@@ -28,14 +28,14 @@ Use minutes/seconds below one hour and hours/minutes/seconds thereafter without 
 
 ## Coach conversation
 
-The initial room opens directly to the composer, with one exception: signed-in iOS Gym setup draws **Set up your routines**, its three starters and its two escapes above the composer. Entry waits for loaded account data and preserves active workouts, account adoption, saved conversations and drafts. A deliberate manual choice prevents repeated automatic entry; empty Routines retains **Set up routines**. Starters leave after the first send ([Coach](briefs/09-coach.md)). Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. The current iOS chrome differences are recorded in the consistency ledger. Beyond setup, do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
+The initial room opens directly to the composer, with one exception: an empty Gym, signed in or not, opens on Coach's two-bubble greeting with **Add screenshot** and **Build myself** under it, which stays until the first accepted message ([Coach](briefs/09-coach.md) "First open"). Entry waits for loaded account data and preserves active workouts, account adoption, saved conversations and drafts. Empty Routines offers its floating + instead. Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. The current iOS chrome differences are recorded in the consistency ledger. Beyond setup, do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
 
-The composer is fixed above the navigation/keyboard inset while the conversation scrolls. Notes/connection details remain available in their destinations. Show allowance, access, connection and generation failures when they affect an action, with a concrete recovery. Preserve factual read receipts and creation/proposal results; optional tool detail stays collapsed. Keep existing human Apply semantics on each surface. Coach may create a routine when requested; routine edits continue through their existing proposal path. The owner's supplied prompt is preserved verbatim in the Coach implementation. Coach may also append useful new user-provided insights to Notes; existing notes remain under the user's edit and delete controls.
+The composer is fixed above the navigation/keyboard inset while the conversation scrolls. Notes/connection details remain available in their destinations. Show allowance, access, connection and generation failures when they affect an action, with a concrete recovery. Preserve factual read receipts and creation/proposal results; optional tool detail stays collapsed. Keep human Apply: every proposal and every routine draft is decided on its card in the conversation — Apply / Turn down, or Save routines — with no review sheet. Coach may draft a routine when requested; routine edits continue through proposals. The owner's supplied prompt is preserved verbatim in the Coach implementation. Coach may also append useful new user-provided insights to Notes; existing notes remain under the user's edit and delete controls.
 
 | State | UI and action |
 | --- | --- |
-| Setup (signed-in iOS) | Automatic entry only for an empty Gym account; empty Routines also offers explicit entry. Set up your routines, three starters, Just log · Build it myself, and the composer; no allowance count or upgrade action |
-| Clarification | Bounded days/equipment choices wrap at available width; selected options have a checkmark and fill an editable draft; selection never sends |
+| First open | Coach's two-bubble greeting, Add screenshot · Build myself, and the composer; no allowance count, goal form, chips or upgrade action |
+| Proposal | One card under the answer: the diff (Show all N in place), Apply all N · Turn down, the all-or-none promise; settled, a receipt line; out of date, grey with the reason |
 | Empty | Empty reading region and composer; no unsolicited message |
 | History | Retained conversations; selecting a row opens that same editable conversation; ordinary rows show a date, and creation/proposal rows add one concise outcome |
 | Resumed | Ordered existing messages, unchanged conversation identity, active composer, New chat in More |
@@ -53,10 +53,9 @@ The composer is fixed above the navigation/keyboard inset while the conversation
 
 The signed-out allowance is $0.05 for an installation credential's lifetime; no question count is promised. Server-issued credentials, IP limits and shared budgets protect access; installation resets are not guaranteed to preserve identity. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
 
-Signed-in questions and pasted programs accept up to 8,000 UTF-8 bytes. Anonymous setup accepts
-1,000-byte goals, 4,000-byte programs or a photo with a 1,000-byte note. Input beyond that remains editable and
-receives a specific length refusal. Clarification groups and routine receipts come from the typed
-Coach contract; clients never parse generated prose to invent controls, creation outcomes or counts.
+Signed-in questions and pasted programs accept up to 8,000 UTF-8 bytes. Signed-out messages accept
+4,000 bytes, optionally with one photo. Input beyond that remains editable and receives a specific
+length refusal. Routine drafts, proposals and their receipts come from the typed Coach contract; clients never parse generated prose to invent controls, creation outcomes or counts.
 
 Copy returns only the message's visible textual content, preserving line breaks. It excludes timestamps, hidden metadata, receipt controls and image filenames. Do not offer an empty text Copy for an attachment-only message. Partial text remains copyable. Proposal actions stay separate from message context menus.
 
@@ -83,6 +82,6 @@ The clock icon comes from the subscribed Material kit; the stopwatch uses Google
 - Web photo-picker upload acceptance remains unverified. Exercise real selection, upload,
   preview/remove/retry and authenticated image reads.
 - Real iOS photo selection, upload retry and authenticated image reads remain unverified in the
-  setup phase. Signed-in conversation fixtures cover draft-only starters, clarification selection,
+  setup phase. Signed-in conversation fixtures cover the greeting, inline drafts and their Save,
   creation receipts, routine opening and workout start; they do not establish live-provider behavior.
   Android acceptance does not establish those platform behaviors.

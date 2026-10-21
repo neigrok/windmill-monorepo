@@ -19,8 +19,7 @@ shared workout and account boards.
 | State | Figma |
 | --- | --- |
 | Coach greeting (🚧 target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
-| Draft to review (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
-| Review and save (🚧 target) | [1156:3154](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1156-3154) |
+| Drafts, confirmed inline (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
 | Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
 | Routine to workout (🚧 target) | [1182:4650](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1182-4650) |
 

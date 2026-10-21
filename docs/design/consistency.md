@@ -256,19 +256,6 @@ these are the places it disagrees with a drawing, a brief or the build.
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 10–13b and 21a/21b from
   the new section's bar anatomy.
-- **9i · The proposal card.** `gym/briefs/09-coach.md` ("One · the turn") gives a phone card its
-  summary, its counted changes on their own line and **Review**, says iOS's card shows no diff rows,
-  and keeps the promise on the card while pending; ("Two · the review") a closed review leaves the
-  card reading *still waiting*, and the sheet heads its quote with *Coach wrote:*. The spec (§6)
-  draws no summary on the card (the answer above is the reasoning), up to three change rows and
-  *+ N more* as Android's skim does, a door *Review changes* (*Review removal* on a removal) with no
-  count, no caption while pending and the settled word once settled (10f), and no kicker: the
-  sheet's subtitle names the source. Restate the brief for both phones.
-- **9j · The Review band's slots.** `09-coach.md` ("Two · the review") holds the gate's refusal
-  and the atomic promise as two slots, the promise always drawn; the spec (§6) gives the band one
-  caption slot that reads the gate sentence until the diff is seen and the promise after, so Apply
-  never moves and the band never says two things. Restate the brief; the Android band keeps the
-  brief's shape until its owner decides.
 - **9k · Where a signed-out workout waits.** The spec (§7.16) puts the account's untaken workout in
   one **On this phone** row at the head of The log — a door to a pushed list from two workouts — with
   the Log tab's system badge as the one door from other tabs; Android draws a card in Settings and a
@@ -412,7 +399,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from branch
   `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). Each target holds
   the slot and number of the board it replaced; the replaced boards are deleted. Targets:
-  - 01: review and Save routines 01.8 `1156:3154`; the Coach chat targets of 01 are listed under 10q.
+  - 01 and 08: listed under 10q.
   - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
     remove by the trash circle 02.8 `1149:2275`.
   - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
@@ -454,11 +441,14 @@ these are the places it disagrees with a drawing, a brief or the build.
   journeys 01 and 08, with local components on the Gym Components page: `_Coach / Bubble`
   (`1167:185`: sender × tail × text, image, typing) and `_Coach / Composer · Messages` (`1168:212`:
   empty, typed, photo). Boards: 01.1 `1173:3783`, 01.2 `1173:3860`, 01.4 `1173:3934`,
-  01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.9 `1173:4471`, 01.11 `1173:4600`,
-  01.12 `1173:4678`, 01.13 `1173:4754`, 01.14 `1173:4833`; 08.1 `1170:2943`, 08.2 `1170:3007`,
-  08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9 `1170:3192`, 08.10 `1170:3266`,
-  08.11 `1170:3364`. Each conflicts with written canon, for the owner to settle before the spec
-  moves:
+  01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.8 `1173:4471`, 01.9 `1182:4650`,
+  01.10 `1173:4600`, 01.11 `1173:4678`, 01.12 `1173:4754`, 01.13 `1173:4833`; 08.1 `1170:2943`,
+  08.2 `1170:3007`, 08.3 `1198:6144`, 08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9
+  `1170:3192`, 08.10 `1170:3266`,
+  08.11 `1170:3364`, 08.12–08.14 `1198:6275`, `1198:6381`, `1198:6484`. Owner rulings since:
+  proposals and drafts are decided inline on their cards (no review sheet; `09-coach.md`, §6), and
+  the greeting is two bubbles of anchored capabilities. Still open against written canon, for the
+  owner to settle before the spec moves:
   - `ios/ios-redesign.md` §6: *Coach's turn is plain prose on the canvas, no bubble*. The targets put
     Coach in a left bubble with a tail, full width for headings, lists and tables.
   - §6: the lifter's bubble is `gym/accent-soft`, radius 18, max 78 %. The targets fill it with
@@ -468,11 +458,23 @@ these are the places it disagrees with a drawing, a brief or the build.
   - §6: the composer is one capsule with `photo.badge.plus` inside and a send circle that only
     dims when empty, *never a different size, shape or colour*. The targets put a round + outside the
     field and show the send arrow only when there is something to send.
-  - `gym/feedback-contract.md` "Coach conversation" and §6 *Signed out* still describe the starters,
-    escapes and the signed-out `ContentUnavailableView`; the targets' greeting, typing bubble,
-    centred service notes and timestamps are not in canon.
-  - The library has no `clock` symbol; the targets draw History with `clock.arrow.circlepath`
-    while the app uses `clock`.
+  - The typing bubble, centred service notes and timestamps are not in canon.
+  - The targets draw History with `clock.arrow.circlepath` while the app uses `clock`; `clock` joins
+    the library with 10s.
+- **10s · Library additions awaiting a publish (2026-10-22).** The Design System file
+  (`qoOwNbWOYE1GFi0yR5uGY2`) gained Theme `ios/system/red` (aliasing new Brand primitives
+  `light/ios/system/red` #FF3B30 and `dark/ios/system/red` #FF453A); fourteen symbols on its iOS page
+  (`minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`, `chevron.up.chevron.down`,
+  `figure.strengthtraining.traditional`, `figure.strengthtraining.functional`, `delete.left`,
+  `scalemass`, `magnifyingglass`, `square.and.arrow.up`, `clock`, `timer`,
+  `exclamationmark.triangle`); `iOS / Keyboard`'s delete key now `delete.left` in both variants and a
+  new `Type=Decimal` variant (the `.decimalPad`). Until the owner publishes, the Gym file keeps its
+  local stand-ins: `gym/destructive`, `sf/…` vector frames and interim `delete.left` overlays on the
+  keyboards. After the publish, `.claude/scratch/gym-figma-targets/post-publish.js` swaps them for the
+  library assets and the local variable is deleted.
+- **10t · Coach saves a stated goal (build).** The greeting says Coach sets goals and plans around
+  them. The prompt (`AnthropicAsk.cpp`) saves only "useful insight" and reads Notes for goals; it
+  should say plainly that a goal the lifter states is saved with `save_note` in that turn.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). Audit of the iOS code

@@ -19,58 +19,58 @@ The lifter’s Notes are written in `10-notes.md`. The trust boundary distinguis
 a **note is directive**, and Coach follows it. The Notes screen says so. The set-note field says
 nothing, because it is a record.
 
-## First open — set up your routines
+## First open — Coach greets
 
-Signed-in iOS Gym offers setup automatically after account data has loaded, when the account has
-no Gym data and no active workout, account transition or adoption decision. A saved conversation or
-draft takes precedence. A person who deliberately chose a manual route is not redirected on each
-visit; empty Routines retains a quiet **Set up routines** action. Signed-out setup uses the
-installation and local persistence boundary below.
+An empty Gym, signed in or not, opens on Coach. Before the first accepted message Coach speaks
+first, locally — two bubbles, no model turn, no allowance line:
 
-The empty setup room is headed **Set up your routines** · *Built from what you bring.* and offers
-three starters as one list:
+> I’m Coach. I can help with:
+>
+> **Build** — a program from a screenshot or your own words.
+> **Goals** — set them here, and I’ll plan around them.
+> **Notes** — I keep what matters, like an old injury.
+> **Adjust** — I review your routines as you train; nothing changes until you apply.
 
-- **Add a screenshot** opens the system photo picker, which needs no permission; the photo waits
-  in the composer as the attachment draft (`../feedback-contract.md`).
-- **Describe your program** takes pasted or typed program text.
-- **Share your goal** takes a goal. Coach asks only the materially missing questions, each
-  answered with chips that fill one draft. Selecting chips invokes no AI work; submitting the
-  draft can use USD allowance.
+Signed out the second bubble reads **Build** and **Goals** (*tell me what you’re after, and I’ll
+plan around it*) and then **With an account** — *I keep notes and review your routines as you
+train.*, since saving notes and proposing changes need an account. Each claim is a tool Coach has:
+`create_routine` from an attached image or text; goals, limits and other insight the lifter states
+go into Notes through `save_note`, which every later turn reads; `propose_routine_change` and
+`propose_routine_removal` change nothing until the lifter applies. When the lifter states a goal,
+Coach saves it as a note in that turn.
 
-Two quiet escapes sit under the starters: **Just log** opens the logger, **Build it myself** opens
-the routine editor. Both preserve the choice for that account. Text starters prepare an editable
-draft and focus the composer; they never send automatically. The starters leave after the first
-send. The heading and starters are the room's, not a message: Coach still does not speak first.
+Under the last bubble sit **Add screenshot** (the system photo picker, no permission) and **Build
+myself** (the routine builder). The greeting and its actions stay until the first user message is
+accepted; tab changes, a cancelled picker, relaunch and a refused or failed send keep them. There
+is no goal form, no chips and no Just log.
 
-Signed-in program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire draft and
-asks the person to shorten it; it never truncates text silently. Clarification choices arrive as
-bounded, typed days/equipment groups. The client does not derive buttons from Coach's prose. A
-selection updates the editable draft, and the person still taps Send.
+Signed-in program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire
+draft and asks the person to shorten it; it never truncates text silently.
 
-When Coach creates requested routines, show one creation receipt per saved routine, *<name>* ·
-*Routine created · N movements*, each with **Open routine** — three saved routines yield three receipts.
-One turn can create at most six routines. Each creation has its own stable operation identity;
-replaying the same request recovers the same saved routine and receipt. An interrupted answer keeps
-its completed creation rows even if the next provider call is refused by an allowance.
-Open routine shows the routine with **Start workout**. Signed-out setup adds the Keep row
-(`../../guidelines/superapp-flow.md` §6); signed-in setup has no phone-only or Keep claim. With
-routines, Gym opens on Routines.
+**Routines Coach writes are drafts, confirmed inline.** They hang under the answer as one card: each
+routine a row that expands in place to its movements, equipment and set targets in their load
+basis, and **Save routines** (**Save routine** for one) on the card. Nothing is saved until that tap.
+After it, the card becomes one receipt per saved routine, *<name>* · *Routine created · N
+movements*, each with **Open routine**. One turn can prepare at most six routines; each has its own
+stable operation identity, so a retry recovers the same draft and the same receipt. Signed-out
+setup adds the Keep row (`../../guidelines/superapp-flow.md` §6). With routines, Gym opens on
+Routines.
 
 ## The loop — four beats
 
-The same four beats on every surface. Web keeps the diff, decision and receipt inline; the phones
-open a review sheet.
+The same four beats on every surface, and all of them in the conversation: the diff, the decision
+and the receipt live on the proposal card. There is no review sheet.
 
 ### One · the turn
 
 Coach answers in prose. On web, one inline proposal follows with the routine name, counted changes,
 full diff, **Apply** and **Turn this down**. The decision replaces its actions with a receipt in the
-same place. A routines-home preview opens the inline panel through **Review**.
+same place. A routines-home preview opens the conversation at its inline proposal.
 
-On the phones, the proposal card carries its summary, counted changes and **Review**. It has no
-Apply button: `../../guidelines/thumb-reach.md` keeps the committing action in the review sheet's
-pinned band. Android's skim shows at most three changed rows and a *+ N more* line; iOS's shows no
-diff rows. The complete routine and kept runs belong to the sheet.
+On the phones, the proposal card under the answer carries the diff, **Apply** and **Turn down**.
+It shows up to three changed rows, then **Show all N changes**, which expands the card in place to
+every change and kept run; **Show less** folds it. A routines-home proposal row opens its
+conversation at the card.
 
 **The count describes the proposed change.** Web's inline heading combines the routine name and
 counted phrase; routines-home previews show changed rows or the proposal summary. Phone cards
@@ -88,8 +88,7 @@ row). Whether that line names the routine a second time is a copy owner's call t
 (`3j`): Android draws *`<routine>` · `<counted>` · waiting* after its eyebrow has named the routine. Web's inline heading names the routine once beside the count.
 
 **The proposal names its routine.** Web's inline heading reads *<routine> · <counted>*; its routine
-name truncates on one line. Phone cards and review sheets use *Proposal · <routine name>*; the
-review sheet's heading may take two lines. The source attribution remains separate from the routine
+name truncates on one line. Phone cards use *Proposal · <routine name>*. The source attribution remains separate from the routine
 name.
 
 **Pending promises disappear when the decision is settled.** Web draws *Logged sets stay unchanged.*
@@ -113,92 +112,31 @@ Every surface shows the server's sentence as sent; local words only for a reply 
 
 ### Two · the review
 
-Web renders the complete diff inline with collapsed kept runs, one Apply button, its atomic promise
-and a plain **Turn this down** action. It has no review dialog or scroll-to-end gate. Both actions
-are disabled during the request; the server's refusal stays beside the proposal.
+The review is the card. Web and the phones render the same thing: the complete diff — changed rows
+at full weight, each kept run a collapsed count *in its own place* (*and 7 lines unchanged*) that
+unfolds where it stands — then the actions and the atomic promise. On the phones a long diff opens
+on its first three changes and **Show all N changes** expands it in place; nothing opens over the
+conversation.
 
-On the phones, Review opens the diff **over** the conversation: an iOS sheet or Android modal bottom
-sheet with its drag handle. Closing returns to the same conversation without deciding. The following
-sheet and scroll-gate rules apply to iOS and Android.
+**The actions are on the card.** **Apply all N** (**Apply** when N is 1, **Remove <routine>** for a
+removal, in the destructive style) and **Turn down**, side by side under the diff, then the promise —
+*All or none. Nothing changes until you tap.* (*Nothing changes until you tap.* for one change;
+*Your logged sets stay. Nothing is removed until you tap.* for a removal). The label carries the
+count the store will apply, never a number the screen counted for itself. Both are disabled while
+a request runs; the server's refusal stays on the card.
 
-**No fixed partial detent.** A routine holds up to fifty entries and the summary runs to four hundred
-model-written characters, so the diff is unbounded — and a half-height detent does not grow with the
-system's text size, so at the larger accessibility sizes the visible diff goes to zero while Apply
-stays enabled. The iOS sheet is `.large` only; Android's skips the partial state. **Apply is never
-reachable while the diff is clipped:** on both phones it stays disabled until the diff has been
-scrolled to its end, or fits without scrolling. A kept run unfolding past the height already seen
-clips the diff again, so it takes Apply away until the new end is seen — and scrolling back up never
-re-locks it, because that end has been seen. **Both phones enforce that rule**, with `seenExtent` on Android and `ReviewGate.seenAt` on iOS.
+**Turn down asks once** on the phones: *Turn this down?* / *Nothing changes, and it stays in the
+routine’s history as a record.* / **Turn down** (destructive) · **Keep it**. Web settles directly.
+Leaving the card alone decides nothing: the proposal stays pending in the conversation.
 
-**And the gate says why, on the screen and not only to a screen reader:**
-
-> **Scroll to the end to apply.**
-
-Six words, byte-identical on both phones (`Proposal.applyHint` in `Proposal.swift` and `Proposal.kt`), inside `../../guidelines/text-budget.md`'s refusal row
-because it names the way out rather than only refusing. It is driven off the **gate alone**, never
-off whatever else has Apply inert: while an apply request is in flight Apply is shut for a different
-reason, and a sentence bound to the disabled state would tell a lifter to read further while the
-write is already going. So it is the sentence while the diff is unseen and nothing once it has been
-seen, whatever the request is doing.
-
-**Both channels, on both phones: the pixels, and the control that is refusing.** iOS hands
-VoiceOver the button's `accessibilityHint`; Android uses `stateDescription`. Hide the duplicate
-visual refusal from semantics so the gate is announced once.
-
-**Kept rows have one shape everywhere.** Changed rows at full weight; every run of kept rows as a
-collapsed count **in its own place** — *"and 7 lines unchanged"*, *"and 1 line unchanged"* — tappable
-to unfold where it stands. The rows are the document as well as the diff, and a lifter deciding needs
-to see the run the routine takes on, not only what moved, in the order it will apply.
-
-**The phone review attributes the model's prose to whoever wrote it.** The summary sits in a quoted block under a
-kicker, visually separate from the counted rows: **Coach wrote:** for a proposal that came through the
-Coach door; **<name> wrote:** for one that came over MCP from a source with a name — the agent's own,
-else the connection's, as the byline *from Claude Desktop* already reads; **Your agent wrote:** for
-an MCP source with neither. The kicker is an attribution, not an eyebrow: drawn as written, sentence
-case, never uppercased. The sheet never puts two kinds of truth under one pair of buttons.
-
-**Three exits, not two.** Closing the sheet — swipe, scrim, back, × — **decides nothing**: the proposal
-stays pending, and the card it was opened from reads *still waiting*.
-
-**The phone review band holds one button, and it is Apply.** Its label carries the count the store will apply —
-**Apply all N**, **Apply** when N is 1, **Remove <routine>** for a removal — and never a number the
-screen counted for itself. Turning a proposal down is a **plain text row beneath it**, not the left
-half of a pair. A pair puts the one irreversible act exactly where a lifter's hand expects *cancel*,
-and colour does not undo position — someone reaching for "not now" would settle something
-permanently. "Not now" already exists and costs nothing: close the sheet. So the pinned band is a
-single primary, which is also what the reach law asks for; two full-strength buttons of the same
-weight is a failure to decide. The atomic promise — *All N or none. Nothing is applied until you
-tap.* — is always drawn, never toggled, so the band's height never changes.
-
-**The phone band's order is four things on iOS and Android: Apply · the gate's
-refusal · the atomic promise · turn down.** The promise is inside the band because a promise that
-scrolls with the diff is not pinned, and above turn-down because below it puts the last word under
-the irreversible act.
-
-**The refusal's slot is held open in both states**, empty once the diff has been seen and empty
-again while the apply request runs, so Apply never moves under a thumb already reaching for it. It
-holds in the returning direction too — a kept run unfolding past the end already seen shuts the gate
-again on both phones, and the sentence comes back into a slot that was already its size.
-
-**"Turn this down"** is confirmed on iOS and Android. The phone confirmation reads: *Turn this down?* / *Nothing changes, and it stays in the routine’s history as a
-record.* / **Turn down** (destructive) · **Keep it**. Web settles directly from the inline action and replaces it with the turned-down receipt; it adds no confirmation dialog.
-
-**One word for one act.** Every surface calls the settled decision *turned down*. Web's inline
-receipt reads *Turned down · nothing changed.* Phone history and settled-proposal views keep that
-same term. No route reopens a settled proposal, so the copy promises no way back. The phone
-confirmation guards that irreversible decision. The wire state `dismissed` and route `/dismiss`
-are machine tokens and stay.
+**The card attributes the proposal.** A proposal from a connected tool carries *from Claude
+Desktop* (the agent's name, else the connection's; *from your agent* with neither) under its
+eyebrow; Coach's own needs no byline, since its answer sits above.
 
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
-mid-workout changes nothing about the workout in progress. Outside the refused Coach room, a pending inline proposal on web
-carries *"You are mid-workout. Applying changes next time, not this session."* That state exists on
-the web only: both phones draw the logger over every other screen while a session is open, so no
-review is reachable there mid-workout, and they draw nothing for it — a board that drew the caveat on
-a phone would be drawing a state the phone cannot reach.
-
-That line sits **above the inline diff, never inside its action band.** A line that appears and disappears
-inside the band moves the Apply button, so the same tap lands somewhere different depending on
-whether a workout is running. The band's height is constant; the caveat is content.
+mid-workout changes nothing about the workout in progress. A pending card seen during a workout on
+web carries *"You are mid-workout. Applying changes next time, not this session."* above the diff,
+never inside the actions, so Apply never moves.
 
 ### Three · the apply
 
@@ -208,15 +146,14 @@ merged over. All of it lands or none of it does.
 ### Four · the return
 
 On web, the inline proposal replaces its actions with the stored outcome. Reopening the conversation
-reloads that proposal's state and renders the same outcome. On iOS, decisions remain in Review
-until the person closes it. Android keeps removals there and returns other decisions to what
-opened them. The proposal card or stored-thread row carries the receipt line:
+reloads that proposal's state and renders the same outcome. On the phones the card collapses to its
+receipt line in place; a proposal that is out of date stays readable in grey with the server's
+reason and no actions. The card or stored-thread row carries the receipt line:
 
 > **Applied · Push A · 4 changes**
 
 *1 change* when one; **Applied · Push A · routine removed** for a removal. Turning down writes
-*"Turned down · nothing changed."* Other Android decisions opened outside a thread use the room's
-transient for their return receipt.
+*"Turned down · nothing changed."*
 
 A removal applied on either phone keeps its receipt state with the account until the receipt is
 shown. Retries, timeouts and relaunch preserve the pending decision and its confirmed outcome;
@@ -284,17 +221,12 @@ The full quiet-room, copying, image attachment and streaming contract is [feedba
 the credential; the phone keeps it separately from account credentials and retains it on sign-out.
 IP issuance and generation limits and the shared free daily/monthly pools bound exposure.
 Installation resets are not guaranteed to preserve identity. Input tokens are estimated for each
-actual request and settled to actual provider cost. Show the server's lifetime grant once under
-the first-open starters, without promising a number of questions:
+actual request and settled to actual provider cost. No allowance line is shown before it is in
+the way: no countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next
+send is refused once, as a centred line in the conversation with its way out:
 
-> $0.05 of AI use without an account. Does not renew.
-
-No countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next send is
-refused once, in place of an answer:
-
-> **You’ve used this phone’s AI allowance.**
-> Sign in to keep your routines. If your account already has training, you’ll be
-> asked first.
+> Your AI allowance is fully used or reserved.
+> Sign in to continue. **Sign in**
 
 Use that refusal only for a spent balance. A request that cannot fit positive remaining capacity
 needs its own explanation. Sign-in binds the installation permanently and includes its current
@@ -307,10 +239,9 @@ phone's routines join the account by the sign-in rule (`../../guidelines/superap
 same conversation continues under the account, receipts included, unless the person discards the
 phone's gym work when asked, which discards the conversation with it.
 
-Signed-out setup makes one bounded provider request. A goal accepts up to 1,000 UTF-8 bytes and
-requires local Days (1–6) and Equipment (Full gym, Dumbbells, Barbell, Bodyweight) choices before
-Send. A supplied program accepts up to 4,000 bytes without mandatory goal choices. A photo accepts
-JPEG or PNG up to 1 MiB with an optional 1,000-byte note. Limits preserve the full editable draft.
+Signed-out Coach is plain dialogue: each message makes one bounded provider request of up to
+4,000 UTF-8 bytes, optionally with one photo (JPEG or PNG up to 1 MiB), and may return routine
+drafts confirmed inline. Limits preserve the full editable draft.
 The result contains at most three reusable routines, six movements per routine and eight target
 sets per movement; it does not promise a weekly calendar. Unknown movements or insufficient
 source details are refused rather than invented.
