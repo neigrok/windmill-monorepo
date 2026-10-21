@@ -1433,6 +1433,9 @@ Recorded in `consistency.md` under *iOS redesign*:
   boards' W capsule and hand-drawn glass), 9m
   (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
   accent).
+- **Drawings against the build:** 10h (Routines' unshipped controls), 10i (Duplicate on the editor
+  board), 10k (*session* on two wave-three boards),
+  10l (the Live Activity double tap), 10m (screens that ship with no drawing).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in* in the
   bar), 9y (the month moment named by its month).
@@ -1455,30 +1458,27 @@ settings waits on the owner in 9r and 9w.
 
 ## 10. Drawings
 
-Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page `iOS` (`11:2`), section
-[iOS redesign · iteration 1 · 2026-10-08](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1055-204)
-(`1055:204`) — 393 × 852 boards, Instrument unless named Daylight:
+Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page [`iOS`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
+(`11:2`), one section per flow; each caption names the code that ships the screen and the date of
+its drawing. 393 × 852 boards, Instrument with Daylight in the row beneath:
 
-| Board | Node |
-|---|---|
-| Top bar anatomy — the three root bars and a pushed bar | `1055:205` · Daylight `1055:274` |
-| Routines | `1056:201` · Daylight `1056:417` |
-| The log | `1056:529` · Daylight `1056:779` |
-| Coach — empty | `1056:903` |
-| Coach — conversation | `1056:1048` · Daylight `1056:1240` |
-| Routine summary · Dark / Light | `1063:531` / `1065:390` |
-| Workout · Dark / Light | `1065:222` / `1065:441` |
-| Finish · Dark / Light | `1063:486` / `1065:343` |
-| Log swipe · Dark / Light | `1065:307` / `1065:526` |
-| Workout — the logger and the rack | `1056:1455` · Daylight `1056:1638` |
-| Finish receipt | `1056:1737` |
-| Session detail | `1056:1930` |
-| Colour roles and type ramp | `1057:201` |
-| Transient band | `1057:383` |
+| Section | Node | Boards |
+|---|---|---|
+| 00 · The room — read me, map, anatomy | `1118:1768` | top bar anatomy `1055:205` · Daylight `1055:274`; colour roles and type ramp `1057:201`; transient band `1057:383`; native anatomy `1063:478` |
+| 01 · First open — Coach-led setup | `1081:565` | signed-out and signed-in first open `1081:569`, `1081:607`; photo `1081:637`, `1081:704`, `1081:1027`; preparing `1081:737`; created `1081:762`, `1081:800`; routine to Start `1081:829`; goal `1081:858`, `1081:894`; program `1081:925`; allowance used `1081:957`; after sign-in `1081:988` |
+| 02 · Routines | `1113:1474` | Routines `1056:201` · `1056:417`; routine summary `1063:531` · `1065:390`; editor `252:358`, `252:767`; movement picker `258:417`; targets `254:478` |
+| 03 · Workout | `1114:1513` | workout `1065:222` · `1065:441`; keypad `321:281`; fix sheet `327:922`; finish `1063:486` · `1065:343`; ended early `328:646`; no movement yet `320:318` |
+| 04 · Outside the app | `1115:1576` | Live Activity `168:29`; Dynamic Island `171:29`; states `175:29`; double tap `177:29` |
+| 05 · The log, past workouts & progress | `1116:1605` | The log `1056:529` · `1056:779`; discard by swipe `1065:307` · `1065:526`; workout detail `1056:1930`; a deleted set `323:29`; Record `461:60`, scrub `529:60`, panned `529:154` |
+| 06 · Bodyweight | `1116:1683` | Bodyweight `128:2` |
+| 07 · On this phone | `1116:1705` | not drawn |
+| 08 · Coach | `1117:1703` | empty `1056:903`; conversation `1056:1048` · `1056:1240`; proposal review `123:2`; no Coach seat `133:1045`; not on this Windmill `133:1152`; the day's cap `224:309` |
+| 09 · Notes & Connected log | `1117:1768` | Notes `130:1419`; note editor `135:246` |
+| 10 · Not built — designed only | `1118:1810` | Apple Health (no board) |
 
 The boards bind `Gym · Product colours` and shared Theme `ios/gym/*` roles, including
-`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). They are iteration-1 drawings; what §5–§7 rule past them is written here and not
-yet drawn (9m).
+`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). Most predate iteration 3;
+what §5–§7 rule past them is written here and not yet drawn (9m, 10m).
 
 Shell file `tkI7GnS6TcZvQSDi9lwrBf`, page `iOS` (`1:5`),
 402 × 874 boards:

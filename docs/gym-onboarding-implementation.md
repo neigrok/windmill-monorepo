@@ -12,7 +12,7 @@ The canonical iOS flow is
 on the Gym file's
 [Gym · iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
 page. The Gym file's
-[iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25) links directly to it.
+[iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1118-1772) links directly to it.
 The flow uses the existing Coach room, Routines destination and workout logger, with links to the
 shared workout and account boards.
 
