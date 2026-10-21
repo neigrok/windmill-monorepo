@@ -478,15 +478,14 @@ these are the places it disagrees with a drawing, a brief or the build.
     Equipment menu 05.10 `1153:2603`.
   - 08: Coach updates a movement 08.9, listed under 10q.
 
-  Choices the branch forced or left open, for the build and the owner:
-  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
+  Choices the build made or left open, for the owner:
+  - The build's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
     said *Build it myself*), *Add screenshot*, *Save routine(s)*, *Sign in to continue.*
-  - The greeting's actions are drawn `.bordered` with the accent tint; the branch uses `.borderless`.
-  - The branch adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
+  - The greeting's actions are drawn `.bordered` with the accent tint; the build uses `.borderless`.
+  - The build adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
     available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
     entry; board (b) is the owner's paid upsell and must wait for checkout.
-  - The set-editing haptic is a `.selection` tick per accepted rack change. The branch keeps the
-    canon's silence on Log set, which the boards keep.
+  - The build keeps the canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
     `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
     token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors and
@@ -511,8 +510,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   - §6: the composer is one capsule with `photo.badge.plus` inside and a send circle that only
     dims when empty, *never a different size, shape or colour*. The targets put a round + outside the
     field and show the send arrow only when there is something to send.
-  - `gym/feedback-contract.md` "Coach conversation" and §6 *Signed out* still describe the starters,
-    escapes and the signed-out `ContentUnavailableView`; the targets' greeting, typing bubble,
+  - §6 *Signed out* still draws the signed-out `ContentUnavailableView`; the targets' typing bubble,
     centred service notes and timestamps are not in canon.
   - The library has no `clock` symbol; the targets draw History with `clock.arrow.circlepath`
     while the app uses `clock`.

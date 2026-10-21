@@ -107,8 +107,8 @@ Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run 
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
 and a replica change recomputes each read once. These render checks have no timing budget.
-The gym domain claims 13 of the 14 corpus files and 610 vectors, compared by JCS and with reversed record
-order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 116 vectors (including 36 promoted REST samples, 22 regression cases
+The gym domain claims 13 of the 14 corpus files and 630 vectors, compared by JCS and with reversed record
+order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 121 vectors (including 36 promoted REST samples, 22 regression cases
 and the `ProgressRecords` new bests), proposals claim 56 (the proposal state over the log-confirmed routine and its `OutOfDate` read
 included), units claim 57 and the weight ladder claims 36. Training actions claim 133; nothing remains pending.
 The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the
