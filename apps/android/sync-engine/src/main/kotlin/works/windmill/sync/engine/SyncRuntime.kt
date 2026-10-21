@@ -483,7 +483,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         val seat = seat() ?: return@withLock
         val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.openLive(seat.token!!) } ?: Reply.Unreachable
         if (!current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return@withLock }
-        // §7.5: a handshake's refusal carries no body, so its 426 proves nothing; the pull the failed open runs hears the server's own verdict.
+        // §7.5: a handshake's 426 proves nothing on its own; the pull the failed open runs hears the server's own verdict.
         if (reply is Reply.Failed) {
             if (reply.response.status == 401) engine.write(EngineOperation.live) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
             return@withLock

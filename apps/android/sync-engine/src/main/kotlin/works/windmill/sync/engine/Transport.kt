@@ -235,8 +235,8 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             if (ended.get() || closed.get()) return
             if (bytes.size > Constants.LIVE_FRAME_BYTES) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
             val frame = try { Json.parse(bytes).also(::validateFrame) } catch (malformed: Exception) { return fail { failed(EngineOperation.live, malformed) } }
-            if (!messages.trySend(frame).isSuccess) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
             outages.remove(EngineOperation.live)
+            if (!messages.trySend(frame).isSuccess) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
         }
         override fun onMessage(webSocket: WebSocket, text: String) = message(text.encodeToByteArray())
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) = message(bytes.toByteArray())
