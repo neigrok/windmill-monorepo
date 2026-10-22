@@ -435,9 +435,6 @@ these are the places it disagrees with a drawing, a brief or the build.
     to continue.* The owner's later rulings replace two: *Build my own* (not *Build myself*) and
     **Apply** / **Reject** on drafts (not *Save routine(s)*) — build work in 10v.
   - The greeting's actions are drawn `.bordered` with the accent tint; the build uses `.borderless`.
-  - The build adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
-    available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
-    entry; board (b) is the owner's paid upsell and must wait for checkout.
   - The set-editing haptic is a `.selection` tick per accepted rack change. The build keeps the
     canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
@@ -511,7 +508,7 @@ these are the places it disagrees with a drawing, a brief or the build.
     `needsAccount` from it, which the backend's onboarding schema and prompt do not produce yet, so the button shows only
     on the simulator fixture.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
-    on iOS only; the signed-out *Sign in* answer for a change request (08.31) is built nowhere.
+    on iOS only.
   - `ios/ios-redesign.md` §7.5 has a removal the log refused read *Out of date* on its Routines row, but the card that row
     opens is not out of date: it reads *Not applied.* with **Try again**. iOS's row reads *Not applied*, as does a
     waiting change's row once the log refused its Apply; §7.5 and task 11's settled words want *Not applied* added.

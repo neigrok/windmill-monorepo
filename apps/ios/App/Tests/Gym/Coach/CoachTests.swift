@@ -784,7 +784,7 @@ import SyncTesting
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
   }
 
-  @Test func recoveryIsOfferedOnlyWhereSigningInOrWindmillOneCanHelp() {
+  @Test func recoveryIsOfferedOnlyWhereSigningInCanHelp() {
     for code in ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"] {
       #expect(CoachRecovery(code: code, anonymous: true) == .signIn)
     }
