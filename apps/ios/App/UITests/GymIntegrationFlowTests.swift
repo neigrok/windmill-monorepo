@@ -82,10 +82,9 @@ import XCTest
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
     XCTAssertTrue(app.buttons["settings-notes"].waitForExistence(timeout: 5)); app.buttons["settings-notes"].tap()
-    app.buttons["coach-add-note"].tap(); replace(app.textFields["coach-note-title"], "Training focus")
-    let body = app.textFields["coach-note-body"].exists ? app.textFields["coach-note-body"] : app.textViews["coach-note-body"]
-    replace(body, "Keep the bench controlled."); app.buttons["coach-note-save"].tap()
-    XCTAssertTrue(app.staticTexts["Training focus"].waitForExistence(timeout: 5)); capture(app, "e2e-notes")
+    app.buttons["coach-add-note"].tap(); replace(app.textFields["coach-note-text"], "Training focus\nKeep the bench controlled.")
+    app.buttons["coach-note-save"].tap()
+    XCTAssertTrue(app.staticTexts["Training focus\nKeep the bench controlled."].waitForExistence(timeout: 5)); capture(app, "e2e-notes")
     back(app)
     XCTAssertTrue(app.navigationBars["You"].buttons["Done"].waitForExistence(timeout: 5))
     app.navigationBars["You"].buttons["Done"].tap()

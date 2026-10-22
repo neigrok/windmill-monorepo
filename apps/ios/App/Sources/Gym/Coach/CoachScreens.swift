@@ -58,6 +58,34 @@ struct CoachUnavailable: View {
   }
 }
 
+// A note reads and edits as one text. A first line of up to 60 characters is the title and the rest the body. A longer
+// first line keeps the whole text in the body under a title cut from that line: at its last space within 60 characters,
+// or at 59 when no space falls there, then "…". The text reads back as the body whenever the title is that cut of the
+// body's first line, so nothing the lifter did not type appears.
+extension Note {
+  var text: String {
+    get {
+      if let firstLine = body.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first,
+         Note.title(cutting: firstLine) == title { return body }
+      return body.isEmpty ? title : title + "\n" + body
+    }
+    set {
+      let lines = newValue.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+      let firstLine = lines.first ?? ""
+      if let cut = Note.title(cutting: firstLine) { title = cut; body = newValue; return }
+      title = String(firstLine); body = lines.count > 1 ? String(lines[1]) : ""
+    }
+  }
+
+  static func title(cutting line: Substring) -> String? {
+    let scalars = Array(line.trimmingCharacters(in: .whitespaces).unicodeScalars)
+    guard scalars.count > 60 else { return nil }
+    let space = scalars.prefix(60).lastIndex(of: " ").flatMap { $0 > 0 ? $0 : nil }
+    var cut = String.UnicodeScalarView(); cut.append(contentsOf: scalars.prefix(space ?? 59))
+    return String(cut).trimmingCharacters(in: .whitespaces) + "…"
+  }
+}
+
 struct NotesScreen: View {
   let gym: GymModel
   @State var editor: NoteEditorIdentity?
@@ -69,7 +97,7 @@ struct NotesScreen: View {
       else { CoachUnavailable(symbol: "note.text", sentence: "Notes live with your account, so they need you signed in.", signIn: openAccount) }
     }.navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .gymTabBar()
-      .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
+      .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton().tint(GymPalette.ink) } }
       .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }
       .sensoryFeedback(.selection, trigger: ordered)
@@ -78,42 +106,42 @@ struct NotesScreen: View {
   var notes: some View {
     List {
       Section {
-        Group {
-          ForEach(gym.notes, id: \.id) { note in
-            Button { editor = NoteEditorIdentity(note: note) } label: {
-              GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), trailing: .door, lineLimit: 2)
-            }
-              .trashSwipe("Delete note") { _ = gym.run(DeleteNote(note.id)) }
-              .contextMenu {
-                Button("Edit") { editor = NoteEditorIdentity(note: note) }
-                Button("Move up") { move(note, by: -1) }
-                Button("Move down") { move(note, by: 1) }
-                Button("Delete note", role: .destructive) { _ = gym.run(DeleteNote(note.id)) }
-              }
-              .accessibilityAction(named: "Move up") { move(note, by: -1) }
-              .accessibilityAction(named: "Move down") { move(note, by: 1) }
-              .accessibilityAction(named: "Delete note") { _ = gym.run(DeleteNote(note.id)) }
-          }.onMove { source, destination in
-            guard let from = source.first, source.count == 1 else { return }
-            if gym.coachMoveNote(gym.notes[from], to: destination > from ? destination - 1 : destination) { ordered.toggle() }
-          }.onDelete { offsets in
-            let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
+        ForEach(gym.notes, id: \.id) { note in
+          Button { editor = NoteEditorIdentity(note: note) } label: {
+            GymRow(title: note.text, trailing: .door, lineLimit: 2)
           }
-          if gym.coachNoteCount == 0 {
-            ForEach(["How I want to be talked to", "What I am training for"], id: \.self) { hint in
-              Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
-                .foregroundStyle(GymPalette.inkDim)
+            .trashSwipe("Delete note") { _ = gym.run(DeleteNote(note.id)) }
+            .contextMenu {
+              Button("Edit") { editor = NoteEditorIdentity(note: note) }
+              Button("Move up") { move(note, by: -1) }
+              Button("Move down") { move(note, by: 1) }
+              Button("Delete note", role: .destructive) { _ = gym.run(DeleteNote(note.id)) }
             }
+            .accessibilityAction(named: "Move up") { move(note, by: -1) }
+            .accessibilityAction(named: "Move down") { move(note, by: 1) }
+            .accessibilityAction(named: "Delete note") { _ = gym.run(DeleteNote(note.id)) }
+        }.onMove { source, destination in
+          guard let from = source.first, source.count == 1 else { return }
+          if gym.coachMoveNote(gym.notes[from], to: destination > from ? destination - 1 : destination) { ordered.toggle() }
+        }.onDelete { offsets in
+          let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
+        }
+        if gym.coachNoteCount == 0 {
+          ForEach(["How I want to be talked to", "What I am training for"], id: \.self) { hint in
+            Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
+              .foregroundStyle(GymPalette.inkDim)
           }
-          if gym.coachNoteCount < 10 {
-            Button { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), isNew: true) } label: { Label("Add a note", systemImage: "plus") }
-              .accessibilityIdentifier("coach-add-note")
-          } else { Text("10 of 10 notes. Delete one to add another.").foregroundStyle(GymPalette.inkDim) }
-        }.listRowBackground(GymPalette.card)
+        }
       } header: {
-        Text("Any agent you connect can read these too.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil)
-      }
-    }.listStyle(.insetGrouped)
+        Text("Agents you connect can also read these.").font(.footnote).foregroundStyle(GymPalette.inkDim).textCase(nil)
+      }.listRowBackground(GymPalette.card)
+      Section {
+        if gym.coachNoteCount < 10 {
+          Button("Add a note") { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), isNew: true) }
+            .foregroundStyle(GymPalette.accent).accessibilityIdentifier("coach-add-note")
+        } else { Text("10 of 10 notes. Delete one to add another.").foregroundStyle(GymPalette.inkDim) }
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).contentMargins(.top, RoomSpace.small, for: .scrollContent)
   }
   func move(_ note: Note, by step: Int) {
     guard let index = gym.notes.firstIndex(where: { $0.id == note.id }), gym.notes.indices.contains(index + step) else { return }
@@ -128,20 +156,24 @@ struct NoteEditorIdentity: Identifiable {
   var id: String { note.id.description }
 }
 
-// One note, saved from the bar's checkmark; a swipe down the form puts the keyboard away.
+// One note, its text focused on open and saved from the bar's checkmark; a swipe down the form puts the keyboard away.
 struct NoteEditor: View {
   let gym: GymModel
   let identity: NoteEditorIdentity
   let owner: String?
   @State var draft: Draft<Note>
   @State var saved = false
+  @FocusState var writing: Bool
   @Environment(\.dismiss) var dismiss
   init(gym: GymModel, identity: NoteEditorIdentity) {
     self.gym = gym; self.identity = identity; owner = gym.account
     _draft = State(initialValue: identity.isNew ? Draft(new: identity.note, placed: .bottom) : Draft(opening: identity.note))
   }
   var current: Bool { owner == gym.account && gym.coachAccountAvailable }
-  var savable: Bool { current && !draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (identity.isNew || draft.isDirty) }
+  var bytes: Int { NoteRules.body.measure(draft.current.body) }
+  var savable: Bool {
+    current && !draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && bytes <= 500 && (identity.isNew || draft.isDirty)
+  }
   var body: some View {
     NavigationStack {
       Form {
@@ -149,12 +181,14 @@ struct NoteEditor: View {
           Text("The account changed. Open this note again.").listRowBackground(GymPalette.card)
         } else {
           Section {
-            TextField(identity.hint, text: $draft.current.title, axis: .vertical).font(.title3.weight(.semibold)).accessibilityIdentifier("coach-note-title")
-            let titleCount = draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count
-            if titleCount >= 48 { Text("\(titleCount) of 60 characters").font(.caption.monospacedDigit()).foregroundStyle(titleCount > 60 ? GymPalette.alarm : GymPalette.inkDim) }
-            TextField("Write a note for Coach", text: $draft.current.body, axis: .vertical).lineLimit(8...20).accessibilityIdentifier("coach-note-body")
-            let bytes = draft.current.body.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count
-            if bytes >= 400 { Text("\(bytes) of 500 bytes").font(.caption.monospacedDigit()).foregroundStyle(bytes > 500 ? GymPalette.alarm : GymPalette.inkDim) }
+            TextField(identity.hint, text: $draft.current.text, axis: .vertical).lineLimit(5...20)
+              .focused($writing).accessibilityIdentifier("coach-note-text")
+            if bytes > 500 {
+              Text("This note runs past 500 bytes. Shorten it to save.").font(.caption).foregroundStyle(GymPalette.alarm)
+                .accessibilityIdentifier("coach-note-refusal")
+            } else if bytes >= 400 {
+              Text("\(bytes) of 500 bytes").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+            }
           }.listRowBackground(GymPalette.card)
           if !identity.isNew {
             Section {
@@ -173,6 +207,6 @@ struct NoteEditor: View {
         }
         .sensoryFeedback(.success, trigger: saved)
     }.presentationDetents([.large])
-      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "note"]) }
+      .onAppear { writing = current; gym.telemetry.event("gym_screen_viewed", properties: ["screen": "note"]) }
   }
 }

@@ -528,8 +528,12 @@ these are the places it disagrees with a drawing, a brief or the build.
     Create movement does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
     `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so the rack's
     keypad, Targets and Create movement read the same words.
-  - Weigh in (06.1): on a
-    phone the keyboard lifts the `.medium` sheet to the top, where the board draws it at its detent.
+  - Weigh in (06.1): on a phone the keyboard lifts the `.medium` sheet to the top, where the board
+    draws it at its detent.
+  - Notes (09.1, 09.2): a row and the editor are the note's one text, where `briefs/10-notes.md` keeps
+    a title and a body. The domain still stores both (ios-redesign §7.10 Notes has the rule), so a
+    long first line reaches other surfaces as a cut title over the whole text, and Coach's `save_note`
+    and the rules are unchanged.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

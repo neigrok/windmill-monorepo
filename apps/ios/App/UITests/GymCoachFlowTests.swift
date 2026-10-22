@@ -204,21 +204,20 @@ import UIKit
     XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 5))
     openDestination("Notes", app)
     XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Any agent you connect can read these too."].exists)
+    XCTAssertTrue(app.staticTexts["Agents you connect can also read these."].exists)
     XCTAssertFalse(app.staticTexts["what you write for Coach"].exists || app.staticTexts["Top note wins."].exists)
     capture("coach-notes-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
     app.buttons["coach-add-note"].tap()
     let save = app.buttons["coach-note-save"]
-    XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "A note with no title cannot save")
-    let title = app.descendants(matching: .any)["coach-note-title"]
-    title.tap(); title.typeText("Training focus")
-    let body = app.descendants(matching: .any)["coach-note-body"]
-    body.tap(); body.typeText("Keep the squat steady.")
+    XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "A note with no text cannot save")
+    let text = app.descendants(matching: .any)["coach-note-text"]
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    text.typeText("Training focus\nKeep the squat steady.")
     XCTAssertFalse(app.buttons["coach-note-keyboard-done"].exists || app.buttons["Done"].exists, "Nothing but the bar commits the note")
     capture("coach-note-editor-\(suffix)", app)
     XCTAssertTrue(save.isEnabled); save.tap()
-    let saved = app.staticTexts["Training focus"]
+    let saved = app.staticTexts["Training focus\nKeep the squat steady."]
     XCTAssertTrue(saved.waitForExistence(timeout: 5)); saved.tap()
     XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "An unchanged note cannot save")
     app.buttons["Cancel"].tap()

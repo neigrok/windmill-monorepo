@@ -682,7 +682,12 @@ has no pinned primary: Back returns to the composer.
 
 **Notes** carries one fact as its header, *Agents you connect can also read these.*
 (`10-notes.md`), with no second heading line and no *Top note wins.* footer: the drag handle in
-Edit carries the order (`consistency.md` 9s). *Add a note* is an action row. The note editor
+Edit carries the order (`consistency.md` 9s). A row is the note's text with the door chevron, and
+*Add a note* is an accent action row on its own card. The note editor is one text field, focused on
+open, over *Delete note*: a first line of up to 60 characters is the note's title and the rest its body;
+a longer first line keeps the whole text in the body under a title cut at its last space within 60
+characters (at 59 when none) and *…*. Past 500 bytes the field says *This note runs past 500 bytes.
+Shorten it to save.* It
 commits from its bar with `.sheetCommit` (✓ *Save*, §5) and has no *Done* above the keyboard; a swipe
 down puts the keyboard away. Signed out, Notes is the room's signed-out shape: a
 `ContentUnavailableView` with `note.text`, no title, *Notes live with your account, so they need you
