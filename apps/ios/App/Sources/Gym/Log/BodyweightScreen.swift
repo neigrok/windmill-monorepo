@@ -98,28 +98,27 @@ struct BodyweightScreen: View {
             .listRowBackground(GymPalette.canvas).accessibilityIdentifier("gym-bodyweight-empty")
         } else if weight.stance == .holding {
           Section {
-            ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
-            let chart = weight.chart(window == .recent ? .recent : .all)
-            let caption = window.line(recent: "90 days", holding: GymCount.of(chart.dots.count, "weigh-in"))
-            if !chart.dots.isEmpty {
-              LogDatedChart(points: chart.dots.map { entry in
-                LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
-                             label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))")
-              }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
-              through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption)
-              .accessibilityIdentifier("gym-bodyweight-chart")
-            } else {
-              if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {
-                Text("no weigh-in in the last 90 days")
-                  .foregroundStyle(GymPalette.inkDim)
-                  .accessibilityIdentifier("gym-bodyweight-window-empty")
+            VStack(alignment: .leading, spacing: 12) {
+              ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
+              let chart = weight.chart(window == .recent ? .recent : .all)
+              let caption = window.line(recent: "90 days", holding: GymCount.of(chart.dots.count, "weigh-in"))
+              if !chart.dots.isEmpty {
+                LogDatedChart(points: chart.dots.map { entry in
+                  LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
+                               label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))")
+                }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
+                through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption)
+                .accessibilityIdentifier("gym-bodyweight-chart")
+              } else {
+                if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {
+                  Text("no weigh-in in the last 90 days")
+                    .foregroundStyle(GymPalette.inkDim)
+                    .accessibilityIdentifier("gym-bodyweight-window-empty")
+                }
+                Text(caption).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim)
               }
-              Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
             }
-          } footer: {
-            Text("Every point is a number you typed. Nothing here is estimated.")
-              .foregroundStyle(GymPalette.inkDim)
-          }.listRowBackground(GymPalette.card)
+          }.listRowBackground(Color.clear).listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 14, trailing: 0))
 
           Section {
             ForEach(weight.entries.reversed(), id: \.day) { entry in
@@ -134,15 +133,14 @@ struct BodyweightScreen: View {
               .trashSwipe("Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
               .accessibilityAction(named: "Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
             }
-          } header: {
-            Text("Every weigh-in")
           } footer: {
-            Text("Coach can read this. It can never write it.").foregroundStyle(GymPalette.inkDim)
+            Text("Coach can read your weigh-ins but cannot change them.").foregroundStyle(GymPalette.inkDim)
           }.listRowBackground(GymPalette.card)
         }
       }
     }
     .listStyle(.insetGrouped)
+    .contentMargins(.top, RoomSpace.small, for: .scrollContent)
     .modifier(GymPage())
     .navigationTitle("Bodyweight")
     .navigationBarTitleDisplayMode(.inline)

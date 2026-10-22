@@ -48,6 +48,7 @@ struct LogDatedChart: View {
   var axis: ClosedRange<Double> { Self.axis(points.map(\.value), step: series.axisStep) }
   var low: Double { axis.lowerBound }
   var high: Double { axis.upperBound }
+  var ticks: [Double] { [high, (high + low) / 2, low] }
   var gaps: [(LogPlotPoint, LogPlotPoint)] {
     zip(ordered, ordered.dropFirst()).filter { LogPresentation.day($0.date).days(until: LogPresentation.day($1.date)) > series.gapDays }
   }
@@ -75,18 +76,20 @@ struct LogDatedChart: View {
     let height = Self.plotHeight
     VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .top, spacing: 8) {
-        ZStack(alignment: .leading) {
-          ForEach([high, (high + low) / 2, low], id: \.self) { value in
-            Text(Readout.weight(value)).position(x: 12, y: y(value, height: height))
+        ZStack(alignment: .topLeading) {
+          VStack(alignment: .leading) { ForEach(ticks, id: \.self) { Text(Readout.weight($0)) } }.hidden()
+          ForEach(ticks, id: \.self) { value in
+            Text(Readout.weight(value)).fixedSize().frame(height: 14).offset(y: y(value, height: height) - 7)
           }
-        }.font(.caption2.monospaced()).foregroundStyle(GymPalette.inkDim).frame(width: 24, height: height).accessibilityHidden(true)
+        }.font(.caption2.monospaced()).foregroundStyle(GymPalette.inkDim).frame(minWidth: 24, maxHeight: height, alignment: .topLeading)
+          .frame(height: height, alignment: .top).accessibilityHidden(true)
         GeometryReader { geometry in
           let width = max(geometry.size.width, CGFloat(Set(points.map(\.date)).count) * 12), marked = marked
           ScrollViewReader { proxy in
           ScrollView(.horizontal) {
             VStack(alignment: .leading, spacing: 4) {
               Canvas { context, size in
-                for value in [high, (high + low) / 2, low] {
+                for value in ticks {
                   var grid = Path(); grid.move(to: CGPoint(x: 0, y: y(value, height: size.height)))
                   grid.addLine(to: CGPoint(x: size.width, y: y(value, height: size.height)))
                   context.stroke(grid, with: .color(GymPalette.line), lineWidth: 1)

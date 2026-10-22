@@ -496,7 +496,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   - A failed apply's red line and **Try again**, Reject disabled while Applying, and the signed-out
     *Sign in* answer for a change request (08.29–08.31).
   - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets
-    stay saved…*, *You decide the numbers at the rack.*, *Every point is a number you typed…*, the
+    stay saved…*, *You decide the numbers at the rack.*, the
     greeting (*Adjust*, *With an account*, *Build myself*), *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…*, `AiAllowance.message` (*fully used or
     reserved*), the photo captions and *The next question frees up…*.

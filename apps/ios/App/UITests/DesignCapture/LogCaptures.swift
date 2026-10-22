@@ -42,7 +42,6 @@ final class LogCaptures: DesignCapture {
     revealInLog(app.buttons["gym-bodyweight-door"], app)
     app.buttons["gym-bodyweight-door"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
-    capture("06.2-bodyweight", look, app)
     let weighIn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
     revealInLog(weighIn, app)
     capture("gym-bodyweight-rows", look, app)
@@ -106,6 +105,17 @@ final class LogCaptures: DesignCapture {
       XCTAssertTrue(field.waitForExistence(timeout: 5))
       XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
       field.typeText("82.4")
+      return app
+    }
+  }
+
+  // Bodyweight scrubs like the Record; its rows open the Weigh in sheet.
+  func testBodyweight() {
+    captureBoard("06.2-bodyweight", settle: 1.5) { look in
+      let app = openLog(look)
+      let door = app.buttons["gym-bodyweight-door"]
+      revealInLog(door, app); door.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight-chart"].waitForExistence(timeout: 5))
       return app
     }
   }
