@@ -293,16 +293,16 @@ nonisolated enum CoachCopy {
     default: nil
     }
   }
-  // A note Coach saved is never silent: the row under its answer says so, or that the save could not be confirmed.
+  // A note Coach saved is never silent: the card under its answer says so, or that the save could not be confirmed.
   static func noteSave(_ steps: [CoachStep]) -> String? {
     let saves = steps.filter { $0.tool == "save_note" }
     if saves.contains(where: { !$0.failed }) { return "Saved a note" }
     return saves.isEmpty ? nil : "Could not confirm a note save"
   }
-  // A movement Coach corrected lands at once, so its row says so, or that the change could not be confirmed.
+  // A movement Coach corrected lands at once, so its card says so, or that the change could not be confirmed.
   static func movementUpdate(_ steps: [CoachStep]) -> String? {
     let updates = steps.filter { $0.tool == "update_exercise" }
-    if updates.contains(where: { !$0.failed }) { return "Updated a movement" }
+    if updates.contains(where: { !$0.failed }) { return "Changed a movement" }
     return updates.isEmpty ? nil : "Could not confirm a movement update"
   }
 }

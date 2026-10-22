@@ -60,6 +60,7 @@ enum CoachFixture {
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
       let board = CoachBoard.current
       if board != nil { _ = gym.run(CreateExercise(Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: "barbell", stepKg: 2.5))) }
+      for case .exercise(let exercise, _, _, _) in board?.writes ?? [] { _ = gym.run(CreateExercise(exercise)) }
       let routines = board?.routines ?? [(id: "coach-fixture-routine", name: "Push A", entries: [CoachBoard.entry("back-squat", 1, 5, 80)])]
       for planned in routines {
         var routine = Draft(new: Routine(id: ID(RecordID(planned.id)), name: planned.name, entries: planned.entries))
@@ -111,6 +112,20 @@ enum CoachFixture {
     #if DEBUG && targetEnvironment(simulator)
     guard ProcessInfo.processInfo.arguments.contains("-coach-draft-photo"), coach.allowed, coach.saved.photo == nil else { return }
     try? coach.addPhoto(CoachFixtureConversation.program())
+    #endif
+  }
+
+  // The board's writes land as Coach's first words arrive, after the phone took what the log held as the question went.
+  static let boardWritten = Mutex(false)
+  static func applyBoardWrites(_ gym: GymModel) {
+    #if DEBUG && targetEnvironment(simulator)
+    guard let board = CoachBoard.current, !board.writes.isEmpty, !boardWritten.withLock({ let done = $0; $0 = true; return done }) else { return }
+    for write in board.writes {
+      switch write {
+      case .exercise(let exercise, let name, let equipment, let loadCount): _ = gym.run(UpdateExercise(exercise.id, name: name, equipment: equipment, loadCount: loadCount))
+      case .note(let title, let body): _ = gym.run(SaveNoteCall(Note(id: ID("board-note"), title: title, body: body)))
+      }
+    }
     #endif
   }
 
@@ -294,7 +309,8 @@ nonisolated struct CoachFixtureConversation {
     if let board = CoachBoard.current {
       let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
       question = turn.question; partial = turn.answer; answer = turn.answer
-      steps.append(["tool": board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"])
+      let tools = turn.tools.isEmpty ? [board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"] : turn.tools
+      steps.append(contentsOf: tools.map { ["tool": $0] })
       receipt = ["version": 1, "read": read, "steps": steps, "proposals": turn.proposals, "observations": observations]
       outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines[0].id, "routine": board.routines[0].name]
     } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
@@ -368,11 +384,19 @@ nonisolated struct CoachFixtureConversation {
 // what it says to each question; a board may then change a routine under its proposal.
 nonisolated struct CoachBoard {
   struct Proposed { let id: String; let routine: String; let name: String; let entries: [RoutineEntry]; var removing = false }
-  struct Turn { let question: String; let answer: String; let proposals: [String] }
+  struct Turn {
+    let question: String
+    let answer: String
+    var proposals: [String] = []
+    var tools: [String] = []
+  }
+  // What Coach writes on the log while it answers: a movement it corrects, or a note it saves.
+  enum Write { case exercise(Exercise, name: String?, equipment: String?, loadCount: Int?), note(String, String) }
   var routines: [(id: String, name: String, entries: [RoutineEntry])]
   var proposals: [Proposed]
   var turns: [Turn]
   var editedAfter: (id: String, entries: [RoutineEntry])?
+  var writes: [Write] = []
 
   static var current: CoachBoard? {
     let arguments = ProcessInfo.processInfo.arguments
@@ -397,7 +421,22 @@ nonisolated struct CoachBoard {
   static let pullA = [entry("chin-up", 3, nil), entry("barbell-row", 3, 8, 60), entry("face-pull", 3, 15, 12.5), entry("lateral-raise", 3, 15, 8), entry("rear-delt-fly", 3, 15, 8)]
   static let change = one("Is Push A still doing anything?", "Your Bench Press has not gone up in 3 weeks.\n\nYou did 5 × 5 at 82.5 kg nine times and finished every rep. Try 3 sets of 3 at 90 kg for a heavier top set.",
     routine: ("Push A", pushA), proposed: ("Push A", [heavier, pushA[3], entry("incline-dumbbell-press", 3, 10, 24), entry("triceps-pushdown", 3, 10, 30)]))
+  static func wrote(_ question: String, _ answer: String, tool: String, _ write: Write) -> CoachBoard {
+    var board = CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+                           turns: [Turn(question: question, answer: answer, tools: [tool])])
+    if case .exercise(let exercise, _, _, _) = write { board.routines[0].entries.append(RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8)])) }
+    board.writes = [write]
+    return board
+  }
+
   static let all: [String: CoachBoard] = [
+    "load-basis": wrote("Pull-ups are bodyweight for me. I add a 10 kg belt.",
+      "Done. Pull-up is now a bodyweight movement. Log the belt as 10 kg added. Volume counts only the added weight.", tool: "update_exercise",
+      .exercise(Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "machine", stepKg: 2.5), name: nil, equipment: "bodyweight", loadCount: nil)),
+    "note": wrote("My left shoulder hurts on wide-grip bench.", "I saved this as a note. I will use it when I plan.", tool: "save_note",
+      .note("Shoulder", "Left shoulder hurts on wide-grip bench. Use a close grip.")),
+    "movement-details": wrote("Incline DB is really dumbbells, one in each hand.", "Done. Enter the weight of one dumbbell from now on.", tool: "update_exercise",
+      .exercise(Exercise(id: ID("board-incline-db"), name: "Incline DB", pattern: "press", equipment: "barbell", stepKg: 2.5), name: "Incline Press", equipment: "dumbbell", loadCount: 2)),
     "change": change,
     "routine-changed": { var board = change; board.editedAfter = (id: "board-routine", entries: [entry("bench-press", 5, 5, 85)] + pushA.dropFirst()); return board }(),
     "bench": one("Is Push A still doing anything?", "Try 3 sets of 3 at 90 kg for a heavier top set.",

@@ -796,7 +796,7 @@ import SyncTesting
     #expect(CoachRecovery(code: "subject_exhausted", tier: "unknown", anonymous: false) == nil)
     #expect(CoachRecovery(.daily("Later"), anonymous: false) == nil && CoachRecovery(.ceiling("Later"), anonymous: false) == nil)
     #expect(CoachRecovery(.installation("Bound"), anonymous: true) == .signIn && CoachRecovery(.installation("Bound"), anonymous: false) == nil)
-    #expect(CoachCopy.movementUpdate([CoachStep(tool: "list_exercises"), CoachStep(tool: "update_exercise")]) == "Updated a movement")
+    #expect(CoachCopy.movementUpdate([CoachStep(tool: "list_exercises"), CoachStep(tool: "update_exercise")]) == "Changed a movement")
     #expect(CoachCopy.movementUpdate([CoachStep(tool: "update_exercise", failed: true)]) == "Could not confirm a movement update")
     #expect(CoachCopy.movementUpdate([CoachStep(tool: "save_note")]) == nil)
   }

@@ -126,6 +126,8 @@ struct CoachDraftStore {
   @ObservationIgnored var stopWork: Task<Void, Never>?
   @ObservationIgnored var stopGeneration = 0
   @ObservationIgnored var readGeneration = 0
+  // What the log held as each question was sent, by request, so what Coach wrote while answering reads against it.
+  @ObservationIgnored var heldAtSend: [String: CoachHeld] = [:]
 
   init(gym: GymModel, rest: GymRESTClient? = nil, store: CoachDraftStore = CoachDraftStore()) {
     self.gym = gym; self.rest = rest ?? gym.rest; self.store = store
@@ -319,6 +321,7 @@ struct CoachDraftStore {
   }
   func launch(_ request: CoachSaved.Request, owner: String) {
     invalidateRead()
+    if heldAtSend[request.requestId] == nil { heldAtSend[request.requestId] = CoachHeld(catalogue: gym.catalogue, notes: Set(gym.notes.map(\.id))) }
     stopGeneration += 1; stopWork?.cancel(); stopWork = nil; stopping = false
     workGeneration += 1; let generation = workGeneration
     asking = true; uploading = false; refusal = nil; error = nil
@@ -417,7 +420,7 @@ struct CoachDraftStore {
   func accept(_ snapshot: CoachSnapshot, request: CoachSaved.Request) throws {
     guard snapshot.thread == request.thread, snapshot.generation.requestId == request.requestId else { throw URLError(.badServerResponse) }
     if let previous = activeGeneration, previous.id == snapshot.generation.id, snapshot.generation.revision <= previous.revision { return }
-    CoachFixture.applySetupResults(snapshot.generation.results, gym: gym)
+    CoachFixture.applySetupResults(snapshot.generation.results, gym: gym); CoachFixture.applyBoardWrites(gym)
     var next = saved; next.generation = snapshot.generation; next.allowance = snapshot.generation.allowanceRefusal
     if snapshot.generation.allowanceRefusal == nil, snapshot.generation.status != "failed" { next.acceptedFirstMessage = true }
     // Composer edits keep their request marker through Stop and recovery, even after an edit is reverted.

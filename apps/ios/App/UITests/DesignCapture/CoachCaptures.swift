@@ -254,6 +254,27 @@ final class CoachCaptures: DesignCapture {
       app.terminate()
     }
   }
+  // A board where Coach writes while it answers: its card stands under the answer when the answer settles.
+  func askWrite(_ board: String, _ question: String, _ card: String, _ look: Look) -> XCUIApplication {
+    let app = launchSignedInCoach(look, arguments: ["-coach-board", board])
+    ask(question, app)
+    XCTAssertTrue(app.descendants(matching: .any)[card].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    return app
+  }
+
+  func testWriteReceipts() {
+    captureBoard("08.9-coach-changed-load-basis", settle: 2) { look in
+      askWrite("load-basis", "Pull-ups are bodyweight for me. I add a 10 kg belt.", "coach-updated-movement", look)
+    }
+    captureBoard("08.25-coach-saved-note", settle: 2) { look in
+      askWrite("note", "My left shoulder hurts on wide-grip bench.", "coach-saved-note", look)
+    }
+    captureBoard("08.26-coach-changed-movement", settle: 2) { look in
+      askWrite("movement-details", "Incline DB is really dumbbells, one in each hand.", "coach-updated-movement", look)
+    }
+  }
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]

@@ -103,13 +103,42 @@ struct CoachAnswerText: View {
   }
 }
 
-// Coach's answer: its words, its read receipt, the cards of what it proposed, and the doors to what it wrote.
+// The catalogue and the notes as a question was sent.
+struct CoachHeld {
+  let catalogue: Catalogue
+  let notes: Set<ID<Note>>
+}
+
+// What Coach wrote while it answered, read against what the log held as the question was sent: the notes that appeared and
+// the movements that changed. Without that reading — a conversation opened again — the cards say what was written and no more.
+struct CoachWrites {
+  struct Movement { let before: Exercise; let after: Exercise }
+  let notes: [Note]
+  let movements: [Movement]
+  init(held: CoachHeld?, gym: GymModel) {
+    guard let held else { notes = []; movements = []; return }
+    notes = gym.notes.filter { !held.notes.contains($0.id) }
+    movements = gym.catalogue.exercises.compactMap { after in
+      held.catalogue.find(after.id).flatMap { before in Self.fields(before, after).isEmpty ? nil : Movement(before: before, after: after) }
+    }
+  }
+  // *Name*, *Equipment* and *Weight is*, each only when it changed: *Weight is  ~~Total~~ → Each dumbbell*.
+  static func fields(_ before: Exercise, _ after: Exercise) -> [ProposalDiff.Field] {
+    let basis = { (exercise: Exercise) in exercise.equipment == "dumbbell" && exercise.loadCount == 2 ? "Each dumbbell" : "Total" }
+    let equipment = (MovementEquipment(before).title, MovementEquipment(after).title)
+    return [("Name", before.name, after.name), ("Equipment", equipment.0, equipment.1), ("Weight is", basis(before), basis(after))]
+      .filter { $0.1 != $0.2 }.map { ProposalDiff.Field($0.0, before: $0.1, after: $0.2) }
+  }
+}
+
+// Coach's answer: its words, its read receipt, the cards of what it proposed, and the cards of what it wrote.
 struct CoachAnswerView: View {
   let gym: GymModel
   let text: String
   let receipt: CoachReceipt?
   let steps: [CoachStep]
   let results: [CoachResult]
+  var held: CoachHeld? = nil
   let read: (CoachReading) -> Void
   let notes: () -> Void
   @Environment(\.coachOpenRoutine) var openRoutine
@@ -141,19 +170,35 @@ struct CoachAnswerView: View {
           .overlay(RoundedRectangle(cornerRadius: 22).stroke(GymPalette.line, lineWidth: 1))
       }
       if let receipt, !created.isEmpty { receiptRow(receipt) }
-      if let saved = CoachCopy.noteSave(steps) { door("note.text", saved, action: notes).accessibilityIdentifier("coach-saved-note") }
+      let writes = CoachWrites(held: held, gym: gym)
+      if let saved = CoachCopy.noteSave(steps) {
+        Button(action: notes) {
+          writeCard(saved, symbol: "square.and.pencil") {
+            ForEach(writes.notes, id: \.id) { note in
+              Divider().overlay(GymPalette.line).padding(.vertical, 12)
+              Text(note.body.isEmpty ? note.title : note.body).frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+        }.buttonStyle(.plain).accessibilityElement(children: .combine).accessibilityLabel(saved).accessibilityAddTraits(.isButton)
+          .accessibilityIdentifier("coach-saved-note")
+      }
       if let updated = CoachCopy.movementUpdate(steps) {
-        GymRow(title: updated, leading: .symbol("pencil", GymPalette.accent)).frame(minHeight: RoomSpace.minimumTarget)
-          .accessibilityElement(children: .combine).accessibilityIdentifier("coach-updated-movement")
+        writeCard(updated, symbol: "pencil") {
+          ForEach(writes.movements, id: \.after.id) { movement in
+            Divider().overlay(GymPalette.line).padding(.vertical, 12)
+            ChangeBlock(kind: .changed, title: movement.after.name, fields: CoachWrites.fields(movement.before, movement.after))
+          }
+        }.accessibilityElement(children: .combine).accessibilityIdentifier("coach-updated-movement")
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
-  // What Coach wrote besides answering, one row each: its symbol in accent, what it did, and the door to it.
-  func door(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      GymRow(title: title, leading: .symbol(symbol, GymPalette.accent), trailing: .door)
-        .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-    }.buttonStyle(.plain).accessibilityLabel(title)
+  // What Coach wrote besides answering, one card each with no buttons: its symbol in accent and what it did over what changed.
+  func writeCard(_ title: String, symbol: String, @ViewBuilder _ detail: () -> some View) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Label { Text(title).foregroundStyle(GymPalette.ink) } icon: { Image(systemName: symbol).foregroundStyle(GymPalette.accent) }
+        .font(.headline)
+      detail()
+    }.modifier(ChangeCard())
   }
   // The receipt row, a door to What Coach read while there are workouts to list.
   @ViewBuilder func receiptRow(_ receipt: CoachReceipt) -> some View {
