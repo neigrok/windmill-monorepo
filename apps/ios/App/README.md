@@ -335,21 +335,52 @@ minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose
 changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
 
-`DesignCaptureTests` is an opt-in design review suite. It captures onboarding, both rooms, account
-flows, pushed screens and sheets in light and dark. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
-`TEST_RUNNER_`-prefixed variables to the runner without the prefix. The CI shards leave the class out
-and check that its guard remains. From this directory, with one simulator and a fresh result path:
+## Design captures
+
+The design capture suite in `UITests/DesignCapture/` screenshots screens and sheets for design review, each in Dark
+and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the gym's tab and sheet navigation, and
+the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
+`TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
+class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures` and `RecoveryCaptures`. The CI shards leave
+the suite out and check that its guard remains.
+
+A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:
+`gym-log-end-375-ax3-dark`. A screen drawn on a Figma board starts with the board's number: `02.1-routines-dark`
+and `02.1-routines-daylight` sit beside board 02.1. Every test takes its captures in both appearances, and
+`captureBoard` takes one board's pair in one call:
+
+```swift
+func testRoutines() {
+  captureBoard("02.1-routines", settle: 1.5) { look in
+    let app = launchSignedInCoach(look)
+    open(.routines, app)
+    XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 10))
+    return app
+  }
+}
+```
+
+An empty gym opens on Coach (`openGymFromJournal(app, opensOn: .coach)`) and a gym holding routines or workouts
+opens on Routines. `launchSignedInCoach` launches with `-coach-fixture`, which signs in and seeds a routine, notes, a
+workout and a waiting proposal once Coach opens; `-gym-log-fixture` seeds a routine, 35 workouts and
+weigh-ins once The log opens.
+
+Run one capture test, or a whole area by its class, then export it. From this directory, with your own simulator
+and a fresh result path:
 
 ```sh
 python3 Tools/generate_project.py
 TEST_RUNNER_WM_DESIGN_CAPTURE=1 xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-  -destination "platform=iOS Simulator,id=$SIMULATOR" -parallel-testing-enabled NO \
-  -resultBundlePath "$RESULT" -only-testing:WindmillUITests/DesignCaptureTests
+  -destination "platform=iOS Simulator,name=$SIMULATOR" -parallel-testing-enabled NO \
+  -resultBundlePath "$RESULT" -only-testing:WindmillUITests/RoutinesCaptures/testRoutines
 python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
-Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
-the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
+Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area. The exporter writes
+one PNG per capture named by the capture, `$CAPTURES/02.1-routines-dark.png`, replacing that capture's PNG from an
+earlier export, and a `capture-manifest.json` linking each PNG to its test and result bundle. Two captures with one
+name in a result fail the export.
 
 ## TestFlight releases
 
