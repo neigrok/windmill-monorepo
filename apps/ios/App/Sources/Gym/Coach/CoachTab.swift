@@ -4,7 +4,7 @@ import PhotosUI
 import DomainKit
 import GymDomain
 
-private enum CoachDestination: Hashable { case history, notes }
+private enum CoachDestination: Hashable { case history, notes, connectedLog }
 
 // What one answer read, as its receipt row and What Coach read say it. It counts only the workouts it lists, so the two add up.
 struct CoachReading: Identifiable {
@@ -72,6 +72,7 @@ struct CoachTab: View {
         switch destination {
         case .history: CoachHistoryScreen(gym: gym, coach: coach, history: history)
         case .notes: NotesScreen(gym: gym)
+        case .connectedLog: ConnectedLogScreen(gym: gym)
         }
       }
       .safeAreaInset(edge: .bottom) {
@@ -133,9 +134,12 @@ struct CoachTab: View {
 
   @ViewBuilder var room: some View {
     if !coach.allowed { CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.signedOut, signIn: openAccount) }
-    else if coach.refusal == .absent { CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.absent) }
+    else if coach.refusal == .absent { CoachUnavailable(symbol: "exclamationmark.triangle", sentence: CoachCopy.absent) }
     else { conversation }
   }
+
+  // A capped question never reached Coach: it stays in the field, not in the conversation.
+  var capped: Bool { switch coach.refusal { case .daily, .ceiling: true; default: false } }
 
   // The greeting stands for a gym Coach has nothing to build on yet; one that holds routines opens on an empty canvas.
   var greets: Bool { coach.showsGreeting && (gym.isAnonymous || gym.routines.isEmpty) }
@@ -187,7 +191,7 @@ struct CoachTab: View {
             }
             ForEach(coach.saved.exchanges) { generation in generationView(generation, stamps: stamps) }
             if let generation = coach.activeGeneration { generationView(generation, stamps: stamps) }
-            else if let request = coach.saved.request {
+            else if let request = coach.saved.request, !capped {
               question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [], at: stamps.asked, stamps: stamps)
               if coach.asking { CoachTyping() }
             }
@@ -196,6 +200,7 @@ struct CoachTab: View {
               let receipt = coach.activeGeneration != nil ? coach.activeGeneration?.receipt : coach.saved.thread?.turns.last?.receipt
               if let receipt { answer("", receipt: receipt, steps: [], results: [], requestId: nil) }
             }
+            if case .daily(let sentence) = coach.refusal { dailyCap(sentence) }
             Color.clear.frame(height: 1).id("latest")
           }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
         }.contentShape(Rectangle()).onTapGesture { composing = false }
@@ -219,7 +224,8 @@ struct CoachTab: View {
   var band: some View {
     let tooLong = coach.saved.text.utf8.count > coach.textLimit
     let transcribed = coach.transcriptAllowance != nil && { if case .allowance = coach.refusal { true } else { false } }()
-    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent || transcribed ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
+    let daily = { if case .daily = coach.refusal { true } else { false } }()
+    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent || transcribed || daily ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
     let detail: String? = tooLong || transcribed ? nil : { if case .allowance(let allowance) = coach.refusal { allowance.detail } else { nil } }()
     let recovery = tooLong || transcribed ? nil : CoachRecovery(coach.refusal, anonymous: coach.anonymous)
@@ -263,7 +269,7 @@ struct CoachTab: View {
               }.padding([.top, .leading], 10)
           }
           HStack(alignment: .bottom, spacing: 0) {
-            TextField("Ask about your training", text: Binding(get: { coach.asking ? "" : coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
+            TextField("Ask about your training", text: Binding(get: { coach.asking ? "" : coach.saved.text }, set: { if !coach.asking { coach.edit($0) } }), axis: .vertical)
               .lineLimit(1...(typeSize.isAccessibilitySize ? 2 : 5)).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
               .id(coach.asking).padding(.leading, 14).padding(.trailing, 4).padding(.vertical, 9)
             send
@@ -294,6 +300,13 @@ struct CoachTab: View {
         draft: record.photo.flatMap { photo in record.request.image.flatMap { Data(base64Encoded: $0.data).map { (photo.id, $0) } } })
       if let response = record.response, response.status == "completed" {
         if let message = response.message, !message.isEmpty { CoachAnswerText(text: message) }
+        if response.needsAccount == true, record.id == coach.anonymousRequest?.id {
+          Button {
+            gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
+            if let keepRoutines { keepRoutines() } else { openAccount?() }
+          } label: { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
+            .accessibilityIdentifier("coach-sign-in")
+        }
         if record.results.isEmpty, !response.routines.isEmpty {
           Button {
             routineReview = CoachRoutineReview(id: record.id, requestId: record.id, drafts: response.routines.map(\.domain), operationId: nil)
@@ -375,6 +388,18 @@ struct CoachTab: View {
         }.padding(RoomSpace.inset).contentShape(Rectangle())
       }.buttonStyle(.bordered).accessibilityIdentifier("coach-review-routine-" + draft.operationId)
     }
+  }
+
+  // The day's cap, centred at the conversation's end, with the lifter's own AI agent as the way on.
+  func dailyCap(_ sentence: String) -> some View {
+    VStack(spacing: RoomSpace.related) {
+      Text(sentence).font(.footnote).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center)
+      Button("Use your own AI agent") {
+        gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "connect"])
+        destination = .connectedLog
+      }.font(.subheadline.weight(.semibold)).buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent)
+        .accessibilityIdentifier("coach-own-agent")
+    }.frame(maxWidth: .infinity).padding(.top, 40).accessibilityIdentifier("coach-daily-cap")
   }
 
   // A refusal's reason and reset stay with its turn; only the refusal the conversation ends on offers its recovery.

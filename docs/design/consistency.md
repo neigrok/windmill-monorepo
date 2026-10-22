@@ -504,6 +504,9 @@ these are the places it disagrees with a drawing, a brief or the build.
     *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
     added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
     domains also pass; no Android or web screen draws them yet.
+  - 08.31's **Sign in** under a signed-out answer needs the onboarding answer to say it needs an account: iOS reads
+    `needsAccount` from it, which the backend's onboarding schema and prompt do not produce yet, so the button shows only
+    on the simulator fixture.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only; the signed-out *Sign in* answer for a change request (08.31) is built nowhere.
   - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets

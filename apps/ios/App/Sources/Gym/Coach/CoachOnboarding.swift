@@ -44,6 +44,8 @@ nonisolated struct CoachOnboardingOut: Codable, Equatable, Sendable {
   let errorCode: String?
   let allowance: AiAllowance
   var message: String?
+  // The answer needs an account — a change to a routine, a note — so Coach says so and offers Sign in under it.
+  var needsAccount: Bool?
 }
 
 nonisolated struct CoachOnboardingRecord: Codable, Equatable, Identifiable {

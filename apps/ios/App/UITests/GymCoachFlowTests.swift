@@ -400,7 +400,7 @@ import UIKit
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("How is my training?")
       app.buttons["coach-send"].tap()
-      XCTAssertTrue(app.staticTexts["Coach isn’t part of this Windmill. Your log is still yours to read."].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["This Windmill does not have Coach. You can still read your log."].waitForExistence(timeout: 10))
       XCTAssertFalse(question.exists)
       capture("coach-unavailable-\(suffix)", app)
       openDestination("Notes", app)

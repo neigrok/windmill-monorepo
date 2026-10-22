@@ -170,6 +170,7 @@ enum CoachFixture {
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let deletedThreads = Mutex<Set<String>>([])
   static let setupGenerations = Mutex<[String: Data]>([:])
+  static let asked = Mutex(0)
   // The log's now, so an answer is stamped on the day the room reads as today; each answer a minute after the one before.
   static let now = Mutex<Int64>(0)
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -214,7 +215,11 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     if path.hasPrefix("/v1/ai/installations") || path == "/v1/gym/coach/onboarding" {
       let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
         "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
-      if path == "/v1/gym/coach/onboarding" {
+      if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-needs-account") {
+        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "b", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
+          "errorCode": NSNull(), "allowance": allowance, "message": "I need your account to change a routine. Sign in, then ask again.", "routines": [],
+          "needsAccount": true]
+      } else if path == "/v1/gym/coach/onboarding" {
         response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
           "errorCode": NSNull(), "allowance": allowance, "message": "Here are your routine drafts. Review them before saving.",
           "routines": ["A", "B", "C"].map { suffix in
@@ -243,6 +248,8 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         Self.setupGenerations.withLock { $0[key] = try? JSONSerialization.data(withJSONObject: snapshot) }
         response = snapshot
       } else { status = 404; response = ["code": "not-found"] }
+    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-daily-cap"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
+      status = 429; response = ["code": "ask-daily-limit", "error": "the next question frees up in a couple of hours"]
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
@@ -309,7 +316,7 @@ nonisolated struct CoachFixtureConversation {
     if let board = CoachBoard.current {
       let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
       question = turn.question; partial = turn.answer; answer = turn.answer
-      let tools = turn.tools.isEmpty ? [board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"] : turn.tools
+      let tools = turn.tools ?? [board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"]
       steps.append(contentsOf: tools.map { ["tool": $0] })
       receipt = ["version": 1, "read": read, "steps": steps, "proposals": turn.proposals, "observations": observations]
       outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines[0].id, "routine": board.routines[0].name]
@@ -388,7 +395,7 @@ nonisolated struct CoachBoard {
     let question: String
     let answer: String
     var proposals: [String] = []
-    var tools: [String] = []
+    var tools: [String]?
   }
   // What Coach writes on the log while it answers: a movement it corrects, or a note it saves.
   enum Write { case exercise(Exercise, name: String?, equipment: String?, loadCount: Int?), note(String, String) }
@@ -430,6 +437,9 @@ nonisolated struct CoachBoard {
   }
 
   static let all: [String: CoachBoard] = [
+    "stalled": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+      turns: [Turn(question: "Bench has stalled for three weeks. Is Push A still doing anything?",
+                   answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.", tools: [])]),
     "load-basis": wrote("Pull-ups are bodyweight for me. I add a 10 kg belt.",
       "Done. Pull-up is now a bodyweight movement. Log the belt as 10 kg added. Volume counts only the added weight.", tool: "update_exercise",
       .exercise(Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "machine", stepKg: 2.5), name: nil, equipment: "bodyweight", loadCount: nil)),

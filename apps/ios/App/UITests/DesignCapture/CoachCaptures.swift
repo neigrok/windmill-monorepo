@@ -275,6 +275,45 @@ final class CoachCaptures: DesignCapture {
       askWrite("movement-details", "Incline DB is really dumbbells, one in each hand.", "coach-updated-movement", look)
     }
   }
+  func testAccessStates() {
+    captureBoard("08.6-coach-no-seat") { look in
+      let app = launch("recovery-paused", look)
+      XCTAssertTrue(app.tabBars.buttons["Coach"].waitForExistence(timeout: 30)); app.tabBars.buttons["Coach"].tap()
+      XCTAssertTrue(app.buttons["coach-sign-in"].waitForExistence(timeout: 15))
+      return app
+    }
+    captureBoard("08.7-coach-not-carried") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-unavailable"])
+      ask("How is my training?", app)
+      XCTAssertTrue(app.staticTexts["This Windmill does not have Coach. You can still read your log."].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("08.8-coach-daily-cap") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "stalled", "-coach-daily-cap"])
+      ask("Bench has stalled for three weeks. Is Push A still doing anything?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-read-receipt"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-daily-cap"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "What should Thursday look like?", "The refused question stays in the field")
+      return app
+    }
+    captureBoard("08.31-coach-change-needs-account") { look in
+      let app = XCUIApplication()
+      app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
+                             "-coach-fixture", "-coach-needs-account", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+      app.launch()
+      let field = app.descendants(matching: .any)["coach-question"]
+      XCTAssertTrue(field.waitForExistence(timeout: 30))
+      field.tap(); field.typeText("Make Push A harder")
+      app.buttons["coach-send"].tap()
+      XCTAssertTrue(app.buttons["coach-sign-in"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]

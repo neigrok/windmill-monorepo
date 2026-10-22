@@ -263,8 +263,9 @@ nonisolated enum CoachCopy {
   static let stopped = "Response stopped."
   static let noAnswer = "Coach didn’t answer. Try again in a moment"
   static let offline = "Coach needs a connection."
-  static let signedOut = "Coach reads your log, so it needs you signed in."
-  static let absent = "Coach isn’t part of this Windmill. Your log is still yours to read."
+  static let signedOut = "Coach needs your workout log. Please sign in."
+  static let absent = "This Windmill does not have Coach. You can still read your log."
+  static let daily = "You can ask again in about 2 hours."
   static let unreadableDraft = "Your draft couldn’t be read."
   static let reconnecting = "Reconnecting…"
   static let signInToContinue = "Sign in to continue."
@@ -331,7 +332,7 @@ nonisolated enum CoachRefusal: Equatable {
     if status == 404 || (status == 503 && code == "ask-not-configured") { self = .absent; return }
     if status! >= 500 { self = .retry(message ?? CoachCopy.noAnswer); return }
     switch code {
-    case "ask-daily-limit": self = .daily(message ?? "The next question frees up in a couple of hours.")
+    case "ask-daily-limit": self = .daily(CoachCopy.daily)
     case "ask-out-of-budget": self = .ceiling(message ?? "This account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on.")
     case "ask-generation-active": self = .retry(message ?? "Coach is answering another message. Try again when it finishes.")
     case "ask-thread-full", "ask-thread-taken": self = .fresh(message ?? "This conversation is unavailable. Start a new one.")
