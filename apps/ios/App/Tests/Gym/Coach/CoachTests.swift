@@ -992,7 +992,7 @@ import SyncTesting
     #expect(coach.saved.text == "Unsaved draft" && !coach.asking && coach.error == "Your message couldn’t be saved. Try again.")
   }
   @Test func refusalsSeparateCeilingsBusyFreshAbsentAndOffline() {
-    #expect(CoachRefusal(status: 429, code: "ask-daily-limit", message: nil) == .daily("You can ask again in about 2 hours."))
+    #expect(CoachRefusal(status: 429, code: "ask-daily-limit", message: nil) == .daily("You can ask again later."))
     let ceiling = CoachRefusal(status: 429, code: "ask-out-of-budget", message: nil)
     #expect(ceiling.message.contains("30 days") && !ceiling.message.contains("couple of hours"))
     #expect(CoachRefusal(status: 409, code: "ask-generation-active", message: "Server says wait") == .retry("Server says wait"))
@@ -1578,9 +1578,9 @@ import SyncTesting
     let (_, gym) = fixture(), coach = CoachConversation(gym: gym, store: store())
     defer { try? FileManager.default.removeItem(at: coach.store.directory) }
     await coach.activate(); coach.edit("Private question")
-    coach.refusal = .daily("You can ask again in about 2 hours.")
+    coach.refusal = .daily("You can ask again later.")
     coach.send()
-    #expect(coach.error == "You can ask again in about 2 hours." && coach.saved.request == nil && !coach.asking)
+    #expect(coach.error == "You can ask again later." && coach.saved.request == nil && !coach.asking)
     #expect(coach.saved.text == "Private question" && !coach.canCompose)
     coach.refusal = .fresh("This conversation is unavailable. Start a new one.")
     #expect(coach.blockedReason == "This conversation is unavailable. Start a new one.")

@@ -263,7 +263,7 @@ nonisolated enum CoachCopy {
   static let offline = "Coach needs a connection."
   static let signedOut = "Coach needs your workout log. Please sign in."
   static let absent = "This Windmill does not have Coach. You can still read your log."
-  static let daily = "You can ask again in about 2 hours."
+  static let daily = "You can ask again later."
   static let unreadableDraft = "Your draft couldn’t be read."
   static let reconnecting = "Reconnecting…"
   static let signInToContinue = "Sign in to continue."

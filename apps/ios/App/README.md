@@ -122,8 +122,8 @@ request too large for what remains, or an allowance a request in progress still 
 names no time. Signed out, *Sign in to
 continue.* and Sign in appear only where the phone's own AI access is used up or belongs to an
 account; shared free-pool, concurrency and rate refusals offer nothing to do. Signed in there is no
-upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again in
-about 2 hours.* with *Use your own AI agent*; a ceiling receives the actual refusal and any
+upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again
+later.*, naming no time the server does not, with *Use your own AI agent*; a ceiling receives the actual refusal and any
 server-provided reset time. A capped or refused question is never sent again on its own: it stays in
 the field, and only Send asks again, with what the field then holds. The day's cap and the ceiling
 lapse when Coach opens again, so that Send asks the server afresh. An unchanged deliberate Send after an
