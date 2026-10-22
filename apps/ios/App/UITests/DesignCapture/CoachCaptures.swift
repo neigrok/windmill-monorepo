@@ -195,6 +195,12 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.19-coach-proposal-swap") { look in askBoard("swap", "I can’t do chin-ups yet.", look) }
     captureBoard("08.20-coach-proposal-move") { look in askBoard("move", "What should I do first?", look) }
   }
+  func testTargetChanges() {
+    captureBoard("08.21-coach-proposal-targets") { look in askBoard("targets", "Give me more work.", look) }
+    captureBoard("08.22-coach-proposal-vary") { look in askBoard("vary", "Make the last set heavier.", look) }
+    captureBoard("08.23-coach-proposal-ramp") { look in askBoard("ramp", "Warm up to your top set.", look) }
+    captureBoard("08.24-coach-proposal-rest") { look in askBoard("rest", "Dips have no target.", look) }
+  }
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]

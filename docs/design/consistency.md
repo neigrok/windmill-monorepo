@@ -496,6 +496,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   - Block order: `09-coach.md` and 08.27 list a rename, moves, changes, removals, then additions; 08.2 and 08.3 draw
     Changed, Added, Removed, Changed, Moved. iOS follows the written order, so 08.2's first two blocks read Moved and
     Changed; 08.2/08.3 want redrawing in that order.
+  - Field lines: 08.21 and 08.27 draw only the fields that change (*Push-up · Reps*, *Lateral Raise · Reps*), where
+    `09-coach.md`, 08.2 and 08.3 draw a set's unchanged fields plain; iOS and the shared vectors follow the written
+    rule. 08.21 also draws three blocks with no *Show all*, where the card's rule shows two, then *Show all 3 changes*.
   - The card's field diff (per field old → new, per-set lines once sets differ, *Max*, *Last time*,
     *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
     added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
