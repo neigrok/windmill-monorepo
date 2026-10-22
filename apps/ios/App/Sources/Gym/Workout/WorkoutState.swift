@@ -62,68 +62,9 @@ nonisolated struct MovementLedger: Equatable {
   var complete: Bool { !targets.isEmpty && performed >= targets.count }
 }
 
-nonisolated struct WorkoutDeviation: Equatable, Identifiable, Sendable {
-  let exerciseId: ID<Exercise>
-  let routineId: ID<Routine>
-  let routine: String
-  let position: Int
-  let plannedKg: Double
-  let liftedKg: Double
-  let scheme: [SetTarget]
-  let lifted: [SetTarget]
-  let revision: Int?
-  let offeredEntry: RoutineEntry
-  var id: ID<Exercise> { exerciseId }
-  var varied: Bool { scheme.contains { $0 != scheme.first } }
-  var proposed: [SetTarget] { varied ? lifted : scheme.map { SetTarget(reps: $0.reps, weightKg: liftedKg) } }
-  var saveLabel: String { varied ? "Save today’s sets" : "Save \(Readout.weight(liftedKg)) to \(routine)" }
-  func sentence(_ movement: String) -> String {
-    "Today’s \(movement) ran at \(Readout.weight(liftedKg)) against a planned \(Readout.weight(plannedKg)). Today’s workout already has it. \(routine) does not."
-  }
-  static func leaving(_ id: ID<Exercise>, session: Session, sets: [TrainingSet], asked: [ID<Exercise>],
-                      routine: Routine? = nil, againstCurrent: Bool = false) -> Self? {
-    guard !asked.contains(id), let routineId = session.routineId, let plan = session.plan else { return nil }
-    let source = againstCurrent ? routine.map(SessionPlan.init) ?? plan : plan
-    let candidates = source.entries.enumerated().compactMap { index, entry -> (Int, [SetTarget], Double)? in
-      guard entry.exerciseId == id, let scheme = entry.sets, let top = scheme.compactMap(\.weightKg).max() else { return nil }
-      return (index, scheme, top)
-    }
-    guard let target = candidates.max(by: { $0.2 < $1.2 }) else { return nil }
-    let working = sets.filter { $0.sessionId == session.id && $0.exerciseId == id }
-      .sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
-    guard let liftedKg = working.map(\.weightKg).max(), liftedKg > target.2 else { return nil }
-    if target.1.contains(where: { $0 != target.1.first }) && working.count > 20 { return nil }
-    return Self(exerciseId: id, routineId: routineId, routine: source.routine, position: target.0,
-                plannedKg: target.2, liftedKg: liftedKg, scheme: target.1,
-                lifted: working.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) },
-                revision: routine?.revision, offeredEntry: source.entries[target.0])
-  }
-  var json: JSON {
-    .object(["exerciseId": exerciseId.json, "routineId": routineId.json, "routine": .string(routine),
-             "position": JSON(position), "plannedKg": .of(plannedKg), "liftedKg": .of(liftedKg),
-             "scheme": .array(scheme.map(\.json)), "lifted": .array(lifted.map(\.json)),
-             "revision": revision.map(JSON.init) ?? .null, "offeredEntry": offeredEntry.json])
-  }
-}
-
-extension WorkoutDeviation {
-  nonisolated init(_ json: JSON) throws {
-    let fields = try Fields(json), object = try json.asObject()
-    self.init(exerciseId: try fields.ref("exerciseId", Exercise.self), routineId: try fields.ref("routineId", Routine.self),
-              routine: try fields.string("routine"), position: try fields.int("position"),
-              plannedKg: try fields.double("plannedKg"), liftedKg: try fields.double("liftedKg"),
-              scheme: try fields.list("scheme", of: SetTarget.self), lifted: try fields.list("lifted", of: SetTarget.self),
-              revision: try fields.optionalInt("revision"), offeredEntry: try RoutineEntry(Fields(object["offeredEntry"] ?? .null)))
-  }
-}
-
 nonisolated struct WorkoutWalk: Equatable, Sendable {
   var order: [ID<Exercise>] = []
   var selected: ID<Exercise>?
-  var asked: [ID<Exercise>] = []
-  var pending: ID<Exercise>?
-  var offer: WorkoutDeviation?
-  var offerNotices: [String] = []
   var hidden = false
   static func key(_ session: ID<Session>) -> String { "rack:\(session.record)" }
   init() {}
@@ -131,18 +72,11 @@ nonisolated struct WorkoutWalk: Equatable, Sendable {
     guard let json else { return }
     let object = try json.asObject()
     order = try object["order"]?.asArray().map { ID<Exercise>(RecordID(try $0.asString())) } ?? []
-    asked = try object["asked"]?.asArray().map { ID<Exercise>(RecordID(try $0.asString())) } ?? []
     selected = try object["selected"].flatMap { $0.isNull ? nil : ID<Exercise>(RecordID(try $0.asString())) }
-    pending = try object["pending"].flatMap { $0.isNull ? nil : ID<Exercise>(RecordID(try $0.asString())) }
-    offer = try object["offer"].flatMap { $0.isNull ? nil : try WorkoutDeviation($0) }
-    offerNotices = try object["offerNotices"]?.asArray().map { try $0.asString() } ?? []
     hidden = try object["hidden"]?.asBool() ?? false
   }
   var json: JSON {
-    .object(["order": .array(order.map(\.json)), "selected": selected?.json ?? .null,
-             "asked": .array(asked.map(\.json)), "pending": pending?.json ?? .null, "offer": offer?.json ?? .null,
-             "offerNotices": .array(offerNotices.map(JSON.string)),
-             "hidden": .bool(hidden)])
+    .object(["order": .array(order.map(\.json)), "selected": selected?.json ?? .null, "hidden": .bool(hidden)])
   }
   // Where a movement stands in the walk, while the walk holds more than one.
   func position(of id: ID<Exercise>?) -> (index: Int, count: Int)? {
@@ -173,27 +107,6 @@ struct StartWorkoutCommand: ServerCommand {
   init(id: ID<Session>, routineId: ID<Routine>?, at: Instant) {
     var args: [String: JSON] = ["id": id.json, "startedAt": .of(at), "joinOpenSession": false]
     if let routineId { args["routineId"] = routineId.json }; self.args = args
-  }
-}
-
-struct SaveWorkoutDeviation: Action {
-  let original: Routine
-  let current: Routine
-  let sessionId: ID<Session>
-  let walk: WorkoutWalk
-  var scope: ScopeRef { Gym.scope }
-  func load(_ read: Reader) throws -> (Routine?, Session?, Moment) {
-    (try read.repository(Routine.self).find(original.id, in: .drawn),
-     try read.repository(Session.self).find(sessionId, in: .drawn), read.moment)
-  }
-  func decide(_ loaded: (Routine?, Session?, Moment), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    guard loaded.1 != nil else { return .refuse(.gone(sessionId.ref, .predicted)) }
-    guard loaded.0 == original else { return .refuse(.stale(original.id.ref, .predicted)) }
-    var plan = Plan()
-    if original.revision != nil { plan.guardRead(original.id, fields: ["revision"]) }
-    plan.update(try Valid(current, at: loaded.2), fields: ["entries"], from: original, guarded: true)
-    plan.device(WorkoutWalk.key(sessionId), walk.json)
-    return .write(plan)
   }
 }
 
@@ -247,7 +160,7 @@ struct LogWorkoutSet: Action {
     let current = loaded.drawnSets.filter { $0.sessionId == session.id }.sorted { $0.id < $1.id }
     if let offer {
       guard let record = input.1, record.ownerID == offer.ownerID, record.replica == input.2, record.anonymous == input.5,
-            !input.3.hidden, input.3.pending == nil, !input.4, input.3.selected?.description == offer.movementID,
+            !input.3.hidden, !input.4, input.3.selected?.description == offer.movementID,
             record.baseline == WorkoutActivityRecord.snapshot(session: session, sets: current),
             record.offer == offer, value.id.description == offer.setID,
             value.sessionId.description == offer.sessionID, value.exerciseId.description == offer.movementID,
@@ -370,7 +283,7 @@ struct FinishWorkout: Action {
     do {
       if let sessionId, var record = try activityRecord() {
         record.offer = nil; revoke = record
-        if canLog, walk.pending == nil, !rackEditing, !gym.workoutHidden,
+        if canLog, !rackEditing, !gym.workoutHidden,
            weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
            let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
@@ -412,12 +325,6 @@ struct FinishWorkout: Action {
   func ledger(_ id: ID<Exercise>) -> MovementLedger {
     MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id })
   }
-  var deviation: WorkoutDeviation? {
-    guard let id = walk.pending, let session else { return nil }
-    if let offer = walk.offer, offer.exerciseId == id { return offer }
-    return WorkoutDeviation.leaving(id, session: session, sets: sets, asked: walk.asked,
-                                    routine: gym.routines.first { $0.id == session.routineId })
-  }
   // The clocks read the log's time, which stamped the start and the sets; this phone's time stands in when it cannot be read.
   var clocks: WorkoutClocks? {
     guard let session else { return nil }
@@ -446,9 +353,6 @@ struct FinishWorkout: Action {
     sessionId = open.id; (walk, finishQueued) = restored
     if message == Self.orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
-    if walk.pending != nil, walk.offer == nil, let offer = deviation {
-      var next = walk; next.offer = offer; _ = keep(next)
-    }
     prefill(); restoreActivityDraft()
   }
   func reconcile() {
@@ -467,23 +371,6 @@ struct FinishWorkout: Action {
     }
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
-    if walk.pending == nil, let offer = walk.offer {
-      let stale = gym.notices.contains { notice in
-        guard !walk.offerNotices.contains(notice.id), notice.subject == offer.routineId.ref,
-              case .stale = notice.refusal else { return false }
-        let fields = notice.values(of: offer.routineId.ref)
-        guard let entries = try? fields["entries"]?.asArray(), entries.indices.contains(offer.position),
-              let entry = try? RoutineEntry(Fields(entries[offer.position])) else { return false }
-        var proposed = offer.offeredEntry; proposed.sets = offer.proposed
-        return entry == proposed
-      }
-      if stale { rebuildDeviation(offer) }
-      else if let routine = gym.routines.first(where: { $0.id == offer.routineId }),
-              routine.entries.indices.contains(offer.position), routine.entries[offer.position].sets == offer.proposed,
-              gym.isAnonymous || routine.revision != offer.revision {
-        var next = walk; next.offer = nil; next.offerNotices = []; _ = keep(next)
-      }
-    }
     if previousSelected != selected { prefill(); restoreActivityDraft() }
     else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
       let pending = rackBase.map { _ in Prefill(weightKg: weightKg, reps: reps) }
@@ -506,33 +393,15 @@ struct FinishWorkout: Action {
   }
   func select(_ id: ID<Exercise>) {
     guard walk.order.contains(id), id != selected, !finishing, flushRack() else { return }
-    if let pending = deviation {
-      message = "\(gym.catalogue.find(pending.exerciseId)?.name ?? "That movement") first — that question is still open."; return
-    }
     if let selected { drafts[selected] = Prefill(weightKg: weightKg, reps: reps) }
-    var next = walk
-    if let selected, let session,
-       let offer = WorkoutDeviation.leaving(selected, session: session, sets: sets, asked: walk.asked,
-                                            routine: gym.routines.first { $0.id == session.routineId }) {
-      next.pending = selected; next.offer = offer; next.offerNotices = []
-    }
-    next.selected = id
+    var next = walk; next.selected = id
     guard keep(next) else { return }
     prefill()
     if let draft = drafts[id] { restoreRack(weightKg: draft.weightKg, reps: draft.reps) }
   }
   func add(_ id: ID<Exercise>) {
     guard !walk.order.contains(id), gym.catalogue.find(id) != nil, !finishing, flushRack() else { return }
-    if let pending = deviation {
-      message = "\(gym.catalogue.find(pending.exerciseId)?.name ?? "That movement") first — that question is still open."; return
-    }
-    var next = walk; next.order.append(id)
-    if let selected, let session,
-       let offer = WorkoutDeviation.leaving(selected, session: session, sets: sets, asked: walk.asked,
-                                            routine: gym.routines.first { $0.id == session.routineId }) {
-      next.pending = selected; next.offer = offer; next.offerNotices = []
-    }
-    next.selected = id
+    var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
     guard keep(next) else { return }
     if let prior { drafts[prior] = draft }
@@ -570,42 +439,6 @@ struct FinishWorkout: Action {
     gym.telemetry.event("gym_set_logged", properties: ["screen": "workout", "outcome": "ok"])
     drafts[selected] = nil; message = nil; prefill(); activityChanged()
     return true
-  }
-  func resolveDeviation(save: Bool) {
-    guard !gym.readFailed, let offer = deviation else { return }
-    var next = walk; next.asked.append(offer.exerciseId); next.pending = nil
-    if save {
-      guard let routine = gym.routines.first(where: { $0.id == offer.routineId }),
-            routine.revision == offer.revision, routine.entries.indices.contains(offer.position),
-            routine.entries[offer.position] == offer.offeredEntry else {
-        rebuildDeviation(offer); return
-      }
-      var changed = routine; changed.entries[offer.position].sets = offer.proposed
-      next.offerNotices = gym.notices.map(\.id)
-      guard let sessionId, let result = gym.run(SaveWorkoutDeviation(original: routine, current: changed, sessionId: sessionId, walk: next)) else { message = gym.error; return }
-      if case .stale = result.refusal { rebuildDeviation(offer); return }
-      guard result.refusal == nil else { message = gym.error; return }
-      walk = next; message = nil
-      gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "action": "update"])
-      return
-    }
-    next.offer = nil; next.offerNotices = []
-    if keep(next) { message = nil }
-  }
-  func rebuildDeviation(_ offer: WorkoutDeviation) {
-    guard let session else { return }
-    var next = walk; next.asked.removeAll { $0 == offer.exerciseId }
-    next.offerNotices = gym.notices.map(\.id)
-    let routine = gym.routines.first { $0.id == offer.routineId }
-    next.offer = routine.flatMap { WorkoutDeviation.leaving(offer.exerciseId, session: session, sets: sets,
-                                                          asked: next.asked, routine: $0, againstCurrent: true) }
-    next.pending = next.offer?.exerciseId
-    if next.offer == nil { next.asked.append(offer.exerciseId) }
-    if keep(next) {
-      message = next.offer == nil
-        ? "The routine changed. Today’s sets are saved; the current routine no longer needs that target change."
-        : "The routine changed. Today’s sets are saved; review the new offer before changing its targets."
-    }
   }
 
   static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."

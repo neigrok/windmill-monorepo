@@ -914,7 +914,7 @@ import SyncTesting
     #expect(workout.session?.plan == frozen && gym.routines.first { $0.id == plan.id } == current)
   }
 
-  @Test func rebuiltDeviationRevokesActivityLoggingUntilTheReviewIsResolved() throws {
+  @Test func aSetAboveThePlanLeavesTheNextMovementsOfferOpen() throws {
     let (harness, gym) = try fixtures.fixture(anonymous: false)
     #expect(gym.run(CreateExercise(Exercise(id: fixtures.second, name: "Workout second", pattern: "hinge", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
     let created = try fixtures.routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
@@ -926,39 +926,11 @@ import SyncTesting
     let heavier = try #require(workout.activityOffer())
     #expect(workout.logActivityOffer(heavier))
     workout.select(fixtures.second)
-    let offered = try #require(workout.deviation), frozen = workout.session?.plan
-    #expect(offered.revision == 1 && workout.activityOffer() == nil)
-    let other = harness.device()
-    harness.sync()
-    let remote = GymModel(runner: other.runner)
-    var edit = Draft(opening: try #require(remote.routines.first { $0.id == plan.id }))
-    edit.current.entries[0].sets = [SetTarget(reps: 9, weightKg: 45)]
-    #expect(saved(remote.save(&edit)))
-    harness.sync(); gym.refresh(); workout.reconcile()
-    let current = try #require(gym.routines.first { $0.id == plan.id })
-    workout.resolveDeviation(save: true)
-    let rebuilt = try #require(workout.deviation)
-    #expect(rebuilt.revision == 2 && rebuilt.offeredEntry == current.entries[0])
-    #expect(gym.routines.first { $0.id == plan.id } == current)
-    #expect(workout.activityOffer() == nil && workout.session?.plan == frozen)
-    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
-    #expect(reopened.deviation == rebuilt && reopened.activityOffer() == nil)
-    #expect(reopened.sets.map(\.weightKg) == [50] && reopened.session?.plan == frozen)
-    let retained = try #require(reopened.sets.first), session = try #require(reopened.session)
-    #expect(retained.id.description == heavier.setID && retained.exerciseId == fixtures.first)
-    reopened.resolveDeviation(save: false)
-    let next = try #require(reopened.activityOffer())
+    let next = try #require(workout.activityOffer())
     #expect(next.movementID == fixtures.second.description && next.setID != heavier.setID)
-    #expect(reopened.logActivityOffer(next))
-    let logged = TrainingSet(id: ID(RecordID(next.setID)), sessionId: session.id, exerciseId: fixtures.second,
-      weightKg: next.weightKg, reps: next.reps, completedAt: Instant(ms: retained.completedAt.ms + 1))
-    #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, logged].sorted { $0.id < $1.id })
-    harness.sync(); reopenedGym.refresh(); reopened.reconcile()
-    let confirmed = TrainingSet(id: logged.id, sessionId: logged.sessionId, exerciseId: logged.exerciseId,
-      weightKg: logged.weightKg, reps: logged.reps, completedAt: logged.completedAt, setNumber: 1)
-    #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, confirmed].sorted { $0.id < $1.id })
-    #expect(reopened.deviation == nil && reopened.walk.asked == [fixtures.first])
-    #expect(reopenedGym.routines.first { $0.id == plan.id } == current)
+    #expect(workout.logActivityOffer(next))
+    #expect(workout.sets.map(\.exerciseId) == [fixtures.first, fixtures.second])
+    #expect(gym.routines.first { $0.id == plan.id } == plan)
   }
 
   // The lock screen's count follows the connection: a status the store does not hold redraws it at once, not at the

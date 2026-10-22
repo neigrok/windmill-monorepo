@@ -160,9 +160,8 @@ handoff belongs to the account it was asked under, so the sign-in it waited for 
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
-the workout's movement order, selected movement, hidden status and deviation offer — the offered
-entry and the routine's revision, which Save guards; an offer the routine has moved past is rebuilt
-against the current routine. A set logged before the clock passes the latest set completes 1 ms
+the workout's movement order, selected movement and hidden status. Lifting above the plan only
+logs the set; a routine's targets change in the routine editor or through Coach's proposals. A set logged before the clock passes the latest set completes 1 ms
 after it, so every surface draws sets in logged order. Before the engine changes the replica,
 `GymBinding` saves the rack's pending value, ends the Live Activity and snapshots each signed-out workout for recovery; a failed
 snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's

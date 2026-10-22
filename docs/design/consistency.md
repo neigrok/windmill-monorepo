@@ -103,11 +103,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   failing instead. Confirm one storage sentence for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
-  iOS's counts only writing operations (`Translation.swift`), and the iOS gym relies on it: saving a
-  workout's deviation guards the routine's `revision` with a `guardRead` and updates the same
-  routine in one plan (`SaveWorkoutDeviation`, `WorkoutState.swift`). That plan goes with the
-  deviation question (12a). Rule whether a guard read may accompany a write to its record before
-  another plan needs it, then align the kit spec and both kits. Owner: domain kit.
+  iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
+  record. Rule whether a guard read may accompany a write to its record before a plan needs it,
+  then align the kit spec and both kits. Owner: domain kit.
 
 ### Durable draft adoption on native clients
 
@@ -746,11 +744,9 @@ rulings. Entries 9k, 9o, 9p, 9q, 9r, 9s, 9y, 9z, 7c and 7d carry the rulings tha
 question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, Android paths as above.
 
 - **12a · Lifting above the plan is just logged.** No surface asks to change a routine when the
-  lifter beats it; targets change only through Coach's proposals (catalogue 08.21). Both phones ask
-  today: iOS an alert *Save {w} to {routine}?* or the sheet *Heavier than the plan*
-  (`Workout/WorkoutSheets.swift:105-151`, `WorkoutState` `resolveDeviation`, `SaveWorkoutDeviation`),
-  Android the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are deleted on both
-  pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
+  lifter beats it; targets change only through Coach's proposals (catalogue 08.21). iOS just logs;
+  Android still asks in the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are
+  deleted on both pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
 - **12b · Every workout starts from a routine.** No free workout on either phone, and the Control
   Center control and the Quick Settings tile open Routines when no workout is open (both 04.1).
   Boards 03.9 are deleted on both pages. Android still offers *Start logging*

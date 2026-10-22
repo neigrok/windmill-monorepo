@@ -194,7 +194,7 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
-  func testDeviationAndReceipt() {
+  func testReceiptActions() {
     for look in Look.both {
       let app = launch("workout-planned", look)
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
@@ -202,13 +202,9 @@ final class WorkoutCaptures: DesignCapture {
       app.turnLoadWheel(to: "105")
       app.buttons["workout-log"].tap()
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-      let heavier = app.alerts["Save 105 to Lower A?"]
-      XCTAssertTrue(heavier.waitForExistence(timeout: 5))
-      capture("gym-workout-heavier-than-plan-dialog", look, app)
-      heavier.buttons["Today only"].firstMatch.tap()
-      XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+      app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
-      capture("gym-workout-receipt-after-deviation", look, app)
       app.swipeUp()
       capture("gym-workout-finish-receipt-actions", look, app)
     }

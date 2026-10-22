@@ -73,7 +73,6 @@ struct WorkoutScreen: View {
       SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
                     weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
     }
-    .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
@@ -418,7 +417,7 @@ struct WorkoutPager: UIViewControllerRepresentable {
       if pager.viewControllers?.first !== current { pager.setViewControllers([current], direction: .forward, animated: false) }
     }
     func neighbor(_ view: UIViewController, direction: Int) -> UIViewController? {
-      guard parent.workout.deviation == nil, !parent.workout.finishing,
+      guard !parent.workout.finishing,
             let id = identity(view), let position = parent.workout.walk.order.firstIndex(of: id),
             parent.workout.walk.order.indices.contains(position + direction) else { return nil }
       return page(parent.workout.walk.order[position + direction])

@@ -243,7 +243,7 @@ import Vision
     XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["1 · 100 × 5", "2 · 100 × 5"])
   }
 
-  func testPagerAssemblyAndHeavierBoundary() {
+  func testPagerAndAssembly() {
     let app = launch()
     XCTAssertTrue(app.descendants(matching: .any)["workout-pages"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["workout-next"].exists)
@@ -262,15 +262,8 @@ import Vision
     weight.tap()
     app.turnLoadWheel(to: "105"); app.buttons["workout-log"].tap()
     app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-    // Leaving the movement raised the question, so nothing on screen anchors it: it is an alert.
-    let heavier = app.alerts["Save 105 to Lower A?"]
-    XCTAssertTrue(heavier.waitForExistence(timeout: 5))
-    XCTAssertTrue(heavier.staticTexts["Today’s workout already has it."].exists)
-    XCTAssertEqual(Set(heavier.buttons.allElementsBoundByIndex.map(\.label)), ["Save to Lower A", "Today only"])
-    XCTAssertFalse(app.navigationBars["Heavier than the plan"].exists)
-    heavier.buttons["Today only"].firstMatch.tap()
-    XCTAssertTrue(heavier.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.alerts.count, 0, "A set above the plan is just logged")
     XCTAssertFalse(app.staticTexts["plan 3 × 6 · 82.5"].exists, "The planned rows already say the plan")
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5))
