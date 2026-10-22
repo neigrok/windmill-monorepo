@@ -240,9 +240,6 @@ and Android disagree.
   (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
   banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
   removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-58`); see 12g.
-- **9l · Live Activity clocks carry no words (owner ruling, 2026-10-22; iOS build).** Boards 04.2
-  and 04.4 draw the clocks with no names; VoiceOver names them. The widget's position line still
-  adds *… since last set* (`WorkoutActivityWidget.swift`, `position`): build work in iOS task 59.
 - **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the app on
   2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
   predate the native chrome; redraw them from the app.

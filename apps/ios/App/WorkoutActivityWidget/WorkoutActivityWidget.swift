@@ -29,9 +29,9 @@ struct WorkoutControl: ControlWidget {
   }
 }
 
-// The ledger's current row outside the app: the routine and the workout clock on top, which the expanded Island draws in
-// its leading and trailing regions, then the set it would log, and Log set. The compact Island keeps the clocks at
-// .caption, its slots too narrow to scale.
+// The ledger's current row outside the app: the routine and the rest clock on top, which the expanded Island draws in its
+// leading and trailing regions, then the set it would log, and Log set. The compact Island keeps the clocks at .caption,
+// its slots too narrow to scale.
 struct WorkoutActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
@@ -39,10 +39,11 @@ struct WorkoutActivityWidget: Widget {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
           Label(context.state.title, systemImage: "dumbbell.fill").lineLimit(1)
           Spacer(minLength: 8)
-          WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt).frame(maxWidth: 96, alignment: .trailing)
+          WorkoutActivityClock.rest(context.state).frame(maxWidth: 96, alignment: .trailing)
         }.font(.headline)
         WorkoutActivityDetails(state: context.state, isStale: context.isStale)
-      }.padding(16)
+      }.padding(16).foregroundStyle(GymPalette.ink)
+        .activityBackgroundTint(GymPalette.card)
         .widgetURL(WorkoutActivityAttributes.workoutURL)
     } dynamicIsland: { context in
       DynamicIsland {
@@ -50,7 +51,7 @@ struct WorkoutActivityWidget: Widget {
           Label(context.state.title, systemImage: "dumbbell.fill").font(.headline).lineLimit(1).padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt)
+          WorkoutActivityClock.rest(context.state)
             .font(.headline).frame(maxWidth: 96, alignment: .trailing).padding(.trailing, 12)
         }
         DynamicIslandExpandedRegion(.bottom) {
@@ -63,7 +64,7 @@ struct WorkoutActivityWidget: Widget {
           WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt).frame(maxWidth: 52)
         }.font(.caption).dynamicTypeSize(.large)
       } compactTrailing: {
-        WorkoutActivityClock(name: context.state.lastSetAt == nil ? "Workout time" : "Since last set", from: context.state.lastSetAt ?? context.state.startedAt, until: context.state.staleAt)
+        WorkoutActivityClock.rest(context.state)
           .font(.caption).dynamicTypeSize(.large).frame(maxWidth: 52)
       } minimal: {
         Image(systemName: "dumbbell.fill").foregroundStyle(GymPalette.accent)
@@ -75,9 +76,9 @@ struct WorkoutActivityWidget: Widget {
   }
 }
 
-// The movement, the prefilled set as the one large line, its place in the plan with the rest since the last set, and Log
-// set; before a movement is chosen, where to choose it and the rest alone. What is not yet sent is said beside the button,
-// or above it where the row is too narrow for both.
+// The movement, the prefilled set as the one large line, its place in the plan, and Log set; before a movement is chosen,
+// where to choose it. The rest is the clock's alone. What is not yet sent is said beside the button, or above it where the
+// row is too narrow for both.
 struct WorkoutActivityDetails: View {
   let state: WorkoutActivityAttributes.ContentState
   let isStale: Bool
@@ -92,7 +93,7 @@ struct WorkoutActivityDetails: View {
             Text("\(state.load) × \(state.reps)").font(.title2.weight(.bold)).monospacedDigit().lineLimit(1)
           }
         }
-        position.font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+        if let place = state.place { Text(place).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1) }
       }
       ViewThatFits(in: .horizontal) {
         HStack(alignment: .center) { aside; Spacer(minLength: 8); logSet }
@@ -117,20 +118,18 @@ struct WorkoutActivityDetails: View {
       }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
     }
   }
-
-  @ViewBuilder var position: some View {
-    let rest = state.lastSetAt.map { Text(timerInterval: $0...max($0, state.staleAt), countsDown: false) }
-    if let place = state.place, let rest { Text("\(place) · \(rest) since last set") }
-    else if let place = state.place { Text(place) }
-    else if let rest { Text("\(rest) since last set") }
-  }
 }
 
-// A clock the system draws from a timestamp; its name is spoken, never shown.
+// A clock the system draws from a timestamp; its name is spoken, never shown. The rest clock counts from the latest set,
+// and from the start until there is one.
 struct WorkoutActivityClock: View {
   let name: String
   let from: Date
   let until: Date
+  static func rest(_ state: WorkoutActivityAttributes.ContentState) -> Self {
+    guard let lastSetAt = state.lastSetAt else { return Self(name: "Workout time", from: state.startedAt, until: state.staleAt) }
+    return Self(name: "Since last set", from: lastSetAt, until: state.staleAt)
+  }
   var body: some View {
     Text(timerInterval: from...max(from, until), countsDown: false).monospacedDigit().multilineTextAlignment(.trailing)
       .accessibilityLabel(name)
