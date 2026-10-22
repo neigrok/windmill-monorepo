@@ -53,3 +53,4 @@ The [Figma Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?nod
 - [43](43-coach-allowance-used.md) — Allowance used: signed out, signed in (interim), Windmill One
 - [44](44-coach-after-sign-in.md) — After sign-in, the conversation continues and proposes a change
 - [49](49-coach-choices-kept-draft.md) — Coach asks with choice chips; a draft written signed out waits as Draft kept on this phone (builds after 44)
+- [52](52-onboarding-gym-glimpse.md) — The onboarding's gym glimpse draws today's rack (Shell · Android A4; after 09)

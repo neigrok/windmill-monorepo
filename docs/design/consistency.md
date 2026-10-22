@@ -223,10 +223,6 @@ and Android disagree.
   saved-workout recovery offers *Choose set kind* (`SettingsScreen.kt:240-242,268,293-308,370-383`).
   The Android boards draw none of it (03.1, 03.3, 05.3, 05.6, 07.2, 07.3). Build work: remove it on
   every surface.
-- **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
-  hand-drawn glass fill and a drawn account glyph; the app's room menu and `person.crop.circle`
-  on system glass replace them. Redraw the top band of boards 02d, 05–07d and 21a/21b from
-  the bar anatomy, board 00.1 (`1186:5728`).
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
@@ -498,17 +494,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   (F44); its onboarding glimpse uses verdigris `#137A6C`. The Figma Android boards use
   light `color/brand` `#137A6C`; iOS uses `ios/gym/accent` `#106B5F`. Align Android's glimpse and skin
   with the intended Android accent and identify any intentional platform difference.
-- **9e · About Windmill is built, not drawn.** Both phones' You carry the **About Windmill** row
-  (`AccountSheet.swift`; Android's `OnboardingFlowTests.kt` pins it); Android's You boards draw it
-  (Shell · Android 16a `33:1569`, 16b `33:4408`), the iOS You boards (first-run section *4 · Account*,
-  `2:1867`) do not. Add the row to the iOS drawings.
 - **9f · The gym glimpse draws a rack neither phone has.** The page-4 fixture (*Squat · set 3 of 5 ·
   … Set 3 · target 100 × 5 · … Last time · 97.5 kg × 5 · Set 3 logged · Log set*) and
   `_Glimpse / Gym` (`210:56`) draw a slot target, a *Last time* line and the mono face, and both
   phones' glimpses draw that fixture (`OnboardingGlimpses.swift`, `OnboardingGlimpses.kt`). The iOS
-  rack (board 03.1) has none of the three. Redraw the fixture and the component from the current
-  racks — name, the ledger with its current row, the numeral, *Log set*; one shared, or one per
-  phone — and align both glimpses.
+  rack (board 03.1) has none of the three. Shell · Android A4 (`2:10131`, Daylight `2:10203`) now
+  draws the Android glimpse from today's rack as a 🚧 target (Squat, the ledger with its current row,
+  *100 kg total*, *5 reps*, *Log set*); `OnboardingGlimpses.kt` still draws the old fixture. The iOS
+  A4 and `_Glimpse / Gym` (`210:56`) still draw it: redraw them from the iOS rack and align the iOS
+  glimpse.
 - **9g · Where each product lives.** The iOS app tags both rooms *In this app* (`Onboarding.swift`);
   Android tags Journal *On the web* and Gym *In this app* (`gym/src/main/res/values/onboarding.xml`).
   Decide whether Android's tags name the iPhone.
