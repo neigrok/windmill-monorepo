@@ -524,6 +524,10 @@ these are the places it disagrees with a drawing, a brief or the build.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
     - 01.5: a signed-in drafted photo is captioned *Sent to Coach. Saved only in this chat.*, where the board draws
       *Saved only in this chat.* alone.
+    - 08.9, 08.25 and 08.26: *Changed a movement* and *Saved a note* stand alone on their cards, without the boards'
+      *Changed* block or note text. The answer's steps name only the tool (`tool`, `failed`), so the phone cannot tell
+      Coach's write from the lifter's later edit; the backend would need to return the written note and movement ids
+      on each step before the cards can show what changed.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one

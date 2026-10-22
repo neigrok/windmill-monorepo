@@ -171,7 +171,7 @@ struct CoachTab: View {
             ForEach(coach.visibleTurns) { turn in
               if turn.from == "lifter" { question(turn.text, attachments: turn.attachments, at: turn.at, stamps: stamps) }
               else {
-                answer(turn.text, receipt: turn.clarification != nil && turn.clarification?.id == coach.activeClarification?.id ? nil : turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results, requestId: turn.requestId)
+                answer(turn.text, receipt: turn.clarification != nil && turn.clarification?.id == coach.activeClarification?.id ? nil : turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results)
                 routineDrafts(turn.routineDrafts, requestId: turn.requestId)
                 if let allowance = turn.allowanceRefusal { allowanceMessage(allowance, current: false) }
                 else if turn.status == "failed" || turn.status == "stopped" {
@@ -188,7 +188,7 @@ struct CoachTab: View {
             if let clarification = coach.activeClarification {
               CoachChoicesView(coach: coach, clarification: clarification)
               let receipt = coach.activeGeneration != nil ? coach.activeGeneration?.receipt : coach.saved.thread?.turns.last?.receipt
-              if let receipt { answer("", receipt: receipt, steps: [], results: [], requestId: nil) }
+              if let receipt { answer("", receipt: receipt, steps: [], results: []) }
             }
             if case .daily(let sentence) = coach.refusal { dailyCap(sentence) }
             if case .allowance(let allowance) = coach.refusal, coach.transcriptAllowance == nil { allowanceMessage(allowance, current: true) }
@@ -365,9 +365,8 @@ struct CoachTab: View {
     CoachStamps(times: coach.visibleTurns.filter { $0.from == "lifter" }.map(\.at) + coach.saved.exchanges.map(\.at) + [coach.activeGeneration?.at].compactMap { $0 })
   }
 
-  func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult], requestId: String?) -> some View {
-    CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results, held: requestId.flatMap { coach.heldAtSend[$0] },
-                    read: { sources = $0 }, notes: { destination = .notes })
+  func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult]) -> some View {
+    CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results, read: { sources = $0 }, notes: { destination = .notes })
   }
 
   // The drafts an answer still holds, on one card; Apply saves each by its operation.
@@ -418,7 +417,7 @@ struct CoachTab: View {
     VStack(alignment: .leading, spacing: 16) {
       if generation.allowanceRefusal == nil { question(generation.question, attachments: generation.attachments, at: generation.at, stamps: stamps) }
       if generation.answer.isEmpty, generation.status == "running" { CoachTyping() }
-      answer(generation.answer, receipt: generation.clarification != nil && generation.clarification?.id == coach.activeClarification?.id ? nil : generation.receipt, steps: generation.steps, results: generation.results, requestId: generation.requestId)
+      answer(generation.answer, receipt: generation.clarification != nil && generation.clarification?.id == coach.activeClarification?.id ? nil : generation.receipt, steps: generation.steps, results: generation.results)
       routineDrafts(generation.routineDrafts, requestId: generation.requestId)
       if let allowance = generation.allowanceRefusal { allowanceMessage(allowance, current: generation.id == coach.activeGeneration?.id) }
     }

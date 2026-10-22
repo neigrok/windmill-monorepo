@@ -141,8 +141,6 @@ struct CoachDraftStore {
   @ObservationIgnored var stopWork: Task<Void, Never>?
   @ObservationIgnored var stopGeneration = 0
   @ObservationIgnored var readGeneration = 0
-  // What the log held as each question was sent, by request, so what Coach wrote while answering reads against it.
-  @ObservationIgnored var heldAtSend: [String: CoachHeld] = [:]
 
   init(gym: GymModel, rest: GymRESTClient? = nil, store: CoachDraftStore = CoachDraftStore()) {
     self.gym = gym; self.rest = rest ?? gym.rest; self.store = store
@@ -348,7 +346,6 @@ struct CoachDraftStore {
   }
   func launch(_ request: CoachSaved.Request, owner: String) {
     invalidateRead()
-    if heldAtSend[request.requestId] == nil { heldAtSend[request.requestId] = CoachHeld(catalogue: gym.catalogue, notes: Set(gym.notes.map(\.id))) }
     stopGeneration += 1; stopWork?.cancel(); stopWork = nil; stopping = false
     workGeneration += 1; let generation = workGeneration
     asking = true; uploading = false; refusal = nil; error = nil

@@ -264,15 +264,22 @@ final class CoachCaptures: DesignCapture {
     return app
   }
 
+  // Each card says what Coach did and nothing it read back from the log, though the fixture wrote it there.
   func testWriteReceipts() {
     captureBoard("08.9-coach-changed-load-basis", settle: 2) { look in
-      askWrite("load-basis", "Pull-ups are bodyweight for me. I add a 10 kg belt.", "coach-updated-movement", look)
+      let app = askWrite("load-basis", "Pull-ups are bodyweight for me. I add a 10 kg belt.", "coach-updated-movement", look)
+      XCTAssertEqual(app.descendants(matching: .any)["coach-updated-movement"].label, "Changed a movement")
+      return app
     }
     captureBoard("08.25-coach-saved-note", settle: 2) { look in
-      askWrite("note", "My left shoulder hurts on wide-grip bench.", "coach-saved-note", look)
+      let app = askWrite("note", "My left shoulder hurts on wide-grip bench.", "coach-saved-note", look)
+      XCTAssertEqual(app.buttons["coach-saved-note"].label, "Saved a note")
+      return app
     }
     captureBoard("08.26-coach-changed-movement", settle: 2) { look in
-      askWrite("movement-details", "Incline DB is really dumbbells, one in each hand.", "coach-updated-movement", look)
+      let app = askWrite("movement-details", "Incline DB is really dumbbells, one in each hand.", "coach-updated-movement", look)
+      XCTAssertEqual(app.descendants(matching: .any)["coach-updated-movement"].label, "Changed a movement")
+      return app
     }
   }
   func testAccessStates() {
