@@ -767,7 +767,9 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   last row: an explanation, *Type your email to confirm*, *Deleting…*, *Your account is deleted* /
   *Sign in before Nov 21 to bring it back.*, and *Couldn’t delete your account. Check your connection
   and try again.* (Shell iOS section 4c `47:3852`, boards 27a–27e; Shell Android `33:1568`, 27a
-  `54:1269`–27e `54:1606`). Neither phone has it. The server keeps the copy's promise: `DELETE /v1/me`
+  `54:1269`–27e `54:1606`). iOS builds it (`AccountDeletion.swift`); Android does not. iOS's 27f/27g
+  count is the engine's live unsent entries (ready and sent), which leaves out pending device work. The
+  server keeps the copy's promise: `DELETE /v1/me`
   closes with `closingOn` = now + 30 days, a sign-in before then brings the account back, and from
   then on it is erased with all its data (`backend/AUTH.md`).
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt

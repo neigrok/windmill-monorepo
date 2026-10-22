@@ -159,6 +159,26 @@ import XCTest
     XCTAssertTrue(app.staticTexts["sam@example.com"].exists)
   }
 
+  // 27a–27d: the typed email confirms, the account closes, and Done returns to You signed out over Where to start?.
+  func test27DeleteAccountLeavesThePhoneSignedOut() {
+    let app = launch("24a")
+    let delete = app.buttons["delete-account"]
+    for _ in 0..<6 where !delete.isHittable { app.swipeUp(velocity: .slow) }
+    delete.tap()
+    let field = app.textFields["delete-account-email"], confirm = app.buttons["delete-account-confirm"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    XCTAssertFalse(confirm.isEnabled)
+    field.tap(); field.typeText(" SAM@example.com ")
+    XCTAssertTrue(confirm.wait(for: \.isEnabled, toEqual: true, timeout: 5)); confirm.tap()
+    XCTAssertTrue(app.staticTexts["Your account is deleted"].waitForExistence(timeout: 20))
+    app.buttons["delete-account-done"].tap()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["sign-out"].exists || app.buttons["delete-account"].exists)
+    XCTAssertTrue(app.staticTexts["Not signed in"].exists)
+    app.buttons["Done"].tap()
+    XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10))
+  }
+
   func test24dOccupiedAppleIdentityStaysOnCaller() {
     let app = launch("24a", fixture: "taken")
     app.buttons["apple-sign-in"].tap()

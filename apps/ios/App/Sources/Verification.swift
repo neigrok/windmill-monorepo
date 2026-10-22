@@ -64,6 +64,13 @@ enum BoardFixture {
       model.journal.type("An earlier page in Sam's account."); model.journal.save(); model.journal.done()
       if AdoptionFixture.workouts > 0 { AdoptionFixture.accountTraining(model) }
       await runtime.engine.start(); try? await AppScenario.backedUp(model)
+      if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "-delete-fixture"), index + 1 < ProcessInfo.processInfo.arguments.count {
+        let mode = ProcessInfo.processInfo.arguments[index + 1]
+        server.state.withLock { state in
+          if mode == "held" { state.closeHeldSeconds = 3_600 }
+          if mode == "offline" { state.closeOffline = true }
+        }
+      }
       if board.hasPrefix("24") {
         model.sheet = .you; await model.loadSignInMethods()
         if board == "24b" || board == "24c" {

@@ -276,7 +276,10 @@ local editing. Account requests can be dismissed with Back, Close or Done; cance
 late navigation, and a pending sign-in or adoption can be deferred while the phone remains usable. Adoption and
 sign-out flush dirty writing and recount before completion. A paused session plainly shows that backup
 is paused and offers email or Apple sign-in to the same account; reauthentication retains its replica.
-Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
+Delete account, from You signed in, confirms with the account's email, flushes as sign-out does,
+sends `DELETE /v1/me` naming the signed-in user id, then discards this phone's copy and the account's Coach
+drafts; Done returns to You signed out. The `-delete-fixture held` and `offline` launch arguments hold or
+refuse that request on the model server. Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
 

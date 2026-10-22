@@ -5,7 +5,7 @@ import CryptoKit
 import SyncReplica
 
 struct AccountSheet: View {
-  enum SettingsDestination: Hashable { case notes, connectedLog }
+  enum SettingsDestination: Hashable { case notes, connectedLog, deleteAccount }
   @State var settingsPath: [SettingsDestination] = []
   @Bindable var model: AppModel
   @FocusState var focusedInput: AppModel.Sheet?
@@ -44,6 +44,7 @@ struct AccountSheet: View {
             switch destination {
             case .notes: NotesScreen(gym: model.gym)
             case .connectedLog: ConnectedLogScreen(gym: model.gym)
+            case .deleteAccount: DeleteAccountScreen(model: model)
             }
           }.environment(\.coachOpenAccount, { settingsPath = []; model.openYou() })
         }
@@ -65,7 +66,7 @@ struct AccountSheet: View {
             }
         }.presentationDetents([.large]).presentationDragIndicator(.hidden)
       }
-      .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil)
+      .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil || model.deletion == .deleting)
       .disabled(answeringSignOut)
       .animation(.easeOut(duration: reduceMotion ? 0.2 : 0.28), value: model.sheet)
       .sensoryFeedback(.success, trigger: model.authSuccess)
@@ -438,6 +439,9 @@ struct AccountSheet: View {
           Button(role: .destructive) { model.performAuthentication { await model.beginSignOut() } } label: {
             Text("Sign out").foregroundStyle(ShellPalette.danger)
           }.accessibilityIdentifier("sign-out")
+          Button(role: .destructive) { settingsPath.append(.deleteAccount) } label: {
+            Text("Delete account").foregroundStyle(ShellPalette.danger)
+          }.disabled(model.signOutSession != nil).accessibilityIdentifier("delete-account")
         } footer: {
           if let refusal = model.signOutRefusal { Text(refusal).foregroundStyle(ShellPalette.danger).accessibilityIdentifier("sign-out-error") }
         }.listRowBackground(card)

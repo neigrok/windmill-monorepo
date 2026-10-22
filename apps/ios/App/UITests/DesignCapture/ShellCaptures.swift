@@ -39,6 +39,52 @@ final class ShellCaptures: DesignCapture {
     }
   }
 
+  // 26b, 27a–27g: Delete account from You, against the fake server; `-delete-fixture` holds the request or refuses it offline.
+  func openDeletion(_ board: String, _ look: Look, _ fixture: String? = nil) -> XCUIApplication {
+    let app = launch(board, look, arguments: ["-fake-apple", "-apple-fixture", "linking"] + (fixture.map { ["-delete-fixture", $0] } ?? []))
+    reach(app.buttons["delete-account"], app).tap()
+    XCTAssertTrue(app.textFields["delete-account-email"].waitForExistence(timeout: 10))
+    return app
+  }
+  func type(_ app: XCUIApplication) {
+    let field = app.textFields["delete-account-email"]
+    field.tap(); field.typeText("sam@example.com")
+    XCTAssertTrue(app.buttons["delete-account-confirm"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
+  }
+  func testDeleteAccount() {
+    captureBoard("26b-you-signed-in") { look in
+      let app = launch("24b", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      XCTAssertTrue(app.buttons["delete-account"].waitForExistence(timeout: 30))
+      return app
+    }
+    captureBoard("27a-delete-your-account") { look in openDeletion("24b", look) }
+    captureBoard("27b-email-typed") { look in let app = openDeletion("24b", look); type(app); return app }
+    captureBoard("27f-delete-with-unsent-changes") { look in
+      let app = openDeletion("16e", look)
+      XCTAssertTrue(app.staticTexts["3 changes on this phone haven’t been confirmed by your account. They are deleted too."].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("27g-email-typed-with-unsent-changes") { look in let app = openDeletion("16e", look); type(app); return app }
+    captureBoard("27c-deleting") { look in
+      let app = openDeletion("24b", look, "held"); type(app)
+      app.buttons["delete-account-confirm"].tap()
+      XCTAssertTrue(app.buttons["Deleting…"].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("27d-account-deleted") { look in
+      let app = openDeletion("24b", look); type(app)
+      app.buttons["delete-account-confirm"].tap()
+      XCTAssertTrue(app.staticTexts["Your account is deleted"].waitForExistence(timeout: 20))
+      return app
+    }
+    captureBoard("27e-could-not-delete") { look in
+      let app = openDeletion("24b", look, "offline"); type(app)
+      app.buttons["delete-account-confirm"].tap()
+      XCTAssertTrue(app.staticTexts["Couldn’t delete your account. Check your connection and try again."].waitForExistence(timeout: 20))
+      return app
+    }
+  }
+
   func testGymKeepAndSignIn() {
     for look in Look.both {
       let app = launch("keep-gym", look)

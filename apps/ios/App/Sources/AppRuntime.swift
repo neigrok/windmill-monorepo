@@ -434,6 +434,22 @@ final class NativeAuth {
     _ = try await exchange("v1/me/sign-in-methods/apple", operation: "auth_apple_remove", body: nil, token: token, allowNotFound: true, method: "DELETE") { $0 }
   }
 
+  // DELETE /v1/me names the signed-in user id, never a typed address, and answers when the account closes for good. A
+  // session already gone answers 401: the refusal `unauthorized`, like the 409 `account-mismatch` of another account.
+  func deleteAccount(_ account: String, token: SessionToken) async throws -> Date {
+    #if DEBUG
+    if let fake {
+      if let held = fake.state.withLock({ $0.closeHeldSeconds }) { try await Task.sleep(for: .seconds(held)) }
+      return try modelExchange("account_delete", method: "DELETE") { try fake.closeAccount(account, token: token) }
+    }
+    #endif
+    return try await exchange("v1/me", operation: "account_delete", body: ["account": account], token: token, allowUnauthorized: true, method: "DELETE") { body in
+      guard !body.isEmpty else { throw AuthRefusal(code: "unauthorized", message: "Sign in again to delete your account.") }
+      guard let closes = body["closesMs"] as? NSNumber else { throw URLError(.cannotParseResponse) }
+      return Date(timeIntervalSince1970: closes.doubleValue / 1000)
+    }
+  }
+
   func appleResponse(_ body: [String: Any], attaching: Bool) throws -> AppleAuthResponse {
     guard body["created"] == nil || body["created"] as? Bool == false else {
       throw AppFailure(message: "Couldn't continue with Apple. Use email instead. Your pages stay on this phone.")
@@ -455,7 +471,7 @@ final class NativeAuth {
       let code = (error as? AuthRefusal)?.code ?? ""
       let status: Int? = switch code {
       case "apple-ticket-expired": 410
-      case "identity-taken": 409
+      case "identity-taken", "account-mismatch": 409
       case "no-account", "not-found": 404
       case "invalid-code", "unverified-email": 400
       case "unauthorized": 401
@@ -463,7 +479,7 @@ final class NativeAuth {
       default: nil
       }
       let kind = code == "offline" ? "offline" : status == nil ? "unexpected" : "http"
-      var properties = ["operation": operation, "method": method, "route": operation == "auth_methods" || operation == "auth_apple_remove" ? "/v1/me" : "/v1/auth", "failure_kind": kind]
+      var properties = ["operation": operation, "method": method, "route": ["auth_methods", "auth_apple_remove", "account_delete"].contains(operation) ? "/v1/me" : "/v1/auth", "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties)
       if kind == "unexpected" { telemetry.failure(operation, kind: kind, properties: properties) }

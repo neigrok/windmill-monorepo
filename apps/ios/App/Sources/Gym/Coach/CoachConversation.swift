@@ -112,6 +112,11 @@ struct CoachDraftStore {
     }
     try FileManager.default.removeItem(at: sourceURL)
   }
+  // A deleted account's drafts leave the phone with it.
+  func delete(_ account: String) throws {
+    let url = file(account)
+    if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+  }
   // Drafts hold photos and signed-out questions, which live only on this phone: the folder stays out of every backup.
   func write(_ saved: CoachSaved, account: String) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

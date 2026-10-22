@@ -50,6 +50,10 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var upgradeRequired = false
     // Every push gets no answer, after this many seconds in flight.
     var pushesUnansweredAfter: Double?
+    // Delete account: the closed accounts and when each closes for good, a close held this long, or refused as offline.
+    var closedAccounts: [String: Int64] = [:]
+    var closeHeldSeconds: Double?
+    var closeOffline = false
     // Signed-in pulls past this many are held without an answer, so a restore stops part-way.
     var pullsAnsweredBeforeHold: Int?
   }
@@ -198,6 +202,18 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
       guard let subject = state.appleDoors.first(where: { $0.value == account })?.key else { throw AuthRefusal(code: "not-found", message: "Apple isn't added to this account.") }
       state.appleDoors[subject] = nil; state.appleEmails[subject] = nil
       if state.loseRemovalResponse { state.loseRemovalResponse = false; throw AuthRefusal.offline }
+    }
+  }
+  // DELETE /v1/me: the signed-in account closes 30 days from now, and every one of its sessions ends at once.
+  func closeAccount(_ account: String, token: SessionToken) throws -> Date {
+    try state.withLock { state in
+      guard state.authOnline, !state.closeOffline else { throw AuthRefusal.offline }
+      guard let caller = state.sessions[token.value] else { throw AuthRefusal(code: "unauthorized", message: "Sign in again to delete your account.") }
+      guard caller == account else { throw AuthRefusal(code: "account-mismatch", message: "the signed-in account changed; no account was closed") }
+      let closes = now + 30 * 86_400_000
+      state.closedAccounts[caller] = closes
+      state.sessions = state.sessions.filter { $0.value != caller }
+      return Date(timeIntervalSince1970: Double(closes) / 1000)
     }
   }
   func revoke(_ token: SessionToken) throws {

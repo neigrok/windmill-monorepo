@@ -65,6 +65,8 @@ final class AppModel {
   var signInSession: SignInSession?
   // Returning on a new phone (02c): the account's rooms arriving after a sign-in from Where to start?.
   var restore: SignInRestore?
+  // Delete account's page, from You (27a–27g).
+  var deletion: AccountDeletion?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
@@ -773,14 +775,7 @@ final class AppModel {
       _ = try await session.finish(choice)
       runtime.updateTelemetryIdentity()
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
-      signOutSession = nil; signInSession = nil
-      preferences.removeObject(forKey: "accountName:\(session.account)"); preferences.removeObject(forKey: "accountEmail:\(session.account)")
-      journal.liftInk()
-      sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
-      appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
-      email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
-      keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
-      preferences.set(false, forKey: "keepDismissed")
+      sheet = nil; forgetAccount(session.account)
       Task { await runtime.revokeSignedOutSessions(force: true) }
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
@@ -789,6 +784,19 @@ final class AppModel {
       reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }
       await refuseSignOut(Self.signOutFailed)
     }
+  }
+
+  // The account has left this phone: nothing of it stays in the model or the phone's preferences, and the phone starts
+  // again at Where to start?, its Keep offers due once more.
+  func forgetAccount(_ account: String) {
+    signOutSession = nil; signInSession = nil; restore = nil
+    preferences.removeObject(forKey: "accountName:\(account)"); preferences.removeObject(forKey: "accountEmail:\(account)")
+    journal.liftInk()
+    self.account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
+    appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
+    email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
+    keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
+    preferences.set(false, forKey: "keepDismissed"); preferences.removeObject(forKey: GymModel.keepReceipt)
   }
 
   // A sign-out that could not begin, or an answer it could not carry out, ends the held sign-out and leaves the account
