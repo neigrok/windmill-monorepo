@@ -25,7 +25,7 @@ The link grants access to anyone who possesses it; the UI states this plainly. A
 - Movement and routine filters use stable IDs. Workout corrections can change the displayed routine name without changing the frozen plan or living routine.
 - The progress projection uses the same filtered and authorized history. Estimates remain per movement; bodyweight-only movements report actual reps instead of fabricated external-load estimates.
 - Log links support whole-history or date-range scope, frozen snapshots or live updates, anonymous paging/filtering, and revocation. Links expire after 30 days. Recipient data excludes Coach conversations, private Notes and set notes.
-- Working-set classification remains a backend aggregation rule. Web planning and correction do not expose Kind; correcting an existing set preserves its classification, and a new set is working.
+- Sets have no type. Planning and correction expose none.
 
 The wire contract is [gym-history.md](../../../packages/api-contract/gym-history.md). The existing single-workout link remains available separately.
 
