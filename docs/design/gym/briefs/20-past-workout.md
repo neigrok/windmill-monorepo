@@ -92,7 +92,7 @@ them.
 - **`+ Add movement`** opens the movement picker; the movement arrives with last time's sets, or one
   empty row if it has never been lifted.
 
-There is no line-with-a-count, no `−`/`+` stepper, and no set kind: every set is Working.
+There is no line-with-a-count, no `−`/`+` stepper, and no set type.
 
 ## Save
 
