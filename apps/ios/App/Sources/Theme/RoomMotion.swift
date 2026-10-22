@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The rooms' one motion rule (docs/design/ios/ios-redesign.md §5 Motion): each act answers in place on the system spring,
+// The rooms' one motion rule: each act answers in place on the system spring,
 // a numeral rolls and a mark replaces its symbol; with Reduce Motion each is a 200 ms fade.
 nonisolated enum RoomMotion {
   static func animation(reduceMotion: Bool) -> Animation { reduceMotion ? .easeInOut(duration: 0.2) : .spring }

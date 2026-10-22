@@ -14,7 +14,7 @@ export const MAX_LOAD_KG = 500;
 export const WEIGHT_UNIT = 'kg';
 export const REPS_HINT = 'whole reps';
 
-// Pinned in briefs/15-the-routine.md, in the same words the target sheet uses, with this screen's
+// In the same words the target sheet uses, with this screen's
 // own rep band in the one sentence that names a band.
 export const ONE_DECIMAL = 'One decimal point only.';
 export const NOT_A_NUMBER = 'That is not a number yet.';

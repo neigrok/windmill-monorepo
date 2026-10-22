@@ -35,7 +35,7 @@ The product measures activation as a tree with at least three nodes and a first 
 claimed forks form the distribution loop. Numeric targets require real funnel data.
 
 Current system contracts are in [roadmap backend](../backend/SPEC.md),
-[graph sync](GRAPH_SYNC_DESIGN.md) and [roadmap design](design/roadmap/readme.md).
+[graph sync](GRAPH_SYNC_DESIGN.md) and [roadmap architecture](../web/src/products/roadmap/ARCHITECTURE.md).
 
 ## Journal
 
@@ -43,8 +43,8 @@ Give daily writing a quiet home. Search helps the writer find their own words; E
 related passages. Talk transcribes audio where the account and configured service allow it.
 
 Current behavior and privacy boundaries are in
-[journal architecture](../backend/products/journal/ARCHITECTURE.md) and
-[journal design](design/journal/journal.md).
+[journal architecture](../backend/products/journal/ARCHITECTURE.md) and Journal's principles in
+[brand foundations](design/brand-foundations.md).
 
 ## Gym
 
@@ -61,4 +61,5 @@ set. Useful measures are prefill acceptance, week-one and week-four return, and 
 A weight increased by one program step can be a successful prefill.
 
 Current data rules are in [gym architecture](../backend/products/gym/ARCHITECTURE.md),
-[Coach's wire contract](gym-coach-contract.md) and [gym design](design/gym/briefs/00-README.md).
+[Coach's wire contract](gym-coach-contract.md) and Gym's principles in
+[brand foundations](design/brand-foundations.md).

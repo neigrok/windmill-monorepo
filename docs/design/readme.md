@@ -1,8 +1,8 @@
 # Design canon — the written half
 
-Current guidelines, feature contracts and open design gaps.
-
-The product, shell and library drawings live in six Figma files.
+Brand-wide rules and open design gaps. Figma holds the drawings, with a status emoji on every
+board; the code is the truth for behaviour. The product, shell and library drawings live in six
+Figma files.
 
 | File | Key |
 |---|---|
@@ -19,25 +19,23 @@ in [Gym onboarding · Coach-led](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJ
 The Gym file's [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25)
 links directly to this flow. Shared workout and account boards stay linked from the canonical flow.
 
-The approved logo is [Windmill, node 9:129](https://www.figma.com/design/v21I1eIsWkyIaN7byJ8GdV/Windmill?node-id=9-129).
-Its source and usage are recorded in `brand-logo.md`.
+The approved logo is [Windmill, node 9:129](https://www.figma.com/design/v21I1eIsWkyIaN7byJ8GdV/Windmill?node-id=9-129);
+its assets and usage are in `brand-foundations.md`, "Logo".
 
-Figma holds the drawings. These documents hold behavior, constraints and unresolved design questions.
-Keep current requirements; remove completed plans, verification transcripts and superseded rationale.
+These documents hold rules that outlive any one screen and the questions still open. A screen's
+behaviour is not restated here: it is in the code, and its picture is in Figma.
 
 ## Layout
 
 | Path | Holds |
 |---|---|
-| `consistency.md` | The drift ledger — canon-vs-code disagreements. Start here for consistency work. |
-| `brand-foundations.md` | Brand direction, voice, visual foundations, iconography, and the standing font and logo policies. |
-| `brand-logo.md` | Approved logo source, exported assets, usage, and native icon follow-ups. |
-| `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the phone onboarding (four screens, once), account linking (one account, many sign-in doors), the four-layer system architecture, thumb reach, **the text budget**. |
-| `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
-| `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |
-| `gym/briefs/` | Current feature contracts for the gym room. |
-| `ios/` | The iOS rendering contract (`ios-redesign.md`): palettes by role, type and spacing, toolbars, menus, sheets, the per-screen build list. |
-| `marketing/` | The landing-family briefs, the pricing story, the transactional-email spec. |
+| `consistency.md` | The drift ledger — disagreements between drawings, written rules and code. Start here for consistency work. |
+| `brand-foundations.md` | Direction, voice, the honesty rules, visual foundations, iconography, fonts, the logo, and each product's standing principles. |
+| `guidelines/system-architecture.md` | The four layers that travel between products, the colour contract, the interaction laws (native idiom, gestures), grounds. |
+| `guidelines/motion-language.md` | The motion beats, their composition and the calm ceiling. |
+| `guidelines/text-budget.md` | How many words an element may spend. |
+| `guidelines/thumb-reach.md` | Where controls, guidance and identity sit on a phone. |
+| `ios/ios-redesign.md` | The iOS app's principles and its colour roles by room, which `apps/ios/App/Tools/tests/test_theme_assets.py` checks against the colour assets. |
 
 ## Rules for drawing a screen
 

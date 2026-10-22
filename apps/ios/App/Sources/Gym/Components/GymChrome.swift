@@ -12,7 +12,7 @@ struct GymPage: ViewModifier {
   }
 }
 
-// A sheet that edits a record commits from its bar (docs/design/ios/ios-redesign.md §5 Sheets): the dismissal leading,
+// A sheet that edits a record commits from its bar: the dismissal leading,
 // the commit trailing in the room's accent — the system's prominent checkmark on iOS 26, a bold label before it — so
 // nothing stands at the sheet's foot. Its destructive act is the form's last row.
 struct SheetCommit: ViewModifier {
@@ -47,7 +47,7 @@ struct SheetCommit: ViewModifier {
 }
 
 // A pushed screen, or Coach while its composer has focus, hides the tab bar, and the tab bar's accessory goes with it
-// (docs/design/ios/ios-redesign.md §7.18): the room reads this from each tab's stack.
+// (Figma Gym · iOS 03.5): the room reads this from each tab's stack.
 struct TabBarHidden: PreferenceKey {
   static let defaultValue = false
   static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
@@ -124,9 +124,9 @@ struct KeyboardBar: View {
 }
 
 // A tab's one creation act, floating bottom-trailing in the tab's reach band, 16 pt from the edge and 12 pt above the tab
-// bar, so the list's last row clears it (docs/design/ios/ios-redesign.md §4): Liquid Glass with its symbol, and its label
-// when it has one, in the accent. A bare symbol is a 60 pt circle named for VoiceOver by the act; a labelled act is a
-// 52 pt capsule. Before iOS 26 the glass is the regular material.
+// bar, so the list's last row clears it: Liquid Glass with its symbol, and its label when it has one, in the accent. A
+// bare symbol is a 60 pt circle named for VoiceOver by the act; a labelled act is a 52 pt capsule. Before iOS 26 the
+// glass is the regular material.
 struct FloatingAction: View {
   let title: String
   let symbol: String
@@ -156,7 +156,7 @@ struct FloatingAction: View {
   }
 }
 
-// The room's More: `ellipsis.circle` in the bar presenting a native Menu (docs/design/ios/ios-redesign.md §5).
+// The room's More: `ellipsis.circle` in the bar presenting a native Menu.
 struct MoreMenu<Content: View>: View {
   let identifier: String
   @ViewBuilder let content: () -> Content

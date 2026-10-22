@@ -8,10 +8,9 @@ imports the returned collection atomically on the phone.
 
 ## Design sources
 
-The current interaction contract is
-[Gym and Coach feedback](design/gym/feedback-2026-10-21.md), with the room rendering in
-[iOS redesign](design/ios/ios-redesign.md) and shared behavior in the
-[Coach brief](design/gym/briefs/09-coach.md).
+The interaction contract is the Gym file's iOS page in Figma; colour roles are in
+[iOS redesign](design/ios/ios-redesign.md) and Coach's principles in
+[brand foundations](design/brand-foundations.md).
 
 The drawing references live in
 [Gym onboarding · Coach-led](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-565)

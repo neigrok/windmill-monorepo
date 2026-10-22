@@ -33,7 +33,7 @@ export function hiddenIds(held, settled, kind) {
 
 // What the STORE has answered for, under one verb — the settled half of `hiddenIds` alone. A screen's
 // stance about the ACCOUNT reads this and its rows read `hiddenIds`: a window decides which rows are
-// drawn, never what state a screen is in (`13-gestures.md`). An id leaves it only by being written
+// drawn, never what state a screen is in (`docs/design/guidelines/system-architecture.md` §3). An id leaves it only by being written
 // again, so a day written back is a day the account holds.
 export function goneIds(settled, kind) {
   return new Set(settled.filter((each) => each.kind === kind).map((each) => each.id));
@@ -61,7 +61,7 @@ export function deleteLineOf(kind, id, projection) {
 }
 
 // What the act does NOT take with it, said at the moment of the act rather than standing on the
-// screen the act is reached from. 13-gestures Law 4 is enforced here and not at the call site: past
+// screen the act is reached from. The rule is enforced here and not at the call site: past
 // one held delete the count line takes over, and a count has no one detail to carry.
 export function heldDetail(open) {
   if (open.length !== 1) return null;

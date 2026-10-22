@@ -1,0 +1,42 @@
+# Hide workout: the logger can be left, the workout bar brings it back, and the notification's swipe only turns it off
+
+**Figma:**
+- 03.5 Hide workout, the workout waits above the tabs: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41318) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41409)
+- 03.4 This workout draws the *Hide workout* item and the *Notification off* · *Show* row (board linked from 11); 00.1 draws the workout bar's anatomy (board linked from 03).
+- Components (Gym Components page, section `🧩 Android · Material 3`):
+  - `Android / Workout bar` `1283:28333`: 412 × 48, the routine and the time since start, `keyboard_arrow_up` trailing
+  - `Android / Top app bar` Type=Workout `1260:2933`: **Finish**, the routine, ⌄ Hide
+- The iOS build is the model: *Hide workout* in This workout (`apps/ios/App/Sources/Gym/Workout/WorkoutSheets.swift:59`, `hideWorkout` at `Workout/WorkoutState.swift:750`) and the hidden workout's tab-bar accessory (`HiddenWorkoutAccessory`, `apps/ios/App/Sources/Gym/GymRoom.swift:214`).
+
+**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- A running workout cannot be left before Finish: back means `StayInTheWorkout` whenever a workout is live (`GymRoom.kt:161-185`, `live` at :398), and the navigation bar stands only when no workout is live (`railStands`, :190-191).
+- Swiping the ongoing notification away fires `Command.Hide` (`notification/WorkoutNotifications.kt:211`), which marks the workout *hidden* (`domain/WorkoutNotification.kt:50,116-117`). Gym settings then shows *Workout hidden* / *Show workout* (`ui/SettingsScreen.kt:113-119`, through `TrainingStore.showWorkout`, `store/TrainingStore.kt:228-238`). The word *hidden* there means the notification, not the workout.
+
+**Change**
+- Hide (03.5):
+  - The logger's bar ends with ⌄ **Hide**: `IconButton(Icons.Rounded.KeyboardArrowDown)`, content description *Hide workout* (the slot 03 left).
+  - This workout (03.4) gains the list item **Hide workout** (leading `keyboard_arrow_down`) under **Add movement**.
+  - Hide, **Hide workout** and system Back all leave the logger with the workout running and show the tab the lifter came from. `BackMeans.StayInTheWorkout` goes; back from the logger hides it.
+  - Remember the hidden state on this phone with the workout, so a restart with a hidden workout opens the tabs, not the logger.
+- The workout bar (03.5), new `ui/WorkoutBar.kt` from `Android / Workout bar`:
+  - Shown on every tab root while a workout runs and the logger is hidden, in the Scaffold's bottom bar right above the navigation bar.
+  - One `Surface(onClick)` row, 48 dp min, surface container, 1 dp `border/subtle` top edge: the accent `fitness_center` glyph, *Push A* (bold, ellipsis) and *· 12:34*, the time since start in tabular figures, ticking each second; `keyboard_arrow_up` trailing.
+  - A tap opens the logger. Content description *{routine}, in progress*.
+  - Not shown on pushed screens, in the editor, or while the logger is up.
+- The notification's swipe (03.4, 04 header):
+  - Swiping the notification away only turns it off. Rename the state *notification off*; it never hides the workout.
+  - This workout shows the row **Notification off** (leading `notifications`) with a quiet text button **Show**, only after the swipe. **Show** posts the notification again (today's `showWorkout(key, false)` path).
+  - Delete *Workout hidden* / *Show workout* from Gym settings (46 deletes the screen).
+
+**Out of scope:** the bar's chrome (03); This workout's other rows (11); the notification's content (15); Gym settings (46).
+
+**Done when**
+- Screenshots of 03.5 match in Dark and Daylight, and 03.4 matches in full with its two new rows; the rig (01) adds `03.5-hide-workout-dark/light` and recaptures `03.4-this-workout-dark/light`.
+- A test leaves a live workout with Hide and with Back, sees the workout bar on Routines, The log and Coach, taps it, and lands in the logger with the same rack. Another test recreates the activity with the workout hidden and finds the bar, not the logger.
+- Events: `gym_action` with `screen=workout`, `action=hide`; `screen=workout_bar`, `action=open`; `screen=workout`, `action=show_notification`, `outcome=ok` / `refused`. List them in `docs/ANDROID_OBSERVABILITY.md`. The time and the routine name are never event properties.
+- A failed Show still reports under `gym.showWorkout`.
+- Tests: `GymTabsTests.kt`, `GymRailTests.kt` (the rail and the bar stand together while hidden), `ui/LoggerScreenTests.kt`, `notification/WorkoutNotificationsTests.kt` (the swipe turns the notification off and leaves the workout shown).
+
+**Depends on:** 03, 11.
+
+**Ledger:** 12c, 9r; dogfood `android-gym-target-page`.

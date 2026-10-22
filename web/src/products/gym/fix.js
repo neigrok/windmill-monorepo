@@ -52,8 +52,8 @@ export function setNoteRefusal(note) {
   return `A set note runs to ${SET_NOTE_BYTES} bytes.`;
 }
 
-// The withheld window, on every surface (13-gestures.md Law 2). The room's `TOAST_MS` — how long a
-// SAID sentence stands — is pinned equal to it, but they are two spans: a window retires the
+// The web's withheld window (gesture law 2, `docs/design/guidelines/system-architecture.md` §3).
+// The room's `TOAST_MS` — how long a SAID sentence stands — is pinned equal to it, but they are two spans: a window retires the
 // transient itself when its last clock closes, and never on a sentence's clock.
 export const UNDO_MS = 9000;
 

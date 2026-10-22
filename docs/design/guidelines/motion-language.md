@@ -155,7 +155,7 @@ Easings (`tokens/motion.css`): `--ease-soft cubic-bezier(0.16,1,0.3,1)` ·
 | **#3 paste arrival** | camera fit → root wakes + crown ignites → rings enter on the cadence (wake per ring, dormant edges fade in with their ring) → toast ("Roadmap planted · N steps") |
 | **#4 first unlock** | camera (only if off-frame) → complete full-bloom → travels → children wake → pulse ×2 on frontier → toast |
 | **#9 unlock ceremony** | the full sentence; may add flourish only within the ceilings above |
-| **milestone share offer** | ceremony #9 verbatim; the finished limb (a root-child's whole subtree) shares one pulse ×2, and any Share action opens the public-link dialog (`roadmap/guidelines/sharing.md`); no image or video is exported |
+| **milestone share offer** | ceremony #9 verbatim; the finished limb (a root-child's whole subtree) shares one pulse ×2, and any Share action opens the public-link dialog (`brand-foundations.md`, "Publishing"); no image or video is exported |
 | **welcome-back recap** | on reopen with unseen completions (≥12h): camera fit → the unseen completions re-bloom in real order on the cadence, travels waking edges → frontier pulse ×2 → the Next panel enters (no toast) |
 
 Owning specs refine content (copy, targets), never the physics: durations, easings, ceilings

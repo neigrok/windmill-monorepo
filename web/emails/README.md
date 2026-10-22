@@ -3,6 +3,9 @@
 Resend templates have `.html` and plain-text `.txt` parts; send both. HTML uses tables, inline CSS
 and system-font fallbacks. Backend senders mint credentials and URLs; templates never hardcode them.
 
+An email is a hosted surface with one verb: at most one button, the raw URL beneath it as its
+fallback, and quiet brand chrome. A second action goes in the footer or not at all.
+
 ## Templates
 
 | Files | Resend id | Subject / trigger |
@@ -62,7 +65,7 @@ Templates are light-only: declare light `color-scheme` and `supported-color-sche
 [the design consistency ledger](../../docs/design/consistency.md).
 
 Headers keep the Windmill wordmark as text so blocked images do not hide it. Assets and logo rules
-live in [brand logo](../../docs/design/brand-logo.md).
+live in [brand foundations](../../docs/design/brand-foundations.md#logo).
 
 ## Unsubscribe
 

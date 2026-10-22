@@ -242,7 +242,7 @@ test('a routine delete taken back is never sent, and the row is back on the home
   assert.deepEqual(gym.owed(), []);
 });
 
-// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// `docs/design/guidelines/system-architecture.md` §3: a window decides which rows are drawn; it never decides what state a screen is in.
 // The sharpest instance in the room, because this stance carries an ACT: every other one only says
 // something that is wrong.
 test('the home’s empty stance and its new routine action read the store: a held delete of the only routine offers no act, and the settled one does', async (t) => {
@@ -297,7 +297,7 @@ test('a delete held when the room unmounts goes on the engine’s clock, and a r
 });
 
 // The room is torn down while the engine still holds the delete — a switch to the journal and back, inside
-// the window. 13-gestures.md: staying in the app keeps the hold, and the transient returns with the time it has left.
+// the window. Engine §7.3: staying in the app keeps the hold, and the transient returns with the time it has left.
 test('a delete held when the room unmounts is offered back on return, with the deadline it had and not a fresh window', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
@@ -1133,7 +1133,7 @@ test('a weigh-in delete taken back puts the dot and the reading back, and never 
   assert.deepEqual(room.owed(), []);
 });
 
-// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// `docs/design/guidelines/system-architecture.md` §3: a window decides which rows are drawn; it never decides what state a screen is in.
 // The stance about the account reads the STORE, so the invitation to weigh in for the first time is
 // never drawn over a number the transient is still offering back.
 test('the chart’s empty stance reads the store, so a held delete of the only weigh-in draws no invitation and the settled one does', async (t) => {

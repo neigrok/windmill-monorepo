@@ -162,7 +162,7 @@ class TargetSheetTests {
         } } finally { scope.cancel() }
     }
 
-    // A movement added from the picker opens on the open line. 15-the-routine pins the sentence on
+    // A movement added from the picker opens on the open line. The sentence is the same on
     // EVERY surface, and the sheet is its one home: the list behind it prints `open` per row and no
     // sentence. It sits ABOVE the fields, beside the never-logged line; under a field stands only
     // that field's own refusal.

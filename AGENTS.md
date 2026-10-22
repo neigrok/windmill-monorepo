@@ -1,14 +1,144 @@
-# Agent instructions
+## Project
 
-This project's instructions live in `CLAUDE.md`: read the root `CLAUDE.md`, then the `CLAUDE.md` of each tree you
-touch (`backend/CLAUDE.md`, `web/CLAUDE.md`), and follow them. `STRUCTURE.md` maps the monorepo.
-`CLAUDE.md`'s Operations section is for the orchestrating agent; as an implementation agent, skip it.
+Windmill is one brand with three self-growth products:
 
-Working rules for every task:
-- Prefer the smallest design that meets the brief; add no abstraction, option or file nobody asked for.
-- Before finishing, search the whole repository, not only your territory, for consumers of anything whose shape you
-  changed (formats, routes, registration calls, paths, tool output). Update them, or list the ones outside your territory.
-- Anything you add must build and run in CI the way it runs for you (CMake lists, Dockerfile targets, workflow steps).
-- For I/O, concurrency, retries and shutdown, test the failure paths (stalled output, exit, crash, timeout), not only
-  the happy path.
-- Report what you could not verify and why, rather than working around a blocked gate.
+- **roadmap** — an animated RPG skill tree, drawn by a hand-rolled WebGL2 renderer (no three.js).
+- **journal** — a night-canvas daily journal.
+- **gym** — a training log.
+
+One shared backend serves all three behind one account and one paid line; each surface presents the
+products it carries as one superapp. Web carries all three products. Android carries gym only
+(Kotlin/Compose, modules `:app` `:platform` `:gym`). iOS carries journal and gym: `apps/ios` holds the
+engine client, the domain kit, the app (`apps/ios/App`, on TestFlight) and a dev-only probe app. Every
+surface writes gym and journal data through the sync engine.
+
+The paid line — Windmill One — is one backend predicate, `Entitlements::hasWindmillOne`. It cannot
+be bought: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns `false`, so no surface
+offers a checkout, and `BillingApi` answers 503 while no Paddle price id is configured.
+
+This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and the
+one dependency rule** (platform is product-neutral; products depend on platform, never the reverse;
+products never depend on each other). Backend and web keep their rules in `CLAUDE.md`; native
+setup lives in each app's `README.md`. Product architecture lives beside the implementation.
+The principles below apply brand-wide.
+
+## Mission
+
+Mission driven, not money driven: make people develop themselves. Be extremely honest with
+customers — no dark patterns, no manufactured urgency, no copy that promises what the product does
+not do. When a choice trades honesty or user growth for revenue, the mission wins.
+
+## Information hygiene
+
+Docs, comments, READMEs and product copy record the CURRENT state only — not how it used to be, not
+why a decision was taken.
+
+- No stale or wrong information anywhere. A stale line is worse than a missing one.
+- When a change makes a line false, fix or delete it in the same change. Never pin a correction
+  beside a wrong line.
+- If the fix belongs to another owner, record it where that owner sees it —
+  `docs/design/consistency.md` for design/canon drift, a dogfood-tree node for build work — and say
+  so in your summary.
+- Never write a claim you have not verified. "Tested", "fixed" and "works" mean you ran it. Name
+  the part you could not verify, and why.
+
+## Architecture & Design
+
+Structure is the priority: it decides whether a system is buggy and hard to evolve or explicit and
+easy to change. Good structure makes some bugs impossible. Spend the time to refactor so a solution
+fits naturally, and leave the surrounding area better than the scope demanded.
+
+- Optimize for the reader. Favor the obvious over the clever, readable over performant.
+- Make structure explicit: a newcomer infers where things live from folder and file names alone.
+- Push complexity to the edges, keep the core small. Business logic stays pure and
+  dependency-light; I/O, vendors and frameworks live at the boundary.
+- Put the bulk of the logic in the domain layer. An Action loads data through repositories, passes
+  it to the domain layer, and persists the returned object via a Batch. If the domain logic needs
+  more data, split it into two phases rather than loading from inside it.
+- Keep the module dependency graph clear — entities do not depend on helper objects.
+- Prefer composition over inheritance. Reserve inheritance for genuine interface/template
+  relationships.
+- Inject collaborators through constructors/factories, so tests substitute fakes with no patching.
+- Write a function as an explicit, ordered, fail-fast pipeline that reads top to bottom.
+- When implementations share a fixed sequence of steps, put the sequence on the shared abstract base
+  and let each implementation override only the part that varies.
+- Inline single-call-site indirection. A separate file needs more than one consumer, or a name that
+  earns its place.
+- Group a small self-contained feature area (one file format, one integration) under one
+  feature-named package, parsing boundary included. Reserve the layered split for logic genuinely
+  reused by more than one feature.
+
+## Conventions
+
+- Use constructors on entities instead of helper functions.
+- API models: `Request` suffix inbound, `Response` suffix outbound.
+- No docstrings, no multiline commentaries.
+- Put an abstraction and its data structures in one file; each implementation gets its own file
+  unless they are small enough to share one.
+- Few, larger files. A class under 40 lines needs a good reason.
+- Give each module one reason to exist. Group small related classes by kind in one predictable file
+  (all DTOs together, all exceptions together).
+- No private (underscore-prefixed) helper functions without a strong reason — inline the logic or
+  fold it into the solution.
+
+## Testing
+
+- The test folder mirrors the project layout.
+- Prefer full assertions over partial ones.
+
+## Code Style
+
+- In if-else, return early rather than assigning to a variable.
+
+## Observability
+
+Every surface tells us what broke and what people did, never what they wrote.
+
+- Report technical failures to Sentry: the backend through `FailureReporter` and `LOG_*` (forwarded as Sentry
+  Logs); Android and iOS through the Sentry SDK; web through `web/src/telemetry/sentry.js`.
+- Send product events to Amplitude only through the first-party `POST /v1/events` intake; no client ships an
+  Amplitude key.
+- On every backend write path — REST, MCP, Coach, `/v1/sync`, server-origin doors, commands, tools, background
+  jobs — log one structured line per write (operation, product, door, outcome or refusal code, duration) and
+  report unexpected failures to Sentry under a static operation name. Expected refusals are log lines, not Issues.
+- Clients report failures at their boundaries (transport, storage, sync, auth) and emit an event for each
+  user-visible step of a flow.
+- Never send user content or secrets: journal text, mood values, workout and note names, Coach questions and
+  answers, emails, tokens, bodies, raw exception messages. Event properties are allowlisted, bounded labels.
+- A change is not done until its failures report and its steps emit events, listed in the surface's
+  observability doc.
+
+## Workflow
+
+- Act autonomously; do not wait for approval on work that follows from the plan.
+- Stage changes at the end of a phase. Commit and push the monorepo once a phase is implemented,
+  reviewed and verified — house-voice messages, `Co-Authored-By` footer.
+- Every wave goes through the gauntlet before it ships: adversarial review of the diff (correctness,
+  privacy, and observability: when this fails in production, what will we see?) → one fix pass → e2e
+  on the local stack (`.claude/skills/verify`), which also checks that the change's logs, Sentry reports and
+  events arrive → push.
+- Parallelize implementation across subagents: disjoint file territories, contract pinned in both
+  prompts.
+- For unbiased architecture advice, spin up an agent with no access to the code.
+- After each phase, note observations that could improve structure or performance in a `.md` log,
+  and act on the ones that matter most.
+- Design canon is in two halves: `docs/design/` holds the written half (brand foundations, the
+  brand-wide guidelines, the consistency ledger); six Figma files hold the drawings. Build from design specs where canon
+  exists; file descriptive tasks to designers where it does not.
+- `docs/PRODUCT_LOG.md` is the strategy narrative.
+- Keep the running log of product progress in the Windmill dogfood tree (id `t_9362d9bc883e0a1e`)
+  via the windmill MCP: create/connect nodes for new work, `set_progress` as it lands, inspect with
+  `get_tree`/`get_diagnostics`. Bet id == node id; annotate outcomes and follow-ups on nodes. Every
+  node carries a description — one or two sentences on what the work is and why — passed inline to
+  `create_node` or backfilled with `annotate_node`.
+
+## Operations
+
+You should orchestrate sub-agents and delegate the tasks to them, you only need to verify results
+Use developer agent for coding
+Use designer agent for figma and user interactions planning work
+After the implementation do one refactoring/simplification iteration to remove garbage, consolidate code and enhance the structure
+
+# Important!
+Implementing something visually without a design - hard no. Design in figma should be made and approved by human first
+Before developer starts a task that involves visual changes - make sure the task includes figma link with flows marked as ✅ Ready for dev. After developer has implemented required changes, the flow should get a prefix 🚀 In production. Developer is informed, but you need to control it. 

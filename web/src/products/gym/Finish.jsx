@@ -159,7 +159,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
       {/* The room's cap, counted the room's way: 60 CODE POINTS through `cappedName`, and never in
           the UTF-16 units a length attribute counts, which would cut an emoji in half. No counter
           beside it, and that is deliberate — the editor draws one because the editor is the surface
-          a name is worked on, and this card mints one in passing (`15-the-routine.md`). */}
+          a name is worked on, and this card mints one in passing. */}
       <input
         className="gym-keep-input"
         value={name}

@@ -8,7 +8,7 @@ import { stampWeekday } from './echoes/echoDates.js';
 
 // `addressed` is the echo margin describing THIS page: the date lifts from --journal-ink-dim to lamp
 // and nothing else moves. No weight change and no box of its own — a sticky row that reflowed would
-// change the canvas's geometry, which journal.md:56 forbids at any scroll speed. The pip and the tick
+// change the canvas's geometry, and the reading column never moves, at any scroll speed. The pip and the tick
 // keep their own colours: those encode data, and lamp would overwrite meaning.
 export function DayMarker({
   date, mood = null, energy = null, wordCount = 0, isToday = false, trailing = null, addressed = false,

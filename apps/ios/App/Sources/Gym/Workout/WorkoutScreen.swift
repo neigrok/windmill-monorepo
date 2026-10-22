@@ -318,9 +318,9 @@ struct WorkoutFacts: View {
   }
 }
 
-// The rack drafts the next set (docs/design/ios/ios-redesign.md §5): the numeral, its unit at its baseline or under it at
-// accessibility sizes, opens the wheels and rolls to each new load; the ladder steps by the load's own band; each change
-// the lifter makes to load or reps ticks, and Log set stays silent.
+// The rack drafts the next set: the numeral, its unit at its baseline or under it at accessibility sizes, opens the
+// wheels and rolls to each new load; the ladder steps by the load's own band; each change the lifter makes to load or
+// reps ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: () -> Void

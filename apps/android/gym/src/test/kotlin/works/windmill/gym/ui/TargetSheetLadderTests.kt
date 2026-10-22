@@ -40,8 +40,9 @@ import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.EngineRoomFixture
 
-// 17-set-targets: the sheet's two zooms — the head that speaks about every set at once and the
-// ladder with a row per set — on the brief's two fixtures, the ramp and the straight scheme.
+// The sheet's two zooms — the head that speaks about every set at once and the ladder with a row
+// per set — on the two fixtures every surface's tests share: Lower A's Back Squat ramp and Push A's
+// straight Bench Press.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class TargetSheetLadderTests {

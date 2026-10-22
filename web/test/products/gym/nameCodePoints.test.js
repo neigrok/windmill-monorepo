@@ -79,7 +79,7 @@ test('a note’s title counts the same fixture the same way, against the column�
 });
 
 // The finish card mints a routine in passing, so it takes the editor's CAP and its UNIT — and NOT
-// its counter. A counter is drawn where a name is worked on (`15-the-routine.md`); adding one to a
+// its counter. A counter is drawn where a name is worked on; adding one to a
 // receipt would be chrome, so its absence here is a decision and not an omission.
 test('the finish card cuts a typed routine name at sixty code points, and draws no counter', async (t) => {
   browserWith();

@@ -1,6 +1,6 @@
 import Foundation
 
-// What the workout control draws (docs/design/ios/ios-redesign.md §7.19), as the app last published it.
+// What the workout control draws (Figma Gym · iOS 04.1), as the app last published it.
 nonisolated enum WorkoutControlState: Codable, Hashable, Sendable {
   case logSet(WorkoutControlOffer, staleAt: Date)
   case openWorkout(staleAt: Date)

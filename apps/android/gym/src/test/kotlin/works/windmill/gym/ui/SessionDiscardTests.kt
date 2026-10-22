@@ -30,7 +30,7 @@ import works.windmill.sync.core.Json
 
 // D12. The session review screen draws `Discard session`. Without it the log row's long press is the
 // only way an ordinary past workout can be discarded — a gesture as the ONLY path to an action,
-// which `13-gestures.md` Law 1 forbids, and which is the very thing D7 leaned on when it put Discard
+// which gesture law 1 forbids (`docs/design/guidelines/system-architecture.md` §3), and which is the very thing D7 leaned on when it put Discard
 // behind that long press in the first place.
 //
 // The drawn door is the same ACT as the other two: the same nine-second window, the same transient

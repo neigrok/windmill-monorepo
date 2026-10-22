@@ -2,8 +2,8 @@ package works.windmill.gym.domain
 
 import kotlinx.serialization.Serializable
 
-// The screen where a lifter hands their log to their own AI: docs/design/gym/briefs/19-connected-log.md,
-// byte for byte. Every level row is a claim about backend/products/gym/adapters/mcp/GymToolCatalog.cpp
+// The screen where a lifter hands their log to their own AI, its strings pinned byte for byte by
+// `ConnectedLogTests`. Every level row is a claim about backend/products/gym/adapters/mcp/GymToolCatalog.cpp
 // and nothing else — the enumeration is the disclosure.
 object ConnectedLog {
     const val title = "Connected log"

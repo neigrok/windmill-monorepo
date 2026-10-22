@@ -67,9 +67,9 @@ struct GymRow: View {
   }
 }
 
-// A row's trailing swipe (docs/design/ios/ios-redesign.md §5 Lists): the system's round red trash circle, no word, which
-// VoiceOver names by the act it commits. A full swipe never commits it. A swipe action fills with the tint around it, so
-// the button clears the room's accent and the system paints its destructive red.
+// A row's trailing swipe: the system's round red trash circle, no word, which VoiceOver names by the act it commits. A
+// full swipe never commits it. A swipe action fills with the tint around it, so the button clears the room's accent and
+// the system paints its destructive red.
 struct TrashSwipe: ViewModifier {
   let act: String
   var enabled = true

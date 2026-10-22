@@ -30,8 +30,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.EngineRoomFixture
 
-// D7. `13-gestures.md` kept Discard out of the session row's long press only *until the withheld
-// delete exists* — it does now, so the condition has fired and the menu carries BOTH acts.
+// D7. Discard is a withheld delete, so the session row's long press carries BOTH acts.
 //
 // The `⋮` that used to carry Discard is gone with it. A gesture earns its place by REMOVING a
 // control (Law 4); adding a drawn button to every row of the log to carry an act the menu can hold

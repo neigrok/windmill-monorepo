@@ -176,7 +176,7 @@ test('the row is off the list at once, and the window runs the full nine seconds
   assert.deepEqual(titles(room.list()), ['Heavier bench?', 'More rows?']);
 });
 
-// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// `docs/design/guidelines/system-architecture.md` §3: a window decides which rows are drawn; it never decides what state a screen is in.
 test('the list’s stance reads the store: every conversation held draws no empty line, and the settled deletes draw it', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();

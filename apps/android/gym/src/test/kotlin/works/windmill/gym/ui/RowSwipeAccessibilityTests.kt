@@ -28,7 +28,7 @@ import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.RefusedSet
 
-// 13-gestures Law 1 is a PER-ROW test on Android, not a blanket cost, and this file is where the
+// Gesture law 1 (`docs/design/guidelines/system-architecture.md` §3) is a PER-ROW test on Android, not a blanket cost, and this file is where the
 // check lives for the three rows this wave gave a swipe to besides the set row.
 //
 // The routine row inherits its alternative for free: its overflow already holds the same Delete, and

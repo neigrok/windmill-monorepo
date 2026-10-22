@@ -237,7 +237,7 @@ test('a set delete settles into a session screen that never armed it, and the ro
   assert.equal(setsOn(), 0);
 });
 
-// 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
+// `docs/design/guidelines/system-architecture.md` §3: a window decides which rows are drawn; it never decides what state a screen is in.
 // Two of this screen's three derived lines are the ACCOUNT's — whether the session holds sets at
 // all, and how it ended — while the meta counts the rows under it. The store keeps the set while its
 // delete is held, so the stance can only become true once the delete leaves the store.

@@ -83,7 +83,7 @@ struct GymRoom: View {
     .sheet(item: $setupBuilder) { editing in RoutineBuilder(gym: gym, editing: editing) { routine = $0 } }
     .sheet(item: $proposal) { proposal in ProposalSheet(gym: gym, id: proposal.id) }
     // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
-    // shared (docs/design/guidelines/superapp-flow.md §5).
+    // shared.
     .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in
       SessionShareSheet(gym: gym, sessionID: request.id) { shareAfterSignIn = request.id }
     }
@@ -204,7 +204,7 @@ struct GymRoom: View {
   }
 }
 
-// A hidden workout in the tab bar's accessory (ios-redesign §7.18): its name and clock, the clock alone beside a minimized bar.
+// A hidden workout in the tab bar's accessory (Figma Gym · iOS 03.5): its name and clock, the clock alone beside a minimized bar.
 @available(iOS 26, *)
 struct HiddenWorkoutAccessory: View {
   let gym: GymModel

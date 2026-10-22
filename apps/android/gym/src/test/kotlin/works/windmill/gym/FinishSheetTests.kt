@@ -48,7 +48,7 @@ import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
-// 16-the-workout: the finish is a sheet presented over the session it just closed, and dismissing it
+// The finish is a sheet presented over the session it just closed, and dismissing it
 // leaves you in the workout you finished. That ruling costs the room three things at once — the
 // workout has to be PUSHED before the receipt rises, or a dismissal lands on the routines home; the
 // receipt has to carry its own title, because a sheet has no top bar to put one in; and it has to

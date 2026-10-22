@@ -279,7 +279,7 @@ connected-log management. None blocks the local rooms: echoes show nothing extra
 state their connection requirement.
 
 Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation, as
-the iOS contract's §8 draws it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
+Figma's phone echo boards draw it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
 44 pt target opens that day's ink below its body — up to two older passages beside their mono date
 stamps, *Useful · Not useful*, and *N more* when the reader holds the rest. Useful marks the passages
 the ink shows; Not useful retires the page's echo. One day's ink is open at a time; the count again, a
@@ -308,7 +308,7 @@ UIKit quote rectangle to check that the exact passage reaches the visible canvas
 remains read-only. `JournalEchoFlowTests`
 belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
 `WM_IOS_ECHO_SHOTS` is supplied.
-The canon is `docs/design/journal/journal.md` §§3–6 and `onboarding.md` §7; Figma's phone echo
+Journal's principles are in `docs/design/brand-foundations.md`; Figma's phone echo
 boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
 
 Fonts are bundled from official OFL sources, with licences alongside each family:
@@ -322,8 +322,9 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
 asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
 (the reach band and its primary, the transient, the bar's tint, the soft edge, the door chevron) live in
-`Sources/Theme/`, which the Live Activity extension compiles too; their values follow
-[the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
+`Sources/Theme/`, which the Live Activity extension compiles too; the colour values follow
+[the iOS colour roles](../../../docs/design/ios/ios-redesign.md), which `Tools/tests/test_theme_assets.py`
+checks against the asset catalogue. The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent

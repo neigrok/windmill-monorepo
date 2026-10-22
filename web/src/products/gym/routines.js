@@ -90,7 +90,7 @@ export const LAST_TIME_PLACEHOLDER = 'last time';
 // The head's one new word: a column whose rows disagree.
 export const VARIES_PLACEHOLDER = 'varies';
 
-// The sheet's chrome, pinned in briefs/17-set-targets.md: with the commit `Set · 5 sets` it is
+// The sheet's chrome: with the commit `Set · 5 sets` it is
 // fourteen words at first paint.
 export const EVERY_SET = 'Every set';
 export const SET_BY_SET = 'Set by set';
@@ -100,7 +100,7 @@ export const MATCH_SET_ONE = 'Match set 1';
 export const ADD_SET = 'Add set';
 export const SHEET_CHROME = [EVERY_SET, 'Sets', 'Reps', 'Weight', SET_BY_SET, FILL, ADD_SET];
 
-// Pinned in briefs/15-the-routine.md. The reps band here is the ROUTINE TARGET's 1–100; the live
+// The reps band here is the ROUTINE TARGET's 1–100; the live
 // logger's 1–99 sentence is logger/entry.js's. Each is drawn under the row that carries the fault.
 export const ONE_DECIMAL = 'One decimal point only.';
 export const NOT_A_NUMBER = 'That is not a number yet.';

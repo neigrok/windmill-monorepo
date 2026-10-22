@@ -1,5 +1,5 @@
 // The past workout as the form holds it: movements of sets, each value a number or empty, filled the
-// way the rack fills a set (17-set-targets.md) and written to the log in one request.
+// way the rack fills a set and written to the log in one request.
 //
 // A draft is `{ routineId, name, minted, movements }`; a movement is `{ key, exerciseId, target,
 // lastTime, neverLifted, sets }`, where `target` is the routine entry it came from (null when added

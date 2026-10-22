@@ -90,8 +90,8 @@ enabled USD policy. Their data is not backfilled into invented durable reservati
 The web subscription mirror does not fully represent owner access; effective entitlement and
 funded allowance must be loaded independently. Customer billing management still needs confirmed
 renewal dates, scheduled actions and supported management routes. No top-up or allowance overage
-purchase is available. The [account design](design/subscription-usage-proposal.md) describes the
-required customer display without opening checkout.
+purchase is available. The customer usage display is undrawn in its current policy
+([consistency ledger](design/consistency.md) 6u).
 
 Funded grants do not yet react to refunds, chargebacks or payment adjustments. Paid customer
 activation requires that lifecycle policy and implementation as well as supported billing controls.

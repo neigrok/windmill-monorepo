@@ -8,7 +8,7 @@
 // surge (energy 10), the flare (mood 10), the ground (energy 0), the hold (mood 0). Every animation is
 // declarative CSS on a node that does not exist at rest; there is no requestAnimationFrame in this file
 // and nothing here loops. Nothing here animates a layout property either: the head and the fill ride
-// on transforms, so a commit and a drag both reflow zero times (scales.md §6.13).
+// on transforms, so a commit and a drag both reflow zero times.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -265,7 +265,7 @@ function ScaleRow({ field, value, onChange, onCommit, bloomRef }) {
   // The head, the fill and the numeral follow the DISPLAYED value, so a pointerdown on an unset track
   // shows a value at once rather than making the writer commit before seeing one. The two PERMANENT
   // marks follow the COMMITTED one: a mark is a statement about an answer, and one that flashed while
-  // a drag crossed an end would be both false and a reward per scrub (scales.md §6.3.1).
+  // a drag crossed an end would be both false and a reward per scrub.
   const marks = value === 10 ? ' is-ceiling' : value === 0 ? ' is-floor' : '';
   const state = display == null ? ' is-unset' : ' is-set';
   const empty = display == null || display === 0 ? ' is-empty' : '';   // nothing to fill at 0

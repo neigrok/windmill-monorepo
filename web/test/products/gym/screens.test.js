@@ -32,7 +32,7 @@ test('the routine row’s overflow is Log past above Delete, and no surface offe
   assert.equal(source.includes('More for this routine'), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
-  // The gate 13-gestures.md put in front of Delete is met: it is a held engine death, and the room's
+  // Delete's gate is met: it is a held engine death, and the room's
   // window is its way back.
   assert.equal(source.includes("const remove = (routine) => log.holdDelete({\n    kind: 'routine',\n    id: routine.id,"), true);
   assert.equal((source.match(/log\.holdDelete\(/g) ?? []).length, 1);
@@ -386,7 +386,7 @@ test('a deleted set is withheld for the window, never sent and re-posted, and th
   const source = read('Log.jsx');
   assert.equal(source.includes('appendSet'), false);
   // The window is the room's: a screen that armed its own clock would settle a delete the moment the
-  // lifter walked to another screen, which is the defect 13-gestures.md names by name.
+  // lifter walked to another screen, which is the defect the window exists to prevent.
   assert.equal(source.includes('setTimeout'), false, 'the screen arms no clock of its own');
   assert.equal(source.includes('UNDO_MS'), false);
   assert.equal(source.includes("holdDelete({\n      kind: 'set',\n      id: set.id,"), true);
@@ -488,7 +488,7 @@ test('the empty routines home offers to build one, and this surface still starts
   const source = read('Routines.jsx');
   assert.equal(source.includes('<Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button>'), true);
   // Over the ACCOUNT's program and never the drawn rows: the offer is an act, and an act may not be
-  // offered over a store the window has only taken a routine off the screen of (13-gestures.md).
+  // offered over a store the window has only taken a routine off the screen of (`docs/design/guidelines/system-architecture.md` §3).
   assert.equal(source.includes("view.phase === 'ready' && complete && !hasProgram"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?)$/.test(file)) continue;

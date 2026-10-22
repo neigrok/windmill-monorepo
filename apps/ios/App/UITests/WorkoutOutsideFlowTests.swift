@@ -17,7 +17,7 @@ import XCTest
     shortcuts.terminate()
   }
 
-  // The control in Control Center (docs/design/ios/ios-redesign.md §7.19): each state drawn, and Log set from it with the app behind.
+  // The control in Control Center (Figma Gym · iOS 04.1): each state drawn, and Log set from it with the app behind.
   func testControlDrawsEachStateAndLogsTheRackFromControlCenter() {
     continueAfterFailure = false
     let appearance = ProcessInfo.processInfo.environment["WM_APPEARANCE"] ?? "light"

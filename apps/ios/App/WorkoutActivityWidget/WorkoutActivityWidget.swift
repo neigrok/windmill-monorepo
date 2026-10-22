@@ -10,7 +10,7 @@ struct WorkoutActivityBundle: WidgetBundle {
   }
 }
 
-// The workout's one control (docs/design/ios/ios-redesign.md §7.19): it draws what the app last published.
+// The workout's one control (Figma Gym · iOS 04.1): it draws what the app last published.
 struct WorkoutControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
     StaticControlConfiguration(kind: WorkoutControlState.kind, provider: Board()) { state in
@@ -29,9 +29,9 @@ struct WorkoutControl: ControlWidget {
   }
 }
 
-// The ledger's current row outside the app (docs/design/ios/ios-redesign.md §7.7): the routine and the workout clock on
-// top, which the expanded Island draws in its leading and trailing regions, then the set it would log, and Log set. The
-// compact Island keeps the clocks at .caption, its slots too narrow to scale.
+// The ledger's current row outside the app: the routine and the workout clock on top, which the expanded Island draws in
+// its leading and trailing regions, then the set it would log, and Log set. The compact Island keeps the clocks at
+// .caption, its slots too narrow to scale.
 struct WorkoutActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in

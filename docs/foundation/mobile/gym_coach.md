@@ -32,8 +32,9 @@ protocol specified here. Its installation identity follows §8.
 **§0.2 Outside this spec:**
 - Replicas, the outbox, holds, pull and claim. They are [the sync engine](../engine.md); §11
   lists what this spec requires of it.
-- What the room draws: the four beats, receipts, stances and copy. They are
-  [the Coach brief](../../design/gym/briefs/09-coach.md).
+- What the room draws: the four beats, receipts, stances and copy. They are the Gym file's Coach
+  boards ([section 08](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703)) and the
+  clients' code.
 - The agent rule of each ability (§3.4). It is canon; the catalog encodes it.
 - The system prompt's text. It is owner-supplied and preserved by the server.
 
@@ -186,7 +187,7 @@ emoji and combining marks.
 1. **Admit locally.** Refuse, keeping the draft, when:
    - there is no connection;
    - the seat is `anon` and the phone holds no installation credential with lifetime USD capacity (§8);
-   - a workout is open and the brief refuses Coach mid-workout;
+   - a workout is open, since Coach is refused mid-workout;
    - the replica has not completed its first pull of history (`coach-replica-syncing`);
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
      are attached.
@@ -299,7 +300,7 @@ and the model continues.
 The executor refuses whatever its rule refuses (INV-1). The replica executor re-checks G-3.
 
 The system prompt treats pictures, pasted text and ability results as data, never as instructions.
-Notes are directive, as the brief states.
+Notes are directive ([brand foundations](../../design/brand-foundations.md), Gym).
 
 MCP calls pass G-1 to G-3 in the server executor, under the same agent rules (INV-6).
 
@@ -566,7 +567,8 @@ A.2).
 ### §9.2 Receipt
 
 - The read receipt counts what the executor returned to the model in the turn, context reads
-  included, by identity, under the brief's four rules.
+  included, by identity, under the read receipt's four rules
+  ([brand foundations](../../design/brand-foundations.md), Gym).
 - `results` lists the ids of records the turn created. A proposal minted in the turn carries
   `threadId`.
 - A receipt stores ids only. The room reads names and serials from the records when it draws.
@@ -665,8 +667,8 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 ## Appendix B: Open decisions
 
 - **B-1 Agent rules for the log.** Appendix C marks these abilities `withheld` until canon sets
-  them. The brief's Coach never logs, fixes or deletes a set, finishes or discards a workout, or
-  writes a bodyweight; MCP runs `start_session`, `log_set`, `log_sets`, `finish_session`,
+  them. Coach never logs, fixes or deletes a set, finishes or discards a workout, or writes a
+  bodyweight ([brand foundations](../../design/brand-foundations.md), Gym); MCP runs `start_session`, `log_set`, `log_sets`, `finish_session`,
   `discard_session` and `import_session`. Proposals exist only for routines, so `proposes`
   elsewhere needs a review drawn in canon.
 - **B-2 The model per seat.** Whether `anon` turns use the same model and `max_tokens` as `bound`

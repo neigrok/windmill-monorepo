@@ -20,7 +20,7 @@ import { routineDocument, routineValue } from '../../../src/products/gym/gymRunt
 const routineFields = (document) => routineDocument(routineValue(document));
 const sessionRoutine = ({ id, ...input }) => routineDocument(RoutineValue.fromSession({ id: new Id(id, Routine), ...input }));
 
-// The fixtures every surface shares (briefs/17-set-targets.md).
+// The fixtures every surface's tests share: Lower A's Back Squat ramp and Push A's straight Bench Press.
 const RAMP = [
   { reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, { reps: 3, weightKg: 90 },
   { reps: 1, weightKg: 100 }, { reps: 5, weightKg: 80 },
