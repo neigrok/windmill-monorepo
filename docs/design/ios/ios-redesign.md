@@ -748,13 +748,14 @@ with 7.11 and 7.12.
 - No signed-out section. The sign-in offer is the Keep row under a routine Coach created and *Keep
   this log* on the finish receipt.
 - A routine row is two lines: the name (`.body.semibold`) and *4 movements · trained 3 days ago*
-  (`.subheadline ink-dim`; *never trained*).
+  (`.subheadline ink-dim`; *never trained*), with the system chevron.
 - A waiting proposal is one row in its own section at the top: *Push A · 3 changes* (*Push A · a
   removal*) over *From Coach · 6:42 PM* — the time form while it came today, the day form after
   (*From Coach · Yesterday*, *From Coach · Sep 26*) — leading `bubble.left.and.bubble.right` in
   accent, the system chevron. A connected tool's proposal names the source its card
   names (§6): *From Claude · 6:42 PM*, or *From a connected tool · 6:42 PM* when the tool gave no
-  name. Settled removal receipts are one row each.
+  name. Settled removal receipts are one row each: *Push A · a removal* over *Removed*, or *Out of
+  date* when the log refused it.
 - The root lists routines and proposals. Movement discovery belongs to routine editing and the workout.
 - Empty: `ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")` with no
   description and no central action.

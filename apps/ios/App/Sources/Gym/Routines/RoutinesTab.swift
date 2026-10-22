@@ -29,13 +29,14 @@ struct RoutinesTab: View {
           Group {
             if !receipts.isEmpty || !proposals.isEmpty {
               Section {
+                // A removal the log answered reads its settled word: Removed, or Out of date when the log refused it.
                 ForEach(receipts, id: \.proposal.id) { receipt in
                   Button { onReviewProposal?(receipt.proposal.id) } label: {
-                    GymRow(title: receipt.proposal.baseName ?? "Routine removal",
-                           meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
+                    GymRow(title: CoachCopy.proposalTitle(routine: receipt.proposal.baseName ?? receipt.proposal.proposedName, changes: 0, removal: true),
+                           meta: receipt.outcome == .applied ? CoachCopy.settled("applied", removal: true) : CoachCopy.outOfDate, trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
-                // A waiting proposal carries the accent; one out of date reads its settled word alone, as a receipt does.
+                // A waiting proposal carries the accent and opens its card; one out of date reads its settled word alone.
                 ForEach(proposals, id: \.id) { proposal in
                   let outOfDate = gym.coachProposalOutOfDate(proposal)
                   Button { onReviewProposal?(proposal.id) } label: {
@@ -50,7 +51,7 @@ struct RoutinesTab: View {
               Section {
                 ForEach(routines, id: \.id) { routine in
                   Button { selectedID = routine.id } label: {
-                    GymRow(title: routine.name, meta: gym.routineLine(routine))
+                    GymRow(title: routine.name, meta: gym.routineLine(routine), trailing: .door)
                   }.accessibilityIdentifier("routine-\(routine.id)")
                     .trashSwipe("Delete routine") { gym.run(DeleteRoutine(routine.id)) }
                     .contextMenu {
