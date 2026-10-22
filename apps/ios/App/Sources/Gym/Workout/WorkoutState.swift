@@ -302,12 +302,14 @@ struct FinishWorkout: Action {
   @ObservationIgnored private var rackBase: Prefill?
   var weightKg: Double {
     get { rackWeightKg }
-    set { editRack(weightKg: newValue, reps: reps) }
+    set { adjustRack(weightKg: newValue, reps: reps) }
   }
   var reps: Int {
     get { rackReps }
-    set { editRack(weightKg: weightKg, reps: newValue) }
+    set { adjustRack(weightKg: weightKg, reps: newValue) }
   }
+  // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
+  private(set) var adjustments = 0
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
   var message: String?
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
@@ -335,6 +337,11 @@ struct FinishWorkout: Action {
     rackSave?.cancel(); rackSave = nil; rackBase = nil
     rackWeightKg = weightKg; rackReps = reps
     activityChanged()
+  }
+  func adjustRack(weightKg: Double, reps: Int) {
+    guard weightKg != self.weightKg || reps != self.reps else { return }
+    editRack(weightKg: weightKg, reps: reps)
+    adjustments += 1
   }
   func editRack(weightKg: Double, reps: Int) {
     guard weightKg != self.weightKg || reps != self.reps else { return }

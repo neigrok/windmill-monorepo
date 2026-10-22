@@ -769,6 +769,23 @@ import SyncTesting
     #expect(workout.weightKg == 60 && workout.reps == 5 && workout.selected == first && workout.sets.count == 2)
   }
 
+  @Test func onlyTheLiftersOwnRackChangesCountTowardTheTick() throws {
+    let (harness, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 8, weightKg: 40), SetTarget(reps: 5, weightKg: 60)])
+    let workout = try begin(gym, routine: plan)
+    #expect(workout.adjustments == 0)
+    workout.weightKg = 20; workout.reps = 10; workout.reps = 10
+    #expect(workout.adjustments == 2)
+    workout.logSet()
+    #expect(workout.weightKg == 60 && workout.reps == 5 && workout.adjustments == 2)
+    _ = workout.activityOffer()
+    workout.weightKg = 65
+    harness.failNextCommit()
+    #expect(!workout.flushRack())
+    #expect(workout.weightKg == 60 && workout.adjustments == 3)
+    workout.select(second)
+    #expect(workout.adjustments == 3)
+  }
+
   @Test func straightPrefillKeepsLastWorkingLoadAndPerMovementDraft() throws {
     let (_, gym) = try fixture(), plan = try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 40), count: 3))
     let workout = try begin(gym, routine: plan)

@@ -71,7 +71,7 @@ struct WorkoutScreen: View {
     .sheet(isPresented: $wheel) {
       let movement = workout.selected.flatMap { gym.catalogue.find($0) }
       SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
-                    weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.editRack(weightKg: weightKg, reps: reps) }
+                    weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
     }
     .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
@@ -320,17 +320,12 @@ struct WorkoutFacts: View {
 
 // The rack drafts the next set (docs/design/ios/ios-redesign.md §5): the numeral, its unit at its baseline or under it at
 // accessibility sizes, opens the wheels and rolls to each new load; the ladder steps by the load's own band; each change
-// of load or reps on one movement ticks, and Log set stays silent.
+// the lifter makes to load or reps ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.dynamicTypeSize) var typeSize
-  struct Reading: Equatable {
-    let movement: ID<Exercise>?
-    let weightKg: Double
-    let reps: Int
-  }
   var body: some View {
     let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
     let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
@@ -372,9 +367,7 @@ struct WorkoutRack: View {
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
-      .sensoryFeedback(.selection, trigger: Reading(movement: workout.selected, weightKg: workout.weightKg, reps: workout.reps)) { old, new in
-        old.movement == new.movement
-      }
+      .sensoryFeedback(.selection, trigger: workout.adjustments)
   }
 }
 
