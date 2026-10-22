@@ -411,6 +411,9 @@ import UIKit
     XCTAssertFalse(app.staticTexts["Your log is saved on this device."].exists)
     createRoutine(app)
     XCTAssertEqual(app.buttons["routine-start"].label, "Start")
+    XCTAssertEqual(app.buttons["routine-close"].label, "Close")
+    XCTAssertTrue(app.navigationBars.staticTexts["1 movement · never trained"].exists, "The last-trained line is the bar's subtitle")
+    XCTAssertEqual(app.staticTexts.matching(identifier: "routine-detail-movement-bench-press").allElementsBoundByIndex.map(\.label), ["1. Bench Press", "open"])
     XCTAssertTrue(app.buttons["edit-routine"].isHittable)
     app.buttons["routine-close"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForNonExistence(timeout: 5))
@@ -607,9 +610,9 @@ import UIKit
     XCTAssertEqual(app.textFields["routine-name"].value as? String, "Custom day")
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.navigationBars["Custom day"].waitForExistence(timeout: 5))
-    let title = app.staticTexts["1. Custom press kept · yours"]
+    let title = app.staticTexts["1. Custom press kept"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
-    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept · yours", "1 × max"])
+    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept", "1 × max"])
   }
 
   func testProposalScreensInBothAppearances() {

@@ -119,13 +119,11 @@ struct RoutineDetail: View {
           Group {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-                let exercise = gym.catalogue.find(entry.exerciseId)
-                let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                GymRow(title: "\(index + 1). \(gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable")",
                        meta: Readout.target(entry.sets))
                   .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text(gym.routineLine(routine)) }
+            }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
       } else if waitsForSync {
@@ -141,9 +139,10 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).accessibilityIdentifier("routine-detail")
+      .roomTitle(routine?.name ?? "Routine", subtitle: routine.map(gym.routineLine)).navigationBarTitleDisplayMode(.inline)
+      .accessibilityIdentifier("routine-detail")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).accessibilityIdentifier("routine-close") }
+        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.accessibilityIdentifier("routine-close") }
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
