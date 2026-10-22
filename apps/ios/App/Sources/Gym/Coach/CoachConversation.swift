@@ -75,7 +75,6 @@ nonisolated struct CoachHandoff: Identifiable, Equatable {
   let account: String?
   let question: String
   var send = false
-  var purpose: CoachPurpose = .conversation
 }
 
 struct CoachDraftStore {
@@ -255,17 +254,17 @@ struct CoachDraftStore {
     var next = saved; next.photo = nil; next.photoData = nil; next.editedRequestId = next.request?.requestId
     if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
   }
-  @discardableResult func newChat(seed: String = "", purpose: CoachPurpose = .conversation) -> Bool {
+  @discardableResult func newChat(seed: String = "") -> Bool {
     guard !asking, !anonymous else { return false }
     invalidateRead()
-    var next = saved.carried; next.text = seed; next.purpose = purpose
+    var next = saved.carried; next.text = seed; next.purpose = .conversation
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
   }
   func begin(_ handoff: CoachHandoff) -> Bool {
     guard !asking else { error = "Coach is answering another message. Try again when it finishes."; return false }
-    guard allowed, draftReadable, handoff.account == owner, newChat(seed: handoff.question, purpose: handoff.purpose) else { return false }
+    guard allowed, draftReadable, handoff.account == owner, newChat(seed: handoff.question) else { return false }
     if handoff.send { send() }
     return true
   }

@@ -8,7 +8,6 @@ private struct CoachAccountDoor: EnvironmentKey { static let defaultValue: (@Mai
 private struct CoachKeepDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
 private struct CoachRoutineDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 private struct CoachSessionDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
-private struct CoachAskDoor: EnvironmentKey { static let defaultValue: (@MainActor (CoachHandoff) -> Void)? = nil }
 extension EnvironmentValues {
   var coachKeepRoutines: (@MainActor () -> Void)? {
     get { self[CoachKeepDoor.self] }
@@ -25,11 +24,6 @@ extension EnvironmentValues {
   var coachOpenSession: (@MainActor (String) -> Void)? {
     get { self[CoachSessionDoor.self] }
     set { self[CoachSessionDoor.self] = newValue }
-  }
-  // Opens Coach on a new chat with the question in the composer, sent or left for the lifter to send.
-  var coachAsk: (@MainActor (CoachHandoff) -> Void)? {
-    get { self[CoachAskDoor.self] }
-    set { self[CoachAskDoor.self] = newValue }
   }
 }
 

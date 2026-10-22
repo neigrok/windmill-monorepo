@@ -211,14 +211,14 @@ import SyncModelServer
   }
 
   @Test func creationPreservesAllEquipmentChoicesAndAcceptsOpenTargets() {
-    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
+    #expect(MovementEquipment.choices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
     #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
     #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
     #expect(draft.problem == nil)
-    for equipment in MovementCreationDraft.equipmentChoices {
+    for equipment in MovementEquipment.choices {
       draft.equipment = equipment
       #expect(draft.problem == nil)
     }

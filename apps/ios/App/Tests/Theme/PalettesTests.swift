@@ -17,7 +17,7 @@ import Testing
       ("canvas", GymPalette.canvas), ("card", GymPalette.card), ("line", GymPalette.line), ("ink", GymPalette.ink),
       ("ink-dim", GymPalette.inkDim), ("ink-faint", GymPalette.inkFaint), ("accent", GymPalette.accent),
       ("accent-soft", GymPalette.accentSoft), ("on-accent", GymPalette.onAccent), ("done", GymPalette.done),
-      ("record", GymPalette.record), ("alarm", GymPalette.alarm), ("alarm-fill", GymPalette.alarmFill),
+      ("record", GymPalette.record), ("alarm", GymPalette.alarm),
     ]
     let table = roles.map { "gym/\($0.0) \(hex($0.1, .dark)) \(hex($0.1, .light))" }.joined(separator: "\n")
     #expect(table == """
@@ -33,7 +33,6 @@ import Testing
       gym/done #9AA859 #7D8C43
       gym/record #D9B04C #6E5217
       gym/alarm #D08268 #A84E35
-      gym/alarm-fill #A84E35 #A84E35
       """)
   }
 }

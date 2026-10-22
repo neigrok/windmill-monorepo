@@ -470,7 +470,7 @@ import UIKit
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance,
       "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-fixture", "-coach-setup-fixture"]
     if restore { app.launchArguments.append("-restore-board") }
-    if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-coach-long-choices"] }
+    if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
     app.launch()
     if app.textViews["journal-editor"].waitForExistence(timeout: 3) {
       app.buttons["room-menu"].tap(); app.buttons["room-gym"].tap()

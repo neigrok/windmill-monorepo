@@ -11,9 +11,7 @@ import struct SyncModelServer.ServerCall
 struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
-  var onSetup: (() -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
-  @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
   @State private var selectedID: ID<Routine>?
   @State private var startID: ID<Routine>?

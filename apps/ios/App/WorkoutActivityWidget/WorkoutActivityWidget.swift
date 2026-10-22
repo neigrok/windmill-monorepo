@@ -30,12 +30,17 @@ struct WorkoutControl: ControlWidget {
 }
 
 // The ledger's current row outside the app (docs/design/ios/ios-redesign.md §7.7): the routine and the workout clock on
-// top, the set it would log, and Log set. The compact Island keeps the clocks at .caption, its slots too narrow to scale.
+// top, which the expanded Island draws in its leading and trailing regions, then the set it would log, and Log set. The
+// compact Island keeps the clocks at .caption, its slots too narrow to scale.
 struct WorkoutActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
       VStack(alignment: .leading, spacing: 8) {
-        WorkoutActivityHead(state: context.state).font(.headline)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          Label(context.state.title, systemImage: "dumbbell.fill").lineLimit(1)
+          Spacer(minLength: 8)
+          WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt).frame(maxWidth: 96, alignment: .trailing)
+        }.font(.headline)
         WorkoutActivityDetails(state: context.state, isStale: context.isStale)
       }.padding(16)
         .widgetURL(WorkoutActivityAttributes.workoutURL)
@@ -70,22 +75,9 @@ struct WorkoutActivityWidget: Widget {
   }
 }
 
-// The banner's head: the routine with the room symbol, and the workout clock alone at the trailing edge; the expanded
-// Island draws the same two in its leading and trailing regions.
-struct WorkoutActivityHead: View {
-  let state: WorkoutActivityAttributes.ContentState
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Label(state.title, systemImage: "dumbbell.fill").lineLimit(1)
-      Spacer(minLength: 8)
-      WorkoutActivityClock(name: "Workout time", from: state.startedAt, until: state.staleAt).frame(maxWidth: 96, alignment: .trailing)
-    }
-  }
-}
-
 // The movement, the prefilled set as the one large line, its place in the plan with the rest since the last set, and Log
-// set; before a movement is chosen, where to choose it and the rest alone. What is not yet sent is said beside the button, or above it
-// where the row is too narrow for both.
+// set; before a movement is chosen, where to choose it and the rest alone. What is not yet sent is said beside the button,
+// or above it where the row is too narrow for both.
 struct WorkoutActivityDetails: View {
   let state: WorkoutActivityAttributes.ContentState
   let isStale: Bool

@@ -87,7 +87,6 @@ struct MovementCreationDraft {
   var loadCount = 2
   var sets: [SetTarget]?
   var refusal: String?
-  static let equipmentChoices = MovementEquipment.choices
 
   var exercise: Exercise {
     Exercise(id: id, name: MovementName.trimmed(name), pattern: "isolation", equipment: equipment,
@@ -96,7 +95,7 @@ struct MovementCreationDraft {
 
   var problem: String? {
     if let problem = MovementName.problem(name) { return problem }
-    if !Self.equipmentChoices.contains(equipment) { return "check the movement name and equipment" }
+    if !MovementEquipment.choices.contains(equipment) { return "check the movement name and equipment" }
     return nil
   }
 

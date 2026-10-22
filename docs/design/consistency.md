@@ -512,9 +512,12 @@ these are the places it disagrees with a drawing, a brief or the build.
   - `ios/ios-redesign.md` §7.5 has a removal the log refused read *Out of date* on its Routines row, but the card that row
     opens is not out of date: it reads *Not applied.* with **Try again**. iOS's row reads *Not applied*, as does a
     waiting change's row once the log refused its Apply; §7.5 and task 11's settled words want *Not applied* added.
-  - Strings in code still carry the cut and pre-simple-English copy: *Your sets stay saved…* (iOS
-    `WorkoutSheets.swift`), *You decide the numbers at the rack.* (iOS, Android `Program.kt`, web
-    `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
+  - `ios/ios-redesign.md` §2 (the `gym/alarm-fill` row, the brick line under the table, white on `alarm-fill`) and §4's
+    Destructive row give a removal's primary a brick fill, where §6 draws **Remove routine** in the destructive style: iOS
+    draws it quiet with its label in the system red and holds no `gym/alarm-fill` colour. §2 wants the row and the
+    lines retired.
+  - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
+    `Program.kt`, web `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.

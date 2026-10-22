@@ -42,7 +42,7 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.clipboard", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal, onSetup: openSetup))
+          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
@@ -74,7 +74,6 @@ struct GymRoom: View {
     .environment(\.coachKeepRoutines, { app.keep(routines: true) })
     .environment(\.coachOpenRoutine, { id in routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
-    .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send, purpose: handoff.purpose) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(isPresented: Binding(get: { routine != nil }, set: { if !$0 { routine = nil } }), onDismiss: {
       if let id = startRoutine { startRoutine = nil; gym.startWorkout(routineId: id) }
@@ -178,12 +177,6 @@ struct GymRoom: View {
   var setupReady: Bool {
     coach.allowed && coach.draftReadable && !gym.coachUnavailable && gym.historyKnown && !app.signInPending && !gym.accountTransition && app.sheet == nil
   }
-  func openSetup() {
-    guard coach.allowed else { return }
-    _ = coach.beginSetup()
-    coachPath = NavigationPath(); tab = .coach
-    gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "shown"])
-  }
   func escapeSetup(_ choice: CoachSetupChoice) {
     if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
   }
@@ -193,9 +186,9 @@ struct GymRoom: View {
     guard coach.proposalTurn(id.description) != nil else { proposal = CoachProposalID(id: id.description); return }
     coachPath = NavigationPath(); revealedProposal = id.description; tab = .coach
   }
-  func ask(_ question: String, send: Bool = false, purpose: CoachPurpose = .conversation) {
+  func ask(_ question: String, send: Bool = false) {
     coachPath = NavigationPath(); tab = .coach
-    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send, purpose: purpose)
+    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send)
   }
   func receiveWorkout() {
     risingFromAccessory = false
