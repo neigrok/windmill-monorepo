@@ -6,10 +6,6 @@ import SyncAPI
 import SyncSchema
 
 nonisolated enum LogPresentation {
-  static func progressEfforts(_ progress: MovementProgress) -> [PerformedFact] {
-    let heaviest = progress.heaviest?.fact.heaviest
-    return [heaviest.flatMap { $0.weightKg == 0 ? nil : $0 }, progress.bodyweightReps?.fact.bodyweightReps].compactMap { $0 }
-  }
   static func date(_ day: LocalDay) -> Date { Calendar(identifier: .gregorian).date(from: DateComponents(year: day.year, month: day.month, day: day.day))! }
   static func instant(_ day: LocalDay, in zone: any Zone) -> Instant {
     let utc = Int64(LocalDay("1970-01-01")!.days(until: day)) * 86_400_000

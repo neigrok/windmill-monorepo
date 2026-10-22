@@ -460,8 +460,7 @@ import XCTest
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     snapshot("record-\(appearance)", app: app)
-    app.swipeUp()
-    XCTAssertTrue(app.segmentedControls["gym-record-window"].exists)
+    XCTAssertTrue(app.segmentedControls["gym-record-window"].waitForExistence(timeout: 5))
     for _ in 0..<3 where app.segmentedControls["gym-record-window"].frame.minY < 180 {
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.4))
       start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)))
@@ -493,8 +492,10 @@ import XCTest
     app.buttons["gym-bodyweight-door"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     snapshot("bodyweight-\(appearance)", app: app)
-    let crowdedPoint = app.buttons["gym-chart-point-2026-09-20"]
-    XCTAssertTrue(crowdedPoint.waitForExistence(timeout: 5)); crowdedPoint.tap()
+    let crowdedRow = app.buttons["gym-weigh-in-2026-09-20"]
+    XCTAssertTrue(crowdedRow.waitForExistence(timeout: 5))
+    for _ in 0..<4 where !crowdedRow.isHittable { app.swipeUp(velocity: .slow) }
+    crowdedRow.tap()
     let fixedDate = app.descendants(matching: .any)["gym-weigh-in-fixed-date"]
     XCTAssertTrue(fixedDate.waitForExistence(timeout: 5))
     snapshot("weigh-in-crowded-\(appearance)", app: app)
@@ -515,10 +516,9 @@ import XCTest
     app.buttons["gym-weigh-in-delete"].tap()
     XCTAssertTrue(app.buttons[deletedDay].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
-    XCTAssertFalse(app.buttons[deletedDay.replacingOccurrences(of: "gym-weigh-in-", with: "gym-chart-point-")].exists)
-    let retainedPoint = app.buttons["gym-chart-point-2026-09-23"]
-    XCTAssertTrue(retainedPoint.waitForExistence(timeout: 5))
-    XCTAssertEqual(retainedPoint.label, "82.5 kg · Sep 23"); retainedPoint.tap()
+    let retainedRow = app.buttons["gym-weigh-in-2026-09-23"]
+    XCTAssertTrue(retainedRow.waitForExistence(timeout: 5))
+    XCTAssertEqual(retainedRow.label, "82.5 kilograms, Sep 23"); retainedRow.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.textFields["gym-weigh-in-weight"].value as? String, "82.5")
     app.buttons["Cancel"].tap()

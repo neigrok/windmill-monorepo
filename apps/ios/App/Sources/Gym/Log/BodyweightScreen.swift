@@ -106,10 +106,7 @@ struct BodyweightScreen: View {
                 LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
                              label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))")
               }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
-              through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption, select: { id in
-                guard let entry = weight.entries.first(where: { $0.day.text == id }) else { return }
-                correcting = Selection(entry: entry)
-              })
+              through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption)
               .accessibilityIdentifier("gym-bodyweight-chart")
             } else {
               if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {

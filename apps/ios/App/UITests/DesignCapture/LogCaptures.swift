@@ -69,9 +69,6 @@ final class LogCaptures: DesignCapture {
     XCTAssertTrue(app.buttons["gym-fix-weight"].waitForNonExistence(timeout: 5))
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-    capture("05.6-record", look, app)
-    app.swipeUp(velocity: .slow)
-    capture("gym-movement-record-chart", look, app)
     choose("gym-record-rename", from: "gym-record-more", app, capturing: "gym-movement-record-menu", look)
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
     capture("05.9-edit-exercise", look, app)
@@ -100,6 +97,41 @@ final class LogCaptures: DesignCapture {
 
   func testWorkoutDetail() {
     captureBoard("05.3-workout-detail") { look in openWorkout(look) }
+  }
+
+  func openRecord(_ look: Look) -> XCUIApplication {
+    let app = openWorkout(look)
+    app.buttons["gym-session-movement"].firstMatch.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-record-chart"].waitForExistence(timeout: 5))
+    return app
+  }
+  func testRecord() {
+    captureBoard("05.6-record", settle: 1.5) { look in openRecord(look) }
+  }
+  // A finger held on the plot rules the point under it and reads it in the window line's place.
+  func testRecordScrub() {
+    captureBoard("05.7-record-scrub", settle: 0.2) { look in
+      let app = openRecord(look)
+      let viewport = app.descendants(matching: .any)["gym-chart-viewport"]
+      let start = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5))
+      start.press(forDuration: 0.6, thenDragTo: start.withOffset(CGVector(dx: -12, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.1)
+      XCTAssertTrue(app.staticTexts["gym-chart-reading"].exists)
+      return app
+    }
+  }
+  // The whole series, panned back to its earliest workouts.
+  func testRecordPanned() {
+    captureBoard("05.8-record-panned", settle: 1.0) { look in
+      let app = openRecord(look)
+      let all = app.segmentedControls["gym-record-window"].buttons["All"]
+      all.tap()
+      XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "the whole series")).firstMatch.waitForExistence(timeout: 5))
+      let viewport = app.descendants(matching: .any)["gym-chart-viewport"]
+      let left = viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+      left.press(forDuration: 0.01, thenDragTo: viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)), withVelocity: .fast, thenHoldForDuration: 0)
+      left.press(forDuration: 0.01, thenDragTo: viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)), withVelocity: .fast, thenHoldForDuration: 0)
+      return app
+    }
   }
   func testScreensLargestText() { for look in Look.bothAtLargestText { screens(look) } }
 

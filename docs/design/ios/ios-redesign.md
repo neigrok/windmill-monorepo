@@ -94,7 +94,7 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/overlay` | `#030606` at 72 % | `#1A1918` at 45 % | the scrim under a sheet the room draws itself |
 | `gym/ink` | `#F1F0EB` | `#1A1918` | primary text, numerals |
 | `gym/ink-dim` | `#B6B5AF` | `#4C4744` | secondary text, facts, every essential label that is not primary |
-| `gym/ink-faint` | `#727771` | `#625C58` | non-essential meta only: axis labels, planned rows, `+ 1 more` |
+| `gym/ink-faint` | `#727771` | `#625C58` | non-essential meta only: a chart's scrub rule, planned rows, `+ 1 more` |
 | `gym/accent` | `#5FCDB4` | `#106B5F` | tint: links, selection, the primary fill, chart dots, the current-set dot |
 | `gym/accent-soft` | `#5FCDB4` at 16 % | `#106B5F` at 12 % | the lifter's bubble, a selected row's wash |
 | `gym/on-accent` | `#1B1408` | `#FFFFFF` | text and symbols on the accent fill |
@@ -861,13 +861,15 @@ with 7.11 and 7.12.
 - Discard and delete raise the band naming what went: *Workout discarded* · *Weigh-in deleted* ·
   an explicit native Delete action.
 - **The Record** (`MovementRecordScreen.swift`) states each fact once: title the movement, subtitle
-  the equipment, `ellipsis.circle` holding *Rename movement*; two `FactTiles` *Best e1RM* and
-  *Heaviest*, the standing records; the chart, whose readout line appears only while a finger
-  scrubs, in place of the window line *last 12 weeks · 28 workouts* (*the whole series · 23
-  workouts*), whatever opened the screen; axis labels at the plate step; then **Earlier records**,
-  every earlier best, newest first, in `ink` (*105 × 5 · e1RM 122.5* over *Sep 17*),
-  drawn only when there is one. The standing best is the tile's and never a row. Facts and axis
-  labels keep monospaced digits in the text face.
+  the equipment (*Barbell*), `ellipsis.circle` holding *Edit exercise*; two `FactTiles` on their own
+  cards, *Best e1RM* and *Heaviest*, the standing records; then *Estimated strength* with *12 weeks
+  | All* beside it, and the chart: a dot per workout, the standing best's in `gym/record`, three axis
+  labels in `ink-dim` at the plate step, month ticks that pan with the plot, and under a finger a
+  scrub rule whose readout (*116.7 kg est · Sep 8 · 100 × 5*) takes the place of the window line
+  *last 12 weeks · 28 workouts* (*the whole series · 23 workouts*), whatever opened the screen; then
+  **Earlier records**, every earlier best, newest first, in `ink` (*105 × 5 · e1RM 122.5* over *Sep
+  17*), drawn only when there is one. The standing best is the tile's and never a row. Window lines,
+  readouts, Earlier records and axis labels take the monospaced face.
 - **Bodyweight** (`BodyweightScreen.swift`): a weigh-in row is a `GymRow` whose title is the weight
   *82.4 kg* (monospaced digits) and whose trailing fact is its day in the day form (*Sep 26*,
   *Today*; the year only when it is not the current one), then `DoorChevron`, since it opens the
