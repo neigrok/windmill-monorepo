@@ -842,7 +842,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     ReviewSheet(
                         onBusy = { reviewBusy = it },
                         proposalId = open.proposalId,
-                        routineId = open.routineId,
                         store = store,
                         // Offered only where Coach itself is: an account, and a deployment that has one.
                         onAsk = if (account.isSignedIn && !askAbsent) {

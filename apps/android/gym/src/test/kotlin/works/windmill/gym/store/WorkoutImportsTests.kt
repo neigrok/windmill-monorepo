@@ -781,6 +781,38 @@ class WorkoutImportsTests {
     }
 
     // A signed-out workout started from a routine that was deleted before sign-in.
+    // The phone refuses what the account would, before sending: the domain's import checks run over the saved copy.
+    @Test fun aSavedWorkoutOnAMovementTheCatalogueLacksIsRefusedByThePhone() {
+        val row = finished().copy(sets = listOf(finished().sets.single().copy(exerciseId = "ghost-movement")))
+        engine().use { engine ->
+            val imports = WorkoutImports(engine)
+            imports.prepare(row)
+            assertEquals(emptyList<Json>(), outbox(engine))
+            assertEquals(listOf(ImportRefusal(row.session.id, row.session, row.sets, row.deleted, "unknown-exercise",
+                WorkoutImports.reason("unknown-exercise"))), imports.refusals())
+            imports.replaceAndRetry(row.session.id, finished())
+            assertEquals(1, outbox(engine).size)
+            assertEquals(emptyList<ImportRefusal>(), imports.refusals())
+        }
+    }
+
+    @Test fun anOpenSavedWorkoutRetriedWhileTheAccountTrainsIsRefusedByThePhone() = runBlocking {
+        val server = EngineRoomFixture.server()
+        accountWorkout(server)
+        engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Working, 2_000))
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            val imports = WorkoutImports(local)
+            assertEquals("session-open", imports.refusals().single().code)
+            imports.retry("session01")
+            assertEquals("session-open", imports.refusals().single().code)
+            assertEquals(emptyList<Json>(), outbox(local))
+        }
+    }
+
     @Test fun frozenPlanLineageRefusesMissingRoutineWithoutAlteration() {
         val row = finished().copy(session = finished().session.copy(routineId = "routine01",
             plan = PlanSnapshot("Original", listOf(PlanEntry("back-squat", listOf(SetTarget(5, 60.0)))))))

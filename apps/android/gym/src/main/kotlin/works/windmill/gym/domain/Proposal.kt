@@ -200,13 +200,6 @@ data class Proposal(
         return run[at - 1].exerciseId
     }
 
-    // Only a routine that has moved PAST the base counts. A head answers no — it carries no base.
-    fun supersededBy(routine: Routine?): Boolean {
-        val base = baseRevision ?: return false
-        val held = routine ?: return false
-        return held.revision > base
-    }
-
     fun byline(nowMs: Long): String = "from ${source.name} · ${Readout.whenLogged(createdAtMs, nowMs)}"
 
     fun summaryLine(routineName: String): String {
