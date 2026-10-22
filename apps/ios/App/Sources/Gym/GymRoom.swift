@@ -40,7 +40,7 @@ struct GymRoom: View {
 
   var tabs: some View {
     TabView(selection: $tab) {
-      SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
+      SwiftUI.Tab("Routines", systemImage: "list.bullet.clipboard", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
           root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal, onSetup: openSetup))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }

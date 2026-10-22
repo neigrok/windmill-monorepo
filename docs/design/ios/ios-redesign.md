@@ -378,7 +378,7 @@ caption (§5).
 ### The tab bar
 
 The system `TabView` with the `Tab` API, `.tabBarMinimizeBehavior(.onScrollDown)` on iOS 26.
-Routines `list.bullet.rectangle` · The log `calendar` · Coach `bubble.left.and.bubble.right`.
+Routines `list.bullet.clipboard` · The log `calendar` · Coach `bubble.left.and.bubble.right`.
 The `TabView` carries `gym/accent` as its tint, so the selected tab is verdigris; the system draws
 the selection, the room supplies the symbol (`12-native-idiom.md`). Hidden on every pushed screen
 and sheet, and while Coach's composer has focus (`.toolbarVisibility(.hidden, for: .tabBar)`). On

@@ -805,9 +805,8 @@ it in these places.
 
 ### Figma reconciliation
 
-- **Coach setup chrome.** The tab bar component draws Routines as `list.bullet.clipboard`; the app
-  uses `list.bullet.rectangle`, which joins the library with 10u. Short conversations start at the
-  top in the targets; the app keeps them bottom-aligned.
+- **Coach setup chrome.** Short conversations start at the top in the targets; the app keeps them
+  bottom-aligned.
 - **Coach creation-row typography.** The app's receipt rows are the shared iOS `GymRow`: semibold
   body routine name and subheadline metadata. Target 01.9 (`1173:4471`) draws them with the library
   `iOS / List row`; compare the type treatment when the build lands.
