@@ -14,6 +14,15 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
+  // Turns the open set wheel's load to a number, in the unit the wheel reads, and commits it with the checkmark.
+  func turnLoadWheel(to load: String) {
+    let wheel = pickerWheels.element(boundBy: 0)
+    XCTAssertTrue(wheel.waitForExistence(timeout: 5))
+    let unit = (wheel.value as? String)?.split(separator: " ", maxSplits: 1).last.map(String.init) ?? "kg"
+    wheel.adjust(toPickerWheelValue: "\(load) \(unit)")
+    buttons["set-wheel-done"].tap()
+  }
+
   func cancelConfirmation() {
     let cancel = buttons["Cancel"]
     if cancel.exists { cancel.tap(); return }

@@ -12,7 +12,7 @@ struct WorkoutScreen: View {
   @State var addMovement = false
   @State var addAfterAssembly = false
   @State var fixing: TrainingSet?
-  @State var keypad: SetKeypad.Field?
+  @State var wheel = false
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
@@ -68,18 +68,16 @@ struct WorkoutScreen: View {
     .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
       if let set = fixing { SetEditor(gym: gym, set: set, routine: workout.session?.plan?.routine, identifier: "workout-fix") }
     }
-    .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
-      if let keypad {
-        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps), basis: MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) })) { value in
-          if keypad == .weight { workout.weightKg = value } else { workout.reps = Int(value) }
-        }
-      }
+    .sheet(isPresented: $wheel) {
+      let movement = workout.selected.flatMap { gym.catalogue.find($0) }
+      SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
+                    weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.editRack(weightKg: weightKg, reps: reps) }
     }
     .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
-    .onChange(of: keypad) { _, field in workout.rackEditing = field != nil }
+    .onChange(of: wheel) { _, open in workout.rackEditing = open }
     .onAppear {
       if workout.sessionId != gym.openSession?.id && gym.openSession != nil { workout.restore() }
       workout.reconcile(); updateAwake()
@@ -123,7 +121,7 @@ struct WorkoutScreen: View {
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
-          WorkoutRack(workout: workout, edit: { keypad = $0 })
+          WorkoutRack(workout: workout, edit: { wheel = true })
             .padding(RoomSpace.inset)
             .background {
               UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
@@ -318,16 +316,16 @@ struct WorkoutFacts: View {
 
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
-  let edit: (SetKeypad.Field) -> Void
+  let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })) { edit(.weight) }
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) }), edit: edit)
       HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= 1)
-        Button { edit(.reps) } label: {
+        Button(action: edit) {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
             .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56)

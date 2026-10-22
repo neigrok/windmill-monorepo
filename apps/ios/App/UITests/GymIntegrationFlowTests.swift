@@ -49,8 +49,7 @@ import XCTest
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
     app.buttons["workout-fix-weight"].tap()
-    for digit in ["6", "2", ".", "5"] { app.buttons["workout-key-\(digit)"].tap() }
-    app.buttons["workout-keypad-set"].tap()
+    app.turnLoadWheel(to: "62.5")
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20)); capture(app, "e2e-receipt")

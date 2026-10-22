@@ -16,17 +16,6 @@ final class WorkoutCaptures: DesignCapture {
       app.navigationBars.buttons["Cancel"].tap()
       XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["workout-assembly-add"].waitForNonExistence(timeout: 5))
-      app.buttons["workout-weight"].tap()
-      XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
-      capture("03.2-load-and-reps", look, app)
-      app.buttons["Cancel"].tap()
-      XCTAssertTrue(app.buttons["workout-key-1"].waitForNonExistence(timeout: 5))
-      app.buttons["workout-reps"].tap()
-      XCTAssertTrue(app.navigationBars["Reps"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
-      capture("gym-workout-reps-keypad-sheet", look, app)
-      app.navigationBars["Reps"].buttons["Cancel"].tap()
-      XCTAssertTrue(app.buttons["workout-key-1"].waitForNonExistence(timeout: 5))
       let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
       XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
       XCTAssertTrue(app.buttons["workout-fix-save"].waitForExistence(timeout: 5))
@@ -35,6 +24,15 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
       capture("gym-workout-rack-second-movement", look, app)
+    }
+  }
+
+  func testLoadAndReps() {
+    captureBoard("03.2-load-and-reps", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
+      XCTAssertTrue(app.pickerWheels["16 kg each"].waitForExistence(timeout: 5))
+      return app
     }
   }
 
@@ -55,9 +53,7 @@ final class WorkoutCaptures: DesignCapture {
       let app = launch("workout-planned", look)
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
       app.buttons["workout-weight"].tap()
-      XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
-      for key in ["1", "0", "5"] { app.buttons["workout-key-\(key)"].tap() }
-      app.buttons["workout-keypad-set"].tap()
+      app.turnLoadWheel(to: "105")
       app.buttons["workout-log"].tap()
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
       let heavier = app.alerts["Save 105 to Lower A?"]

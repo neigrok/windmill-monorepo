@@ -443,15 +443,8 @@ import XCTest
     XCTAssertTrue(weight.waitForExistence(timeout: 5))
     snapshot("fix-\(appearance)", app: app)
     weight.tap()
-    let delete = app.buttons["workout-key-delete"]
-    XCTAssertTrue(delete.waitForExistence(timeout: 5))
-    for _ in 0..<8 where app.staticTexts["workout-keypad-value"].label != "—" { delete.tap() }
-    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "—")
-    XCTAssertFalse(app.buttons["workout-keypad-set"].isEnabled)
-    app.buttons["workout-key-9"].tap(); app.buttons["workout-key-0"].tap()
-    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "90")
-    // Set and Save each land before their sheet leaves, so what they wrote is read, not awaited: a wait drops a slow accessibility read at its timeout.
-    app.buttons["workout-keypad-set"].tap()
+    // The checkmark and Save each land before their sheet leaves, so what they wrote is read, not awaited: a wait drops a slow accessibility read at its timeout.
+    app.turnLoadWheel(to: "90")
     XCTAssertEqual(weight.label, "Weight, 90 kg total")
     app.buttons["gym-fix-save"].tap()
     XCTAssertTrue(weight.waitForNonExistence(timeout: 5))

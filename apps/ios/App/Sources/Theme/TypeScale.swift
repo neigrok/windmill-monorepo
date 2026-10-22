@@ -36,13 +36,6 @@ struct GymNumeral: ViewModifier {
   }
 }
 
-struct GymKeypadNumeral: ViewModifier {
-  @ScaledMetric(relativeTo: .largeTitle) private var size = 60.0
-  func body(content: Content) -> some View {
-    content.font(.system(size: min(size, 84), weight: .bold, design: .rounded)).monospacedDigit()
-  }
-}
-
 enum RoomSpace {
   static let small: CGFloat = 4
   static let related: CGFloat = 8
