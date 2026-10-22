@@ -307,7 +307,7 @@ import Vision
   }
 
   // This workout counts each movement's working sets against its plan, adds a movement from its own list, and hides the
-  // workout without promising a place the phone does not draw.
+  // workout with no footer under it.
   func testThisWorkoutCountsSetsAgainstThePlanAndHidesTheWorkout() {
     let app = launch(appearance: "light")
     app.buttons["workout-assembly"].tap()
@@ -315,24 +315,40 @@ import Vision
     XCTAssertTrue(app.buttons["Back Squat, 2 of 4 sets"].exists)
     XCTAssertTrue(app.buttons["Romanian Deadlift, 0 of 3 sets"].exists)
     XCTAssertTrue(app.buttons["workout-assembly-add"].exists)
-    XCTAssertFalse(app.staticTexts["Your sets stay saved. Restore this workout from Gym settings."].exists)
-    let footer = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
-      ? "Your sets stay saved. Tap the workout above the tabs to return." : "Your sets stay saved. Find it at the top of The log."
-    XCTAssertTrue(app.staticTexts[footer].exists)
+    XCTAssertTrue(app.buttons["workout-hide"].exists)
+    XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Your sets stay saved")).count, 0)
+  }
+
+  // A movement with no sets and no plan leaves This workout by the trash swipe; one holding sets offers no trash.
+  func testThisWorkoutRemovesAnEmptyMovementBySwipe() {
+    let app = launch("workout-free")
+    app.buttons["workout-assembly"].tap()
+    let deadlift = app.buttons["workout-movement-romanian-deadlift"], squat = app.buttons["workout-movement-back-squat"]
+    XCTAssertTrue(deadlift.waitForExistence(timeout: 5))
+    deadlift.swipeLeft()
+    let trash = app.buttons["trash-swipe"]
+    XCTAssertTrue(trash.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(trash.label, "Remove movement")
+    trash.tap()
+    XCTAssertTrue(deadlift.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-movement-")).count, 1)
+    squat.swipeLeft()
+    XCTAssertFalse(app.buttons["trash-swipe"].waitForExistence(timeout: 2), "A movement holding sets offers no trash")
   }
 
   // Hidden heads The log, or stands in the tab bar's accessory on iOS 26: either brings the logger back with its sets.
   func testHiddenWorkoutReturnsFromTheLogWithItsSets() {
     let app = launch()
     app.buttons["workout-log"].tap()
-    let retained = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 5)); app.tabBars.buttons["The log"].tap()
     let hidden = app.buttons["gym-hidden-workout"]
     XCTAssertTrue(hidden.waitForExistence(timeout: 5)); hidden.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, retained)
+    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
   }
 
   func testDismissLocalFailureRevealsDurableWorkoutRefusal() {

@@ -3,8 +3,9 @@ import DomainKit
 import GymDomain
 import SyncCore
 
-// This workout: each movement's working sets against its plan, a gym/done check once every planned set is logged, Add movement
-// as the list's last row, and Hide workout.
+// This workout (03.4): each movement's working sets against its plan, a gym/done check once every planned set is logged, Add
+// movement as the list's last row, and Hide workout. Out of edit mode a long press lifts a row by its drawn handle and a
+// swipe shows the trash, which an editing list hides; VoiceOver moves and removes through the row's actions.
 struct WorkoutAssembly: View {
   @Bindable var workout: WorkoutState
   let add: () -> Void
@@ -16,51 +17,39 @@ struct WorkoutAssembly: View {
         Group {
           Section {
             ForEach(workout.walk.order, id: \.self) { id in
-              HStack {
-                Button {
-                  workout.select(id)
-                  if workout.selected == id { dismiss() }
-                } label: {
-                  let ledger = workout.ledger(id)
-                  GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement", meta: ledger.tally,
-                         trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
-                }.buttonStyle(.borderless)
-                if workout.canRemove(id) {
-                  Button(role: .destructive) { workout.remove(id) } label: {
-                    Image(systemName: "trash").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-                  }.buttonStyle(.borderless)
-                    .accessibilityLabel("Remove exercise").accessibilityIdentifier("workout-remove-\(id)")
+              let ledger = workout.ledger(id), exercise = workout.gym.catalogue.find(id)
+              let index = workout.walk.order.firstIndex(of: id) ?? 0, last = workout.walk.order.count - 1
+              Button {
+                workout.select(id)
+                if workout.selected == id { dismiss() }
+              } label: {
+                HStack(spacing: RoomSpace.related) {
+                  GymRow(title: exercise?.name ?? "Movement", meta: ledger.tally, trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
+                  Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
                 }
-              }
-              .contextMenu {
-                if let exercise = workout.gym.catalogue.find(id) {
-                  Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise }
+              }.accessibilityIdentifier("workout-movement-\(id)")
+                .trashSwipe("Remove movement", enabled: workout.canRemove(id)) { workout.remove(id) }
+                .contextMenu {
+                  if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
+                  Button("Move up") { move(index, by: -1) }.disabled(index == 0)
+                  Button("Move down") { move(index, by: 1) }.disabled(index == last)
+                  if workout.canRemove(id) {
+                    Button("Remove movement", systemImage: "trash", role: .destructive) { workout.remove(id) }
+                  }
                 }
-                if workout.canRemove(id) {
-                  Button("Remove exercise", systemImage: "trash", role: .destructive) { workout.remove(id) }
-                }
-              }
-              .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
-              .deleteDisabled(!workout.canRemove(id)).moveDisabled(workout.finishing)
-              .accessibilityAction(named: "Move up") {
-                if let index = workout.walk.order.firstIndex(of: id), index > 0 { workout.move(from: IndexSet(integer: index), to: index - 1) }
-              }
-              .accessibilityAction(named: "Move down") {
-                if let index = workout.walk.order.firstIndex(of: id), index + 1 < workout.walk.order.count { workout.move(from: IndexSet(integer: index), to: index + 2) }
-              }
+                .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
+                .moveDisabled(workout.finishing)
+                .accessibilityAction(named: "Move up") { move(index, by: -1) }
+                .accessibilityAction(named: "Move down") { move(index, by: 1) }
             }.onMove { workout.move(from: $0, to: $1) }
             Button("Add movement", systemImage: "plus.circle.fill", action: add).accessibilityIdentifier("workout-assembly-add")
           }
-          // The footer names the one way back: the tab bar's accessory on iOS 26, The log's Hidden row before it.
           Section {
             Button("Hide workout") { if workout.gym.hideWorkout() { dismiss() } }
               .disabled(workout.finishing || workout.gym.accountTransition).accessibilityIdentifier("workout-hide")
-          } footer: {
-            if #available(iOS 26, *) { Text("Your sets stay saved. Tap the workout above the tabs to return.") }
-            else { Text("Your sets stay saved. Find it at the top of The log.") }
           }
         }.listRowBackground(GymPalette.card)
-      }.environment(\.editMode, .constant(.active)).modifier(GymPage()).navigationTitle("This workout").navigationBarTitleDisplayMode(.inline)
+      }.modifier(GymPage()).navigationTitle("This workout").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
         }.roomBar(.gym)
@@ -73,6 +62,12 @@ struct WorkoutAssembly: View {
       .sheet(isPresented: Binding(get: { exerciseToEdit != nil }, set: { if !$0 { exerciseToEdit = nil } })) {
         if let exerciseToEdit { RenameMovementSheet(gym: workout.gym, exercise: exerciseToEdit) }
       }
+  }
+
+  func move(_ index: Int, by offset: Int) {
+    let target = index + offset
+    guard workout.walk.order.indices.contains(target), !workout.finishing else { return }
+    workout.move(from: IndexSet(integer: index), to: offset > 0 ? target + 1 : target)
   }
 }
 
