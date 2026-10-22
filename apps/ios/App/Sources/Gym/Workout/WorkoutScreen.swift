@@ -154,11 +154,14 @@ struct WorkoutLedger: View {
     let ledger = workout.ledger(exerciseId)
     let unsent = gym.unsentSets(workout.sets)
     let fixable = !(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
+    let movement = gym.catalogue.find(exerciseId)
     VStack(spacing: RoomSpace.related) {
       Button(action: assembly) {
-        Text(gym.catalogue.find(exerciseId)?.name ?? "Movement")
-          .font(.title2.weight(.bold)).multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
+        HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+          Image(systemName: MovementEquipment(movement).symbol).font(.title3).accessibilityHidden(true)
+          Text(movement?.name ?? "Movement").font(.title2.weight(.bold)).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity)
       }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
         .accessibilityHint("Open this workout’s movements")
         .padding(.horizontal, RoomSpace.inset)
@@ -314,12 +317,18 @@ struct WorkoutFacts: View {
   }
 }
 
+// The rack drafts the next set: each change of load or reps on one movement ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  struct Reading: Equatable {
+    let movement: ID<Exercise>?
+    let weightKg: Double
+    let reps: Int
+  }
   var body: some View {
-    VStack(spacing: RoomSpace.related) {
+    VStack(spacing: RoomSpace.inset) {
       WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) }), edit: edit)
       HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
@@ -328,8 +337,8 @@ struct WorkoutRack: View {
         Button(action: edit) {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
-            .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56)
-        }.accessibilityIdentifier("workout-reps")
+            .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         Button { workout.reps = min(99, workout.reps + 1) } label: {
           Image(systemName: "plus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= 99)
@@ -341,6 +350,9 @@ struct WorkoutRack: View {
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+      .sensoryFeedback(.selection, trigger: Reading(movement: workout.selected, weightKg: workout.weightKg, reps: workout.reps)) { old, new in
+        old.movement == new.movement
+      }
   }
 }
 

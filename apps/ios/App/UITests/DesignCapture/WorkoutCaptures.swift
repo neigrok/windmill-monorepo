@@ -27,6 +27,28 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
+  // The rack at Upper A's dumbbell press, after a +1 and one rep fewer, and at the pull-up's added load.
+  func testRack() {
+    let rack = { (look: Look) -> XCUIApplication in
+      let app = self.launch("workout-upper", look)
+      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("03.1-rack-dumbbells", settle: 1.5, opening: rack)
+    captureBoard("03.11-rack-changed", settle: 1.5) { look in
+      let app = rack(look)
+      app.buttons["workout-weight-step-2"].tap(); app.buttons["workout-reps-minus"].tap()
+      XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 17 kg each"))
+      return app
+    }
+    captureBoard("03.12-rack-bodyweight", settle: 1.5) { look in
+      let app = rack(look)
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 10 kg added"))
+      return app
+    }
+  }
+
   func testLoadAndReps() {
     captureBoard("03.2-load-and-reps", settle: 1.5) { look in
       let app = launch("workout-upper", look)

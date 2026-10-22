@@ -107,13 +107,6 @@ struct WeightInstrument: View {
             .accessibilityLabel("\(label) \(basis.unit)").accessibilityIdentifier("\(identifier)-step-\(index)")
         }
       }.font(.body.monospacedDigit())
-      if basis.value == "dumbbell" {
-        Text("\(basis.loadCount == 1 ? "One dumbbell" : "Two dumbbells") · \(Readout.weight(max(0, weightKg) * Double(basis.loadCount))) kg total")
-          .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-      } else if basis.value == "bodyweight" {
-        Text(weightKg < 0 ? "Assistance" : weightKg == 0 ? "Bodyweight only" : "Added weight only")
-          .font(.caption).foregroundStyle(GymPalette.inkDim)
-      }
     }.frame(maxWidth: .infinity)
   }
 }

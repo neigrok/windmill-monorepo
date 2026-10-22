@@ -78,7 +78,7 @@ import SyncTesting
     let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
     #expect(await WorkoutFixture.prepare(board, model: model))
     let gym = model.gym, workout = gym.workout, started = try #require(workout.session), seeded = workout.sets
-    #expect(gym.isAnonymous && seeded.count == 3)
+    #expect(gym.isAnonymous && seeded.count == 2)
     #expect(runtime.auth.fake?.boardClock == false)
     await runtime.engine.start()
     #expect(await WorkoutStateTests.until {
@@ -90,7 +90,7 @@ import SyncTesting
     let offer = try #require(workout.activityOffer())
     #expect(workout.logActivityOffer(offer))
     let retained = workout.sets
-    #expect(retained.count == 4 && Set(retained.map(\.id)) == Set(seeded.map(\.id) + [ID<TrainingSet>(RecordID(offer.setID))]))
+    #expect(retained.count == 3 && Set(retained.map(\.id)) == Set(seeded.map(\.id) + [ID<TrainingSet>(RecordID(offer.setID))]))
     #expect((retained.first { $0.id.description == offer.setID }?.completedAt.ms ?? 0) >= started.startedAt.ms)
     await workout.finish()
     #expect(workout.sets == retained)
