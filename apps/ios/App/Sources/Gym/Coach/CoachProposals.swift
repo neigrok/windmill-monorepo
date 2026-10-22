@@ -60,7 +60,8 @@ extension GymModel {
   }
   func updateCoachProposals(_ read: CoachProposalsRead) {
     if proposalReadReplica != read.replica || isAnonymous {
-      shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:]; refusedCoachApplies = []
+      shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:]
+      sentCoachApplies = []; landedCoachApplies = []; refusedCoachApplies = []
     }
     proposalReadReplica = read.replica
     publish(\.coachRemovalReceipts, read.receipts)
@@ -75,17 +76,20 @@ extension GymModel {
       do {
         if case .committed(let settled, _) = try runner.run(RecordRoutineRemovalOutcomes(replica: read.replica)) {
           for receipt in settled {
-            if receipt.outcome == .refused { refusedCoachApplies.insert(receipt.proposal.id) }
             telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
           }
         }
       } catch { report("gym_action", error) }
     }
+    // An Apply this phone sent is judged once the log's answer reaches it: taken, it has landed; refused, its card says so.
+    for id in sentCoachApplies where !read.queued.contains(id) {
+      sentCoachApplies.remove(id)
+      if visible.first(where: { $0.id == id })?.state == "applied" { landedCoachApplies.insert(id) } else { refusedCoachApplies.insert(id) }
+    }
     // Any other decision is recorded once the log's answer reaches the phone: the queue lets it go, the proposal says how.
     for (id, decision) in awaitedCoachDecisions where !read.queued.contains(id) {
       awaitedCoachDecisions[id] = nil
       let taken = visible.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
-      if decision == .apply, !taken { refusedCoachApplies.insert(id) }
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])
     }
   }
@@ -131,8 +135,10 @@ extension GymModel {
     let outcome = apply ? run(ApplyProposalKeepingReceipt(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
     let removal = apply && proposal.intent == "remove"
+    let queued = ok && coachProposalAwaitingReceipt(proposal.id)
+    if queued && apply { sentCoachApplies.insert(proposal.id) }
     // A removal's answer is its receipt; any other queued decision waits for updateCoachProposals to see the log's answer.
-    if ok && !removal && coachProposalAwaitingReceipt(proposal.id) { awaitedCoachDecisions[proposal.id] = decision }
+    if queued && !removal { awaitedCoachDecisions[proposal.id] = decision }
     else if !ok || !removal {
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": decision.rawValue, "outcome": ok ? "decided" : "failed"])
     }
@@ -199,6 +205,7 @@ extension GymModel {
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "retry", "outcome": "failed"]); return nil
     }
     start()
+    if coachQueuedDecision(id) == .apply { sentCoachApplies.insert(id) }
     return Task {
       await runtime.engine.flushOnLeave()
       let taken: Bool

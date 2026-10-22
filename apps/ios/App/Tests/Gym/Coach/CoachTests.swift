@@ -1602,6 +1602,37 @@ import SyncTesting
     h.sync(); gym.refresh()
     #expect(card.stance == .applied && card.failure == nil && gym.routines.first?.name == "Push B")
   }
+  // Only an Apply this phone sent that the log took lands, with the bounce and the haptic: one refused before it was sent,
+  // one the log refused and one applied elsewhere settle without them.
+  @Test func onlyAnApplyThisPhoneSentAndTheLogTookLands() throws {
+    let (h, gym) = fixture(), elsewhere = GymModel(runner: h.runner)
+    elsewhere.account = "coach-owner"
+    gym.run(CreateExercise(Exercise(id: ID("landed-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routines = ["push", "pull"].map { Draft(new: Routine(id: ID(RecordID("landed-" + $0)), name: $0.capitalized, entries: [RoutineEntry(exerciseId: ID("landed-bench"))])) }
+    for index in routines.indices { #expect(saved(gym.save(&routines[index]))) }
+    h.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("landed-here"), routineId: routines[0].id, name: "Push B", entries: routines[0].current.entries, summary: "Rename"))?.receipt != nil)
+    #expect(gym.run(ProposeRoutine(id: ID("landed-elsewhere"), routineId: routines[1].id, name: "Pull B", entries: routines[1].current.entries, summary: "Rename"))?.receipt != nil)
+    h.sync(); gym.refresh(); elsewhere.refresh()
+    let here = ProposalCard(gym: gym, id: "landed-here"), applied = ProposalCard(gym: gym, id: "landed-elsewhere")
+    let proposal = { (id: String) in try #require(gym.proposals.first { $0.id == ID(RecordID(id)) }) }
+    gym.run(StartSession(id: ID("landed-session")))
+    #expect(!gym.coachDecideProposal(try proposal("landed-here"), apply: true) && gym.error == "Finish your workout first.")
+    gym.run(FinishSession(id: ID("landed-session")))
+    h.sync(); gym.refresh()
+    #expect(!here.pending && !here.landed && here.failure == nil)
+    #expect(gym.coachDecideProposal(try proposal("landed-here"), apply: true))
+    h.server.refuse(code: .invalid)
+    h.sync(); gym.refresh()
+    #expect(here.stance == .open && !here.landed && here.failure == "Not applied.")
+    #expect(elsewhere.coachDecideProposal(try #require(elsewhere.proposals.first { $0.id == ID("landed-elsewhere") }), apply: true))
+    h.sync(); gym.refresh()
+    #expect(applied.stance == .applied && !applied.landed)
+    #expect(gym.coachDecideProposal(try proposal("landed-here"), apply: true))
+    #expect(here.pending && !here.landed)
+    h.sync(); gym.refresh()
+    #expect(here.stance == .applied && here.landed && gym.landedCoachApplies == [ID("landed-here")])
+  }
   // The refusal the engine keeps as a notice names its cause, and the card says that cause over its buttons.
   @Test func aRefusedApplySaysTheCauseItsNoticeNames() async throws {
     let transport = WorkoutFaultTransport(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)

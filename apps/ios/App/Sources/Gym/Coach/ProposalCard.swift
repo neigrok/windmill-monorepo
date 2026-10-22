@@ -15,9 +15,7 @@ struct ProposalCard: View {
   @State var expanded = false
   @State var stalled = false
   @State var resent = 0
-  @State var applying = false
   @State var retrying = false
-  @State var landed = false
   @Environment(\.scenePhase) var phase
 
   init(gym: GymModel, id: String, stallAfter: Duration = .seconds(15)) { self.gym = gym; self.id = id; self.stallAfter = stallAfter }
@@ -26,6 +24,9 @@ struct ProposalCard: View {
   // The routine as the proposal found it, so an applied rename still reads *Applied · Push A*.
   var routineName: String { proposal?.baseName ?? proposal.flatMap(gym.coachRoutine)?.name ?? "Routine" }
   var removal: Bool { proposal?.intent == "remove" }
+  // Only an Apply this phone sent that the log took bounces the check and plays the haptic, as it lands: never one refused
+  // before it was sent, one applied elsewhere, or one that landed before this card was drawn.
+  var landed: Bool { proposal.map { gym.landedCoachApplies.contains($0.id) } ?? false }
   // The decision the log has not answered yet, while it waits.
   var waiting: CoachQueuedDecision? { proposal.flatMap { gym.coachQueuedDecision($0.id) } }
   var pending: Bool { waiting != nil }
@@ -69,11 +70,7 @@ struct ProposalCard: View {
     }.sensoryFeedback(.success, trigger: landed)
       .onAppear { acknowledgeReceipt() }
       .onChange(of: phase) { _, _ in acknowledgeReceipt() }
-      .onChange(of: stance) { _, stance in
-        acknowledgeReceipt()
-        if stance == .applied, applying { landed = true }
-        if stance != .open { applying = false }
-      }
+      .onChange(of: stance) { _, _ in acknowledgeReceipt() }
       .task(id: "\(pending):\(resent)") {
         stalled = false
         guard pending else { return }
@@ -163,7 +160,6 @@ struct ProposalCard: View {
     VStack(spacing: 10) {
       // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
       Button(role: removal ? .destructive : nil) {
-        applying = true
         guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
         resent += 1
         guard let resend = gym.coachResendDecision(proposal.id) else { return }
@@ -187,7 +183,7 @@ struct ProposalCard: View {
   }
 }
 
-// The applied card's check bounces in once, when the Apply this card sent lands.
+// The applied card's check bounces in once, when the Apply this phone sent lands.
 struct ReceiptStyle: LabelStyle {
   let landed: Bool
   func makeBody(configuration: Configuration) -> some View {
