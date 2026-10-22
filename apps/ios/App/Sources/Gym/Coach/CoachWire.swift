@@ -374,12 +374,14 @@ nonisolated struct CoachSSE {
 }
 
 nonisolated extension AiAllowance {
+  // Nothing remains, and no request still in progress holds any of it.
+  var spent: Bool { amount(remaining) == 0 && amount(reserved) == 0 }
+  func amount(_ value: String) -> Decimal { Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
   var message: String {
     switch code {
     case "subject_exhausted":
-      if let amount = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), amount > 0 {
-        return "This request needs more AI capacity than your remaining allowance."
-      }
+      if amount(remaining) > 0 { return "This request needs more AI capacity than your remaining allowance." }
+      if !spent { return "The rest of your AI allowance is held by a request still in progress." }
       return "You have used all of your AI allowance."
     case "free_month_exhausted": return "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit."
     case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
@@ -389,8 +391,15 @@ nonisolated extension AiAllowance {
     default: return "Coach’s AI allowance is unavailable right now."
     }
   }
+  // When Coach answers again, said only where a reset brings it back: a spent allowance at its period's end, a shared
+  // free pool when its day or month turns. Nothing else lifts at a reset — a request too large, one in progress, debt.
   var detail: String? {
-    let reset = ["free_day_exhausted", "free_month_exhausted"].contains(code) ? budgetResetsAtMs : resetsAtMs
+    let reset: Int64?
+    switch code {
+    case "subject_exhausted": reset = spent ? resetsAtMs : nil
+    case "free_day_exhausted", "free_month_exhausted": reset = budgetResetsAtMs
+    default: reset = nil
+    }
     guard let reset else { return nil }
     let date = Date(timeIntervalSince1970: Double(reset) / 1000)
     return "You can use Coach again on " + date.formatted(.dateTime.month(.abbreviated).day()) + " at " + date.formatted(date: .omitted, time: .shortened) + "."

@@ -800,6 +800,25 @@ import SyncTesting
     #expect(CoachCopy.movementUpdate([CoachStep(tool: "save_note")]) == nil)
   }
 
+  // Each refusal says only what is true of it: the reset line where a reset brings Coach back, *used all* only when nothing
+  // is left or held.
+  @Test func anAllowanceSaysWhenCoachAnswersAgainOnlyWhereAResetBringsItBack() throws {
+    func said(_ code: String, remaining: String, reserved: String) throws -> [String?] {
+      let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(#"{"code":"\#(code)","currency":"USD","period":"calendar_month_utc","tier":"logged_in","configured":true,"limit":"0.25","used":"0.2","reserved":"\#(reserved)","remaining":"\#(remaining)","resetsAtMs":1793491200000,"budgetResetsAtMs":1792540800000}"#.utf8))
+      return [allowance.message, allowance.detail]
+    }
+    let reset = "You can use Coach again on Nov 1 at 12:00\u{202F}AM.", pool = "You can use Coach again on Oct 21 at 12:00\u{202F}AM."
+    #expect(try said("subject_exhausted", remaining: "0.000000000", reserved: "0") == ["You have used all of your AI allowance.", reset])
+    #expect(try said("subject_exhausted", remaining: "0", reserved: "0.05") == ["The rest of your AI allowance is held by a request still in progress.", nil])
+    #expect(try said("subject_exhausted", remaining: "0.01", reserved: "0") == ["This request needs more AI capacity than your remaining allowance.", nil])
+    #expect(try said("free_day_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", pool])
+    #expect(try said("free_month_exhausted", remaining: "0.05", reserved: "0") == ["Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit.", pool])
+    #expect(try said("concurrency_exhausted", remaining: "0.04", reserved: "0.01") == ["Another AI request is still in progress. Try again when it finishes.", nil])
+    #expect(try said("funding_required", remaining: "0", reserved: "0") == ["Your plan has no funded AI allowance for this period.", nil])
+    #expect(try said("debt_outstanding", remaining: "0", reserved: "0") == ["Coach’s AI allowance is unavailable right now.", nil])
+    #expect(try said("device_bound", remaining: "0.05", reserved: "0") == ["This phone’s AI access belongs to an account.", nil])
+  }
+
   @Test func aFailedFirstAnswerKeepsTheGreetingAfterTheNextSend() async throws {
     let (gym, rest, _) = try await authed(.stalled), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }

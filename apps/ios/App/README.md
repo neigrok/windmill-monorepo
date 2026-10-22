@@ -114,9 +114,12 @@ goes to signed-in Coach, which can answer it with a change to a routine the conv
 on their proposal card.
 
 Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
-question stays in the field, and the refusal and its reset time are drawn once, centred in the
-conversation — *You have used all of your AI allowance.*, then *You can use Coach again on Nov 1 at
-12:00 AM.* — and only the refusal the conversation ends on offers recovery. Signed out, *Sign in to
+question stays in the field, and the refusal is drawn once, centred in the conversation — *You have
+used all of your AI allowance.*, then *You can use Coach again on Nov 1 at 12:00 AM.* — and only the
+refusal the conversation ends on offers recovery. The reset line stands only where a reset brings
+Coach back: a spent allowance at its period's end, a shared free pool when its day or month turns. A
+request too large for what remains, or an allowance a request in progress still holds, says so and
+names no time. Signed out, *Sign in to
 continue.* and Sign in appear only where the phone's own AI access is used up or belongs to an
 account; shared free-pool, concurrency and rate refusals offer nothing to do. Signed in there is no
 upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again in
