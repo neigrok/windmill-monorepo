@@ -140,10 +140,10 @@ struct CoachHistoryScreen: View {
             let proposals = gym.proposals.filter { $0.threadId == row.id }
             let removal = proposals.contains { $0.intent == "remove" }
             let waiting = proposals.filter { $0.state == "pending" }
-            GymRow(title: row.headline(removal: removal),
-                   meta: row.settled(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
+            GymRow(title: row.headline,
+                   meta: row.outcomeLine(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
                    trailing: opening == row.id ? .progress : row.askedAt > 0 ? .fact(gym.dates.day(Instant(ms: row.askedAt)), door: true) : .door,
-                   lineLimit: 2).contentShape(Rectangle())
+                   lineLimit: 1).contentShape(Rectangle())
           }.disabled(opening != nil || coach.asking)
             .trashSwipe("Delete conversation") { deletion = row }
             .contextMenu { Button("Delete conversation", role: .destructive) { deletion = row } }
@@ -151,8 +151,8 @@ struct CoachHistoryScreen: View {
         if history.nextCursor != nil {
           ProgressView().frame(maxWidth: .infinity).task { await history.load(earlier: true) }
         }
-      }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped)
+      }.listRowBackground(GymPalette.canvas)
+    }.listStyle(.plain).scrollContentBackground(.hidden)
       .refreshable { await history.load() }
   }
 }

@@ -181,7 +181,7 @@ import UIKit
     XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-out-of-date"].exists, "An applied proposal is not out of date")
     capture("coach-proposal-applied-\(suffix)", app)
     openDestination("History", app)
-    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5))
     XCTAssertFalse(conversation.label.contains("waiting"), conversation.label)
     XCTAssertFalse(app.buttons["Ask something new"].exists)
@@ -247,7 +247,7 @@ import UIKit
     let app = launch("Light")
     ask("Is Push A still doing anything?", app)
     openDestination("History", app)
-    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5))
     conversation.swipeLeft()
     app.buttons["trash-swipe"].tap()

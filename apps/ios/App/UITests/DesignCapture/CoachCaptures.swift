@@ -94,8 +94,8 @@ final class CoachCaptures: DesignCapture {
       let history = app.buttons["coach-history"]
       XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 5)); history.tap()
       XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
-      capture("08.4-coach-history", look, app)
-      let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+      capture("gym-coach-history-one", look, app)
+      let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
       XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
       XCTAssertTrue(app.buttons["trash-swipe"].waitForExistence(timeout: 5)); app.buttons["trash-swipe"].tap()
       XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
@@ -337,6 +337,16 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(app.descendants(matching: .any)["coach-allowance"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertFalse(app.buttons["coach-sign-in"].exists, "Signed in, a spent allowance offers no upgrade")
+      return app
+    }
+  }
+
+  func testHistory() {
+    captureBoard("08.4-coach-history") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-history"])
+      let history = app.buttons["coach-history"]
+      XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 10)); history.tap()
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "My program")).firstMatch.waitForExistence(timeout: 10))
       return app
     }
   }

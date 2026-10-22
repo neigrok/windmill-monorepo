@@ -197,7 +197,7 @@ four seconds in flight, then unanswered,
 first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
 with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
-with a spent allowance,
+with a spent allowance, `-coach-history` lists four conversations in History,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

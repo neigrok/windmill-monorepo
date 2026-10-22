@@ -283,6 +283,17 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("event: snapshot\ndata: \(first)\n\n".utf8)); return
       }
+    } else if path == "/v1/gym/threads", ProcessInfo.processInfo.arguments.contains("-coach-history") {
+      // Four conversations a few days apart: a proposal, a movement corrected, a plain answer and created routines.
+      let now = Self.now.withLock { $0 }, day: Int64 = 86_400_000
+      let thread = { (id: String, title: String, days: Int64, outcome: [String: Any]) -> [String: Any] in
+        ["id": id, "title": title, "askedAt": now - days * day, "outcome": outcome, "turns": [], "nextCursor": NSNull()]
+      }
+      response = ["threads": [
+        thread("history-push", "Is Push A still doing anything?", 0, ["kind": "proposed", "changes": 3, "routineId": "coach-fixture-routine", "routine": "Push A"]),
+        thread("history-pull-ups", "Pull-ups are bodyweight for me. I add a 10 kg belt.", 1, ["kind": "read-only", "changes": 0]),
+        thread("history-squats", "How heavy should I start squats?", 3, ["kind": "read-only", "changes": 0]),
+        thread("history-program", "My program, 3 days a week", 4, ["kind": "created", "changes": 3])], "nextCursor": NSNull()]
     } else if path == "/v1/gym/threads" {
       response = ["threads": Self.deletedThreads.withLock { $0.contains("coach-fixture-thread") } ? [] : [row], "nextCursor": NSNull()]
     } else if path.hasPrefix("/v1/gym/threads/"), request.httpMethod == "DELETE" {

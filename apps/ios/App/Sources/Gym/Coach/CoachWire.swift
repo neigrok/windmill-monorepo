@@ -235,18 +235,16 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     outcome = try c.decodeIfPresent(Outcome.self, forKey: .outcome); turns = try c.decodeIfPresent([CoachTurn].self, forKey: .turns) ?? []
     nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor); generation = try c.decodeIfPresent(CoachGeneration.self, forKey: .generation)
   }
-  // History's row: the routine and what was proposed for it, or the question when the conversation proposed nothing.
-  func headline(removal: Bool) -> String {
-    guard let outcome, ["proposed", "applied", "dismissed", "superseded"].contains(outcome.kind), outcome.changes > 0 else {
-      return title.isEmpty ? "Conversation" : title
-    }
-    return CoachCopy.proposalTitle(routine: outcome.routine, changes: outcome.changes, removal: removal)
-  }
-  // History's caption, the card's word: the log's outcome, or Out of date while the phone sees every waiting proposal outrun.
-  func settled(removal: Bool, outOfDate: Bool) -> String? {
+  // History's row title: the conversation's first question.
+  var headline: String { title.isEmpty ? "Conversation" : title }
+  // History's second line, what the conversation came to: the routine and what was proposed for it, with the card's word
+  // once it settled — Out of date while the phone sees every waiting proposal outrun — or the routines it created.
+  func outcomeLine(removal: Bool, outOfDate: Bool) -> String? {
     guard let outcome else { return nil }
-    if outcome.kind == "proposed" && outOfDate { return CoachCopy.outOfDate }
-    return CoachCopy.settled(outcome.kind, removal: removal)
+    if outcome.kind == "created", outcome.changes > 0 { return "Created " + GymCount.of(outcome.changes, "routine") }
+    guard ["proposed", "applied", "dismissed", "superseded"].contains(outcome.kind), outcome.changes > 0 else { return nil }
+    let settled = outcome.kind == "proposed" && outOfDate ? CoachCopy.outOfDate : CoachCopy.settled(outcome.kind, removal: removal)
+    return ([CoachCopy.proposalTitle(routine: outcome.routine, changes: outcome.changes, removal: removal)] + [settled].compactMap { $0 }).joined(separator: " · ")
   }
   mutating func prepend(_ page: CoachThread) {
     var positions = Set<Int64>()

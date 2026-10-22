@@ -1285,8 +1285,8 @@ import SyncTesting
     #expect(rows.map { $0.meta(dates) } == ["read · delete · since Sep 26", "whole account · since today", "API key · whole account · since Sep 26, 2025"])
     #expect(throws: DecodingError.self) { try CoachConnection.decode(grants: grants, keys: Data("{}".utf8)) }
   }
-  // A History row names the routine and what was proposed for it, the question when nothing was, and the card's settled word;
-  // the phone says Out of date for a waiting proposal it sees outrun before the log does.
+  // A History row is the first question over what the conversation came to: the routine and what was proposed for it with
+  // the card's settled word, or the routines it created; the phone says Out of date for a waiting proposal it sees outrun.
   @Test func historyRowsNameTheRoutineWhatWasProposedAndHowItSettled() throws {
     func thread(_ outcome: String) throws -> CoachThread {
       try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"t","title":"Is Push A still doing anything?","askedAt":1000\#(outcome)}"#.utf8))
@@ -1304,10 +1304,13 @@ import SyncTesting
       (thread(#","outcome":{"kind":"created","changes":1,"routine":"Push A"}"#), false, false),
       (thread(#","outcome":{"kind":"unknown","changes":0}"#), false, false),
       (thread(""), false, false)]
-    #expect(rows.map { [$0.0.headline(removal: $0.1), $0.0.settled(removal: $0.1, outOfDate: $0.2) ?? "-"].joined(separator: " | ") } == [
-      "Push A · 3 changes | -", "Push A · a removal | -", "Push A · 2 changes | Out of date", "Push A · 1 change | Applied",
-      "Push A · a removal | Removed", "Push A · 1 change | Applied", "Push A · 2 changes | Rejected", "Push A · 2 changes | Out of date",
-      "4 changes | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -"])
+    #expect(rows.map { [$0.0.headline, $0.0.outcomeLine(removal: $0.1, outOfDate: $0.2) ?? "-"].joined(separator: " | ") } == [
+      "Is Push A still doing anything? | Push A · 3 changes", "Is Push A still doing anything? | Push A · a removal",
+      "Is Push A still doing anything? | Push A · 2 changes · Out of date", "Is Push A still doing anything? | Push A · 1 change · Applied",
+      "Is Push A still doing anything? | Push A · a removal · Removed", "Is Push A still doing anything? | Push A · 1 change · Applied",
+      "Is Push A still doing anything? | Push A · 2 changes · Rejected", "Is Push A still doing anything? | Push A · 2 changes · Out of date",
+      "Is Push A still doing anything? | 4 changes", "Is Push A still doing anything? | Created 1 routine",
+      "Is Push A still doing anything? | -", "Is Push A still doing anything? | -"])
   }
   // An out-of-date proposal has no Apply and no Reject: the card says once why nothing was applied — a newer one
   // took its place, the log set it aside when its routine changed there, or its routine moved here and the log has not

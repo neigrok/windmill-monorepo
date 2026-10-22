@@ -442,7 +442,7 @@ struct CoachSourcesSheet: View {
           .listRowBackground(GymPalette.card)
       }.listStyle(.insetGrouped).navigationTitle("What Coach read").modifier(GymPage())
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-    }.presentationDetents([.medium, .large])
+    }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
       .accessibilityIdentifier("gym-coach-sources")
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "sources"]) }
   }
