@@ -88,7 +88,7 @@ final class ShellCaptures: DesignCapture {
       XCTAssertTrue(app.staticTexts["Your Windmill email"].waitForExistence(timeout: 5))
       let field = app.textFields["email-address"]
       field.tap(); field.typeText("sam@example.com")
-      capture("shell-apple-your-windmill-email", look, app)
+      capture("23b-your-windmill-email", look, app)
       app.buttons["Send code"].tap()
       XCTAssertTrue(app.textFields["email-code"].waitForExistence(timeout: 5))
       app.textFields["email-code"].tap(); app.textFields["email-code"].typeText("482913")

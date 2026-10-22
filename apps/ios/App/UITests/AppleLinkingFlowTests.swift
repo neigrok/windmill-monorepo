@@ -54,6 +54,20 @@ import XCTest
     app.buttons["Done"].tap(); assertPage(app, equals: localPage)
   }
 
+  func test23bOnlyTheEmailDoorSaysItCreatesAnAccount() {
+    let app = launch()
+    let creates = app.staticTexts["New here? This also creates your account."]
+    app.buttons["email-sign-in"].tap()
+    XCTAssertTrue(app.staticTexts["Sign in with email"].waitForExistence(timeout: 5))
+    XCTAssertTrue(creates.exists)
+    app.buttons["Back"].tap()
+    question(app)
+    app.buttons["Use my account"].tap()
+    XCTAssertTrue(app.staticTexts["Your Windmill email"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Send code"].exists)
+    XCTAssertFalse(creates.exists)
+  }
+
   func test23aUseAccountReceiptAnd23dAdd() {
     let app = launch(); question(app); sendCode(app)
     app.textFields["email-code"].typeText("482913")

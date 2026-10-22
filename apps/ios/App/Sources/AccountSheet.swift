@@ -327,13 +327,13 @@ struct AccountSheet: View {
         Button(model.runtime?.settings.appleEnabled == true ? "Use email instead" : "Continue with email") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
-      Text(model.sheet == .appleAddress ? "We'll send a code to confirm it's yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)
+      Text(model.sheet == .appleAddress ? "We’ll send a code to confirm it’s yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)
       TextField("Email address", text: Binding(get: { model.email }, set: { if !model.working { model.email = $0 } })).keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focusedInput, equals: model.sheet == .appleAddress ? .appleAddress : .address)
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
       Button { model.performAuthentication { await model.sendCode() } } label: {
         Text("Send code").frame(maxWidth: .infinity)
       }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
-      Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim)
+      if model.sheet != .appleAddress { Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim) }
       }
     }
   }
