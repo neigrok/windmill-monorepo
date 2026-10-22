@@ -23,10 +23,9 @@ links to this flow. The drawings need the interaction updates recorded in the
 | State | Figma |
 | --- | --- |
 | Coach greeting (🚧 target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
-| Draft to review (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
-| Review and save (🚧 target) | [1156:3154](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1156-3154) |
+| Drafts, confirmed inline (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
 | Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
-| Routine to workout | [1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) |
+| Routine to workout (🚧 target) | [1182:4650](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1182-4650) |
 
 The 🚧 states are targets (`design/consistency.md` 10p, 10q) not yet compared with this build.
 “Only on this phone” and “Keep it” belong to anonymous results. Screenshots are user attachments,

@@ -22,13 +22,12 @@ Android uses the quiet ledger: movement identity, Previous/Next controls, exerci
 there is more than one movement, elapsed clocks, and a vertical set ledger above the fixed rack.
 History prefills the rack without a repeated Last time line. Logged rows open Fix; planned rows
 have no action. The current row identifies its target without repeating the rack draft.
-Warmups read `W` and do not consume planned working-set numbers. Spoken row names include position,
+Sets have no type; every logged set takes the next number. Spoken row names include position,
 state, load and reps. Keep the current row visible above the rack and any transient.
 
 iOS uses native paging with a page indicator, compact visual working-set progress, a compact
 scrolling ledger, distinct elapsed/rest icons and grounded weight/reps controls
-(`../../ios/ios-redesign.md` §7.7). Entry omits Kind on every surface: new sets are Working,
-corrections preserve stored classification, and the Fix sheet is where a kind is changed. Targets
+(`../../ios/ios-redesign.md` §7.7). No surface offers a set type, in entry or correction. Targets
 remain references, independent of actual load/reps and extra, skipped or substituted sets.
 
 A successful log persists and sends immediately, with no after-log Undo. Correction and deletion
@@ -96,5 +95,4 @@ needs concrete copy and an owning state; unresolved strings remain in the consis
 
 ## Open
 
-- Whether a drop set needs to name a parent; classification alone carries no relationship.
 - iOS delayed-queue presentation beside the affected set.

@@ -45,8 +45,7 @@ its surface contract, not a second copy in this document.
 
 Empty load means **last time**, empty reps **max**, and no sets **open**. While a counted scheme is
 cleared to open, disable its other head fields and hide its rows without discarding the draft.
-Retyping the count restores rows; committing open drops them. The sheet shows
-**You decide the numbers at the rack.** above the fields only while open and not refused.
+Retyping the count restores rows; committing open drops them.
 List rows show only `open`.
 
 Accept comma and point without a permanent separator hint. Show one numeric refusal: count

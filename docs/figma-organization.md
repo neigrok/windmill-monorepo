@@ -21,8 +21,7 @@ within its owner, not a separate product file. Proposals remain separate from de
 | Gym | Cover, Model, Components, Web, iOS, Android, Proposals |
 | Marketing | Landings, Static pages, Emails, Store listings |
 
-Journal's Model page and Marketing's Store listings page are empty. Gym's retired
-Today/Ask drawings sit in the [Boards archive](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1084-15663).
+Journal's Model page and Marketing's Store listings page are empty.
 Gym's iOS page is organized as one section per user flow (see [the flow index](index.md)).
 The organization check does not establish visual acceptance of the screens.
 Superseded boards are deleted, not archived.

@@ -60,7 +60,7 @@ on the client, with the reason said plainly — never as a server error the lift
 - **routine** — a named ordered list of exercises you can start a session from.
 - **plan snapshot** — what the routine said at the moment the session started. Frozen.
 - **e1RM** — estimated one-rep max, Epley: `weight × (1 + reps / 30)`.
-- **set kind** — warmup · working · drop · failure. Only working sets count toward anything.
+- **set** — a load and reps, logged in order. Sets have no type: every set counts.
 - **note** — a title and a body a lifter writes *for* Coach. Not a set's note, and not a preference.
 - **bodyweight** — a lifter's own weight on a day. Never a load; loads are signed, bodyweights are not.
 

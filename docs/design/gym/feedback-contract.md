@@ -28,54 +28,40 @@ Use minutes/seconds below one hour and hours/minutes/seconds thereafter without 
 
 ## Coach conversation
 
-The iOS room shows one local conversational welcome until its first accepted user message, with
-**Add screenshot**, **Build myself** and the composer. It survives picker cancellation, tab changes,
-relaunch and failed/refused sends. No goal form, required chips, Just log or remaining-allowance
-indicator is drawn. Automatic empty-account entry waits for account hydration and preserves active
-workouts, adoption and saved conversation state. Empty Routines instead has one bottom-right plus
-opening the routine builder. See [Coach](briefs/09-coach.md).
+The initial room opens directly to the composer, with one exception: an empty Gym, signed in or not, opens on Coach's two-bubble greeting with **Add screenshot** and **Build my own** under it, which stays until the first accepted message ([Coach](briefs/09-coach.md) "First open"). Entry waits for loaded account data and preserves active workouts, account adoption, saved conversations and drafts. Empty Routines offers its floating + instead. Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. The current iOS chrome differences are recorded in the consistency ledger. Beyond setup, do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
 
-Keep Coach as the native title and History as a navigation action. iOS Notes and Connected log
-live in You and settings; New chat is in History. Other surfaces retain their own native More
-menus. The composer stays above navigation/keyboard insets while conversation content scrolls.
-Placeholder: **Ask about your training**. After onboarding, an empty conversation needs no repeated
-capability text. Coach supports natural dialogue and contextual follow-up questions.
+The composer is fixed above the navigation/keyboard inset while the conversation scrolls. Notes/connection details remain available in their destinations. Show allowance, access, connection and generation failures when they affect an action, with a concrete recovery. Preserve factual read receipts and creation/proposal results; optional tool detail stays collapsed. Keep human Apply: every proposal and every routine draft is decided on its card in the conversation — **Apply** or **Reject** — with no review sheet. Coach's strings use simple English: short common words, no idioms. Coach may draft a routine when requested; routine edits continue through proposals. The owner's supplied prompt is preserved verbatim in the Coach implementation. Coach may also append useful new user-provided insights to Notes; existing notes remain under the user's edit and delete controls.
 
 | State | UI and action |
 | --- | --- |
-| First message (iOS) | Local greeting, Add screenshot, Build myself and the composer |
-| Empty after onboarding | Empty reading region and composer |
-| History / resumed | The same editable conversation, ordered messages and factual outcomes |
-| Copy | Native Copy for either speaker, including partial text; web keeps selection/context access |
-| Attachment draft | One thumbnail, Remove photo, optional text; retain the draft on failure |
-| Uploading | Thumbnail progress and Cancel upload; no duplicate Send |
-| Upload failed | Photo didn’t upload. · Retry; preserve image and text |
-| Unsupported | Choose a supported photo. · accepted formats/size follow the API |
-| Generating | Incremental text and Stop in Send's target; no internal reasoning |
-| Reconnecting | Only after transport failure; recover the same turn and clear after recovery |
-| Interrupted | Preserve partial text, Response interrupted. and Retry; saved receipts remain |
-| Stopped | Preserve partial text; never describe completed actions as undone |
-| At limit | Actual refusal and available recovery; no new-chat reset claim |
-| Exhausted anonymous | Sign-in recovery, preserving draft and conversation |
-| Exhausted signed-in | Windmill One information for eligible non-One accounts; no unavailable checkout |
-| Routine draft | Actual name/count and Review; the human confirms Save routine |
-| Routine saved | Routine created · N movements and Open routine, only after successful saving |
+| First open | Coach's two-bubble greeting, Add screenshot · Build my own, and the composer; no allowance count, goal form, chips or upgrade action |
+| Proposal | One full-width card under the answer: each change its own block — kind (symbol and word), movement, then fields old → new with the old struck through and dim, at body size — the first two in full, Show all N in place; Apply and Reject as full-size buttons, nothing under them. Every change type has a drawn block (`ios/ios-redesign.md` §6 table). Reject settles with no alert. A failed write shows one red line and Try again. Applied keeps the blocks as a record; rejected is one line; out of date dims the blocks and names why |
+| Empty | Empty reading region and composer; no unsolicited message |
+| History | Retained conversations; selecting a row opens that same editable conversation; ordinary rows show a date, and creation/proposal rows add one concise outcome |
+| Resumed | Ordered existing messages, unchanged conversation identity, active composer, New chat in More |
+| Copy | Long press either speaker → native Copy; also expose accessibility Copy; web keeps selection and keyboard/context-menu access |
+| Attachment draft | One image thumbnail above input, Remove photo target, optional text; retain draft on failure |
+| Uploading | Thumbnail with progress and Cancel upload; no duplicate Send |
+| Upload failed | “Photo didn’t upload.” with Retry; preserve photo and text |
+| Unsupported | “Choose a supported photo.”; accepted formats and size come from the actual API |
+| Generating | Incremental text, Stop in Send’s existing target; no raw tool trace or internal reasoning |
+| Interrupted | Preserve partial answer; “Response interrupted.” and Retry; completed action receipts remain |
+| Stopped | Preserve partial answer; “Response stopped.”; completed actions are not described as undone |
+| At limit | Server’s accurate refusal and available recovery; New chat never implies a limit resets |
+| Allowance used (signed out) | “You’ve used this phone’s AI allowance.” once, then Continue with Apple · Use email instead; draft and conversation kept. Positive remaining capacity that cannot fit a request is a separate refusal |
+| Routines created | One grouped row per saved routine: actual name, “Routine created · N movements” and Open routine; completed rows survive interruption |
 
-Installation access uses the server-issued lifetime grant with no promised question count. Shared
-budgets, individual allowance, request size and concurrent-call limits remain distinct refusals.
-Sign-in preserves usage attribution and does not guarantee capacity. While checkout is closed,
-the Windmill One destination says **Subscriptions aren’t available yet.** Existing One users receive
-recovery for their actual limit. There is no standing allowance/balance line.
+The signed-out allowance is $0.05 for an installation credential's lifetime; no question count is promised. Server-issued credentials, IP limits and shared budgets protect access; installation resets are not guaranteed to preserve identity. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
 
-Signed-in text accepts 8,000 UTF-8 bytes; anonymous conversation text accepts 4,000. Overlong input
-remains editable and receives a length refusal. Routine drafts, save outcomes and counts come from
-typed contract data; clients never parse generated prose to invent controls or completed writes.
+Signed-in questions and pasted programs accept up to 8,000 UTF-8 bytes. Signed-out messages accept
+4,000 bytes, optionally with one photo. Input beyond that remains editable and receives a specific
+length refusal. Routine drafts, proposals and their receipts come from the typed Coach contract; clients never parse generated prose to invent controls, creation outcomes or counts.
 
 Copy returns only the message's visible textual content, preserving line breaks. It excludes timestamps, hidden metadata, receipt controls and image filenames. Do not offer an empty text Copy for an attachment-only message. Partial text remains copyable. Proposal actions stay separate from message context menus.
 
 Android history omits the redundant Your conversations caption and ordinary Read only/no changes proposed status. “Read only” must not imply a retained conversation cannot continue. A created routine has one outcome fact: “Created {routine}” when named, otherwise the actual count of routines created. Preserve meaningful proposal outcomes and conversation receipts; do not repeat the same state as both a badge and a subtitle.
 
-Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Signed in, sent images are kept privately with the account's conversation and reopen from authenticated storage. The draft caption says “Sent to Coach when you send. Kept privately with this chat.” Signed out, the caption says “Sent to our AI provider when you send. Windmill keeps this photo only on this phone.” The application server processes the image inline without persisting it; the caption makes no claim about provider retention. Do not fake an image asset or promise unsupported file types in the drawing.
+Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Signed in, sent images are kept privately with the account's conversation and reopen from authenticated storage. The draft caption says “Saved only in this chat.” Signed out, the caption says “Sent to Coach. Saved only on this phone.” The application server processes the image inline without persisting it; the caption makes no claim about provider retention. Do not fake an image asset or promise unsupported file types in the drawing.
 
 While streaming, follow new text only when already at the end. Reading older messages preserves position; a quiet Jump to latest affordance appears when needed. Retry/reconnect reattach to the existing logical turn, preserving ordered text and completed tool effects. Signed-in Stop stops generation and does not reverse a completed routine creation or Apply. Anonymous setup uses one request: “Stop waiting” cancels local waiting and saving, while “Check response” recovers the same request without another charge. “Saving your routines…” lasts until the atomic local commit succeeds; only then show creation receipts.
 
@@ -96,6 +82,6 @@ The clock icon comes from the subscribed Material kit; the stopwatch uses Google
 - Web photo-picker upload acceptance remains unverified. Exercise real selection, upload,
   preview/remove/retry and authenticated image reads.
 - Real iOS photo selection, upload retry and authenticated image reads remain unverified in the
-  setup phase. Signed-in conversation fixtures cover draft-only starters, clarification selection,
+  setup phase. Signed-in conversation fixtures cover the greeting, inline drafts and their Save,
   creation receipts, routine opening and workout start; they do not establish live-provider behavior.
   Android acceptance does not establish those platform behaviors.
