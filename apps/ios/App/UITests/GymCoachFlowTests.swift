@@ -204,8 +204,8 @@ import UIKit
     XCTAssertFalse(app.buttons["coach-note-keyboard-done"].exists || app.buttons["Done"].exists, "Nothing but the bar commits the note")
     capture("coach-note-editor-\(suffix)", app)
     XCTAssertTrue(save.isEnabled); save.tap()
-    let saved = app.staticTexts["Training focus\nKeep the squat steady."]
-    XCTAssertTrue(saved.waitForExistence(timeout: 5)); saved.tap()
+    let saved = app.staticTexts["Training focus"]
+    XCTAssertTrue(saved.waitForExistence(timeout: 5)); XCTAssertTrue(app.staticTexts["Keep the squat steady."].exists); saved.tap()
     XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "An unchanged note cannot save")
     app.buttons["Cancel"].tap()
     back(app, expecting: "Coach")

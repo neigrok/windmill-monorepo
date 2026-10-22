@@ -104,7 +104,8 @@ struct NotesScreen: View {
       Section {
         ForEach(gym.notes, id: \.id) { note in
           Button { editor = NoteEditorIdentity(note: note) } label: {
-            GymRow(title: note.text, trailing: .door, lineLimit: 2)
+            let lines = note.text.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false).map(String.init)
+            GymRow(title: lines[0], meta: lines.count > 1 ? lines[1] : nil, trailing: .door, lineLimit: 1)
           }
             .trashSwipe("Delete note") { _ = gym.run(DeleteNote(note.id)) }
             .contextMenu {

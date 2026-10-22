@@ -217,7 +217,8 @@ first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) 
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
 with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
 with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
-one routine, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
+one routine, `-coach-choices` has the setup fixture ask two things before it drafts, `-coach-kept-draft` keeps a signed-out
+start's draft on the phone beside the account's own, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
 change to *Full body B*,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
