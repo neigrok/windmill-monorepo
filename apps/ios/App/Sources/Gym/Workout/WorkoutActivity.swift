@@ -258,10 +258,12 @@ extension WorkoutState {
   }
   func content(session: Session, offer: WorkoutActivityOffer?) throws -> ActivityContent<WorkoutActivityAttributes.ContentState> {
     guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
-    let workout = gym.workout, clocks = try self.clocks(session)
+    let workout = gym.workout, clocks = try self.clocks(session), movement = workout.selected.flatMap { gym.catalogue.find($0) }
+    // Before a movement is chosen the card names neither a movement nor a load. A barbell's load is its total, which kg
+    // alone already says; a dumbbell's and a bodyweight movement's keep the basis the rack draws.
+    let basis = MovementEquipment(movement), unit = basis.value == "barbell" ? "kg" : basis.unit
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
-      movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) }).unit, reps: workout.reps,
+      movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
       staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)

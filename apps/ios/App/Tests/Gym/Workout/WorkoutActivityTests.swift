@@ -140,6 +140,20 @@ import SyncTesting
     #expect(!workout.canLog && !workout.logActivityOffer(next) && workout.sets == retained)
   }
 
+  // The card names the routine, the movement and the set it would log, a barbell's load in plain kg; before a movement it
+  // names neither and offers nothing.
+  @Test func cardReadsTheSetItWouldLogAndNothingBeforeAMovement() throws {
+    let (_, gym) = try fixtures.fixture()
+    _ = try #require(gym.startWorkout(routineId: nil))
+    let workout = gym.workout, session = try #require(workout.session), controller = WorkoutActivityController(gym: gym)
+    let blank = try controller.content(session: session, offer: workout.activityOffer()).state
+    #expect([blank.title, blank.movement, blank.load, "\(blank.workingSetOrdinal)"] == ["Free workout", "", "", "1"] && blank.offer == nil)
+    workout.add(fixtures.first); workout.weightKg = 100; workout.reps = 5
+    let offer = try #require(workout.activityOffer()), state = try controller.content(session: session, offer: offer).state
+    #expect([state.title, state.movement, state.load, "\(state.reps)", "\(state.workingSetOrdinal)"] == ["Free workout", "Workout squat", "100 kg", "5", "1"])
+    #expect(state.offer == offer)
+  }
+
   @Test(arguments: [true, false])
   func lockScreenCountsOnlyTheSetsTheLedgerMarksUnsent(anonymous: Bool) throws {
     let (_, gym) = try fixtures.fixture(anonymous: anonymous), workout = try fixtures.begin(gym)

@@ -68,20 +68,27 @@ final class WorkoutCaptures: DesignCapture {
 
   // Outside the app the system draws in the phone's appearance, so each look sets it before the workout goes to the Home
   // Screen with its Live Activity running.
-  func leaveForHomeScreen(_ look: Look) -> XCUIApplication {
-    XCUIDevice.shared.appearance = look.appearance == .dark ? .dark : .light
-    let app = launch("workout-live-activity-planned", look)
-    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 15))
+  func leaveForHomeScreen(_ look: Look) -> (app: XCUIApplication, springboard: XCUIApplication) {
+    let app = launchOutside("workout-live-activity-planned", look, ready: "workout-log")
     let activity = app.otherElements["workout-activity-state"]
     XCTAssertTrue(activity.waitForValue("active", timeout: 15))
     XCUIDevice.shared.press(.home)
-    return XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    return (app, XCUIApplication(bundleIdentifier: "com.apple.springboard"))
+  }
+
+  // A Live Activity outlives the app, and a later launch would meet it, so each board ends its workout before the next.
+  func finishOutside(_ app: XCUIApplication) {
+    XCUIDevice.shared.press(.home)
+    app.activate()
+    XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 10)); app.buttons["workout-finish"].tap()
+    XCTAssertTrue(app.buttons["workout-finish"].waitForNonExistence(timeout: 10))
+    app.terminate()
   }
 
   // The control in Control Center at its 2 × 1 size, added from the controls gallery when the phone does not hold it yet.
   func testControlCenterControl() {
     for look in Look.both {
-      let springboard = leaveForHomeScreen(look)
+      let (app, springboard) = leaveForHomeScreen(look)
       springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.005)).press(forDuration: 0.05,
         thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.6)))
       let control = springboard.buttons["works.windmill.app.workout"]
@@ -100,10 +107,67 @@ final class WorkoutCaptures: DesignCapture {
       }
       XCTAssertTrue(control.waitForLabel("Log set"))
       capture("04.1-control-center", look, springboard)
-      XCUIDevice.shared.press(.home)
-      XCUIApplication().terminate()
+      finishOutside(app)
     }
     XCUIDevice.shared.appearance = .light
+  }
+
+  // The Live Activity in the compact and expanded Island, then on the Lock Screen.
+  func testLiveActivity() {
+    for look in Look.both {
+      let (app, springboard) = leaveForHomeScreen(look)
+      let compact = springboard.staticTexts["Since last set"]
+      let inIsland = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        guard let snapshot = try? compact.snapshot() else { return false }
+        return !snapshot.frame.isEmpty && springboard.frame.contains(snapshot.frame) && snapshot.frame.maxY < 100
+      }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [inIsland], timeout: 30), .completed)
+      capture("04.3-dynamic-island-compact", look, springboard)
+      let container = springboard.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "jindo-container-view:"))
+        .containing(.staticText, identifier: "Since last set").firstMatch
+      XCTAssertTrue(container.wait(for: \.isHittable, toEqual: true, timeout: 30)); container.press(forDuration: 1)
+      XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: 5))
+      capture("04.3-dynamic-island-expanded", look, springboard)
+      XCUIDevice.shared.press(.home)
+      showLockScreen(springboard)
+      XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: 20))
+      capture("04.2-live-activity", look, springboard)
+      finishOutside(app)
+    }
+    XCUIDevice.shared.appearance = .light
+  }
+
+  // 04.4's first state: a free workout before its first movement offers no set and says where to choose one.
+  func testLiveActivityBeforeTheFirstMovement() {
+    for look in Look.both {
+      let app = launchOutside("workout-live-activity-blank", look, ready: "workout-add")
+      RunLoop.current.run(until: Date().addingTimeInterval(3))
+      XCUIDevice.shared.press(.home)
+      let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+      showLockScreen(springboard)
+      XCTAssertTrue(springboard.staticTexts["Pick a movement in the app."].waitForExistence(timeout: 20))
+      XCTAssertFalse(springboard.buttons["Log set"].exists)
+      capture("04.4-live-activity-before-the-first-movement", look, springboard)
+      finishOutside(app)
+    }
+    XCUIDevice.shared.appearance = .light
+  }
+
+  // The first launch after an install can open on Where to start? before the board's workout is ready, so it launches once
+  // more when the workout does not appear.
+  func launchOutside(_ fixture: String, _ look: Look, ready: String) -> XCUIApplication {
+    XCUIDevice.shared.appearance = look.appearance == .dark ? .dark : .light
+    var app = launch(fixture, look)
+    if !app.buttons[ready].waitForExistence(timeout: 15) { app.terminate(); app = launch(fixture, look) }
+    XCTAssertTrue(app.buttons[ready].waitForExistence(timeout: 15))
+    return app
+  }
+
+  func showLockScreen(_ springboard: XCUIApplication) {
+    springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.001)).press(forDuration: 0.05,
+      thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
+    let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
+    if allow.waitForExistence(timeout: 2) { allow.tap() }
   }
 
   func testHiddenWorkout() {

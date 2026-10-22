@@ -48,6 +48,23 @@ import SyncStore
     #expect(app.selectedRoom == room)
   }
 
+  // 04.5: the set id is minted once, when the app builds the card's state, and the drawn button carries it, so a second
+  // tap of that button finds its set already logged and writes nothing.
+  @Test func aDoubleTapOfTheDrawnLogSetLogsOneSet() async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder), workout = try fixtures.begin(app.gym)
+    let session = try #require(workout.session), controller = WorkoutActivityController(gym: app.gym)
+    let drawn = try controller.content(session: session, offer: workout.activityOffer()).state
+    let offer = try #require(drawn.offer)
+    #expect(try controller.content(session: session, offer: workout.activityOffer()).state.offer == offer)
+    let button = WorkoutLogSetIntent(offer: offer)
+    let tapped = WorkoutActivityOffer(ownerID: button.ownerID, sessionID: button.sessionID, movementID: button.movementID,
+                                      weightKg: button.weightKg, reps: button.reps, setID: button.setID)
+    #expect(tapped == offer)
+    for _ in 0..<2 { _ = await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: tapped, surface: .activity) } }
+    #expect(workout.sets.map { $0.id.description } == [offer.setID])
+    #expect(outsideEvents(recorder) == ["gym_activity_set_logged surface=activity"])
+  }
+
   // A movement this phone cannot name is left out of the answer, never given a stand-in.
   @Test func aLoggedSetWhoseMovementHasNoNameIsSaidWithItsNumbersAlone() {
     let offer = WorkoutActivityOffer(ownerID: "owner", sessionID: "session", movementID: "not-on-this-phone", weightKg: 60, reps: 1, setID: "set")
