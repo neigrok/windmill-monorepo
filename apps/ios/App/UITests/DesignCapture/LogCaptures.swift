@@ -108,6 +108,23 @@ final class LogCaptures: DesignCapture {
     }
   }
 
+  // At the largest text the log's end scrolls clear above the floating Weigh in.
+  func testWeighInClearsTheEndAtLargestText() {
+    for look in Look.bothAtLargestText {
+      let app = launch("shell-anonymous", look, arguments: ["-gym-log-fixture"])
+      openGymFromWelcome(app, opensOn: .coach)
+      open(.log, app)
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch.waitForExistence(timeout: 20))
+      let end = app.staticTexts["gym-log-end"]
+      for _ in 0..<40 where !onScreen(end, app) { app.swipeUp(velocity: .fast) }
+      for _ in 0..<3 { app.swipeUp(velocity: .fast) }
+      RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+      XCTAssertLessThanOrEqual(end.frame.maxY, app.buttons["gym-weigh-in"].frame.minY)
+      capture("gym-log-end-weigh-in", look, app)
+      app.terminate()
+    }
+  }
+
   func testOneSessionSignedIn() {
     for look in Look.both {
       let app = launchSignedInCoach(look)

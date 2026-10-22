@@ -123,6 +123,39 @@ struct KeyboardBar: View {
   }
 }
 
+// A tab's one creation act, floating bottom-trailing in the tab's reach band, 16 pt from the edge and 12 pt above the tab
+// bar, so the list's last row clears it (docs/design/ios/ios-redesign.md §4): Liquid Glass with its symbol, and its label
+// when it has one, in the accent. A bare symbol is a 60 pt circle named for VoiceOver by the act; a labelled act is a
+// 52 pt capsule. Before iOS 26 the glass is the regular material.
+struct FloatingAction: View {
+  let title: String
+  let symbol: String
+  var labelled = false
+  let identifier: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Group {
+        if labelled {
+          Label(title, systemImage: symbol).padding(.leading, 18).padding(.trailing, 22).frame(minHeight: 52)
+        } else {
+          Image(systemName: symbol).font(.title).frame(width: 60, height: 60).accessibilityLabel(title)
+        }
+      }.font(.headline).foregroundStyle(GymPalette.accent).modifier(Glass()).contentShape(Capsule())
+    }.buttonStyle(.plain).accessibilityIdentifier(identifier)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.horizontal, RoomSpace.inset).padding(.bottom, 12)
+  }
+
+  struct Glass: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+      if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Capsule()) }
+      else { content.background(.regularMaterial, in: Capsule()).shadow(radius: 8, y: 2) }
+    }
+  }
+}
+
 // The room's More: `ellipsis.circle` in the bar presenting a native Menu (docs/design/ios/ios-redesign.md §5).
 struct MoreMenu<Content: View>: View {
   let identifier: String

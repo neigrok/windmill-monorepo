@@ -1438,8 +1438,8 @@ Recorded in `consistency.md` under *iOS redesign*:
   10p (the gym-feedback targets), 10q (the Coach chat in the Messages language), 10r (swipe delete
   and the code's swipe audit).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
-  expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in* in the
-  bar), 9y (the month moment named by its month).
+  expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in*
+  floats), 9y (the month moment named by its month).
 - **The workout and routines:** 9c (sets have no type; Android, the web's writes and the backend still carry a kind), 9k (the untaken workout's row and badge
   vs Android's card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer),
   10d (two search shapes in the pickers).

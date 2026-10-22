@@ -23,9 +23,7 @@ struct RoutinesTab: View {
     let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
     Group {
       if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
-        ContentUnavailableView {
-          Label("No routines yet", systemImage: "list.bullet.rectangle")
-        }
+        ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")
       } else {
         List {
           Group {
@@ -75,12 +73,9 @@ struct RoutinesTab: View {
       .reachBand {
         VStack(spacing: RoomSpace.related) {
           GymTransient(gym: gym)
-          HStack {
-            Spacer()
-            Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
-              .labelStyle(.iconOnly).buttonStyle(RoomSeatStyle()).font(.title3.weight(.semibold))
-              .accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
-          }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+          FloatingAction(title: "New routine", symbol: "plus", identifier: "new-routine") {
+            building = RoutineEditingSession(gym: gym, routine: nil)
+          }.disabled(gym.accountTransition)
         }
       }
       .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }

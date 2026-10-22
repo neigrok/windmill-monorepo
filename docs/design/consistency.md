@@ -298,11 +298,10 @@ these are the places it disagrees with a drawing, a brief or the build.
   best can stand there at the same stated value as the best before it; and the receipt's *Personal
   record* is the server's (`Review.cpp` `recordFor`), which needs a prior estimate but compares
   exactly. Rule whether both follow the stated rule.
-- **9q · Weigh in is a bar action on iOS.** `18-progress.md` keeps one control in Android's reach
-  band, the weigh-in chip; the spec (§4, §7.6) and the iOS build put *Weigh in* in The log's bar
-  (`scalemass`, before the account button) and float nothing over the list, since a floating control
-  over rows that end in dates and chevrons always covers one. The brief states both. Decide whether
-  Android follows.
+- **9q · Weigh in floats on iOS.** `18-progress.md` keeps one control in Android's reach band, the
+  weigh-in chip; the spec (§4, §7.6) and the iOS build float *Weigh in* bottom-trailing as a labelled
+  glass capsule (`scalemass` and *Weigh in* in the accent), with the list's bottom inset keeping the
+  last row clear. The brief states both. Decide whether Android follows.
 - **9r · No Gym settings on iOS.** The spec (§6) draws no Gym settings page: Notes and Connected
   log are reached from Coach's More, and a hidden workout from the tab bar's accessory on iOS 26
   and the **Hidden** row at the head of The log on iOS 18 (§7.18).

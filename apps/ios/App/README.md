@@ -94,7 +94,7 @@ precedence. Coach greets the user locally with a short introduction and compact 
 Build myself actions. The greeting persists through typing, photo selection/cancellation, navigation,
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
-Empty Routines has one bottom-trailing plus opening the routine builder.
+Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
 account- or replica-scoped local Coach archive. Every new routine is a draft: Review shows its

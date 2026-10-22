@@ -42,8 +42,8 @@ final class ChromeCaptures: DesignCapture {
     }
   }
 
-  // The floating layer (designer-review-3 §2.7): bands that clear the rows, sheets that commit from the bar, Weigh in in
-  // The log's bar, the transient on glass, and the instruments at AX3. Run on a 375 pt phone for the -375 set.
+  // The floating layer (designer-review-3 §2.7): bands that clear the rows, sheets that commit from the bar, Weigh in
+  // floating on The log, the transient on glass, and the instruments at AX3. Run on a 375 pt phone for the -375 set.
   func floatingLayer(_ look: Look) {
     let workout = launch("workout-planned", look)
     XCTAssertTrue(workout.buttons["workout-log"].waitForExistence(timeout: 10))
