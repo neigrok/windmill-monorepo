@@ -84,7 +84,7 @@ struct WorkoutActivityHead: View {
 }
 
 // The movement, the prefilled set as the one large line, its place in the plan with the rest since the last set, and Log
-// set; before a movement is chosen, where to choose it. What is not yet sent is said beside the button, or above it
+// set; before a movement is chosen, where to choose it and the rest alone. What is not yet sent is said beside the button, or above it
 // where the row is too narrow for both.
 struct WorkoutActivityDetails: View {
   let state: WorkoutActivityAttributes.ContentState
@@ -126,12 +126,11 @@ struct WorkoutActivityDetails: View {
     }
   }
 
-  var position: Text {
-    let planned = state.plannedWorkingSetCount.flatMap { $0 >= state.workingSetOrdinal ? $0 : nil }
-    let set = planned.map { "Set \(state.workingSetOrdinal) of \($0)" } ?? "Set \(state.workingSetOrdinal)"
-    guard let lastSetAt = state.lastSetAt else { return Text(set) }
-    let rest = Text(timerInterval: lastSetAt...max(lastSetAt, state.staleAt), countsDown: false)
-    return Text("\(set) · \(rest) since last set")
+  @ViewBuilder var position: some View {
+    let rest = state.lastSetAt.map { Text(timerInterval: $0...max($0, state.staleAt), countsDown: false) }
+    if let place = state.place, let rest { Text("\(place) · \(rest) since last set") }
+    else if let place = state.place { Text(place) }
+    else if let rest { Text("\(rest) since last set") }
   }
 }
 

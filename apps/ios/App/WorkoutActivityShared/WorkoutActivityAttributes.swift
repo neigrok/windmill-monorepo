@@ -27,6 +27,13 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     let staleAt: Date
     let unsentSetCount: Int
     let offer: WorkoutActivityOffer?
+
+    // The set's place: *Set 2 of 4* within the plan, *Set 5* past it or without one, and none before a movement is chosen.
+    var place: String? {
+      guard !movement.isEmpty else { return nil }
+      let planned = plannedWorkingSetCount.flatMap { $0 >= workingSetOrdinal ? $0 : nil }
+      return planned.map { "Set \(workingSetOrdinal) of \($0)" } ?? "Set \(workingSetOrdinal)"
+    }
   }
 }
 
