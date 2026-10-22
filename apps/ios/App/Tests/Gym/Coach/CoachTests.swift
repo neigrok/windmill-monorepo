@@ -863,6 +863,28 @@ import SyncTesting
     #expect(coach.error == "That conversation couldn’t be opened. Try again.")
   }
 
+  @Test func openingAConversationKeepsTheDraftAndWhatThePhoneDecided() async throws {
+    let (gym, rest, _) = try await authed(.http(200, #"{"id":"historic-thread","turns":[{"position":1,"from":"lifter","text":"Old"}]}"#)), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    coach.edit("A question I was typing")
+    try coach.addPhoto(UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { _ in }.pngData()!)
+    let photo = try #require(coach.saved.photo), photoData = try #require(coach.saved.photoData)
+    var next = coach.saved
+    next.phoneDrafts = [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)]
+    next.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "onb-1", mode: "conversation", text: "Adopted question"))]
+    next.acceptedFirstMessage = true; next.adoptedSources = ["anonymous:replica"]; next.setupChoice = .describe
+    #expect(coach.keep(next, failure: "x"))
+    await coach.open("historic-thread")
+    for kept in [coach.saved, try cache.read(gym.account!)] {
+      #expect(kept.threadId == "historic-thread" && kept.thread?.turns.map(\.text) == ["Old"] && kept.request == nil && kept.generation == nil)
+      #expect(kept.text == "A question I was typing" && kept.photo == photo && kept.photoData == photoData && kept.editedRequestId == nil)
+      #expect(kept.phoneDrafts == [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)])
+      #expect(kept.onboarding?.map(\.id) == ["onb-1"] && kept.acceptedFirstMessage == true)
+      #expect(kept.adoptedSources == ["anonymous:replica"] && kept.setupChoice == .describe)
+    }
+  }
+
   @Test func textAndPhotoAdmissionUsesUTF8Bound() {
     #expect(!CoachCopy.sendable("  ", photo: false))
     #expect(CoachCopy.sendable("", photo: true))

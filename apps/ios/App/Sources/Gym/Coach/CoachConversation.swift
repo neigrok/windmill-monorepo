@@ -50,6 +50,14 @@ nonisolated struct CoachSaved: Codable {
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
+  // What outlives a conversation on this phone: the first-run marks, the signed-out work adopted into the account and the
+  // setup chosen. A new conversation and one opened from History start from it.
+  var carried: CoachSaved {
+    var next = CoachSaved()
+    next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources; next.onboarding = onboarding
+    next.phoneDrafts = phoneDrafts; next.setupChoice = setupChoice
+    return next
+  }
 }
 
 nonisolated struct CoachPhoneDraft: Codable, Equatable {
@@ -251,7 +259,7 @@ struct CoachDraftStore {
   @discardableResult func newChat(seed: String = "", purpose: CoachPurpose = .conversation) -> Bool {
     guard !asking, !anonymous else { return false }
     invalidateRead()
-    var next = CoachSaved(); next.acceptedFirstMessage = saved.acceptedFirstMessage; next.adoptedSources = saved.adoptedSources; next.onboarding = saved.onboarding; next.phoneDrafts = saved.phoneDrafts; next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
+    var next = saved.carried; next.text = seed; next.purpose = purpose
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
@@ -513,8 +521,13 @@ struct CoachDraftStore {
       guard self.owner == owner, allowed, self.readGeneration == generation else { return }
       let page = try JSONDecoder().decode(CoachThread.self, from: data)
       guard page.id == id else { throw URLError(.badServerResponse) }
-      var next = earlier ? saved : CoachSaved(); next.threadId = id; next.setupChoice = saved.setupChoice
-      if earlier { next.thread?.prepend(page) } else { next.thread = page; next.generation = page.generation }
+      var next = earlier ? saved : saved.carried; next.threadId = id
+      if earlier { next.thread?.prepend(page) } else {
+        next.thread = page; next.generation = page.generation
+        // The composer's draft comes along, never mistaken for the opened conversation's own question.
+        next.text = saved.text; next.photo = saved.photo; next.photoData = saved.photoData
+        next.editedRequestId = saved.request?.requestId == page.generation?.requestId ? saved.editedRequestId : page.generation?.requestId
+      }
       if next.generation == nil { next.purpose = page.turns.last?.purpose ?? .conversation }
       if let generation = next.generation {
         next.request = CoachSaved.Request(thread: id, question: generation.question, requestId: generation.requestId,
