@@ -8,7 +8,7 @@
 - 07.8 Discard this workout?: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1284-17208) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1285-17094)
 - 07.4 Sign-in decision, Add or Discard: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-33533) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1285-17152)
 - 07.5 Discard 3 workouts?: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-33632) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1285-17192)
-- Components: `Android / NavigationBar` `659:6945` (the kit Badge on The log), `Android / Top app bar` `1260:2948`, `Android / Button` `656:6699` (Tone=Error), `Android / Menu` `1260:2608`.
+- Components: `Android / Navigation bar` `348:2762` (the kit Badge on The log), `Android / Top app bar` `342:2953`, `Android / Button` `210:181` (Tone=Error), `Android / Menu` `342:2725`.
 - The iOS build is the model: `apps/ios/App/Sources/Gym/Recovery/OnThisPhoneSection.swift`, `WorkoutInspectScreen.swift`, `WorkoutFixSheet.swift`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `app/`)

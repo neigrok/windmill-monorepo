@@ -4,11 +4,11 @@
 - 05.1 The log, Weigh in FAB: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39988)
 - 05.2 The log, discard by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27527) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40892)
 - 05.12 Empty log: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30325) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31496)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / FAB` `1247:2332` (Extended)
-  - `Android / Swipe row` `1247:2439`
-  - `Android / Menu` `1260:2608`
-  - `Android / Top app bar` `1260:2948`
+- Components (Design System library, Android page):
+  - `Android / FAB` `337:2110` (Extended)
+  - `Android / Swipe row` `337:2217`
+  - `Android / Menu` `342:2725`
+  - `Android / Top app bar` `342:2953`
 - The iOS log is the reference: `apps/ios/App/Sources/Gym/Log/LogPresentation.swift` (the head's line, a session's facts, a new best's line, the month line, and the record dot at :136).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)

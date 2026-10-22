@@ -4,10 +4,10 @@
 - 03.1 Rack, Dumbbells, kg each: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34026)
 - 03.12 Rack, Bodyweight, kg added: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28687) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34230)
 - 03.13 Rack, Barbell, kg total: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28829) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34284)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Number stepper` `1247:2736` (the load field is the Display size)
-  - `Android / Equipment icon` `1247:2247`
-  - `Android / Button` `656:6699` (Log set)
+- Components (Design System library, Android page):
+  - `Android / Number stepper` `337:2514` (the load field is the Display size)
+  - `Android / Equipment icon` `337:2025`
+  - `Android / Button` `210:181` (Log set)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `MovementHead` (`ui/LoggerScreen.kt:571`): *‹* / *›* step keys (:588, :609), the name auto-sized 28 → 20 sp (:600-601), the pager *Exercise {i} / {n}*, spoken *Exercise {i} of {n}* (`domain/LiveSession.kt:134-135`). No equipment icon.

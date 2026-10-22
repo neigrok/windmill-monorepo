@@ -2,7 +2,7 @@
 
 **Figma:**
 - 04.1 Quick Settings tile: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46694) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46936)
-- Component (Gym Components page, section `🧩 Android · Material 3`): `Android / Quick Settings tile` `1247:3007`
+- Component (Design System library, Android page): `Android / Quick Settings tile` `337:2785`
 
 **Today**
 - There is no tile. No `TileService`, Glance widget or app widget exists in `apps/android`.

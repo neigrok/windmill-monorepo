@@ -4,11 +4,11 @@
 - 01.7 three drafts, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-8716) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39439)
 - 01.14 one routine: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-8887) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39487)
 - 01.15 drafts rejected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-9021) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39521)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Change row` `1247:2908`: Added
-  - `Android / Diff field` `1247:2753`: New
-  - `Android / Button` `656:6699`: Primary *Apply* and Tonal *Reject*, 56 dp, stacked
-  - `Android / Chat bubble` `1247:2983`
+- Components (Design System library, Android page):
+  - `Android / Change row` `337:2686`: Added
+  - `Android / Diff field` `337:2531`: New
+  - `Android / Button` `210:181`: Filled *Apply* and Tonal *Reject*, 56 dp, stacked
+  - `Android / Chat bubble` `337:2761`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Each pending draft is its own card (`coach/CoachAnswer.kt:84-133`):
@@ -32,7 +32,7 @@
   - *Bench Press* · *Sets 3* · *Reps 5* · *Load 50 kg total*
   - *Dumbbell Row* · *Sets 3* · *Reps 10* · *Load 22 kg each*
   - 01.14 also has *Pull-up* · *Sets 3* · *Reps 8* · *Load 5 kg added*.
-- **Apply** (Primary, 56 dp) saves every routine at once:
+- **Apply** (Filled, 56 dp) saves every routine at once:
   - Signed in: confirm each draft through the existing endpoint.
   - Signed out: one atomic import through 38.
   - The card then becomes the receipts (42).

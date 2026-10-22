@@ -2,7 +2,7 @@
 
 **Figma:**
 - 03.4 This workout: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29834) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34419)
-- Components (Gym Components page, section `🧩 Android · Material 3`): `Android / Swipe row` `1247:2439`, `Android / Equipment icon` `1247:2247`, `Android / Button` `656:6699`.
+- Components (Design System library, Android page): `Android / Swipe row` `337:2217`, `Android / Equipment icon` `337:2025`, `Android / Button` `210:181`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `AssemblySheet` (`ui/AssemblySheet.kt:68`) opens from the movement name on the rack.

@@ -3,7 +3,7 @@
 **Figma:**
 - 01.17 Coach asks a choice, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40111) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40235)
 - 01.18 Draft kept on this phone, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40674) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40774)
-- System parts: M3 kit Filter chips, the kit text button; `Android / Chat bubble` `1247:2983`.
+- System parts: M3 kit Filter chips, the kit text button; `Android / Chat bubble` `337:2761`.
 - iOS ships both and is the model: the chips in `CoachChoicesView` (`apps/ios/App/Sources/Gym/Coach/CoachSetup.swift:44-71`), the wire type and its limits in `CoachClarification` (`apps/ios/App/Sources/Gym/Coach/CoachWire.swift:128-148`), the kept drafts in `CoachTab.swift:163-176` and their adoption at sign-in in `CoachConversation.swift:83-101`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `backend/`)

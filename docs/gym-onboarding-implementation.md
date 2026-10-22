@@ -21,12 +21,12 @@ links to this flow. The drawings need the interaction updates recorded in the
 
 | State | Figma |
 | --- | --- |
-| Coach greeting (🚧 target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
-| Drafts, confirmed inline (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
-| Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
-| Routine to workout (🚧 target) | [1182:4650](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1182-4650) |
+| Coach greeting (target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
+| Drafts, confirmed inline (target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
+| Created routines (target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
+| Routine to workout (target) | [1182:4650](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1182-4650) |
 
-The 🚧 states are targets (`design/consistency.md` 10p, 10q) not yet compared with this build.
+These states are targets (`design/consistency.md` 10p, 10q) not yet compared with this build.
 “Only on this phone” and “Keep it” belong to anonymous results. Screenshots are user attachments,
 not bundled illustrations. The greeting's actions use `photo.badge.plus` and `plus`; creation
 receipts use `checkmark.circle` and `arrow.up.right`. Room controls reuse Theme, system typography

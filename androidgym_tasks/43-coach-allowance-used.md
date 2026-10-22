@@ -4,10 +4,10 @@
 - 01.10 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35870) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39675)
 - 01.11 signed in, interim: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35979) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39698)
 - 01.12 Windmill One: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-36078) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39721)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Chat notice` `1247:2986`
-  - `Android / Chat bubble` `1247:2983`
-  - `Android / Button` `656:6699`: Tonal *Sign in*
+- Components (Design System library, Android page):
+  - `Android / Chat notice` `337:2764`
+  - `Android / Chat bubble` `337:2761`
+  - `Android / Button` `210:181`: Tonal *Sign in*
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `backend/`)
 - Android reads only two cap codes (`coach/CoachStore.kt:397-411`):

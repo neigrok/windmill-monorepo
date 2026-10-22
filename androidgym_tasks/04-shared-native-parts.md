@@ -2,13 +2,13 @@
 
 **Figma:**
 - 00.4 Native anatomy primitives: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38403) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46495)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / FAB` `1247:2332`: Default and Pressed, the (+) and the extended *Weigh in*
-  - `Android / Button` `656:6699`: Tone=Error, Primary and Quiet
-  - `Android / Menu` `1260:2608`
-  - `Android / Swipe row` `1247:2439`: Rest, Swiping, Past threshold
-  - `Android / Number stepper` `1247:2736`: Default, Pressed, Changed, Focused
-  - `Android / Keyboard` `1247:2625`: Decimal
+- Components (Design System library, Android page):
+  - `Android / FAB` `337:2110`: Default and Pressed, the (+) and the extended *Weigh in*
+  - `Android / Button` `210:181`: Tone=Error, Filled and Text
+  - `Android / Menu` `342:2725`
+  - `Android / Swipe row` `337:2217`: Rest, Swiping, Past threshold
+  - `Android / Number stepper` `337:2514`: Default, Pressed, Changed, Focused
+  - `Android / Keyboard` `337:2403`: Decimal
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - No `FloatingActionButton` anywhere in gym.
@@ -22,8 +22,8 @@
 - Build these once, in `ui/`, matching 00.4 in both modes:
   - **FAB:** M3 `FloatingActionButton` (+), and `ExtendedFloatingActionButton` (icon + label). Bottom end, 16 dp from the edge. The list under it gets a bottom inset so the last row stays clear.
   - **Error buttons:**
-    - Primary·Error (e.g. **Discard**): `Button` with `containerColor = colorScheme.error`, `contentColor = colorScheme.onError`.
-    - Quiet·Error (e.g. **Delete weigh-in**, **Delete note**): `TextButton` with `contentColor = colorScheme.error`.
+    - Filled·Error (e.g. **Discard**): `Button` with `containerColor = colorScheme.error`, `contentColor = colorScheme.onError`.
+    - Text·Error (e.g. **Delete weigh-in**, **Delete note**): `TextButton` with `contentColor = colorScheme.error`.
   - **Menu:** `DropdownMenu` on the card surface, `DropdownMenuItem` with a leading icon. A destructive item paints its icon and label in `colorScheme.error`.
   - **`DeleteSwipeRow`** in `ui/RowSwipe.kt`, replacing `RowDeleteGround`:
     - `SwipeToDismissBox`, end-to-start only, keeps `rememberRowDismiss`.

@@ -5,7 +5,7 @@
 - 08.22 vary by set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37592) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41750)
 - 08.23 ramp up: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37639) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41765)
 - 08.24 rest and a first target: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37684) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41780)
-- Components: `Android / Change row` `1247:2908` (Changed), `Android / Diff field` `1247:2753` (Changed, Same, New).
+- Components: `Android / Change row` `337:2686` (Changed), `Android / Diff field` `337:2531` (Changed, Same, New).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `Proposal.moves` (`domain/Proposal.kt:282-292`) returns one move per change:

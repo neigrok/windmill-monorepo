@@ -4,7 +4,7 @@
 - 04.2 Ongoing notification, since last set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46754) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46949)
 - 04.3 Live Update chip, since last set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46826) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46963)
 - 04.4 Lock screen: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46875) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46971)
-- Component (Gym Components page, section `🧩 Android · Material 3`): `Android / Ongoing notification` `1247:3067`
+- Component (Design System library, Android page): `Android / Ongoing notification` `337:2845`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `notification/WorkoutNotifications.kt:189-227` builds the notification:

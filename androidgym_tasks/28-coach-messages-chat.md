@@ -7,10 +7,10 @@
 - 08.32 copy a message: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31101) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41499)
 - 08.33 jump to latest: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31296) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41540)
 - 01.6 Coach is thinking: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30742) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39416)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Chat bubble` `1247:2983`: Coach left on the card fill, lifter right on the accent; First / Middle / Last corners; Width = Full for long Markdown
-  - `Android / Chat timestamp` `1247:2984` and `Android / Chat notice` `1247:2986` (same section)
-  - `Android / Top app bar` `1260:2948`, `Android / Menu` `1260:2608`, `Android / Keyboard` `1247:2625`
+- Components (Design System library, Android page):
+  - `Android / Chat bubble` `337:2761`: Coach left on the card fill, lifter right on the accent; First / Middle / Last corners; Width = Full for long Markdown
+  - `Android / Chat timestamp` `337:2762` and `Android / Chat notice` `337:2764` (same section)
+  - `Android / Top app bar` `342:2953`, `Android / Menu` `342:2725`, `Android / Keyboard` `337:2403`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Top bar (`coach/AskScreen.kt:134-157`):

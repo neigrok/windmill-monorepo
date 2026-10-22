@@ -3,7 +3,7 @@
 **Figma:**
 - 02.2 Routine summary: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28969) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44488)
 - 02.5 Routine editor, always sortable: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30313) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44882)
-- Components (Gym Components page, section `🧩 Android · Material 3`): `Android / Equipment icon` `1247:2247` (Barbell, Dumbbells, Bodyweight, Machine; Machine is `1263:34603`, the Material Symbol `table_rows`).
+- Components (Design System library, Android page): `Android / Equipment icon` `337:2025` (Barbell, Dumbbells, Bodyweight, Machine; Machine is `343:2377`, the Material Symbol `table_rows`).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The model is on main: `Exercise.equipment` is `"barbell" | "dumbbell" | "machine" | "bodyweight"` and `loadCount` is 1 or 2 (`domain/Training.kt:38-45`). Volume already multiplies by `loadCount`.

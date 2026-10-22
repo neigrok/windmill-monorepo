@@ -3,10 +3,10 @@
 **Figma:**
 - 02.1 Routines: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27415) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44402)
 - 02.7 No routines yet, FAB: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30574) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45142)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / FAB` `1247:2332`
-  - `Android / Top app bar` `1260:2948`
-  - `Android / Swipe row` `1247:2439`
+- Components (Design System library, Android page):
+  - `Android / FAB` `337:2110`
+  - `Android / Top app bar` `342:2953`
+  - `Android / Swipe row` `337:2217`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/RoutinesScreen.kt:91-105`: the bar holds the text action *New routine* (a `+` icon button above font scale 1.3), then the account seat.

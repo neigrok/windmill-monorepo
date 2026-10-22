@@ -29,4 +29,4 @@
 
 **Depends on:** 03, 25, 45.
 
-**Ledger:** 9r, 9w; dogfood `android-gym-target-page`.
+**Ledger:** 9r; dogfood `android-gym-target-page`.

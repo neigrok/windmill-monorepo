@@ -3,10 +3,10 @@
 **Figma:**
 - 08.2 a proposal pending: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27854) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41150)
 - 08.3 expanded in place: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28311) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41187)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Change row` `1247:2908`: Kind = Changed, Added, Removed, Moved, Renamed, Note
-  - `Android / Diff field` `1247:2753`: State = Changed, Same, New, Gone
-  - `Android / Button` `656:6699`: Primary (Apply) and Tonal (Reject), 56 dp
+- Components (Design System library, Android page):
+  - `Android / Change row` `337:2686`: Kind = Changed, Added, Removed, Moved, Renamed, Note
+  - `Android / Diff field` `337:2531`: State = Changed, Same, New, Gone
+  - `Android / Button` `210:181`: Filled (Apply) and Tonal (Reject), 56 dp
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Under Coach's answer, `Minted` (`coach/AskScreen.kt:387-394`) draws `ProposalCard` (`ui/ReviewSheet.kt:498-507`), which is `CoachProposalCard` (`coach/CoachAnswer.kt:327-341`):

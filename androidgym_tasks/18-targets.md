@@ -3,11 +3,11 @@
 **Figma:**
 - 02.6 Targets: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
 - 02.11 Targets, each set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Number stepper` `1247:2736`
-  - `Android / Keyboard` `1247:2625` (Number and Decimal)
-  - `Android / Swipe row` `1247:2439`
-  - `Android / Button` `656:6699`
+- Components (Design System library, Android page):
+  - `Android / Number stepper` `337:2514`
+  - `Android / Keyboard` `337:2403` (Number and Decimal)
+  - `Android / Swipe row` `337:2217`
+  - `Android / Button` `210:181`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The sheet (`ui/RoutineBuilder.kt:451-491`): the movement name, *{pos} of {N} · {routine}* (:468), *Cancel*, `TargetBlock`, and the commit *Set · {summary}* (:487, `TargetEntry.commitLabel`).
@@ -36,7 +36,7 @@
   - Each row: two M3 `OutlinedTextField`s; the focused one shows the accent outline.
   - *+ Add set* as today; at the ceiling *Sets, 1 to 20.*
   - A row swipes away on `DeleteSwipeRow` (04), a11y label *Remove set*. It leaves the draft at once, as today.
-- Commit button (`Android / Button` Primary, 56 dp): *Set · 3 × 8 · 75 kg* (02.6) or *Set · 5 sets* (02.11).
+- Commit button (`Android / Button` Filled, 56 dp): *Set · 3 × 8 · 75 kg* (02.6) or *Set · 5 sets* (02.11).
 - Delete `TargetStepKey` and the 88 dp field. Keep `TargetBlock(scheme, onChange)` as the seam (F38): the editor, Create movement (19) and Coach drafts all use it.
 
 **Out of scope:**

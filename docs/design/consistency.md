@@ -292,10 +292,6 @@ and Android disagree.
   in every Log row's menu whatever the account state, and its sheet offers *Get a link* / *Try
   again* with no sign-in door (`SessionScreen.kt`, `LogScreen.kt`, `WorkoutSharing.kt`). Rule
   signed-out sharing and align Android.
-- **9w · You's sections.** iOS You (Shell boards 26a/26b) gives the identity row one status line
-  (*Not signed in* · *Backed up* · …), draws no **Your data** and no room settings. Delete account is
-  designed on both phones (12e); Erase data is drawn on iOS 16a only and built on neither phone —
-  rule it in or out.
 - **9x · Shared room-menu drawings.** The iOS app uses Journal and Gym only in the room
   menu, with account/settings reached once through the account button. Ink notes are onboarding
   only. Update the Design System's `_Room capsule` variant descriptions (`117:52`, `226:4310`)
@@ -338,7 +334,7 @@ and Android disagree.
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target (owner decision, 2026-10-22).** The owner treats the Gym iOS page
   as the target: no board is 👀 Review. Boards that matched the app on the 2026-10-21/22 simulator
-  pass (iPhone 17, iOS 26.5) stay 🚀; everything else is 🚧. Where a drawing lagged behind the app's
+  pass (iPhone 17, iOS 26.5) stay 🚀; everything else is a target (✅ or 🚧). Where a drawing lagged behind the app's
   iteration 2 and 3, it was redrawn to the app first so no target asks for a regression: 00.1 top
   bar (no bar creation action), 00.3 transient band (no Undo; deletes are immediate), 01.10 summary
   sheet with Start, 02.1 Routines, 02.2 summary, 02.3 editor with ✓, 02.4 picker, 02.6 stepper
@@ -351,7 +347,7 @@ and Android disagree.
   The Live Activity double tap (`177:29`, 04.5) draws what the app does not do: verify on a device
   and either rule it in or retire the board.
 - **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
-  2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath). Each target holds
+  2026-10-21 feedback as targets (Dark, with a Daylight twin beneath). Each target holds
   the slot and number of the board it replaced; the replaced boards are deleted. Targets:
   - 01 and 08: listed under 10q.
   - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
@@ -385,15 +381,12 @@ and Android disagree.
   - The set-editing haptic is a `.selection` tick per accepted rack change. The build keeps the
     canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
-    `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
-    token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors.
-    System red lives locally as `gym/destructive` in *iOS · Gym roles* (#FF453A dark, #FF3B30
-    light), used by the swipe trash circle and *Delete set*; older destructive labels on the boards
-    still paint `ios/gym/alarm`. Moving both into the library is a Design System change, which then
-    needs a library publish from the Figma UI.
+    `chevron.up.chevron.down`, the two `figure.strengthtraining.*` symbols, `wifi` and
+    `battery.100percent`. The boards draw local `sf/…` vectors. Moving them into the library is a
+    Design System change, which then needs a library publish from the Figma UI.
 - **10q · Coach chat in the Messages language (owner decision, 2026-10-22).** The owner asked for
-  the Coach chat to read like iOS Messages, drawn as 🚧 targets over every Coach chat board in
-  journeys 01 and 08, with local components on the Gym Components page: `_Coach / Bubble`
+  the Coach chat to read like iOS Messages, drawn as targets over every Coach chat board in
+  journeys 01 and 08, with local components on the Gym Components page: `_Coach / Bubble · Messages`
   (`1167:185`: sender × tail × text, image, typing) and `_Coach / Composer · Messages` (`1168:212`:
   empty, typed, photo). Boards: 01.1 `1173:3783`, 01.2 `1173:3860`, 01.4 `1173:3934`,
   01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.8 `1173:4471`, 01.9 `1182:4650`,
@@ -418,12 +411,6 @@ and Android disagree.
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
   `gym/destructive` variable is deleted.
-- **10u · Three more symbols awaiting a publish.** `iOS / Symbol / ellipsis` (renamed from the
-  library's private `_sf/ellipsis`), `list.bullet.rectangle` and `plus.circle.fill` are in the
-  Design System file but not yet in a published library version: importing their keys from the Gym
-  file still fails (checked 2026-10-22, second try). Until the owner publishes the library from the
-  Figma UI, the Gym boards draw them as local `sf/…` frames;
-  `.claude/scratch/gym-figma-targets/post-publish.js` swaps them afterwards.
 - **10v · Coach's cards, words and change catalogue (owner rulings, 2026-10-22; build).** The owner
   ruled: proposals and drafts are decided with **Apply** and **Reject** (*Rejected*, never *Turned
   down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
@@ -499,7 +486,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `_Glimpse / Gym` (`210:56`) draw a slot target, a *Last time* line and the mono face, and both
   phones' glimpses draw that fixture (`OnboardingGlimpses.swift`, `OnboardingGlimpses.kt`). The iOS
   rack (board 03.1) has none of the three. Shell · Android A4 (`2:10131`, Daylight `2:10203`) now
-  draws the Android glimpse from today's rack as a 🚧 target (Squat, the ledger with its current row,
+  draws the Android glimpse from today's rack as a target (Squat, the ledger with its current row,
   *100 kg total*, *5 reps*, *Log set*); `OnboardingGlimpses.kt` still draws the old fixture. The iOS
   A4 and `_Glimpse / Gym` (`210:56`) still draw it: redraw them from the iOS rack and align the iOS
   glimpse.
@@ -622,14 +609,15 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11a · The page is the target (owner decision, 2026-10-22).** Journeys 00–09 carry the iOS
   numbers; Android-only boards take the next free number in their journey. A board is 🚀 when it
   matched the emulator pass of 2026-10-22 (Pixel 10 Pro, API 37, a debug build of origin/main
-  `cca4bd3b`), otherwise 🚧. Daylight twins that show the accent stay 🚧 until 9a lands. Sign-in,
+  `cca4bd3b`), otherwise a target (✅ or 🚧). Daylight twins that show the accent stay targets until 9a
+  lands. Sign-in,
   email code and You live in the Shell file's Android page (section `33:1568`). Boards drawn from
   code because no capture reaches them say so in their captions (16b). The parity rulings of
   2026-10-22 (12a–12l) apply to both pages.
 - **11b · Swipe delete is immediate (owner ruling, 2026-10-22).** One Material swipe-to-dismiss row
   everywhere: the error-red ground with a trash icon, gone on release past the threshold, no
   Snackbar Undo and no hold (`guidelines/system-architecture.md` §3; component `Android / Swipe row`
-  `1247:2439`). Confirmations stay only for discarding a workout and deleting a conversation. Today
+  `337:2217`). Confirmations stay only for discarding a workout and deleting a conversation. Today
   every swipe draws the word *Delete* on brick at 18 % with no icon (`ui/RowSwipe.kt:68-81`), and
   routine, set, workout, note, weigh-in and conversation deletes are held 9 000 ms behind an Undo
   snackbar (`store/WithheldDelete.kt:108`, `GymRoom.kt:507-563`).
@@ -694,10 +682,6 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   and drafts are a *Review routine* card with *Save routine* (`coach/CoachAnswer.kt:84-133`). The
   signed-out build needs the onboarding endpoint, which runs only with `AI_INSTALLATIONS_ENABLED`
   and `AI_ALLOWANCES_ENABLED` (both default off).
-- **11i · The greeting's *Changes* line.** Coach proposes only inside a conversation the lifter
-  starts (`Proposal.h` `ProposalDoor`), and `AskService.cpp` refuses while a workout is open. The iOS
-  greeting (01.2 `1173:3860`) says *as you train, I suggest changes to your routines*; Android 01.2
-  says *Changes — ask me, and I suggest changes to your routines.* Rule one wording for both phones.
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
   reserved.*, 10v). Android reads only `ask-daily-limit` and `ask-out-of-budget`
@@ -795,6 +779,13 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   minutes — send a fresh one.* for every refusal, a typo included (`plat/auth/Auth.kt:261-266`); both
   phones draw the server's *That code didn’t work.* / *Check the digits, or send a fresh one.* (Shell
   Android 15c `33:4317`).
+- **12k · No Erase data; Delete account removes the cloud copy.** No phone offers Erase data:
+  removing the app erases its data. Delete account's first line says *This deletes your Windmill
+  account and its copy in the cloud: your roadmaps, journal pages and gym log.* (12e).
+- **12l · The greeting's *Changes* line.** Both phones say *Changes — ask me, and I suggest changes to
+  your routines.*, because Coach proposes only inside a conversation the lifter starts
+  (`Proposal.h` `ProposalDoor`). The iOS build still says *as you train*
+  (`Gym/Coach/CoachSetup.swift:24` on branch `ios-gym-backlog`); Android has no greeting yet (11h).
 
 ### Coach on the client
 
@@ -896,9 +887,9 @@ these places.
 
 ### Figma reconciliation
 
-- **Coach setup chrome.** The tab bar component draws Routines as `list.bullet.clipboard`; the app
-  uses `list.bullet.rectangle`, which joins the library with 10u. Short conversations start at the
-  top in the targets; the app keeps them bottom-aligned.
+- **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
+  `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design
+  System. Short conversations start at the top in the targets; the app keeps them bottom-aligned.
 - **Coach creation-row typography.** The app's receipt rows are the shared iOS `GymRow`: semibold
   body routine name and subheadline metadata. Target 01.9 (`1173:4471`) draws them with the library
   `iOS / List row`; compare the type treatment when the build lands.

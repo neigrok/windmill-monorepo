@@ -39,4 +39,4 @@
 
 **Depends on:** 46, 47; backend `account-delete-grace-enforced`.
 
-**Ledger:** 12e, 9w; dogfood `android-gym-target-page`, `account-delete-grace-enforced`.
+**Ledger:** 12e; dogfood `android-gym-target-page`, `account-delete-grace-enforced`.

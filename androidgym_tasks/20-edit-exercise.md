@@ -3,10 +3,10 @@
 **Figma:**
 - 05.9 Edit movement, name and Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31338)
 - 05.10 Edit movement, the Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6469) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31377)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Equipment icon` `1247:2247` (Kind=Machine `1263:34603`, Material Symbol `table_rows`)
-  - `Android / Menu` `1260:2608`
-  - `Android / Button` `656:6699`
+- Components (Design System library, Android page):
+  - `Android / Equipment icon` `337:2025` (Kind=Machine `343:2377`, Material Symbol `table_rows`)
+  - `Android / Menu` `342:2725`
+  - `Android / Button` `210:181`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The Record's *Rename* opens `RenameSheet` (`ui/RenameSheet.kt:20-63`) titled *Rename movement* (`ui/RecordScreen.kt:94`):
@@ -25,7 +25,7 @@
   - Exposed dropdown *Equipment* with the leading equipment icon (08).
   - For Dumbbells: *Dumbbells lifted*, M3 segmented button *One* / *Two*.
   - Help for Dumbbells: *Enter the weight of one dumbbell. Volume counts both. Changing equipment updates past volume. Your logged weights do not change.*
-  - Primary **Save** (56 dp); *Saving…* while busy. Enabled only when something changed.
+  - Filled **Save** (56 dp); *Saving…* while busy. Enabled only when something changed.
 - 05.10, the Equipment menu open: an `Android / Menu` (`ExposedDropdownMenu`) with *Barbell*, *Dumbbells*, *Bodyweight*, *Machine*, each with its equipment icon (Machine draws `table_rows`, as in 08) and a check on the chosen one.
   - Help for Bodyweight: *Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight. Changing equipment updates past volume. Your logged weights do not change.*
 - Delete *Renames this movement everywhere.*, *Your logged sets and records keep the same movement.* and the *Old name … Searchable as an alias.* line.

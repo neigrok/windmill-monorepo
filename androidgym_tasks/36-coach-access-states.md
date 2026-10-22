@@ -5,7 +5,7 @@
 - 08.7 not on this Windmill: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28776) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41292)
 - 08.8 the day's cap: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28820) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41310)
 - 08.31 signed out, a change needs an account: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38214) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41909)
-- Components: `Android / Chat bubble` `1247:2983`, `Android / Chat notice` `1247:2986`, `Android / Button` `656:6699`, `Android / Top app bar` `1260:2948`.
+- Components: `Android / Chat bubble` `337:2761`, `Android / Chat notice` `337:2764`, `Android / Button` `210:181`, `Android / Top app bar` `342:2953`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Signed out, `AskSignedOutStance` (`coach/AskScreen.kt:268-278`): *Coach reads your log, so it needs you signed in.* at body 26 Bold at the top (`coach/Ask.kt:216`), then a primary *Sign in* at the bottom.

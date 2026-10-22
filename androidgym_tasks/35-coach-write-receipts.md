@@ -4,7 +4,7 @@
 - 08.9 Coach changes a movement's equipment: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28915) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41334)
 - 08.25 save a note: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37720) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41795)
 - 08.26 a movement's details: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37761) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41805)
-- Components: `Android / Change row` `1247:2908` (Changed, Note), `Android / Diff field` `1247:2753`.
+- Components: `Android / Change row` `337:2686` (Changed, Note), `Android / Diff field` `337:2531`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - A note save and a movement update show only as tally phrases in the expanded read line: *saved a note*, *updated a movement* (`coach/Ask.kt:232`, `:235`; drawn at `coach/CoachAnswer.kt:197-199`).

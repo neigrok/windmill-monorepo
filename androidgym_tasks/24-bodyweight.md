@@ -4,10 +4,10 @@
 - 06.1 Weigh in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46006)
 - 06.2 Bodyweight: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32141) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46157)
 - 06.3 Correct a weigh-in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32246) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46256)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Swipe row` `1247:2439`
-  - `Android / Button` `656:6699` (Quiet · Tone=Error)
-  - `Android / Top app bar` `1260:2948`
+- Components (Design System library, Android page):
+  - `Android / Swipe row` `337:2217`
+  - `Android / Button` `210:181` (Text · Tone=Error)
+  - `Android / Top app bar` `342:2953`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `BodyweightScreen` (`ui/BodyweightScreen.kt:225-350`):
@@ -21,7 +21,7 @@
 - 06.1, Weigh in: the sheet matches today (*Weigh in*, *Weight* with the decimal keyboard, *Date*, **Save weight**). What changed is the log behind it, titled *The log* with rows *Pull A* / *18 working sets · 1 h 03 min* (22); check the sheet over that backdrop.
 - Window toggle: a standard M3 `SingleChoiceSegmentedButtonRow`, *90 days* | *All*, with the default outline, shape and check icon on the chosen segment (`SegmentedButtonDefaults.itemShape`). Remove the custom colours and the empty `icon = {}`.
 - Every weigh-in row swipes end-to-start on `DeleteSwipeRow` (04), a11y label *Delete weigh-in*. Past the threshold the weigh-in is deleted at once: no hold, no Undo.
-- Correct sheet (06.3): *Weigh in*, *81.1 kg*, the fixed date *19 October 2026*, **Save weight**, then **Delete weigh-in** as `Android / Button` Quiet · Tone=Error (error role, 02). It deletes at once and closes the sheet.
+- Correct sheet (06.3): *Weigh in*, *81.1 kg*, the fixed date *19 October 2026*, **Save weight**, then **Delete weigh-in** as `Android / Button` Text · Tone=Error (error role, 02). It deletes at once and closes the sheet.
 - A refused or failed delete puts the row back and the note line says why: *the log didn’t answer — that weigh-in is still here*.
 - 05 already makes the store's weigh-in delete immediate; this task adds the swipe and the button.
 
