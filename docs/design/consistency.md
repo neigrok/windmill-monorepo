@@ -252,9 +252,10 @@ these are the places it disagrees with a drawing, a brief or the build.
   the Gym boards state none. The shared gym vectors and the iOS, Android and web domains count every
   set as a working set and read a stored `kind` only to ignore it. Still carrying a kind:
   Android's app layer (`SetKind`, the `FixSheet.kt` and Settings kind pickers, the warm-up rows and
-  counts in `LiveSession.kt` and `Training.kt`), whose kind no longer reaches the log; the web, which
-  writes `kind: 'working'` on new sets (`WorkoutEditor.jsx`, `backfill/draft.js`), draws the share
-  page's kinds and a warm-up set on the gym landing (`GymLanding.jsx`); and the backend, whose reads
+  counts in `LiveSession.kt` and `Training.kt`), whose kind no longer reaches the log; the web, whose
+  new-set rows carry a dead `kind: 'working'` (`WorkoutEditor.jsx`, `backfill/draft.js`) that the
+  domain's imported and corrected sets drop before the wire, and which draws the share page's kinds
+  and a warm-up set on the gym landing (`GymLanding.jsx`); and the backend, whose reads
   count working sets only (`PgLogRepository.cpp`, `PgLogHistory.cpp`, `Review.cpp`: REST, MCP
   `gym_get_stats` and last time, the Coach's context) and whose MCP `gym_log_set` and Coach prompt
   still offer warm-up, drop and failure. An old row of another kind so counts on every client and

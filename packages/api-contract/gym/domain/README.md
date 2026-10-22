@@ -43,7 +43,9 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
 Sets have no type: every set is a working set. A stored row's `kind` is read and ignored, and no
-writable form, command argument or read document carries one.
+writable form or read document carries one. The session commands' rules still name a `sets.kind`
+choice (`gym.importSession.sets.kind`, `gym.correctSession.sets.kind`); the domain's imported and
+corrected sets drop it.
 
 `ExerciseName` is a metadata override keyed by a movement: a seed's carries `name`, `equipment` and
 `loadCount`, a custom movement's only `equipment` and `loadCount` (its name lives on `exercise.name`). Its
