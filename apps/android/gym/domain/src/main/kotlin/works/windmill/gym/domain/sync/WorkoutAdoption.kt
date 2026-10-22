@@ -17,7 +17,7 @@ class SignedOutWorkout(session: Session, sets: List<TrainingSet>) {
         return Json.objectOf("session" to row(session.id, session.fields()), "sets" to Json.Arr(sets.map { row(it.id, it.fields()) }))
     }
     val importAction: ImportSession get() = ImportSession(session.id, session.startedAt, session.finishedAt ?: SessionRules.lastActivity(session, sets),
-        sets.map { ImportedSet(it.id, it.exerciseId, it.weightKg, it.reps, it.completedAt, it.kind, it.rpe, it.note, rpeNamed = true) }, session.routineId)
+        sets.map { ImportedSet(it.id, it.exerciseId, it.weightKg, it.reps, it.completedAt, it.rpe, it.note, rpeNamed = true) }, session.routineId)
 
     // What this phone refuses before asking the account: the import's own checks, a window reaching past now, a
     // movement the catalogue lacks, then a crossing with a finished workout on the log.

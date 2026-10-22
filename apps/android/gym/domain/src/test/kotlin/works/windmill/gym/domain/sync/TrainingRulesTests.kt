@@ -86,26 +86,23 @@ class TrainingRulesTests {
         assertFalse(SessionRules.crosses(Instant(100), Instant(200), other.copy(finishedAt = null)))
     }
 
-    @Test fun liveHintAndReviewReadDrawnSetsAndCloseStaleSessions() {
+    @Test fun liveHintAndReviewReadEveryDrawnSetAndCloseStaleSessions() {
         val workout = session()
         val first = trainingSet(number = 1).copy(weightKg = 100.0, reps = 5)
         val best = first.copy(id = Id("set00002", TrainingSet), weightKg = 95.0, reps = 10, completedAt = Instant(first.completedAt.ms + 1))
-        val ignored = first.copy(id = Id("set00003", TrainingSet), kind = "warmup", weightKg = 500.0)
+        val warmup = first.copy(id = Id("set00003", TrainingSet), weightKg = 60.0)
+        val warmupRow = row(TrainingSet, warmup.id.record, warmup.fields() + ("kind" to Json.of("warmup")), serials = mapOf("setNumber" to Json.of(1)))
         val assisted = first.copy(id = Id("set00004", TrainingSet), weightKg = -20.0)
-        val log = TrainingLog(reader(drawn = listOf(row(workout), setRow(best), setRow(first), setRow(ignored), setRow(assisted))))
+        val log = TrainingLog(reader(drawn = listOf(row(workout), setRow(best), setRow(first), warmupRow, setRow(assisted))))
         assertEquals(workout, log.open)
         assertTrue(log.liveHint)
-        assertEquals(1450.0, log.volumeKg(sessionId), 0.0)
+        assertEquals(1750.0, log.volumeKg(sessionId), 0.0)
         assertEquals(95.0 * (1 + 10 / 30.0), log.topE1rm(sessionId)!!, 0.0)
-        assertEquals(listOf(first, ignored, assisted, best).sortedWith(compareBy({ it.completedAt }, { it.id })), log.sets(sessionId))
+        assertEquals(listOf(first, warmup, assisted, best).sortedWith(compareBy({ it.completedAt }, { it.id })), log.sets(sessionId))
         val stale = log.copy(sessions = listOf(workout), sets = listOf(first), moment = Moment(Instant(first.completedAt.ms + SessionRules.staleAfterMs), FixedZone(0)))
         assertNull(stale.open)
         assertFalse(stale.liveHint)
         assertEquals(listOf(workout.copy(finishedAt = first.completedAt, closedBy = "stale")), stale.drawnSessions)
-        for (kind in listOf("warmup", "drop", "failure")) {
-            assertEquals(0.0, first.copy(kind = kind).volumeKg, 0.0)
-            assertNull(first.copy(kind = kind).e1rm)
-        }
         assertNull(assisted.e1rm)
         assertNull(first.copy(weightKg = 0.0).e1rm)
         assertEquals(100.0, first.copy(reps = 1).e1rm!!, 0.0)
@@ -120,8 +117,6 @@ class TrainingRulesTests {
         for (weight in listOf(-500.0, 0.0, 500.0))
             assertEquals(weight, Valid(value.copy(weightKg = weight), TrainingSet, at = testMoment).value.weightKg, 0.0)
         for (reps in listOf(1, 500)) assertEquals(reps, Valid(value.copy(reps = reps), TrainingSet, at = testMoment).value.reps)
-        for (kind in listOf("warmup", "working", "drop", "failure"))
-            assertEquals(kind, Valid(value.copy(kind = kind), TrainingSet, at = testMoment).value.kind)
     }
 
     @Test fun eachSetFieldHasOrderedLocalRefusals() {
@@ -131,7 +126,6 @@ class TrainingRulesTests {
             Triple(value.copy(weightKg = 501.0), "weightKg", Violation.Reason.Above(500.0)),
             Triple(value.copy(reps = 0), "reps", Violation.Reason.Below(1.0)),
             Triple(value.copy(reps = 501), "reps", Violation.Reason.Above(500.0)),
-            Triple(value.copy(kind = "unknown"), "kind", Violation.Reason.NotOneOf),
             Triple(value.copy(rpe = 0.9), "rpe", Violation.Reason.Below(1.0)),
             Triple(value.copy(rpe = 10.1), "rpe", Violation.Reason.Above(10.0)),
             Triple(value.copy(note = "\u0000"), "note", Violation.Reason.Nul),
@@ -187,12 +181,12 @@ class TrainingRulesTests {
     }
 
     @Test fun correctSetChangesOnlyMutableFieldsAfterFinishAndDetectsEveryIdentityChange() {
-        val old = trainingSet(number = 3).copy(kind = "drop", rpe = 8.0, note = "old")
+        val old = trainingSet(number = 3).copy(rpe = 8.0, note = "old")
         val read = reader(listOf(row(session(testMoment.now, "finish")), setRow(old)))
         assertEquals(Decision.Unchanged(Unit), decide(CorrectSet(old), read))
-        val current = old.copy(weightKg = 82.125, reps = 6, kind = "failure", rpe = 9.25, note = "new")
+        val current = old.copy(weightKg = 82.125, reps = 6, rpe = 9.25, note = "new")
         val normalized = current.copy(weightKg = 82.13, rpe = 9.3)
-        assertEquals(listOf(Change.update(TrainingSet.type, setId.record, normalized.fields().filterKeys { it in listOf("weightKg", "reps", "kind", "rpe", "note") })),
+        assertEquals(listOf(Change.update(TrainingSet.type, setId.record, normalized.fields().filterKeys { it in listOf("weightKg", "reps", "rpe", "note") })),
             writing(decide(CorrectSet(current), read)).plan.gesture(Session.scope, SyncSchema.registry).changes)
         for (changed in listOf(old.copy(sessionId = Id("session2", Session)), old.copy(exerciseId = bench),
             old.copy(completedAt = Instant(old.completedAt.ms + 1)), old.copy(setNumber = 4)))

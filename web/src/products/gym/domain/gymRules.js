@@ -129,7 +129,7 @@ export const GymRules = Object.freeze({
     const { before, after, ...proposal } = ProposalRules;
     return Object.freeze([...Object.values(NoteRules), WeighInRules.kg, PreferencesRules.units,
       ...Object.values(ExerciseRules), ...Object.values(routine), ...Object.values(targets),
-      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), SetRules.weightKg, SetRules.reps, SetRules.kind, SetRules.rpe, SetRules.note, ...CommandSpecs]);
+      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), SetRules.weightKg, SetRules.reps, SetRules.rpe, SetRules.note, ...CommandSpecs]);
   },
   /** @param {string} path */
   spec(path) { return GymRules.specs.find((spec) => spec.path === path) ?? null; },

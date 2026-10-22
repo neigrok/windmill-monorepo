@@ -179,7 +179,7 @@ class EngineTraining(val engine: Engine) {
         return storedSet(value.id)
     }
     private fun engineSet(sessionId: String, write: SetWrite) = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession),
-        Id(write.exerciseId, EngineExercise), write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
+        Id(write.exerciseId, EngineExercise), write.weightKg, write.reps, completedAt = Instant(write.completedAt))
     // A set id names one set: a redelivered append finds it written, and a different set under it is refused.
     private fun alreadyWritten(value: EngineSet): EngineSet? = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.also { existing ->
         if (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt)
@@ -191,7 +191,7 @@ class EngineTraining(val engine: Engine) {
         val old = read { it.repository(EngineSet).find(Id(setId, EngineSet), ViewMode.drawn) }
             ?.takeIf { it.sessionId.text == sessionId } ?: throw missing("That set is no longer on the log.")
         val next = old.copy(weightKg = fix.weightKg ?: old.weightKg, reps = fix.reps ?: old.reps,
-            kind = fix.kind?.wire ?: old.kind, note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
+            note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
         apply(CorrectSet(next))
         return storedSet(next.id)
     }
@@ -505,7 +505,7 @@ class EngineTraining(val engine: Engine) {
                     entry.write == Owed.Delete -> Remove(EngineSet, value.id, GymRefusal).decide(known, ids)
                     known == null -> AppendSet(value).decide(state, ids)
                     entry.write == Owed.Fix -> CorrectSet(known.copy(weightKg = value.weightKg, reps = value.reps,
-                        kind = value.kind, rpe = value.rpe, note = value.note)).decide(state, ids)
+                        rpe = value.rpe, note = value.note)).decide(state, ids)
                     else -> Decision.Unchanged(Unit)
                 }
                 val plan = when (decision) {
@@ -608,7 +608,7 @@ class EngineTraining(val engine: Engine) {
         SeedExercises.all.none { it.id == id }, aliases, loadCount)
     private fun EngineSession.ui() = Session(id.text, startedAt.ms, finishedAt?.ms, (historyRoutineId ?: routineId)?.text,
         plan?.let { PlanSnapshot(name ?: it.routine, it.entries.map { entry -> PlanEntry(entry.exerciseId.text, entry.sets.orEmpty().map { set -> SetTarget(set.reps, set.weightKg) }) }) })
-    private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, SetKind.parse(kind), rpe, note, completedAt.ms)
+    private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, SetKind.Working, rpe, note, completedAt.ms)
     private fun EngineRoutine.ui(last: Long? = null, proposal: Proposal? = null) = Routine(id.text, name, position, last,
         entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId.text, entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) }, revision ?: 1, proposal)
     private fun RoutineWrite.engine(old: EngineRoutine?) = EngineRoutine(Id(id, EngineRoutine), name, position,

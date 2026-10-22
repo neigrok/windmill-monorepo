@@ -43,7 +43,7 @@ export function exerciseDocument(value) {
 /** @param {TrainingSetValue} value @returns {Document} */
 export function setDocument(value) {
   return { id: value.id.record, exerciseId: value.exerciseId.record, ...(value.setNumber === null ? {} : { setNumber: value.setNumber }),
-    weightKg: value.weightKg, reps: value.reps, kind: value.kind, note: value.note, completedAt: value.completedAt.ms,
+    weightKg: value.weightKg, reps: value.reps, note: value.note, completedAt: value.completedAt.ms,
     ...(value.rpe === null ? {} : { rpe: value.rpe }) };
 }
 
@@ -79,9 +79,6 @@ export function proposalDocument(read, value) {
     ...(value.baseRevision === null ? {} : { baseRevision: value.baseRevision }),
     ...(value.baseName === null ? {} : { baseName: value.baseName }) };
 }
-
-/** @param {readonly TrainingSetValue[]} sets */
-function working(sets) { return sets.filter((set) => set.kind === 'working'); }
 
 /** @param {readonly TrainingSetValue[]} sets @param {Catalogue} catalogue */
 function totals(sets, catalogue) {
@@ -147,7 +144,7 @@ export class TrainingHistory {
       for (const point of this.log.progress.sessions) {
         /** @type {Map<string, Map<number, Mark>>} */
         const earned = new Map();
-        for (const set of working(this.log.setsFor(point.sessionId))) {
+        for (const set of this.log.setsFor(point.sessionId)) {
           const key = jcs(set.exerciseId.json);
           const marks = earned.get(key) ?? new Map();
           const held = marks.get(set.weightKg);
@@ -165,7 +162,7 @@ export class TrainingHistory {
           /** @param {string} kind @param {Document} mark @param {number} value @param {number} previous @param {number} previousAt */
           const add = (kind, mark, value, previous, previousAt) => candidates.push({ kind, exerciseId: fact.exerciseId.record,
             value, weightKg: mark.weightKg, reps: mark.reps, previous, previousAt, at: point.startedAt.ms,
-            score: GymEstimate.score(mark.weightKg, mark.reps, 'working', mark.rpe ?? null) ?? 0 });
+            score: GymEstimate.score(mark.weightKg, mark.reps, mark.rpe ?? null) ?? 0 });
           const currentEstimate = fact.estimate;
           if (currentEstimate && prior.estimate && currentEstimate.score > prior.estimate.fact.score) {
             add('e1rm', currentEstimate, currentEstimate.e1rm, prior.estimate.fact.e1rm, prior.estimate.at);
@@ -212,7 +209,7 @@ export class TrainingHistory {
     const readout = this.log.readout(session.id);
     const topE1rm = readout?.topE1rm;
     const stats = { durationMs: readout?.durationMs ?? Math.max(0, SessionRules.lastActivity(session, held).ms - session.startedAt.ms),
-      workingSets: working(held).length, ...(topE1rm == null ? {} : { topE1rm }) };
+      workingSets: held.length, ...(topE1rm == null ? {} : { topE1rm }) };
     /** @type {Document} */
     const review = { stats, slight: stats.workingSets < 4 };
     if (review.slight) return review;
@@ -224,10 +221,10 @@ export class TrainingHistory {
     /** @param {TrainingSetValue[]} sets */
     const top = (sets) => { const value = topSet(sets); return value ? { weightKg: value.weightKg, reps: value.reps,
       sets: sets.filter((set) => set.weightKg === value.weightKg).length } : null; };
-    const movements = [...new Set(working(held).map((set) => String(set.exerciseId.record)))].map((exerciseId) => {
-      const before = top(working(this.log.setsFor(previous.id)).filter((set) => set.exerciseId.record === exerciseId));
+    const movements = [...new Set(held.map((set) => String(set.exerciseId.record)))].map((exerciseId) => {
+      const before = top(this.log.setsFor(previous.id).filter((set) => set.exerciseId.record === exerciseId));
       const plan = session.plan?.entries.find((entry) => entry.exerciseId.record === exerciseId);
-      return { exerciseId, now: top(working(held).filter((set) => set.exerciseId.record === exerciseId)),
+      return { exerciseId, now: top(held.filter((set) => set.exerciseId.record === exerciseId)),
         ...(before ? { before } : {}), ...(plan ? { planned: plan.sets ? { sets: plan.sets.map((set) => set.json) } : {} } : {}) };
     });
     review.against = { sessionId: previous.id.record, ...(previous.plan?.routine ? { routine: previous.plan.routine } : {}), startedAt: previous.startedAt.ms, movements };
@@ -237,12 +234,12 @@ export class TrainingHistory {
   /** @param {HistoryQuery} query */
   sessions(query = {}) {
     return pageOf(this.log.drawnSessions, query).page.map((session) => {
-      const held = this.log.setsFor(session.id); const worked = working(held); const top = topSet(worked);
+      const held = this.log.setsFor(session.id); const top = topSet(held);
       const topE1rm = this.log.topE1rm(session.id);
-      return { ...sessionDocument(session), setCount: held.length, workingSetCount: worked.length, tonnageKg: totals(worked, this.catalogue).tonnageKg,
+      return { ...sessionDocument(session), setCount: held.length, workingSetCount: held.length, tonnageKg: totals(held, this.catalogue).tonnageKg,
         exercises: [...new Set(held.flatMap((set) => { const exercise = this.catalogue.find(set.exerciseId); return exercise ? [exercise.name] : []; }))].sort(compareText),
         ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), ...(topE1rm === null ? {} : { topE1rm }),
-        record: this.log.firstPullComplete && worked.length >= 4 && this.recordAgainst(session) !== null,
+        record: this.log.firstPullComplete && held.length >= 4 && this.recordAgainst(session) !== null,
         closedItself: session.closedBy ? session.closedBy === 'stale' : session.finishedAt?.ms === SessionRules.lastActivity(session, held).ms };
     });
   }
@@ -255,7 +252,7 @@ export class TrainingHistory {
   }
 
   lastSets() {
-    return [...new Set(this.finished.flatMap((session) => this.log.setsFor(session.id).filter((set) => set.kind !== 'warmup').map((set) => String(set.exerciseId.record))))]
+    return [...new Set(this.finished.flatMap((session) => this.log.setsFor(session.id).map((set) => String(set.exerciseId.record))))]
       .sort(compareText).flatMap((exerciseId) => {
         const last = this.lastTime(exerciseId); const set = last.sets?.at(-1);
         return set ? [{ exerciseId, weightKg: set.weightKg, reps: set.reps, at: last.session?.startedAt }] : [];
@@ -304,15 +301,15 @@ export class TrainingHistory {
     }
     /** @param {Document} a @param {Document} b */
     const facetOrder = (a, b) => compareText(a.name, b.name) || compareText(a.id, b.id);
-    const total = totals(scoped.flatMap((session) => working(this.log.setsFor(session.id))), this.catalogue);
+    const total = totals(scoped.flatMap((session) => this.log.setsFor(session.id)), this.catalogue);
     return { sessions: page.map((session) => {
-      const held = this.log.setsFor(session.id); const worked = working(held); const count = totals(worked, this.catalogue);
+      const held = this.log.setsFor(session.id); const count = totals(held, this.catalogue);
       const names = held.map((set) => this.catalogue.find(set.exerciseId)?.name ?? '');
       return { id: session.id.record, startedAt: session.startedAt.ms, finishedAt: session.finishedAt?.ms,
         ...(session.historyRoutineId === null ? {} : { routineId: session.historyRoutineId.record }), routineName: session.name ?? '',
-        setCount: held.length, workingSetCount: worked.length, reps: count.reps, tonnageKg: count.tonnageKg,
-        sets: held.map((set) => { const { kind, note, ...fields } = setDocument(set); return { ...fields, exercise: this.catalogue.find(set.exerciseId)?.name ?? '' }; }),
-        movements: [...new Set(held.map((set) => String(set.exerciseId.record)))].sort(compareText).map((exerciseId) => ({ exerciseId, ...totals(worked.filter((set) => set.exerciseId.record === exerciseId), this.catalogue) })),
+        setCount: held.length, workingSetCount: held.length, reps: count.reps, tonnageKg: count.tonnageKg,
+        sets: held.map((set) => { const { note, ...fields } = setDocument(set); return { ...fields, exercise: this.catalogue.find(set.exerciseId)?.name ?? '' }; }),
+        movements: [...new Set(held.map((set) => String(set.exerciseId.record)))].sort(compareText).map((exerciseId) => ({ exerciseId, ...totals(held.filter((set) => set.exerciseId.record === exerciseId), this.catalogue) })),
         exerciseNames: [...new Set(names)].sort(compareText) };
     }), summary: { sessions: scoped.length, ...total },
     months: [...months].sort(([a], [b]) => compareText(b, a)).map(([month, sessions]) => ({ month, sessions })),
@@ -328,12 +325,12 @@ export class TrainingHistory {
     const routines = this.read.repository(Routine).all('drawn').filter((value) => value.entries.some((entry) => entry.exerciseId.record === exerciseId))
       .sort((a, b) => a.position - b.position || Id.compare(a.id, b.id));
     /** @param {any} point @param {'estimate' | 'heaviest'} field */
-    const fact = (point, field) => { const value = point.fact[field]; const e1rm = field === 'estimate' ? value.e1rm : GymEstimate.value(value.weightKg, value.reps, 'working', value.rpe);
+    const fact = (point, field) => { const value = point.fact[field]; const e1rm = field === 'estimate' ? value.e1rm : GymEstimate.value(value.weightKg, value.reps, value.rpe);
       return { weightKg: value.weightKg, reps: value.reps, at: point.startedAt.ms, ...(e1rm === null ? {} : { e1rm }) }; };
     const series = movement.chartWindow(this.read.moment.now, this.read.moment.zone).estimates.map((point) => fact(point, 'estimate'));
     const records = movement.records.map((point) => fact(point, 'estimate')).reverse();
-    const recentDays = this.finished.filter((session) => this.log.setsFor(session.id).some((set) => set.exerciseId.record === exerciseId && set.kind !== 'warmup')).slice(0, 10)
-      .map((session) => ({ sessionId: session.id.record, startedAt: session.startedAt.ms, sets: this.log.setsFor(session.id).filter((set) => set.exerciseId.record === exerciseId && set.kind !== 'warmup')
+    const recentDays = this.finished.filter((session) => this.log.setsFor(session.id).some((set) => set.exerciseId.record === exerciseId)).slice(0, 10)
+      .map((session) => ({ sessionId: session.id.record, startedAt: session.startedAt.ms, sets: this.log.setsFor(session.id).filter((set) => set.exerciseId.record === exerciseId)
         .sort((a, b) => (a.setNumber ?? 0) - (b.setNumber ?? 0) || Id.compare(a.id, b.id)).map(setDocument) }));
     return { exercise, routineCount: routines.length, sessionCount: movement.sessions.length,
       ...(routines.length ? { routines: routines.map((value) => value.name) } : {}),
@@ -348,13 +345,13 @@ export class TrainingHistory {
     const weeks = [];
     if (first && last) for (let startedAt = weekOf(first); startedAt <= weekOf(last); startedAt += 7 * 86400000) {
       const trained = finished.filter((session) => weekOf(session) === startedAt);
-      weeks.push({ startedAt, sessions: trained.length, workingSets: trained.reduce((sum, session) => sum + working(this.log.setsFor(session.id)).length, 0) });
+      weeks.push({ startedAt, sessions: trained.length, workingSets: trained.reduce((sum, session) => sum + this.log.setsFor(session.id).length, 0) });
     }
     const movements = [...new Set(this.log.progress.sessions.flatMap((session) => session.movements.map((movement) => String(movement.exerciseId.record))))].map((exerciseId) => {
       const progress = this.log.progress.movement(new Id(exerciseId, Exercise));
       const record = this.record(exerciseId);
       return { exerciseId, lastTrainedAt: progress.sessions.at(-1)?.startedAt.ms,
-        points: progress.sessions.map((point) => { const value = point.fact.heaviest; const e1rm = GymEstimate.value(value.weightKg, value.reps, 'working', value.rpe);
+        points: progress.sessions.map((point) => { const value = point.fact.heaviest; const e1rm = GymEstimate.value(value.weightKg, value.reps, value.rpe);
           return { at: point.startedAt.ms, weightKg: value.weightKg, reps: value.reps, ...(e1rm === null ? {} : { e1rm }) }; }),
         ...(record?.bestE1rm ? { bestE1rm: record.bestE1rm } : {}), ...(record?.heaviest ? { heaviest: record.heaviest } : {}) };
     }).sort((a, b) => (b.lastTrainedAt ?? 0) - (a.lastTrainedAt ?? 0) || compareText(a.exerciseId, b.exerciseId));

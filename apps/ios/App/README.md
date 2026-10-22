@@ -69,7 +69,7 @@ supplies account/navigation callbacks and Coach handoffs. A model extension live
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
 bar, More menu), the transient band, the
-two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
+two-line row, the set row and fact tiles, the load and reps wheels and the Fix set editor, the rename sheet with its
 model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
@@ -90,32 +90,46 @@ Tapping a routine opens a native summary sheet with Edit and Start. Movements ar
 routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
-precedence. Coach greets the user locally with a short introduction and compact Add screenshot and
-Build myself actions. The greeting persists through typing, photo selection/cancellation, navigation,
+precedence. Coach greets the user locally in two bubbles — who it is, then what it can do, each line led by its anchor
+word (signed in: Build, Goals, Notes, Changes; signed out: Build, Goals, Account) — with Add screenshot and Build my own
+under them. A signed-in gym that already holds routines opens on an empty conversation. The greeting persists through typing, photo selection/cancellation, navigation,
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
-Empty Routines has one bottom-trailing plus opening the routine builder.
+Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
-account- or replica-scoped local Coach archive. Every new routine is a draft: Review shows its
-movements, equipment and targets, and Save is the only creation path. A movement the phone does not
-know yet reads *New movement*, with no equipment or load basis. Every signed-in ask sends
-`routineReview: true`. Signed-in confirmation replays the exact server-held document using its request
-and operation identity; a draft that arrived without its request offers no Save. A draft the server no
-longer holds, or cannot write, says so and retires Save; a signed-out, busy or unanswered confirmation
-keeps Save for another try, and an account change during the save says so without claiming a failure.
-Anonymous results commit all routines and the replay receipt in one domain action only after Save; a
-retained result can also be explicitly saved after account adoption. Creation links appear after that
-save succeeds. Existing routine changes continue through Review and Apply.
+account- or replica-scoped local Coach archive. Every new routine is a draft, and an answer's drafts
+stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
+movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
+on this phone with no server call and leaves *Rejected · 3 routines*, which stays through a new chat, an
+opened or deleted conversation and the adoption of a signed-out conversation. A movement the phone does not know
+yet reads *New movement*. Every signed-in ask sends `routineReview: true`. Signed-in Apply replays each
+exact server-held document using its request and operation identity; a draft that arrived without its
+request cannot be applied. A draft the server no longer holds, or cannot write, says so and retires
+Apply; a signed-out, busy or unanswered confirmation keeps Apply for another try, and an account change
+during the save says so without claiming a failure. Anonymous results commit all routines and the
+replay receipt in one domain action only after Apply; a retained result can also be applied after
+account adoption. After sign-in and *Add* the adopted conversation stays on screen, without the Sign in
+under an answer that needed an account or the signed-out allowance's refusal, and the next question
+goes to signed-in Coach, which can answer it with a change to a routine the conversation created. Creation links appear after that save succeeds. Existing routine changes are decided
+on their proposal card.
 
-Allowance refusals preserve drafts and retained results, with no balance indicator. The refusal and
-its reset time are drawn once, on the turn it belongs to or in the composer band, and only the
-refusal the conversation ends on offers recovery. Signed out, *Sign in to continue.* and Sign in
-appear only where the phone's own AI access is used up or belongs to an account; shared free-pool,
-concurrency and rate refusals offer nothing to do. Signed in, Windmill One appears only when an
-account without it has used its own allowance; its informational sheet states that subscriptions are
-not available yet. One members, and daily or ceiling limits, receive the actual refusal and any
-server-provided reset time. An unchanged deliberate Send preserves its original request identity.
+Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
+question stays in the field, and the refusal is drawn once, centred in the conversation — *You have
+used all of your AI allowance.*, then *You can use Coach again on Nov 1 at 12:00 AM.* — and only the
+refusal the conversation ends on offers recovery. The reset line stands only where a reset brings
+Coach back: a spent allowance at its period's end, a shared free pool when its day or month turns. A
+request too large for what remains, or an allowance a request in progress still holds, says so and
+names no time. Signed out, *Sign in to
+continue.* and Sign in appear only where the phone's own AI access is used up or belongs to an
+account; shared free-pool, concurrency and rate refusals offer nothing to do. Signed in there is no
+upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again
+in about 2 hours.*, the wait to the server's `retryAtMs` rounded (*in a minute* under one, then the nearest minute,
+five minutes or hour; *later* where the server names no moment), with *Use your own AI agent*; a ceiling receives the actual refusal and any
+server-provided reset time. A capped or refused question is never sent again on its own: it stays in
+the field, and only Send asks again, with what the field then holds. The day's cap and the ceiling
+lapse when Coach opens again, so that Send asks the server afresh. An unchanged deliberate Send after an
+interruption or an allowance refusal preserves its original request identity.
 
 Anonymous Coach accepts bounded conversation text, up to twelve prior text messages within 16 KB,
 and one inline photo. Each call returns an assistant message and zero to three public-catalogue
@@ -189,7 +203,15 @@ and scripted routine setup. `-coach-removal` makes the proposal a removal and th
 asks for it from your totals,
 `-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
 `-coach-out-of-date` has a newer proposal replace it,
-`-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
+`-coach-decision-stall` leaves a card's Apply unanswered past its 15-second wait, `-coach-decision-unreachable` leaves every push
+four seconds in flight, then unanswered,
+`-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer, `-coach-thinking` holds it before its
+first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
+proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
+with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
+with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
+one routine, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
+change to *Full body B*,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
@@ -258,7 +280,7 @@ connected-log management. None blocks the local rooms: echoes show nothing extra
 state their connection requirement.
 
 Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation, as
-the iOS contract's §8 draws it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
+Figma's phone echo boards draw it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
 44 pt target opens that day's ink below its body — up to two older passages beside their mono date
 stamps, *Useful · Not useful*, and *N more* when the reader holds the rest. Useful marks the passages
 the ink shows; Not useful retires the page's echo. One day's ink is open at a time; the count again, a
@@ -336,21 +358,53 @@ minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose
 changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
 
-`DesignCaptureTests` is an opt-in design review suite. It captures onboarding, both rooms, account
-flows, pushed screens and sheets in light and dark. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
-`TEST_RUNNER_`-prefixed variables to the runner without the prefix. The CI shards leave the class out
-and check that its guard remains. From this directory, with one simulator and a fresh result path:
+## Design captures
+
+The design capture suite in `UITests/DesignCapture/` screenshots screens and sheets for design review, each in Dark
+and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the gym's tab and sheet navigation, and
+the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
+`TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
+class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures` and `RecoveryCaptures`. The CI shards leave
+the suite out and check that its guard remains.
+
+A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:
+`gym-log-end-375-ax3-dark`. A screen drawn on a Figma board starts with the board's number: `02.1-routines-dark`
+and `02.1-routines-daylight` sit beside board 02.1. Every test takes its captures in both appearances, and
+`captureBoard` takes one board's pair in one call:
+
+```swift
+func testRoutines() {
+  captureBoard("02.1-routines", settle: 1.5) { look in
+    let app = launchSignedInCoach(look)
+    open(.routines, app)
+    XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 10))
+    return app
+  }
+}
+```
+
+An empty gym opens on Coach (`openGymFromJournal(app, opensOn: .coach)`) and a gym holding routines or workouts
+opens on Routines. `launchSignedInCoach` launches with `-coach-fixture`, which signs in and seeds a routine, notes, a
+workout and a waiting proposal once Coach opens; `-gym-log-fixture` seeds a routine, 35 workouts and
+weigh-ins once The log opens. The boards outside the app (04.x, `WorkoutCaptures`) set the simulator's appearance for each look, leave a
+workout running with its Live Activity, and add the workout control to Control Center when the simulator lacks it.
+
+Run one capture test, or a whole area by its class, then export it. From this directory, with your own simulator
+and a fresh result path:
 
 ```sh
 python3 Tools/generate_project.py
 TEST_RUNNER_WM_DESIGN_CAPTURE=1 xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-  -destination "platform=iOS Simulator,id=$SIMULATOR" -parallel-testing-enabled NO \
-  -resultBundlePath "$RESULT" -only-testing:WindmillUITests/DesignCaptureTests
+  -destination "platform=iOS Simulator,name=$SIMULATOR" -parallel-testing-enabled NO \
+  -resultBundlePath "$RESULT" -only-testing:WindmillUITests/RoutinesCaptures/testRoutines
 python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
-Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
-the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
+Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area. The exporter writes
+one PNG per capture named by the capture, `$CAPTURES/02.1-routines-dark.png`, replacing that capture's PNG from an
+earlier export, and a `capture-manifest.json` linking each PNG to its test and result bundle. Two captures with one
+name in a result fail the export.
 
 ## TestFlight releases
 

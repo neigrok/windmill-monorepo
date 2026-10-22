@@ -108,9 +108,9 @@ extension CoachTests {
     let restored = CoachConversation(gym: coach.gym, store: cache)
     await restored.activate()
     #expect(!restored.showsGreeting && !restored.asking && restored.gym.routines.isEmpty)
-    let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
-    #expect(await restored.saveRoutines(review) == .saved)
-    #expect(await restored.saveRoutines(review) == .saved)
+    let save = CoachDraftSave(requestId: completed.id, operationId: nil)
+    #expect(await restored.saveRoutines(save) == .saved)
+    #expect(await restored.saveRoutines(save) == .saved)
     #expect(restored.gym.routines.count == 1 && restored.anonymousRequest?.results.count == 1)
     #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
   }
@@ -163,13 +163,13 @@ extension CoachTests {
     let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
     call.respond(200, try onboardingResponse(record.request)); await coach.work?.value
     let completed = try #require(coach.anonymousRequest)
-    let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
+    let save = CoachDraftSave(requestId: completed.id, operationId: nil)
     fault.point.withLock { $0 = .beforeCommit(.commit) }
-    #expect(await coach.saveRoutines(review) == .kept("Your routines couldn’t be saved. The response is kept on this phone; try again."))
+    #expect(await coach.saveRoutines(save) == .kept("Your routines couldn’t be saved. The response is kept on this phone; try again."))
     #expect(coach.gym.routines.isEmpty && coach.anonymousRequest?.results == [])
     #expect(coach.anonymousRequest?.response?.status == "completed")
     fault.point.withLock { $0 = nil }
-    #expect(await coach.saveRoutines(review) == .saved)
+    #expect(await coach.saveRoutines(save) == .saved)
     #expect(coach.gym.routines.count == 1 && coach.anonymousRequest?.results.count == 1)
     #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
   }
@@ -208,8 +208,8 @@ extension CoachTests {
       #expect(request.mode == "conversation" && request.image != nil)
       let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
       call.respond(200, try onboardingResponse(request)); await coach.work?.value
-      let response = try #require(coach.anonymousRequest?.response)
-      #expect(await coach.saveRoutines(CoachRoutineReview(id: request.requestId, requestId: request.requestId, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
+      #expect(coach.anonymousRequest?.response != nil)
+      #expect(await coach.saveRoutines(CoachDraftSave(requestId: request.requestId, operationId: nil)) == .saved)
       #expect(coach.gym.routines.count == 1)
       try cache.adopt(from: #require(coach.owner), account: "photo-account", discard: false)
       #expect(try cache.read("photo-account").onboarding == coach.saved.onboarding)
@@ -235,9 +235,10 @@ extension CoachTests {
     }
     coach.edit("Build a short full gym routine for three days per week")
     coach.send(); await coach.work?.value
-    let goal = try #require(coach.anonymousRequest), response = try #require(goal.response)
+    let goal = try #require(coach.anonymousRequest)
+    #expect(goal.response != nil)
     #expect(model.gym.routines.isEmpty && goal.results.isEmpty && model.gym.isAnonymous)
-    #expect(await coach.saveRoutines(CoachRoutineReview(id: goal.id, requestId: goal.id, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
+    #expect(await coach.saveRoutines(CoachDraftSave(requestId: goal.id, operationId: nil)) == .saved)
     let count = model.gym.routines.count
     #expect(coach.chooseSetup(.screenshot))
     let photo = UIGraphicsImageRenderer(size: CGSize(width: 480, height: 240)).image { context in
@@ -245,9 +246,10 @@ extension CoachTests {
       ("Bench press 3 x 8\nSquat 3 x 5" as NSString).draw(at: CGPoint(x: 25, y: 25), withAttributes: [.font: UIFont.systemFont(ofSize: 30), .foregroundColor: UIColor.black])
     }
     try coach.addPhoto(#require(photo.pngData())); coach.send(); await coach.work?.value
-    let photoRecord = try #require(coach.anonymousRequest), photoResponse = try #require(photoRecord.response)
+    let photoRecord = try #require(coach.anonymousRequest)
+    #expect(photoRecord.response != nil)
     #expect(photoRecord.request.mode == "conversation" && photoRecord.results.isEmpty)
-    #expect(await coach.saveRoutines(CoachRoutineReview(id: photoRecord.id, requestId: photoRecord.id, drafts: photoResponse.routines.map(\.domain), operationId: nil)) == .saved)
+    #expect(await coach.saveRoutines(CoachDraftSave(requestId: photoRecord.id, operationId: nil)) == .saved)
     #expect(model.gym.routines.count > count)
     let routine = try #require(model.gym.routines.first)
     model.gym.startWorkout(routineId: routine.id)
@@ -264,5 +266,42 @@ extension CoachTests {
     let credential = try await runtime.installation.credential()
     let current = try await runtime.installation.request("/v1/ai/installations/current", credential: credential)
     #expect(try JSONDecoder().decode(AiInstallation.State.self, from: current).bound)
+  }
+
+  func onboardingRecord(_ id: String, response: String) throws -> CoachOnboardingRecord {
+    var record = CoachOnboardingRecord(request: CoachOnboardingIn(requestId: id, mode: "conversation", text: "Make Push A harder"))
+    record.response = try JSONDecoder().decode(CoachOnboardingOut.self, from: Data(response.utf8))
+    return record
+  }
+
+  @Test func onlyASignedOutAnswerThatNeedsAnAccountOffersSignIn() async throws {
+    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.01","reserved":"0","remaining":"0.04","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let needs = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in, then ask again.","needsAccount":true,"#+allowance+"}")
+    let earlier = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in first.","needsAccount":true,"#+allowance+"}")
+    let (anonymous, anonymousCache) = try await anonymousCoach()
+    defer { try? FileManager.default.removeItem(at: anonymousCache.directory) }
+    var next = anonymous.saved; next.onboarding = [earlier, needs]; #expect(anonymous.keep(next, failure: "x"))
+    #expect([anonymous.offersSignIn(earlier), anonymous.offersSignIn(needs)] == [false, true])
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let account = CoachConversation(gym: gym, rest: rest, store: cache); await account.activate()
+    var adopted = account.saved; adopted.onboarding = [earlier, needs]; #expect(account.keep(adopted, failure: "x"))
+    #expect([account.offersSignIn(earlier), account.offersSignIn(needs)] == [false, false])
+  }
+
+  @Test func aSpentSignedOutAllowanceIsSaidOnlyWhileSignedOut() async throws {
+    let spent = #"{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.05","reserved":"0","remaining":"0","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let refused = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"failed","expiresAtMs":1900000000000,"routines":[],"errorCode":"subject_exhausted","allowance":"#+spent+"}")
+    let answered = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Squat first.","allowance":"#+spent+"}")
+    let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(spent.utf8))
+    let (anonymous, anonymousCache) = try await anonymousCoach()
+    defer { try? FileManager.default.removeItem(at: anonymousCache.directory) }
+    var next = anonymous.saved; next.onboarding = [answered, refused]; #expect(anonymous.keep(next, failure: "x"))
+    #expect(anonymous.spentAllowance(answered) == nil && anonymous.spentAllowance(refused) == allowance && anonymous.transcriptAllowance == allowance)
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let account = CoachConversation(gym: gym, rest: rest, store: cache); await account.activate()
+    var adopted = account.saved; adopted.onboarding = [answered, refused]; #expect(account.keep(adopted, failure: "x"))
+    #expect(account.spentAllowance(answered) == nil && account.spentAllowance(refused) == nil && account.transcriptAllowance == nil)
   }
 }

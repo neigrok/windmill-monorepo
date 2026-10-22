@@ -7,50 +7,40 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 
+CAPTURE_NAME = re.compile(r"[0-9a-z][0-9a-z.-]*-(dark|daylight)")
+# xcresulttool puts _<index>_<uuid> before a name's first dot: 02_0_<uuid>.1-routines-dark, gym-log-dark_0_<uuid>.png.
+XCRESULT_TOKEN = re.compile(r"_\d+_[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+
+
 def publish(exported, destination, result):
     manifest = json.loads((exported / "manifest.json").read_text())
     if not isinstance(manifest, list):
         raise ValueError("The attachment manifest must be an array.")
-    captures = []
+    captures = {}
     for test in manifest:
-        if "DesignCaptureTests/" not in test["testIdentifier"]:
+        if not test["testIdentifier"].split("/")[0].endswith("Captures"):
             continue
         for attachment in test["attachments"]:
             original = attachment["exportedFileName"]
             if Path(original).name != original:
                 raise ValueError("Attachment filename must stay inside the export directory.")
-            name = attachment["suggestedHumanReadableName"]
-            if not name.startswith(("gym-", "journal-", "shell-")) or Path(original).suffix.lower() != ".png":
+            name = XCRESULT_TOKEN.sub("", attachment["suggestedHumanReadableName"], count=1).removesuffix(".png")
+            if not CAPTURE_NAME.fullmatch(name) or Path(original).suffix.lower() != ".png":
                 continue
             source = exported / original
             if not source.is_file():
                 raise ValueError(f"Missing capture attachment: {original}")
-            name = re.sub(r"_\d+_[0-9A-Fa-f-]{36}(?=\.png$)", "", name)
-            clean = re.sub(r"[^A-Za-z0-9._-]", "-", name)
-            if not clean.lower().endswith(".png"):
-                clean += ".png"
-            captures.append((source, clean, test["testIdentifier"]))
+            if name in captures:
+                raise ValueError(f"Two captures share the name {name}: {captures[name][1]} and {test['testIdentifier']}")
+            captures[name] = (source, test["testIdentifier"])
     if not captures:
-        raise ValueError("The result contains no named DesignCaptureTests PNGs. Check WM_DESIGN_CAPTURE and the test results.")
+        raise ValueError("The result contains no named design captures. Check WM_DESIGN_CAPTURE and the test results.")
     destination.mkdir(parents=True, exist_ok=True)
     entries = []
-    for source, name, test in captures:
-        target = destination / name
-        suffix = 2
-        while target.exists():
-            target = destination / f"{Path(name).stem}-{suffix}.png"
-            suffix += 1
-        with source.open("rb") as incoming, target.open("xb") as outgoing:
-            shutil.copyfileobj(incoming, outgoing)
-        entries.append({"file": target.name, "test": test, "result": str(result)})
-    index = destination / "capture-manifest.json"
-    suffix = 2
-    while index.exists():
-        index = destination / f"capture-manifest-{suffix}.json"
-        suffix += 1
-    with index.open("x") as handle:
-        json.dump(entries, handle, indent=2)
-        handle.write("\n")
+    for name, (source, test) in sorted(captures.items()):
+        shutil.copyfile(source, destination / f"{name}.png")
+        entries.append({"file": f"{name}.png", "test": test, "result": str(result)})
+    (destination / "capture-manifest.json").write_text(json.dumps(entries, indent=2) + "\n")
     return entries
 
 

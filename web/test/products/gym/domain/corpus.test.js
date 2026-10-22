@@ -13,6 +13,7 @@ import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, def
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.js';
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
@@ -73,7 +74,7 @@ function trainingReadsForm(vector, read) {
   const f = Fields.object(vector.input.input);
   const log = new TrainingLog(read);
   switch (vector.input.read) {
-    case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.string('kind', 'working'), f.optionalDouble('rpe'));
+    case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.optionalDouble('rpe'));
     case 'TrainingLog': {
       const id = f.ref('sessionId', Session);
       return { drawnSessions: log.drawnSessions.map((session) => session.id.json), open: log.open?.id.json ?? null,
@@ -208,7 +209,7 @@ const handlers = {
         const sets = input.sets.map((/** @type {any} */ raw) => {
           const s = Fields.object(raw);
           return new ImportedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), weightKg: s.double('weightKg'),
-            reps: s.int('reps'), completedAt: s.instant('completedAt'), kind: s.optionalString('kind'), rpe: s.optionalDouble('rpe'),
+            reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
             note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
         return corpus.decision(ImportSession({ id: f.ref('id', Session), startedAt: f.instant('startedAt'), finishedAt: f.instant('finishedAt'),
@@ -219,7 +220,7 @@ const handlers = {
           const s = Fields.object(raw);
           return new CorrectedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), setNumber: s.int('setNumber'),
             weightKg: s.double('weightKg'), reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
-            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe'), kind: s.optionalString('kind') });
+            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
         return corpus.decision(CorrectSession({ id: f.ref('sessionId', Session), requestId: f.string('requestId'), startedAt: f.instant('startedAt'),
           finishedAt: f.instant('finishedAt'), routineName: f.optionalString('routineName'), sets, preserveOtherSets: input.preserveOtherSets === true }),
@@ -305,6 +306,15 @@ const handlers = {
         const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
         const base = Routine.decode(Fields.values('routine', input.base.id, input.base.fields));
         return { changeCount: proposal.countChanges(base) };
+      }
+      case 'ChangeBlocks': {
+        const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
+        const routine = input.routine ? Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields)) : null;
+        const each = (input.each ?? []).map((/** @type {string} */ id) => new Id(id, Exercise));
+        const diff = new ProposalDiff(proposal, routine, GymUnits.reading(input.units), each);
+        return { unchanged: diff.unchanged, blocks: diff.blocks.map((block) => ({
+          kind: block.kind, exerciseId: block.exerciseId === null ? null : block.exerciseId.record,
+          fields: block.fields.map((field) => ({ label: field.label, before: field.before, after: field.after, state: field.state })) })) };
       }
       case 'Metadata': {
         const value = Proposal.decode(Fields.values('proposal', input.id, input.fields));

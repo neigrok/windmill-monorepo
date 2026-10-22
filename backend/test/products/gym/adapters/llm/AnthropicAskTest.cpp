@@ -288,6 +288,53 @@ TEST(the_prompt_describes_routine_drafts_only_when_the_catalog_offers_them) {
   CHECK(rec.failures.empty());
 }
 
+// A goal the lifter states is saved in the turn that states it: the prompt says so, and the run makes one
+// save_note call with the lifter's words before the answer plans around it.
+TEST(a_stated_goal_is_saved_as_one_note_in_the_same_turn) {
+  FakeToolHost host;
+  host.catalog.push_back(declared("save_note", "Append one note.", Access::write));
+  host.responder = [](const std::string& name, const Json::Value&) {
+    if (name == "list_notes") return ToolResult::text("{\"notes\":[]}");
+    if (name == "save_note") return ToolResult::text("{\"note\":{\"id\":\"note_goal0001\"}}");
+    return ToolResult::text("{\"sessions\":[]}");
+  };
+  Json::Value goal(Json::objectValue);
+  goal["id"] = "note_goal0001";
+  goal["title"] = "Goal";
+  goal["body"] = "Squat 100 kg by June. I can train 3 days a week.";
+  Json::Value saveNote(Json::objectValue);
+  saveNote["type"] = "tool_use";
+  saveNote["id"] = "toolu_goal";
+  saveNote["name"] = "save_note";
+  saveNote["input"] = goal;
+  Json::Value saving(Json::objectValue);
+  saving["stop_reason"] = "tool_use";
+  saving["content"].append(saveNote);
+  FakeModel model;
+  model.replies = {saving, textReply("end_turn", "I saved your goal. Here is a plan for 3 days a week.")};
+
+  Recorder rec;
+  const AskAnswer answered = driveAsk(question("I want to squat 100 kg by June. I can train 3 days a week."),
+                                      asked(), host, model.asCall(), rec.report());
+
+  const std::string prompt = model.requests[0]["system"][0]["text"].asString();
+  CHECK(prompt.find("- When the user states a goal or a limit, such as an injury, the days per week they can train "
+                    "or a target, call save_note in that same turn unless Notes already hold it. Then plan around "
+                    "it.\n") != std::string::npos);
+  CHECK(prompt.find("Write simple English for readers who learned it as a second language. Use short, common words "
+                    "and no idioms. Say one idea per sentence. Write numbers as digits.\n") != std::string::npos);
+  REQUIRE(answered.ok);
+  CHECK_EQ(answered.answer, std::string("I saved your goal. Here is a plan for 3 days a week."));
+  REQUIRE_EQ(host.calls.size(), 3u);
+  CHECK_EQ(host.calls[0].first, std::string("list_sessions"));
+  CHECK_EQ(host.calls[1].first, std::string("list_notes"));
+  CHECK_EQ(host.calls[2].first, std::string("save_note"));
+  CHECK_EQ(host.calls[2].second, goal);
+  CHECK_EQ(answered.steps, (std::vector<AskStep>{{"list_notes", false}, {"save_note", false}}));
+  CHECK_EQ(model.requests.size(), 2u);
+  CHECK(rec.failures.empty());
+}
+
 // An empty notes list still welds a document and still lands the step, so "read your notes" is
 // true on every answer; a notes read that FAILS is no run at all, like an unreadable log.
 TEST(ask_reads_the_notes_on_every_opening_turn_and_never_runs_without_them) {

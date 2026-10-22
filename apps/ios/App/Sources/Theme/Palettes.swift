@@ -6,6 +6,8 @@ import UIKit
 nonisolated enum GymPalette {
   static let control = Color(uiColor: .tertiarySystemFill)
   static let uiInkFaint = UIColor(named: "gym/ink-faint")!
+  // System red where no button role can paint it: a removal's badge on Coach's card, a failed Apply's line, and the label of
+  // the card's quiet Remove routine, whose own button style draws it.
   static let destructive = Color(uiColor: .systemRed)
   static let canvas = Color("gym/canvas")
   static let card = Color("gym/card")
@@ -19,9 +21,7 @@ nonisolated enum GymPalette {
   static let done = Color("gym/done")
   static let record = Color("gym/record")
   static let alarm = Color("gym/alarm")
-  static let alarmFill = Color("gym/alarm-fill")
-  // White on the alarm fill (§2 `on-alarm`), and the black a full-screen photo sits on in both appearances (§7.3).
-  static let onAlarm = Color.white
+  // The black a full-screen photo sits on in both appearances (§7.3).
   static let photoGround = Color.black
   static let uiAccent = UIColor(named: "gym/accent")!
 }

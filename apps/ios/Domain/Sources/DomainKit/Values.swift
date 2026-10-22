@@ -125,7 +125,8 @@ public struct TextSpec: ValueSpec {
     }
   }
 
-  func normalised(_ s: String) -> String {
+  // The text as this spec stores it: composed, then trimmed.
+  public func normalised(_ s: String) -> String {
     let composed = nfc ? DomainKitNFC.nfc(s) : s
     guard trim else { return composed }
     let scalars = composed.unicodeScalars

@@ -152,6 +152,9 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
 
+`gym_proposal_outcome` carries `action` apply or dismiss and `outcome` decided, moved, gone, settled
+or failed; iOS records the same turn-down as `reject`.
+
 `gym_proposal_receipt_shown` carries `outcome=applied` after a visible removal receipt's durable
 acknowledgment succeeds. A failed acknowledgment reports under `gym.proposal_receipt_shown` and
 retains the receipt for retry. Receipt snapshots, proposal IDs and routine names stay on the phone.

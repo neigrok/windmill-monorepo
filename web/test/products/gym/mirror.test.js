@@ -5,7 +5,7 @@ import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, 
 
 const NOW = 1_755_000_600_000;
 const session = (plan) => ({ id: 'ses_1', startedAt: NOW - 600_000, ...(plan ? { plan } : {}) });
-const sets = [{ id: 'set_1', exerciseId: 'bench-press', setNumber: 2, weightKg: 80, reps: 5, kind: 'working', completedAt: NOW - 30_000 }];
+const sets = [{ id: 'set_1', exerciseId: 'bench-press', setNumber: 2, weightKg: 80, reps: 5, completedAt: NOW - 30_000 }];
 
 // The mirror hands the running session to a child; the harness renders no child, so it is drawn here.
 async function mirror(t, { plan = null, logged = sets }) {
@@ -45,15 +45,13 @@ test('the mirror draws the plan line in the readout formula and the slots as row
     }],
   };
   const logged = [
-    { id: 'set_w', exerciseId: 'back-squat', setNumber: 1, weightKg: 40, reps: 8, kind: 'warmup', completedAt: NOW - 400_000 },
-    { id: 'set_1', exerciseId: 'back-squat', setNumber: 2, weightKg: 60, reps: 5, kind: 'working', completedAt: NOW - 200_000 },
-    { id: 'set_2', exerciseId: 'back-squat', setNumber: 3, weightKg: 80, reps: 5, kind: 'working', completedAt: NOW - 30_000 },
+    { id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 60, reps: 5, completedAt: NOW - 200_000 },
+    { id: 'set_2', exerciseId: 'back-squat', setNumber: 2, weightKg: 80, reps: 5, completedAt: NOW - 30_000 },
   ];
   const tree = await mirror(t, { plan, logged });
   assert.deepEqual(findByClass(tree, 'gym-mirror-plan').map(textOf), ['plan 5 × 1–5 · 60–100']);
   const rows = findByClass(tree, 'gym-mirror-slot');
   assert.deepEqual(rows.map((row) => [row.props.className, textOf(row), row.props['aria-label']]), [
-    ['gym-mirror-slot is-warmup', '40 × 8 (warmup)', undefined],
     ['gym-mirror-slot is-lifted', '60 × 5', undefined],
     ['gym-mirror-slot is-lifted', '80 × 5', undefined],
     ['gym-mirror-slot is-target', '90 × 3', 'set 3, target 90 × 3'],
@@ -74,8 +72,8 @@ test('a free session draws no plan line and only what landed', async (t) => {
 test('clock anchors survive corrections, exercise changes, deletion/Undo, finish and skew', async () => {
   const { workoutClocks } = await import('../../../src/products/gym/log.js');
   const session = { startedAt: 1000 };
-  const first = { id: 's1', completedAt: 6000, exerciseId: 'squat', kind: 'warmup' };
-  const last = { id: 's2', completedAt: 61000, exerciseId: 'bench', kind: 'working' };
+  const first = { id: 's1', completedAt: 6000, exerciseId: 'squat' };
+  const last = { id: 's2', completedAt: 61000, exerciseId: 'bench' };
   const now = 3662000;
   assert.deepEqual(workoutClocks(session, [first, last], now), [
     { label: 'Workout time', elapsed: 3661000, spoken: '1 hour 1 minute 1 second' },

@@ -11,33 +11,30 @@ import struct SyncModelServer.ServerCall
 struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
-  var onSetup: (() -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
-  @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
   @State private var selectedID: ID<Routine>?
   @State private var startID: ID<Routine>?
 
   var body: some View {
     let proposals = gym.routineProposals
-    let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
+    let receipts = gym.routineRemovalReceipts
     Group {
       if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
-        ContentUnavailableView {
-          Label("No routines yet", systemImage: "list.bullet.rectangle")
-        }
+        ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")
       } else {
         List {
           Group {
             if !receipts.isEmpty || !proposals.isEmpty {
               Section {
+                // A removal the log answered reads the word its card stands on: Removed, or Not applied when the log refused it.
                 ForEach(receipts, id: \.proposal.id) { receipt in
                   Button { onReviewProposal?(receipt.proposal.id) } label: {
-                    GymRow(title: receipt.proposal.baseName ?? "Routine removal",
-                           meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
+                    GymRow(title: CoachCopy.proposalTitle(routine: receipt.proposal.baseName ?? receipt.proposal.proposedName, changes: 0, removal: true),
+                           meta: gym.coachProposalWord(receipt.proposal), trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
-                // A waiting proposal carries the accent; one out of date reads its settled word alone, as a receipt does.
+                // A waiting proposal carries the accent and opens its card; one out of date reads its settled word alone.
                 ForEach(proposals, id: \.id) { proposal in
                   let outOfDate = gym.coachProposalOutOfDate(proposal)
                   Button { onReviewProposal?(proposal.id) } label: {
@@ -52,9 +49,9 @@ struct RoutinesTab: View {
               Section {
                 ForEach(routines, id: \.id) { routine in
                   Button { selectedID = routine.id } label: {
-                    GymRow(title: routine.name, meta: gym.routineLine(routine))
+                    GymRow(title: routine.name, meta: gym.routineLine(routine), trailing: .door)
                   }.accessibilityIdentifier("routine-\(routine.id)")
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .trashSwipe("Delete routine") { gym.run(DeleteRoutine(routine.id)) }
                     .contextMenu {
                       Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
                       Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
@@ -75,12 +72,9 @@ struct RoutinesTab: View {
       .reachBand {
         VStack(spacing: RoomSpace.related) {
           GymTransient(gym: gym)
-          HStack {
-            Spacer()
-            Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
-              .labelStyle(.iconOnly).buttonStyle(RoomSeatStyle()).font(.title3.weight(.semibold))
-              .accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
-          }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+          FloatingAction(title: "New routine", symbol: "plus", identifier: "new-routine") {
+            building = RoutineEditingSession(gym: gym, routine: nil)
+          }.disabled(gym.accountTransition)
         }
       }
       .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }
@@ -125,12 +119,12 @@ struct RoutineDetail: View {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
                 let exercise = gym.catalogue.find(entry.exerciseId)
-                let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                let yours = exercise != nil && !SeedExercises.contains(entry.exerciseId)
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(yours ? " · yours" : "")",
                        meta: Readout.target(entry.sets))
                   .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text(gym.routineLine(routine)) }
+            }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
       } else if waitsForSync {
@@ -146,9 +140,10 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).accessibilityIdentifier("routine-detail")
+      .roomTitle(routine?.name ?? "Routine", subtitle: routine.map(gym.routineLine)).navigationBarTitleDisplayMode(.inline)
+      .accessibilityIdentifier("routine-detail")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).accessibilityIdentifier("routine-close") }
+        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.accessibilityIdentifier("routine-close") }
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
@@ -211,6 +206,13 @@ enum RoutineLines {
     return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
+  // A movement's targets in its load basis: *4 × 8 · 60 kg total*, *3 × 10 · 22.5 kg each*, *3 × 12* with no load, *Open*.
+  static func movement(_ sets: [SetTarget]?, equipment: MovementEquipment) -> String {
+    guard let sets, !sets.isEmpty else { return "Open" }
+    let target = Readout.target(sets)
+    return sets.contains { $0.weightKg != nil } ? "\(target) \(equipment.unit)" : target
+  }
+
   static func session(_ readout: SessionReadout) -> String {
     "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
   }
@@ -239,8 +241,12 @@ extension GymModel {
     }
   }
 
+  // The removals the log answered, each a row on Routines until its card is seen.
+  var routineRemovalReceipts: [RoutineRemovalReceipt] { coachRemovalReceipts.filter { $0.outcome != .pending } }
+
   // The proposals Routines draws, newest first: each one still waiting, and a connected tool's gone out of date while it is
   // the newest proposal on a routine in sight. A Coach proposal out of date leaves for its card; a tool's has no other door.
+  // A removal the log answered is its receipt's row alone, though a refused one still waits.
   var routineProposals: [Proposal] {
     let born: [ID<Proposal>: Stamp]
     do {
@@ -252,7 +258,9 @@ extension GymModel {
       let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
       return a == b ? $0.id < $1.id : a > b
     }
+    let answered = Set(routineRemovalReceipts.map(\.proposal.id))
     return newest.filter { proposal in
+      guard !answered.contains(proposal.id) else { return false }
       guard coachProposalOutOfDate(proposal) else { return proposal.state == "pending" }
       if case .ask = proposal.provenance { return false }
       return coachRoutine(proposal) != nil && newest.first { $0.routineId == proposal.routineId }?.id == proposal.id
@@ -273,10 +281,10 @@ extension GymModel {
                             changes: coachChangeCount(proposal), removal: proposal.intent == "remove")
   }
 
-  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once it can no longer be
-  // applied, its settled word.
+  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once its card stands on a
+  // word — out of date, or its Apply refused — that word.
   func proposalLine(_ proposal: Proposal) -> String {
-    if coachProposalOutOfDate(proposal) { return CoachCopy.outOfDate }
+    if let word = coachProposalWord(proposal) { return word }
     return RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
   }
 }

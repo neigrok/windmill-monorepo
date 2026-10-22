@@ -82,7 +82,7 @@ enum RecoveryFixture {
         let last = index == count - 1
         let completed: Int64 = start + Int64(index + 1) * 180_000 + (late && last ? Self.day : 0)
         return TrainingSet(id: ID(RecordID("\(id)-set-\(index)")), sessionId: session.id, exerciseId: ID(RecordID(exercise)),
-                           weightKg: index == 0 ? 60 : 80, reps: index == 0 ? 8 : 5, kind: index == 0 ? "warmup" : "working",
+                           weightKg: index == 0 ? 60 : 80, reps: index == 0 ? 8 : 5,
                            rpe: last ? 8 : nil, completedAt: Instant(ms: completed))
       })
     }

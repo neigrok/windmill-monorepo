@@ -298,7 +298,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
               </h2>
               {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${movements.get(exerciseId)?.name ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
               {!scheme && <span className="gym-movement-state" aria-hidden="true"><img src={new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
-              <span className="gym-movement-totals">{movementTotals.reps} reps · {group.filter((set) => set.kind === 'working').every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageLabel(movementTotals.tonnageKg) ?? '0'} ${weightUnit()}`}</span>
+              <span className="gym-movement-totals">{movementTotals.reps} reps · {group.every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageLabel(movementTotals.tonnageKg) ?? '0'} ${weightUnit()}`}</span>
             </div>
             {collapsed && <button type="button" className="gym-scheme-row" aria-expanded="false" onClick={() => setExpanded((current) => new Set(current).add(exerciseId))}>
               <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>
@@ -310,7 +310,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
                   <li key={set.id}>
                     <button
                       type="button"
-                      className={['gym-set', set.kind === 'warmup' && 'gym-set-warmup'].filter(Boolean).join(' ')}
+                      className="gym-set"
                       onClick={() => { setFixing(set); window.location.hash = fixSetHref(id, set.id, from); }}
                     >
                       <span className="gym-set-rail" aria-hidden="true"><i /></span>

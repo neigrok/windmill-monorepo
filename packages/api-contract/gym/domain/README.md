@@ -20,7 +20,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
-| `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, provenance and optional R118 metadata reads |
+| `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
@@ -42,26 +42,29 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 `GymPreferences` and `Proposal` use `{id,fields}`. The writable form excludes server metadata,
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
+Sets have no type: every set is a working set. A stored row's `kind` is read and ignored, and no
+writable form or read document carries one. The session commands' rules still name a `sets.kind`
+choice (`gym.importSession.sets.kind`, `gym.correctSession.sets.kind`); the domain's imported and
+corrected sets drop it.
 
 `ExerciseName` is a metadata override keyed by a movement: a seed's carries `name`, `equipment` and
 `loadCount`, a custom movement's only `equipment` and `loadCount` (its name lives on `exercise.name`). Its
 writable form omits every null field, `name` included.
 
-**Load count.** Volume and tonnage count each working set as `max(0, weightKg) × reps × count`: a load is
+**Load count.** Volume and tonnage count each set as `max(0, weightKg) × reps × count`: a load is
 entered per dumbbell, so `count` is the resolved `loadCount` for a movement whose resolved equipment is
 `dumbbell` (the override's `loadCount`, else the seed's, else two; `goblet-squat`, `dumbbell-row`,
 `suitcase-carry` and `overhead-triceps-extension` hold one), and one for every other equipment, a
 `loadCount` left on a non-dumbbell override included. A bodyweight set counts only positive added load;
-an assisted set counts nothing. Warmups never count. Every volume read takes the resolved catalogue.
+an assisted set counts nothing. Every volume read takes the resolved catalogue.
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
 frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
 
-`ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `kind,rpe,note`.
-`CorrectedSet` adds required `setNumber`: kept sets keep their kind; new ones take optional `kind`,
-default working. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
+`ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `rpe,note`.
+`CorrectedSet` adds required `setNumber`. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
 Command arguments retain their raw loads and omitted versus explicit null `rpe` for
 receipt identity. Predictions use checked, rounded values and never invent serials.
 
@@ -110,6 +113,21 @@ routine's revision moved or its name or movements differ from the confirmed copy
 reads the decision; a reorder alone does not refuse. It is refused `gone` when the routine is absent or out of sight.
 Turning down ignores both. A proposal is out of date when it is superseded, replaced, or pending with its Apply refused.
 
+## Change blocks
+
+`ChangeBlocks` (`{proposal, routine?, units?, each?}` → `{blocks, unchanged}`) reads a proposal as its card draws it.
+Blocks list a new name, then movements that only moved, changed movements, removals and additions, each kind in the
+proposal's order; `unchanged` counts the movements it keeps in place. A move is read against the routine only while the
+proposal is pending: a movement whose place is the same in the routine and the proposal never moved; of the rest, those
+in the longest run that keeps the routine's order stand — of equal runs, the one whose routine places come first — and
+every other kept movement moved, *Order 3rd → 1st*. A moved
+and retargeted movement is one changed block with its order first. A field is `{label, before, after, state}`: no
+before is new, no after is gone, equal is same. While every set on both sides is the same a movement reads *Sets*,
+*Reps* (*Max* with none) and *Load* (only when a side has a weight; *Last time* with none); once sets differ it reads
+*Set N* per set, *5 × 80 kg* (*8 reps* unweighted); an open side reads one *Target* line, *None* against *3 × 10* or
+*3 × 5 at 80 kg*; a changed rest reads *Rest*, in seconds under two minutes (*60 s*, *90 s*), whole minutes from two (*2 min*), else seconds, or *Default*. Loads format through `Readout.weight` in the
+requested units, *each* for a movement in `each`. A removal proposal has no blocks.
+
 ## Reads
 
 `WorkoutRecovery` (read scene with `input.notices` in the kit's notice form, `dismissed?` added) lists a row per
@@ -123,11 +141,11 @@ parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-s
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's working-set override. `SessionReadout` provides duration, working-set
-and movement counts, working volume and the session estimate. `StatsProgress` groups
-finished working facts in total order, with full-precision estimate values. `MovementProgress`
+last-time rows and today's sets. `SessionReadout` provides duration, working-set (every set)
+and movement counts, volume and the session estimate. `StatsProgress` groups
+finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
-and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
+and gaps. All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
 Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
 by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;

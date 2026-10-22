@@ -439,29 +439,19 @@ import XCTest
     snapshot("session-\(appearance)", app: app)
     let correctedSet = firstSet(app)
     correctedSet.tap()
-    let weight = app.buttons["gym-fix-weight"]
-    XCTAssertTrue(weight.waitForExistence(timeout: 5))
+    let save = app.buttons["gym-fix-save"]
+    XCTAssertTrue(save.waitForExistence(timeout: 5))
     snapshot("fix-\(appearance)", app: app)
-    weight.tap()
-    let delete = app.buttons["workout-key-delete"]
-    XCTAssertTrue(delete.waitForExistence(timeout: 5))
-    for _ in 0..<8 where app.staticTexts["workout-keypad-value"].label != "—" { delete.tap() }
-    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "—")
-    XCTAssertFalse(app.buttons["workout-keypad-set"].isEnabled)
-    app.buttons["workout-key-9"].tap(); app.buttons["workout-key-0"].tap()
-    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "90")
-    // Set and Save each land before their sheet leaves, so what they wrote is read, not awaited: a wait drops a slow accessibility read at its timeout.
-    app.buttons["workout-keypad-set"].tap()
-    XCTAssertEqual(weight.label, "Weight, 90 kg total")
-    app.buttons["gym-fix-save"].tap()
-    XCTAssertTrue(weight.waitForNonExistence(timeout: 5))
+    app.turnLoadWheel(to: "90")
+    XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "90 kg total")
+    save.tap()
+    XCTAssertTrue(save.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     XCTAssertEqual(correctedSet.label, "1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.")
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     snapshot("record-\(appearance)", app: app)
-    app.swipeUp()
-    XCTAssertTrue(app.segmentedControls["gym-record-window"].exists)
+    XCTAssertTrue(app.segmentedControls["gym-record-window"].waitForExistence(timeout: 5))
     for _ in 0..<3 where app.segmentedControls["gym-record-window"].frame.minY < 180 {
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.4))
       start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)))
@@ -493,8 +483,10 @@ import XCTest
     app.buttons["gym-bodyweight-door"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     snapshot("bodyweight-\(appearance)", app: app)
-    let crowdedPoint = app.buttons["gym-chart-point-2026-09-20"]
-    XCTAssertTrue(crowdedPoint.waitForExistence(timeout: 5)); crowdedPoint.tap()
+    let crowdedRow = app.buttons["gym-weigh-in-2026-09-20"]
+    XCTAssertTrue(crowdedRow.waitForExistence(timeout: 5))
+    for _ in 0..<4 where !crowdedRow.isHittable { app.swipeUp(velocity: .slow) }
+    crowdedRow.tap()
     let fixedDate = app.descendants(matching: .any)["gym-weigh-in-fixed-date"]
     XCTAssertTrue(fixedDate.waitForExistence(timeout: 5))
     snapshot("weigh-in-crowded-\(appearance)", app: app)
@@ -515,20 +507,20 @@ import XCTest
     app.buttons["gym-weigh-in-delete"].tap()
     XCTAssertTrue(app.buttons[deletedDay].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
-    XCTAssertFalse(app.buttons[deletedDay.replacingOccurrences(of: "gym-weigh-in-", with: "gym-chart-point-")].exists)
-    let retainedPoint = app.buttons["gym-chart-point-2026-09-23"]
-    XCTAssertTrue(retainedPoint.waitForExistence(timeout: 5))
-    XCTAssertEqual(retainedPoint.label, "82.5 kg · Sep 23"); retainedPoint.tap()
+    let retainedRow = app.buttons["gym-weigh-in-2026-09-23"]
+    XCTAssertTrue(retainedRow.waitForExistence(timeout: 5))
+    XCTAssertEqual(retainedRow.label, "82.5 kilograms, Sep 23"); retainedRow.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.textFields["gym-weigh-in-weight"].value as? String, "82.5")
     app.buttons["Cancel"].tap()
     back(app)
     let session = visibleSessionRow(app), id = session.identifier
     session.swipeLeft()
-    let discard = app.buttons["Delete"]
+    let discard = app.buttons["trash-swipe"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5))
     snapshot("log-actions-\(appearance)", app: app)
     discard.tap()
+    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
     app.buttons["Discard workout"].tap()
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))

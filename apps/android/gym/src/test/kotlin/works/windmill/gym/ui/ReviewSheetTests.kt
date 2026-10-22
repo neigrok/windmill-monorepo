@@ -65,7 +65,6 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.sync.ProposalRules
 import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.net.FakeGymRest
@@ -704,12 +703,11 @@ class ReviewSheetTests {
         val closed = runBlocking {
             assertTrue(store.start(routine.id) is GymResult.Ok)
             store.choose("bench-press")
-            store.logSet(20.0, 8, SetKind.Warmup)
+            store.logSet(20.0, 8)
             store.logSet(60.0, 5)
             (store.finish() as FinishOutcome.Closed).detail
         }
-        assertEquals(listOf(Triple(SetKind.Warmup, 20.0, 8), Triple(SetKind.Working, 60.0, 5)),
-            closed.sets.map { Triple(it.kind, it.weightKg, it.reps) })
+        assertEquals(listOf(20.0 to 8, 60.0 to 5), closed.sets.map { it.weightKg to it.reps })
         room.sync(server)
         val history = room.training.details()
         val confirmed = history.single { it.session.id == closed.session.id }

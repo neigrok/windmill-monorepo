@@ -13,7 +13,7 @@ nonisolated enum GymCount {
   }
 }
 
-// The one date formatter: five forms in the person's locale and calendar,
+// The one date formatter: its forms in the person's locale and calendar,
 // each day read in the zone the domain reads it in. No view orders a day and a month of its own.
 nonisolated struct GymDate {
   let moment: Moment
@@ -45,6 +45,9 @@ nonisolated struct GymDate {
 
   // *September*, the year only when it is not this one: a month section's header, and the month a month moment names.
   func month(_ day: LocalDay) -> String { draw(day, dated(day, .dateTime.month(.wide))) }
+
+  // *Aug*, a chart's month tick, the year only when it is not this one.
+  func monthTick(_ day: LocalDay) -> String { draw(day, dated(day, .dateTime.month(.abbreviated))) }
 
   // *Wed, Sep 23 · 12:00–12:45 PM*. A span that crosses midnight keeps its first day and both times,
   // *Mon, Oct 12 · 11:43 PM – 12:20 AM*; one with no end yet is its day and its start.

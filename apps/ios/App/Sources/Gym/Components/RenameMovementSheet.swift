@@ -67,6 +67,7 @@ struct RenameMovementSheet: View {
   @State var loadCount: Int
   @State var saving = false
   @State var refusal: String?
+  @State var detent = PresentationDetent.large
   @State private var editingAccount: String?
   @State private var editingAnonymous: Bool
   @FocusState var nameFocused: Bool
@@ -88,11 +89,11 @@ struct RenameMovementSheet: View {
           if let refusal, !saving {
             Text(refusal).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
           }
-        } footer: { Text("The name updates in your routines and history. The old name still finds it.") }
+        } footer: { Text("The new name shows in your routines and history. Search still finds the old name.") }
           .listRowBackground(GymPalette.card)
         Section {
           MovementEquipmentPicker(equipment: $equipment, loadCount: $loadCount, identifier: "gym-rename-movement-equipment").disabled(saving)
-        } footer: { Text(MovementEquipment(equipment, loadCount: loadCount).help + " Equipment changes recalculate your history’s volume; logged weights stay as entered.") }
+        } footer: { Text(MovementEquipment(equipment, loadCount: loadCount).help + " Changing equipment updates past volume. Your logged weights do not change.") }
           .listRowBackground(GymPalette.card)
       }
       .modifier(GymPage()).navigationTitle("Edit exercise")
@@ -100,12 +101,12 @@ struct RenameMovementSheet: View {
                    disabled: gym.accountTransition || MovementName.problem(name) != nil || MovementEdit(exercise, name: name, equipment: equipment, loadCount: loadCount).isEmpty, busy: saving,
                    dismiss: { dismiss() }, commit: rename)
       .interactiveDismissDisabled(saving)
-      .onAppear { nameFocused = true; gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
       .onChange(of: name) { _, value in name = MovementName.capped(value); refusal = nil }
       .onChange(of: gym.account) { _, _ in dismiss() }
       .accessibilityIdentifier("gym-rename-movement")
     }
-    .modifier(GymPage()).presentationDetents([.medium, .large])
+    .modifier(GymPage()).presentationDetents([.medium, .large], selection: $detent)
   }
 
   func rename() {
@@ -132,8 +133,12 @@ struct MovementEquipment {
   let loadCount: Int
   init(_ value: String, loadCount: Int = 2) { self.value = value; self.loadCount = value == "dumbbell" ? loadCount : 1 }
   init(_ exercise: Exercise?) { self.init(exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 2) }
-  static let choices = ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"]
+  static let choices = ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"]
   var title: String { value == "dumbbell" ? loadCount == 1 ? "One dumbbell" : "Dumbbells" : value.capitalized }
+  // Its name in the Equipment menu, whatever the dumbbell count.
+  var choice: String { value == "dumbbell" ? "Dumbbells" : value.capitalized }
+  // A pair of dumbbells, whose load is the weight of one, said per hand.
+  var each: Bool { value == "dumbbell" && loadCount == 2 }
   var symbol: String {
     switch value {
     case "barbell": "figure.strengthtraining.traditional"
@@ -153,8 +158,8 @@ struct MovementEquipment {
   }
   var help: String {
     switch value {
-    case "dumbbell": loadCount == 1 ? "Enter the dumbbell’s weight. Volume counts one dumbbell." : "Enter each dumbbell’s weight. Volume counts both."
-    case "bodyweight": "Enter added weight, or a negative number for assistance. Zero means bodyweight only. Volume counts added weight only."
+    case "dumbbell": loadCount == 1 ? "Enter the dumbbell’s weight. Volume counts one dumbbell." : "Enter the weight of one dumbbell. Volume counts both."
+    case "bodyweight": "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight."
     case "barbell": "Enter the total weight, including the bar."
     default: "Enter the external weight you lift."
     }
@@ -167,18 +172,29 @@ struct MovementEquipmentPicker: View {
   let identifier: String
   var body: some View {
     Group {
-      Picker(selection: $equipment) {
-        ForEach(MovementEquipment.choices, id: \.self) { value in
-          Label(value == "dumbbell" ? "Dumbbells" : MovementEquipment(value).title, systemImage: MovementEquipment(value).symbol).tag(value)
-        }
+      LabeledContent {
+        Menu {
+          Picker("Equipment", selection: $equipment) {
+            ForEach(MovementEquipment.choices, id: \.self) { value in
+              Label(MovementEquipment(value).choice, systemImage: MovementEquipment(value).symbol).tag(value)
+            }
+          }
+        } label: {
+          HStack(spacing: RoomSpace.small) {
+            Text(MovementEquipment(equipment).choice)
+            Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+          }
+        }.accessibilityLabel("Equipment").accessibilityValue(MovementEquipment(equipment).choice).accessibilityIdentifier(identifier)
       } label: {
-        Label("Equipment", systemImage: MovementEquipment(equipment).symbol)
-      }.pickerStyle(.menu).accessibilityIdentifier(identifier)
+        Label("Equipment", systemImage: MovementEquipment(equipment).symbol).foregroundStyle(GymPalette.ink)
+      }
       if equipment == "dumbbell" {
-        Picker("Dumbbells lifted", selection: $loadCount) {
-          Text("One").tag(1)
-          Text("Two").tag(2)
-        }.pickerStyle(.segmented).accessibilityIdentifier("\(identifier)-count")
+        LabeledContent("Dumbbells lifted") {
+          Picker("Dumbbells lifted", selection: $loadCount) {
+            Text("One").tag(1)
+            Text("Two").tag(2)
+          }.pickerStyle(.segmented).fixedSize().accessibilityIdentifier("\(identifier)-count")
+        }.foregroundStyle(GymPalette.ink)
       }
     }
   }

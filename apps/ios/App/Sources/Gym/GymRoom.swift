@@ -18,8 +18,9 @@ struct GymRoom: View {
   @State var routinesPath = NavigationPath()
   @State var logPath = NavigationPath()
   @State var coachPath = NavigationPath()
-  @State var proposal: ProposalReviewID?
+  @State var proposal: CoachProposalID?
   @State var coachHandoff: CoachHandoff?
+  @State var revealedProposal: String?
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
   @State var shareAfterSignIn: ID<Session>?
@@ -41,14 +42,14 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }, onSetup: openSetup))
+          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
         NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, revealedProposal: $revealedProposal, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
           .onPreferenceChange(TabBarHidden.self) { tabBar(.coach, hidden: $0) }
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
@@ -71,9 +72,8 @@ struct GymRoom: View {
     }
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachKeepRoutines, { app.keep(routines: true) })
-    .environment(\.coachOpenRoutine, { id in tab = .routines; routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
+    .environment(\.coachOpenRoutine, { id in routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
-    .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send, purpose: handoff.purpose) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(isPresented: Binding(get: { routine != nil }, set: { if !$0 { routine = nil } }), onDismiss: {
       if let id = startRoutine { startRoutine = nil; gym.startWorkout(routineId: id) }
@@ -81,12 +81,7 @@ struct GymRoom: View {
       if let routine { RoutineSummarySheet(gym: gym, id: routine, awaitSync: routineAwaitingSync) { startRoutine = routine; self.routine = nil } }
     }
     .sheet(item: $setupBuilder) { editing in RoutineBuilder(gym: gym, editing: editing) { routine = $0 } }
-    .sheet(item: $proposal) { proposal in
-      ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
-        self.proposal = nil
-        ask("Tell me about the proposal for \(name).")
-      }
-    }
+    .sheet(item: $proposal) { proposal in ProposalSheet(gym: gym, id: proposal.id) }
     // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
     // shared.
     .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in
@@ -182,18 +177,18 @@ struct GymRoom: View {
   var setupReady: Bool {
     coach.allowed && coach.draftReadable && !gym.coachUnavailable && gym.historyKnown && !app.signInPending && !gym.accountTransition && app.sheet == nil
   }
-  func openSetup() {
-    guard coach.allowed else { return }
-    _ = coach.beginSetup()
-    coachPath = NavigationPath(); tab = .coach
-    gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "shown"])
-  }
   func escapeSetup(_ choice: CoachSetupChoice) {
     if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
   }
-  func ask(_ question: String, send: Bool = false, purpose: CoachPurpose = .conversation) {
+  // A proposal's row opens the conversation at its card while the conversation on screen holds it; one it does not — a
+  // connected tool's, or one from another conversation — opens its card on a sheet.
+  func reviewProposal(_ id: ID<Proposal>) {
+    guard coach.proposalTurn(id.description) != nil else { proposal = CoachProposalID(id: id.description); return }
+    coachPath = NavigationPath(); revealedProposal = id.description; tab = .coach
+  }
+  func ask(_ question: String, send: Bool = false) {
     coachPath = NavigationPath(); tab = .coach
-    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send, purpose: purpose)
+    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send)
   }
   func receiveWorkout() {
     risingFromAccessory = false

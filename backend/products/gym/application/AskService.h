@@ -17,6 +17,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -94,6 +95,12 @@ struct AskRequest {
   bool routineReview = false;  // the client shows Coach's routine drafts and their Save routine control
 };
 
+// When a capped account's next question frees up: the moment, and the wait from the refusal to it.
+struct NextQuestion {
+  std::uint64_t atMs = 0;
+  std::uint64_t afterMs = 0;
+};
+
 // `read` and `proposals` are the server's own observations, never the model's.
 struct AskReply {
   AskRefusal refusal = AskRefusal::none;
@@ -103,6 +110,7 @@ struct AskReply {
   std::optional<AnswerReceipt> receipt;
   std::optional<AskGeneration> generation;
   std::optional<AiBudgetView> allowance;
+  std::optional<NextQuestion> nextQuestion;  // dailyLimit only
 };
 
 // Why a routine draft was not saved; a transient engine refusal throws GymUnavailable with the engine's code.
@@ -130,12 +138,17 @@ constexpr double kAskPerDay = 10.0;
 constexpr double kAskBackToBack = 3.0;
 
 // A token bucket: `kAskBackToBack` in hand, refilling at `kAskPerDay` a day, keyed by the ACCOUNT
-// and never by IP. A run that reached nobody is GIVEN BACK; the test is `AskAnswer::modelTurns`,
-// what a run COST, and never `ok`.
+// and never by IP, timed by the service's wall clock. A run that reached nobody is GIVEN BACK; the
+// test is `AskAnswer::modelTurns`, what a run COST, and never `ok`.
 class AskRation {
 public:
-  // One of today's questions, or false when the account has spent them.
-  bool take(const std::string& account);
+  // A question spent, or — none left — when the bucket next holds a whole one.
+  struct Take {
+    bool spent = false;
+    NextQuestion next;
+  };
+
+  Take take(const std::string& account, std::uint64_t nowMs);
   // Un-spends a question that COST NOTHING, never merely one that failed. Clamped at full, so a
   // stray return cannot mint a question beyond the burst.
   void giveBack(const std::string& account);
@@ -143,7 +156,7 @@ public:
 private:
   struct Held {
     double questions = kAskBackToBack;  // an account nobody has seen holds the whole burst
-    std::chrono::steady_clock::time_point refilledAt{};
+    std::uint64_t refilledAtMs = 0;
   };
 
   std::mutex mutex_;

@@ -12,7 +12,7 @@ struct WorkoutScreen: View {
   @State var addMovement = false
   @State var addAfterAssembly = false
   @State var fixing: TrainingSet?
-  @State var keypad: SetKeypad.Field?
+  @State var wheel = false
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
@@ -37,7 +37,7 @@ struct WorkoutScreen: View {
         old == nil && new != nil
       }
       .roomTitle(workout.session?.name ?? Readout.noRoutine,
-                 subtitle: workout.session.flatMap { session in session.isOpen ? dates.time(session.startedAt) : nil })
+                 subtitle: workout.session.flatMap { session in session.isOpen ? "Started " + dates.time(session.startedAt) : nil })
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if workout.session?.isOpen == true {
@@ -66,20 +66,18 @@ struct WorkoutScreen: View {
     }
     .sheet(isPresented: $addMovement) { WorkoutMovementPicker(gym: gym, workout: workout) }
     .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-      if let set = fixing { SetEditor(gym: gym, set: set, routine: workout.session?.plan?.routine, identifier: "workout-fix") }
+      if let set = fixing { SetEditor(gym: gym, set: set, identifier: "workout-fix") }
     }
-    .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
-      if let keypad {
-        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps), basis: MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) })) { value in
-          if keypad == .weight { workout.weightKg = value } else { workout.reps = Int(value) }
-        }
-      }
+    .sheet(isPresented: $wheel) {
+      let movement = workout.selected.flatMap { gym.catalogue.find($0) }
+      SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
+                    weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
     }
     .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
-    .onChange(of: keypad) { _, field in workout.rackEditing = field != nil }
+    .onChange(of: wheel) { _, open in workout.rackEditing = open }
     .onAppear {
       if workout.sessionId != gym.openSession?.id && gym.openSession != nil { workout.restore() }
       workout.reconcile(); updateAwake()
@@ -104,14 +102,15 @@ struct WorkoutScreen: View {
   func live(_ session: Session) -> some View {
     VStack(spacing: 0) {
       if workout.walk.order.isEmpty {
-        ContentUnavailableView {
-          Label("Choose your first movement", systemImage: "dumbbell")
-        } description: {
-          Text("You decide the numbers at the rack.")
-        } actions: {
-          Button("Add movement", systemImage: "plus") { addMovement = true }.modifier(RoomPrimaryStyle(room: .gym))
-            .accessibilityIdentifier("workout-add")
-        }
+        VStack(spacing: RoomSpace.panel) {
+          Spacer()
+          Text("Choose your first movement").font(.title2.weight(.semibold)).foregroundStyle(GymPalette.ink)
+            .multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+          Button("Add movement", systemImage: "plus") { addMovement = true }
+            .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).tint(GymPalette.accent).fontWeight(.semibold)
+            .padding(.top, RoomSpace.panel).accessibilityIdentifier("workout-add")
+          Spacer()
+        }.padding(.horizontal, RoomSpace.inset).padding(.bottom, 120).frame(maxWidth: .infinity)
       } else {
         WorkoutPager(gym: gym, workout: workout, assembly: { assembly = true }, fix: { fixing = $0 })
       }
@@ -123,7 +122,7 @@ struct WorkoutScreen: View {
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
-          WorkoutRack(workout: workout, edit: { keypad = $0 })
+          WorkoutRack(workout: workout, edit: { wheel = true })
             .padding(RoomSpace.inset)
             .background {
               UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
@@ -156,11 +155,14 @@ struct WorkoutLedger: View {
     let ledger = workout.ledger(exerciseId)
     let unsent = gym.unsentSets(workout.sets)
     let fixable = !(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
+    let movement = gym.catalogue.find(exerciseId)
     VStack(spacing: RoomSpace.related) {
       Button(action: assembly) {
-        Text(gym.catalogue.find(exerciseId)?.name ?? "Movement")
-          .font(.title2.weight(.bold)).multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
+        HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+          Image(systemName: MovementEquipment(movement).symbol).font(.title3).accessibilityHidden(true)
+          Text(movement?.name ?? "Movement").font(.title2.weight(.bold)).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity)
       }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
         .accessibilityHint("Open this workout’s movements")
         .padding(.horizontal, RoomSpace.inset)
@@ -205,9 +207,9 @@ struct WorkoutLedger: View {
         HStack(spacing: RoomSpace.related) {
           Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)).unit)
             .font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
-            Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
-              .font(.system(size: 20)).foregroundStyle(index < ledger.working ? GymPalette.done : index == ledger.working ? GymPalette.accent : GymPalette.inkFaint)
+          ForEach(0..<max(ledger.targets.count, ledger.performed + 1), id: \.self) { index in
+            Image(systemName: index < ledger.performed ? "checkmark.circle.fill" : index == ledger.performed ? "record.circle" : "circle.fill")
+              .font(.system(size: 20)).foregroundStyle(index < ledger.performed ? GymPalette.done : index == ledger.performed ? GymPalette.accent : GymPalette.inkFaint)
               .frame(width: 28, height: 28)
           }
         }.padding(.horizontal, RoomSpace.inset)
@@ -282,8 +284,7 @@ struct WorkoutLedgerRow: View {
   var spoken: String {
     switch row.place {
     case .logged(let set):
-      let name = set.kind == SetKind.working.rawValue ? "Set \(row.marker)" : set.kind.capitalized
-      return "\(name), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
+      return "Set \(row.marker), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
     case .current: return "Set \(row.marker), current, \(asked.map { "target " + $0 } ?? "open target")"
     case .planned: return "Set \(row.marker), planned, \(asked ?? "open target")"
     }
@@ -317,22 +318,44 @@ struct WorkoutFacts: View {
   }
 }
 
+// The rack drafts the next set: the numeral, its unit at its baseline or under it at accessibility sizes, opens the
+// wheels and rolls to each new load; the ladder steps by the load's own band; each change the lifter makes to load or
+// reps ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
-  let edit: (SetKeypad.Field) -> Void
+  let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
-    VStack(spacing: RoomSpace.related) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })) { edit(.weight) }
+    let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
+    let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
+    VStack(spacing: RoomSpace.inset) {
+      numeral {
+        Button(action: edit) {
+          Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
+        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(workout.weightKg)) \(basis.unit)")
+          .accessibilityIdentifier("workout-weight")
+        Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
+      }.roomMotion(workout.weightKg)
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
+        ForEach(0..<4) { index in
+          let label = WeightLadder.labels(workout.weightKg)[index]
+          Button { workout.weightKg = WeightLadder.bump(workout.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
+            Text(label).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
+          }.accessibilityLabel("\(label) \(basis.unit)").accessibilityIdentifier("workout-weight-step-\(index)")
+        }
+      }.buttonStyle(GymInstrumentButtonStyle()).font(.body.monospacedDigit())
       HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= 1)
-        Button { edit(.reps) } label: {
+        Button(action: edit) {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
-            .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56)
-        }.accessibilityIdentifier("workout-reps")
+            .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         Button { workout.reps = min(99, workout.reps + 1) } label: {
           Image(systemName: "plus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= 99)
@@ -344,8 +367,24 @@ struct WorkoutRack: View {
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+      .sensoryFeedback(.selection, trigger: workout.adjustments)
   }
 }
+
+// The rack's keys are instruments in ink, whatever tint the host carries; a pressed key takes the accent.
+struct GymInstrumentButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .foregroundStyle(!enabled ? GymPalette.inkFaint : configuration.isPressed ? GymPalette.onAccent : GymPalette.ink)
+      .background(configuration.isPressed && enabled ? GymPalette.accent : GymPalette.control,
+                  in: RoundedRectangle(cornerRadius: RoomSpace.inset))
+      .contentShape(Rectangle())
+      .scaleEffect(configuration.isPressed && enabled && !reduceMotion ? 0.96 : 1)
+  }
+}
+
 
 struct WorkoutPager: UIViewControllerRepresentable {
   let gym: GymModel

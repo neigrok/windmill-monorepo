@@ -15,22 +15,12 @@ export function whenOf(ms, now) {
   return shortDayLabel(ms);
 }
 
-// `sessionCount` counts sessions the movement was WORKED in; `recentDays` holds every day it was
-// trained in bar a warmup. A movement logged only as a drop counts zero and still has sets to show.
-function inTheLog(record) {
-  return record.sessionCount > 0 || (record.recentDays ?? []).length > 0;
-}
-
 export function subheadOf(record) {
   const routines = record.routineCount === 0
     ? 'in no routine'
     : `in ${countLabel(record.routineCount, 'routine', 'routines')}`;
-  if (record.sessionCount > 0) {
-    const sessions = countLabel(record.sessionCount, 'session', 'sessions');
-    return `${record.exercise.equipment} · ${routines} · ${sessions}`;
-  }
-  // 'never logged' rather than '0 sessions', and guarded: a drop set is a set somebody did.
-  const sessions = inTheLog(record) ? 'no working sets' : 'never logged';
+  // 'never logged' rather than '0 sessions'.
+  const sessions = record.sessionCount > 0 ? countLabel(record.sessionCount, 'session', 'sessions') : 'never logged';
   return `${record.exercise.equipment} · ${routines} · ${sessions}`;
 }
 
@@ -72,10 +62,7 @@ export function daysOf(record, now) {
   return (record.recentDays ?? []).map((day) => ({
     sessionId: day.sessionId,
     when: whenOf(day.startedAt, now),
-    // Warmups are already off this wire; a drop or failure set printed bare would read as working.
-    sets: day.sets
-      .map((set) => (set.kind === 'working' ? setLoadLabel(set) : `${setLoadLabel(set)} ${set.kind}`))
-      .join(' · '),
+    sets: day.sets.map((set) => setLoadLabel(set)).join(' · '),
   }));
 }
 
@@ -118,7 +105,7 @@ export function recordView(record, { now = Date.now() } = {}) {
     name: record.exercise.name,
     subhead: subheadOf(record),
     // A movement nobody has worked draws no tiles, no chart and no lists.
-    logged: inTheLog(record),
+    logged: record.sessionCount > 0,
     tiles: tilesOf(record, now),
     records: recordsOf(record, now),
     days: daysOf(record, now),

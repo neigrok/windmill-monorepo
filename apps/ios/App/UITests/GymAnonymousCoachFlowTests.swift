@@ -64,29 +64,13 @@ import XCTest
     XCTAssertEqual(question.value as? String, "Build a short full body routine for three days each week")
     XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
-    let review = app.buttons["coach-review-routines"]
-    XCTAssertTrue(review.waitForExistence(timeout: 30))
-    reveal(review, in: app); review.tap()
-    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
-    try capture(app, "anonymous-review-" + suffix)
-    if largeText {
-      let lastTarget = app.staticTexts["coach-review-final-set"]
-      let save = app.buttons["coach-save-routines"]
-      for _ in 0..<16 {
-        if lastTarget.exists, lastTarget.isHittable, lastTarget.frame.maxY <= save.frame.minY - 28 { break }
-        let top = app.navigationBars.firstMatch.frame.maxY + 24
-        let bottom = save.frame.minY - 40
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: bottom))
-        let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: top))
-        start.press(forDuration: 0.05, thenDragTo: end)
-      }
-      XCTAssertTrue(lastTarget.isHittable)
-      XCTAssertLessThanOrEqual(lastTarget.frame.maxY, save.frame.minY - 28)
-      XCTAssertTrue(save.isHittable)
-      try capture(app, "anonymous-review-bottom-" + suffix)
-    }
-    app.buttons["coach-save-routines"].tap()
+    let apply = app.buttons["coach-save-routines"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 30))
+    XCTAssertTrue(app.buttons["coach-reject-routines"].exists)
+    reveal(apply, in: app)
+    XCTAssertTrue(apply.isHittable, "Apply is reachable under the drafts at every size")
+    try capture(app, "anonymous-drafts-" + suffix)
+    apply.tap()
     let receipt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch
     XCTAssertTrue(receipt.waitForExistence(timeout: 30))
     XCTAssertTrue(app.buttons["coach-keep-routines"].exists)
@@ -103,6 +87,42 @@ import XCTest
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
     try capture(app, "anonymous-workout-" + suffix)
     app.terminate()
+  }
+
+  // Signed out, Coach drafts routines and the lifter applies them; after sign-in and Add the same conversation goes on, and
+  // the next question gets a change to the routine it created.
+  func testTheConversationContinuesSignedInAfterAdd() throws {
+    for appearance in ["dark", "light"] {
+      let app = XCUIApplication()
+      app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
+        "-coach-fixture", "-coach-board", "after-sign-in", "-onboarding-appearance", appearance, "-AppleLocale", "en_US", "-AppleLanguages", "(en)"]
+      app.launch()
+      let question = app.descendants(matching: .any)["coach-question"]
+      XCTAssertTrue(question.waitForExistence(timeout: 30))
+      question.tap(); question.typeText("Build me a three day full body program")
+      app.buttons["coach-send"].tap()
+      let apply = app.buttons["coach-save-routines"]
+      XCTAssertTrue(apply.waitForExistence(timeout: 30)); reveal(apply, in: app); apply.tap()
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch.waitForExistence(timeout: 30))
+      app.buttons["you"].tap()
+      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10)); app.buttons["email-sign-in"].tap()
+      let address = app.textFields["email-address"]; address.tap(); address.typeText("after-sign-in-" + UUID().uuidString.prefix(8).lowercased() + "@example.com")
+      app.buttons["Send code"].tap()
+      let code = app.textFields["email-code"]; XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("482913")
+      if app.alerts.buttons["Add"].waitForExistence(timeout: 15) { app.alerts.buttons["Add"].tap() }
+      if app.buttons["Close"].waitForExistence(timeout: 3) { app.buttons["Close"].tap() }
+      XCTAssertTrue(question.waitForExistence(timeout: 15))
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch.waitForExistence(timeout: 15),
+                    "The adopted conversation stays")
+      question.tap(); question.typeText("Swap chin-ups for pulldowns")
+      app.buttons["coach-send"].tap()
+      let header = app.descendants(matching: .any)["coach-proposal-header"]
+      XCTAssertTrue(header.waitForExistence(timeout: 20), "The signed-in send gets Coach's answer, with its change")
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      try capture(app, "anonymous-after-sign-in-" + appearance)
+      app.terminate()
+    }
   }
 
   func testAnonymousDialogueLight() throws { try flow(appearance: "light") }

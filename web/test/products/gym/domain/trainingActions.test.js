@@ -86,7 +86,7 @@ test('concurrent starts join one workout and rewrite the queued set parent befor
   committed(await b.runner.run(AppendSet(set)));
   assert.deepEqual(b.drawn(TrainingSet), [set]);
   await a.sync();
-  const admitted = new TrainingSetValue(set.id, sessionId, exerciseId, 80, 5, finishedAt, 'working', null, '', 1);
+  const admitted = new TrainingSetValue(set.id, sessionId, exerciseId, 80, 5, finishedAt, null, '', 1);
   assert.deepEqual(a.drawn(TrainingSet), [admitted]);
   assert.deepEqual(b.drawn(TrainingSet), [admitted]);
   assert.deepEqual(a.drawn(Session), [new SessionValue(sessionId, finishedAt)]);
@@ -99,7 +99,7 @@ test('a pending start, complete set and finish survive restart and settle withou
   const a = await open(t);
   const b = await a.device();
   const set = new TrainingSetValue(new Id('set00001', TrainingSet), sessionId, exerciseId, 82.5, 5,
-    finishedAt, 'drop', 7.5, 'Keep this set');
+    finishedAt, 7.5, 'Keep this set');
   committed(await a.runner.run(StartSession({ id: sessionId, startedAt })));
   committed(await a.runner.run(AppendSet(set)));
   committed(await a.runner.run(FinishSession({ id: sessionId, finishedAt })));
@@ -164,7 +164,7 @@ test('CorrectSet accepts an admission serial but refuses concurrent changes and 
 test('a held set deletion refuses corrections, restores exactly on Undo and expires at its original deadline', async (t) => {
   const a = await open(t);
   const b = await a.device();
-  const input = imported('set00001', { kind: 'drop', rpe: 8, note: 'Kept' });
+  const input = imported('set00001', { rpe: 8, note: 'Kept' });
   await importWorkout(a, [input]);
   const before = setOf(a, input.id);
   const removed = committed(await a.runner.run(DeleteSet(input.id)));
@@ -269,7 +269,7 @@ for (const refused of [false, true]) test(`a correction removal preserves born a
   const product = new GymProduct();
   const a = await open(t, product);
   const b = await a.device();
-  const one = imported('set00001', { kind: 'drop', rpe: 8, note: 'Kept detail' });
+  const one = imported('set00001', { rpe: 8, note: 'Kept detail' });
   const two = imported('set00002');
   await importWorkout(a, [one, two]);
   const original = setOf(a, one.id);
@@ -336,20 +336,20 @@ test('registry v6 recovery preserves unmentioned sets and concurrent edits while
   assert.ok(retained);
   const changed = editing(retained, { reps: 9, note: 'Edited on another device' });
   committed(await a.runner.run(CorrectSet(changed)));
-  const added = new CorrectedSet({ ...imported('set00003', { kind: 'drop', rpe: 7.5, note: 'Recovered detail' }), setNumber: 3 });
+  const added = new CorrectedSet({ ...imported('set00003', { rpe: 7.5, note: 'Recovered detail' }), setNumber: 3 });
   committed(await b.runner.run(CorrectSession({ id: sessionId, requestId: 'recover1', startedAt, finishedAt, routineName: null,
     sets: [added], preserveOtherSets: true })));
   const command = b.engine.device.activeReplica.entries().at(-1).intent.cmd;
   assert.deepEqual(command, {
     name: 'gym.correctSession', args: { sessionId: 'session1', requestId: 'recover1', startedAt: startedAt.ms, finishedAt: finishedAt.ms,
       routineName: null, preserveOtherSets: true, sets: [{ id: 'set00003', exerciseId: 'bench-press', setNumber: 3, weightKg: 80,
-        reps: 5, completedAt: DEFAULT_NOW - 1_000, kind: 'drop', rpe: 7.5, note: 'Recovered detail' }] },
+        reps: 5, completedAt: DEFAULT_NOW - 1_000, rpe: 7.5, note: 'Recovered detail' }] },
   });
   assert.deepEqual(b.drawn(TrainingSet).filter((set) => !set.id.equals(added.id)), before);
   assert.deepEqual(setOf(b, added.id), new TrainingSetValue(added.id, sessionId, exerciseId, 80, 5, added.completedAt,
-    'drop', 7.5, 'Recovered detail'), 'a recovered set receives its serial only when the server admits it');
+    7.5, 'Recovered detail'), 'a recovered set receives its serial only when the server admits it');
   await a.sync();
-  const expected = [before[0], changed, new TrainingSetValue(added.id, sessionId, exerciseId, 80, 5, added.completedAt, 'drop', 7.5, 'Recovered detail', 3)];
+  const expected = [before[0], changed, new TrainingSetValue(added.id, sessionId, exerciseId, 80, 5, added.completedAt, 7.5, 'Recovered detail', 3)];
   assert.deepEqual(a.drawn(TrainingSet), expected);
   assert.deepEqual(b.drawn(TrainingSet), expected);
   assert.deepEqual(a.notices(GymRefusals), []);

@@ -158,7 +158,7 @@ public struct CorrectSet: Action {
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
   public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard let old = loaded.sets.first(where: { $0.id == value.id }), loaded.drawnSets.contains(where: { $0.id == value.id }) else { return .refuse(.gone(value.id.ref, .predicted)) }
-    let fields = ["weightKg", "reps", "kind", "rpe", "note"]
+    let fields = ["weightKg", "reps", "rpe", "note"]
     var correction = value
     if let original {
       guard original.id == value.id && original.sessionId == value.sessionId && original.exerciseId == value.exerciseId
@@ -169,7 +169,7 @@ public struct CorrectSet: Action {
             fields.allSatisfy({ old.fields[$0] == original.fields[$0] }) else { return .refuse(.stale(value.id.ref, .predicted)) }
       // Admission can assign a serial or normalize the clock while this editor is open.
       correction = TrainingSet(id: old.id, sessionId: old.sessionId, exerciseId: old.exerciseId,
-                               weightKg: value.weightKg, reps: value.reps, kind: value.kind, rpe: value.rpe, note: value.note,
+                               weightKg: value.weightKg, reps: value.reps, rpe: value.rpe, note: value.note,
                                completedAt: old.completedAt, setNumber: old.setNumber)
     }
     guard old.sessionId == correction.sessionId && old.exerciseId == correction.exerciseId && old.completedAt == correction.completedAt && old.setNumber == correction.setNumber else {
@@ -202,22 +202,21 @@ public struct ImportedSet: Sendable {
   public let weightKg: Double
   public let reps: Int
   public let completedAt: Instant
-  public let kind: String?
   public let rpe: Double?
   public let note: String?
   public let rpeNamed: Bool
   public init(id: ID<TrainingSet>, exerciseId: ID<Exercise>, weightKg: Double, reps: Int, completedAt: Instant,
-              kind: String? = nil, rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil) {
+              rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil) {
     self.id = id; self.exerciseId = exerciseId; self.weightKg = weightKg; self.reps = reps; self.completedAt = completedAt
-    self.kind = kind; self.rpe = rpe; self.note = note; self.rpeNamed = rpeNamed ?? (rpe != nil)
+    self.rpe = rpe; self.note = note; self.rpeNamed = rpeNamed ?? (rpe != nil)
   }
   public func value(session: ID<Session>) -> TrainingSet {
-    TrainingSet(id: id, sessionId: session, exerciseId: exerciseId, weightKg: weightKg, reps: reps, kind: kind ?? "working",
+    TrainingSet(id: id, sessionId: session, exerciseId: exerciseId, weightKg: weightKg, reps: reps,
                 rpe: rpe, note: note ?? "", completedAt: completedAt)
   }
   public var json: JSON {
     var members: JSON.Object = ["id": id.json, "exerciseId": exerciseId.json, "weightKg": .of(weightKg), "reps": JSON(reps), "completedAt": .of(completedAt)]
-    if let kind { members["kind"] = .string(kind) }; if let note { members["note"] = .string(note) }
+    if let note { members["note"] = .string(note) }
     if rpeNamed { members["rpe"] = .of(rpe) }; return .object(members)
   }
 }
@@ -276,16 +275,13 @@ public struct CorrectedSet: Sendable {
   public let rpe: Double?
   public let note: String?
   public let rpeNamed: Bool
-  public let kind: String?
   public init(id: ID<TrainingSet>, exerciseId: ID<Exercise>, setNumber: Int, weightKg: Double, reps: Int, completedAt: Instant,
-              rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil, kind: String? = nil) {
+              rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil) {
     self.id = id; self.exerciseId = exerciseId; self.setNumber = setNumber; self.weightKg = weightKg; self.reps = reps
     self.completedAt = completedAt; self.rpe = rpe; self.note = note; self.rpeNamed = rpeNamed ?? (rpe != nil)
-    self.kind = kind
   }
   public var json: JSON {
     var members: JSON.Object = ["id": id.json, "exerciseId": exerciseId.json, "setNumber": JSON(setNumber), "weightKg": .of(weightKg), "reps": JSON(reps), "completedAt": .of(completedAt)]
-    if let kind { members["kind"] = .string(kind) }
     if let note { members["note"] = .string(note) }; if rpeNamed { members["rpe"] = .of(rpe) }; return .object(members)
   }
 }
@@ -331,7 +327,7 @@ public struct CorrectSession: Action {
     for set in sets {
       let previous = loaded.sets.first { $0.id == set.id }
       let value = TrainingSet(id: set.id, sessionId: id, exerciseId: set.exerciseId, weightKg: set.weightKg, reps: set.reps,
-        kind: previous?.kind ?? set.kind ?? "working", rpe: set.rpeNamed ? set.rpe : previous?.rpe,
+        rpe: set.rpeNamed ? set.rpe : previous?.rpe,
         note: set.note ?? previous?.note ?? "", completedAt: set.completedAt, setNumber: set.setNumber)
       checked.append(try Valid(value, at: loaded.moment).value)
     }

@@ -65,12 +65,8 @@ struct LogTab: View {
         VStack(spacing: RoomSpace.related) {
           GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
                        errorIdentifier: "gym-log-error")
-          HStack {
-            Spacer()
-            Button("Weigh in", systemImage: "plus") { weighing = true }
-              .labelStyle(.iconOnly).buttonStyle(RoomSeatStyle()).font(.title3.weight(.semibold))
-              .accessibilityIdentifier("gym-weigh-in").disabled(gym.accountTransition)
-          }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+          FloatingAction(title: "Weigh in", symbol: "scalemass", labelled: true, identifier: "gym-weigh-in") { weighing = true }
+            .disabled(gym.accountTransition)
         }
       }
       .onChange(of: discard) { _, shown in
@@ -167,7 +163,7 @@ struct LogTab: View {
         Button("Share this workout", systemImage: "square.and.arrow.up") { share?(session.id) }
         Button("Discard workout", systemImage: "trash", role: .destructive) { discard = session.id }
       }
-      .swipeActions(allowsFullSwipe: false) { Button("Delete", systemImage: "trash", role: .destructive) { discard = session.id }.tint(GymPalette.destructive) }
+      .trashSwipe("Discard workout") { discard = session.id }
       .accessibilityAction(named: "Share this workout") { share?(session.id) }
       .accessibilityAction(named: "Discard workout") { discard = session.id }
   }

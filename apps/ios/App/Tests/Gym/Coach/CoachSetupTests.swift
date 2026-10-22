@@ -24,16 +24,16 @@ extension CoachTests {
     #expect(gym.routines.isEmpty && coach.activeGeneration?.results.isEmpty == true)
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
     let draft = try #require(coach.activeGeneration?.routineDrafts.first)
-    let review = CoachRoutineReview(id: draft.id, requestId: request.requestId, drafts: [draft.routine], operationId: draft.operationId)
+    let save = CoachDraftSave(requestId: request.requestId, operationId: draft.operationId)
     CoachTestProtocol.state.withLock { $0.reply = .failure(.networkConnectionLost) }
-    #expect(await coach.saveRoutines(review) == .kept("Couldn’t save the routine. Try again."))
+    #expect(await coach.saveRoutines(save) == .kept("Couldn’t save the routine. Try again."))
     #expect(coach.activeGeneration?.routineDrafts.first?.state == "pending" && gym.routines.isEmpty)
     generation["revision"] = 2
     var drafts = try #require(generation["routineDrafts"] as? [[String: Any]]); drafts[0]["state"] = "saved"; generation["routineDrafts"] = drafts
     generation["results"] = [["kind": "routine-created", "operationId": "draft-operation", "routineId": "draft-routine", "routineName": "Upper", "movementCount": 1]]
     let body = String(decoding: try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": generation]), as: UTF8.self)
     CoachTestProtocol.state.withLock { $0.reply = .http(200, body) }
-    #expect(await coach.saveRoutines(review) == .saved)
+    #expect(await coach.saveRoutines(save) == .saved)
     #expect(coach.activeGeneration?.routineDrafts.first?.state == "saved" && coach.activeGeneration?.results.count == 1)
     let calls = CoachTestProtocol.state.withLock { $0.requests }
     #expect(calls.map(\.path) == Array(repeating: "/v1/gym/threads/" + request.thread + "/generations/draft-request/routines/draft-operation/confirm", count: 2))
@@ -49,14 +49,13 @@ extension CoachTests {
     let (gym, rest, telemetry) = try await authed(.http(status, #"{"code":""# + code + #"","error":"A private server refusal"}"#)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
-    let draft = CoachRoutine(name: "Upper", entries: [RoutineEntry(exerciseId: ID("bench-press"))])
-    let expected: CoachRoutineSave = switch status {
+    let expected: CoachDraftSave.Outcome = switch status {
     case 404: .closed("This draft is no longer available.")
     case 400, 422: .closed("This draft can’t be saved. Ask Coach for a new one.")
     case 401: .kept("Sign in again to save this routine.")
     default: .kept("Couldn’t save the routine. Try again.")
     }
-    #expect(await coach.saveRoutines(CoachRoutineReview(id: "draft-operation", requestId: "draft-request", drafts: [draft], operationId: "draft-operation")) == expected)
+    #expect(await coach.saveRoutines(CoachDraftSave(requestId: "draft-request", operationId: "draft-operation")) == expected)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_coach_routine_confirm" }.map { $0.properties["outcome"] ?? "" } } == ["started", status < 500 ? "refused" : "failed"])
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } == (status < 500 ? [] : [["operation": "gym_rest", "failure_kind": "http"]]))
   }
@@ -65,9 +64,9 @@ extension CoachTests {
     let (gym, rest, telemetry) = try await authed(.stalled), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
-    let review = CoachRoutineReview(id: "draft-operation", requestId: nil, drafts: [CoachRoutine(name: "Upper", entries: [])], operationId: "draft-operation")
-    #expect(!review.savable)
-    #expect(await coach.saveRoutines(review) == .closed("This draft can’t be saved. Ask Coach for a new one."))
+    let save = CoachDraftSave(requestId: nil, operationId: "draft-operation")
+    #expect(!save.savable)
+    #expect(await coach.saveRoutines(save) == .closed("This draft can’t be saved. Ask Coach for a new one."))
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty } && telemetry.entries.withLock { $0.filter { $0.name == "gym_coach_routine_confirm" }.isEmpty })
   }
 
@@ -258,7 +257,7 @@ extension CoachTests {
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
     await coach.activate(); await coach.open("capped-thread")
     #expect(coach.saved.allowance?.code == "subject_exhausted" && !coach.retryable && !coach.asking)
-    #expect(coach.error == "Your AI allowance is fully used or reserved." && coach.activeGeneration?.results.map(\.operationId) == ["done"])
+    #expect(coach.error == "You have used all of your AI allowance." && coach.activeGeneration?.results.map(\.operationId) == ["done"])
     #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.method) } == ["GET"])
     CoachTestProtocol.state.withLock { $0.reply = .http(200, #"{"id":"normal-thread","turns":[]}"#) }
     await coach.open("normal-thread")

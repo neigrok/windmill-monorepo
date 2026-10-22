@@ -8,68 +8,21 @@ import SyncTesting
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct SetEditorTests {
-  @Test func keypadReplacesSeedAndSupportsBackspaceCommaAndSign() {
-    var pad = SetKeypad(.weight, value: 82.5)
-    #expect(pad.text == "82.5" && pad.keeping == 82.5 && pad.seeded)
-    pad.press("1"); pad.press("2"); pad.press(","); pad.press("5")
-    #expect(pad.text == "12,5" && pad.reading.value == 12.5 && !pad.seeded)
-    pad.press("±")
-    #expect(pad.text == "-12,5" && pad.reading.value == -12.5)
-    pad.press("⌫")
-    #expect(pad.text == "-12," && pad.reading.value == -12)
-    pad.press("±")
-    #expect(pad.text == "12," && pad.reading.value == 12)
-    var seeded = SetKeypad(.weight, value: -50)
-    seeded.press("±"); seeded.press("2")
-    #expect(seeded.text == "502" && seeded.reading.value == nil)
+  // The load wheel walks the ladder's bands to 500 kg, bodyweight mirrors them below zero for assistance, and a load off
+  // the steps keeps its own row.
+  @Test func loadWheelStepsByTheLadderBandsAndKeepsALoadOffTheSteps() {
+    let ones: [Double] = (0...20).map(Double.init), bands: [Double] = Array(stride(from: 22.5, through: 500, by: 2.5))
+    let grid = ones + bands, assistance: [Double] = grid.dropFirst().reversed().map { -$0 }
+    #expect(SetWheels.loads(around: 16, basis: MovementEquipment("dumbbell")) == grid)
+    #expect(SetWheels.loads(around: -10, basis: MovementEquipment("bodyweight")) == assistance + grid)
+    let offTheSteps: [Double] = ones.prefix(17) + [16.25] + ones.suffix(4) + bands
+    #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")) == offTheSteps)
+    #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("machine")) == [-12.5] + grid)
   }
 
-  @Test(arguments: ["", "-", "1.2.3", "1,2.3", "no", "nan", "inf", "501", "-500.01"])
-  func keypadRejectsInvalidWeights(text: String) {
-    var pad = SetKeypad(.weight, value: 20); pad.text = text
-    #expect(pad.reading.value == nil)
-    #expect(pad.reading.refusal?.isEmpty == false)
-  }
-
-  @Test(arguments: [-500.0, 0, 500, -82.125, 82.125])
-  func keypadAcceptsWeightBoundsAndRounds(value: Double) {
-    var pad = SetKeypad(.weight, value: 20); pad.text = String(value)
-    #expect(pad.reading.value == WeightLadder.round(value))
-    #expect(pad.reading.refusal == nil)
-  }
-
-  @Test func keypadBoundsTextAndRepsKeys() {
-    var weight = SetKeypad(.weight, value: 20)
-    for _ in 0..<10 { weight.press("1") }
-    #expect(weight.text == "11111111")
-    weight.press("±"); #expect(weight.text == "11111111")
-    weight.press("⌫"); weight.press("±"); weight.press("2")
-    #expect(weight.text == "-1111111" && weight.text.count == 8)
-    var reps = SetKeypad(.reps, value: 5)
-    for key in ["±", ".", ","] { reps.press(key) }
-    #expect(reps.text == "5" && reps.seeded)
-    reps.press("9"); reps.press("9")
-    #expect(reps.text == "99" && reps.reading.value == 99)
-    reps.press("⌫"); reps.press("⌫")
-    #expect(reps.reading.value == nil)
-  }
-
-  @Test(arguments: ["0", "100", "-1", "1.5", "no", ""])
-  func keypadRejectsInvalidReps(text: String) {
-    var pad = SetKeypad(.reps, value: 5); pad.text = text
-    #expect(pad.reading.value == nil)
-  }
-
-  @Test(arguments: [1, 99]) func keypadAcceptsRepBounds(reps: Int) {
-    var pad = SetKeypad(.reps, value: 5); pad.text = String(reps)
-    #expect(pad.reading.value == Double(reps) && pad.reading.refusal == nil)
-  }
-
-  // The keypad names its unit as the rack does, and the reps pad leaves its sign and decimal slots empty rather than explaining them.
-  @Test func eachPadNamesItsUnitAndOffersOnlyTheKeysItsNumberTakes() {
-    #expect([SetKeypad.Field.weight, .reps].map(\.unit) == ["kg", "reps"])
-    #expect(SetKeypad.Field.weight.keys == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."])
-    #expect(SetKeypad.Field.reps.keys == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", ""])
+  @Test func repsWheelRunsOneToNinetyNineAndKeepsACountOutsideIt() {
+    #expect(SetWheels.reps(around: 8) == Array(1...99))
+    #expect(SetWheels.reps(around: 120) == Array(1...99) + [120])
   }
 
   @Test func draftAcceptsSignedLoadsClearEffortAndNotesAndRefusesEachBoundInOrder() throws {
@@ -114,17 +67,6 @@ import SyncTesting
     #expect(changed.id == old.id && changed.completedAt == old.completedAt && changed.setNumber == old.setNumber)
     draft.rpe = nil; draft.note = ""; #expect(draft.save(gym))
     #expect(workout.sets.first?.rpe == nil && workout.sets.first?.note == "")
-  }
-
-  @Test func kindCorrectionKeepsTheSetIdentity() throws {
-    let workouts = WorkoutStateTests(), (_, gym) = try workouts.fixture(), workout = try workouts.begin(gym)
-    workout.logSet()
-    let old = try #require(workout.sets.first), draft = SetFixDraft(old, account: gym.account)
-    #expect(old.kind == "working")
-    draft.kind = SetKind.warmup.rawValue
-    #expect(draft.save(gym))
-    var expected = old; expected.kind = "warmup"
-    #expect(workout.sets == [expected] && draft.original == expected)
   }
 
   @Test func failedFixRetainsDraftAndOriginalWhileRetryLeavesTargetsAlone() throws {

@@ -22,13 +22,16 @@ enum WorkoutFixture {
       } catch { gym.error = "Workout notice fixture could not sign in."; return true }
     }
     if gym.openSession != nil { gym.workout.restore(); return true }
-    let planned = board.contains("planned")
+    // The rack's boards (03.x) stand at Upper A's dumbbell press, its squat and pull-up sets already logged.
+    let upper = board.contains("upper"), planned = upper || board.contains("planned")
+    let targets = { (id: String, count: Int, reps: Int, kg: Double) in
+      RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count))
+    }
     var routineId: ID<Routine>?
     if planned {
-      var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Lower A", entries: [
-        RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 4)),
-        RoutineEntry(exerciseId: ID("romanian-deadlift"), sets: Array(repeating: SetTarget(reps: 6, weightKg: 82.5), count: 3)),
-      ]))
+      var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: upper ? "Upper A" : "Lower A", entries: upper ? [
+        targets("back-squat", 4, 5, 100), targets("dumbbell-bench-press", 4, 8, 16), targets("pull-up", 4, 8, 10), targets("overhead-press", 3, 8, 40),
+      ] : [targets("back-squat", 4, 5, 100), targets("romanian-deadlift", 3, 6, 82.5)]))
       guard case .saved = gym.save(&draft) else { return true }
       routineId = draft.current.id
     }
@@ -37,17 +40,23 @@ enum WorkoutFixture {
     let id = gym.runner.mint(Session.self)
     guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000)))?.refusal == nil,
           gym.restoreWorkout() else { return true }
+    // A free workout before its first movement: 03.9 in the app, 04.4 on the Lock Screen under the live-activity board's real clock.
+    if board.hasSuffix("blank") { gym.workout.reconcile(); return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
-      for (index, agoMs) in [1_630_000, 1_210_000, 97_000].enumerated() {
-        let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
-                              weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
-                              kind: index == 0 ? "warmup" : "working", completedAt: Instant(ms: now.ms - Int64(agoMs)))
+      let logged: [(movement: String, kg: Double, reps: Int, agoMs: Int64)] = upper ? [
+        ("back-squat", 100, 5, 1_800_000), ("back-squat", 100, 5, 1_650_000), ("pull-up", 10, 8, 1_000_000),
+        ("pull-up", 10, 7, 850_000), ("dumbbell-bench-press", 16, 8, 300_000), ("dumbbell-bench-press", 16, 8, 97_000),
+      ] : [("back-squat", 100, 5, 1_210_000), ("back-squat", 100, 5, 97_000)]
+      for logged in logged {
+        let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID(RecordID(logged.movement)),
+                              weightKg: logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs))
         _ = gym.run(AppendSet(set))
       }
     }
     gym.workout.reconcile()
     if !planned { gym.workout.select(ID("back-squat")) }
+    if upper { gym.workout.select(ID("dumbbell-bench-press")) }
     if board == "workout-notice", let runtime = gym.runtime, let server = runtime.auth.fake {
       await runtime.engine.flushOnLeave(); gym.refresh(); gym.workout.reconcile()
       server.state.withLock { $0.server.refuse(code: .cap, detail: ["type": .string(TrainingSet.type), "cap": 10]) }

@@ -62,7 +62,6 @@ class LoggerScreenTests {
         scope: CoroutineScope,
         history: Boolean = false,
         logged: Boolean = false,
-        warmup: Boolean = false,
         lastTimeDown: Boolean = false,
         unanswered: Boolean = false,
         haptics: HapticFeedback? = null,
@@ -94,13 +93,12 @@ class LoggerScreenTests {
             room.store.choose("cable-fly")
             room.store.choose("bench-press")
             if (unanswered) room.sync(server)
-            if (warmup) room.store.logSet(40.0, 10, SetKind.Warmup)
             if (logged) room.store.logSet(60.0, 5)
             // The set's send went out and never came back, so it may already be on the log.
             if (unanswered) {
                 room.engine.releaseHeld(true)
                 room.engine.nextPush()
-            } else if (logged || warmup || history) room.sync(server)
+            } else if (logged || history) room.sync(server)
             room.store.refreshEngine()
         }
         room.store.observeEngine()
@@ -367,23 +365,6 @@ class LoggerScreenTests {
                 ledger(),
             )
             compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed()
-        } } finally { scope.cancel() }
-    }
-
-    // A warmup reads W, takes no number, and is a door like every landed row.
-    @Test
-    fun aWarmupReadsWAndIsNotCounted() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try { logger(scope, warmup = true, logged = true).use {
-            assertEquals(
-                listOf(
-                    "Warmup, logged, 40 kg, 10 reps" to true,
-                    "Set 1, logged, 60 kg, 5 reps" to true,
-                    "Set 2, current" to false,
-                ),
-                ledger(),
-            )
-            compose.onNode(hasContentDescription("Warmup, logged, 40 kg, 10 reps")).assert(hasText("W"))
         } } finally { scope.cancel() }
     }
 

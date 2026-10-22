@@ -48,6 +48,8 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var persistenceFailed = false
     // Requests made as an account meet a 426, as from a server that needs a newer app.
     var upgradeRequired = false
+    // Every push gets no answer, after this many seconds in flight.
+    var pushesUnansweredAfter: Double?
   }
   struct Ticket: Sendable {
     let subject: String
@@ -218,7 +220,11 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     }
   }
   func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    state.withLock { state in
+    if let seconds = state.withLock({ $0.pushesUnansweredAfter }) {
+      try? await Task.sleep(for: .seconds(seconds))
+      return .unreachable
+    }
+    return state.withLock { state in
       if state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.push(request.json, credential: c, at: now)

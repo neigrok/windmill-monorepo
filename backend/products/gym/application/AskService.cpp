@@ -9,7 +9,9 @@
 #include <drogon/utils/Utilities.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <new>
 #include <optional>
@@ -68,20 +70,24 @@ const char* askOutcome(AskRefusal refusal) {
 // How long a confirmation waits for another confirmation of the same conversation to finish.
 constexpr std::chrono::milliseconds kConfirmLeaseWait{3000};
 
-// After this long idle any bucket is full whatever it held, so it can be forgotten.
-constexpr double kQuestionsPerSecond = kAskPerDay / 86400.0;
-constexpr double kRefilledSeconds = kAskBackToBack / kQuestionsPerSecond;
+// A question refills every kMsPerQuestion; after kRefilledMs idle any bucket is full whatever it
+// held, so it can be forgotten.
+constexpr double kMsPerQuestion = 86'400'000.0 / kAskPerDay;
+constexpr double kRefilledMs = kAskBackToBack * kMsPerQuestion;
 constexpr std::size_t kMaxAccountsHeld = 100000;
+
+// Milliseconds between two readings of the wall clock; one that stepped back refilled nothing.
+double msBetween(std::uint64_t earlierMs, std::uint64_t laterMs) {
+  return laterMs > earlierMs ? static_cast<double>(laterMs - earlierMs) : 0.0;
+}
 
 }  // namespace
 
-bool AskRation::take(const std::string& account) {
-  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+AskRation::Take AskRation::take(const std::string& account, std::uint64_t nowMs) {
   std::lock_guard<std::mutex> holding(mutex_);
   if (held_.size() > kMaxAccountsHeld) {
     for (auto entry = held_.begin(); entry != held_.end();) {
-      const double idle = std::chrono::duration<double>(now - entry->second.refilledAt).count();
-      if (idle >= kRefilledSeconds)
+      if (msBetween(entry->second.refilledAtMs, nowMs) >= kRefilledMs)
         entry = held_.erase(entry);
       else
         ++entry;
@@ -89,14 +95,15 @@ bool AskRation::take(const std::string& account) {
   }
 
   Held& ration = held_[account];
-  if (ration.refilledAt != std::chrono::steady_clock::time_point{}) {
-    const double elapsed = std::chrono::duration<double>(now - ration.refilledAt).count();
-    ration.questions = std::min(kAskBackToBack, ration.questions + elapsed * kQuestionsPerSecond);
+  ration.questions = std::min(kAskBackToBack,
+                              ration.questions + msBetween(ration.refilledAtMs, nowMs) / kMsPerQuestion);
+  ration.refilledAtMs = nowMs;
+  if (ration.questions >= 1.0) {
+    ration.questions -= 1.0;
+    return {true, {}};
   }
-  ration.refilledAt = now;
-  if (ration.questions < 1.0) return false;
-  ration.questions -= 1.0;
-  return true;
+  const auto afterMs = static_cast<std::uint64_t>(std::ceil((1.0 - ration.questions) * kMsPerQuestion));
+  return {false, {nowMs + afterMs, afterMs}};
 }
 
 void AskRation::giveBack(const std::string& account) {
@@ -686,9 +693,9 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
     if (!generation && opened.thread->generation && opened.thread->generation->status == "running") {
       reply.refusal = AskRefusal::generationActive; finish(job); return;
     }
-    if (!perAccount_.take(caller.str())) {
+    if (const auto ration = perAccount_.take(caller.str(), clock_.nowMs()); !ration.spent) {
       threads_.discardEmptyThread(caller, thread);
-      reply.refusal = AskRefusal::dailyLimit; finish(job); return;
+      reply.refusal = AskRefusal::dailyLimit; reply.nextQuestion = ration.next; finish(job); return;
     }
     charged = true;
     if (!generation) {

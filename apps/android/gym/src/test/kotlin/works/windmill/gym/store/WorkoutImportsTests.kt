@@ -385,14 +385,14 @@ class WorkoutImportsTests {
                 assertEquals(original.copy(setNumber = 2), EngineTraining(reopened).session("session01")!!.sets.first())
                 engine().use { other ->
                     signIn(other, server); pull(other, server)
-                    EngineTraining(other).fixSet("session01", original.id, SetFix(weightKg = 62.5, kind = SetKind.Failure,
+                    EngineTraining(other).fixSet("session01", original.id, SetFix(weightKg = 62.5,
                         note = "Newer", rpe = 9.0, rpeNamed = true))
                     push(other, server)
                 }
                 pull(reopened, server)
                 val restored = EngineTraining(reopened)
                 restored.reconcileImports(); push(reopened, server)
-                assertEquals(listOf(original.copy(weightKg = 62.5, kind = SetKind.Failure, note = "Newer", rpe = 9.0, setNumber = 2), standing), restored.session("session01")!!.sets)
+                assertEquals(listOf(original.copy(weightKg = 62.5, note = "Newer", rpe = 9.0, setNumber = 2), standing), restored.session("session01")!!.sets)
                 assertEquals(Json.of("Evening"), reopened.read(scope) { it.confirmed("session", RecordID("session01")) }!!.values["displayName"])
                 assertEquals(3_000L, restored.session("session01")!!.session.finishedAtMs)
                 assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
@@ -454,7 +454,6 @@ class WorkoutImportsTests {
                 }
                 EngineTraining(local).reconcileImports(); push(local, server)
                 val restored = EngineTraining(local).session("session01")!!.sets
-                assertEquals(SetKind.Warmup, restored.single { it.id == "set00001" }.kind)
                 if (adding) {
                     assertEquals(setOf("set00001", "standing1", "another01"), restored.map { it.id }.toSet())
                     assertEquals(Json.of("Changed"), local.read(scope) { it.confirmed("session", RecordID("session01")) }!!.values["displayName"])
@@ -486,7 +485,6 @@ class WorkoutImportsTests {
             assertTrue(imports.refusals().isEmpty())
             EngineTraining(local).reconcileImports(); push(local, server)
             assertFalse(imports.hasOwedSets("session01"))
-            assertEquals(SetKind.Warmup, EngineTraining(local).session("session01")!!.sets.first().kind)
         }
     }
 
@@ -537,7 +535,7 @@ class WorkoutImportsTests {
         }
     }
 
-    @Test fun aLostRecoveryReceiptReplaysWithoutChangingANewerSetKind() = runBlocking {
+    @Test fun aLostRecoveryReceiptReplaysWithoutChangingANewerSetEdit() = runBlocking {
         val server = EngineRoomFixture.server()
         engine(stranded(server)).use { local ->
             WorkoutImports(local).retry("set00001")
@@ -547,14 +545,13 @@ class WorkoutImportsTests {
             assertEquals(200, reply.status)
             engine().use { other ->
                 signIn(other, server); pull(other, server)
-                EngineTraining(other).fixSet("session01", "set00001", SetFix(kind = SetKind.Failure, note = "Newer"))
+                EngineTraining(other).fixSet("session01", "set00001", SetFix(note = "Newer"))
                 push(other, server)
             }
             engine(local.snapshot()).use { reopened ->
                 push(reopened, server)
                 EngineTraining(reopened).reconcileImports(); push(reopened, server)
                 val recovered = EngineTraining(reopened).session("session01")!!.sets.single { it.id == "set00001" }
-                assertEquals(SetKind.Failure, recovered.kind)
                 assertEquals("Newer", recovered.note)
                 assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
                 assertTrue(WorkoutImports(reopened).refusals().isEmpty())
@@ -574,7 +571,7 @@ class WorkoutImportsTests {
             engine().use { other ->
                 signIn(other, server); pull(other, server)
                 EngineTraining(other).fixSet("session01", "set00001", SetFix(weightKg = 92.5, reps = 12,
-                    kind = SetKind.Failure, rpe = 9.0, rpeNamed = true, note = "Newer"))
+                    rpe = 9.0, rpeNamed = true, note = "Newer"))
                 push(other, server)
             }
             pull(local, server)
@@ -583,7 +580,7 @@ class WorkoutImportsTests {
             imports.refuseOperation(stale, "session-finished")
             assertTrue(imports.recoverFinishedOperation(stale))
             assertEquals(before, local.snapshot())
-            assertEquals(stale.entry.set.copy(setNumber = 2, weightKg = 92.5, reps = 12, kind = SetKind.Failure,
+            assertEquals(stale.entry.set.copy(setNumber = 2, weightKg = 92.5, reps = 12,
                 rpe = 9.0, note = "Newer"), gym.session("session01")!!.sets.first())
         }
     }
@@ -604,7 +601,7 @@ class WorkoutImportsTests {
             assertEquals(before, local.snapshot())
             assertEquals(SetKind.Drop, imports.operations().single().entry.set.kind)
             gym.reconcileImports(); push(local, server)
-            assertEquals(stale.entry.set.copy(setNumber = 2, kind = SetKind.Drop), gym.session("session01")!!.sets.first())
+            assertEquals(stale.entry.set.copy(setNumber = 2, kind = SetKind.Working), gym.session("session01")!!.sets.first())
             assertFalse(imports.hasOwedSets("session01"))
         }
     }
@@ -704,10 +701,10 @@ class WorkoutImportsTests {
             fun row() = gym.details().single().let { SavedWorkout(it.session, it.sets) }
             val imports = WorkoutImports(local)
             imports.prepare(row())
-            gym.fixSet("session01", "set00001", SetFix(kind = SetKind.Working, rpe = null, rpeNamed = true, note = ""))
+            gym.fixSet("session01", "set00001", SetFix(rpe = null, rpeNamed = true, note = ""))
             val corrected = row(); imports.prepare(corrected)
             val sets = outbox(local).single { it.member("intent")["cmd"] != null }.member("intent").member("cmd").member("args").member("sets").arr()
-            assertEquals(Json.of("working"), sets.single().member("kind")); assertEquals(Json.Null, sets.single().member("rpe")); assertEquals(Json.of(""), sets.single().member("note"))
+            assertNull(sets.single()["kind"]); assertEquals(Json.Null, sets.single().member("rpe")); assertEquals(Json.of(""), sets.single().member("note"))
             assertEquals(corrected, imports.retainedWorkouts().single())
         }
     }

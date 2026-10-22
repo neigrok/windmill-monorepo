@@ -32,13 +32,12 @@ const row = (reps, weight) => ({ reps, weight });
 
 const AT = 1_900_000_000_000;
 
-function set(exerciseId, weightKg, reps, minute, kind = 'working') {
+function set(exerciseId, weightKg, reps, minute) {
   return {
     id: `set_${exerciseId}_${minute}`,
     exerciseId,
     weightKg,
     reps,
-    kind,
     setNumber: null,
     completedAt: AT + minute * 60_000,
   };
@@ -46,7 +45,7 @@ function set(exerciseId, weightKg, reps, minute, kind = 'working') {
 
 test('RoutineValue.fromSession — the session becomes the routine, in the order it was performed', () => {
   const sets = [
-    set('back-squat', 60, 5, 1, 'warmup'),
+    set('back-squat', 60, 5, 1),
     set('back-squat', 100, 5, 5),
     set('back-squat', 100, 5, 9),
     set('back-squat', 100, 5, 13),
@@ -59,29 +58,32 @@ test('RoutineValue.fromSession — the session becomes the routine, in the order
     name: 'Legs',
     position: 0,
     entries: [
-      { exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }] },
+      { exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }, { reps: 5, weightKg: 100 }] },
       { exerciseId: 'romanian-deadlift', sets: [{ reps: 8, weightKg: 80 }, { reps: 8, weightKg: 80 }, { reps: 7, weightKg: 80 }] },
     ],
   });
 });
 
-test('RoutineValue.fromSession — the three other kinds count toward nothing, and can cost a movement', () => {
+test('RoutineValue.fromSession — sets handed over out of order are read in the order they were done, every one a slot', () => {
   const sets = [
+    set('cable-fly', 20, 12, 20),
+    set('bench-press', 60, 12, 11),
     set('bench-press', 82.5, 5, 3),
+    set('bench-press', 82.5, 2, 15),
     set('bench-press', 82.5, 5, 7),
-    set('bench-press', 60, 12, 11, 'drop'),
-    set('bench-press', 82.5, 2, 15, 'failure'),
-    set('cable-fly', 20, 12, 20, 'warmup'),
   ];
   assert.deepEqual(sessionRoutine({ id: 'rt_2', name: 'Push A', position: 2, sets }), {
     id: 'rt_2',
     name: 'Push A',
     position: 2,
-    entries: [{ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }] }],
+    entries: [
+      { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }, { reps: 12, weightKg: 60 }, { reps: 2, weightKg: 82.5 }] },
+      { exerciseId: 'cable-fly', sets: [{ reps: 12, weightKg: 20 }] },
+    ],
   });
 });
 
-test('RoutineValue.fromSession — every working set is its own slot, as lifted: no modal reps, no heaviest load', () => {
+test('RoutineValue.fromSession — every set is its own slot, as lifted: no modal reps, no heaviest load', () => {
   const sets = [
     set('overhead-press', 45, 8, 2),
     set('overhead-press', 47.5, 8, 6),

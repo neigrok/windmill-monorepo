@@ -145,27 +145,13 @@ struct RoutineBuilder: View {
         Section {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
-            HStack {
-              Button {
-                if let exercise { editing.follow([.targets(exercise.id)]) }
-              } label: {
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets), trailing: .door)
-              }.buttonStyle(.borderless).accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              Button(role: .destructive) { editing.remove(index) } label: {
-                Image(systemName: "trash").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-              }.buttonStyle(.borderless)
-                .accessibilityLabel("Remove exercise").accessibilityIdentifier("builder-remove-\(entry.exerciseId)")
+            OrderedMovementRow(exercise: exercise, index: index, count: editing.draft.current.entries.count,
+                               identifier: "builder-movement-\(entry.exerciseId)",
+                               open: { if let exercise { editing.follow([.targets(exercise.id)]) } },
+                               move: { editing.move(index, by: $0) }, remove: { editing.remove(index) }, edit: { exerciseToEdit = $0 }) {
+              GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")",
+                     meta: RoutineLines.movement(entry.sets, equipment: MovementEquipment(exercise)))
             }
-              .swipeActions(allowsFullSwipe: false) { Button("Remove", systemImage: "trash", role: .destructive) { editing.remove(index) } }
-              .contextMenu {
-                if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
-                Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
-                Button("Move down") { editing.move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
-                Button("Remove movement", systemImage: "trash", role: .destructive) { editing.remove(index) }
-              }
-              .accessibilityAction(named: "Move up") { editing.move(index, by: -1) }
-              .accessibilityAction(named: "Move down") { editing.move(index, by: 1) }
-              .accessibilityAction(named: "Remove movement") { editing.remove(index) }
           }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
           Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
             .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
@@ -180,12 +166,12 @@ struct RoutineBuilder: View {
         }
         if !editing.draft.isNew {
           Section {
-            Button("Delete routine", systemImage: "trash", role: .destructive) { delete() }
-              .foregroundStyle(GymPalette.alarm).disabled(gym.accountTransition).accessibilityIdentifier("delete-routine")
+            Button("Delete routine", role: .destructive) { delete() }
+              .disabled(gym.accountTransition).accessibilityIdentifier("delete-routine")
           }
         }
       }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, .constant(.active))
+    }.listStyle(.insetGrouped).modifier(GymPage())
   }
 
   @ViewBuilder func destination(_ step: RoutineEditingSession.Step) -> some View {

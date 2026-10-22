@@ -69,10 +69,18 @@ drogon::HttpResponsePtr refusalOf(const AskReply& reply) {
     return error(drogon::k409Conflict,
                  "finish your workout first — Coach reads a log that has stopped moving",
                  "ask-session-open");
-  if (refusal == AskRefusal::dailyLimit)
-    // Ten a day on a steady refill is one question every two and a half hours.
-    return error(drogon::k429TooManyRequests, "the next question frees up in a couple of hours",
-                 "ask-daily-limit");
+  if (refusal == AskRefusal::dailyLimit) {
+    // Ten a day on a steady refill is one question every two and a half hours; `retryAtMs` and
+    // Retry-After say when this account's next one frees up.
+    Json::Value body(Json::objectValue);
+    body["error"] = "the next question frees up in a couple of hours";
+    body["code"] = "ask-daily-limit";
+    if (reply.nextQuestion) body["retryAtMs"] = Json::Int64(reply.nextQuestion->atMs);
+    auto response = jsonResponse(body, drogon::k429TooManyRequests);
+    if (reply.nextQuestion)
+      response->addHeader("Retry-After", std::to_string((reply.nextQuestion->afterMs + 999) / 1000));
+    return response;
+  }
   if (refusal == AskRefusal::outOfBudget)
     return error(drogon::k429TooManyRequests,
                  "this account has reached its AI ceiling for the last 30 days. Coach will answer "

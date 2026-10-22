@@ -24,9 +24,9 @@ import SyncModelServer
             finishedAt: open ? nil : Instant(ms: now.ms - Int64(daysAgo) * 86_400_000))
   }
 
-  func set(_ id: String, session: Session, exercise: ID<Exercise>, weight: Double = 60, reps: Int = 8, kind: String = "working", offset: Int64 = 0) -> TrainingSet {
+  func set(_ id: String, session: Session, exercise: ID<Exercise>, weight: Double = 60, reps: Int = 8, offset: Int64 = 0) -> TrainingSet {
     TrainingSet(id: ID(RecordID(id)), sessionId: session.id, exerciseId: exercise, weightKg: weight, reps: reps,
-                kind: kind, completedAt: Instant(ms: session.startedAt.ms + offset))
+                completedAt: Instant(ms: session.startedAt.ms + offset))
   }
 
   func fixture() -> (Harness, GymModel) {
@@ -61,17 +61,29 @@ import SyncModelServer
     #expect(result.matches == [MovementPickerOptions.Row(exercise: movement, meta: nil, alias: nil, selected: true)])
   }
 
-  @Test func lastEffortUsesLastNonWarmupSetAndSessionDate() {
+  @Test func lastEffortUsesLastSetAndSessionDate() {
     let movement = exercise("movement1", name: "Custom")
     let yesterday = session("session1", daysAgo: 1)
     let history = log(sessions: [yesterday], sets: [
       set("set-one1", session: yesterday, exercise: movement.id, weight: 40, reps: 10),
-      set("set-two2", session: yesterday, exercise: movement.id, weight: -5, reps: 6, offset: 10),
-      set("set-three3", session: yesterday, exercise: movement.id, weight: 20, reps: 12, kind: "warmup", offset: 20)
+      set("set-two2", session: yesterday, exercise: movement.id, weight: -5, reps: 6, offset: 10)
     ])
     let result = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: history)
     #expect(result.matches.first?.meta == "−5 × 6 · yesterday")
     #expect(result.matches.map(\.line) == ["Barbell · −5 × 6 · yesterday"])
+  }
+
+  @Test func aRowNamesItsEquipmentAsCreationDoesAndBodyweightAloneByItsReps() {
+    let chin = Exercise(id: ID("chin"), name: "Chin-up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5)
+    let dumbbells = Exercise(id: ID("db-bench"), name: "Dumbbell Bench Press", pattern: "push", equipment: "dumbbell", stepKg: 2, loadCount: 2)
+    let curl = Exercise(id: ID("db-curl"), name: "Dumbbell Curl", pattern: "isolation", equipment: "dumbbell", stepKg: 1, loadCount: 1)
+    let earlier = session("session1", daysAgo: 9), today = session("session2")
+    let history = log(sessions: [earlier, today], sets: [
+      set("set-one1", session: earlier, exercise: chin.id, weight: 0, reps: 8),
+      set("set-two2", session: today, exercise: dumbbells.id, weight: 16, reps: 8),
+    ])
+    let result = MovementPickerOptions.matching(query: "", catalogue: [chin, dumbbells, curl], selected: [], log: history, featured: [])
+    #expect(result.matches.map(\.line) == ["Bodyweight · 8 reps · 9 days ago", "Dumbbells · 16 × 8 · today", "One dumbbell"])
   }
 
   @Test func aMovementNeverLoggedReadsItsEquipmentAlone() {
@@ -199,14 +211,14 @@ import SyncModelServer
   }
 
   @Test func creationPreservesAllEquipmentChoicesAndAcceptsOpenTargets() {
-    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"])
+    #expect(MovementEquipment.choices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
     #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
     #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
     #expect(draft.problem == nil)
-    for equipment in MovementCreationDraft.equipmentChoices {
+    for equipment in MovementEquipment.choices {
       draft.equipment = equipment
       #expect(draft.problem == nil)
     }

@@ -82,7 +82,7 @@ export class SessionReadout {
     this.sessionId = session.id;
     this.name = session.name;
     this.durationMs = session.finishedAt === null ? null : Math.max(0, session.finishedAt.ms - session.startedAt.ms);
-    this.workingSetCount = own.filter((set) => set.kind === 'working').length;
+    this.workingSetCount = own.length;
     this.movementCount = new Set(own.map((set) => jcs(set.exerciseId.json))).size;
     this.volumeKg = own.reduce((sum, set) => sum + set.volumeFor(catalogue.find(set.exerciseId)), 0);
     this.topE1rm = estimates.length === 0 ? null : Math.max(...estimates);
@@ -107,7 +107,7 @@ export class LastTime {
   static of(exerciseId, log) {
     for (const session of log.drawnSessions) {
       if (session.isOpen) continue;
-      const sets = log.setsFor(session.id).filter((set) => set.exerciseId.equals(exerciseId) && set.kind !== 'warmup');
+      const sets = log.setsFor(session.id).filter((set) => set.exerciseId.equals(exerciseId));
       if (sets.length > 0) return new LastTime(exerciseId, session, sets, log.firstPullComplete);
     }
     return new LastTime(exerciseId, null, [], log.firstPullComplete);
@@ -128,14 +128,13 @@ export class Prefill {
   /** @param {readonly TrainingSetValue[]} todaySets @param {RoutineEntry | null} planEntry @param {LastTime | null} lastTime */
   static of(todaySets, planEntry, lastTime) {
     const scheme = planEntry?.sets ?? [];
-    const working = todaySets.filter((set) => set.kind === 'working');
-    const sticky = working.at(-1);
+    const sticky = todaySets.at(-1);
     const history = lastTime?.sets ?? [];
     const first = scheme[0];
     const straight = first === undefined || scheme.every((set) => set.reps === first.reps && set.weightKg === first.weightKg);
     if (scheme.length > 0 && !straight) {
-      const slot = scheme[working.length];
-      const lastNth = history.filter((set) => set.kind === 'working')[working.length];
+      const slot = scheme[todaySets.length];
+      const lastNth = history[todaySets.length];
       return new Prefill(slot?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? Prefill.emptyBarKg,
         slot?.reps ?? lastNth?.reps ?? sticky?.reps ?? Prefill.emptyBarReps);
     }
@@ -165,7 +164,7 @@ export class EstimatedFact {
   constructor(set, e1rm) {
     this.performed = new PerformedFact(set);
     this.e1rm = e1rm;
-    this.score = GymEstimate.score(set.weightKg, set.reps, 'working', set.rpe) ?? 0;
+    this.score = GymEstimate.score(set.weightKg, set.reps, set.rpe) ?? 0;
     Object.freeze(this);
   }
 
@@ -226,7 +225,7 @@ export class StatsProgress {
       this.sessions = Object.freeze(log.drawnSessions.filter((session) => !session.isOpen).flatMap((session) => {
         /** @type {Map<string, TrainingSetValue[]>} */
         const groups = new Map();
-        for (const set of log.setsFor(session.id).filter((set) => set.kind === 'working')) {
+        for (const set of log.setsFor(session.id)) {
           const key = jcs(set.exerciseId.json);
           const group = groups.get(key);
           if (group) group.push(set);

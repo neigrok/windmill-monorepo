@@ -27,9 +27,9 @@ struct TrainingTests {
   }
 
   static func set(_ h: Harness, session: ID<Session> = sessionID, weight: Double = 80, reps: Int = 5,
-                  kind: String = "working", rpe: Double? = nil, note: String = "") -> TrainingSet {
+                  rpe: Double? = nil, note: String = "") -> TrainingSet {
     TrainingSet(id: h.runner.mint(TrainingSet.self), sessionId: session, exerciseId: exerciseID,
-                weightKg: weight, reps: reps, kind: kind, rpe: rpe, note: note, completedAt: Instant(ms: h.clock.nowMs()))
+                weightKg: weight, reps: reps, rpe: rpe, note: note, completedAt: Instant(ms: h.clock.nowMs()))
   }
 
   @Test func unreadableFrozenPlansRetainExactJSONAndDoNotHideSessionFacts() throws {
@@ -187,16 +187,16 @@ struct TrainingTests {
 
   @Test func explicitlyFinishedSessionRejectsAppendAndStillAllowsCorrectionAndDeletion() throws {
     let a = Self.phone(); try Self.exercise(a); _ = try Self.start(a)
-    let value = Self.set(a, kind: "drop", rpe: 8, note: "old")
+    let value = Self.set(a, rpe: 8, note: "old")
     _ = try a.runner.run(AppendSet(value)); a.sync()
     _ = try a.runner.run(FinishSession(id: Self.sessionID)); a.sync()
     let append = try a.runner.run(AppendSet(Self.set(a)))
     #expect(append.refusal != nil)
     var old = try #require(try a.drawn(TrainingSet.self).first)
-    old.weightKg = 82.125; old.reps = 6; old.kind = "failure"; old.rpe = 9.25; old.note = "new"
+    old.weightKg = 82.125; old.reps = 6; old.rpe = 9.25; old.note = "new"
     _ = try a.runner.run(CorrectSet(old)); a.sync()
     let corrected = try #require(try a.drawn(TrainingSet.self).first)
-    #expect(corrected.weightKg == 82.13 && corrected.reps == 6 && corrected.kind == "failure" && corrected.rpe == 9.3 && corrected.note == "new")
+    #expect(corrected.weightKg == 82.13 && corrected.reps == 6 && corrected.rpe == 9.3 && corrected.note == "new")
     #expect(corrected.setNumber == 1 && corrected.completedAt == value.completedAt)
     let delete = try #require(try a.runner.run(DeleteSet(corrected.id)).receipt)
     #expect(delete.releaseAt == a.clock.nowMs() + Constants.holdMs)
@@ -298,14 +298,14 @@ struct TrainingTests {
 
   @Test func completedSessionCorrectionPreservesOmittedDetailsReplacesSerialAndDropsMissingSets() throws {
     let a = Self.phone(); try Self.exercise(a); _ = try Self.start(a)
-    let one = Self.set(a, kind: "drop", rpe: 8, note: "kept"), two = Self.set(a)
+    let one = Self.set(a, rpe: 8, note: "kept"), two = Self.set(a)
     _ = try a.runner.run(AppendSet(one)); _ = try a.runner.run(AppendSet(two)); a.sync()
     _ = try a.runner.run(FinishSession(id: Self.sessionID)); a.sync()
     let kept = CorrectedSet(id: one.id, exerciseId: Self.exerciseID, setNumber: 7, weightKg: 82, reps: 6, completedAt: one.completedAt)
     _ = try a.runner.run(CorrectSession(id: Self.sessionID, requestId: "request1", startedAt: Instant(ms: Self.now), finishedAt: Instant(ms: Self.now), routineName: "Corrected", sets: [kept])); a.sync()
     let set = try #require(try a.drawn(TrainingSet.self).first)
     #expect(try a.drawn(TrainingSet.self).count == 1)
-    #expect(set.id == one.id && set.setNumber == 7 && set.kind == "drop" && set.rpe == 8 && set.note == "kept")
+    #expect(set.id == one.id && set.setNumber == 7 && set.rpe == 8 && set.note == "kept")
     #expect(set.weightKg == 82 && set.reps == 6)
     #expect(try a.drawn(Session.self).first?.name == "Corrected")
     let cleared = CorrectedSet(id: one.id, exerciseId: Self.exerciseID, setNumber: 7, weightKg: 82, reps: 6, completedAt: one.completedAt, rpe: nil, note: "", rpeNamed: true)
@@ -477,12 +477,12 @@ struct TrainingTests {
     case "DeleteSet": result = try corpus.decision(of: DeleteSet(ID(try RecordID(json: input.member("id")))), vector, result: { _ in .null }, refusal: \.form)
     case "ImportSession":
       let sets = try input.member("sets").asArray().map { json in
-        ImportedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), kind: try json["kind"]?.asString(), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil)
+        ImportedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil)
       }
       result = try corpus.decision(of: ImportSession(id: ID(try RecordID(json: input.member("id"))), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), sets: sets, routineId: try input["routineId"].map { ID(try RecordID(json: $0)) }), vector, result: \.json, refusal: \.form)
     case "CorrectSession":
       let sets = try input.member("sets").asArray().map { json in
-        CorrectedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), setNumber: Int(try json.member("setNumber").asInteger()), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil, kind: try json["kind"]?.asString())
+        CorrectedSet(id: ID(try RecordID(json: json.member("id"))), exerciseId: ID(try RecordID(json: json.member("exerciseId"))), setNumber: Int(try json.member("setNumber").asInteger()), weightKg: try json.member("weightKg").asDouble(), reps: Int(try json.member("reps").asInteger()), completedAt: Instant(ms: try json.member("completedAt").asInteger()), rpe: try json["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try json["note"]?.asString(), rpeNamed: json["rpe"] != nil)
       }
       result = try corpus.decision(of: CorrectSession(id: ID(try RecordID(json: input.member("sessionId"))), requestId: input.member("requestId").asString(), startedAt: Instant(ms: try input.member("startedAt").asInteger()), finishedAt: Instant(ms: try input.member("finishedAt").asInteger()), routineName: input.member("routineName").isNull ? nil : input.member("routineName").asString(), sets: sets, preserveOtherSets: input["preserveOtherSets"] == .bool(true)), vector, result: { _ in .null }, refusal: \.form)
     case let action: throw ContractError("unclaimed training action \(action)")
@@ -492,6 +492,6 @@ struct TrainingTests {
 
   static func trainingSet(_ input: JSON) throws -> TrainingSet {
     let f = try input.member("fields")
-    return TrainingSet(id: ID(try RecordID(json: input.member("id"))), sessionId: ID(try RecordID(json: f.member("sessionId"))), exerciseId: ID(try RecordID(json: f.member("exerciseId"))), weightKg: try f.member("weightKg").asDouble(), reps: Int(try f.member("reps").asInteger()), kind: try f["kind"]?.asString() ?? "working", rpe: try f["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try f["note"]?.asString() ?? "", completedAt: Instant(ms: try f.member("completedAt").asInteger()), setNumber: try f["setNumber"].map { Int(try $0.asInteger()) })
+    return TrainingSet(id: ID(try RecordID(json: input.member("id"))), sessionId: ID(try RecordID(json: f.member("sessionId"))), exerciseId: ID(try RecordID(json: f.member("exerciseId"))), weightKg: try f.member("weightKg").asDouble(), reps: Int(try f.member("reps").asInteger()), rpe: try f["rpe"].flatMap { $0.isNull ? nil : try $0.asDouble() }, note: try f["note"]?.asString() ?? "", completedAt: Instant(ms: try f.member("completedAt").asInteger()), setNumber: try f["setNumber"].map { Int(try $0.asInteger()) })
   }
 }

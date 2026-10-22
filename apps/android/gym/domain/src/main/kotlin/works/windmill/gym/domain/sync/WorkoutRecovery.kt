@@ -93,10 +93,10 @@ class WorkoutRecovery(val workout: SignedOutWorkout, val reason: Reason, val ref
 // corrected copy a retry submits; a set is removed by taking it out of `sets`.
 data class WorkoutFix(val original: SignedOutWorkout, val landed: Boolean, val startedAt: Instant, val finishedAt: Instant?,
     val keepsRoutine: Boolean, val sets: List<SetFix>, val edited: Set<Id<TrainingSet>>) {
-    data class SetFix(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val weightKg: Double, val reps: Int, val kind: String,
+    data class SetFix(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val weightKg: Double, val reps: Int,
         val rpe: Double?, val note: String, val completedAt: Instant) {
-        constructor(set: TrainingSet) : this(set.id, set.exerciseId, set.weightKg, set.reps, set.kind, set.rpe, set.note, set.completedAt)
-        fun set(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, kind, rpe, note, completedAt)
+        constructor(set: TrainingSet) : this(set.id, set.exerciseId, set.weightKg, set.reps, set.rpe, set.note, set.completedAt)
+        fun set(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, rpe, note, completedAt)
     }
 
     constructor(workout: SignedOutWorkout) : this(workout, workout.sets, false)
@@ -213,7 +213,7 @@ class RecoverStrandedSets(val id: Id<Session>, val placement: Placement, val rev
             val next = numbers[set.exerciseId] ?: SetRules.nextNumber(state.sets, id, set.exerciseId)?.toLong()
             if (next == null || next > Int.MAX_VALUE) throw Violation("set.setNumber", Path("setNumber"), Violation.Reason.Above(Int.MAX_VALUE.toDouble()))
             numbers[set.exerciseId] = next + 1
-            CorrectedSet(set.id, set.exerciseId, next, set.weightKg, set.reps, set.completedAt, set.rpe, set.note, rpeNamed = true, kind = set.kind)
+            CorrectedSet(set.id, set.exerciseId, next, set.weightKg, set.reps, set.completedAt, set.rpe, set.note, rpeNamed = true)
         }
         val correction = CorrectSession(id, ids.opaqueID(), session.startedAt, finish, session.displayName, corrected, preserveOtherSets = true)
         return correction.decision(state, ids)

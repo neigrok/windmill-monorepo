@@ -139,7 +139,7 @@ public struct Catalogue: Equatable, Sendable {
   public init(custom: [Exercise], names: [ExerciseName]) {
     let resolved = (SeedExercises.all + custom).map { exercise in
       guard let override = names.first(where: { $0.id.record == exercise.id.record }) else { return exercise }
-      let seed = SeedExercises.all.contains { $0.id == exercise.id }
+      let seed = SeedExercises.contains(exercise.id)
       return Exercise(id: exercise.id, name: seed ? override.name ?? exercise.name : exercise.name,
                       pattern: exercise.pattern, equipment: override.equipment ?? exercise.equipment,
                       stepKg: exercise.stepKg, loadCount: override.loadCount ?? (exercise.equipment == "dumbbell" ? exercise.loadCount : nil),
@@ -232,7 +232,7 @@ public struct UpdateExercise: Action {
     }
     var counted: Int?
     if let loadCount, (equipped ?? old.equipment) == "dumbbell", equipped != nil || loadCount != old.loadCount { counted = loadCount }
-    let seed = SeedExercises.all.contains { $0.id == id }
+    let seed = SeedExercises.contains(id)
     let metadata = ExerciseName(id: ID(id.record), name: seed ? renamed : nil, equipment: equipped, loadCount: counted)
     if renamed == nil && metadata.fields.isEmpty { return .unchanged(()) }
     var plan = Plan()

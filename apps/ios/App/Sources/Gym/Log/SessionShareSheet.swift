@@ -252,7 +252,7 @@ struct SessionShareSheet: View {
           }
           if sharing.state.isLive {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
-              .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: RoomSpace.minimumTarget)
+              .font(.body).buttonStyle(.borderless).frame(minHeight: RoomSpace.minimumTarget)
               .accessibilityIdentifier("gym-share-revoke")
           }
         }.padding(.bottom, RoomSpace.inset).roomMotion(sharing.state.note)

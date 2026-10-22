@@ -1562,6 +1562,31 @@ TEST(coach_write_completion_and_issue_share_request_without_private_content) {
   CHECK(h.reports->events.front().find("the vendor sent") == std::string::npos);
 }
 
+TEST(coach_saving_a_stated_goal_logs_one_completion_and_never_the_goal) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  h.agent.plan = {{"list_notes", parse("{}")},
+                  {"save_note", parse(R"({"id":"note_goal0001","title":"PRIVATE_GOAL_TITLE","body":"PRIVATE_GOAL_BODY"})")}};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  const AskReply reply = h.question("PRIVATE_GOAL_QUESTION");
+  installWriteSink({});
+
+  REQUIRE(reply.answer.ok);
+  REQUIRE(reply.generation.has_value());
+  CHECK_EQ(stored("select id, title, body from gym_notes"),
+           std::vector<std::string>{"note_" + reply.generation->id + " | PRIVATE_GOAL_TITLE | PRIVATE_GOAL_BODY"});
+  // The door's own admission and the live feed log beside these under their own doors; Coach's are the two below.
+  std::vector<std::string> coachLines;
+  for (const WriteCompletion& completion : completions) {
+    CHECK(writeCompletionJson(completion).find("PRIVATE_") == std::string::npos);
+    if (completion.door == "Coach")
+      coachLines.push_back(completion.operation + " " + completion.product + " " + completion.door + " " + completion.outcome);
+  }
+  CHECK_EQ(coachLines, (std::vector<std::string>{"gym.save_note gym Coach ok", "ask.run gym Coach ok"}));
+  CHECK_EQ(h.reports->events, std::vector<std::string>{});
+}
+
 TEST(every_declared_coach_write_tool_has_one_completion_even_when_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;

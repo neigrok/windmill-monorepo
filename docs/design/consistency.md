@@ -191,7 +191,7 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   later sheets' keyboard avoidance 82 pt short: after the routine targets' bar, the weigh-in sheet
   drew *Save weight* under the decimal pad. The iOS boards draw no keyboard toolbar: Coach's *Done*
   is a glass circle above the composer, the note editor has none, and Targets commits from its bar. The app draws *Next* and *Done* as `KeyboardBar` in the bottom inset
-  while a field is focused (routine targets, the Coach note); align those two sheets.
+  while a routine target's field is focused; align that sheet.
 
 ### iOS against the drawings and the other phone
 
@@ -215,15 +215,22 @@ and Android disagree.
   (`--accent-terracotta-500`). Figma Theme roles `ios/gym/accent`, `ios/gym/accent-soft`,
   `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. iOS code still carries
-  `SetKind`: `GymRows.swift` dims warm-ups and prints the *W* prefix, and `SetEditor` offers Kind;
-  Android still carries `SetKind` (`gym/domain/Training.kt:17-23`): `FixSheet.kt:249` passes a set's
-  kind through, the logger indexes warm-ups *W* in faint ink (`LoggerScreen.kt:770-781`,
-  `LiveSession.kt:74,146-151`), workout detail prints the wire *warmup* / *drop* / *failure* as a set
-  note (`SessionScreen.kt:128`), the Record's recent sets append it (`domain/Record.kt:40-43`), and the
-  saved-workout recovery offers *Choose set kind* (`SettingsScreen.kt:240-242,268,293-308,370-383`).
-  The Android boards draw none of it (03.1, 03.3, 05.3, 05.6, 07.2, 07.3). Build work: remove it on
-  every surface.
+  the Gym boards state none. The shared gym vectors and the iOS, Android and web domains count every
+  set as a working set and read a stored `kind` only to ignore it. Still carrying a kind:
+  Android's app layer, whose kind no longer reaches the log — `SetKind` (`gym/domain/Training.kt:17-23`),
+  `FixSheet.kt:249` passing a set's kind through, the logger indexing warm-ups *W* in faint ink
+  (`LoggerScreen.kt:770-781`, `LiveSession.kt:74,146-151`), workout detail printing the wire *warmup*
+  / *drop* / *failure* as a set note (`SessionScreen.kt:128`), the Record's recent sets appending it
+  (`domain/Record.kt:40-43`) and the saved-workout recovery's *Choose set kind*
+  (`SettingsScreen.kt:240-242,268,293-308,370-383`), none of it on the Android boards (03.1, 03.3,
+  05.3, 05.6, 07.2, 07.3); the web, whose new-set rows carry a dead `kind: 'working'`
+  (`WorkoutEditor.jsx`, `backfill/draft.js`) that the domain's imported and corrected sets drop before
+  the wire, and which draws the share page's kinds and a warm-up set on the gym landing
+  (`GymLanding.jsx`); and the backend, whose reads count working sets only (`PgLogRepository.cpp`,
+  `PgLogHistory.cpp`, `Review.cpp`: REST, MCP `gym_get_stats` and last time, the Coach's context) and
+  whose MCP `gym_log_set` and Coach prompt still offer warm-up, drop and failure. An old row of another
+  kind so counts on every client and not on the server. Build work: remove it on Android, the web and
+  the backend.
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
@@ -233,7 +240,7 @@ and Android disagree.
   settings (`ui/SettingsScreen.kt:182-442`) with a dialog Inspect, a typed-format fix sheet
   (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
   banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
-  removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-56`); see 12g.
+  removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-58`); see 12g.
 - **9l · Live Activity clocks carry no words (owner ruling, 2026-10-22; iOS build).** Boards 04.2
   and 04.4 draw the clocks with no names; VoiceOver names them. The widget's position line still
   adds *… since last set* (`WorkoutActivityWidget.swift`, `position`): build work in iOS task 59.
@@ -262,9 +269,8 @@ and Android disagree.
   exactly. Rule whether both follow the stated rule.
 - **9q · Where Weigh in sits (owner rulings, 2026-10-22; build).** Both phones float *Weigh in*
   bottom-end over The log: iOS as the labelled glass capsule (target 05.1), Android as the M3
-  extended FAB (Android 05.1). The iOS build puts it in The log's bar (`scalemass`, before the account
-  button); Android pins a full-width button under the list (`LogScreen.kt:148-150`,
-  `BodyweightScreen.kt:83-90`).
+  extended FAB (Android 05.1). iOS builds it, the list's bottom inset keeping its last row clear;
+  Android pins a full-width button under the list (`LogScreen.kt:148-150`, `BodyweightScreen.kt:83-90`).
 - **9r · No Gym settings anywhere (owner ruling, 2026-10-22; Android build).** Neither phone has a
   Gym settings page. On iOS, Notes and Connected log are reached from You's Settings
   (`AccountSheet.swift:419-431`) and a hidden workout from the tab bar's accessory on iOS 26 and the
@@ -320,12 +326,11 @@ and Android disagree.
   (board 08.5), and the table's words stand where iOS says what Coach did — the receipt's *Read your
   movement history* for a totals-only read and *Read nothing from your log*, *Also read your notes.*
   under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note* / *Could
-  not confirm a note save*; whether the iOS build draws the saved-note row is unchecked. The words
+  not confirm a note save*, which iOS draws as a card under the answer (10v). The words
   differ too: the return receipt on boards 08.12–08.13 reads *Applied · Push A · 4 changes*,
   *Applied · Push A · routine removed* and *Rejected · Push A.*; the web's `receiptLine` still says
-  *Turned down* (10v); the iOS Review's band says the word alone — *Applied*, *Removed*, *Turned
-  down* — and the card, History and band share one table that adds *Out of date* for a superseded
-  proposal. Decide whether the step list holds on every surface, and whether web and Android take
+  *Turned down* (10v); iOS's card and History share one word per outcome — *Applied*, *Removed*,
+  *Rejected* — and add *Out of date* for a superseded proposal (`CoachCopy.settled`). Decide whether the step list holds on every surface, and whether web and Android take
   *Removed* and *Out of date*.
 - **10g · Backend: the read receipt's weeks.** The server's read receipt counts weeks no
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
@@ -374,9 +379,6 @@ and Android disagree.
     to continue.* The owner's later rulings replace two: *Build my own* (not *Build myself*) and
     **Apply** / **Reject** on drafts (not *Save routine(s)*) — build work in 10v.
   - The greeting's actions are drawn `.bordered` with the accent tint; the build uses `.borderless`.
-  - The build adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
-    available yet.* (`CoachTab.swift:93-101,349-353`, `CoachWire.swift:311-314`). The owner ruled
-    (2026-10-22) it goes: build work. Board (b) is the owner's paid upsell and waits for checkout.
   - The set-editing haptic is a `.selection` tick per accepted rack change. The build keeps the
     canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
@@ -394,18 +396,11 @@ and Android disagree.
   `1170:3192`, 08.10 `1170:3266`,
   08.11 `1170:3364`, 08.12–08.14 `1203:7214`, `1203:7452`, `1203:7628`. Owner rulings since:
   proposals and drafts are decided inline on their cards (no review sheet), and the greeting is two
-  bubbles of anchored capabilities. Still open between the targets and the iOS build
-  (`CoachTab.swift`), for the owner to settle:
-  - The build draws Coach's turn as plain prose on the canvas, no bubble. The targets put Coach in a
-    left bubble with a tail, full width for headings, lists and tables.
-  - The build's lifter bubble is `gym/accent-soft`, radius 18, at most 78 % wide. The targets fill it
-    with `gym/accent` and set it in `on-accent`, with a tail, grouped Messages-style.
-  - The build shows a sent photo as a 56 pt thumbnail under the text. The targets send it as a 200 pt
-    image bubble.
-  - The build's composer is one capsule with Add photo inside and a send circle that only dims when
-    it cannot send. The targets put a round + outside the field and show the send arrow only when
-    there is something to send.
-  - The typing bubble, centred service notes and timestamps are drawn only on the targets.
+  bubbles of anchored capabilities. The iOS build draws the targets (`Coach/CoachMessages.swift`,
+  `CoachTab.swift`): bubbles with tails, the lifter's in `gym/accent` set in `on-accent`, a sent photo
+  as a 200 pt image bubble, timestamps, the typing bubble, Markdown in a full-width bubble, and the
+  round + outside the field with the send arrow that appears with text. Android (11g) and the web
+  still draw the older chat.
 - **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
@@ -413,46 +408,78 @@ and Android disagree.
 - **10v · Coach's cards, words and change catalogue (owner rulings, 2026-10-22; build).** The owner
   ruled: proposals and drafts are decided with **Apply** and **Reject** (*Rejected*, never *Turned
   down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
-  English. Boards 01.1–01.15 and 08.1–08.31 say so. Build work, none of it in code today:
-  - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in every surface
-    (iOS card and History table, Android `Proposal.kt` and its review actions, web `proposals.js`
-    `receiptLine`) and in the server's dead-proposal sentences (*…so it was not turned down*).
-  - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
-    are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
-    routines* line.
+  English. Boards 01.1–01.15 and 08.1–08.31 say so. Build work:
+  - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in Android
+    `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
+    *Reject* and *Rejected* and asks nothing.
+  - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
+    routines*); Android and the web still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
+    proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
+  - Block order: 08.27 lists a rename, moves, changes, removals, then additions, as the shared
+    `ProposalDiff` vectors order them; 08.2 and 08.3 draw Changed, Added, Removed, Changed, Moved. iOS
+    follows the vectors, so 08.2's first two blocks read Moved and Changed; 08.2/08.3 want redrawing
+    in that order.
+  - Field lines: 08.21 and 08.27 draw only the fields that change (*Push-up · Reps*, *Lateral Raise · Reps*),
+    where 08.2 and 08.3 draw a set's unchanged fields plain, as iOS and the shared vectors do. 08.21
+    also draws three blocks with no *Show all*, where the card's rule shows two, then *Show all 3 changes*.
   - The card's field diff (per field old → new, per-set lines once sets differ, *Max*, *Last time*,
     *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
-    added are not built on any phone; iOS still opens a review sheet.
-  - A failed apply's red line and **Try again**, Reject disabled while Applying, and the signed-out
-    *Sign in* answer for a change request (08.29–08.31).
-  - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets
-    stay saved…*, *You decide the numbers at the rack.*, *Every point is a number you typed…*, the
-    greeting (*Adjust*, *With an account*, *Build myself*), *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…*, `AiAllowance.message` (*fully used or
-    reserved*), the photo captions and *The next question frees up…*.
-- **10t · Coach saves a stated goal (build).** The greeting says Coach sets goals and plans around
-  them. The prompt (`AnthropicAsk.cpp`) saves only "useful insight" and reads Notes for goals; it
-  should say plainly that a goal the lifter states is saved with `save_note` in that turn.
+    added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
+    domains also pass; no Android or web screen draws them yet.
+  - 08.4 gives a conversation that proposed and created nothing a second line — *Changed a movement*, or the answer's
+    first words — but the thread list the server sends carries only the question and a proposal or creation outcome, so
+    iOS shows those rows on one line.
+  - 08.31's **Sign in** under a signed-out answer needs the onboarding answer to say it needs an account: iOS reads
+    `needsAccount` from it, which the backend's onboarding schema and prompt do not produce yet, so the button shows only
+    on the simulator fixture.
+  - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
+    on iOS only.
+  - `ios/ios-redesign.md` §2 (the `gym/alarm-fill` row, the brick line under the table, white on
+    `alarm-fill`) gives a removal's primary a brick fill, where the boards draw **Remove routine** in
+    the destructive style: iOS draws it quiet with its label in the system red and holds no
+    `gym/alarm-fill` colour. §2 wants the row and the lines retired.
+  - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
+    `Program.kt`, web `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
+    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. The day's cap can say 08.8's
+    *You can ask again in about 2 hours.* on both: `429 ask-daily-limit` carries `retryAtMs` (and `Retry-After` on a
+    plain reply), which iOS reads and Android and the web ignore. iOS Coach's
+    greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
+    departures below.
+  - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
+    - 08.9, 08.25 and 08.26: *Changed a movement* and *Saved a note* stand alone on their cards, without the boards'
+      *Changed* block or note text. The answer's steps name only the tool (`tool`, `failed`), so the phone cannot tell
+      Coach's write from the lifter's later edit. Owner ruling (2026-10-22): the cards gain their content with the
+      local Coach, whose abilities run on the phone's replica ([gym_coach.md](../foundation/mobile/gym_coach.md)),
+      not before.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
-  trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with the local component `_Gym / Swipe actions` (`1190:172`). Audit of the iOS code
-  (`apps/ios/App/Sources/Gym`, main) against the boards:
-
-  | Place | Code today | Board | Build work |
-  |---|---|---|---|
-  | Routines list | `RoutinesTab.swift:63` text *Delete*, no symbol | 02.1 `1181:4042` | text label |
-  | Routine editor movements | `RoutineBuilder.swift:159` `trash` + *Remove* | 02.8 `1149:2275` | text label |
-  | Targets, per set | `RoutineTargets.swift:262` text *Delete* | none (Vary by set rows not drawn) | text label |
-  | This workout movements | `WorkoutSheets.swift:28` text *Remove* | 03.4 `1135:1875` | text label |
-  | The log sessions | `LogTab.swift:167` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 05.2 `1185:4905` | custom tint, not the system red |
-  | Workout detail sets | `SessionDetailScreen.swift:40` text *Delete* | 05.4 `1188:5811` | text label |
-  | Bodyweight entries | `BodyweightScreen.swift:137` text *Delete* | 06.2 `1185:5500` | text label |
-  | Notes | `CoachScreens.swift:86` text *Delete*; `onDelete` in Edit | 09.1 `1186:5557` | text label |
-  | Coach History | `CoachHistory.swift:148` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 08.4 `1172:3561` | custom tint |
+  trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
+  the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,
+  `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, Targets' per-set rows, The log,
+  workout detail sets, Bodyweight entries, Notes, Coach History and the routine editor's movements
+  (02.8 `1149:2275`) and This workout's movements (03.4 `1135:1875`), both lists out of edit mode
+  that draw their own handles and drag on a long press. A one-line row draws the system's capsule
+  rather than a circle (05.4's set row).
 
   Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,
   *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
-  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*
-  (`WorkoutReceipt.swift:252`), which is the receipt's band action, not a swipe.
+  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*,
+  which is the receipt's band action, not a swipe.
+- **10x · The log's boards ahead of other canon (build, 2026-10-22).** The iOS build follows the
+  🚧 targets (10o), and other canon still says otherwise in these places:
+  - Workout detail's tiles share one card parted by hairlines (05.3), and the one session
+    constructor draws them so on Inspect too, where 07.2 draws one card without hairlines; the
+    receipt sets each tile on its own card, as 03.7 draws them. Settle one form for 05.3 and 07.2.
+  - The Equipment menu (05.10) draws Bodyweight third; the build lists it last, as Create movement
+    does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
+    `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so Edit
+    exercise, Targets and Create movement read the same words.
+  - Weigh in (06.1): on a phone the keyboard lifts the `.medium` sheet to the top, where the board
+    draws it at its detent.
+  - Notes (09.1, 09.2): on iOS a row and the editor are the note's one text, while the domain still
+    stores a title and a body: the editor takes a first line of up to 60 characters as the title and
+    the rest as the body, and a longer first line keeps the whole text in the body under a title cut
+    at a word boundary with *…*, which is how it reaches the other surfaces. Coach's `save_note` and
+    the rules are unchanged.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
@@ -720,7 +747,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12a · Lifting above the plan is just logged.** No surface asks to change a routine when the
   lifter beats it; targets change only through Coach's proposals (catalogue 08.21). Both phones ask
   today: iOS an alert *Save {w} to {routine}?* or the sheet *Heavier than the plan*
-  (`Workout/WorkoutSheets.swift:95-141`, `WorkoutState` `resolveDeviation`, `SaveWorkoutDeviation`),
+  (`Workout/WorkoutSheets.swift:105-151`, `WorkoutState` `resolveDeviation`, `SaveWorkoutDeviation`),
   Android the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are deleted on both
   pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
 - **12b · Every workout starts from a routine.** No free workout on either phone, and the Control
@@ -728,8 +755,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   Boards 03.9 are deleted on both pages. Android still offers *Start logging*
   (`ui/RoutinesScreen.kt:162-177`), the first-movement picker (`ui/LoggerScreen.kt:364`) and *Save a
   routine* on the receipt (`ui/FinishScreen.kt:68,379-395`); iOS still draws *Choose your first
-  movement* (`Workout/WorkoutScreen.swift:107-113`) and, on main, *Save as routine*
-  (`Workout/WorkoutReceipt.swift:203-214`).
+  movement* (`Workout/WorkoutScreen.swift:107-113`).
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
@@ -752,29 +778,28 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
   `1283:42292`). Neither phone builds it: iOS offers Keep only from Coach's receipts and from Share
-  with Coach signed out (`Coach/CoachTab.swift:307`, `GymRoom.swift:205`); Android shows a standing
+  with Coach signed out (`Coach/CoachTab.swift:318`, `GymRoom.swift:200`); Android shows a standing
   card on Routines (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
   (`plat/auth/SignInDoor.kt:117`), both removed from the boards.
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
   The sign-in question: 7d. iOS says *This permanently removes the workout and its sets.*
-  (`Workout/WorkoutReceipt.swift:221-228`), *This permanently removes the copy saved on this phone.*
-  (`Recovery/WorkoutInspectScreen.swift:52-56`) and *This permanently removes the conversation.* /
-  *Delete conversation* (`Coach/CoachHistory.swift:113,119`); Android asks nothing (11b).
+  (`Workout/WorkoutReceipt.swift:186-193`), *This permanently removes the copy saved on this phone.*
+  (`Recovery/WorkoutInspectScreen.swift:52-58`) and *This permanently removes the conversation.* /
+  *Delete conversation* (`Coach/CoachHistory.swift:124-131`); Android asks nothing (11b).
 - **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight
   is · Total → Each dumbbell*; the day's cap reads *You can ask again in about 2 hours.* with *Use your
   own AI agent*; *This Windmill does not have Coach. You can still read your log.* with no doors;
   *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
   `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.34
   `1254:31663`). Android: `coach/Ask.kt:180,218,225-240`, `coach/AskScreen.kt:142-153,282-315,332-343`,
-  `coach/Thread.kt:157,168`, `coach/CoachAnswer.kt:225-228`. iOS: the absent and cap lines use the
-  older words (`Coach/CoachWire.swift:267,333`) and the cap has no door (`Coach/CoachTab.swift:220-237`).
+  `coach/Thread.kt:157,168`, `coach/CoachAnswer.kt:225-228`. The cap's hours come from the 429's `retryAtMs`, as iOS
+  says them (`Coach/CoachWire.swift`, `CoachCopy.daily`); Android does not read the field yet (10v).
 - **12i · Shipped iOS states, drawn on both pages.** Coach's choice chips (01.17), *Draft kept on this
   phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
   movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
   device check; Android builds none (01.17 `1283:40111`, 01.18 `1283:40674`, 02.13 `1283:39087`).
-  iOS's code-only *Windmill One* door goes (10p).
 - **12j · A refused sign-in code.** Android says *That code has expired. Codes work once and last 15
   minutes — send a fresh one.* for every refusal, a typo included (`plat/auth/Auth.kt:261-266`); both
   phones draw the server's *That code didn’t work.* / *Check the digits, or send a fresh one.* (Shell
@@ -893,8 +918,8 @@ these places.
 - **9z · One noun per thing (owner rulings, 2026-10-16 and 2026-10-22).** Every phone screen says
   *workout* (never *session*), *movement* (never *exercise*) and *The log* (tab and title); *session*
   stays in code and on the wire. Both pages draw this (iOS 05.9 *Edit movement*; Android pager
-  *Movement 3 of 5*, tab *The log*). Code still differs: iOS *Edit exercise* and *Remove exercise*
-  (`RoutineBuilder.swift:157,161`, `Components/RenameMovementSheet.swift`); Android *Log* (tab and
+  *Movement 3 of 5*, tab *The log*). Code still differs: iOS *Edit exercise* (`Components/GymRows.swift:118`,
+  `Log/MovementRecordScreen.swift:66`, `Components/RenameMovementSheet.swift`); Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,

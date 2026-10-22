@@ -136,8 +136,8 @@ tests select `WindmillTests` on iPhone 17. Three UI shards select each standard 
 | `coach-shell` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `OfflineFlowTests` |
 
 Each test job builds its own App, and the packages job checks that the UI class partition stays complete.
-The opt-in `DesignCaptureTests` class is excluded; its environment flag and screenshot export command are
-in [the App README](App/README.md). Each UI shard
+The opt-in design capture suite in `App/UITests/DesignCapture/` is excluded; how to run and export it is
+in [the App README](App/README.md#design-captures). Each UI shard
 creates its own iPhone 17 on iOS 26.5 and prepares it with `App/Tools/prepare_simulator.py <udid>`, which prepares a
 new local simulator the same way: it seeds English/US preferences, Live Activity consent and completed Apple
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility

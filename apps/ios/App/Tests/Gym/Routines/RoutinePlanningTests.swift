@@ -162,10 +162,21 @@ import UIKit
     #expect(RoutineLines.routine(one, lastTrained: moment.now, historyKnown: true, moment: nil) == "1 movement · never trained")
     let session = Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2))
     let set = TrainingSet(id: ID("set-one1"), sessionId: session.id, exerciseId: ID("bench-press"), weightKg: 100, reps: 5, completedAt: Instant(ms: 1))
-    let warmup = TrainingSet(id: ID("set-two2"), sessionId: session.id, exerciseId: ID("deadlift"), weightKg: 60, reps: 5, kind: "warmup", completedAt: Instant(ms: 1))
+    let other = TrainingSet(id: ID("set-two2"), sessionId: session.id, exerciseId: ID("deadlift"), weightKg: 60, reps: 5, completedAt: Instant(ms: 1))
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set], catalogue: Catalogue(custom: [], names: []))) == "1 working set · 1 movement")
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, warmup], catalogue: Catalogue(custom: [], names: []))) == "1 working set · 2 movements")
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [warmup], catalogue: Catalogue(custom: [], names: []))) == "0 working sets · 1 movement")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 working sets · 2 movements")
+  }
+
+  @Test func anEditorRowReadsItsTargetsInTheMovementsLoadBasis() {
+    let lines = [
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 4), equipment: MovementEquipment("barbell")),
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 10, weightKg: 22.5), count: 3), equipment: MovementEquipment("dumbbell")),
+      RoutineLines.movement([SetTarget(reps: 8, weightKg: 10), SetTarget(reps: 8)], equipment: MovementEquipment("bodyweight")),
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 12), count: 3), equipment: MovementEquipment("cable")),
+      RoutineLines.movement(nil, equipment: MovementEquipment("cable")),
+      RoutineLines.movement([], equipment: MovementEquipment(nil)),
+    ]
+    #expect(lines == ["4 × 8 · 60 kg total", "3 × 10 · 22.5 kg each", "2 × 8 · 10–last kg added", "3 × 12", "Open", "Open"])
   }
 
   @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {
@@ -199,6 +210,36 @@ import UIKit
     harness.sync(); gym.refresh()
     let taken = try #require(gym.routineProposals.first)
     #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · 12:00\u{202F}PM"])
+  }
+
+  // A removal's receipt row and a waiting proposal's row read the word their card stands on: Removed once the log took the
+  // removal, Not applied once it refused an Apply — never Out of date for a refusal that says nothing of the routine. A
+  // refused removal still waits, and is its receipt's row alone.
+  @Test func aProposalsRowReadsTheWordItsCardStandsOn() throws {
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
+    let gym = GymModel(runner: harness.runner, locale: Locale(identifier: "en_US")); gym.account = "routines-owner"
+    gym.run(CreateExercise(Exercise(id: ID("word-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routines = ["push", "pull", "legs"].map { Draft(new: Routine(id: ID(RecordID("word-" + $0)), name: $0.capitalized, entries: [RoutineEntry(exerciseId: ID("word-bench"))])) }
+    for index in routines.indices { #expect(gym.saveRoutine(&routines[index])) }
+    harness.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("word-removed"), routineId: routines[0].id, name: "", entries: [], summary: "Remove", removing: true))?.refusal == nil)
+    #expect(gym.run(ProposeRoutine(id: ID("word-refused-removal"), routineId: routines[1].id, name: "", entries: [], summary: "Remove", removing: true))?.refusal == nil)
+    #expect(gym.run(ProposeRoutine(id: ID("word-refused-change"), routineId: routines[2].id, name: "Legs B", entries: routines[2].current.entries, summary: "Rename"))?.refusal == nil)
+    harness.sync(); gym.refresh()
+    func decide(_ id: String, _ refused: Bool) throws {
+      #expect(gym.coachDecideProposal(try #require(gym.proposals.first { $0.id == ID(RecordID(id)) }), apply: true))
+      if refused { harness.server.refuse(code: .invalid) }
+      harness.sync(); gym.refresh()
+    }
+    try decide("word-removed", false); try decide("word-refused-removal", true); try decide("word-refused-change", true)
+    #expect(gym.routineRemovalReceipts.map { [$0.proposal.id.description, gym.coachProposalWord($0.proposal) ?? "-"] } == [
+      ["word-refused-removal", "Not applied"], ["word-removed", "Removed"]])
+    #expect(gym.proposals.first { $0.id == ID("word-refused-removal") }?.state == "pending")
+    #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"]])
+    let cards = ["word-removed", "word-refused-removal", "word-refused-change"].map { ProposalCard(gym: gym, id: $0) }
+    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.retryable ? $0.primaryTitle : "-"] } == [
+      ["applied", "-", "-"], ["open", "Not applied.", "Try again"], ["open", "Not applied.", "Try again"]])
   }
 
   @Test func aProposalIsNamedByItsRoutineAndWhatItChanges() throws {
@@ -283,7 +324,7 @@ import UIKit
     let (_, gym) = fixture()
     var draft = draft(gym)
     #expect(gym.startWorkout(routineId: draft.id) == nil)
-    #expect(gym.error == "That routine is no longer in your program. Everything you logged against it is still in the log.")
+    #expect(gym.error == "That routine can’t be found. No workout was started.")
     gym.readFailed = true
     #expect(gym.startWorkout() == nil)
     #expect(gym.openSession == nil)
@@ -308,12 +349,12 @@ import UIKit
     let waiting = Proposal(id: ID("pending"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
     let settled = Proposal(id: ID("settled"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Done", changes: [], state: "applied")
     let replaced = Proposal(id: ID("old"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Old", changes: [], supersededBy: waiting.id)
-    gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id]
+    gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id: .replaced]
     #expect(gym.routineProposals.map(\.id) == [waiting.id])
   }
 
-  // A connected tool's proposal gone out of date keeps its row, Out of date, the door to a Review without Apply or Turn this
-  // down; a Coach proposal leaves for its card, and a newer proposal or a routine out of sight takes the row away.
+  // A connected tool's proposal gone out of date keeps its row, Out of date, the door to its card without Apply or Reject; a
+  // Coach proposal leaves for its card in the conversation, and a newer proposal or a routine out of sight takes the row away.
   @Test func aConnectedToolsOutOfDateProposalKeepsItsRowAsTheDoorToItsReview() {
     let (_, gym) = fixture()
     gym.isAnonymous = false; gym.account = "routines-owner"
@@ -326,14 +367,15 @@ import UIKit
                      proposal("c-coach-set-aside", "pull", "ask", "superseded"), proposal("d-coach-newer", "arms", "ask", "pending"),
                      proposal("e-tool-older", "arms", "mcp", "superseded"), proposal("f-tool-gone", "gone", "mcp", "pending"),
                      proposal("g-tool-waiting", "core", "mcp", "pending"), proposal("h-tool-applied", "core", "mcp", "applied")]
-    gym.outOfDateProposals = [ID("a-tool-edited"), ID("b-tool-set-aside"), ID("c-coach-set-aside"), ID("e-tool-older"), ID("f-tool-gone")]
+    gym.outOfDateProposals = [ID("a-tool-edited"): .routineChanged, ID("b-tool-set-aside"): .replaced, ID("c-coach-set-aside"): .replaced,
+                              ID("e-tool-older"): .replaced, ID("f-tool-gone"): .routineChanged]
     #expect(gym.routineProposals.map { [$0.id.description, gym.proposalTitle($0), gym.proposalLine($0)] } == [
       ["a-tool-edited", "Push · 1 change", "Out of date"], ["b-tool-set-aside", "Legs · 1 change", "Out of date"],
       ["d-coach-newer", "Arms · 1 change", "From Coach"], ["g-tool-waiting", "Core · 1 change", "From Claude"]])
-    let reviews = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalReviewSheet(gym: gym, proposalId: $0) }
-    #expect(reviews.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
-      ["The routine changed after this was written. Nothing was applied.", "false", "false"],
-      ["This proposal is out of date. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
+    let cards = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalCard(gym: gym, id: $0) }
+    #expect(cards.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
+      ["Push changed after this suggestion. Nothing was applied.", "false", "false"],
+      ["A newer suggestion replaced this one. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
   }
 
   // One visit to the editor is one screen event, however often its steps push over it and pop; each step records its own.

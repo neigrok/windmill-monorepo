@@ -127,9 +127,9 @@ import UIKit
     XCTAssertGreaterThanOrEqual(contrast, 4.5,
       "\(appearance) \(button.label): rendered glyph/fill contrast \(contrast), glyph pixels \(glyph.count)", file: file, line: line)
   }
-  // The rename sheet focuses its name as it rises with the keyboard, so a tap could land outside it and dismiss it.
+  // The rename sheet opens at its large detent with nothing focused, so its name takes a tap first.
   func retype(_ field: XCUIElement, with text: String) {
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap()
     XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForExistence(timeout: 5))
     let value = field.value as? String ?? ""
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + text)
@@ -274,8 +274,8 @@ import UIKit
     }
   }
 
-  // The builder's bar is Cancel · title · Save at every size: Reorder stands with the movements, the title stays while
-  // reordering, Save never folds into an overflow, and a refusal answers a Save, never a keystroke.
+  // The builder's bar is Cancel · title · Save at every size: the movements sort without a Reorder button, Save never folds
+  // into an overflow, and a refusal answers a Save, never a keystroke.
   func testBuilderBarKeepsTitleAndSaveAtAccessibilityTextAndRefusesOnSave() {
     let app = launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     app.buttons["new-routine"].tap()
@@ -300,8 +300,8 @@ import UIKit
     }
     XCTAssertTrue(refusal.waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["reorder-movements"].exists)
-    XCTAssertTrue(app.buttons["Reorder 2. Deadlift"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
+    XCTAssertTrue(app.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar")
     XCTAssertTrue(save.exists && save.isHittable, "Save folded into the bar's overflow")
     XCTAssertLessThanOrEqual(save.frame.maxY, app.navigationBars.firstMatch.frame.maxY)
   }
@@ -364,7 +364,7 @@ import UIKit
     app.buttons["routine-close"].tap()
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 5)); row.swipeLeft()
-    app.buttons["Delete"].tap()
+    app.buttons["trash-swipe"].tap()
     XCTAssertTrue(row.waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
     XCTAssertTrue(app.staticTexts["No routines yet"].exists)
@@ -411,6 +411,9 @@ import UIKit
     XCTAssertFalse(app.staticTexts["Your log is saved on this device."].exists)
     createRoutine(app)
     XCTAssertEqual(app.buttons["routine-start"].label, "Start")
+    XCTAssertEqual(app.buttons["routine-close"].label, "Close")
+    XCTAssertTrue(app.navigationBars.staticTexts["1 movement · never trained"].exists, "The last-trained line is the bar's subtitle")
+    XCTAssertEqual(app.staticTexts.matching(identifier: "routine-detail-movement-bench-press").allElementsBoundByIndex.map(\.label), ["1. Bench Press", "open"])
     XCTAssertTrue(app.buttons["edit-routine"].isHittable)
     app.buttons["routine-close"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForNonExistence(timeout: 5))
@@ -476,6 +479,8 @@ import UIKit
     XCTAssertFalse(app.staticTexts["gym-record-empty"].exists)
   }
 
+  // The builder's movements are always sortable out of edit mode: a long press on the drawn handle drags a row, a swipe shows
+  // the trash circle, and the row's menu, which VoiceOver reads as its actions, moves it up and down.
   func testBuilderReorderRemoveAndAddMovementAgain() {
     let app = launch()
     app.buttons["new-routine"].tap()
@@ -485,30 +490,32 @@ import UIKit
       app.buttons["gym-movement-" + id].tap()
     }
     XCTAssertFalse(app.buttons["reorder-movements"].exists)
-    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
-    let deadliftHandle = app.buttons["Reorder 2. Deadlift"]
-    XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(app.buttons["Reorder 1. Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(deadliftHandle.exists)
-    let deadlift = app.buttons["builder-movement-deadlift"]
-    func settledFrame() -> CGRect {
-      let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        guard deadlift.exists, deadlift.isEnabled, deadlift.isHittable else { return false }
-        let frame = deadlift.frame
-        return !frame.isEmpty && self.viewport.contains(frame)
-      }, object: deadlift)
-      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-      return deadlift.frame
-    }
-    _ = settledFrame()
+    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar")
+    let order = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-"))
+    func ids() -> [String] { order.allElementsBoundByIndex.map(\.identifier) }
+    let bench = app.buttons["builder-movement-bench-press"], deadlift = app.buttons["builder-movement-deadlift"]
+    XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(ids(), ["builder-movement-bench-press", "builder-movement-deadlift"])
+    XCTAssertEqual(deadlift.label, "2. Deadlift, Open")
+    let handle = deadlift.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+    handle.press(forDuration: 1.2, thenDragTo: bench.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0.6)
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5), "The drag left the order at \(ids())")
+    XCTAssertTrue(deadlift.wait(for: \.label, toEqual: "1. Deadlift, Open", timeout: 5))
+    deadlift.press(forDuration: 1)
+    let moveDown = app.buttons["Move down"]
+    XCTAssertTrue(moveDown.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveDown.tap()
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-bench-press", timeout: 5))
     deadlift.press(forDuration: 1)
     let moveUp = app.buttons["Move up"]
     XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveUp.tap()
-    let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
-    XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
-    let remove = app.buttons["builder-remove-deadlift"]
-    XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
+    deadlift.swipeLeft()
+    let trash = app.buttons["trash-swipe"]
+    XCTAssertTrue(trash.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(trash.label, "Remove movement")
+    trash.tap()
     XCTAssertTrue(deadlift.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(ids(), ["builder-movement-bench-press"])
     XCTAssertFalse(app.buttons["builder-undo"].exists)
     app.buttons["add-movement"].tap()
     XCTAssertFalse(app.buttons["gym-movement-bench-press"].isEnabled)
@@ -623,43 +630,15 @@ import UIKit
       XCTAssertFalse(routine.label.contains("proposal"), routine.label)
       capture(app, "list-" + appearance)
       app.buttons["routine-proposal"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["A heavier bench target"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["Bench Press"].exists)
-      XCTAssertTrue(app.buttons["coach-apply-proposal"].exists)
-      XCTAssertFalse(app.staticTexts["The account changed. Open this proposal again."].exists)
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["coach-apply-proposal"].exists && app.buttons["coach-reject-proposal"].exists)
       capture(app, "proposal-" + appearance)
       app.buttons["Close"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 5))
-      app.buttons["routine-proposal"].tap()
-      let ask = app.descendants(matching: .any)["gym-proposal-review"].buttons["Ask Coach"]
-      XCTAssertTrue(ask.waitForExistence(timeout: 5))
-      XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Ask Coach must answer a 44 pt target, not its label")
-      ask.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForNonExistence(timeout: 5))
-      let question = app.descendants(matching: .any)["coach-question"]
-      XCTAssertTrue(question.waitForExistence(timeout: 5))
-      let seeded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        question.value as? String == "Tell me about the proposal for Push A."
-      }, object: question)
-      XCTAssertEqual(XCTWaiter.wait(for: [seeded], timeout: 5), .completed)
-      let done = app.buttons["coach-keyboard-done"]
-      let keyboardReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        app.keyboards.firstMatch.exists && done.exists && done.isHittable
-      }, object: done)
-      XCTAssertEqual(XCTWaiter.wait(for: [keyboardReady], timeout: 5), .completed)
-      let send = app.buttons["coach-send"]
-      XCTAssertTrue(send.waitForExistence(timeout: 5))
-      capture(app, "coach-proposal-question-" + appearance)
-      XCTAssertFalse(done.frame.intersects(send.frame), "Coach Done \(done.frame) must not cover Send \(send.frame) in \(appearance).")
-      XCTAssertGreaterThanOrEqual(done.frame.height, 44)
-      XCTAssertTrue(done.isEnabled && done.isHittable)
-      XCTAssertTrue(send.isEnabled && send.isHittable)
-      done.tap()
-      XCTAssertTrue(done.waitForNonExistence(timeout: 5))
-      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      XCTAssertEqual(question.value as? String, "Tell me about the proposal for Push A.")
+      app.tabBars.buttons["Coach"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 5))
       let routines = app.tabBars.buttons["Routines"]
       let tabBar = app.tabBars.firstMatch
       let routinesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -677,8 +656,8 @@ import UIKit
     }
   }
 
-  // A connected tool's proposal that an edit here put out of date keeps its row, Out of date, and its Review says why
-  // where Apply stood, with no Turn this down.
+  // A connected tool's proposal that an edit here put out of date keeps its row, Out of date, and its card says why
+  // where Apply and Reject stood.
   func testAConnectedToolsOutOfDateProposalKeepsItsRowInBothAppearances() {
     for appearance in ["light", "dark"] {
       let app = launch(appearance, proposal: true, arguments: ["-routines-tool-proposal"])
@@ -688,13 +667,11 @@ import UIKit
       XCTAssertFalse(app.buttons["routine-proposal"].exists)
       capture(app, "tool-out-of-date-" + appearance)
       row.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForExistence(timeout: 5))
-      let line = app.staticTexts["coach-review-out-of-date"]
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForExistence(timeout: 5))
+      let line = app.staticTexts["coach-proposal-out-of-date"]
       XCTAssertTrue(line.waitForExistence(timeout: 5))
-      XCTAssertTrue(["The routine changed after this was written. Nothing was applied.", "This proposal is out of date. Nothing was applied."].contains(line.label), line.label)
-      XCTAssertTrue(app.staticTexts["A heavier bench target"].exists)
-      XCTAssertFalse(app.buttons["coach-apply-proposal"].exists)
-      XCTAssertFalse(app.buttons["Turn this down"].exists)
+      XCTAssertEqual(line.label, "Push A changed after this suggestion. Nothing was applied.")
+      XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["coach-reject-proposal"].exists)
       capture(app, "tool-out-of-date-review-" + appearance)
       app.terminate()
     }

@@ -144,22 +144,19 @@ test('routine reads preserve server metadata and own nested values without freez
   assert.equal(Object.isFrozen(value.entries[0]?.sets?.[0]), true);
 });
 
-test('a performed routine groups working sets by performance then set number and retains actual zero load', () => {
+test('a performed routine groups sets by performance then set number and retains actual zero load', () => {
   const sets = [
-    { exerciseId: 'dip', kind: 'working', reps: 900, weightKg: 0, completedAt: 30, setNumber: 2 },
-    { exerciseId: 'back-squat', kind: 'working', reps: 5, weightKg: 80, completedAt: 20, setNumber: 1 },
-    { exerciseId: 'dip', kind: 'working', reps: 0, weightKg: -10, completedAt: 10, setNumber: 1 },
-    { exerciseId: 'bench-press', kind: 'warmup', reps: 8, weightKg: 20, completedAt: 1 },
-    { exerciseId: 'bench-press', kind: 'drop', reps: 8, weightKg: 20, completedAt: 1 },
-    { exerciseId: 'bench-press', kind: 'failure', reps: 8, weightKg: 20, completedAt: 1 },
-    { exerciseId: 'dip', kind: 'working', reps: null, weightKg: 15, completedAt: 5 },
+    { exerciseId: 'dip', reps: 900, weightKg: 0, completedAt: 30, setNumber: 2 },
+    { exerciseId: 'back-squat', reps: 5, weightKg: 80, completedAt: 20, setNumber: 1 },
+    { exerciseId: 'dip', reps: 0, weightKg: -10, completedAt: 10, setNumber: 1 },
+    { exerciseId: 'dip', reps: null, weightKg: 15, completedAt: 5 },
   ];
   const value = RoutineValue.fromSession({ id: new Id('routine1', Routine), name: 'Performed', sets });
   assert.deepEqual(value.fields(), { name: 'Performed', position: 0, entries: [
     { exerciseId: 'dip', sets: [{ reps: 1, weightKg: -10 }, { reps: 100, weightKg: 0 }, { weightKg: 15 }] },
     { exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 80 }] },
   ] });
-  const many = Array.from({ length: 21 }, (_, index) => ({ exerciseId: 'dip', kind: 'working', reps: index + 1, weightKg: 0, completedAt: index }));
+  const many = Array.from({ length: 21 }, (_, index) => ({ exerciseId: 'dip', reps: index + 1, weightKg: 0, completedAt: index }));
   assert.deepEqual(RoutineValue.fromSession({ id: new Id('routine2', Routine), name: 'Long', sets: many }).fields(), {
     name: 'Long', position: 0, entries: [{ exerciseId: 'dip', sets: many.slice(0, 20).map((set) => ({ reps: set.reps, weightKg: 0 })) }],
   });

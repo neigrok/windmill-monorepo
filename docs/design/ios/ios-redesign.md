@@ -95,18 +95,20 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/overlay` | `#030606` at 72 % | `#1A1918` at 45 % | the scrim under a sheet the room draws itself |
 | `gym/ink` | `#F1F0EB` | `#1A1918` | primary text, numerals |
 | `gym/ink-dim` | `#B6B5AF` | `#4C4744` | secondary text, facts, every essential label that is not primary |
-| `gym/ink-faint` | `#727771` | `#625C58` | non-essential meta only: axis labels, planned rows, `+ 1 more` |
+| `gym/ink-faint` | `#727771` | `#625C58` | non-essential meta only: a chart's scrub rule, planned rows, `+ 1 more` |
 | `gym/accent` | `#5FCDB4` | `#106B5F` | tint: links, selection, the primary fill, chart dots, the current-set dot |
 | `gym/accent-soft` | `#5FCDB4` at 16 % | `#106B5F` at 12 % | the lifter's bubble, a selected row's wash |
 | `gym/on-accent` | `#1B1408` | `#FFFFFF` | text and symbols on the accent fill |
 | `gym/done` | `#9AA859` | `#7D8C43` | a logged set's check, a fully logged movement, an applied proposal |
 | `gym/record` | `#D9B04C` | `#6E5217` | a personal record, and nothing else |
-| `gym/alarm` | `#D08268` | `#A84E35` | destructive labels, refusal text in a field |
+| `gym/alarm` | `#D08268` | `#A84E35` | refusal text in a field, a counter past its limit |
 | `gym/alarm-fill` | `#A84E35` | `#A84E35` | a removal proposal's primary; native destructive actions use the system red |
 
 These roles bind to Figma Theme `ios/gym/*` in Dark and Light. The native light accent is
 verdigris `#106B5F`, darkened from the shared Gym brand `#137A6C` so text holds 4.5:1 on the
-Gym grounds. Gold is a *record*, never a warning; brick is destructive only.
+Gym grounds. Gold is a *record*, never a warning; brick is a refusal or a removal proposal's
+primary. Every destructive control is `role: .destructive` with no tint of its own, so the system
+paints it red.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
 the keyline; the banner ground stays the system's. The workout control in Control Center declares `gym/accent`

@@ -22,6 +22,16 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
   static func snapshot(session: Session, sets: [TrainingSet]) -> JSON {
     .object(["session": .object(omittingNil: session.fields), "sets": .array(sets.sorted { $0.id < $1.id }.map { .object(omittingNil: $0.fields) })])
   }
+  // A baseline stored while sets still had a kind names the same workout once the kind it no longer has is left out.
+  static func withoutSetKinds(_ baseline: JSON) -> JSON {
+    guard case .object(var snapshot) = baseline, case .array(let sets)? = snapshot["sets"] else { return baseline }
+    snapshot["sets"] = .array(sets.map { set in
+      guard case .object(var fields) = set else { return set }
+      fields["kind"] = nil
+      return .object(fields)
+    })
+    return .object(snapshot)
+  }
   init(sessionID: String, replica: String, anonymous: Bool) {
     self.sessionID = sessionID; self.replica = replica; self.anonymous = anonymous
     ownerID = replica + ":" + (anonymous ? "anon:" : "bound:") + sessionID
@@ -34,7 +44,7 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
         movementID: try value.member("movementID").asString(), weightKg: try value.member("weightKg").asDouble(),
         reps: Int(try value.member("reps").asInteger()), setID: try value.member("setID").asString())
     }
-    baseline = json["baseline"]
+    baseline = json["baseline"].map(Self.withoutSetKinds)
     dismissed = try json["dismissed"]?.asBool() ?? false
     activityID = try json["activityID"].flatMap { $0.isNull ? nil : try $0.asString() }
   }
@@ -153,7 +163,7 @@ extension WorkoutState {
     guard !gym.accountTransition, activityIdentityResolved, let record = try? activityRecord(), record.ownerID == offer.ownerID,
           let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer(surface, outcome: "refused") }
     if let existing = sets.first(where: { $0.id.description == offer.setID }) {
-      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer(surface, outcome: "refused") }
+      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps else { return refuseActivityOffer(surface, outcome: "refused") }
       return true
     }
     guard activityOffer() == offer else { return refuseActivityOffer(surface, outcome: "refused") }
@@ -258,11 +268,13 @@ extension WorkoutState {
   }
   func content(session: Session, offer: WorkoutActivityOffer?) throws -> ActivityContent<WorkoutActivityAttributes.ContentState> {
     guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
-    let workout = gym.workout, clocks = try self.clocks(session)
+    let workout = gym.workout, clocks = try self.clocks(session), movement = workout.selected.flatMap { gym.catalogue.find($0) }
+    // Before a movement is chosen the card names neither a movement nor a load. A barbell's load is its total, which kg
+    // alone already says; a dumbbell's and a bodyweight movement's keep the basis the rack draws.
+    let basis = MovementEquipment(movement), unit = basis.value == "barbell" ? "kg" : basis.unit
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
-      movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) }).unit, reps: workout.reps,
-      workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
+      movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
+      workingSetOrdinal: workout.currentSets.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
       staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)

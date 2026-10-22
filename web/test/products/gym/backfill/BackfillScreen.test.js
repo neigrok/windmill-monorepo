@@ -316,7 +316,7 @@ test('Save waits for admission, then reads Saved for 900ms and opens the session
       ['chin-up', 0, 8], ['chin-up', 0, 7], ['chin-up', 0, 6],
       ['face-pull', 20, 15],
     ].map(([exerciseId, weightKg, reps], index) => ({
-      id: `set_${stored.id.slice(4)}_${index + 1}`, exerciseId, weightKg, reps, completedAt: spread(index + 1), kind: 'working',
+      id: `set_${stored.id.slice(4)}_${index + 1}`, exerciseId, weightKg, reps, completedAt: spread(index + 1),
     })),
   });
   assert.deepEqual(gym.owed(), [`ready gym.importSession ${stored.id}`], 'one command, whole or not at all, and the routine is never written');

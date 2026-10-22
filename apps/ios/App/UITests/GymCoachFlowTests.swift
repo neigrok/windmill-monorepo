@@ -79,7 +79,7 @@ import UIKit
   func ask(_ question: String, _ app: XCUIApplication) {
     let field = app.descendants(matching: .any)["coach-question"]
     XCTAssertTrue(field.waitForExistence(timeout: 15))
-    XCTAssertFalse(app.buttons["coach-send"].isEnabled, "An empty question cannot be sent.")
+    XCTAssertFalse(app.buttons["coach-send"].exists, "An empty question has no Send.")
     field.tap(); field.typeText(question)
     let done = app.buttons["coach-keyboard-done"], send = app.buttons["coach-send"]
     let keyboard = app.keyboards.firstMatch, tab = app.tabBars.buttons["Coach"]
@@ -98,7 +98,7 @@ import UIKit
     XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
     send.tap()
-    XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(done.waitForNonExistence(timeout: 5))
     XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
@@ -161,47 +161,34 @@ import UIKit
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     back(app)
     openTab("Coach", app)
-    let review = app.buttons["coach-review"]
-    XCTAssertTrue(waitForVisible(review, in: app))
-    XCTAssertEqual(review.label, "Review changes"); XCTAssertEqual(review.value as? String ?? "", "")
-    XCTAssertTrue(app.staticTexts["Back Squat"].exists && app.staticTexts["1 × 5 · 80 → 1 × 3 · 90 kg"].exists)
-    XCTAssertTrue(app.staticTexts["Bench Press"].exists && app.staticTexts["Added · open · after Back Squat"].exists)
-    review.tap()
-    let apply = app.buttons["coach-apply-proposal"]
-    XCTAssertTrue(apply.waitForExistence(timeout: 5))
+    let card = app.descendants(matching: .any)["coach-proposal-header"]
+    XCTAssertTrue(waitForVisible(card, in: app))
+    XCTAssertEqual(card.value as? String ?? "", "")
+    let apply = app.buttons["coach-apply-proposal"], reject = app.buttons["coach-reject-proposal"]
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
     XCTAssertEqual(apply.label, "Apply")
-    XCTAssertTrue(app.staticTexts["3 changes"].exists && app.staticTexts["Push A → Push A2"].exists)
-    XCTAssertTrue(app.staticTexts["proposed by Coach · Today · 12:00\u{202F}PM"].exists, "The board clock's log took the proposal at noon today")
-    XCTAssertFalse(app.staticTexts["Coach wrote:"].exists)
-    let gated = apply.frame
-    capture("coach-review-\(suffix)", app)
-    app.swipeUp()
-    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
-    XCTAssertEqual(apply.frame, gated, "Apply never moves when the caption slot changes.")
-    capture("coach-review-actions-\(suffix)", app)
-    app.buttons["Turn this down"].tap()
-    XCTAssertTrue(app.alerts["Turn this down?"].waitForExistence(timeout: 5))
-    app.alerts.buttons["Keep it"].tap()
-    app.swipeUp()
-    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    XCTAssertTrue(reject.isEnabled)
+    let expand = app.buttons["coach-proposal-expand"]
+    XCTAssertEqual(expand.label, "Show all 3 changes")
+    capture("coach-proposal-\(suffix)", app)
+    expand.tap()
+    XCTAssertTrue(expand.waitForLabel("Show less", timeout: 5))
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    capture("coach-proposal-expanded-\(suffix)", app)
     apply.tap()
-    let receipt = app.descendants(matching: .any)["coach-review-receipt"]
-    XCTAssertTrue(receipt.waitForExistence(timeout: 10))
-    XCTAssertEqual(receipt.label, "Applied")
-    XCTAssertFalse(apply.exists || app.buttons["Turn this down"].exists)
-    XCTAssertFalse(app.descendants(matching: .any)["coach-review-out-of-date"].exists, "An applied proposal is not out of date")
-    capture("coach-review-receipt-\(suffix)", app)
-    app.buttons["Close"].tap()
-    XCTAssertTrue(review.waitForValue("Applied", timeout: 5))
+    XCTAssertTrue(card.waitForValue("Applied", timeout: 10))
+    XCTAssertFalse(apply.exists || reject.exists)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-out-of-date"].exists, "An applied proposal is not out of date")
+    capture("coach-proposal-applied-\(suffix)", app)
     openDestination("History", app)
-    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5))
     XCTAssertFalse(conversation.label.contains("waiting"), conversation.label)
     XCTAssertFalse(app.buttons["Ask something new"].exists)
     capture("coach-history-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
     conversation.tap()
-    XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
     openDestination("Notes", app)
     XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Any agent you connect can read these too."].exists)
@@ -210,15 +197,14 @@ import UIKit
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
     app.buttons["coach-add-note"].tap()
     let save = app.buttons["coach-note-save"]
-    XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "A note with no title cannot save")
-    let title = app.descendants(matching: .any)["coach-note-title"]
-    title.tap(); title.typeText("Training focus")
-    let body = app.descendants(matching: .any)["coach-note-body"]
-    body.tap(); body.typeText("Keep the squat steady.")
+    XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "A note with no text cannot save")
+    let text = app.descendants(matching: .any)["coach-note-text"]
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    text.typeText("Training focus\nKeep the squat steady.")
     XCTAssertFalse(app.buttons["coach-note-keyboard-done"].exists || app.buttons["Done"].exists, "Nothing but the bar commits the note")
     capture("coach-note-editor-\(suffix)", app)
     XCTAssertTrue(save.isEnabled); save.tap()
-    let saved = app.staticTexts["Training focus"]
+    let saved = app.staticTexts["Training focus\nKeep the squat steady."]
     XCTAssertTrue(saved.waitForExistence(timeout: 5)); saved.tap()
     XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "An unchanged note cannot save")
     app.buttons["Cancel"].tap()
@@ -237,7 +223,7 @@ import UIKit
     capture("coach-connected-disclosure-\(suffix)", app)
     back(app); back(app, expecting: "Coach")
     openDestination("New chat", app)
-    XCTAssertTrue(app.buttons["coach-review"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForNonExistence(timeout: 5))
     app.buttons["you"].tap()
     XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
     guard let accountImage = app.screenshot().image.cgImage,
@@ -261,15 +247,15 @@ import UIKit
     let app = launch("Light")
     ask("Is Push A still doing anything?", app)
     openDestination("History", app)
-    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5))
     conversation.swipeLeft()
-    app.buttons["Delete"].tap()
+    app.buttons["trash-swipe"].tap()
     XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
     app.cancelConfirmation()
     XCTAssertTrue(app.buttons["Delete conversation"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(conversation.exists)
-    conversation.swipeLeft(); app.buttons["Delete"].tap()
+    conversation.swipeLeft(); app.buttons["trash-swipe"].tap()
     XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5)); app.buttons["Delete conversation"].tap()
     XCTAssertTrue(app.staticTexts["No conversations"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
@@ -288,7 +274,7 @@ import UIKit
     let created = app.buttons["Open routine · Push A"]
     XCTAssertTrue(created.waitForExistence(timeout: 10))
     XCTAssertEqual(app.descendants(matching: .any)["coach-read-receipt"].label, "Read nothing from your log")
-    XCTAssertFalse(app.buttons["coach-review"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal"].exists)
     let note = app.buttons["coach-saved-note"]
     XCTAssertEqual(note.label, "Saved a note")
     capture("coach-created-routine-light", app)
@@ -299,89 +285,69 @@ import UIKit
     XCTAssertTrue(app.navigationBars["Push A"].waitForExistence(timeout: 5))
     app.terminate()
   }
-  func testRoutineRemovalKeepsItsReceiptInReviewAndConversation() {
+  func testRoutineRemovalKeepsItsReceiptInTheConversation() {
     let app = launch("Light", arguments: ["-coach-removal"])
     ask("Remove Push A.", app)
-    let review = app.buttons["coach-review"]
-    XCTAssertEqual(review.label, "Review removal")
-    XCTAssertTrue(app.staticTexts["Routine"].exists && app.staticTexts["Removed"].exists, "The removal's row says what goes")
+    let card = app.descendants(matching: .any)["coach-proposal-header"]
     XCTAssertEqual(app.descendants(matching: .any)["coach-read-receipt"].label, "Read your movement history")
     XCTAssertFalse(app.buttons["coach-read-receipt"].exists, "A read with no workout to list is not a door")
     XCTAssertFalse(app.staticTexts["Push A has stopped moving your squat."].exists, "The card has no body")
-    app.scrollViews.firstMatch.swipeUp(); review.tap()
     let apply = app.buttons["coach-apply-proposal"]
-    XCTAssertTrue(apply.waitForExistence(timeout: 5))
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
     XCTAssertEqual(apply.label, "Remove routine")
-    XCTAssertTrue(app.staticTexts["Routine"].exists && app.staticTexts["Removed"].exists)
-    XCTAssertFalse(app.staticTexts["The whole routine is removed from your program. Every set you logged against it stays in the log."].exists)
-    app.swipeUp()
-    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5)); apply.tap()
-    let receipt = app.descendants(matching: .any)["coach-review-receipt"]
-    XCTAssertTrue(receipt.waitForExistence(timeout: 10))
-    XCTAssertEqual(receipt.label, "Removed")
+    apply.tap()
+    XCTAssertTrue(card.waitForValue("Removed", timeout: 10))
     XCTAssertFalse(app.staticTexts["That proposal is gone."].exists)
-    XCTAssertFalse(app.buttons["Turn this down"].exists)
-    app.buttons["Close"].tap()
-    XCTAssertTrue(review.waitForValue("Removed", timeout: 5))
-    review.tap()
-    XCTAssertTrue(receipt.waitForExistence(timeout: 5))
-    app.buttons["Close"].tap()
+    XCTAssertFalse(apply.exists || app.buttons["coach-reject-proposal"].exists)
     openTab("Routines", app)
     XCTAssertFalse(app.buttons["routine-coach-fixture-routine"].exists)
     openTab("The log", app)
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 5))
+    openTab("Coach", app)
+    XCTAssertTrue(card.waitForValue("Removed", timeout: 5))
     app.terminate()
   }
   func testAnOutOfDateProposalSaysWhyWhereApplyStood() {
     let app = launch("Light", arguments: ["-coach-out-of-date"])
     ask("Is Push A still doing anything?", app)
-    let review = app.buttons["coach-review"]
-    XCTAssertTrue(review.waitForValue("Out of date", timeout: 10))
-    for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
-    review.tap()
-    let why = app.staticTexts["coach-review-out-of-date"]
-    XCTAssertTrue(why.waitForExistence(timeout: 5))
-    XCTAssertEqual(why.label, "A newer proposal replaced this one. Nothing was applied.")
-    XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["Turn this down"].exists)
-    XCTAssertTrue(app.buttons["Ask Coach"].exists)
-    capture("coach-review-out-of-date-light", app)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Out of date", timeout: 10))
+    let why = app.staticTexts["coach-proposal-out-of-date"]
+    for _ in 0..<4 where !why.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    XCTAssertEqual(why.label, "A newer suggestion replaced this one. Nothing was applied.")
+    XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["coach-reject-proposal"].exists)
+    capture("coach-proposal-out-of-date-light", app)
     app.terminate()
   }
-  func testRemovalWaitingOnTheLogOffersRetryAfterFifteenSeconds() {
-    let app = launch("Light", arguments: ["-coach-removal", "-coach-removal-stall"])
+  func testRemovalWaitingOnTheLogOffersTryAgainAfterFifteenSeconds() {
+    let app = launch("Light", arguments: ["-coach-removal", "-coach-decision-stall"])
     ask("Remove Push A.", app)
-    app.scrollViews.firstMatch.swipeUp(); app.buttons["coach-review"].tap()
     let apply = app.buttons["coach-apply-proposal"]
-    XCTAssertTrue(apply.waitForExistence(timeout: 5))
-    app.swipeUp()
-    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
     let place = apply.frame
     apply.tap()
     XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
-    XCTAssertFalse(apply.isEnabled); XCTAssertEqual(apply.frame, place, "The primary keeps its place while it waits")
-    capture("coach-review-waiting-light", app)
-    XCTAssertTrue(apply.waitForLabel("Retry", timeout: 25))
-    XCTAssertTrue(apply.isEnabled); XCTAssertEqual(apply.frame, place)
-    capture("coach-review-still-waiting-light", app)
+    XCTAssertFalse(apply.isEnabled); XCTAssertEqual(apply.frame, place, "Apply keeps its place while it waits")
+    XCTAssertFalse(app.buttons["coach-reject-proposal"].isEnabled)
+    capture("coach-proposal-waiting-light", app)
+    XCTAssertTrue(apply.waitForLabel("Try again", timeout: 25))
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-failure"].exists, "A wait alone states no cause")
+    XCTAssertTrue(apply.isEnabled); XCTAssertFalse(app.buttons["coach-reject-proposal"].isEnabled)
+    capture("coach-proposal-still-waiting-light", app)
     apply.tap()
     XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
     app.terminate()
   }
-  func testLongReviewGatesApplyUntilItsEndWithoutMovingIt() {
+  func testTheCardsDecisionStaysReachableAtTheLargestText() {
     let app = launch("Light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     ask("Is Push A still doing anything?", app)
-    let review = app.buttons["coach-review"]
-    for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
-    review.tap()
-    let apply = app.buttons["coach-apply-proposal"]
-    XCTAssertTrue(apply.waitForExistence(timeout: 5))
-    XCTAssertFalse(apply.isEnabled, "Apply waits until the diff has been seen to its end.")
-    let gated = apply.frame
-    capture("coach-review-gate-ax3", app)
-    for _ in 0..<6 where !apply.isEnabled { app.scrollViews.firstMatch.swipeUp() }
-    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
-    XCTAssertEqual(apply.frame, gated, "Apply never moves when the caption slot changes.")
-    capture("coach-review-promise-ax3", app)
+    let expand = app.buttons["coach-proposal-expand"], apply = app.buttons["coach-apply-proposal"]
+    for _ in 0..<6 where !expand.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    expand.tap()
+    XCTAssertTrue(expand.waitForLabel("Show less", timeout: 5))
+    for _ in 0..<8 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    XCTAssertTrue(apply.isHittable && apply.isEnabled)
+    XCTAssertTrue(app.buttons["coach-reject-proposal"].isHittable)
+    capture("coach-proposal-ax3", app)
     app.terminate()
   }
   func testOfflineRoomRaisesTheBandAndDimsSend() {
@@ -391,14 +357,14 @@ import UIKit
       XCTAssertTrue(band.waitForExistence(timeout: 10))
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 5))
-      XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+      XCTAssertFalse(app.buttons["coach-send"].exists)
       capture("coach-offline-\(suffix)", app)
       app.buttons["Dismiss message"].tap()
       XCTAssertTrue(band.waitForNonExistence(timeout: 5))
       question.tap(); question.typeText("How is my training?")
       app.buttons["coach-send"].tap()
       XCTAssertTrue(band.waitForExistence(timeout: 5))
-      XCTAssertFalse(app.buttons["coach-review"].exists)
+      XCTAssertFalse(app.descendants(matching: .any)["coach-proposal"].exists)
       XCTAssertEqual(question.value as? String, "How is my training?")
       capture("coach-offline-send-\(suffix)", app)
       app.terminate()
@@ -434,7 +400,7 @@ import UIKit
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("How is my training?")
       app.buttons["coach-send"].tap()
-      XCTAssertTrue(app.staticTexts["Coach isn’t part of this Windmill. Your log is still yours to read."].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["This Windmill does not have Coach. You can still read your log."].waitForExistence(timeout: 10))
       XCTAssertFalse(question.exists)
       capture("coach-unavailable-\(suffix)", app)
       openDestination("Notes", app)
@@ -448,10 +414,28 @@ import UIKit
 
   // A pushed screen hides the tab bar; back at the conversation's end, or back from another tab, its last card stands where it
   // stood, over the composer.
+  // The Routines row of a proposal this conversation made opens the conversation at its card, not a sheet.
+  func testAProposalsRoutinesRowOpensTheConversationAtItsCard() {
+    let app = launch("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    ask("Is Push A still doing anything?", app)
+    let header = app.descendants(matching: .any)["coach-proposal-header"]
+    XCTAssertTrue(header.waitForExistence(timeout: 15))
+    for _ in 0..<6 { app.scrollViews.firstMatch.swipeDown(velocity: .fast) }
+    XCTAssertFalse(header.isHittable, "At this size the conversation's start leaves the card out of sight")
+    openTab("Routines", app)
+    let row = app.buttons["routine-proposal"]
+    XCTAssertTrue(row.waitForExistence(timeout: 10))
+    row.tap()
+    XCTAssertTrue(app.tabBars.buttons["Coach"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+    XCTAssertTrue(waitForVisible(header, in: app))
+    XCTAssertFalse(app.descendants(matching: .any)["gym-proposal-sheet"].exists)
+    capture("coach-proposal-revealed-light", app)
+    app.terminate()
+  }
   func testTheConversationsEndStaysClearOfTheComposerAfterAPushedScreenPopsAndATabSwitch() {
     let app = launch("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     ask("Is Push A still doing anything?", app)
-    let review = app.buttons["coach-review"], composer = app.descendants(matching: .any)["coach-question"]
+    let review = app.buttons["coach-reject-proposal"], composer = app.descendants(matching: .any)["coach-question"]
     for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
     XCTAssertFalse(app.buttons["coach-read-receipt"].isHittable, "At this size the conversation scrolls past its receipt")
     let atEnd = settledFrame(review)
@@ -486,7 +470,7 @@ import UIKit
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance,
       "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-fixture", "-coach-setup-fixture"]
     if restore { app.launchArguments.append("-restore-board") }
-    if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-coach-long-choices"] }
+    if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
     app.launch()
     if app.textViews["journal-editor"].waitForExistence(timeout: 3) {
       app.buttons["room-menu"].tap(); app.buttons["room-gym"].tap()
@@ -504,16 +488,16 @@ import UIKit
     field.tap(); field.typeText("Build a three day full body routine.")
     XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
-    let review = app.buttons["coach-review-routine-setup-operation-B"]
-    XCTAssertTrue(review.waitForExistence(timeout: 10))
+    let apply = app.buttons["coach-save-routines"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
-    for _ in 0..<4 where !review.isHittable { app.swipeUp() }
-    review.tap()
-    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Barbell"].firstMatch.exists)
-    app.buttons["Close"].tap()
-    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
-    review.tap(); app.buttons["coach-save-routines"].tap()
+    let second = app.buttons["coach-draft-1"]
+    for _ in 0..<4 where !second.isHittable { app.swipeUp() }
+    second.tap()
+    XCTAssertTrue(second.waitForValue("expanded", timeout: 5))
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists, "Nothing exists before Apply")
+    for _ in 0..<6 where !apply.isHittable { app.swipeUp() }
+    apply.tap()
     let receipt = app.buttons["coach-created-setup-operation-B"]
     XCTAssertTrue(receipt.waitForExistence(timeout: 10)); receipt.tap()
     XCTAssertTrue(app.navigationBars["Full body B"].waitForExistence(timeout: 10))

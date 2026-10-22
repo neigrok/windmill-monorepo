@@ -29,23 +29,22 @@ data class Session(override val id: Id<Session>, val startedAt: Instant, val fin
 }
 
 data class TrainingSet(override val id: Id<TrainingSet>, val sessionId: Id<Session>, val exerciseId: Id<Exercise>,
-    val weightKg: Double, val reps: Int, val kind: String = "working", val rpe: Double? = null, val note: String = "",
+    val weightKg: Double, val reps: Int, val rpe: Double? = null, val note: String = "",
     val completedAt: Instant, val setNumber: Int? = null) : Writable<TrainingSet> {
     override fun fields(): Map<String, Json> = mapOf("sessionId" to sessionId.json, "exerciseId" to exerciseId.json, "weightKg" to Json.of(weightKg),
-        "reps" to Json.of(reps), "kind" to Json.of(kind), "rpe" to (rpe?.let(Json::of) ?: Json.Null), "note" to Json.of(note), "completedAt" to Json.of(completedAt.ms))
-    val volumeKg: Double get() = if (kind == "working") maxOf(0.0, weightKg) * reps else 0.0
+        "reps" to Json.of(reps), "rpe" to (rpe?.let(Json::of) ?: Json.Null), "note" to Json.of(note), "completedAt" to Json.of(completedAt.ms))
+    val volumeKg: Double get() = maxOf(0.0, weightKg) * reps
     fun volumeFor(exercise: Exercise?): Double = volumeKg * (exercise?.loadCount ?: 1)
-    val e1rm: Double? get() = GymEstimate.value(weightKg, reps, kind, rpe)
+    val e1rm: Double? get() = GymEstimate.value(weightKg, reps, rpe)
     companion object : WritableType<TrainingSet>, RemovableType<TrainingSet> {
         override val type = Gym.Types.set
         override val scope = ScopeRef(Gym.scope)
         override val heldRemoval = true
         override fun decode(f: Fields) = TrainingSet(Id(f.id, this), f.ref("sessionId", Session), f.ref("exerciseId", Exercise), f.double("weightKg"),
-            f.int("reps"), f.string("kind", "working"), f.optionalDouble("rpe"), f.string("note", ""), f.instant("completedAt"), f.serial("setNumber") ?: f.optionalInt("setNumber"))
+            f.int("reps"), f.optionalDouble("rpe"), f.string("note", ""), f.instant("completedAt"), f.serial("setNumber") ?: f.optionalInt("setNumber"))
         override val checks = listOf(
             Check<TrainingSet>("weightKg") { value, _ -> value.copy(weightKg = SetRules.weightKg.apply(value.weightKg, Path("weightKg"))) },
             Check<TrainingSet>("reps") { value, _ -> value.copy(reps = SetRules.reps.apply(value.reps, Path("reps"))) },
-            Check<TrainingSet>("kind") { value, _ -> value.copy(kind = SetRules.kind.apply(value.kind, Path("kind"))) },
             Check<TrainingSet>("rpe") { value, _ -> value.copy(rpe = SetRules.rpe.applyOptional(value.rpe, Path("rpe"))) },
             Check<TrainingSet>("note") { value, _ -> value.copy(note = SetRules.note.apply(value.note, Path("note"))) },
             Check<TrainingSet>("completedAt") { value, _ -> SessionRules.instant(value.completedAt, "set.completedAt", Path("completedAt")); value },
@@ -56,10 +55,9 @@ data class TrainingSet(override val id: Id<TrainingSet>, val sessionId: Id<Sessi
 object SetRules {
     val weightKg = NumberSpec("set.weightKg", -500.0, 500.0, quantum = 0.01)
     val reps = NumberSpec("set.reps", 1.0, 500.0, integer = true)
-    val kind = ChoiceSpec("set.kind", listOf("warmup", "working", "drop", "failure"))
     val rpe = NumberSpec("set.rpe", 1.0, 10.0, quantum = 0.1)
     val note = TextSpec("set.note", MeasureUnit.bytes, 0, 4000, trim = false, nfc = false)
-    val rules = listOf(weightKg, reps, kind, rpe, note).map(Rule::local) + Rule.local("set.completedAt", Gym.Types.set)
+    val rules = listOf(weightKg, reps, rpe, note).map(Rule::local) + Rule.local("set.completedAt", Gym.Types.set)
     fun nextNumber(sets: List<TrainingSet>, sessionId: Id<Session>, exerciseId: Id<Exercise>): Int? {
         val last = sets.filter { it.sessionId == sessionId && it.exerciseId == exerciseId }.maxOfOrNull { it.setNumber ?: 0 } ?: 0
         return if (last == Int.MAX_VALUE) null else last + 1

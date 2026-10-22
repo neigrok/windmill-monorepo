@@ -33,6 +33,7 @@ nonisolated struct CoachSaved: Codable {
     var groups: [String: [String]]
   }
   var adoptedSources: [String]?
+  var rejectedDrafts: [String]?
   var phoneDrafts: [CoachPhoneDraft]?
   var onboarding: [CoachOnboardingRecord]?
   var acceptedFirstMessage: Bool?
@@ -49,6 +50,15 @@ nonisolated struct CoachSaved: Codable {
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
+  // What outlives a conversation on this phone: the first-run marks, the signed-out work adopted into the account, the
+  // drafts rejected here and the setup chosen. A new conversation, one opened from History and the one a delete leaves
+  // start from it.
+  var carried: CoachSaved {
+    var next = CoachSaved()
+    next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources; next.onboarding = onboarding
+    next.phoneDrafts = phoneDrafts; next.rejectedDrafts = rejectedDrafts; next.setupChoice = setupChoice
+    return next
+  }
 }
 
 nonisolated struct CoachPhoneDraft: Codable, Equatable {
@@ -65,7 +75,6 @@ nonisolated struct CoachHandoff: Identifiable, Equatable {
   let account: String?
   let question: String
   var send = false
-  var purpose: CoachPurpose = .conversation
 }
 
 struct CoachDraftStore {
@@ -90,6 +99,7 @@ struct CoachDraftStore {
       if local.acceptedFirstMessage == true { target.acceptedFirstMessage = true }
       let existing = Set((target.onboarding ?? []).map(\.id))
       target.onboarding = (target.onboarding ?? []) + (local.onboarding ?? []).filter { !existing.contains($0.id) }
+      if let rejected = local.rejectedDrafts { target.rejectedDrafts = (target.rejectedDrafts ?? []) + rejected.filter { !(target.rejectedDrafts ?? []).contains($0) } }
       if !local.text.isEmpty || local.photo != nil {
         if target.text.isEmpty, target.photo == nil {
           target.text = local.text; target.photo = local.photo; target.photoData = local.photoData; target.purpose = .routineSetup; target.setupChoice = local.setupChoice; target.choices = local.choices
@@ -102,9 +112,13 @@ struct CoachDraftStore {
     }
     try FileManager.default.removeItem(at: sourceURL)
   }
+  // Drafts hold photos and signed-out questions, which live only on this phone: the folder stays out of every backup.
   func write(_ saved: CoachSaved, account: String) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try JSONEncoder().encode(saved).write(to: file(account), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    var folder = directory, written = file(account), excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
+    try folder.setResourceValues(excluded)
+    try JSONEncoder().encode(saved).write(to: written, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    try written.setResourceValues(excluded)
   }
 }
 
@@ -145,8 +159,7 @@ struct CoachDraftStore {
   // The refusal the conversation's last turn draws with its reason and recovery; the composer band then repeats neither.
   var transcriptAllowance: AiAllowance? {
     guard anonymous else { return activeGeneration?.allowanceRefusal }
-    guard let response = anonymousRequest?.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") else { return nil }
-    return response.allowance
+    return anonymousRequest.flatMap(spentAllowance)
   }
   var hasConversation: Bool {
     !saved.text.isEmpty || saved.photo != nil || saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty || !(saved.onboarding ?? []).isEmpty
@@ -166,6 +179,15 @@ struct CoachDraftStore {
   var visibleTurns: [CoachTurn] {
     guard let generation = activeGeneration else { return saved.thread?.turns ?? [] }
     return saved.thread?.turns.filter { $0.generationId != generation.id && $0.requestId != generation.requestId } ?? []
+  }
+  // The turn or answer whose card is a proposal's in the conversation on screen, as the room draws it; none when no answer
+  // here proposed it.
+  func proposalTurn(_ id: String) -> AnyHashable? {
+    let draws = { (receipt: CoachReceipt?, clarification: CoachClarification?) in
+      receipt?.proposals.contains(id) == true && (clarification == nil || clarification?.id != self.activeClarification?.id)
+    }
+    if let turn = visibleTurns.first(where: { $0.from != "lifter" && draws($0.receipt, $0.clarification) }) { return turn.id }
+    return (saved.exchanges + [activeGeneration].compactMap { $0 }).first { draws($0.receipt, $0.clarification) }.map { $0.id }
   }
   var offline: Bool { CoachFixture.offline || gym.runtime?.engine.status.online == false }
   // Why a send cannot go now; a dimmed Send says it in the band when tapped.
@@ -199,8 +221,11 @@ struct CoachDraftStore {
       if let record = anonymousRequest, !record.finished, !record.stopped, !asking { launchOnboarding(owner: owner) }
       return
     }
+    // The day's cap and the ceiling lapse here: the server refills them, so the next Send asks again.
+    switch refusal { case .daily?, .ceiling?: refusal = nil; error = nil; default: break }
     if let allowance = saved.allowance ?? activeGeneration?.allowanceRefusal { refusal = .allowance(allowance); error = allowance.message }
     if gym.coachUnavailable { refusal = .absent; error = CoachCopy.absent; return }
+    // Only a question still on its way resumes; a refused one left no request behind.
     if let request = saved.request, saved.allowance == nil, activeGeneration?.terminal != true, !asking {
       launch(request, owner: owner)
     }
@@ -229,17 +254,17 @@ struct CoachDraftStore {
     var next = saved; next.photo = nil; next.photoData = nil; next.editedRequestId = next.request?.requestId
     if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
   }
-  @discardableResult func newChat(seed: String = "", purpose: CoachPurpose = .conversation) -> Bool {
+  @discardableResult func newChat(seed: String = "") -> Bool {
     guard !asking, !anonymous else { return false }
     invalidateRead()
-    var next = CoachSaved(); next.acceptedFirstMessage = saved.acceptedFirstMessage; next.adoptedSources = saved.adoptedSources; next.onboarding = saved.onboarding; next.phoneDrafts = saved.phoneDrafts; next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
+    var next = saved.carried; next.text = seed; next.purpose = .conversation
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
   }
   func begin(_ handoff: CoachHandoff) -> Bool {
     guard !asking else { error = "Coach is answering another message. Try again when it finishes."; return false }
-    guard allowed, draftReadable, handoff.account == owner, newChat(seed: handoff.question, purpose: handoff.purpose) else { return false }
+    guard allowed, draftReadable, handoff.account == owner, newChat(seed: handoff.question) else { return false }
     if handoff.send { send() }
     return true
   }
@@ -395,9 +420,17 @@ struct CoachDraftStore {
             var next = saved; next.allowance = allowance
             _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
             refusal = .allowance(allowance)
-          } else { refusal = CoachRefusal(status: failure.status, code: object["code"] as? String, message: failure.message) }
+          } else {
+            let waitMs = (object["retryAtMs"] as? NSNumber).map { $0.int64Value - Int64(Date().timeIntervalSince1970 * 1000) }
+            refusal = CoachRefusal(status: failure.status, code: object["code"] as? String, message: failure.message, waitMs: waitMs)
+          }
           if refusal == .absent { gym.coachUnavailable = true }
           self.error = refusal?.message
+          // A refused question never reached Coach: the field keeps it, and only Send asks again, with what the field then holds.
+          switch refusal {
+          case .retry?, .allowance?: break
+          default: if activeGeneration == nil { var next = saved; next.request = nil; _ = keep(next, failure: "Your message couldn’t be saved. Try again.") }
+          }
         } else if let failure = error as? AppFailure { self.error = failure.message }
         else { refusal = .retry(CoachCopy.noAnswer); self.error = CoachCopy.noAnswer }
         var properties = ["screen": "coach", "outcome": "failed"]
@@ -417,7 +450,7 @@ struct CoachDraftStore {
   func accept(_ snapshot: CoachSnapshot, request: CoachSaved.Request) throws {
     guard snapshot.thread == request.thread, snapshot.generation.requestId == request.requestId else { throw URLError(.badServerResponse) }
     if let previous = activeGeneration, previous.id == snapshot.generation.id, snapshot.generation.revision <= previous.revision { return }
-    CoachFixture.applySetupResults(snapshot.generation.results, gym: gym)
+    CoachFixture.applySetupResults(snapshot.generation.results, gym: gym); CoachFixture.applyBoardWrites(gym)
     var next = saved; next.generation = snapshot.generation; next.allowance = snapshot.generation.allowanceRefusal
     if snapshot.generation.allowanceRefusal == nil, snapshot.generation.status != "failed" { next.acceptedFirstMessage = true }
     // Composer edits keep their request marker through Stop and recovery, even after an edit is reverted.
@@ -463,7 +496,7 @@ struct CoachDraftStore {
     do {
       let previous = owner == account ? saved : try store.read(account)
       guard previous.threadId == id else { return true }
-      var next = CoachSaved(); next.acceptedFirstMessage = previous.acceptedFirstMessage; next.setupChoice = previous.setupChoice; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
+      var next = previous.carried; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
       try store.write(next, account: account)
       guard owner == account, saved.threadId == id else { return true }
       saved = next
@@ -488,8 +521,13 @@ struct CoachDraftStore {
       guard self.owner == owner, allowed, self.readGeneration == generation else { return }
       let page = try JSONDecoder().decode(CoachThread.self, from: data)
       guard page.id == id else { throw URLError(.badServerResponse) }
-      var next = earlier ? saved : CoachSaved(); next.threadId = id; next.setupChoice = saved.setupChoice
-      if earlier { next.thread?.prepend(page) } else { next.thread = page; next.generation = page.generation }
+      var next = earlier ? saved : saved.carried; next.threadId = id
+      if earlier { next.thread?.prepend(page) } else {
+        next.thread = page; next.generation = page.generation
+        // The composer's draft comes along, never mistaken for the opened conversation's own question.
+        next.text = saved.text; next.photo = saved.photo; next.photoData = saved.photoData
+        next.editedRequestId = saved.request?.requestId == page.generation?.requestId ? saved.editedRequestId : page.generation?.requestId
+      }
       if next.generation == nil { next.purpose = page.turns.last?.purpose ?? .conversation }
       if let generation = next.generation {
         next.request = CoachSaved.Request(thread: id, question: generation.question, requestId: generation.requestId,

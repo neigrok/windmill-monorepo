@@ -12,7 +12,7 @@ import { GymRefusals, RoutineRules } from './gymRules.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
-/** @typedef {{ exerciseId: string, kind: string, reps: number | null, weightKg: number | null, completedAt: number, setNumber?: number | null }} PerformedSet */
+/** @typedef {{ exerciseId: string, reps: number | null, weightKg: number | null, completedAt: number, setNumber?: number | null }} PerformedSet */
 
 export class SetTarget {
   /** @param {number | null} reps @param {number | null} weightKg */
@@ -111,8 +111,7 @@ export class RoutineValue {
   static fromSession({ id, name, position = 0, sets }) {
     /** @type {Map<string, PerformedSet[]>} */
     const groups = new Map();
-    const working = sets.filter((set) => set.kind === 'working').sort((a, b) => a.completedAt - b.completedAt);
-    for (const set of working) {
+    for (const set of [...sets].sort((a, b) => a.completedAt - b.completedAt)) {
       const group = groups.get(set.exerciseId);
       if (group) group.push(set);
       else groups.set(set.exerciseId, [set]);

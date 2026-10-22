@@ -49,10 +49,15 @@ final class GymModel {
   @ObservationIgnored var adoptionReadThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
-  var outOfDateProposals: Set<ID<Proposal>> = []
+  var outOfDateProposals: [ID<Proposal>: CoachOutOfDate] = [:]
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  // The Applies this phone sent this launch: on their way to the log, then landed or refused once its answer arrives.
+  @ObservationIgnored var sentCoachApplies: Set<ID<Proposal>> = []
+  var landedCoachApplies: Set<ID<Proposal>> = []
+  var refusedCoachApplies: Set<ID<Proposal>> = []
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
+  @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil) {

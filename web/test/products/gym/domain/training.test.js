@@ -20,7 +20,7 @@ const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
 
 /** @param {string} id @param {Id<SessionValue>} session @param {number} at @param {number | null} number @param {Id<import('../../../../src/products/gym/domain/catalogue.js').ExerciseValue>} exercise */
 function performed(id = 'set00001', session = sessionId, at = 2000, number = null, exercise = exerciseId) {
-  return new TrainingSetValue(new Id(id, TrainingSet), session, exercise, 80, 5, new Instant(at), 'working', null, '', number);
+  return new TrainingSetValue(new Id(id, TrainingSet), session, exercise, 80, 5, new Instant(at), null, '', number);
 }
 
 test('an unreadable frozen plan retains its exact JSON while session facts remain usable', () => {
@@ -134,10 +134,10 @@ test('set numbers preserve serial assignment, isolate identity pairs and refuse 
 
 test('set validation preserves untrimmed notes and serials while normalizing kilograms and effort', () => {
   const raw = new TrainingSetValue(new Id('set00001', TrainingSet), sessionId, exerciseId, -20.125, 5,
-    new Instant(2000), 'working', 7.25, '  e\u0301  ', 3);
+    new Instant(2000), 7.25, '  e\u0301  ', 3);
   const normalized = new Valid(raw, moment).value;
   assert.deepEqual(normalized, new TrainingSetValue(raw.id, sessionId, exerciseId, -20.13, 5,
-    raw.completedAt, 'working', 7.3, '  e\u0301  ', 3));
+    raw.completedAt, 7.3, '  e\u0301  ', 3));
   assert.equal(normalized.volumeKg, 0);
   assert.equal(normalized.e1rm, null);
 });
@@ -145,7 +145,7 @@ test('set validation preserves untrimmed notes and serials while normalizing kil
 test('estimate helpers enforce native finite-number and integer argument boundaries', () => {
   for (const reps of [Number.NaN, Number.POSITIVE_INFINITY, 1.5, 0, 11]) assert.equal(GymEstimate.value(80, reps), null);
   for (const weight of [Number.NaN, Number.POSITIVE_INFINITY, -20, 0]) assert.equal(GymEstimate.value(weight, 5), null);
-  for (const rpe of [Number.NaN, Number.POSITIVE_INFINITY, 6.9]) assert.equal(GymEstimate.value(80, 5, 'working', rpe), null);
+  for (const rpe of [Number.NaN, Number.POSITIVE_INFINITY, 6.9]) assert.equal(GymEstimate.value(80, 5, rpe), null);
   assert.equal(GymEstimate.value(80, 1), 80);
 });
 

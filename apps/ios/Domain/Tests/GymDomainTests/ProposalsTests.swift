@@ -275,6 +275,15 @@ struct ProposalsTests {
     case "ChangeCount":
       let base = try Routine(form: input.member("base")), proposal = try Proposal(form: input.member("proposal"))
       result = ["changeCount": JSON(proposal.countChanges(comparedTo: base))]
+    case "ChangeBlocks":
+      let routine = try input["routine"].map { try Routine(form: $0) }
+      let each = try Set((input["each"]?.asArray() ?? []).map { ID<Exercise>(RecordID(try $0.asString())) })
+      let diff = ProposalDiff(try Proposal(form: input.member("proposal")), routine: routine, units: GymUnits(reading: try input["units"]?.asString()), each: each)
+      result = ["unchanged": JSON(diff.unchanged), "blocks": .array(diff.blocks.map { block in
+        ["kind": .string(block.kind.rawValue), "exerciseId": .of(block.exerciseId?.record.string), "fields": .array(block.fields.map { field in
+          ["label": .string(field.label), "before": .of(field.before), "after": .of(field.after), "state": .string(field.state.rawValue)]
+        })]
+      })]
     case "Metadata":
       let p = try Proposal(form: input)
       let provenance: JSON = switch p.provenance {

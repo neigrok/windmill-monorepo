@@ -184,10 +184,7 @@ import SyncTesting
     set.weightKg = 60
     #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == "three short")
     set.weightKg = 80
-    #expect(LogPresentation.comparison(set, preceding: [set], plan: plan) == "on plan")
-    set.kind = "warmup"
-    #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == nil)
-    set.kind = "working"
+    #expect(LogPresentation.comparison(set, preceding: [set], plan: plan) == nil)
     #expect(LogPresentation.comparison(set, preceding: [], plan: SessionPlan(routine: "Frozen", entries: [])) == nil)
   }
 
@@ -272,7 +269,7 @@ import SyncTesting
     #expect(LogDatedChart.axis([61.88, 109.62], step: 5) == 60...110)
     #expect(LogDatedChart.axis([100, 100], step: 5) == 95...105)
     let bodyweight = LogDatedChart.axis([81.4, 84.5], step: 0.1)
-    #expect([bodyweight.lowerBound, bodyweight.upperBound].map { Readout.weight($0) } == ["81.4", "84.5"])
+    #expect([bodyweight.lowerBound, (bodyweight.lowerBound + bodyweight.upperBound) / 2, bodyweight.upperBound].map { Readout.weight($0) } == ["81.4", "83", "84.6"])
     let flat = LogDatedChart.axis([82.4], step: 0.1)
     #expect([flat.lowerBound, flat.upperBound].map { Readout.weight($0) } == ["81.4", "83.4"])
   }
@@ -290,16 +287,6 @@ import SyncTesting
     #expect(progress.gaps(in: gym.log!.moment.zone).count == 3)
     #expect(progress.window(now: gym.log!.moment.now, zone: gym.log!.moment.zone).estimates.count == 3)
     #expect(progress.logPlotPoints(gym.dates).count == 4)
-  }
-
-  @Test func bodyweightProgressRemainsVisibleBesideLoadedSets() throws {
-    let (_, gym) = fixture()
-    let zero = try session(gym, daysAgo: 2, kg: 0, reps: 12)
-    _ = try session(gym, daysAgo: 1, kg: 10, reps: 12)
-    let progress = try #require(gym.log).progress.movement(SeedExercises.all.first!.id)
-    let zeroSet = try #require(gym.sets.first { $0.sessionId == zero.id })
-    #expect(LogPresentation.progressEfforts(progress).last == PerformedFact(zeroSet))
-    #expect(LogPresentation.progressEfforts(progress).map(\.weightKg) == [10, 0])
   }
 
   @Test func dateAxesDescribeOnlyTheVisibleCanvasAndClampOverscroll() {

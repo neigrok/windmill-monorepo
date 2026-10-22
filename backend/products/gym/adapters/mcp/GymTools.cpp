@@ -491,9 +491,9 @@ ToolResult proposalReceipt(const RoutineProposal& proposal, const std::string& a
     out["note"] = "This proposal was already applied by the lifter — this is the record of it, not "
                   "a second change.";
   else if (proposal.head.state == ProposalState::dismissed)
-    out["note"] = "The lifter dismissed this proposal. Nothing changed, and it stays in the "
-                  "routine's history. Do not resend the same id; propose again only if you have "
-                  "something different to say.";
+    out["note"] = "The lifter rejected this proposal. Nothing changed. It stays in the routine's "
+                  "history. Do not resend the same id; propose again only if you have something "
+                  "different to say.";
   else
     out["note"] = "This proposal was superseded — the routine moved after it was minted, so it can "
                   "no longer be applied. Read the routine again with list_routines before you "

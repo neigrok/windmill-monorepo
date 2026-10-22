@@ -40,7 +40,7 @@ import SyncTesting
     for index in 0..<count {
       let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
                             weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
-                            kind: index == 0 ? "warmup" : "working", completedAt: Instant(ms: at.ms + Int64(index) * 60_000))
+                            completedAt: Instant(ms: at.ms + Int64(index) * 60_000))
       XCTAssertNil(gym.run(AppendSet(set))?.refusal)
     }
     gym.workout.reconcile()
@@ -91,11 +91,9 @@ import SyncTesting
       try await capture(WorkoutAssembly(workout: gym.workout, add: {}), name: "assembly-" + name, appearance: appearance)
       try await capture(WorkoutMovementPicker(gym: gym, workout: gym.workout), name: "movements-" + name, appearance: appearance)
       try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), purpose: .workout, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(GymPage()), name: "create-movement-" + name, appearance: appearance)
-      try await capture(SetKeypadSheet(field: .weight, value: 100, commit: { _ in }), name: "weight-keypad-" + name, appearance: appearance)
-      try await capture(SetKeypadSheet(field: .reps, value: 5, commit: { _ in }), name: "reps-keypad-" + name, appearance: appearance)
-      try await capture(SetKeypadSheet(field: .weight, value: 501, commit: { _ in }), name: "invalid-keypad-" + name, appearance: appearance)
+      try await capture(SetWheelSheet(title: "Set 4", movement: "Back squat", basis: MovementEquipment("barbell"), weightKg: 100, reps: 5, commit: { _, _ in }), name: "wheel-" + name, appearance: appearance)
       let set = try XCTUnwrap(gym.workout.sets.last)
-      try await capture(SetEditor(gym: gym, set: set, routine: "Lower A", identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
+      try await capture(SetEditor(gym: gym, set: set, identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
       gym.workout.weightKg = 105; gym.workout.logSet(); gym.workout.select(ID("romanian-deadlift"))
       let offer = try XCTUnwrap(gym.workout.deviation)
       try await capture(WorkoutDeviationSheet(workout: gym.workout, offer: offer), name: "heavier-" + name, appearance: appearance)
@@ -105,16 +103,10 @@ import SyncTesting
       let receipt = try XCTUnwrap(free.workout.receipt)
       receipt.reviewFailed = true
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-" + name, appearance: appearance)
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-routine-" + name, appearance: appearance, bottom: true)
       free.isAnonymous = false; free.workout.coachAvailable = true; receipt.reviewFailed = false
       receipt.review = try JSONDecoder().decode(WorkoutReview.self, from: Data(#"{"record":{"kind":"e1rm","exerciseId":"back-squat","value":116.7,"weightKg":100,"reps":5,"previous":110.8,"previousAt":1790000000000},"against":{"routine":"Lower A","movements":[{"exerciseId":"back-squat","now":{"sets":4,"reps":5,"weightKg":100},"before":{"sets":4,"reps":5,"weightKg":95}}]}}"#.utf8))
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-review-" + name, appearance: appearance)
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-coach-" + name, appearance: appearance, bottom: true)
-      receipt.failure = "There is room for 10. Remove one before adding another."
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "routine-refused-" + name, appearance: appearance, bottom: true)
-      receipt.failure = nil
-      XCTAssertTrue(receipt.saveRoutine(free))
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "routine-kept-" + name, appearance: appearance, bottom: true)
       let (_, slight) = try fixture(planned: false, count: 1)
       await slight.workout.finish()
       try await capture(WorkoutReceipt(gym: slight, receipt: try XCTUnwrap(slight.workout.receipt)), name: "early-receipt-" + name, appearance: appearance)
@@ -137,7 +129,7 @@ import SyncTesting
       for index in 0..<3 {
         let value = TrainingSet(id: unreadable.runner.mint(TrainingSet.self), sessionId: readSession, exerciseId: ID("back-squat"),
                                 weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
-                                kind: index == 0 ? "warmup" : "working", completedAt: Instant(ms: readStart.ms + Int64(index) * 60_000))
+                                completedAt: Instant(ms: readStart.ms + Int64(index) * 60_000))
         XCTAssertNil(try XCTUnwrap(unreadable.run(AppendSet(value))).refusal)
       }
       unreadable.workout.reconcile()
@@ -200,13 +192,13 @@ import SyncTesting
   // VoiceOver hears each ledger row's place and its numbers in words: a logged set as it was lifted, the current and
   // planned rows as the plan asks, one number where it asks one, and an open target where it asks none.
   func testLedgerRowsSpeakTheirPlaceAndNumbersInWords() {
-    let set = { (id: String, kind: String, kg: Double, reps: Int) in
-      TrainingSet(id: ID(RecordID(id)), sessionId: ID("session"), exerciseId: ID("back-squat"), weightKg: kg, reps: reps, kind: kind, completedAt: Instant(ms: 0))
+    let set = { (id: String, kg: Double, reps: Int) in
+      TrainingSet(id: ID(RecordID(id)), sessionId: ID("session"), exerciseId: ID("back-squat"), weightKg: kg, reps: reps, completedAt: Instant(ms: 0))
     }
-    let ledger = MovementLedger(sets: [set("warm", "warmup", 60, 5), set("first", "working", 100, 1)],
+    let ledger = MovementLedger(sets: [set("first", 100, 1)],
                                 plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 102.5), SetTarget(reps: 5), SetTarget()]))
     XCTAssertEqual(ledger.rows.map { WorkoutLedgerRow(row: $0, unsent: $0.set?.id == ID("first")).spoken }, [
-      "Warmup, logged, 60 kilograms, 5 reps", "Set 1, logged, 100 kilograms, 1 rep, on this phone",
+      "Set 1, logged, 100 kilograms, 1 rep, on this phone",
       "Set 2, current, target 102.5 kilograms, 5 reps", "Set 3, planned, 5 reps", "Set 4, planned, open target",
     ])
     let open = MovementLedger(sets: [], plan: nil)
@@ -219,8 +211,8 @@ import SyncTesting
         let (_, gym) = try fixture()
         gym.workout.weightKg = -500
         try await capture(WorkoutScreen(gym: gym), name: "live-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(SetKeypadSheet(field: .weight, value: -500, commit: { _ in }), name: "keypad-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), routine: "Lower A", identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(SetWheelSheet(title: "Set 4", movement: "Pull-up", basis: MovementEquipment("bodyweight"), weightKg: -500, reps: 5, commit: { _, _ in }), name: "wheel-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
       }
     }
   }

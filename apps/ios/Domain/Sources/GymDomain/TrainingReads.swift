@@ -3,14 +3,14 @@ import SyncAPI
 import SyncCore
 
 public enum GymEstimate {
-  public static func value(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = nil) -> Double? {
-    guard kind == "working", weightKg.isFinite, weightKg > 0, (1...10).contains(reps),
+  public static func value(weightKg: Double, reps: Int, rpe: Double? = nil) -> Double? {
+    guard weightKg.isFinite, weightKg > 0, (1...10).contains(reps),
           rpe.map({ $0.isFinite && $0 >= 7 }) ?? true else { return nil }
     return reps == 1 ? weightKg : weightKg * (1 + Double(reps) / 30)
   }
 
-  public static func score(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = nil) -> Double? {
-    guard value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) != nil else { return nil }
+  public static func score(weightKg: Double, reps: Int, rpe: Double? = nil) -> Double? {
+    guard value(weightKg: weightKg, reps: reps, rpe: rpe) != nil else { return nil }
     return Quantum(1)!.rounded(weightKg * 100) * Double(reps == 1 ? 30 : 30 + reps)
   }
 
@@ -28,14 +28,13 @@ public struct SessionReadout: Equatable, Sendable {
 
   public init(session: Session, sets: [TrainingSet], catalogue: Catalogue) {
     let sets = sets.filter { $0.sessionId == session.id }
-    let working = sets.filter { $0.kind == "working" }
     sessionId = session.id
     name = session.name
     durationMs = session.finishedAt.map { max(0, $0.ms - session.startedAt.ms) }
-    workingSetCount = working.count
+    workingSetCount = sets.count
     movementCount = Set(sets.map(\.exerciseId)).count
-    volumeKg = working.reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
-    topE1rm = working.compactMap(\.e1rm).max()
+    volumeKg = sets.reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
+    topE1rm = sets.compactMap(\.e1rm).max()
   }
 }
 
@@ -56,7 +55,7 @@ public struct LastTime: Equatable, Sendable {
 
   public static func of(_ exerciseId: ID<Exercise>, log: TrainingLog) -> LastTime {
     for session in log.drawnSessions where !session.isOpen {
-      let sets = log.sets(session: session.id).filter { $0.exerciseId == exerciseId && $0.kind != "warmup" }
+      let sets = log.sets(session: session.id).filter { $0.exerciseId == exerciseId }
       if !sets.isEmpty { return LastTime(exerciseId: exerciseId, session: session, sets: sets, isComplete: log.firstPullComplete) }
     }
     return LastTime(exerciseId: exerciseId, isComplete: log.firstPullComplete)
@@ -76,14 +75,12 @@ public struct Prefill: Equatable, Sendable {
 
   public static func of(todaySets: [TrainingSet], planEntry: PlannedExercise?, lastTime: LastTime?) -> Prefill {
     let scheme = planEntry?.sets ?? []
-    let working = todaySets.filter { $0.kind == "working" }
-    let sticky = working.last
+    let sticky = todaySets.last
     let history = lastTime?.sets ?? []
     let straight = scheme.first.map { first in scheme.allSatisfy { $0 == first } } ?? true
     if !scheme.isEmpty && !straight {
-      let slot = working.count < scheme.count ? scheme[working.count] : nil
-      let pastWorking = history.filter { $0.kind == "working" }
-      let lastNth = working.count < pastWorking.count ? pastWorking[working.count] : nil
+      let slot = todaySets.count < scheme.count ? scheme[todaySets.count] : nil
+      let lastNth = todaySets.count < history.count ? history[todaySets.count] : nil
       return Prefill(weightKg: slot?.weightKg ?? lastNth?.weightKg ?? sticky?.weightKg ?? emptyBarKg,
                      reps: slot?.reps ?? lastNth?.reps ?? sticky?.reps ?? emptyBarReps)
     }
@@ -148,7 +145,7 @@ public struct StatsProgress: Equatable, Sendable {
     isComplete = log.firstPullComplete
     var sessions: [ProgressSession] = []
     for session in log.drawnSessions where !session.isOpen {
-      let groups = Dictionary(grouping: log.sets(session: session.id).filter { $0.kind == "working" }, by: \.exerciseId)
+      let groups = Dictionary(grouping: log.sets(session: session.id), by: \.exerciseId)
       var movements: [MovementSessionFact] = []
       for exerciseId in groups.keys.sorted() {
         let sets = groups[exerciseId] ?? []

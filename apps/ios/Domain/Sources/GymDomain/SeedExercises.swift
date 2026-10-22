@@ -2,6 +2,7 @@ import DomainKit
 import SyncCore
 
 public enum SeedExercises {
+  public static func contains(_ id: ID<Exercise>) -> Bool { all.contains { $0.id == id } }
   public static let all: [Exercise] = [
     Exercise(id: ID("back-squat"), name: "Back Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5),
     Exercise(id: ID("front-squat"), name: "Front Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5),

@@ -248,19 +248,18 @@ struct RoutineTargetsSheet: View {
         Section {
           headField("Sets", field: .sets, placeholder: "open", focus: .sets)
           headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
-          headField(MovementEquipment(exercise).unit, field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+          headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+        } footer: { Text(MovementEquipment(exercise).help) }
+        Section {
           Toggle("Vary by set", isOn: $draft.varyBySet)
             .disabled(!draft.canChangeVariation)
-        } footer: {
-          Text(MovementEquipment(exercise).help)
-          if draft.isOpen && draft.refusal == nil { Text("You decide the numbers at the rack.") }
         }
         if !draft.isOpen && draft.varyBySet {
           Section("Each set") {
             fillMenu
             ForEach(draft.visibleRows.indices, id: \.self) { index in
               targetRow(index)
-                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
+                .trashSwipe("Delete set") { delete(index) }
                 .accessibilityAction(named: "Delete") { delete(index) }
                 .contextMenu {
                   fillActions
@@ -271,8 +270,6 @@ struct RoutineTargetsSheet: View {
               .accessibilityIdentifier("gym-target-add-set")
             if draft.atSetCeiling && draft.refusal == nil { refusalLine(RoutineTargetDraft.outsideSets) }
           }
-        } else if !draft.isOpen {
-          Section { fillMenu }
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped)
@@ -300,6 +297,7 @@ struct RoutineTargetsSheet: View {
     }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_targets"]) }
   }
+  // A head row is its label, the typed value and the system stepper; at accessibility sizes the label stands above the two.
   private func headField(_ label: String, field: RoutineTargetDraft.Field, placeholder: String, focus target: Focus) -> some View {
     let refused = draft.headRefusal?.field == field
     let enabled = field == .sets || draft.canEditTargets
@@ -307,23 +305,21 @@ struct RoutineTargetsSheet: View {
       if dynamicTypeSize.isAccessibilitySize { Text(label) }
       HStack {
         if !dynamicTypeSize.isAccessibilitySize { Text(label); Spacer(minLength: 12) }
-        Button { draft.step(field, direction: -1); feedback += 1 } label: { Image(systemName: "minus").frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }
-          .accessibilityLabel("Decrease \(label)")
         TextField(placeholder, text: Binding(get: { draft.shared(field) }, set: { draft.type($0, field: field) }))
           .keyboardType(field == .weight ? .decimalPad : .numberPad)
-          .multilineTextAlignment(.center)
+          .multilineTextAlignment(.trailing)
           .monospacedDigit()
-          .frame(minWidth: 72, maxWidth: .infinity, minHeight: 44)
+          .frame(minWidth: 44, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 120, minHeight: 44)
           .focused($focus, equals: target)
           .accessibilityLabel(field == .weight ? "Weight target" : "\(label) target")
           .accessibilityHint(refused ? draft.headRefusal?.message ?? "" : "")
           .accessibilityIdentifier("gym-target-\(field)")
           .onSubmit { nextField() }
-        Button { draft.step(field, direction: 1); feedback += 1 } label: { Image(systemName: "plus").frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }
-          .accessibilityLabel("Increase \(label)")
+        Stepper(label) { draft.step(field, direction: 1); feedback += 1 } onDecrement: { draft.step(field, direction: -1); feedback += 1 }
+          .labelsHidden()
+          .accessibilityIdentifier("gym-target-\(field)-stepper")
         if field == .weight && exercise.equipment == "bodyweight" { signButton(row: nil) }
       }
-      .buttonStyle(GymInstrumentButtonStyle())
       .disabled(!enabled)
       if refused, let refusal = draft.headRefusal { refusalLine(refusal.message) }
     }

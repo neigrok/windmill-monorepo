@@ -125,7 +125,7 @@ import SyncTesting
       _ = try local.runner.run(StartSession(id: id, startedAt: Instant(ms: start)))
       for i in 0..<2 {
         let set = TrainingSet(id: local.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("bench-press"),
-                              weightKg: Double(60 + i), reps: 8, kind: i == 0 ? "warmup" : "working", rpe: 8,
+                              weightKg: Double(60 + i), reps: 8, rpe: 8,
                               note: "Preserved set \(i)", completedAt: Instant(ms: start + Int64(i + 1) * 1_000))
         _ = try local.runner.run(AppendSet(set)); expected.append(set)
       }

@@ -35,7 +35,6 @@ class ProgressTests {
     @Test
     fun rawReducerFindsNonHeaviestWinnerAndDeterministicSameLoadTies() {
         val sets = listOf(
-            TrainingSet("warmup", "bench", weightKg = 500.0, reps = 1, kind = SetKind.Warmup, completedAtMs = 100),
             TrainingSet("heavy", "bench", weightKg = 120.0, reps = 12, rpe = 10.0, completedAtMs = 100),
             TrainingSet("bad", "bench", weightKg = 100.0, reps = 10, rpe = 6.5, completedAtMs = 100),
             TrainingSet("z", "bench", weightKg = 100.0, reps = 5, rpe = 7.0, completedAtMs = 100),

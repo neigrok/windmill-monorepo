@@ -20,7 +20,8 @@ Correction and backfill helpers parse fields and arrange draft rows into domain 
 `trainingReads.js` owns prefill, last time, records, the log's new bests (`ProgressRecords`, read by no web screen yet) and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
 Proposal values and decisions live in `domain/proposals.js`; their shared domain reads supply
-the proposal screen and routine history. Removal receipts survive sync and restart until shown.
+the proposal screen and routine history. `domain/proposalDiff.js` reads a proposal as the blocks of field lines
+its card shows; no web screen reads it yet. Removal receipts survive sync and restart until shown.
 Catalogue reads combine `domain/seedExercises.js` with custom movements and seed-name overrides.
 Routine drafts preserve target absences and order; saved-workout routines and frozen plans use the
 values in `domain/routines.js`. Session decoding marks malformed plans as unreadable presentation

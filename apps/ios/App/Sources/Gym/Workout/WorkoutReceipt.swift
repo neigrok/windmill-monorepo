@@ -7,59 +7,24 @@ import SyncCore
 @Observable nonisolated final class WorkoutReceiptData {
   let session: Session
   let sets: [TrainingSet]
-  var routine: Draft<Routine>
-  var keptName: String?
-  var saving = false
-  var failure: String?
   var review: WorkoutReview?
   var reviewFailed = false
   var readingReview = false
-  @ObservationIgnored var refusedNoticeId: String?
-  init(session: Session, sets: [TrainingSet], routineId: ID<Routine>, routinePosition: Int) {
+  init(session: Session, sets: [TrainingSet]) {
     self.session = session
     self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
-    var ids: [ID<Exercise>] = []
-    for set in self.sets where set.kind == "working" && !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
-    let retained = self.sets
-    let entries = ids.map { id in
-      RoutineEntry(exerciseId: id, sets: retained.filter { $0.exerciseId == id && $0.kind == "working" }.map {
-        SetTarget(reps: $0.reps, weightKg: $0.weightKg)
-      })
-    }
-    let name = session.startedAt.date.formatted(.dateTime.weekday(.wide))
-    routine = Draft(new: Routine(id: routineId, name: name, position: routinePosition, entries: entries))
   }
-  var slight: Bool { sets.filter { $0.kind == "working" }.count < 4 }
+  var slight: Bool { sets.count < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
   func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
-  // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
+  // Each movement once, in the order its first set was logged, with its sets; then each planned movement never begun.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
-    SetRow.movements(sets).map { id in
-      let all = sets.filter { $0.exerciseId == id }, working = all.filter { $0.kind == "working" }
-      return (id, Readout.target((working.isEmpty ? all : working).map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
+    let logged = SetRow.movements(sets)
+    let begun = logged.map { id in
+      (exerciseId: id, reading: Readout.target(sets.filter { $0.exerciseId == id }.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
     }
-  }
-  var offersRoutine: Bool { session.routineId == nil && !slight }
-  var nameRefusal: String? {
-    if routine.current.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Name it to save it." }
-    if routine.current.name.precomposedStringWithCanonicalMapping.unicodeScalars.count > 60 { return "Use 60 characters or fewer." }
-    return nil
-  }
-  @MainActor @discardableResult func saveRoutine(_ gym: GymModel) -> Bool {
-    guard offersRoutine, keptName == nil, !saving, nameRefusal == nil else { return false }
-    saving = true; failure = nil; defer { saving = false }
-    guard case .saved = gym.save(&routine) else { failure = gym.error ?? "The routine wasn’t saved. Try again."; return false }
-    keptName = routine.current.name
-    gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "action": "create"])
-    return true
-  }
-  @MainActor func reconcile(_ gym: GymModel) {
-    guard let notice = gym.notices.last(where: { $0.subject == routine.current.id.ref }),
-          notice.id != refusedNoticeId else { return }
-    refusedNoticeId = notice.id
-    keptName = nil
-    routine = Draft(new: routine.current)
-    failure = gym.message(notice.refusal)
+    let unbegun = (session.plan?.entries ?? []).map(\.exerciseId).filter { !logged.contains($0) }.map { (exerciseId: $0, reading: "not started") }
+    return begun + unbegun
   }
   @MainActor func loadReview(_ gym: GymModel) async {
     guard !gym.isAnonymous, !readingReview, review == nil else { return }
@@ -177,14 +142,28 @@ struct WorkoutReceipt: View {
   @Environment(\.dismiss) var dismiss
   @State var discard = false
   @State var discardConfirmed = false
-  // The receipt opens over the workout's detail at full height only, so the detail's tiles never show beside its own.
+  // The receipt opens over the workout's detail at full height only, with no grabber, so the detail's tiles never show
+  // beside its own; its title and subtitle head the page above the tiles (03.7).
   var body: some View {
     NavigationStack {
       List {
         Group {
-          Section { FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).padding(.vertical, RoomSpace.small) }
+          Section {
+            VStack(spacing: RoomSpace.small) {
+              Text(receipt.title).font(.title.weight(.bold)).foregroundStyle(GymPalette.ink).accessibilityAddTraits(.isHeader)
+              Text(receipt.subtitle(gym.dates)).font(.subheadline).foregroundStyle(GymPalette.inkDim)
+            }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
+              .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+            FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue), ground: .own)
+              .listRowInsets(EdgeInsets(top: RoomSpace.inset, leading: 0, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
+          }.listRowSeparator(.hidden)
           if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
-            Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record).modifier(RecordArrival()) }
+            Section {
+              VStack(alignment: .leading, spacing: RoomSpace.small) {
+                Text("Personal record").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.record)
+                Text(sentence).font(.subheadline).foregroundStyle(GymPalette.ink)
+              }.accessibilityElement(children: .combine).modifier(RecordArrival())
+            }
           }
           Section("Performed") {
             ForEach(receipt.performed, id: \.exerciseId) { movement in
@@ -200,24 +179,10 @@ struct WorkoutReceipt: View {
             }
           }
           if receipt.readingReview { Section { ProgressView().frame(maxWidth: .infinity) } }
-          if receipt.offersRoutine {
-            Section("Save as routine") {
-              if let name = receipt.keptName { Text("Kept as \(name).").accessibilityIdentifier("workout-routine-kept") }
-              else {
-                TextField("Name", text: $receipt.routine.current.name).accessibilityIdentifier("workout-routine-name")
-                if !receipt.saving, let refusal = receipt.nameRefusal { Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm) }
-                if let failure = receipt.failure { Text(failure).font(.footnote).accessibilityIdentifier("workout-routine-failure") }
-                Button { _ = receipt.saveRoutine(gym) } label: { Text("Save routine").frame(maxWidth: .infinity) }
-                  .modifier(RoomSecondaryStyle()).disabled(receipt.nameRefusal != nil || receipt.saving || gym.accountTransition)
-                  .accessibilityIdentifier("workout-save-routine")
-              }
-            }
-          }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle(gym.dates))
-        .roomBar(.gym)
+      }.modifier(GymPage()).toolbar(.hidden, for: .navigationBar)
         .reachBand(onSurface: true) { band }
-    }.modifier(GymPage()).presentationDetents([.large])
+    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.hidden)
       .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
         Button("Discard workout", role: .destructive) {
           discardConfirmed = true
@@ -235,10 +200,7 @@ struct WorkoutReceipt: View {
         }
       }
       .onChange(of: gym.account) { _, _ in discard = false }
-      .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
-      .onAppear { receipt.reconcile(gym) }
-      .onChange(of: gym.notices.map(\.id)) { _, _ in receipt.reconcile(gym) }
   }
 
   var band: some View {
@@ -250,7 +212,7 @@ struct WorkoutReceipt: View {
       }
       Button(role: .destructive) { discard = true } label: {
         Text("Discard").frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
-      }.buttonStyle(.plain).foregroundStyle(GymPalette.destructive)
+      }.buttonStyle(.borderless)
         .accessibilityIdentifier("workout-discard-receipt")
       Button {
         gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "share"])

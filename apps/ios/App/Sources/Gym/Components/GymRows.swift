@@ -67,38 +67,110 @@ struct GymRow: View {
   }
 }
 
+// A row's trailing swipe: the system's round red trash circle, no word, which VoiceOver names by the act it commits. A
+// full swipe never commits it. A swipe action fills with the tint around it, so the button clears the room's accent and
+// the system paints its destructive red.
+struct TrashSwipe: ViewModifier {
+  let act: String
+  var enabled = true
+  let action: () -> Void
+
+  func body(content: Content) -> some View {
+    content.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if enabled {
+        Button(role: .destructive, action: action) { Image(systemName: "trash") }.tint(nil)
+          .accessibilityLabel(act).accessibilityIdentifier("trash-swipe")
+      }
+    }
+  }
+}
+
+extension View {
+  func trashSwipe(_ act: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    modifier(TrashSwipe(act: act, enabled: enabled, action: action))
+  }
+}
+
+// A movement in a list the lifter orders, as the routine editor and This workout draw it: the list stays out of edit mode, so
+// a long press lifts the row by its drawn handle and a swipe shows the trash. Its menu and VoiceOver's actions hold the same
+// acts: Edit exercise, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
+struct OrderedMovementRow<Label: View>: View {
+  let exercise: Exercise?
+  let index: Int
+  let count: Int
+  var removable = true
+  let identifier: String
+  let open: () -> Void
+  let move: (Int) -> Void
+  let remove: () -> Void
+  let edit: (Exercise) -> Void
+  @ViewBuilder let label: Label
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: RoomSpace.related) {
+        label
+        Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
+      }
+    }.accessibilityIdentifier(identifier)
+      .trashSwipe("Remove movement", enabled: removable, action: remove)
+      .contextMenu {
+        if let exercise { Button("Edit exercise", systemImage: "pencil") { edit(exercise) } }
+        Button("Move up") { move(-1) }.disabled(index == 0)
+        Button("Move down") { move(1) }.disabled(index == count - 1)
+        if removable { Button("Remove movement", systemImage: "trash", role: .destructive, action: remove) }
+      }
+      .accessibilityActions {
+        Button("Move up") { move(-1) }
+        Button("Move down") { move(1) }
+        if removable { Button("Remove movement", action: remove) }
+      }
+  }
+}
+
 // One set read back: its place, its numbers and, when present, a trailing caption and a second line of the time, the
-// effort and the note. A warmup reads dimmer than the work.
+// effort and the note. Inline it reads *1 · 80 × 5*; in columns, as workout detail draws it, the place stands in its own
+// column and the numbers take the monospaced face.
 struct SetRow: View {
+  enum Reading { case inline, columns }
   let marker: String
   let set: TrainingSet
   var caption: String?
   var time: String?
+  var reading = Reading.inline
   @Environment(\.dynamicTypeSize) private var typeSize
+  @ScaledMetric(relativeTo: .body) private var markerColumn = 28.0
 
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
+    let effort = Readout.effort(weightKg: set.weightKg, reps: set.reps)
     let second = [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 }
-    VStack(alignment: .leading, spacing: RoomSpace.small) {
-      layout {
-        Text("\(marker) · \(Readout.effort(weightKg: set.weightKg, reps: set.reps))").monospacedDigit()
-          .foregroundStyle(set.kind == SetKind.warmup.rawValue ? GymPalette.inkDim : GymPalette.ink)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        if let caption { Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
+    HStack(alignment: .firstTextBaseline, spacing: 0) {
+      if reading == .columns {
+        Text(marker).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(width: markerColumn, alignment: .leading)
       }
-      if !second.isEmpty {
-        Text(second.joined(separator: " · ")).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+      VStack(alignment: .leading, spacing: RoomSpace.small) {
+        layout {
+          Text(reading == .columns ? effort : "\(marker) · \(effort)")
+            .font(reading == .columns ? .body.monospaced() : .body).monospacedDigit()
+            .foregroundStyle(GymPalette.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          if let caption { Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
+        }
+        if !second.isEmpty {
+          Text(second.joined(separator: " · ")).font(reading == .columns ? .footnote : .subheadline).monospacedDigit()
+            .foregroundStyle(GymPalette.inkDim)
+        }
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel((["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", "))
   }
 
-  // A working set by its place among the working sets so far, any other kind by its letter.
+  // A set by its place among the sets so far.
   nonisolated static func marker(_ set: TrainingSet, in sets: [TrainingSet]) -> String {
-    guard set.kind == SetKind.working.rawValue else { return String(set.kind.prefix(1)).uppercased() }
-    let through = sets.prefix { $0.id != set.id } + [set]
-    return "\(through.filter { $0.kind == SetKind.working.rawValue }.count)"
+    "\(sets.prefix { $0.id != set.id }.count + 1)"
   }
 
   // Each movement once, in the order its first set was logged.
@@ -109,7 +181,8 @@ struct SetRow: View {
   }
 }
 
-// Up to three value-over-label tiles, drawing only the facts that are known.
+// Up to three value-over-label tiles, drawing only the facts that are known: on one shared card, parted by hairlines, or
+// each on its own card. A caller drawing its own cards clears the list row's background and insets.
 struct FactTiles: View {
   struct Fact: Equatable {
     let value: String
@@ -117,19 +190,27 @@ struct FactTiles: View {
     var record = false
     var identifier: String?
   }
+  enum Ground { case shared, own }
   let facts: [Fact]
+  var ground = Ground.shared
   @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
-    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.inset))
-      : AnyLayout(HStackLayout(alignment: .top, spacing: RoomSpace.inset))
+    let stacked = typeSize.isAccessibilitySize
+    let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: ground == .own ? RoomSpace.related : RoomSpace.inset))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: ground == .own ? RoomSpace.related : RoomSpace.inset))
     layout {
-      ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { _, fact in
+      ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { index, fact in
+        if ground == .shared && index > 0 && !stacked {
+          Rectangle().fill(GymPalette.line).frame(width: 1, height: 44).accessibilityHidden(true)
+        }
         VStack(alignment: .leading, spacing: RoomSpace.small) {
           Text(fact.value).font(.title3.weight(.semibold)).monospacedDigit()
             .foregroundStyle(fact.record ? GymPalette.record : GymPalette.ink).lineLimit(1).minimumScaleFactor(0.5)
-          Text(fact.label).font(.footnote).foregroundStyle(GymPalette.inkDim)
+          Text(fact.label).font(.caption).foregroundStyle(GymPalette.inkDim)
         }.frame(maxWidth: .infinity, alignment: .leading)
+          .padding(ground == .own ? 14 : 0)
+          .background { if ground == .own { RoundedRectangle(cornerRadius: RoomSpace.cardRadius).fill(GymPalette.card) } }
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier(fact.identifier ?? "")
       }
@@ -139,12 +220,12 @@ struct FactTiles: View {
 
 extension FactTiles {
   // A session's tiles, read the same wherever a session is told: Duration · Working sets · Volume, the duration only once
-  // the session has finished.
-  init(_ readout: SessionReadout) {
+  // the session has finished. The finish receipt sets each on its own card (03.7).
+  init(_ readout: SessionReadout, ground: Ground = .shared) {
     self.init(facts: [
       readout.durationMs.map { Fact(value: Readout.duration($0), label: "Duration") },
       Fact(value: "\(readout.workingSetCount)", label: GymCount.noun(readout.workingSetCount, "Working set")),
       Fact(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
-    ].compactMap { $0 })
+    ].compactMap { $0 }, ground: ground)
   }
 }

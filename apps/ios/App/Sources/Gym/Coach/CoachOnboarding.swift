@@ -44,6 +44,8 @@ nonisolated struct CoachOnboardingOut: Codable, Equatable, Sendable {
   let errorCode: String?
   let allowance: AiAllowance
   var message: String?
+  // The answer needs an account — a change to a routine, a note — so Coach says so and offers Sign in under it.
+  var needsAccount: Bool?
 }
 
 nonisolated struct CoachOnboardingRecord: Codable, Equatable, Identifiable {
@@ -66,6 +68,15 @@ extension CoachConversation {
   }
   var anonymousRequest: CoachOnboardingRecord? { saved.onboarding?.last }
   var anonymousRetryable: Bool { anonymousRequest.map { !$0.finished && !asking } ?? false }
+  // Signed out, the newest answer that needs an account offers Sign in; once signed in, its adopted answer offers nothing.
+  func offersSignIn(_ record: CoachOnboardingRecord) -> Bool {
+    anonymous && record.response?.needsAccount == true && record.id == anonymousRequest?.id
+  }
+  // The signed-out allowance a question was refused on, said only while signed out: an account has its own allowance.
+  func spentAllowance(_ record: CoachOnboardingRecord) -> AiAllowance? {
+    guard anonymous, let response = record.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") else { return nil }
+    return response.allowance
+  }
   var textLimit: Int { anonymous ? 4000 : 8000 }
 
 
@@ -141,7 +152,7 @@ extension CoachConversation {
       } catch {
         guard self.owner == owner, self.allowed, self.workGeneration == generation else { return }
         if error is CancellationError || (error as? URLError)?.code == .cancelled {
-          self.error = "Stopped waiting. Coach may still finish. Check the same response when you’re ready."
+          self.error = "Stopped waiting. Coach may still answer. Check again later."
           return
         }
         if let failure = error as? AiRequestFailure, let body = try? JSONDecoder().decode(InstallationFailure.self, from: failure.body) {
@@ -194,7 +205,7 @@ extension CoachConversation {
     var next = saved
     if let index = next.onboarding?.indices.last { next.onboarding?[index].stopped = true }
     _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
-    error = "Stopped waiting. Coach may still finish. Check the same response when you’re ready."
+    error = "Stopped waiting. Coach may still answer. Check again later."
     gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "cancelled"])
   }
 

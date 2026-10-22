@@ -18,7 +18,7 @@ import {
   loadBasisLabel, sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel,
   threadHref, threadIdOf, THREADS_HREF,
-  topSetLabel, topSetOf, weekdayName, whenLabel, workingSetsOf,
+  topSetLabel, topSetOf, weekdayName, whenLabel,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -429,31 +429,13 @@ test('the routine pick’s row: the day it was last trained, and the sets it nam
   ], ['3 movements · 4 sets', '1 movement · 1 set', '2 movements', '0 movements']);
 });
 
-test('workingSetsOf — only a working set counts, and the other three kinds count toward nothing', () => {
-  const set = (exerciseId, weightKg, reps, kind) => ({ exerciseId, weightKg, reps, kind, completedAt: 0 });
-  const sets = [
-    set('back-squat', 60, 5, 'warmup'),
-    set('back-squat', 100, 5, 'working'),
-    set('back-squat', 90, 3, 'drop'),
-    set('back-squat', 100, 1, 'failure'),
-    set('bench-press', 80, 5, 'working'),
-  ];
-  assert.deepEqual(workingSetsOf(sets), [sets[1], sets[4]]);
-  assert.deepEqual(workingSetsOf(sets, 'back-squat'), [sets[1]]);
-  assert.deepEqual(workingSetsOf(sets, 'bench-press'), [sets[4]]);
-  assert.deepEqual(workingSetsOf(sets, 'deadlift'), []);
-  assert.deepEqual(workingSetsOf([sets[0], sets[2], sets[3]]), []);
-});
-
-test('topSetOf — the heaviest working set, from the sets or from the summary that carries it', () => {
-  const set = (weightKg, reps, kind) => ({ exerciseId: 'back-squat', weightKg, reps, kind, completedAt: 0 });
+test('topSetOf — the heaviest set, from the sets or from the summary that carries it', () => {
+  const set = (weightKg, reps) => ({ exerciseId: 'back-squat', weightKg, reps, completedAt: 0 });
   const label = (sets) => topSetLabel(topSetOf({ id: 'ses_1' }, sets));
-  assert.equal(label([set(100, 5, 'working'), set(102.5, 5, 'working'), set(100, 8, 'working')]), '102.5 × 5');
-  assert.equal(label([set(60, 5, 'warmup'), set(120, 1, 'warmup'), set(100, 5, 'working')]), '100 × 5');
-  assert.equal(label([set(100, 5, 'working'), set(140, 3, 'drop'), set(140, 1, 'failure')]), '100 × 5');
-  assert.equal(label([set(100, 5, 'working'), set(100, 8, 'working')]), '100 × 8');
-  assert.equal(label([set(0, 12, 'working'), set(-20, 8, 'working')]), '0 × 12');
-  assert.equal(label([set(60, 10, 'warmup')]), '—');
+  assert.equal(label([set(100, 5), set(102.5, 5), set(100, 8)]), '102.5 × 5');
+  assert.equal(label([set(60, 5), set(120, 1), set(100, 5)]), '120 × 1');
+  assert.equal(label([set(100, 5), set(100, 8)]), '100 × 8');
+  assert.equal(label([set(0, 12), set(-20, 8)]), '0 × 12');
   assert.equal(label([]), '—');
 
   const row = { id: 'ses_1', setCount: 14, topSet: { weightKg: 102.5, reps: 5 } };
@@ -713,7 +695,7 @@ test('planReadingOf — the target, the movement nobody planned, and the plan th
 
 test('slotRows — the slot strip as rows: what was lifted, then the slots still to come', () => {
   const entry = { exerciseId: 'back-squat', sets: RAMP, restSeconds: 180 };
-  const logged = (id, weightKg, reps, kind = 'working') => ({ id, exerciseId: 'back-squat', weightKg, reps, kind });
+  const logged = (id, weightKg, reps) => ({ id, exerciseId: 'back-squat', weightKg, reps });
   // The rack fixture: sets 1 and 2 landed as planned, set 3 current.
   assert.deepEqual(slotRows([logged('set_1', 60, 5), logged('set_2', 80, 5)], entry), [
     { key: 'set_1', kind: 'lifted', label: '60 × 5' },
@@ -722,13 +704,12 @@ test('slotRows — the slot strip as rows: what was lifted, then the slots still
     { key: 'slot-4', kind: 'target', label: '100 × 1', spoken: 'set 4, target 100 × 1' },
     { key: 'slot-5', kind: 'target', label: '80 × 5', spoken: 'set 5, target 80 × 5' },
   ]);
-  // Warmups stand before slot 1 wearing their kind, and a set logged past the plan appends as lifted.
+  // Every set fills the next slot, a light first set included, and a set logged past the plan appends as lifted.
   assert.deepEqual(slotRows([
-    logged('set_0', 40, 8, 'warmup'), logged('set_1', 60, 5), logged('set_2', 80, 5), logged('set_3', 90, 3),
-    logged('set_4', 102.5, 1), logged('set_5', 80, 5), logged('set_6', 80, 5), logged('set_7', 60, 10, 'drop'),
+    logged('set_0', 40, 8), logged('set_1', 60, 5), logged('set_2', 80, 5), logged('set_3', 90, 3),
+    logged('set_4', 102.5, 1), logged('set_5', 80, 5), logged('set_6', 80, 5),
   ], entry), [
-    { key: 'set_0', kind: 'warmup', label: '40 × 8 (warmup)' },
-    { key: 'set_7', kind: 'warmup', label: '60 × 10 (drop)' },
+    { key: 'set_0', kind: 'lifted', label: '40 × 8' },
     { key: 'set_1', kind: 'lifted', label: '60 × 5' },
     { key: 'set_2', kind: 'lifted', label: '80 × 5' },
     { key: 'set_3', kind: 'lifted', label: '90 × 3' },
