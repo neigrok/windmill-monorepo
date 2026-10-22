@@ -14,6 +14,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace wm;
@@ -306,26 +307,48 @@ TEST(gym_ask_409s_name_the_taken_id_the_full_conversation_and_the_open_workout) 
 
 // The 429 says what to do next and never the allowance: the clients draw the numbers above the
 // composer, and this sentence is the only other place a capped lifter reads.
-TEST(gym_ask_429s_free_up_later_and_name_the_rolling_ceiling) {
+TEST(gym_ask_429_names_the_rolling_ceiling) {
   AskHarness a;
-
-  CHECK_EQ(a.ask("thr_00000001", "one")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(a.ask("thr_00000002", "two")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(a.ask("thr_00000003", "three")->getStatusCode(), drogon::k200OK);
-  const drogon::HttpResponsePtr capped = a.ask("thr_00000004", "four");
   a.usage.spentByProduct[""] = kProMonthlyAiNanos;
-  const drogon::HttpResponsePtr ceiling = a.ask("thr_00000005", "five");
+  const drogon::HttpResponsePtr ceiling = a.ask("thr_00000001", "one");
 
-  CHECK_EQ(refusalOf(capped),
-           (Refusal{drogon::k429TooManyRequests,
-                    "the next question frees up in a couple of hours",
-                    "ask-daily-limit"}));
   CHECK_EQ(refusalOf(ceiling),
            (Refusal{drogon::k429TooManyRequests,
                     "this account has reached its AI ceiling for the last 30 days. Coach will "
                     "answer again as that window rolls on",
                     "ask-out-of-budget"}));
-  CHECK_EQ(a.agent.runs, 3);
+  CHECK_EQ(a.agent.runs, 0);
+}
+
+// The bucket refills one question every 8,640,000 ms. A capped 429 names the moment the next one
+// frees up, which holds still while the bucket refills, and Retry-After the whole seconds until then.
+TEST(gym_ask_daily_cap_names_when_the_next_question_frees_up) {
+  AskHarness a;
+  const UnixMs start = a.h.clock.now;
+  const auto capped = [&](const std::string& thread) {
+    const drogon::HttpResponsePtr response = a.ask(thread, "one more?");
+    return std::make_tuple(static_cast<int>(response->getStatusCode()), dump(bodyOf(response)),
+                           response->getHeader("Retry-After"));
+  };
+
+  for (const std::string thread : {"thr_00000001", "thr_00000002", "thr_00000003"})
+    CHECK_EQ(a.ask(thread, "one")->getStatusCode(), drogon::k200OK);
+  const auto empty = capped("thr_00000004");
+  a.h.clock.now = start + 4'320'000;
+  const auto half = capped("thr_00000005");
+  a.h.clock.now = start + 6'480'000;
+  const auto threeQuarters = capped("thr_00000006");
+  a.h.clock.now = start + 8'640'000;
+  const auto refilled = a.ask("thr_00000007", "one");
+  const auto spentAgain = capped("thr_00000008");
+
+  const std::string sentence = R"("code":"ask-daily-limit","error":"the next question frees up in a couple of hours")";
+  CHECK_EQ(empty, std::make_tuple(429, "{" + sentence + R"(,"retryAtMs":1700008640000})", std::string("8640")));
+  CHECK_EQ(half, std::make_tuple(429, "{" + sentence + R"(,"retryAtMs":1700008640000})", std::string("4320")));
+  CHECK_EQ(threeQuarters, std::make_tuple(429, "{" + sentence + R"(,"retryAtMs":1700008640000})", std::string("2160")));
+  CHECK_EQ(refilled->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(spentAgain, std::make_tuple(429, "{" + sentence + R"(,"retryAtMs":1700017280000})", std::string("8640")));
+  CHECK_EQ(a.agent.runs, 4);
 }
 
 TEST(gym_ask_503_names_the_absent_room_and_502_names_the_answer_that_never_came) {

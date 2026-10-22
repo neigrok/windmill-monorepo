@@ -884,7 +884,8 @@ REST surface's; a write through `/v1/sync` is refused with the engine's codes an
 | 409 | `share-id-taken` | a log share request id already used, a revoked one included | mint a NEW id |
 | 400 | `ask-request-malformed` / `ask-attachment-invalid` | a request id or a picture Coach cannot use | terminal |
 | 409 | `ask-thread-taken` / `ask-request-conflict` / `ask-generation-active` / `ask-session-open` | unavailable thread id, changed retry payload, concurrent generation (a delete included) or workout | correct the request identity or wait |
-| 429 | `ask-daily-limit` / `ask-out-of-budget` / `ask-image-busy` / `ask-image-limit` | the day's ration, the platform ceiling, or the picture uploads | wait |
+| 429 | `ask-daily-limit` | the day's ration is spent; the body's `retryAtMs` (epoch ms) and the `Retry-After` header (whole seconds) say when the next question frees up | wait until `retryAtMs` |
+| 429 | `ask-out-of-budget` / `ask-image-busy` / `ask-image-limit` | the platform ceiling, or the picture uploads | wait |
 | 503 | `ask-busy` | Coach is at capacity | retryable |
 | 503 | `ask-not-configured` | `POST /v1/gym/ask` where no model is configured | terminal. A 503 WITHOUT a code is a proxy or a restart, and asking again is the repair |
 | 503 | `gym-engine-busy` / `gym-engine-unavailable` | the engine did not take a write the request made: the import, the lazy close a read settles, or a conversation's delete | retryable |
@@ -1181,7 +1182,7 @@ model asked. The check is written twice, once per door.
 | Model context | `kMaxContextTurns` (24) and `kMaxContextBytes` (24,000) | latest completed exchanges; full stored history remains available through pagination |
 | Question | `kMaxAskTurnBytes` (8000 UTF-8 bytes) | bounds each submitted text |
 | Entitlement | all signed-in accounts | allowance is resolved through `Entitlements::aiAllowanceFor` |
-| Request ration | per-account token bucket: capacity 3, refilling at 10/day (`AskRation`) | In memory; a deploy refills it. Taken after admission checks and refunded only when `AskAnswer::modelTurns` is zero |
+| Request ration | per-account token bucket: capacity 3, refilling at 10/day on the service's clock (`AskRation`) | In memory; a deploy refills it. Taken after admission checks and refunded only when `AskAnswer::modelTurns` is zero. A spent bucket answers with the moment it next holds a whole question |
 | Dollar ceiling | durable USD allowances when enabled; legacy `AiFuse` and rolling allowance otherwise | per-request token estimate reserves provider cost before dispatch; actual usage reconciles it |
 | Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ `registerRoutes` omits new asks; durable Stop/recovery and history remain available |
 
