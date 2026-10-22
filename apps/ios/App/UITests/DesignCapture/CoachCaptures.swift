@@ -26,7 +26,7 @@ final class CoachCaptures: DesignCapture {
       openGymFromJournal(app, opensOn: .coach)
       let capabilities = app.descendants(matching: .any)["coach-capabilities"]
       XCTAssertTrue(capabilities.waitForExistence(timeout: 15))
-      let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Changes"), object: capabilities)
+      let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Changes — ask me, and I suggest changes to your routines."), object: capabilities)
       XCTAssertEqual(XCTWaiter.wait(for: [signedIn], timeout: 15), .completed)
       return app
     }

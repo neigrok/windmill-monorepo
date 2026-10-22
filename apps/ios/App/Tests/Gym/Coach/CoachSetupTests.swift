@@ -100,6 +100,21 @@ extension CoachTests {
     #expect(rest.tasks.isEmpty)
   }
 
+  @Test func theGreetingOffersOnlyWhatCoachDoes() {
+    let lines = { (signedIn: Bool) in CoachSetupView(signedIn: signedIn, choose: { _ in }).capabilities.map { "\($0.0) — \($0.1)" } }
+    #expect(lines(true) == [
+      "Build — a program from a screenshot or your own words.",
+      "Goals — tell me your goals, and I will plan for them.",
+      "Notes — I save important facts, like an old injury.",
+      "Changes — ask me, and I suggest changes to your routines.",
+    ])
+    #expect(lines(false) == [
+      "Build — a program from a screenshot or your own words.",
+      "Goals — tell me your goals, and I will plan for them.",
+      "Account — sign in, and I can also save notes and suggest changes to your routines.",
+    ])
+  }
+
   @Test func setupNeedsResolvedHydratedEmptyAccountAndAnUnoccupiedRoom() {
     for mask in 0..<64 {
       let flags = (0..<6).map { mask & (1 << $0) != 0 }

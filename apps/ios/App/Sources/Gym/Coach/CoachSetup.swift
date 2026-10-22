@@ -21,7 +21,7 @@ struct CoachSetupView: View {
   @Environment(\.dynamicTypeSize) var typeSize
   var capabilities: [(String, String)] {
     [("Build", "a program from a screenshot or your own words."), ("Goals", "tell me your goals, and I will plan for them.")]
-      + (signedIn ? [("Notes", "I save important facts, like an old injury."), ("Changes", "as you train, I suggest changes to your routines.")]
+      + (signedIn ? [("Notes", "I save important facts, like an old injury."), ("Changes", "ask me, and I suggest changes to your routines.")]
          : [("Account", "sign in, and I can also save notes and suggest changes to your routines.")])
   }
   var body: some View {
