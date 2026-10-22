@@ -212,6 +212,34 @@ import UIKit
     #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · 12:00\u{202F}PM"])
   }
 
+  // A removal's receipt row and a waiting proposal's row read the word their card stands on: Removed once the log took the
+  // removal, Not applied once it refused an Apply — never Out of date for a refusal that says nothing of the routine.
+  @Test func aProposalsRowReadsTheWordItsCardStandsOn() throws {
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
+    let gym = GymModel(runner: harness.runner, locale: Locale(identifier: "en_US")); gym.account = "routines-owner"
+    gym.run(CreateExercise(Exercise(id: ID("word-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routines = ["push", "pull", "legs"].map { Draft(new: Routine(id: ID(RecordID("word-" + $0)), name: $0.capitalized, entries: [RoutineEntry(exerciseId: ID("word-bench"))])) }
+    for index in routines.indices { #expect(gym.saveRoutine(&routines[index])) }
+    harness.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("word-removed"), routineId: routines[0].id, name: "", entries: [], summary: "Remove", removing: true))?.refusal == nil)
+    #expect(gym.run(ProposeRoutine(id: ID("word-refused-removal"), routineId: routines[1].id, name: "", entries: [], summary: "Remove", removing: true))?.refusal == nil)
+    #expect(gym.run(ProposeRoutine(id: ID("word-refused-change"), routineId: routines[2].id, name: "Legs B", entries: routines[2].current.entries, summary: "Rename"))?.refusal == nil)
+    harness.sync(); gym.refresh()
+    func decide(_ id: String, _ refused: Bool) throws {
+      #expect(gym.coachDecideProposal(try #require(gym.proposals.first { $0.id == ID(RecordID(id)) }), apply: true))
+      if refused { harness.server.refuse(code: .invalid) }
+      harness.sync(); gym.refresh()
+    }
+    try decide("word-removed", false); try decide("word-refused-removal", true); try decide("word-refused-change", true)
+    #expect(gym.coachRemovalReceipts.map { [$0.proposal.id.description, gym.coachProposalWord($0.proposal) ?? "-"] } == [
+      ["word-refused-removal", "Not applied"], ["word-removed", "Removed"]])
+    #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"], ["word-refused-removal", "Not applied"]])
+    let cards = ["word-removed", "word-refused-removal", "word-refused-change"].map { ProposalCard(gym: gym, id: $0) }
+    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.retryable ? $0.primaryTitle : "-"] } == [
+      ["applied", "-", "-"], ["open", "Not applied.", "Try again"], ["open", "Not applied.", "Try again"]])
+  }
+
   @Test func aProposalIsNamedByItsRoutineAndWhatItChanges() throws {
     let (_, gym) = fixture()
     var routine = draft(gym)

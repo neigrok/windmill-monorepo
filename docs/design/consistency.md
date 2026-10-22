@@ -512,6 +512,9 @@ these are the places it disagrees with a drawing, a brief or the build.
     on the simulator fixture.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only; the signed-out *Sign in* answer for a change request (08.31) is built nowhere.
+  - `ios/ios-redesign.md` §7.5 has a removal the log refused read *Out of date* on its Routines row, but the card that row
+    opens is not out of date: it reads *Not applied.* with **Try again**. iOS's row reads *Not applied*, as does a
+    waiting change's row once the log refused its Apply; §7.5 and task 11's settled words want *Not applied* added.
   - Strings in code still carry the cut and pre-simple-English copy: *Your sets stay saved…* (iOS
     `WorkoutSheets.swift`), *You decide the numbers at the rack.* (iOS, Android `Program.kt`, web
     `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you

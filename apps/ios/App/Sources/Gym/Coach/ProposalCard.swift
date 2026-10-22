@@ -5,10 +5,6 @@ import GymDomain
 // The Routines row's door to a proposal it lists.
 nonisolated struct CoachProposalID: Identifiable { let id: String }
 
-// Where a proposal stands, as its card draws it: waiting on the lifter (or on the log for an Apply), applied, rejected, or
-// out of date and why.
-nonisolated enum ProposalStance: Equatable { case open, applied, rejected, outOfDate(CoachOutOfDate) }
-
 // A proposal in the conversation, decided where it stands: its changes as blocks, the first two until *Show all*, the
 // movements it leaves folded into one line, then Apply and Reject. Applied, it stays as the record of what changed;
 // rejected, it folds to one line; out of date, it says why nothing was applied.
@@ -37,15 +33,7 @@ struct ProposalCard: View {
     guard let proposal, proposal.state == "pending", !gym.coachProposalOutOfDate(proposal) else { return false }
     return !pending && gym.coachAccountAvailable && !gym.readFailed
   }
-  // Reject settles the card at once; an Apply keeps it open until the log answers.
-  var stance: ProposalStance {
-    guard let proposal else { return .open }
-    if waiting == .reject || (proposal.state == "dismissed" && !pending) { return .rejected }
-    if pending { return .open }
-    if proposal.state == "applied" { return .applied }
-    if let reason = gym.outOfDateProposals[proposal.id] { return .outOfDate(reason) }
-    return .open
-  }
+  var stance: ProposalStance { proposal.map(gym.coachProposalStance) ?? .open }
   // Why an out-of-date proposal has no buttons, said once where they stood.
   var outOfDate: String? {
     guard case .outOfDate(let reason) = stance else { return nil }

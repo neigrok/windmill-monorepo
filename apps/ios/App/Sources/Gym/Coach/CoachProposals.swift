@@ -8,6 +8,9 @@ import SyncSchema
 nonisolated enum CoachQueuedDecision: String { case apply, reject, unreadable }
 // Why a proposal can no longer be applied: a newer proposal took its place, or its routine changed under it.
 nonisolated enum CoachOutOfDate: Equatable { case replaced, routineChanged }
+// Where a proposal stands, as its card draws it: waiting on the lifter (or on the log for an Apply), applied, rejected, or
+// out of date and why.
+nonisolated enum ProposalStance: Equatable { case open, applied, rejected, outOfDate(CoachOutOfDate) }
 // The proposals, their removal receipts, the decisions still queued and the proposals out of date, as one read saw them.
 nonisolated struct CoachProposalsRead {
   let replica: String
@@ -153,6 +156,25 @@ extension GymModel {
   // counted it.
   func coachChangeCount(_ proposal: Proposal) -> Int {
     proposal.changeCount ?? coachRoutine(proposal).map(proposal.countChanges) ?? coachDiff(proposal).blocks.count
+  }
+  // Reject settles a proposal at once; an Apply keeps it open until the log answers.
+  func coachProposalStance(_ proposal: Proposal) -> ProposalStance {
+    let waiting = coachQueuedDecision(proposal.id)
+    if waiting == .reject || (proposal.state == "dismissed" && waiting == nil) { return .rejected }
+    if waiting != nil { return .open }
+    if proposal.state == "applied" { return .applied }
+    if let reason = outOfDateProposals[proposal.id] { return .outOfDate(reason) }
+    return .open
+  }
+  // The one word a proposal's card stands on, said again on its Routines row: Applied or Removed, Rejected, Out of date, or
+  // Not applied while the log's refusal of its Apply stands; none while it waits.
+  func coachProposalWord(_ proposal: Proposal) -> String? {
+    switch coachProposalStance(proposal) {
+    case .applied: CoachCopy.settled("applied", removal: proposal.intent == "remove")
+    case .rejected: CoachCopy.settled("dismissed", removal: proposal.intent == "remove")
+    case .outOfDate: CoachCopy.outOfDate
+    case .open: coachQueuedDecision(proposal.id) == nil && coachApplyRefusal(proposal) != nil ? CoachCopy.notApplied : nil
+    }
   }
   // Why the log refused the Apply this phone sent, while the proposal still waits: the cause its notice names, where the card
   // can say it, else only that nothing was applied. A refusal this phone saw arrive counts when the notice is gone.

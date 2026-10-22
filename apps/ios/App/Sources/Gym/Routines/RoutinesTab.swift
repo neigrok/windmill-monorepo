@@ -29,11 +29,11 @@ struct RoutinesTab: View {
           Group {
             if !receipts.isEmpty || !proposals.isEmpty {
               Section {
-                // A removal the log answered reads its settled word: Removed, or Out of date when the log refused it.
+                // A removal the log answered reads the word its card stands on: Removed, or Not applied when the log refused it.
                 ForEach(receipts, id: \.proposal.id) { receipt in
                   Button { onReviewProposal?(receipt.proposal.id) } label: {
                     GymRow(title: CoachCopy.proposalTitle(routine: receipt.proposal.baseName ?? receipt.proposal.proposedName, changes: 0, removal: true),
-                           meta: receipt.outcome == .applied ? CoachCopy.settled("applied", removal: true) : CoachCopy.outOfDate, trailing: .door)
+                           meta: gym.coachProposalWord(receipt.proposal), trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
                 // A waiting proposal carries the accent and opens its card; one out of date reads its settled word alone.
@@ -275,10 +275,10 @@ extension GymModel {
                             changes: coachChangeCount(proposal), removal: proposal.intent == "remove")
   }
 
-  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once it can no longer be
-  // applied, its settled word.
+  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once its card stands on a
+  // word — out of date, or its Apply refused — that word.
   func proposalLine(_ proposal: Proposal) -> String {
-    if coachProposalOutOfDate(proposal) { return CoachCopy.outOfDate }
+    if let word = coachProposalWord(proposal) { return word }
     return RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
   }
 }
