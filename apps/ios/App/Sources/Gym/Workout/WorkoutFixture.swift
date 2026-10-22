@@ -40,6 +40,8 @@ enum WorkoutFixture {
     let id = gym.runner.mint(Session.self)
     guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000)))?.refusal == nil,
           gym.restoreWorkout() else { return true }
+    // A free workout before its first movement (03.9).
+    if board == "workout-blank" { gym.workout.reconcile(); return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
       let logged: [(movement: String, kg: Double, reps: Int, agoMs: Int64)] = upper ? [

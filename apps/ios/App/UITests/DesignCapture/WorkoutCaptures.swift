@@ -49,6 +49,14 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
+  func testFreeWorkoutStart() {
+    captureBoard("03.9-free-workout-start", settle: 1.5) { look in
+      let app = launch("workout-blank", look)
+      XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
   func testLoadAndReps() {
     captureBoard("03.2-load-and-reps", settle: 1.5) { look in
       let app = launch("workout-upper", look)

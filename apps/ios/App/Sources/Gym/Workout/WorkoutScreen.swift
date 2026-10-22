@@ -37,7 +37,7 @@ struct WorkoutScreen: View {
         old == nil && new != nil
       }
       .roomTitle(workout.session?.name ?? Readout.noRoutine,
-                 subtitle: workout.session.flatMap { session in session.isOpen ? dates.time(session.startedAt) : nil })
+                 subtitle: workout.session.flatMap { session in session.isOpen ? "Started " + dates.time(session.startedAt) : nil })
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if workout.session?.isOpen == true {
@@ -102,14 +102,15 @@ struct WorkoutScreen: View {
   func live(_ session: Session) -> some View {
     VStack(spacing: 0) {
       if workout.walk.order.isEmpty {
-        ContentUnavailableView {
-          Label("Choose your first movement", systemImage: "dumbbell")
-        } description: {
-          Text("You decide the numbers at the rack.")
-        } actions: {
-          Button("Add movement", systemImage: "plus") { addMovement = true }.modifier(RoomPrimaryStyle(room: .gym))
-            .accessibilityIdentifier("workout-add")
-        }
+        VStack(spacing: RoomSpace.panel) {
+          Spacer()
+          Text("Choose your first movement").font(.title2.weight(.semibold)).foregroundStyle(GymPalette.ink)
+            .multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+          Button("Add movement", systemImage: "plus") { addMovement = true }
+            .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).tint(GymPalette.accent).fontWeight(.semibold)
+            .padding(.top, RoomSpace.panel).accessibilityIdentifier("workout-add")
+          Spacer()
+        }.padding(.horizontal, RoomSpace.inset).padding(.bottom, 120).frame(maxWidth: .infinity)
       } else {
         WorkoutPager(gym: gym, workout: workout, assembly: { assembly = true }, fix: { fixing = $0 })
       }
