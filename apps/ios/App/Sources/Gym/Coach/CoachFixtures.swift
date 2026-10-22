@@ -280,7 +280,9 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         "configured": true, "limit": "1.000000000", "used": "1.000000000", "reserved": "0.000000000", "remaining": "0.000000000",
         "resetsAtMs": 1_793_491_200_000 as Int64, "budgetResetsAtMs": NSNull()] as [String: Any]]
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-daily-cap"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
-      status = 429; response = ["code": "ask-daily-limit", "error": "the next question frees up in a couple of hours"]
+      // A bucket emptied back to back frees its next question one refill later, 8,640,000 ms.
+      status = 429; response = ["code": "ask-daily-limit", "error": "the next question frees up in a couple of hours",
+                                "retryAtMs": Int64(Date().timeIntervalSince1970 * 1000) + 8_640_000]
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {

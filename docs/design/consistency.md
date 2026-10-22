@@ -457,7 +457,9 @@ and Android disagree.
     `gym/alarm-fill` colour. §2 wants the row and the lines retired.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
     `Program.kt`, web `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. iOS Coach's
+    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. The day's cap can say 08.8's
+    *You can ask again in about 2 hours.* on both: `429 ask-daily-limit` carries `retryAtMs` (and `Retry-After` on a
+    plain reply), which iOS reads and Android and the web ignore. iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
@@ -466,8 +468,6 @@ and Android disagree.
       Coach's write from the lifter's later edit. Owner ruling (2026-10-22): the cards gain their content with the
       local Coach, whose abilities run on the phone's replica ([gym_coach.md](../foundation/mobile/gym_coach.md)),
       not before.
-    - 08.8: the day's cap reads *You can ask again later.*, where the board draws *You can ask again in about 2 hours.*
-      The server refills the day's questions steadily and returns no retry time, so no duration can be promised.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
   the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,
@@ -813,8 +813,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
   `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.34
   `1254:31663`). Android: `coach/Ask.kt:180,218,225-240`, `coach/AskScreen.kt:142-153,282-315,332-343`,
-  `coach/Thread.kt:157,168`, `coach/CoachAnswer.kt:225-228`. iOS: the cap reads *You can ask again
-  later.* (`Coach/CoachWire.swift:266`), since the server returns no retry time (10v).
+  `coach/Thread.kt:157,168`, `coach/CoachAnswer.kt:225-228`. The cap's hours come from the 429's `retryAtMs`, as iOS
+  says them (`Coach/CoachWire.swift`, `CoachCopy.daily`); Android does not read the field yet (10v).
 - **12i · Shipped iOS states, drawn on both pages.** Coach's choice chips (01.17), *Draft kept on this
   phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
   movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a

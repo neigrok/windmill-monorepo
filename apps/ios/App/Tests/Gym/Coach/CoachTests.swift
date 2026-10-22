@@ -991,8 +991,20 @@ import SyncTesting
     coach.edit("Unsaved draft"); coach.send()
     #expect(coach.saved.text == "Unsaved draft" && !coach.asking && coach.error == "Your message couldn’t be saved. Try again.")
   }
+  @Test func theDaysCapSaysTheWaitToTheServersMomentRounded() {
+    let waits: [Int64?] = [nil, -5_000, 59_999, 60_000, 89_999, 90_000, 539_999, 570_000, 2_400_000, 3_149_999, 3_150_000,
+                           5_399_999, 5_400_000, 8_640_000]
+    #expect(waits.map { CoachCopy.daily(waitMs: $0) } == [
+      "You can ask again later.", "You can ask again in a minute.", "You can ask again in a minute.",
+      "You can ask again in about 1 minute.", "You can ask again in about 1 minute.", "You can ask again in about 2 minutes.",
+      "You can ask again in about 9 minutes.", "You can ask again in about 10 minutes.", "You can ask again in about 40 minutes.",
+      "You can ask again in about 50 minutes.", "You can ask again in about 1 hour.", "You can ask again in about 1 hour.",
+      "You can ask again in about 2 hours.", "You can ask again in about 2 hours.",
+    ])
+  }
   @Test func refusalsSeparateCeilingsBusyFreshAbsentAndOffline() {
     #expect(CoachRefusal(status: 429, code: "ask-daily-limit", message: nil) == .daily("You can ask again later."))
+    #expect(CoachRefusal(status: 429, code: "ask-daily-limit", message: nil, waitMs: 8_640_000) == .daily("You can ask again in about 2 hours."))
     let ceiling = CoachRefusal(status: 429, code: "ask-out-of-budget", message: nil)
     #expect(ceiling.message.contains("30 days") && !ceiling.message.contains("couple of hours"))
     #expect(CoachRefusal(status: 409, code: "ask-generation-active", message: "Server says wait") == .retry("Server says wait"))
@@ -1606,12 +1618,13 @@ import SyncTesting
     #expect(try cache.file(gym.account!).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
   }
   @Test func aCappedQuestionIsNeverSentAgainUntilSendAndThenWithTheFieldsText() async throws {
-    let (gym, rest, telemetry) = try await authed(.http(429, #"{"code":"ask-daily-limit","error":"the next question frees up in a couple of hours"}"#)), cache = store()
+    let retryAtMs = Int64(Date().timeIntervalSince1970 * 1000) + 8_640_000
+    let (gym, rest, telemetry) = try await authed(.http(429, #"{"code":"ask-daily-limit","error":"the next question frees up in a couple of hours","retryAtMs":\#(retryAtMs)}"#)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     coach.edit("How heavy?"); coach.send()
     try await settle { !coach.asking }
-    #expect(coach.refusal == .daily(CoachCopy.daily) && coach.saved.request == nil && coach.saved.text == "How heavy?")
+    #expect(coach.refusal == .daily("You can ask again in about 2 hours.") && coach.saved.request == nil && coach.saved.text == "How heavy?")
     #expect(try cache.read(gym.account!).request == nil)
     coach.edit("I changed my mind")
     await coach.activate()

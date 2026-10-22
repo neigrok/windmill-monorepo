@@ -420,7 +420,10 @@ struct CoachDraftStore {
             var next = saved; next.allowance = allowance
             _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
             refusal = .allowance(allowance)
-          } else { refusal = CoachRefusal(status: failure.status, code: object["code"] as? String, message: failure.message) }
+          } else {
+            let waitMs = (object["retryAtMs"] as? NSNumber).map { $0.int64Value - Int64(Date().timeIntervalSince1970 * 1000) }
+            refusal = CoachRefusal(status: failure.status, code: object["code"] as? String, message: failure.message, waitMs: waitMs)
+          }
           if refusal == .absent { gym.coachUnavailable = true }
           self.error = refusal?.message
           // A refused question never reached Coach: the field keeps it, and only Send asks again, with what the field then holds.

@@ -302,6 +302,7 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
       ask("What should Thursday look like?", app)
       XCTAssertTrue(app.descendants(matching: .any)["coach-daily-cap"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["You can ask again in about 2 hours."].exists)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "What should Thursday look like?", "The refused question stays in the field")
       return app

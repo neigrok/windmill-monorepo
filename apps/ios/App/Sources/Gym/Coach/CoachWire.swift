@@ -265,8 +265,20 @@ nonisolated enum CoachCopy {
   static let offline = "Coach needs a connection."
   static let signedOut = "Coach needs your workout log. Please sign in."
   static let absent = "This Windmill does not have Coach. You can still read your log."
-  static let daily = "You can ask again later."
   static let unreadableDraft = "Your draft couldn’t be read."
+  // The day's cap, said of the wait to the server's moment: under a minute, then to the nearest minute below 9½, the nearest
+  // five below 52½, and the nearest hour beyond. A refusal that names no moment says only *later*.
+  static func daily(waitMs: Int64?) -> String {
+    guard let waitMs else { return "You can ask again later." }
+    let minutes = Double(waitMs) / 60_000
+    let wait = switch minutes {
+    case ..<1: "a minute"
+    case ..<9.5: "about " + GymCount.of(Int(minutes.rounded()), "minute")
+    case ..<52.5: "about " + GymCount.of(Int((minutes / 5).rounded()) * 5, "minute")
+    default: "about " + GymCount.of(Int((minutes / 60).rounded()), "hour")
+    }
+    return "You can ask again in \(wait)."
+  }
   static let reconnecting = "Reconnecting…"
   static let signInToContinue = "Sign in to continue."
   static let confirmRetry = "Couldn’t save the routine. Try again."
@@ -344,12 +356,13 @@ nonisolated enum CoachRecovery: Equatable {
 
 nonisolated enum CoachRefusal: Equatable {
   case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance), installation(String)
-  init(status: Int?, code: String?, message: String?) {
+  // `waitMs` runs from now to the moment the server names for the day's next question.
+  init(status: Int?, code: String?, message: String?, waitMs: Int64? = nil) {
     if status == nil { self = .retry(CoachCopy.noAnswer); return }
     if status == 404 || (status == 503 && code == "ask-not-configured") { self = .absent; return }
     if status! >= 500 { self = .retry(message ?? CoachCopy.noAnswer); return }
     switch code {
-    case "ask-daily-limit": self = .daily(CoachCopy.daily)
+    case "ask-daily-limit": self = .daily(CoachCopy.daily(waitMs: waitMs))
     case "ask-out-of-budget": self = .ceiling(message ?? "This account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on.")
     case "ask-generation-active": self = .retry(message ?? "Coach is answering another message. Try again when it finishes.")
     case "ask-thread-full", "ask-thread-taken": self = .fresh(message ?? "This conversation is unavailable. Start a new one.")
