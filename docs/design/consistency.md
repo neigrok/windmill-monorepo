@@ -491,9 +491,6 @@ these are the places it disagrees with a drawing, a brief or the build.
     greeting (*Adjust*, *With an account*, *Build myself*), *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…*, `AiAllowance.message` (*fully used or
     reserved*), the photo captions and *The next question frees up…*.
-- **10t · Coach saves a stated goal (build).** The greeting says Coach sets goals and plans around
-  them. The prompt (`AnthropicAsk.cpp`) saves only "useful insight" and reads Notes for goals; it
-  should say plainly that a goal the lifter states is saved with `save_note` in that turn.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). Audit of the iOS code
