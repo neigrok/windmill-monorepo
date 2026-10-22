@@ -519,7 +519,11 @@ these are the places it disagrees with a drawing, a brief or the build.
     `WorkoutSheets.swift`), *You decide the numbers at the rack.* (iOS, Android `Program.kt`, web
     `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
     signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. iOS Coach's
-    greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8.
+    greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
+    departures below.
+  - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
+    - 01.5: a signed-in drafted photo is captioned *Sent to Coach. Saved only in this chat.*, where the board draws
+      *Saved only in this chat.* alone.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one

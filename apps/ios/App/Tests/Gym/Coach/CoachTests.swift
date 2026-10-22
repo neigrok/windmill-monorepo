@@ -1519,6 +1519,16 @@ import SyncTesting
     coach.newChat(seed: "Private question")
     #expect(coach.blockedReason == nil && coach.canCompose)
   }
+  @Test func aDraftPhotoStaysOutOfEveryBackup() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    let png = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { _ in }.pngData()!
+    try coach.addPhoto(png)
+    #expect(try cache.read(gym.account!).photoData == coach.saved.photoData && coach.saved.photoData != nil)
+    #expect(try cache.directory.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    #expect(try cache.file(gym.account!).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+  }
   @Test func aCappedQuestionIsNeverSentAgainUntilSendAndThenWithTheFieldsText() async throws {
     let (gym, rest, telemetry) = try await authed(.http(429, #"{"code":"ask-daily-limit","error":"the next question frees up in a couple of hours"}"#)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }

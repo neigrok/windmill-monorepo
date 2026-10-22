@@ -103,9 +103,13 @@ struct CoachDraftStore {
     }
     try FileManager.default.removeItem(at: sourceURL)
   }
+  // Drafts hold photos and signed-out questions, which live only on this phone: the folder stays out of every backup.
   func write(_ saved: CoachSaved, account: String) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try JSONEncoder().encode(saved).write(to: file(account), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    var folder = directory, written = file(account), excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
+    try folder.setResourceValues(excluded)
+    try JSONEncoder().encode(saved).write(to: written, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    try written.setResourceValues(excluded)
   }
 }
 
