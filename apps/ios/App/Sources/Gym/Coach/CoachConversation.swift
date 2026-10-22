@@ -170,6 +170,15 @@ struct CoachDraftStore {
     guard let generation = activeGeneration else { return saved.thread?.turns ?? [] }
     return saved.thread?.turns.filter { $0.generationId != generation.id && $0.requestId != generation.requestId } ?? []
   }
+  // The turn or answer whose card is a proposal's in the conversation on screen, as the room draws it; none when no answer
+  // here proposed it.
+  func proposalTurn(_ id: String) -> AnyHashable? {
+    let draws = { (receipt: CoachReceipt?, clarification: CoachClarification?) in
+      receipt?.proposals.contains(id) == true && (clarification == nil || clarification?.id != self.activeClarification?.id)
+    }
+    if let turn = visibleTurns.first(where: { $0.from != "lifter" && draws($0.receipt, $0.clarification) }) { return turn.id }
+    return (saved.exchanges + [activeGeneration].compactMap { $0 }).first { draws($0.receipt, $0.clarification) }.map { $0.id }
+  }
   var offline: Bool { CoachFixture.offline || gym.runtime?.engine.status.online == false }
   // Why a send cannot go now; a dimmed Send says it in the band when tapped.
   var blockedReason: String? {

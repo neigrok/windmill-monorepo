@@ -2,7 +2,7 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// The Routines row's door to a proposal it lists.
+// The Routines row's door to a proposal it lists, when the conversation on screen does not hold its card.
 nonisolated struct CoachProposalID: Identifiable { let id: String }
 
 // A proposal in the conversation, decided where it stands: its changes as blocks, the first two until *Show all*, the
@@ -19,6 +19,8 @@ struct ProposalCard: View {
   @Environment(\.scenePhase) var phase
 
   init(gym: GymModel, id: String, stallAfter: Duration = .seconds(15)) { self.gym = gym; self.id = id; self.stallAfter = stallAfter }
+  // Where the conversation scrolls to show this card.
+  static func anchor(_ id: String) -> String { "coach-proposal-" + id }
 
   var proposal: Proposal? { gym.proposals.first { $0.id.record.string == id } }
   // The routine as the proposal found it, so an applied rename still reads *Applied · Push A*.
@@ -200,7 +202,7 @@ struct TrailingSymbol: LabelStyle {
   }
 }
 
-// The Routines row's proposal, its card on a sheet of its own.
+// A Routines row's proposal that the conversation on screen does not hold, its card on a sheet of its own.
 struct ProposalSheet: View {
   let gym: GymModel
   let id: String

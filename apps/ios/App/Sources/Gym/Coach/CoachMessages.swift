@@ -149,7 +149,7 @@ struct CoachAnswerView: View {
         if !text.isEmpty { CoachAnswerText(text: text) }
         if let receipt, created.isEmpty { receiptRow(receipt) }
       }
-      ForEach(receipt?.proposals ?? [], id: \.self) { id in ProposalCard(gym: gym, id: id) }
+      ForEach(receipt?.proposals ?? [], id: \.self) { id in ProposalCard(gym: gym, id: id).id(ProposalCard.anchor(id)) }
       if !created.isEmpty {
         // After Apply, one receipt per routine created, each a door to its summary and Start.
         VStack(spacing: 0) {

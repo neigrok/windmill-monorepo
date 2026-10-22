@@ -414,6 +414,24 @@ import UIKit
 
   // A pushed screen hides the tab bar; back at the conversation's end, or back from another tab, its last card stands where it
   // stood, over the composer.
+  // The Routines row of a proposal this conversation made opens the conversation at its card, not a sheet.
+  func testAProposalsRoutinesRowOpensTheConversationAtItsCard() {
+    let app = launch("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    ask("Is Push A still doing anything?", app)
+    let header = app.descendants(matching: .any)["coach-proposal-header"]
+    XCTAssertTrue(header.waitForExistence(timeout: 15))
+    for _ in 0..<6 { app.scrollViews.firstMatch.swipeDown(velocity: .fast) }
+    XCTAssertFalse(header.isHittable, "At this size the conversation's start leaves the card out of sight")
+    openTab("Routines", app)
+    let row = app.buttons["routine-proposal"]
+    XCTAssertTrue(row.waitForExistence(timeout: 10))
+    row.tap()
+    XCTAssertTrue(app.tabBars.buttons["Coach"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+    XCTAssertTrue(waitForVisible(header, in: app))
+    XCTAssertFalse(app.descendants(matching: .any)["gym-proposal-sheet"].exists)
+    capture("coach-proposal-revealed-light", app)
+    app.terminate()
+  }
   func testTheConversationsEndStaysClearOfTheComposerAfterAPushedScreenPopsAndATabSwitch() {
     let app = launch("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     ask("Is Push A still doing anything?", app)

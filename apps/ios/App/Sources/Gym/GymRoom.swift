@@ -20,6 +20,7 @@ struct GymRoom: View {
   @State var coachPath = NavigationPath()
   @State var proposal: CoachProposalID?
   @State var coachHandoff: CoachHandoff?
+  @State var revealedProposal: String?
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
   @State var shareAfterSignIn: ID<Session>?
@@ -41,14 +42,14 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = CoachProposalID(id: $0.description) }, onSetup: openSetup))
+          root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal, onSetup: openSetup))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
         NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, revealedProposal: $revealedProposal, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
           .onPreferenceChange(TabBarHidden.self) { tabBar(.coach, hidden: $0) }
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
@@ -185,6 +186,12 @@ struct GymRoom: View {
   }
   func escapeSetup(_ choice: CoachSetupChoice) {
     if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
+  }
+  // A proposal's row opens the conversation at its card while the conversation on screen holds it; one it does not — a
+  // connected tool's, or one from another conversation — opens its card on a sheet.
+  func reviewProposal(_ id: ID<Proposal>) {
+    guard coach.proposalTurn(id.description) != nil else { proposal = CoachProposalID(id: id.description); return }
+    coachPath = NavigationPath(); revealedProposal = id.description; tab = .coach
   }
   func ask(_ question: String, send: Bool = false, purpose: CoachPurpose = .conversation) {
     coachPath = NavigationPath(); tab = .coach

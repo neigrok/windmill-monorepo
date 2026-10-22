@@ -36,6 +36,8 @@ struct CoachTab: View {
   let gym: GymModel
   var escapeSetup: ((CoachSetupChoice) -> Void)?
   @Binding var handoff: CoachHandoff?
+  // A proposal whose card the conversation scrolls to, from its Routines row.
+  @Binding var revealedProposal: String?
   @State var coach: CoachConversation
   @State var history: CoachHistory
   @State var fixturePrepared = false
@@ -50,7 +52,8 @@ struct CoachTab: View {
   @Environment(\.scenePhase) var phase
   @Environment(\.dynamicTypeSize) var typeSize
   @FocusState var composing: Bool
-  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), coach: CoachConversation? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil) { self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; let rest = coach?.rest ?? CoachFixture.rest(gym)
+  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), revealedProposal: Binding<String?> = .constant(nil), coach: CoachConversation? = nil,
+       escapeSetup: ((CoachSetupChoice) -> Void)? = nil) { self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; _revealedProposal = revealedProposal; let rest = coach?.rest ?? CoachFixture.rest(gym)
     _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest))
     _fixturePrepared = State(initialValue: !gym.isAnonymous) }
 
@@ -177,7 +180,7 @@ struct CoachTab: View {
               }
             }
             ForEach(coach.saved.exchanges) { generation in generationView(generation, stamps: stamps) }
-            if let generation = coach.activeGeneration { generationView(generation, stamps: stamps) }
+            if let generation = coach.activeGeneration { generationView(generation, stamps: stamps).id(generation.id) }
             else if let request = coach.saved.request, !capped {
               question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [], at: nil, stamps: stamps)
               if coach.asking { CoachTyping() }
@@ -205,6 +208,16 @@ struct CoachTab: View {
         .onChange(of: coach.saved.request?.requestId) { _, request in
           if request != nil { composing = false }
           proxy.scrollTo("latest", anchor: .bottom)
+        }
+        .task(id: revealedProposal) {
+          guard let id = revealedProposal else { return }
+          revealedProposal = nil
+          guard let turn = coach.proposalTurn(id) else { return }
+          // The turn first, which the lazy stack can always reach, then the card it now holds, from its head.
+          await Task.yield()
+          proxy.scrollTo(turn, anchor: .bottom)
+          await Task.yield()
+          withAnimation { proxy.scrollTo(ProposalCard.anchor(id), anchor: .top) }
         }
     }
   }
