@@ -52,6 +52,7 @@ final class GymModel {
   var outOfDateProposals: [ID<Proposal>: CoachOutOfDate] = [:]
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  var refusedCoachApplies: Set<ID<Proposal>> = []
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]

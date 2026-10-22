@@ -56,7 +56,9 @@ extension GymModel {
     return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate)
   }
   func updateCoachProposals(_ read: CoachProposalsRead) {
-    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:] }
+    if proposalReadReplica != read.replica || isAnonymous {
+      shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:]; refusedCoachApplies = []
+    }
     proposalReadReplica = read.replica
     publish(\.coachRemovalReceipts, read.receipts)
     var visible = read.proposals
@@ -70,6 +72,7 @@ extension GymModel {
       do {
         if case .committed(let settled, _) = try runner.run(RecordRoutineRemovalOutcomes(replica: read.replica)) {
           for receipt in settled {
+            if receipt.outcome == .refused { refusedCoachApplies.insert(receipt.proposal.id) }
             telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
           }
         }
@@ -79,6 +82,7 @@ extension GymModel {
     for (id, decision) in awaitedCoachDecisions where !read.queued.contains(id) {
       awaitedCoachDecisions[id] = nil
       let taken = visible.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
+      if decision == .apply, !taken { refusedCoachApplies.insert(id) }
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])
     }
   }
@@ -119,7 +123,7 @@ extension GymModel {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
     guard openSession == nil else { error = "Finish your workout first."; return false }
     start()
-    stalledCoachDecisions.remove(proposal.id)
+    stalledCoachDecisions.remove(proposal.id); refusedCoachApplies.remove(proposal.id)
     let decision: CoachQueuedDecision = apply ? .apply : .reject
     let outcome = apply ? run(ApplyProposalKeepingReceipt(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
@@ -149,6 +153,17 @@ extension GymModel {
   // counted it.
   func coachChangeCount(_ proposal: Proposal) -> Int {
     proposal.changeCount ?? coachRoutine(proposal).map(proposal.countChanges) ?? coachDiff(proposal).blocks.count
+  }
+  // Why the log refused the Apply this phone sent, while the proposal still waits: the cause its notice names, where the card
+  // can say it, else only that nothing was applied. A refusal this phone saw arrive counts when the notice is gone.
+  func coachApplyRefusal(_ proposal: Proposal) -> String? {
+    guard proposal.state == "pending" else { return nil }
+    let notice = notices.last { notice in
+      notice.notice.content.command.map { $0.name == Gym.Commands.applyProposal && $0.args["proposalId"] == proposal.id.json } ?? false
+    }
+    let receipt = coachRemovalReceipts.contains { $0.proposal.id == proposal.id && $0.outcome == .refused }
+    guard notice != nil || receipt || refusedCoachApplies.contains(proposal.id) else { return nil }
+    return CoachCopy.notApplied(notice?.refusal, routine: proposal.baseName ?? coachRoutine(proposal)?.name ?? "The routine")
   }
   // Whether the engine says a decision could not reach the log: no network, or a push that got no answer. A wait alone
   // never says so.

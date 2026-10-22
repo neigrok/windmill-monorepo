@@ -282,6 +282,23 @@ nonisolated enum CoachCopy {
     [routine, removal ? "a removal" : GymCount.of(changes, "change")].compactMap { $0 }.joined(separator: " · ")
   }
   static let outOfDate = "Out of date"
+  static let notApplied = "Not applied"
+  // A refused Apply, said over its card's buttons: the cause where the refusal names one, then that nothing was applied.
+  static func notApplied(_ refusal: GymRefusal?, routine: String) -> String {
+    let cause: String? = switch refusal {
+    case .proposalSuperseded(let refused):
+      switch try? refused.detail?.member("reason").asString() {
+      case "routine-changed": routine + " changed after this suggestion."
+      case "replaced": "A newer suggestion replaced this one."
+      default: "This suggestion is out of date."
+      }
+    case .proposalSettled: "This suggestion was already answered."
+    case .sessionOpen: "Finish your workout first."
+    case .gone(let record, _) where record.type == Routine.type: routine + " is no longer in your program."
+    default: nil
+    }
+    return [cause, notApplied + "."].compactMap { $0 }.joined(separator: " ")
+  }
   // How a proposal settled, one word on its card and its History row; a waiting one says nothing. The wire keeps
   // *dismissed* for a rejected proposal.
   static func settled(_ state: String, removal: Bool) -> String? {

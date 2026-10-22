@@ -8,6 +8,7 @@ import DomainKit
 import DomainKitTesting
 import GymDomain
 import SyncCore
+import SyncAPI
 import SyncSchema
 import SyncEngine
 import enum SyncEngine.Reply
@@ -1114,6 +1115,7 @@ import SyncTesting
       try expectProposal(answer, equals: proposal)
       #expect(gym.routines == [routine] && card.decidable)
       #expect(answer.settledAt == nil && !gym.notices.isEmpty)
+      #expect(card.failure == "Not applied." && card.primaryTitle == "Try again")
     } else {
       #expect(answer.state == "applied" && answer.intent == "remove" && answer.settledAt == nil)
       #expect(answer.summary == proposal.summary && answer.changes == proposal.changes && answer.baseName == routine.name)
@@ -1577,6 +1579,65 @@ import SyncTesting
     #expect(gym.proposals.first?.state == "applied")
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
             == ["stalled", "failed", "stalled", "decided"].map { ["screen": "coach", "action": "apply", "outcome": $0] })
+  }
+  // An Apply the log refused leaves the card on the lifter again: one line over its buttons says nothing was applied, and
+  // Apply reads Try again, which decides afresh.
+  @Test func aRefusedApplySaysSoOverItsButtonsAndTryAgainDecidesAfresh() throws {
+    let (h, gym) = fixture()
+    gym.run(CreateExercise(Exercise(id: ID("refused-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routine = Draft(new: Routine(id: ID("refused-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("refused-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("refused-proposal"), routineId: routine.id, name: "Push B", entries: routine.current.entries, summary: "Rename"))?.receipt != nil)
+    h.sync(); gym.refresh()
+    let card = ProposalCard(gym: gym, id: "refused-proposal")
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    #expect(card.pending && card.failure == nil && card.primaryTitle == "Applying…")
+    h.server.refuse(code: .invalid)
+    h.sync(); gym.refresh()
+    #expect(card.stance == .open && !card.pending && card.decidable)
+    #expect(card.failure == "Not applied." && card.primaryTitle == "Try again")
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    #expect(card.pending && card.failure == nil && card.primaryTitle == "Applying…")
+    h.sync(); gym.refresh()
+    #expect(card.stance == .applied && card.failure == nil && gym.routines.first?.name == "Push B")
+  }
+  // The refusal the engine keeps as a notice names its cause, and the card says that cause over its buttons.
+  @Test func aRefusedApplySaysTheCauseItsNoticeNames() async throws {
+    let transport = WorkoutFaultTransport(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "refused-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    defer { gym.stop() }
+    var routine = Draft(new: Routine(id: ID("noticed-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    #expect(gym.run(ProposeRoutine(id: ID("noticed-change"), routineId: routine.id, name: "Push B", entries: [RoutineEntry(exerciseId: ID("bench-press"))], summary: "Rename it."))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
+    let card = ProposalCard(gym: gym, id: "noticed-change")
+    transport.model.state.withLock { $0.server.refuse(code: Gym.Codes.proposalSuperseded, detail: ["reason": "routine-changed"]) }
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    try await settle { gym.refresh(); return !card.pending && !gym.notices.isEmpty }
+    #expect(card.stance == .open && card.decidable)
+    #expect(card.failure == "Push A changed after this suggestion. Not applied." && card.primaryTitle == "Try again")
+  }
+  // A refused Apply says only the cause its refusal names, then that nothing was applied.
+  @Test func aRefusedApplyNamesOnlyTheCauseItsRefusalKnows() {
+    let refusal = { (code: RefusalCode, subject: RecordRef?, detail: JSON?) in GymRefusal(Refused(code, subject: subject, detail: detail, path: .notice)) }
+    let proposal = ID<Proposal>("refused").ref, routine = ID<Routine>("refused").ref
+    let refusals: [GymRefusal?] = [
+      refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "routine-changed"]), refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "replaced"]),
+      refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "superseded"]), refusal(Gym.Codes.proposalSettled, proposal, ["state": "applied"]),
+      refusal(Gym.Codes.sessionOpen, nil, nil), refusal(.unknownRecord, routine, nil), refusal(.unknownRecord, proposal, nil),
+      refusal(.invalid, proposal, nil), nil]
+    #expect(refusals.map { CoachCopy.notApplied($0, routine: "Push A") } == [
+      "Push A changed after this suggestion. Not applied.", "A newer suggestion replaced this one. Not applied.",
+      "This suggestion is out of date. Not applied.", "This suggestion was already answered. Not applied.",
+      "Finish your workout first. Not applied.", "Push A is no longer in your program. Not applied.", "Not applied.",
+      "Not applied.", "Not applied."])
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)

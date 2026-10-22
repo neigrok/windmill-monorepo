@@ -55,11 +55,11 @@ struct ProposalCard: View {
     }
   }
   // Why the Apply did not land, said once over the buttons, only from what the engine or the log answered: no network or
-  // no answer to its push, or the log refused it. A long wait alone states no cause.
+  // no answer to its push, or the log's refusal. A long wait alone states no cause.
   var failure: String? {
     guard let proposal, stance == .open, !retrying else { return nil }
-    if pending { return gym.coachDecisionUnreached ? "No connection. Not applied." : nil }
-    return gym.coachRemovalReceipts.contains(where: { $0.proposal.id == proposal.id && $0.outcome == .refused }) ? "Not applied." : nil
+    if pending { return gym.coachDecisionUnreached ? "No connection. " + CoachCopy.notApplied + "." : nil }
+    return gym.coachApplyRefusal(proposal)
   }
   // Try again once the Apply failed, or once it has waited past the card's wait with the cause unknown.
   var retryable: Bool { failure != nil || (pending && stalled && !retrying) }
