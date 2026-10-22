@@ -118,8 +118,9 @@ Turning down ignores both. A proposal is out of date when it is superseded, repl
 `ChangeBlocks` (`{proposal, routine?, units?, each?}` → `{blocks, unchanged}`) reads a proposal as its card draws it.
 Blocks list a new name, then movements that only moved, changed movements, removals and additions, each kind in the
 proposal's order; `unchanged` counts the movements it keeps in place. A move is read against the routine only while the
-proposal is pending: a movement keeps its place when it stands in the longest run that keeps the routine's order — of
-equal runs, the one whose routine places come first — and every other kept movement moved, *Order 3rd → 1st*. A moved
+proposal is pending: a movement whose place is the same in the routine and the proposal never moved; of the rest, those
+in the longest run that keeps the routine's order stand — of equal runs, the one whose routine places come first — and
+every other kept movement moved, *Order 3rd → 1st*. A moved
 and retargeted movement is one changed block with its order first. A field is `{label, before, after, state}`: no
 before is new, no after is gone, equal is same. While every set on both sides is the same a movement reads *Sets*,
 *Reps* (*Max* with none) and *Load* (only when a side has a weight; *Last time* with none); once sets differ it reads

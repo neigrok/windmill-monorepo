@@ -97,15 +97,17 @@ class ProposalDiff(proposal: Proposal, routine: Routine?, units: GymUnits = GymU
         private data class Kept(val change: Int, val from: Int, val to: Int)
 
         // The movements a pending proposal moves, by change index, each with its place in the routine and in the proposal. A
-        // movement keeps its place when it stands in the longest run that keeps the routine's order — of equal runs, the one
-        // whose places come first — and every other movement it keeps has moved.
+        // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the routine's
+        // order stand — of equal runs, the one whose places come first — and every other one moved.
         private fun moves(proposal: Proposal, base: Routine): Map<Int, Kept> {
             val unmatched = base.entries.indices.toMutableList()
             val kept = mutableListOf<Kept>()
             proposal.changes.withIndex().filter { it.value.kind != "removed" }.forEachIndexed { to, (index, change) ->
                 if (change.kind != "kept" && change.kind != "retargeted") return@forEachIndexed
                 val at = unmatched.indexOfFirst { base.entries[it].exerciseId == change.exerciseId }
-                if (at >= 0) kept += Kept(index, unmatched.removeAt(at), to)
+                if (at < 0) return@forEachIndexed
+                val from = unmatched.removeAt(at)
+                if (from != to) kept += Kept(index, from, to)
             }
             val longest = MutableList(kept.size) { 1 }
             for (i in kept.indices.reversed()) {

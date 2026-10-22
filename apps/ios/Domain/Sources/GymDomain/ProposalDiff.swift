@@ -100,15 +100,16 @@ public struct ProposalDiff: Equatable, Sendable {
   }
 
   // The movements a pending proposal moves, by change index, each with its place in the routine and in the proposal. A
-  // movement keeps its place when it stands in the longest run that keeps the routine's order — of equal runs, the one
-  // whose places come first — and every other movement it keeps has moved.
+  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the routine's
+  // order stand — of equal runs, the one whose places come first — and every other one moved.
   static func moves(_ proposal: Proposal, base: Routine) -> [Int: (from: Int, to: Int)] {
     var unmatched = Array(base.entries.indices)
     var kept: [(change: Int, from: Int, to: Int)] = []
     for (to, (index, change)) in proposal.changes.enumerated().filter({ $0.element.kind != "removed" }).enumerated() {
       guard ["kept", "retargeted"].contains(change.kind),
             let at = unmatched.firstIndex(where: { base.entries[$0].exerciseId == change.exerciseId }) else { continue }
-      kept.append((index, unmatched.remove(at: at), to))
+      let from = unmatched.remove(at: at)
+      if from != to { kept.append((index, from, to)) }
     }
     var longest = Array(repeating: 1, count: kept.count)
     for i in kept.indices.reversed() {

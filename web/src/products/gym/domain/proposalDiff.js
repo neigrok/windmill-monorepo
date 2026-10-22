@@ -128,8 +128,8 @@ export class ProposalDiff {
   }
 
   // The movements a pending proposal moves, by change index, each with its place in the routine and in the proposal. A
-  // movement keeps its place when it stands in the longest run that keeps the routine's order — of equal runs, the one
-  // whose places come first — and every other movement it keeps has moved.
+  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the routine's
+  // order stand — of equal runs, the one whose places come first — and every other one moved.
   /** @param {ProposalValue} proposal @param {RoutineValue} base @returns {Map<number, { from: number, to: number }>} */
   static moves(proposal, base) {
     const unmatched = base.entries.map((entry, index) => ({ entry, index }));
@@ -141,7 +141,7 @@ export class ProposalDiff {
       if (at === -1) return;
       const [matched] = unmatched.splice(at, 1);
       precondition(matched !== undefined, 'a matched routine entry is present');
-      kept.push({ change: index, from: matched.index, to });
+      if (matched.index !== to) kept.push({ change: index, from: matched.index, to });
     });
     /** @type {{ change: number, from: number, to: number, index: number, longest: number }[]} */
     const runs = [];
