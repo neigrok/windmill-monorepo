@@ -15,7 +15,8 @@ import { GymUnits } from './units.js';
 
 const blockOrder = Object.freeze(['renamed', 'moved', 'changed', 'removed', 'added']);
 
-// One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after.
+// One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after. Two sides that differ only in
+// Unicode form read the same.
 export class ProposalDiffField {
   /** @param {string} label @param {string | null} before @param {string | null} after */
   constructor(label, before, after) {
@@ -29,7 +30,7 @@ export class ProposalDiffField {
   get state() {
     if (this.before === null) return 'new';
     if (this.after === null) return 'gone';
-    return this.before === this.after ? 'same' : 'changed';
+    return this.before.normalize('NFC') === this.after.normalize('NFC') ? 'same' : 'changed';
   }
 }
 
@@ -44,9 +45,8 @@ export class ProposalDiff {
     /** @type {ProposalDiffBlock[]} */
     const blocks = [];
     const name = proposal.baseName ?? (pending ? routine?.name ?? null : null);
-    if (name !== null && name !== proposal.proposedName) {
-      blocks.push(Object.freeze({ kind: 'renamed', exerciseId: null, fields: Object.freeze([new ProposalDiffField('Name', name, proposal.proposedName)]) }));
-    }
+    const rename = new ProposalDiffField('Name', name, proposal.proposedName);
+    if (rename.state === 'changed') blocks.push(Object.freeze({ kind: 'renamed', exerciseId: null, fields: Object.freeze([rename]) }));
     let unchanged = 0;
     proposal.changes.forEach((change, index) => {
       const move = moves.get(index);

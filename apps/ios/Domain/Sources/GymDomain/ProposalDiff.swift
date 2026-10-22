@@ -8,7 +8,8 @@ public struct ProposalDiff: Equatable, Sendable {
   public enum Kind: String, Sendable { case renamed, moved, changed, removed, added }
   public enum State: String, Sendable { case changed, same, new, gone }
 
-  // One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after.
+  // One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after. Two sides that differ only in
+  // Unicode form read the same, as Swift's string equality has it.
   public struct Field: Equatable, Sendable {
     public let label: String
     public let before: String?
@@ -35,9 +36,8 @@ public struct ProposalDiff: Equatable, Sendable {
     let pending = proposal.state == "pending"
     let moves = pending ? routine.map { Self.moves(proposal, base: $0) } ?? [:] : [:]
     var blocks: [Block] = []
-    if let name = proposal.baseName ?? (pending ? routine?.name : nil), !name.utf8.elementsEqual(proposal.proposedName.utf8) {
-      blocks.append(Block(kind: .renamed, exerciseId: nil, fields: [Field("Name", before: name, after: proposal.proposedName)]))
-    }
+    let rename = Field("Name", before: proposal.baseName ?? (pending ? routine?.name : nil), after: proposal.proposedName)
+    if rename.state == .changed { blocks.append(Block(kind: .renamed, exerciseId: nil, fields: [rename])) }
     var unchanged = 0
     for (index, change) in proposal.changes.enumerated() {
       let order = moves[index].map { [Field("Order", before: Self.ordinal($0.from), after: Self.ordinal($0.to))] } ?? []

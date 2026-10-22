@@ -1,6 +1,7 @@
 package works.windmill.gym.domain.sync
 
 import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Nfc
 
 // A proposal as its card reads it: each change a block of field lines, in the card's order — a new name, movements that
 // only moved, changed movements, removals, additions — and how many movements it leaves as they were. Moves are read
@@ -9,12 +10,13 @@ class ProposalDiff(proposal: Proposal, routine: Routine?, units: GymUnits = GymU
     enum class Kind { renamed, moved, changed, removed, added }
     enum class State { changed, same, new, gone }
 
-    // One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after.
+    // One line of a block: *Load  82.5 kg → 90 kg*. A new line has no before, a gone line no after. Two sides that differ only
+    // in Unicode form read the same.
     data class Field(val label: String, val before: String?, val after: String?) {
         val state: State get() = when {
             before == null -> State.new
             after == null -> State.gone
-            before == after -> State.same
+            Nfc.normalise(before) == Nfc.normalise(after) -> State.same
             else -> State.changed
         }
     }
@@ -29,7 +31,8 @@ class ProposalDiff(proposal: Proposal, routine: Routine?, units: GymUnits = GymU
         val moves = if (pending && routine != null) moves(proposal, routine) else emptyMap()
         val blocks = mutableListOf<Block>()
         val name = proposal.baseName ?: routine?.name?.takeIf { pending }
-        if (name != null && name != proposal.proposedName) blocks += Block(Kind.renamed, null, listOf(Field("Name", name, proposal.proposedName)))
+        val rename = Field("Name", name, proposal.proposedName)
+        if (rename.state == State.changed) blocks += Block(Kind.renamed, null, listOf(rename))
         var unchanged = 0
         proposal.changes.forEachIndexed { index, change ->
             val order = moves[index]?.let { listOf(Field("Order", ordinal(it.from), ordinal(it.to))) } ?: emptyList()
