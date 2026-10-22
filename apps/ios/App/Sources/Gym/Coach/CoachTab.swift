@@ -245,7 +245,7 @@ struct CoachTab: View {
   var composer: some View {
     VStack(spacing: RoomSpace.related) {
       if (preparing || coach.saved.photo != nil) && !coach.asking {
-        Text(coach.anonymous ? "Sent to Coach. Saved only on this phone." : "Sent to Coach. Saved only in this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
+        Text(coach.anonymous ? "Sent to Coach. Saved only on this phone." : "Saved only in this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
           .accessibilityIdentifier("coach-photo-caption")
       }
       HStack(alignment: .bottom, spacing: RoomSpace.related) {

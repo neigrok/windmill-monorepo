@@ -461,8 +461,6 @@ and Android disagree.
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
-    - 01.5: a signed-in drafted photo is captioned *Sent to Coach. Saved only in this chat.*, where the board draws
-      *Saved only in this chat.* alone.
     - 08.9, 08.25 and 08.26: *Changed a movement* and *Saved a note* stand alone on their cards, without the boards'
       *Changed* block or note text. The answer's steps name only the tool (`tool`, `failed`), so the phone cannot tell
       Coach's write from the lifter's later edit; the backend would need to return the written note and movement ids
