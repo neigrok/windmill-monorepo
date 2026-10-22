@@ -286,7 +286,7 @@ the noun reads:
 | Sign-in, when the server's answer holds no sign-in | *Sign-in did not finish. Your pages are still on this phone.* | *Sign-in did not return a native session. …* |
 
 The ramp is the public API: named roles in `Sources/Theme/TypeScale.swift` — `ShellType`,
-`JournalType`, `GymNumeral`, `GymKeypadNumeral` — each with one size and one `relativeTo`. A screen
+`JournalType`, `GymNumeral` — each with one size and one `relativeTo`. A screen
 cannot ask for a size.
 
 ### Spacing
@@ -463,7 +463,7 @@ product-neutral), and every feature uses the one:
 | `DoorChevron` | the chevron of a door a `Button` opens, drawn as the system draws a `NavigationLink`'s | Theme |
 | `ActionBand` | the one floating primary in the reach band, with its optional trailing symbol, its one-line footer on the band's surface (§4; never bare text over the list), and disabled and busy states | Theme |
 | `.sheetCommit` | an edit sheet's bar: *Cancel* and the checkmark (§5 Sheets) | Gym |
-| `WeightInstrument` | the big numeral with its unit at the numeral's baseline, the four-key ladder in `ink` and its accessibility reflow; centred and the same wherever it is drawn, a sheet's tint never reaching its keys | Gym |
+| `SetWheels` | load and reps on two native wheels side by side: the load in the movement's steps, labelled by its basis, bodyweight running from assistance through zero to added load, the reps 1 to 99; a value off the steps keeps its row, so the wheels never move a number they were opened on; the rack's sheet (03.2) and Fix set (03.3) both draw them | Gym |
 | `SetEditor` | the load-and-reps wheel, effort, note, delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | Gym |
 | `RenameMovementSheet` | one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | Gym |
 | `GymRow` | a title over one meta line, with an optional leading symbol or dot and an optional trailing fact, `iphone`, check, progress or `DoorChevron`, and a fact followed by `DoorChevron` on a row that opens a sheet; every list row of a title over one line, The log's included. It takes the list's own row height: a title-only row is the system's one-line row, never padded to a two-line height, and the 44 pt target is the list row's | Gym |
