@@ -530,6 +530,8 @@ these are the places it disagrees with a drawing, a brief or the build.
     Create movement does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
     `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so the rack's
     keypad, Targets and Create movement read the same words.
+  - Weigh in (06.1): on a
+    phone the keyboard lifts the `.medium` sheet to the top, where the board draws it at its detent.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

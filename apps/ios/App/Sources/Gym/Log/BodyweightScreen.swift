@@ -166,6 +166,7 @@ struct WeighInSheet: View {
   @State private var saving = false
   @State private var saved = false
   @State private var refusal: String?
+  @State private var choosingDate = false
   private var today: LocalDay { gym.bodyweight?.today ?? LogPresentation.day(Date()) }
   private var cannotSave: Bool { !BodyweightLogInput.canSave(typed, refusal: refusal, entry: entry) }
 
@@ -179,8 +180,9 @@ struct WeighInSheet: View {
     NavigationStack {
       Form {
         Section {
-          HStack {
+          HStack(spacing: RoomSpace.related) {
             TextField("Weight", text: $typed)
+              .font(.title2.weight(.medium)).monospacedDigit()
               .keyboardType(.decimalPad)
               .focused($weightFocused)
               .accessibilityLabel("Weight in kilograms")
@@ -192,24 +194,38 @@ struct WeighInSheet: View {
             Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
               .accessibilityIdentifier("gym-weigh-in-refusal")
           }
-        }.listRowBackground(GymPalette.card)
+        }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card)
+          .strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5))
         Section {
           if let entry {
             LabeledContent("Date", value: gym.dates.subtitle(entry.day)).accessibilityIdentifier("gym-weigh-in-fixed-date")
           } else {
-            DatePicker("Date", selection: $date, in: ...LogPresentation.date(today), displayedComponents: .date)
-              .accessibilityIdentifier("gym-weigh-in-date")
+            LabeledContent("Date") {
+              Button(gym.dates.day(LogPresentation.day(date))) { choosingDate = true }
+                .buttonStyle(.plain).font(.subheadline).foregroundStyle(GymPalette.ink)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityLabel("Date").accessibilityValue(gym.dates.day(LogPresentation.day(date)))
+                .accessibilityIdentifier("gym-weigh-in-date")
+                .popover(isPresented: $choosingDate) {
+                  DatePicker("Date", selection: $date, in: ...LogPresentation.date(today), displayedComponents: .date)
+                    .datePickerStyle(.graphical).labelsHidden().tint(GymPalette.accent).padding()
+                    .presentationCompactAdaptation(.popover)
+                }
+            }
           }
-        }.listRowBackground(GymPalette.card)
+        }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card))
         if let entry {
           Section {
             Button("Delete weigh-in", role: .destructive) {
               if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
               else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
             }.accessibilityIdentifier("gym-weigh-in-delete")
-          }.listRowBackground(GymPalette.card)
+          }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card))
         }
       }
+      .listSectionSpacing(12)
+      .contentMargins(.top, RoomSpace.related, for: .scrollContent)
       .disabled(saving)
       .modifier(GymPage())
       .navigationTitle("Weigh in")
@@ -222,7 +238,7 @@ struct WeighInSheet: View {
       .onChange(of: refusal) { _, refusal in
         if let refusal { UIAccessibility.post(notification: .announcement, argument: refusal) }
       }
-      .onChange(of: date) { _, _ in refusal = nil; draft = nil }
+      .onChange(of: date) { _, _ in refusal = nil; draft = nil; choosingDate = false }
       .onChange(of: gym.account) { _, _ in dismiss() }
       .onChange(of: gym.accountTransition) { _, changing in if changing { dismiss() } }
       .onAppear {

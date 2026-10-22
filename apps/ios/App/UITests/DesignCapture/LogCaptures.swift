@@ -37,7 +37,6 @@ final class LogCaptures: DesignCapture {
     RunLoop.current.run(until: Date().addingTimeInterval(0.6))
     app.buttons["gym-weigh-in"].tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
-    capture("06.1-weigh-in", look, app)
     app.buttons["gym-weigh-in-cancel"].tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
     revealInLog(app.buttons["gym-bodyweight-door"], app)
@@ -96,6 +95,19 @@ final class LogCaptures: DesignCapture {
 
   func testWorkoutDetail() {
     captureBoard("05.3-workout-detail") { look in openWorkout(look) }
+  }
+
+  // The weight field rises focused over the system decimal pad, the day a compact Today.
+  func testWeighIn() {
+    captureBoard("06.1-weigh-in") { look in
+      let app = openLog(look)
+      app.buttons["gym-weigh-in"].tap()
+      let field = app.textFields["gym-weigh-in-weight"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      field.typeText("82.4")
+      return app
+    }
   }
 
   func openRecord(_ look: Look) -> XCUIApplication {

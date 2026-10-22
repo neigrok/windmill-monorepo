@@ -1006,10 +1006,10 @@ Detents, dismissals and commits per §5; `presentationCornerRadius` never set.
   and *Time*. *Delete set* is the last row, destructive, with no caption. Sets have no type, so there
   is no kind control. The set note carries no footer: a set note is a record and the field says
   nothing about Coach (`09-coach.md`). *Clear note* is drawn only while the note has text.
-- **Weigh in**: the *kg* field with its suffix as the first row under the title, focused on open with
-  the system `.decimalPad` up; *Date* as a compact picker; then *Delete weigh-in* (destructive) for
+- **Weigh in**: the *kg* field with its suffix as the first row under the title, ringed in the accent
+  while focused, focused on open with the system `.decimalPad` up; *Date* as a compact picker; then *Delete weigh-in* (destructive) for
   an existing one; ✓ in the bar. A weigh-in's day is its identity: a new one picks
-  its *Date* with the system picker, and an existing one shows *Date* as a fact in the subtitle form
+  its *Date* from a compact *Today* (the day form) that opens the system calendar, and an existing one shows *Date* as a fact in the subtitle form
   (*Sat, Sep 26*).
 - **Edit exercise**: *Cancel* · title · ✓; the name field with *The new name shows in your routines
   and history. Search still finds the old name.*; *Equipment* as a menu showing its choice alone; for
