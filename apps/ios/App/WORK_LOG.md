@@ -133,7 +133,7 @@ Stream liveness comes from transport activity, including SSE comments. The app d
 broken Coach connection from a quiet model interval or the sync channel’s separate reconnect state.
 A real dropped active stream retries its stable request a bounded number of times, preserving partial
 output; accepted transport activity clears the reconnect notice. Allowance recovery is separate from
-balance display, and the Windmill One destination reflects the closed checkout.
+balance display, and signed in a spent allowance offers no upgrade while paid plans are closed.
 
 Exercise identity and equipment share one editor. Read paths resolve current names from the stable
 catalogue identity. External-load volume uses each set’s equipment basis and one/two-dumbbell count,
@@ -205,5 +205,5 @@ asked under another account, so the sign-in that a receipt's Share with Coach wa
 question, and Coach refuses a handoff from another account. The greeting steps aside while a message
 is on its way and returns after a failed or refused one. Confirming a draft reports
 `gym_coach_routine_confirm` and words each answer by what the draft can still do; access recovery is
-drawn once, only where signing in or Windmill One can help. Movement edits write only the fields
+drawn once, only where signing in can help. Movement edits write only the fields
 that changed, and the load basis reads *kg each* for two dumbbells and *kg* for one.
