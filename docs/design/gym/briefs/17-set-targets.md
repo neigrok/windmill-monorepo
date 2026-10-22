@@ -25,7 +25,6 @@ alternative remains under consistency entry F38.
 Changing the count hides or restores rows without losing their draft values. Growing beyond the
 retained rows copies the last row. Add set first restores a hidden row, then copies one. Clearing
 the count hides the ladder and disables the other head fields; only committing open discards it.
-Show **You decide the numbers at the rack.** above the fields while open and not refused.
 
 Each row edits reps and load through native numeric entry, with Next/Done navigation. Use `max`
 and `last time` placeholders. The planning sign control appears on bodyweight load fields,
@@ -73,7 +72,7 @@ last time's Nth working set, then today's last set, then the empty bar. Missing 
 time's Nth set, then the last set's reps. The plan must not be flattened to the preceding slot.
 
 Logged rows show actual values and open Fix. The current row shows its target; future rows remain
-read-only and have spoken position/target names. Warmups do not consume working-set slots; extra
+read-only and have spoken position/target names. Every logged set takes a slot; extra
 sets append without a target. Android's quiet ledger, iOS's current strip and the web mirror
 follow [workouts](16-the-workout.md). A lock-screen offer uses the current slot's prefilled values.
 

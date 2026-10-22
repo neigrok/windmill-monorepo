@@ -87,7 +87,7 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 |---|---|---|---|
 | `gym/canvas` | `#0B1111` | `#EBE7E3` | screen ground, sheet ground |
 | `gym/card` | `#161C1D` | `#F8F6F4` | list rows, cards, the rack panel, composer |
-| `gym/raised` | `#202627` | `#DFDAD5` | ladder keys, secondary buttons, chips, input fields, keypad keys |
+| `gym/raised` | `#202627` | `#DFDAD5` | ladder keys, secondary buttons, chips, input fields |
 | `gym/sunken` | `#060C0C` | `#DFDAD5` | a well a control sits in (chart plot, segmented track) |
 | `gym/line` | `#202627` | `#D0CAC5` | separators, card strokes, chart grid |
 | `gym/line-strong` | `#2A3133` | `#B6AFA9` | a focused field's stroke, the rack panel's edge |
@@ -208,9 +208,8 @@ ramp, by role:
 | Eyebrow | `.caption` uppercase, `ink-faint`, no manual tracking | |
 | Section header | the list's own header | sentence case |
 | Prose (Coach answers) | `.body` | headings in an answer `.headline` |
-| Big numeral (rack, keypad, record) | `.system(size: 68, weight: .bold, design: .rounded)`, `@ScaledMetric(relativeTo: .largeTitle)`, cap 92 | reflows vertical at accessibility sizes |
-| Keypad echo | the same at 60, cap 84 | |
-| Instrument labels and keys | the rack's labels, the ladder and the keypad's digits | capped at `.accessibility1` (Phone and Calculator do not scale their keys) |
+| Big numeral (rack, record) | `.system(size: 68, weight: .bold, design: .rounded)`, `@ScaledMetric(relativeTo: .largeTitle)`, cap 92 | reflows vertical at accessibility sizes |
+| Instrument labels and keys | the rack's labels and the ladder | capped at `.accessibility1` (Phone and Calculator do not scale their keys) |
 | Brand display | Nunito ExtraBold 34 / 28 | Where to start?, You, Keep, onboarding — never inside a room |
 | Journal body | Inter 17, line spacing 7 | the one custom body face |
 | Journal date | JetBrains Mono 11, tracking 0.7 | |
@@ -254,7 +253,7 @@ every other word on screen.
 Where a moment needs its day and its time, `GymDate` joins the day form and the time form with
 ` · `, so no view does: *Sep 26 · 6:42 PM*, *Yesterday · 11:43 PM* — a finish on a later day than
 its start, a hidden workout open since an earlier day (*Open since yesterday · 11:43 PM*), the
-Review sheet's *proposed by Coach · Sep 26 · 6:42 PM*. A run of days joins two day forms with a
+a proposal row's *From Coach · Sep 26 · 6:42 PM*. A run of days joins two day forms with a
 spaced en dash, *Jul 7 – Aug 4*. Date pickers are the system's. No view orders a day and month by
 hand. The journal's date line and echo stamp keep the journal's mono forms (§8).
 
@@ -278,7 +277,7 @@ the noun reads:
 | The logger's band, when the movement order cannot be read | *The workout is saved. Its movement order could not be read. Try again.* | *The session is saved. …* |
 | The logger's band, removing a movement with sets or targets | *A movement with sets or planned targets stays in this workout.* | *… stays in this session.* |
 | The receipt's *Share with Coach*: the line it sends | *Check my last workout.* | *Check my last session.* |
-| Review while a workout is open: the caption slot, and the refusal on Apply or *Turn this down* | *Finish your workout to apply.* · *Finish your workout first.* | *Finish this session to apply.* · *Finish this session* |
+| A proposal card while a workout is open: the caption, and the refusal on Apply or *Reject* | *Finish your workout to apply.* · *Finish your workout first.* | *Finish this session to apply.* · *Finish this session* |
 | The workout parameter's title on the Live Activity's and the control's intents (§7.19) | *Workout* | *Session* |
 | Sign-in, when the server's answer holds no sign-in | *Sign-in did not finish. Your pages are still on this phone.* | *Sign-in did not return a native session. …* |
 
@@ -299,7 +298,7 @@ at 375 × 667 and at the largest accessibility size.
 ### The top bar on every room root
 
 ```
-[ Gym ⌄ ]                              [ + ] [ ◯ ]
+[ Gym ⌄ ]                                    [ ◯ ]
 ```
 
 - **Top-left: the room menu.** A `ToolbarItem(placement: .topBarLeading)` holding a native
@@ -314,10 +313,9 @@ at 375 × 667 and at the largest accessibility size.
   *You and settings*. The system symbol, default rendering, no custom shape. It sits last; on
   iOS 26 a `ToolbarSpacer(.fixed)` separates it from the room's own actions so it stands in its own
   glass circle and the room's actions share theirs.
-- **The room's own actions** come before the account button: Routines `plus` (*New routine*); The
-  log `scalemass` (*Weigh in*); Coach `clock` (*History*); a pushed screen draws its own.
-  Order is actions then account, and nothing is painted inside a toolbar item. All three roots read
-  `[Room ⌄] … [action] [account]`.
+- **Coach's History** is the `clock` action before the account button; a pushed screen draws its
+  own. Routines and The log carry no creation action in the bar: theirs float bottom-trailing (the
+  floating action, below). Nothing is painted inside a toolbar item.
 - **Journal sits in a `NavigationStack`** so its bar is the system's: a visible bar filled
   `journal/canvas` in the room's appearance, so past pages scroll beneath it instead of under the
   bar's items; no title, the room menu and account button as above. The ink notes anchor to the
@@ -336,22 +334,23 @@ at 375 × 667 and at the largest accessibility size.
 | Kind | iOS 26 | iOS 18 fallback | Where |
 |---|---|---|---|
 | Primary | `.buttonStyle(.glassProminent)`, `.controlSize(.large)`, full width, tint `accent`, label `on-accent` | `.borderedProminent` | one per screen, in the reach band |
-| Secondary | `.buttonStyle(.glass)` | `.bordered` | ladder keys, chips, *Ask Coach* on an empty screen |
+| Secondary | `.buttonStyle(.glass)` | `.bordered` | ladder keys, chips, contextual choices |
 | Quiet | `.buttonStyle(.plain)` in `accent` | same | row actions, *Not now*, *Use email instead* |
 | Destructive | `role: .destructive` in a Menu or list row | same | never a prominent fill, except a removal's primary (§6) |
 | Seat | a 44 pt glass circle with one symbol, bottom-trailing, 16 pt from the edges | material circle | Journal *Write* |
+| Floating action | Liquid Glass (`.glass`), its symbol and label in `accent`; a 60 pt + circle, or a 52 pt labelled capsule where a bare + would not say what it adds; bottom-trailing, 16 pt from the edge and 12 pt above the tab bar; the list's bottom inset keeps the last row clear | material | Gym *New routine* (+), *Weigh in* (`scalemass` + label) |
 
 **The reach band.** Whatever stands at the foot of a screen — its one primary, its footer, its
 transient — is placed with `.reachBand { }`: `safeAreaBar(edge: .bottom)` on iOS 26, so the
 system's scroll-edge effect softens what passes beneath it; on iOS 18 `safeAreaInset(edge:
 .bottom)` with the `.bar` material, drawn only while content is beneath. At rest the list's last
-row clears the band. A band that carries text outside a button — an `ActionBand` footer, the Review's
-caption, a quiet button such as *Turn this down* or *Revoke the link* — stands on a surface, at every
+row clears the band. A band that carries text outside a button — an `ActionBand` footer, a quiet
+button such as *Revoke the link* — stands on a surface, at every
 text size (`.reachBand(onSurface: true)`): while content is beneath it, the band takes the `.bar`
 material on both systems, and on iOS 26 the scroll view beneath it also takes the hard scroll edge
 (`.scrollEdgeEffectStyle(.hard, for: .bottom)`), so rows passing under the band stop at its edge and
-nothing reads through its words. The hard edge alone is not opaque: under a band as tall as the
-Review's at AX3, a row's blurred words still show. A band of buttons alone keeps the soft edge. A
+nothing reads through its words. The hard edge alone is not opaque: under a tall band at AX3, a row's blurred
+words still show. A band of buttons alone keeps the soft edge. A
 band floats only where reach or a gate rules it:
 *Log set*, *Start*, *Apply*, the receipt's *Done*,
 *Connect a tool*, Inspect's recovery primary, and the steps of a flow (sign-in, Keep, onboarding).
@@ -367,7 +366,7 @@ a `Button` drawing the same chevron (`DoorChevron`, `chevron.forward`, never a h
 `chevron.right`). A row that acts is a `Button` in
 `accent` with no chevron — *Add movement*, *Add a note*. A screen's one primary is never a row; it is
 the band. Accent text on a door, or a chevron on an action, is a defect. The only row that unfolds
-in place is a kept run in the Review diff (§6); it carries a rotating `chevron.down`, never the
+in place is a kept run in a proposal card's diff (§6); it carries a rotating `chevron.down`, never the
 navigation chevron. A `SetRow` is the one row that opens a sheet without a chevron: every set in a
 ledger opens Fix set, and a chevron on each would repeat down the list; its trailing slot is the
 caption (§5).
@@ -403,7 +402,7 @@ lifter has hidden the workout.
   deletes through a full swipe. Cancellation leaves a confirmed record untouched. Keep refusal
   and delivery recovery visible.
 - An irreversible act asks once. A `.alert` carries the act as its destructive button and Cancel
-  (*Turn this down?*, *Sign out?*); a choice asked from a row is a `.confirmationDialog` presented
+  (*Sign out?*); a choice asked from a row is a `.confirmationDialog` presented
   from that row, title visible (*Remove Apple?*), which SwiftUI anchors to its source on iOS 26.
 - A `.confirmationDialog` always has a source: the control or row the lifter touched. A question
   nothing on screen raised is an `.alert`, centred by design, never a dialog floating over the
@@ -420,7 +419,7 @@ content:
 
 | Sheet | Detent | Bar |
 |---|---|---|
-| Keypad | `.height(440)`; `.large` at accessibility sizes | *Cancel* · title *Weight* / *Reps* |
+| Load and reps wheel | `.height(380)`; `.large` at accessibility sizes | *Cancel* · title *Set 3* (the movement as subtitle) · ✓ |
 | Weigh in, Rename movement, Create movement from Movements or the workout's picker | `.medium` | *Cancel* · title · ✓ (*Save* / *Rename* / *Add*) |
 | Heavier than the plan, varied scheme | `.medium` | *Today only* · title · ✓ (*Save*) |
 | Share this workout | `.medium`; `.large` at accessibility sizes | *Close* |
@@ -428,7 +427,6 @@ content:
 | Fix workout | `.large` | *Cancel* · title · ✓ (*Save and retry*) |
 | The builder | `.large`; *Add movement*, Create movement and Targets are steps pushed inside it, each with *Cancel* and its own ✓ (*Add* / *Done*) | *Cancel* · title · ✓ (*Save*) |
 | This workout | `.large` | *Close* · title · *Edit* |
-| Review | `.large` | *Close* · title; *Apply* in the band |
 | Finish | `.large`, one detent: it opens over the finished workout's detail, whose tiles a shorter sheet would leave showing above its own (§7.9) | no duplicate Done; the primary is in the bottom band |
 | Routine summary | `.medium`, `.large`; accessibility sizes use `.large` | *Close* · title · *Edit* |
 | You, sign-in steps | `.large`; Keep and the Apple questions `.medium` | *Done* / *Close* |
@@ -462,10 +460,10 @@ product-neutral), and every feature uses the one:
 | `ActionBand` | the one floating primary in the reach band, with its optional trailing symbol, its one-line footer on the band's surface (§4; never bare text over the list), and disabled and busy states | Theme |
 | `.sheetCommit` | an edit sheet's bar: *Cancel* and the checkmark (§5 Sheets) | Gym |
 | `WeightInstrument` | the big numeral with its unit at the numeral's baseline, the four-key ladder in `ink` and its accessibility reflow; centred and the same wherever it is drawn, a sheet's tint never reaching its keys | Gym |
-| `SetEditor` | weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | Gym |
+| `SetEditor` | the load-and-reps wheel, effort, note, delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | Gym |
 | `RenameMovementSheet` | one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | Gym |
 | `GymRow` | a title over one meta line, with an optional leading symbol or dot and an optional trailing fact, `iphone`, check, progress or `DoorChevron`, and a fact followed by `DoorChevron` on a row that opens a sheet; every list row of a title over one line, The log's included. It takes the list's own row height: a title-only row is the system's one-line row, never padded to a two-line height, and the 44 pt target is the list row's | Gym |
-| `SetRow` | a set read back: its place, its numbers, a trailing caption (a working set's comparison with the plan; a warmup, drop or failure set carries none, since its letter is its kind), then time, effort and note when present. Tapping it fixes the set, and it draws no chevron (§4). Its place is one rule everywhere — the ledger, session detail, Inspect and Fix workout: a working set by its count among the working sets so far (*1*, *2*), any other kind by its letter (*W*, *D*, *F*) | Gym |
+| `SetRow` | a set read back: its place, its numbers, a trailing caption (its comparison with the plan, only when off plan), then time, effort and note when present. Tapping it fixes the set, and it draws no chevron (§4). Its place is one rule everywhere — the ledger, session detail, Inspect and Fix workout: its count among the workout's sets so far (*1*, *2*). Sets have no type | Gym |
 | `MoreMenu` | `ellipsis.circle` in the bar presenting the native Menu | Gym |
 | `FactTiles` | up to three value-over-label tiles, drawing only the facts that are known; a session's tiles come from one constructor over its readout, so Duration · Working sets · Volume read the same on session detail, the receipt and Inspect | Gym |
 | `RoomDoor` | the Where to start? card, given a title, line, symbol, accent and ground | Shell |
@@ -487,6 +485,10 @@ Every list is `.insetGrouped` with the system's insets, and its sections follow 
   log's *28 workouts*), never a card. A whole empty screen is `ContentUnavailableView`. No third shape.
 - **One caption per section, at most twelve words**, and never a caption that repeats a placeholder,
   a title or the label on the button below it (`guidelines/text-budget.md`).
+- **Swipe delete is the native trash circle, everywhere in gym.** A trailing swipe slides the row
+  and reveals a round red trash circle — `Button(role: .destructive)` with `Image(systemName:
+  "trash")` and no text label, the system's destructive tint — with any secondary action as a round
+  circle before it. Its accessibility label names the act (*Delete routine*, *Delete set*).
 
 ### Status
 
@@ -544,6 +546,13 @@ no capability text, no allowance line until a limit is in the way (`09-coach.md`
 contextual"), no *Done* row and no account item, since the account button is in the bar. *Jump to
 latest* is a 36 pt glass circle with `chevron.down`, bottom-trailing above the composer.
 
+**An empty Gym's first open** is the one exception: Coach greets in two bubbles — *Hi, I’m Coach. I can
+help you with:*, then one line per capability led by its anchor word in semibold (**Build**, **Goals**,
+**Notes**, **Changes**; signed out **Build**, **Goals**, **Account**) — with **Add
+screenshot** and **Build my own** under the last bubble, until the first accepted message
+(`09-coach.md` "First open", word for word). Routine drafts are decided on their card with
+**Apply** and **Reject**; no review sheet (01.7, 01.14, 01.15).
+
 **History** is the trailing `clock` toolbar button before the account button. It opens the
 conversation list. *New chat* belongs in History. Notes and Connected log live in the Gym section
 of You and settings; they have no duplicate Coach-menu entries.
@@ -578,95 +587,86 @@ it read in the phrase table's words (`09-coach.md`, "The verbs"), with no number
 since there is nothing to open: *Read your movement history* when it read your totals
 (`get_stats`), *Read nothing from your log* when it read nothing.
 
-**A proposal card** on `gym/card`, radius 16, 1 pt `gym/accent` stroke:
+**A proposal is decided on its card**, in the conversation — there is no review sheet. The card
+spans the reading width (16 pt gutters) on `gym/card`, radius 22, 1 pt `gym/accent` stroke:
 
 ```
-PROPOSAL · PUSH A                        (eyebrow, accent)
-→ Back Squat     1 × 5 · 80 → 1 × 3 · 90 kg   (change rows, up to 3: symbol accent, title ink, change ink-dim)
-+ Bench Press    Added · open · after Back Squat
-+ 1 more                                 (ink-faint)
-Review changes                        ›  (the door: ink, the system chevron)
+CHANGES TO PUSH A                                   5 changes
+───────────────────────────────────────────────────────────────
+✎ CHANGED                      (kind: symbol + word, .footnote semibold, accent)
+Bench Press                    (movement, .headline)
+Sets   5̶  →  3                  (label ink-dim · old struck, ink-dim · → · new semibold ink)
+Reps   5̶  →  3
+Load   8̶2̶.̶5̶ ̶k̶g̶  →  90 kg
+───────────────────────────────────────────────────────────────
++ ADDED
+Incline Dumbbell Press
+Sets 3 · Reps 10 · Load 24 kg each   (each on its own line, all new)
+───────────────────────────────────────────────────────────────
+Show all 5 changes ⌄                (expands in place; Show less folds)
+[               Apply               ]   (52 pt, prominent)
+[               Reject              ]   (52 pt, quiet)
 ```
 
-The change rows are the same `GymRow`s the Review sheet draws, so the card and the sheet read as
-one object. No body line: the answer above is the reasoning. The door reads *Review changes*, and
-*Review removal* on a removal's card. Pending, the card carries no caption, since the Review row is
-the invitation; settled, the Review row's trailing caption is the settled word, the same on the
-card, in History and in the Review's band:
+Nothing sits under the buttons: the card carries the diff and the decision, no promise line.
 
-| State | Word |
-|---|---|
-| applied | *Applied*, with a `gym/done` check |
-| a removal applied | *Removed*, with a `gym/done` check |
-| turned down | *Turned down*, `ink-dim` |
-| superseded, or its routine changed since | *Out of date*, `ink-dim` |
+**The diff rule.** Each change is its own block, separated by a hairline: a kind badge — a symbol
+and a word, never a bare sign — then the movement name, then one line per field at body size with
+monospaced digits. A field that changed reads old → new on one line: the old value struck through
+in `ink-dim` on the left, an arrow, the new value semibold in `ink` on the right. Strikethrough and
+position carry the difference, so it reads without colour and in both appearances; a field that did
+not change is plain `ink-dim`. An added movement shows every value as new; a removed one is struck
+through and dimmed, name and values. Unchanged movements fold into one dim line, *No change: 4
+movements*. The first two changes show in full; **Show all N changes** expands the card in place.
+
+**Every change Coach can propose**, from the code (`GymToolCatalog.cpp`, `Proposals.swift`,
+`AskService.cpp`), and how its block reads (boards 08.15–08.31):
+
+| Change | Source in the model | Block |
+|---|---|---|
+| Rename the routine | `proposedName` on a revise proposal | *Renamed* (`pencil`): *Name* Push A → Push Day, no movement line |
+| Remove the routine | intent `remove` (`propose_routine_removal`) | eyebrow *Remove a routine*; the routine struck (*Removed*, `minus`, `ios/system/red`), its movement count and last day; **Remove routine** in the destructive style, then **Reject**. No count |
+| Add a movement | kind `added` | *Added* (`plus`): Sets, Reps, Load, all new |
+| Remove a movement | kind `removed` (listed last) | *Removed*: name and values struck |
+| Swap a movement | no swap kind: `removed` + `added` | two blocks, the removed one then the added one |
+| Reorder | derived from order, not stored | *Moved* (`line.3.horizontal`): *Order* 3rd → 1st |
+| Sets, reps, load | kind `retargeted`, uniform sets | *Changed*: Sets · Reps · Load, old → new; no reps reads *Max*, no weight *Last time* |
+| Vary by set | `retargeted`, sets differ | one line per set (*Set 1* … ): unchanged sets plain, a changed set old → new |
+| Ramp up | `retargeted`, rising loads | per set, as above; an added set is new, a dropped set struck |
+| Open target to numbers | sets empty = open | *Target* None → 3 × 10 |
+| Rest | `restSeconds` | *Rest* 90 s → 2 min |
+| Movement details | `update_exercise` (applied at once) | receipt *Changed a movement*: *Name*, *Equipment*, *Weight is* Total → Each dumbbell |
+| Save a note | `save_note` (append only, applied at once) | receipt *Saved a note* (`square.and.pencil`) with the note's text. Coach cannot edit, reorder or delete notes |
+
+**Apply** (**Remove routine** in the destructive style for a removal) and **Reject** are 52 pt
+buttons under the list. *Reject* settles at once, with no alert: it changes nothing. A connected
+tool's proposal carries *from Claude Desktop* under the eyebrow (*from a connected tool* with no
+name). The pieces are the local components `_Coach / Change row` (Kind = Changed, Added, Removed,
+Moved, Renamed, Note, Kept) and `_Coach / Diff field` (State = Changed, Same, New, Gone) on the Gym
+Components page; routine drafts (all *Added*) and Coach's movement edits use the same blocks.
+
+While a decision waits on the log the pressed button holds in place with an inline `ProgressView`
+(*Applying…*, *Removing…*) and *Reject* is disabled (08.30). A decision the phone could not write
+puts one red line above the buttons — *No connection. Not applied.*, or the server's refusal — and
+*Apply* reads **Try again** (08.29). **Applied**, the card drops its actions and stroke and reads
+*✓ Applied · Push A* over the same change blocks, a record of what landed; a newer proposal in the
+same conversation is the only card with buttons (08.28). **Rejected**, it collapses to one line,
+*Rejected · Push A*, in `ink-dim`. **Out of date**, the change blocks stay readable, dimmed, with
+the reason — *Push A changed after this suggestion. Nothing was applied.* / *A newer suggestion
+replaced this one. Nothing was applied.* — and no buttons. Signed out, a request to change a
+routine gets *I need your account to change a routine. Sign in, then ask again.* and one **Sign
+in** button (08.31).
 
 What Coach did besides answering is one row under the answer, each a door: a created routine
 *Open routine · Push A ›* with `list.bullet.rectangle`; a saved note *Saved a note ›* with
-`note.text`, opening Notes — and, when the save could not be confirmed, *Could not confirm a note
+`square.and.pencil` and the note's text, opening Notes — and, when the save could not be confirmed, *Could not confirm a note
 save ›*, opening Notes the same way, where the note is or is not. A write is never silent.
 
 **Signed out** the room is a `ContentUnavailableView` with `bubble.left.and.bubble.right`, no title
-(the bar already says Coach), the canon sentence *Coach reads your log, so it needs you signed in.*
-as its description, and *Sign in* as a `.glass` button; no composer — until the phone allowance
-ships, when `09-coach.md` applies.
-
-**The Review sheet** (`ProposalReview.swift`) lists the diff as one section of `GymRow`s headed
-*3 changes*: the leading symbol is the only accent, the title is `ink` and the change is the
-`ink-dim` subtitle, one row per line the proposal holds, in the proposal's order:
-
-| Line | Symbol | Title | Subtitle |
-|---|---|---|---|
-| a movement retargeted | `arrow.right` | *Back Squat* | *1 × 5 · 80 → 1 × 3 · 90 kg*, then its rest when that moves: *· rest 1:30 → 2:00* |
-| a movement added | `plus` | *Bench Press* | *Added · open · after Back Squat* (*first in the routine*) |
-| a movement removed | `minus` | *Lunge* | *Removed · 3 × 8 · 40 kg*, the scheme it leaves with |
-| the name | `pencil` | *Name* | *Push A → Push A2* |
-| the order | `arrow.up.arrow.down` | *Order* | the new order in full, *Bench Press · Back Squat · Row*, wrapping, never truncated |
-
-A rest reads as the workout's clocks do, minutes and seconds with monospaced digits; a side with no
-rest of its own reads *default*. A kept run is a row *4 unchanged* that unfolds in place. The count
-is the store's (`changeCount`, `09-coach.md` "Four · the return") wherever a proposal's changes are
-counted — the section header, History and Routines — and the rows add up to it; a settled
-proposal keeps the rows it drew while pending, *Order* included. The Apply gate is
-scroll-to-the-end. *proposed by Coach · Sep 26 · 6:42 PM* (§3, a day and a time, joined once the log
-has taken the proposal) is the sheet's subtitle. A proposal from a connected tool names the tool as
-it named itself — its agent, else its connection — and *a connected tool* when it gave no name:
-*proposed by a connected tool · Sep 26 · 6:42 PM*. The source is never left out, and the Routines
-row says the same one (§7.5). The quote bar is the attribution, with no *Coach wrote:* label; the
-quote is the proposal's summary, since the sheet also opens from Routines, where no answer sits
-above it. *Ask Coach* is a quiet accent button under the diff. The band holds *Apply* — never a
-count, which the section's header already carries — then one caption slot under it, then *Turn this
-down* as a quiet `ink-dim` button; *Turn this down* raises its `.alert`, which keeps the destructive role
-(`09-coach.md`). The caption slot keeps the height of its tallest line in every state, so Apply
-never moves: while the diff is unseen it reads the gate's sentence *Scroll to the end to apply.*;
-once the end has been seen it reads the atomic promise — *All or none. Nothing changes until you
-tap.* for two changes or more, *Nothing changes until you tap.* for one, and the removal's *Your
-logged sets stay. Nothing is removed until you tap.*
-
-**A removal names its routine once on each surface**: the card's eyebrow, the Review's title. Its
-diff is one row, `minus` in `alarm` · *Routine* · *Removed*, the title `ink` and the change
-`ink-dim` like every diff row, so the word, not only the colour, says what goes; the card draws the
-same row. Its primary is *Remove routine* in the prominent style filled `alarm-fill`, white text,
-`role: .destructive`. The quote is the proposal's own summary and may name the routine; it is the
-proposer's words, not chrome.
-
-**While a decision waits on the log** the primary stays in place, disabled, naming the act in
-flight with an inline `ProgressView`: *Applying…*, *Turning down…* or *Removing…* (*Sending…* when
-the queue cannot be read to say which), and the caption slot is blank, since the button says the act
-and the promise is no longer the news. After 15 seconds it enables as *Retry*, which resends the same
-command, and the caption reads *Not confirmed yet.*; a Retry waits blank again for its own 15
-seconds. A decision the phone could not write never waits: its refusal rises in the band (§5),
-and Apply returns enabled over the promise, which holds once more. Never a spinner without an
-end.
-
-**The settled band.** When the log answers, the settled word of the card's table replaces Apply,
-its caption and *Turn this down*: *Applied* with its check bouncing in, *Removed*, or *Turned down*
-— the word alone, since the sheet's title names the routine and the header the count. A proposal
-that is out of date has no Apply: the band holds its one line, `ink-dim`, naming why — *A newer
-proposal replaced this one. Nothing was applied.* when a later proposal took its place; *The routine
-changed after this was written. Nothing was applied.* when the routine moved under a pending one;
-*This proposal is out of date. Nothing was applied.* when the store kept no reason. The diff stays
-readable above it, and *Ask Coach* stays.
+(the bar already says Coach), the canon sentence *Coach needs your workout log. Please sign in.*
+as its description, and *Sign in* as a `.glass` button; no composer. That shape is for a phone with
+no AI access (08.6); with its installation allowance a signed-out phone gets the full room and its
+greeting (`09-coach.md`).
 
 **History** (`CoachHistory.swift`) is a plain list of conversation rows, each the door to its
 conversation: *Push A · 3 changes* (*Push A · a removal* for a removal; the question when the
@@ -676,7 +676,7 @@ A swipe-delete asks once, then removes the conversation without an Undo band. Wi
 `ContentUnavailableView("No conversations", systemImage: "bubble.left.and.bubble.right")`. History
 has no pinned primary: Back returns to the composer.
 
-**Notes** carries one fact as its header, *Any agent you connect can read these too.*
+**Notes** carries one fact as its header, *Agents you connect can also read these.*
 (`10-notes.md`), with no second heading line and no *Top note wins.* footer: the drag handle in
 Edit carries the order (`consistency.md` 9s). *Add a note* is an action row. The note editor
 commits from its bar with `.sheetCommit` (✓ *Save*, §5) and has no *Done* above the keyboard; a swipe
@@ -714,14 +714,14 @@ appearances.
 
 `Sources/Theme/` holds the three palettes as asset-catalogue roles, compiled into the app and the
 widget. The Live Activity reads `gym/accent`; the `TabView` and `GymPage` carry the tint; no view
-branches on the colour scheme; Coach, Notes, Connected log and Review sit on the room's grounds, not
+branches on the colour scheme; Coach, Notes and Connected log sit on the room's grounds, not
 the system's grouped grey. Light Gym is pietra, not iOS grey. Rendering tests pin roles, never hex
 values.
 
 ### 7.3 Coach (§6)
 
 The History toolbar action; the composer; the receipt row and *What Coach read*; the card
-without a body; the Review diff as `GymRow`s; the removal's colours and wait. The keyboard's own bar
+without a body; the proposal card's diff as `GymRow`s; the removal's colours and wait. The keyboard's own bar
 cannot carry *Done* on iOS 26 (`consistency.md` 6w), so while typing *Done* is a 36 pt glass
 `keyboard.chevron.compact.down` circle above the composer's trailing edge, the slot *Jump to
 latest* takes otherwise; Send, a swipe down the conversation or a tap on it also put the keyboard
@@ -750,14 +750,14 @@ with 7.11 and 7.12.
 - A waiting proposal is one row in its own section at the top: *Push A · 3 changes* (*Push A · a
   removal*) over *From Coach · 6:42 PM* — the time form while it came today, the day form after
   (*From Coach · Yesterday*, *From Coach · Sep 26*) — leading `bubble.left.and.bubble.right` in
-  accent, the system chevron. A connected tool's proposal names the source the Review's subtitle
+  accent, the system chevron. A connected tool's proposal names the source its card
   names (§6): *From Claude · 6:42 PM*, or *From a connected tool · 6:42 PM* when the tool gave no
   name. Settled removal receipts are one row each.
 - The root lists routines and proposals. Movement discovery belongs to routine editing and the workout.
 - Empty: `ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")` with no
-  description; signed in with Coach available it carries one `.glass` action *Ask Coach*, opening a
-  new chat with *Build me a routine.* in the composer, unsent.
-- Large title, `plus` and the account button in the bar. There is no free-workout primary on Routines.
+  description and no central action.
+- Large title and the account button in the bar. *New routine* is the 60 pt glass floating + (§4
+  Buttons), bottom-trailing, with or without routines. There is no free-workout primary on Routines.
 - Tapping a routine opens a native summary sheet with movement targets, last-trained metadata,
   *Close* leading, *Edit* trailing, and a full-width *Start* in its bottom band. The sheet supports
   medium and large detents; accessibility sizes use large. Movement rows retain their Record door.
@@ -838,7 +838,10 @@ with 7.11 and 7.12.
   of February* (the month form, §3), woven under that month for a past month whose every week holds
   a trained day, whatever today's weeks say. It is a plain row that opens nothing and carries no
   chevron. No `DisclosureGroup` in The log.
-- **Weigh in** is the bar's action (§4), opening the Weigh in sheet. Nothing floats over the list.
+- **Weigh in** is a labelled glass floating capsule, `scalemass` and *Weigh in* in the accent,
+  bottom-trailing (§4 Buttons): a bare + would not say what it adds, and at the foot of the list it
+  sits under the thumb. It opens the Weigh in sheet. The list's bottom inset keeps the last row clear;
+  the bar carries no weight action.
 - Older sessions load when the last row appears (a `ProgressView` row); a failed read is the band's,
   with *Try again*. The end is the last section's footer, the log's total, *28 workouts* (`GymCount`,
   `.footnote` `ink-dim`, monospaced digits), a fact no row states: drawn once the oldest workout is
@@ -864,16 +867,14 @@ with 7.11 and 7.12.
   Weigh in sheet — the same shape as a session row, the thing first and its day trailing. The chart
   follows the Record's rule and `11-bodyweight.md`'s words: its readout appears only while
   scrubbing, in place of the window line *last 90 days · 6 weigh-ins* (*the whole series · 14
-  weigh-ins*), since at rest the newest weigh-in is the list's first row. The chart's caption *Every
-  point is a number you typed. Nothing here is estimated.* is drawn; *Coach can read this. It can
-  never write it.* is the list's footer.
+  weigh-ins*), since at rest the newest weigh-in is the list's first row. The chart has no caption; *Coach can read your weigh-ins but cannot change them.* is the
+  list's footer.
 - **Session detail** follows §7.8.
 
 ### 7.7 Workout
 
-- No slot strip, no *Last time* line, no kind control: history prefills the rack (`16-the-workout.md`);
-  a new set is Working, as on web and Android; the Fix sheet carries *Kind* as a segmented control
-  (warmup · working · drop · failure).
+- No slot strip, no *Last time* line: history prefills the rack (`16-the-workout.md`). Sets have no
+  type — no warm-up, drop or failure — on any surface.
 - The rack is a grounded panel on `gym/card`, with 16 pt padding. Weight is a large rounded
   numeral with `kg`; four equal ladder keys are at least 48 pt tall. Reps sit in one raised
   rounded row with equal 48–56 pt minus/plus targets and a centered editable value.
@@ -883,22 +884,21 @@ with 7.11 and 7.12.
   there is no movement-position sentence or pair of arrows. Accessibility exposes the current
   movement count and adjustable previous/next navigation. The title opens *This workout*.
 - Working-set progress is a compact visual row: completed checks, an accent current ring/dot,
-  and quiet planned markers. It never counts warmups as planned working sets. VoiceOver states
+  and quiet planned markers. Every logged set counts toward the plan. VoiceOver states
   logged, current and planned totals. The native ledger stays compact, around three 48 pt rows
   at default size, with recent/current rows visible; all rows remain scrollable and editable.
 - The clocks pair `clock` with workout elapsed time and `timer` with time since the latest valid
   session-wide set. No visible labels; keep complete accessible names. Before the first set,
   show only elapsed time. Numerals use monospaced digits.
 - The ledger draws sets in the order they were logged, the same on every draw and every surface; a
-  warmup logged between working sets stays between them. It scrolls under the rack's head, not a
+  set stays where it was logged. It scrolls under the rack's head, not a
   bar, so the system draws no scroll edge there: its top fades over 16 pt (`SoftEdge(.top)`), and at
   rest the current row and the one before it are fully visible.
 - The current row is its place, its target (*100 × 5*, or *open*) and the accent dot — never the
   words *Current set* or *Target*, never a sentence (`16-the-workout.md`). An unsent set is marked
   once, by a trailing `iphone`.
 - **VoiceOver reads each ledger row as one element**, and only a logged row is a button, since only
-  a logged set opens anything. A logged row: *Set 2, logged, 100 kilograms, 5 reps* (a warmup, drop
-  or failure set by its kind, *Warmup, logged, 60 kilograms, 5 reps*), then *, on this phone* while
+  a logged set opens anything. A logged row: *Set 2, logged, 100 kilograms, 5 reps* then *, on this phone* while
   unsent; the button trait and the hint *Opens Fix set.*; never *Selected* — its check is drawn,
   not spoken, since the label already says *logged*. The current row: *Set 3, current, target 100
   kilograms, 5 reps* (*Set 3, current, open target*), static text with no hint and no action. A
@@ -913,12 +913,10 @@ with 7.11 and 7.12.
   connection — keep logging, or hide the workout.*, or, while the server needs a newer app (§7.15),
   *Finish needs the update — keep logging, or hide the workout.*
 - *This workout* lists each movement with *2 of 4 sets* against plan (*3 sets* without one), the
-  same at zero (*0 of 3 sets*, *0 sets*). The count is of working sets, the sets the ledger numbers
-  (`SetRow`, §5) and the plan's targets hold; a warmup, drop or failure set carries its letter and
-  is not counted. A `gym/done` check only when every planned set is logged;
-  *Add movement* is the section's last row, `plus.circle.fill`. *Hide workout*'s footer names the
-  way back (§7.18): *Your sets stay saved. Tap the workout above the tabs to return.* on iOS 26,
-  *Your sets stay saved. Find it at the top of The log.* on iOS 18.
+  same at zero (*0 of 3 sets*, *0 sets*). The count is of every logged set, the sets the ledger
+  numbers (`SetRow`, §5). A `gym/done` check only when every planned set is logged;
+  *Add movement* is the section's last row, `plus.circle.fill`. *Hide workout* has no footer: the way
+  back (§7.18) is the tab bar's accessory on iOS 26 and the **Hidden** row on iOS 18.
 - **Heavier than the plan** is an `.alert`: *Save 105 to Lower A?* · *Today's workout already has
   it.* · **Save to Lower A** · *Today only* (the cancel role). Leaving a movement raises it — a swipe
   or accessible movement navigation, not a control the lifter touched for it — so a dialog would have no source to
@@ -986,20 +984,20 @@ since-last-set clock trailing. Minimal: the room symbol.
 
 Detents, dismissals and commits per §5; `presentationCornerRadius` never set.
 
-- **Fix set** (`SetEditor`): title *Fix set*, the movement as subtitle, *Cancel* · *Save* in the bar.
-  One section: the centred `WeightInstrument`, *Reps*, *Effort* (`Picker(.menu)`), *Kind*
-  (segmented), then *Note* as a `TextField(axis: .vertical)` row, 1–6 lines, no header; over a saved
-  workout's set also *Movement* and *Time*. *Delete set* is the last section in `alarm`, with the one
-  caption *Push A keeps its planned targets.* The set note carries no footer: a set note is a record
-  and the field says nothing about Coach (`09-coach.md`). *Clear note* is drawn only while the note
-  has text.
-- **Keypad**: title *Weight* or *Reps*; the unit at the numeral's baseline as on the rack (*kg*,
-  *reps*), dropping under it only at accessibility sizes as the rack's does; digits `ink` on
-  `raised`, *Set* the only accent; digits cap at `.accessibility1`; `.large` at accessibility sizes.
-  Reps are whole and positive, so the reps pad's ± and decimal slots are empty and no line explains
-  it.
-- **Weigh in**: the *kg* field with its suffix as the first row under the title, *Date*, then
-  *Delete weigh-in* in `alarm`; *Save* in the bar. A weigh-in's day is its identity: a new one picks
+- **Numbers: the wheel or the decimal pad, per case.** Load and reps in a workout — the rack and
+  Fix set — use a native wheel (`Picker(.wheel)`): load in the movement's steps, labelled by its
+  basis, reps beside it; each detent ticks `.selection`. The rack's ladder keys stay for one-tap
+  nudges and edit the same draft. A weigh-in is one precise number, so it uses a focused field with
+  the system `.decimalPad`. No custom keypad anywhere.
+- **Fix set** (`SetEditor`): title *Set 2*, the movement as subtitle, *Cancel* · ✓ in the bar. One
+  section holds the wheel (load and reps); a second holds *Effort* (`Picker(.menu)`) and *Note* as a
+  `TextField(axis: .vertical)` row, 1–6 lines, no header; over a saved workout's set also *Movement*
+  and *Time*. *Delete set* is the last row, destructive, with no caption. Sets have no type, so there
+  is no kind control. The set note carries no footer: a set note is a record and the field says
+  nothing about Coach (`09-coach.md`). *Clear note* is drawn only while the note has text.
+- **Weigh in**: the *kg* field with its suffix as the first row under the title, focused on open with
+  the system `.decimalPad` up; *Date* as a compact picker; then *Delete weigh-in* (destructive) for
+  an existing one; ✓ in the bar. A weigh-in's day is its identity: a new one picks
   its *Date* with the system picker, and an existing one shows *Date* as a fact in the subtitle form
   (*Sat, Sep 26*).
 - **Rename movement**: the name field, the help line, *Rename* in the bar.
@@ -1190,7 +1188,7 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   reason as that section's footer; *Started* and *Finished* as fact rows in the time form (*9:00
   AM*), a finish on a later day than the start as its day and time (*Sep 27 · 12:20 AM*, §3), an
   open copy's *Finished* reading *Not finished*; then a section per movement of read-only `SetRow`s
-  (*1 · 100 × 5*, *W* for a warmup, effort and note as the second line). A stranded set shows Working sets ·
+  (*1 · 100 × 5*, effort and note as the second line). A stranded set shows Working sets ·
   Volume and its own rows only. The band holds the reason's one primary, chosen by the reason alone
   and the same for a stranded set: *Keep as finished* (`session-open`), *Retry* (`session-finished`,
   `unsent`), *Fix workout* for every other reason, and none for `id-taken`, whose way out is
@@ -1212,7 +1210,7 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   and *Finished* as compact `DatePicker` rows, an open workout's *Finished* reading *Not finished*
   with a quiet *Mark finished* that fills it from the last set; a *Linked to Push A* toggle whose off
   state drops the saved plan; then a section per movement, each row opening the Fix set sheet
-  (weight, reps, effort, kind, movement, time, note, delete). The sheet has no destructive row:
+  (weight, reps, effort, movement, time, note, delete). The sheet has no destructive row:
   Discard lives on Inspect, with its confirmation. Over 200 sets the bar's ✓ disables and the held reason,
   *Over 200 sets · remove 12.*, stands in the band at the sheet's foot; any other refusal the phone
   predicts (below) disables it with that reason's line in the same place. Edits touch the phone's
@@ -1431,18 +1429,18 @@ Recorded in `consistency.md` under *iOS redesign*:
   day contrast* (the light `gym/accent` and `shell/brand` values, the red-brick `shell/danger`, and
   the Figma collections that follow them), 9e (the first-run
   boards' W capsule and hand-drawn glass), 9m
-  (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
+  (iteration-1 drawings outside the Gym page), 9d under *Onboarding* (the onboarding collection's gym day
   accent).
-- **Drawings against the build:** 10h (Routines' unshipped controls), 10k (*session* on two
-  wave-three boards), 10l (the Live Activity double tap), 10o (every board against the simulator),
-  10p (the gym-feedback targets), 10q (the Coach chat in the Messages language).
+- **Drawings against the build:** 10o (the page is the target; the Live Activity double tap),
+  10p (the gym-feedback targets), 10q (the Coach chat in the Messages language), 10r (swipe delete
+  and the code's swipe audit).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in* in the
   bar), 9y (the month moment named by its month).
-- **The workout and routines:** 9c (the rack's kind picker), 9k (the untaken workout's row and badge
+- **The workout and routines:** 9c (sets have no type; the code still carries `SetKind`), 9k (the untaken workout's row and badge
   vs Android's card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer),
   10d (two search shapes in the pickers).
-- **Coach:** 9i (the proposal card), 9j (the Review band's one caption slot), 9s (Notes' lines), 9t
+- **Coach:** 9s (Notes' lines), 9t
   (Connected log with a connection), 6w (no keyboard toolbar on iOS 26), 10f (what Coach did in
   iOS's words: no step list, the saved-note row, the settled words), 10g (the server's read-receipt
   weeks, a backend fix).
@@ -1460,28 +1458,27 @@ settings waits on the owner in 9r and 9w.
 
 Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page [`iOS`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
 (`11:2`), one section per flow; each caption names the code that ships the screen and the date of
-its drawing; every section and board name starts with its status (🚀 · 🚧 · 👀, ledger 10o).
-393 × 852 boards (402 × 874 for those drawn on 2026-10-22), Instrument with Daylight in the row beneath:
+its drawing; every section and board name starts with its status (🚀 · 🚧; the page is the target, ledger 10o).
+402 × 874 boards (00's anatomy boards are references), Instrument with Daylight in the row beneath:
 
 | Section | Node | Boards |
 |---|---|---|
-| 00 · The room — read me, map, anatomy | `1118:1768` | top bar anatomy `1055:205` · Daylight `1055:274`; colour roles and type ramp `1057:201`; transient band `1057:383`; native anatomy `1063:478` |
-| 01 · First open — Coach-led setup | `1081:565` | 01.1–01.2 greeting `1173:3783`, `1173:3860`; 01.3 photo picker `1081:637`; 01.4–01.5 photo in the composer `1173:3934`, `1173:4111`; 01.6 thinking `1173:4264`; 01.7 draft `1173:4370`; 01.8 review `1156:3154`; 01.9 saved `1173:4471`; 01.10 routine to Start `1081:829`; 01.11–01.13 allowance used `1173:4600`, `1173:4678`, `1173:4754`; 01.14 after sign-in `1173:4833` |
-| 02 · Routines | `1113:1474` | 02.1 Routines `1056:201` · `1056:417`; 02.2 routine summary `1063:531` · `1065:390`; 02.3 editor `252:358`; 02.4 movement picker `258:417`; 02.5 editor, always sortable `1149:2200`; 02.6 targets `254:478`; 02.7 empty Routines `1149:2477`; 02.8 trash swipe `1149:2275` |
-| 03 · Workout | `1114:1513` | 03.1 rack with Dumbbells `1150:2352`; 03.2 keypad `321:281`; 03.3 fix sheet `327:922`; 03.4 This workout `1135:1875`; 03.5 hidden workout `1135:1996`; 03.6 deviation `1135:2123`; 03.7 finish `1063:486` · `1065:343`; 03.8 ended early `328:646`; 03.9 no movement yet `320:318`; 03.10–03.12 rack pressed, changed, Bodyweight `1150:2495`, `1150:2638`, `1150:2793` |
+| 00 · The room — read me, map, anatomy | `1118:1768` | READ ME `1118:1772`; 00.1 top bar anatomy `1186:5728`; 00.2 colour roles and type ramp `1057:201`; 00.3 transient band `1057:383`; 00.4 native anatomy `1063:478` |
+| 01 · First open — Coach-led setup | `1081:565` | 01.1–01.2 greeting `1173:3783`, `1173:3860`; 01.3 photo picker `1081:637`; 01.4–01.5 photo in the composer `1173:3934`, `1173:4111`; 01.6 thinking `1173:4264`; 01.7 drafts, confirmed inline `1173:4370`; 01.8 saved `1173:4471`; 01.9 routine to Start `1182:4650`; 01.10–01.12 allowance used `1173:4600`, `1173:4678`, `1173:4754`; 01.13 after sign-in, a swap `1173:4833`; 01.14 one routine to review `1217:26167`; 01.15 drafts rejected `1217:26342` |
+| 02 · Routines | `1113:1474` | 02.1 Routines `1181:4042`; 02.2 routine summary `1181:4149`; 02.3 editor, new `1181:4273`; 02.4 movement picker `1181:4379`; 02.5 editor, always sortable `1149:2200`; 02.6 Targets `1181:4473`; 02.7 empty Routines `1149:2477`; 02.8 trash swipe `1149:2275` |
+| 03 · Workout | `1114:1513` | 03.1 rack with Dumbbells `1150:2352`; 03.2 wheel picker `1180:3930`; 03.3 Fix set `1180:4021`; 03.4 This workout `1135:1875`; 03.5 hidden workout `1135:1996`; 03.6 deviation `1135:2123`; 03.7 finish receipt `1182:4744`; 03.8 ended early `1182:4789`; 03.9 before the first movement `1182:4834`; 03.10–03.12 rack pressed, changed, Bodyweight `1150:2495`, `1150:2638`, `1150:2793` |
 | 04 · Outside the app | `1115:1576` | 04.1 Control Center control `1138:2636`; 04.2 Live Activity, since last set `1152:2533`; 04.3 Dynamic Island `171:29`; 04.4 states `175:29`; 04.5 double tap `177:29` |
-| 05 · The log, past workouts & progress | `1116:1605` | 05.1 The log, Weigh in seat `1153:2765`; 05.2 discard by swipe `1065:307` · `1065:526`; 05.3 workout detail `1056:1930`; 05.4 a deleted set `323:29`; 05.5 share sheet `1136:1904`; 05.6 Record `461:60`, 05.7 scrub `529:60`, 05.8 panned `529:154`; 05.9 Edit exercise `1153:2559`; 05.10 Equipment menu `1153:2603` |
-| 06 · Bodyweight | `1116:1683` | Bodyweight `128:2`; weigh-in sheet `1136:2114` |
+| 05 · The log, past workouts & progress | `1116:1605` | 05.1 The log, Weigh in `1153:2765`; 05.2 discard by swipe `1185:4905`; 05.3 workout detail `1185:4993`; 05.4 a set deleted `1188:5811`; 05.5 share sheet `1136:1904`; 05.6 Record `1185:5111`, 05.7 scrub `1185:5238`, 05.8 panned `1185:5371`; 05.9 Edit exercise `1153:2559`; 05.10 Equipment menu `1153:2603` |
+| 06 · Bodyweight | `1116:1683` | 06.1 Weigh in `1191:5884`; 06.2 Bodyweight `1185:5500` |
 | 07 · On this phone | `1116:1705` | On this phone `1138:2042`; Inspect `1138:2201`; Fix workout `1138:2362` |
-| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation `1170:3007`; 08.3 proposal review `123:2`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `133:1045`; 08.7 not on this Windmill `133:1152`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364` |
-| 09 · Notes & Connected log | `1117:1768` | Notes `130:1419`; note editor `135:246`; Connected log `1138:2522` |
+| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation, proposal pending `1203:6633`; 08.3 proposal expanded `1203:6896`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `1186:5415`; 08.7 not on this Windmill `1186:5489`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364`; 08.12 applied `1203:7214`; 08.13 rejected `1203:7452`; 08.14 out of date `1203:7628`. Every change: 08.15 rename a routine `1215:7291`; 08.16 remove a routine `1215:7381`; 08.17 add a movement `1215:7476`; 08.18 remove a movement `1215:7567`; 08.19 swap `1216:7413`; 08.20 move `1216:7494`; 08.21 sets, reps and load `1216:7669`; 08.22 vary by set `1216:7774`; 08.23 ramp up `1216:7877`; 08.24 rest and a first target `1216:7978`; 08.25 save a note `1216:8018`; 08.26 a movement's details `1216:8077`. Situations: 08.27 a very long proposal `1217:7846`; 08.28 two proposals `1217:7959`; 08.29 apply failed `1217:8077`; 08.30 retry, applying `1217:8190`; 08.31 signed out `1217:8214` |
+| 09 · Notes & Connected log | `1117:1768` | 09.1 Notes `1186:5557`; 09.2 note editor `1186:5614`; 09.3 Connected log `1138:2522` |
 | 10 · Not built — designed only | `1118:1810` | Apple Health (no board) |
 
 The boards bind `Gym · Product colours` and shared Theme `ios/gym/*` roles, including
-`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). Most predate iteration 3;
-what §5–§7 rule past them is written here and not yet drawn (9m, 10o). 🚧 boards are targets ahead
-of a build (10p, 10q), each with a Daylight twin beneath it; the Coach chat targets draw the
-Messages language, which contradicts §6 until the owner rules (10q).
+`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). 🚧 boards are targets ahead
+of a build (10o, 10p, 10q, 10r), each with a Daylight twin beneath it. Where a target departs from §4–§7
+— the Messages-style Coach chat — the ledger records it as an owner decision until the spec moves.
 
 Shell file `tkI7GnS6TcZvQSDi9lwrBf`, page `iOS` (`1:5`),
 402 × 874 boards:
@@ -1525,8 +1522,8 @@ Iteration 3's captures show:
    - A Coach answer with a body-less proposal card.
    - The Record stating the best once: the two tiles, then **Earlier records** without the standing
      best; and, opened from a moment, its point ringed under the window line, with no readout.
-   - A removal's card and Review naming the routine once (the eyebrow; the title), the row
-     *Routine · Removed* and the primary *Remove routine*.
+   - A removal's card naming the routine once (the eyebrow), the row *Routine · Removed* and
+     *Remove routine* on the card.
    - The log at its end reading *28 workouts*, with one workout reading no footer, and empty while a
      workout is hidden reading *No finished workouts yet* over the accessory.
    - A month moment naming its month (*Trained every week of February*) under a head that reads
@@ -1535,25 +1532,21 @@ Iteration 3's captures show:
    - You whose identity line is the one status, with no *Your data*, the address said once, and
      *Done* and *Sign out* in two colours in both appearances.
    - The finish receipt at `.large` over session detail, no tile showing twice.
-   - A settled Review reading its word alone (*Applied*, *Removed*, *Turned down*), an out-of-date
-     one naming why, and a Coach answer with *Saved a note* and one with *Read your movement
+   - A settled card collapsed to its receipt line (*Applied · Push A · 4 changes*, *Rejected · Push A*), an out-of-date one in grey naming why, and a Coach answer with *Saved a note* and one with *Read your movement
      history*.
    - **On this phone** headed once over *3 workouts*; the echo reader's stamps with no year.
 2. **One chevron.** The log's moments as doors with the system chevron, opening the Record with its
-   point marked; no `DisclosureGroup` in The log; the Review diff as `GymRow`s in one section; Notes
+   point marked; no `DisclosureGroup` in The log; the proposal card's diff as `GymRow`s; Notes
    rows with `DoorChevron`.
 3. **Nothing floats on content.**
-   - *Weigh in* in The log's bar; no seat in Gym.
+   - *Weigh in* as The log's labelled glass capsule and *New routine* as the glass +.
    - Every band clearing the last row at rest, and the scroll edge softening text that passes under
      bars and bands.
-   - Captured scrolled mid-list on The log, the rack ledger, the Review sheet, Fix workout and a
-     picker.
+   - Captured scrolled mid-list on The log, the rack ledger, Fix workout and a picker.
    - The transient band as glass over rows, in both appearances.
-   - The Review band at AX3 scrolled mid-diff in both appearances, its caption and *Turn this down*
-     on the band's surface, no row reading through them — no trace of *Ask Coach* under the caption
-     in light; Share this workout with a live link at AX3, *Revoke the link* on the same surface;
-     Review while Apply waits (*Applying…* over a blank caption) and after 15 seconds (*Retry* ·
-     *Not confirmed yet.*).
+   - A long proposal card expanded at AX3 in both appearances, Apply and Reject reachable;
+     Share this workout with a live link at AX3, *Revoke the link* on the band's surface; a card
+     while Apply waits (*Applying…*) and after a failed write (*Try again* · *No connection. Not applied.*).
 4. **Sheets commit from the bar:** Fix set, Weigh in, Targets, Create movement, Fix workout.
    *Heavier than the plan* as an alert. Search-to-create in a picker with a query. *Sign out* as one
    alert. Share this workout signed out with *Sign in to share*.
@@ -1570,7 +1563,7 @@ Iteration 3's captures show:
    subtitle, session subtitle (one that crosses midnight among them), Inspect's times, the workout's
    bar subtitle, weigh-in, a month header — and The log empty (*No workouts yet*) and at its end
    (*28 workouts*).
-8. **AX3 in both appearances** for: the rack (reps visible), the keypad (*0* reachable), the Coach
+8. **AX3 in both appearances** for: the rack (reps visible), the wheel (both columns readable), the Coach
    composer, Fix set, the receipt, Inspect, You, and onboarding's four pages, each opening on its
    title and body (page 1's *You can start without one.* whole) and running on under the bottom fade
    where it scrolls. **375 × 667** for the same, plus Journal and the shell: onboarding's four pages

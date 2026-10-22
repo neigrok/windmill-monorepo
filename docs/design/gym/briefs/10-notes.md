@@ -8,7 +8,7 @@ programme they are running and the goal they are chasing.
 
 **One.** Not four.
 
-> **"Any agent you connect can read these too."**
+> **"Agents you connect can also read these."**
 
 That is the only genuinely surprising fact on the screen, and alone it lands. Coach's tool set can
 only *narrow* the catalogue every connected agent already sees, and the MCP grant is a name prefix —
