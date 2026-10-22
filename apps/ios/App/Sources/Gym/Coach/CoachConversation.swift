@@ -50,12 +50,13 @@ nonisolated struct CoachSaved: Codable {
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
-  // What outlives a conversation on this phone: the first-run marks, the signed-out work adopted into the account and the
-  // setup chosen. A new conversation and one opened from History start from it.
+  // What outlives a conversation on this phone: the first-run marks, the signed-out work adopted into the account, the
+  // drafts rejected here and the setup chosen. A new conversation, one opened from History and the one a delete leaves
+  // start from it.
   var carried: CoachSaved {
     var next = CoachSaved()
     next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources; next.onboarding = onboarding
-    next.phoneDrafts = phoneDrafts; next.setupChoice = setupChoice
+    next.phoneDrafts = phoneDrafts; next.rejectedDrafts = rejectedDrafts; next.setupChoice = setupChoice
     return next
   }
 }
@@ -99,6 +100,7 @@ struct CoachDraftStore {
       if local.acceptedFirstMessage == true { target.acceptedFirstMessage = true }
       let existing = Set((target.onboarding ?? []).map(\.id))
       target.onboarding = (target.onboarding ?? []) + (local.onboarding ?? []).filter { !existing.contains($0.id) }
+      if let rejected = local.rejectedDrafts { target.rejectedDrafts = (target.rejectedDrafts ?? []) + rejected.filter { !(target.rejectedDrafts ?? []).contains($0) } }
       if !local.text.isEmpty || local.photo != nil {
         if target.text.isEmpty, target.photo == nil {
           target.text = local.text; target.photo = local.photo; target.photoData = local.photoData; target.purpose = .routineSetup; target.setupChoice = local.setupChoice; target.choices = local.choices
@@ -496,7 +498,7 @@ struct CoachDraftStore {
     do {
       let previous = owner == account ? saved : try store.read(account)
       guard previous.threadId == id else { return true }
-      var next = CoachSaved(); next.acceptedFirstMessage = previous.acceptedFirstMessage; next.setupChoice = previous.setupChoice; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
+      var next = previous.carried; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
       try store.write(next, account: account)
       guard owner == account, saved.threadId == id else { return true }
       saved = next

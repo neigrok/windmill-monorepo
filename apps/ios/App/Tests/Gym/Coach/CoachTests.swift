@@ -873,7 +873,7 @@ import SyncTesting
     var next = coach.saved
     next.phoneDrafts = [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)]
     next.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "onb-1", mode: "conversation", text: "Adopted question"))]
-    next.acceptedFirstMessage = true; next.adoptedSources = ["anonymous:replica"]; next.setupChoice = .describe
+    next.acceptedFirstMessage = true; next.adoptedSources = ["anonymous:replica"]; next.setupChoice = .describe; next.rejectedDrafts = ["request-rejected"]
     #expect(coach.keep(next, failure: "x"))
     await coach.open("historic-thread")
     for kept in [coach.saved, try cache.read(gym.account!)] {
@@ -881,8 +881,35 @@ import SyncTesting
       #expect(kept.text == "A question I was typing" && kept.photo == photo && kept.photoData == photoData && kept.editedRequestId == nil)
       #expect(kept.phoneDrafts == [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)])
       #expect(kept.onboarding?.map(\.id) == ["onb-1"] && kept.acceptedFirstMessage == true)
-      #expect(kept.adoptedSources == ["anonymous:replica"] && kept.setupChoice == .describe)
+      #expect(kept.adoptedSources == ["anonymous:replica"] && kept.setupChoice == .describe && kept.rejectedDrafts == ["request-rejected"])
     }
+  }
+
+  @Test func rejectedDraftsStayRejectedThroughNewChatDeleteAndAdoption() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let account = try #require(gym.account)
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    coach.rejectDrafts("request-rejected")
+    #expect(coach.newChat())
+    let durable = try cache.read(account)
+    #expect(coach.saved.rejectedDrafts == ["request-rejected"] && durable.rejectedDrafts == ["request-rejected"])
+    var next = coach.saved
+    next.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "onb-1", mode: "conversation", text: "Make me routines"))]
+    next.text = "Unsent"; #expect(coach.keep(next, failure: "x"))
+    let deleted = coach.saved.threadId
+    #expect(coach.deletedConversation(deleted, account: account))
+    for kept in [coach.saved, try cache.read(account)] {
+      #expect(kept.threadId != deleted && kept.rejectedDrafts == ["request-rejected"] && kept.onboarding?.map(\.id) == ["onb-1"] && kept.text == "Unsent")
+    }
+    var local = CoachSaved()
+    local.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "onb-2", mode: "conversation", text: "Make me more"))]
+    local.rejectedDrafts = ["onb-2", "request-rejected"]
+    try cache.write(local, account: "anonymous:replica")
+    try cache.adopt(from: "anonymous:replica", account: account, discard: false)
+    let adopted = try cache.read(account)
+    #expect(adopted.onboarding?.map(\.id) == ["onb-1", "onb-2"] && adopted.rejectedDrafts == ["request-rejected", "onb-2"])
+    #expect(adopted.adoptedSources == ["anonymous:replica"])
   }
 
   @Test func textAndPhotoAdmissionUsesUTF8Bound() {

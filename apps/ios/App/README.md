@@ -101,7 +101,8 @@ Draft text, photos, request identities, retained anonymous responses and accepta
 account- or replica-scoped local Coach archive. Every new routine is a draft, and an answer's drafts
 stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
 movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
-on this phone with no server call and leaves *Rejected · 3 routines*. A movement the phone does not know
+on this phone with no server call and leaves *Rejected · 3 routines*, which stays through a new chat, an
+opened or deleted conversation and the adoption of a signed-out conversation. A movement the phone does not know
 yet reads *New movement*. Every signed-in ask sends `routineReview: true`. Signed-in Apply replays each
 exact server-held document using its request and operation identity; a draft that arrived without its
 request cannot be applied. A draft the server no longer holds, or cannot write, says so and retires
