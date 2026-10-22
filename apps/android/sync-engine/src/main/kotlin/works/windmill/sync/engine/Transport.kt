@@ -30,6 +30,22 @@ sealed interface Reply<out T> {
     data class Failed(val response: SyncResponse) : Reply<Nothing>
     data object Unreachable : Reply<Nothing>
 }
+// An HTTP answer: its status, and its JSON body when it had one.
+data class SyncResponse(val status: Int, val body: Json? = null) {
+    // §9.6: the server's own 426 names its cause; a bare 426, a proxy's or a captive portal's, is a failure like any other.
+    val requiresUpgrade: Boolean get() = status == 426 && body?.get("error") == Json.of("upgrade-required")
+    // §9.1: an answer handled as a 401: a 401, an `account-mismatch`, or a 200 or 409 served as anyone but `account`.
+    internal fun unauthenticated(account: String?) = status == 401 || status == 409 && body?.get("error") == Json.of("account-mismatch") ||
+        status in setOf(200, 409) && account != null && body?.get("as") != Json.of(account)
+    // §7.4: a 409 served to the push's `account` whose code or envelope recovery cannot use, a transport failure though the server answered.
+    internal fun malformedConflict(account: String?) = account != null && status == 409 && !unauthenticated(account) &&
+        runCatching { validateResponse("push-conflict", body ?: throw JsonError("response")) }.isFailure
+}
+internal val Reply<SyncResponse>.answer: SyncResponse? get() = when (this) {
+    is Reply.Answer -> value
+    is Reply.Failed -> response
+    Reply.Unreachable -> null
+}
 interface SyncTransport {
     suspend fun hello(token: String?): Reply<SyncResponse>
     suspend fun push(request: Json, token: String): Reply<SyncResponse>
@@ -145,17 +161,13 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                                 if (current()) failed(operation, EngineOutcome.failure, "limit")
                                 return@use Reply.Unreachable
                             }
-                            val json = try { Json.parse(source.readByteArray()) } catch (_: IllegalArgumentException) { null }
-                            if (it.code == 200) {
-                                validateResponse(kind, json ?: throw JsonError("response"))
-                                outages.remove(operation)
-                            } else {
-                                if (kind == "push" && it.code == 409 && body?.get("account") != null &&
-                                    json?.get("as") == body["account"] && json?.get("error") != Json.of("account-mismatch"))
-                                    validateResponse("push-conflict", json!!)
-                                if (current()) failed(operation, it.code, expected)
+                            val answer = SyncResponse(it.code, try { Json.parse(source.readByteArray()) } catch (_: IllegalArgumentException) { null })
+                            when {
+                                it.code == 200 -> { validateResponse(kind, answer.body ?: throw JsonError("response")); outages.remove(operation) }
+                                kind == "push" && answer.malformedConflict(body?.get("account")?.str()) -> if (current()) failed(operation, EngineOutcome.failure, "malformed")
+                                else -> if (current()) failed(operation, it.code, expected)
                             }
-                            Reply.Answer(SyncResponse(it.code, json))
+                            Reply.Answer(answer)
                         } catch (failure: Exception) {
                             if (current()) failed(operation, failure)
                             Reply.Unreachable
@@ -223,12 +235,17 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             if (ended.get() || closed.get()) return
             if (bytes.size > Constants.LIVE_FRAME_BYTES) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
             val frame = try { Json.parse(bytes).also(::validateFrame) } catch (malformed: Exception) { return fail { failed(EngineOperation.live, malformed) } }
-            if (!messages.trySend(frame).isSuccess) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
             outages.remove(EngineOperation.live)
+            if (!messages.trySend(frame).isSuccess) return fail { failed(EngineOperation.live, EngineOutcome.failure, "limit") }
         }
         override fun onMessage(webSocket: WebSocket, text: String) = message(text.encodeToByteArray())
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) = message(bytes.toByteArray())
-        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
+        // A close frame ends the socket at once: quietly on 1000 or 1001, as a refusal on the server's session-ended 1008, and as a fault on any other code or none.
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) = when (code) {
+            1000, 1001 -> end(null)
+            1008 -> fail { failed(EngineOperation.live, EngineOutcome.refused, null) }
+            else -> fail { failed(EngineOperation.live, EngineOutcome.failure, "transport") }
+        }
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = end(null)
         override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
             val status = response?.code

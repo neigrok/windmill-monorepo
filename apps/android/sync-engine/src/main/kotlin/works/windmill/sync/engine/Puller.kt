@@ -113,7 +113,7 @@ fun Engine.onPullResponse(request: Json, response: SyncResponse, timing: Request
     val accepted = write(EngineOperation.pull) { replica ->
         if (device.active != pulledFor) return@write false
         body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
-        if (replica.unauthenticated(response)) { replica.meta = replica.meta.with("authPaused" to Json.of(true)); false }
+        if (response.unauthenticated(replica.account)) { replica.meta = replica.meta.with("authPaused" to Json.of(true)); false }
         else if (response.status != 200 || body == null) false
         else {
             if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
@@ -193,7 +193,7 @@ fun Engine.onFrame(frame: Json, appVersion: String = "1", replicaID: String = ac
     if (device.active != replicaID) return@write "outside"
     val op = frame.member("op").str()
     if (op !in setOf("change", "gone", "not-found")) return@write "ignored"
-    if (replica.servedAsOther(frame["as"])) { replica.meta = replica.meta.with("authPaused" to Json.of(true)); return@write "paused" }
+    if (replica.account?.let { frame["as"] != Json.of(it) } == true) { replica.meta = replica.meta.with("authPaused" to Json.of(true)); return@write "paused" }
     val scope = ScopeRef(frame.member("scope"))
     if (scope.text in replica.known || selectedScopes?.let { scope !in it } == true) return@write "outside"
     if (op in setOf("gone", "not-found")) {

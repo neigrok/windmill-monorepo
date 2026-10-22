@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.Dispatcher
@@ -35,12 +36,13 @@ class SyncRuntimeTests {
         override fun accounts() = values.keys.toSet()
     }
     private class Identities : IdentitySource {
+        val bounds = CopyOnWriteArrayList<Int>()
         private var gestures = 0
         private var replicas = 0
         private var actors = 0
         private var guards = 0
         override fun opaqueID() = "g${++gestures}"
-        override fun draw(bound: Int) = 0
+        override fun draw(bound: Int): Int { bounds.add(bound); return 0 }
         override fun replicaID() = "rp_${(++replicas).toString(16).padStart(32, '0')}"
         override fun actorID() = "r_${(++actors).toString(16).padStart(12, '0')}"
         override fun forkGuard() = "fg_${++guards}"
@@ -72,8 +74,9 @@ class SyncRuntimeTests {
             if (stallSend) try { awaitCancellation() }
                 catch (cancelled: CancellationException) { sendCancelled.complete(Unit); throw cancelled }
         }
-        override suspend fun receive() = frames.receiveCatching().getOrNull()
+        override suspend fun receive() = frames.receiveCatching().let { it.exceptionOrNull()?.let { failure -> throw failure }; it.getOrNull() }
         override fun close() { if (closing.compareAndSet(false, true)) { frames.close(); closed.complete(Unit) } }
+        fun fail() { if (closing.compareAndSet(false, true)) { frames.close(LiveEnded("live-failed")); closed.complete(Unit) } }
     }
     private class Transport : SyncTransport {
         val pushes = Channel<Push>(Channel.UNLIMITED)
@@ -90,6 +93,7 @@ class SyncRuntimeTests {
         var schema = 2L
         var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
         @Volatile var refuseReopen = false
+        @Volatile var liveRefusal: SyncResponse? = null
         val socket = Socket()
         override suspend fun hello(token: String?): Reply<SyncResponse> {
             hellos.send(token)
@@ -121,6 +125,7 @@ class SyncRuntimeTests {
         }
         override suspend fun openLive(token: String): Reply<LiveConnection> {
             opening.incrementAndGet()
+            liveRefusal?.let { return Reply.Failed(it) }
             if (refuseReopen && opened.isCompleted) return Reply.Unreachable
             opened.complete(socket); return Reply.Answer(socket)
         }
@@ -131,7 +136,8 @@ class SyncRuntimeTests {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
         val clock = Clock()
-        val engine = Engine.memory(registry, snapshot, clock, Identities(), "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
+        val identities = Identities()
+        val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
         val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"))
         init { if (bound) tokens.save("A", "token:A"); if (bound && snapshot == null) engine.signIn("A", mapOf("probe" to false)) }
@@ -148,6 +154,8 @@ class SyncRuntimeTests {
         "serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "as" to Json.of(account), "schema" to Json.of(schema),
         "minSchema" to Json.of(2), "holdsRecords" to Json.objectOf("probe" to Json.of(false)))))
     private suspend fun until(body: () -> Boolean) = withTimeout(2_000) { while (!body()) delay(5) }
+    private suspend fun <T> settles(expected: T, actual: () -> T) { withTimeoutOrNull(2_000) { while (actual() != expected) delay(5) }; assertEquals(expected, actual()) }
+    private val upgradeRequired = SyncResponse(426, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "error" to Json.of("upgrade-required")))
 
     @Test fun signInAndReconnectPublishTheAdvertisedSchemaWithoutBlockingBoundOfflineRestoration() = runBlocking {
         Fixture(bound = false).use { fixture ->
@@ -646,6 +654,86 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun aFailedPushHoldsItsRecordsBackAnsweredOrNotUntilAPushOfItsScopeIsTaken() = runBlocking {
+        Fixture().use { fixture ->
+            val status = fixture.engine.status.state
+            val held = mapOf(product to setOf(RecordKey("card", RecordID("card0001"))))
+            fixture.create()
+            val numbered = async { fixture.runtime.senderStep(leaving = true) }
+            val first = fixture.push(); first.answer.complete(Reply.Unreachable); assertTrue(numbered.await())
+            settles(SyncStatus.Snapshot(account = "A", sent = 1, failedPushes = held, unansweredPushes = setOf(product))) { status.value }
+            val sent = fixture.engine.device.current().entries().single().json
+            val malformedConflict = SyncResponse(409, Json.objectOf("serverTime" to Json.of(5_000), "as" to Json.of("A"), "error" to Json.of("gap")))
+            for ((reply, unanswered) in listOf<Pair<Reply<SyncResponse>, Set<ScopeRef>>>(Reply.Answer(malformedConflict) to emptySet(),
+                Reply.Unreachable to setOf(product), Reply.Answer(SyncResponse(500)) to emptySet())) {
+                val step = async { fixture.runtime.senderStep(leaving = true) }
+                val push = fixture.push()
+                assertEquals(first.request, push.request)
+                push.answer.complete(reply); assertTrue(step.await())
+                settles(SyncStatus.Snapshot(account = "A", sent = 1, failedPushes = held, unansweredPushes = unanswered)) { status.value }
+                assertEquals(sent, fixture.engine.device.current().entries().single().json)
+            }
+            val mismatch = async { fixture.runtime.senderStep(leaving = true) }
+            fixture.push().answer.complete(Reply.Answer(SyncResponse(409, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "error" to Json.of("account-mismatch"))))); assertTrue(mismatch.await())
+            settles(SyncStatus.Snapshot(account = "A", authPaused = true, sent = 1)) { status.value }
+            fixture.engine.reauthenticate()
+            val taken = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push(); push.answer.complete(ok(push.request)); assertTrue(taken.await())
+            settles(SyncStatus.Snapshot(account = "A")) { status.value }
+            fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+            until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+            assertEquals(emptyList<EngineEvent>(), fixture.events.filter { it.outcome != EngineOutcome.success })
+        }
+    }
+
+    @Test fun aBare426OnAnyRouteIsAFailureLikeAnyOtherAndOnlyTheServersOwnStopsSync() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.create()
+            val pushing = async { fixture.runtime.senderStep(leaving = true) }
+            fixture.push().answer.complete(Reply.Answer(SyncResponse(426))); assertTrue(pushing.await())
+            fixture.transport.helloAnswer = CompletableDeferred(Reply.Answer(SyncResponse(426)))
+            assertEquals(Reply.Answer(SyncResponse(426)), fixture.runtime.hello("token:A"))
+            assertFalse(fixture.runtime.upgradeRequired)
+            val stopping = async { fixture.runtime.senderStep(leaving = true) }
+            fixture.push().answer.complete(Reply.Answer(upgradeRequired)); assertFalse(stopping.await())
+            assertTrue(fixture.runtime.upgradeRequired)
+            withTimeout(2_000) { fixture.engine.status.state.first { it.upgradeRequired } }
+            assertFalse(fixture.runtime.senderStep(leaving = true))
+        }
+        // A handshake's 426 carries no body: the live socket opens again, and the pull its failed open runs answers for the server.
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true; fixture.transport.liveRefusal = SyncResponse(426)
+            fixture.runtime.enter()
+            fixture.pull().answer.complete(Reply.Answer(SyncResponse(426)))
+            until { fixture.transport.opening.get() >= 1 }
+            fixture.runtime.enter()
+            until { fixture.transport.opening.get() >= 2 }
+            assertFalse(fixture.runtime.upgradeRequired)
+            assertFalse(fixture.engine.status.state.value.upgradeRequired)
+        }
+    }
+
+    @Test fun aSocketOpenThirtySecondsResetsTheReopenBackoffHoweverItEnds() = runBlocking {
+        Fixture().use { fixture ->
+            // With pulls held and nothing to push, every backoff drawn is a reopen pause, its bound 1 s shifted by `k`.
+            val pauses = { fixture.identities.bounds.filter { it >= 1_000 } }
+            fixture.transport.controlPulls = true; fixture.transport.liveRefusal = SyncResponse(503)
+            fixture.runtime.enter(); until { pauses().size >= 1 }
+            fixture.runtime.enter(); until { pauses().size >= 2 }
+            fixture.transport.liveRefusal = null; fixture.transport.refuseReopen = true
+            fixture.runtime.enter()
+            val socket = withTimeout(2_000) { fixture.transport.opened.await() }
+            until { socket.sends.isNotEmpty() }
+            val before = pauses()
+            fixture.clock.wall += 31_000
+            socket.fail()
+            until { pauses().size > before.size }
+            assertTrue("$before", before.last() >= 2_000)
+            assertEquals(1_000, pauses()[before.size])
+        }
+    }
+
     @Test fun typed401FailurePausesWithoutRewritingTheSentPush() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
@@ -797,6 +885,7 @@ class SyncRuntimeTests {
             withTimeout(2_000) { request.cancelled.await() }
             assertEquals(0, fixture.transport.activePushes.get())
             assertEquals("sent", fixture.engine.device.current().entries().single().state)
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), fixture.engine.pushFailures)
             question.cancel(); fixture.runtime.enter()
             val resumed = fixture.push()
             assertEquals(request.request, resumed.request)
@@ -871,6 +960,7 @@ class SyncRuntimeTests {
             fixture.create(); fixture.runtime.enter()
             until { fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure } }
             assertEquals("sent", fixture.engine.device.current().entries().single().state)
+            assertEquals(mapOf(fixture.engine.activeReplica() to mapOf(product to PushFailure.answered)), fixture.engine.pushFailures)
             val request = fixture.engine.nextPush()!!
             fixture.transport.failPush = false
             fixture.runtime.enter()
@@ -878,6 +968,7 @@ class SyncRuntimeTests {
             assertEquals(request, resumed.request)
             resumed.answer.complete(ok(resumed.request))
             until { fixture.engine.device.current().meta.member("ackThrough") == Json.of(1) }
+            until { fixture.engine.pushFailures.isEmpty() }
         }
     }
 
@@ -922,7 +1013,7 @@ class SyncRuntimeTests {
             fixture.transport.helloAnswer = CompletableDeferred(helloResponse(schema = 5))
             fixture.runtime.reauthenticate("token:A-new")
             until { fixture.engine.read(product) { it.serverSchema() } == 5L }
-            answer.complete(Reply.Failed(SyncResponse(426)))
+            answer.complete(Reply.Failed(upgradeRequired))
             hello.await()
             assertTrue(fixture.runtime.upgradeRequired)
             assertFalse(fixture.engine.device.current().meta.member("authPaused").bool())
@@ -941,7 +1032,7 @@ class SyncRuntimeTests {
             fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             fixture.create()
             val before = fixture.engine.device.current().json()
-            request.answer.complete(Reply.Failed(SyncResponse(426)))
+            request.answer.complete(Reply.Failed(upgradeRequired))
             assertFalse(send.await())
             assertTrue(fixture.runtime.upgradeRequired)
             assertEquals(before, fixture.engine.device.current().json())
@@ -957,7 +1048,7 @@ class SyncRuntimeTests {
             fixture.engine.signOut("keep")
             fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             val before = fixture.engine.device.current().json()
-            request.answer.complete(Reply.Failed(SyncResponse(426)))
+            request.answer.complete(Reply.Failed(upgradeRequired))
             until { fixture.runtime.upgradeRequired }
             assertEquals(before, fixture.engine.device.current().json())
             assertFalse(fixture.runtime.pullerStep())
@@ -979,17 +1070,19 @@ class SyncRuntimeTests {
             withTimeout(2_000) { request.cancelled.await() }
             assertEquals(numbered, fixture.engine.device.current().entries().single().json)
             assertEquals(0, fixture.transport.activePushes.get())
+            assertEquals(mapOf(fixture.engine.activeReplica() to mapOf(product to PushFailure.unanswered)), fixture.engine.pushFailures)
         }
     }
 
     @Test fun helloFailuresUseLifecycleCodesAndKeepTheDurablePendingSignIn() = runBlocking {
-        for ((status, code) in listOf(401 to EngineError.Code.unauthenticated,
-            503 to EngineError.Code.unreachable, 426 to EngineError.Code.upgradeRequired)) {
+        for ((response, code) in listOf(SyncResponse(401) to EngineError.Code.unauthenticated, SyncResponse(503) to EngineError.Code.unreachable,
+            SyncResponse(426) to EngineError.Code.unreachable, upgradeRequired to EngineError.Code.upgradeRequired)) {
             Fixture(bound = false).use { fixture ->
-                fixture.transport.helloAnswer = CompletableDeferred(Reply.Failed(SyncResponse(status)))
+                fixture.transport.helloAnswer = CompletableDeferred(Reply.Failed(response))
                 val failure = runCatching { fixture.runtime.signIn("A", "token:A") }.exceptionOrNull()
-                assertTrue("$status", failure is EngineError)
+                assertTrue("$response", failure is EngineError)
                 assertEquals(code, (failure as EngineError).code)
+                assertEquals(code == EngineError.Code.upgradeRequired, fixture.runtime.upgradeRequired)
                 assertEquals("anon", fixture.engine.device.current().state)
                 assertEquals(Json.of("A"), fixture.engine.device.meta.member("pendingSignIn").member("account"))
                 assertEquals("token:A", fixture.tokens.token("A"))

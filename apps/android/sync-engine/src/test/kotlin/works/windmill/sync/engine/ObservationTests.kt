@@ -227,6 +227,67 @@ class ObservationTests {
             assertTrue(next.authPaused); assertEquals("next", next.pendingSignIn)
         }
     }
+    @Test fun statusNamesTheQueuedRecordsOfAScopeWhoseLastPushFailedAndWhetherItWasAnswered() = runBlocking<Unit> {
+        engine().use { engine ->
+            val one = RecordKey("card", RecordID("card0001")); val two = RecordKey("card", RecordID("card0002"))
+            engine.signIn("A", mapOf("probe" to false))
+            val status = engine.status.state
+            engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(one.id)))))
+            val request = engine.nextPush()!!
+            engine.recordPushFailure(request, PushFailure.unanswered)
+            assertEquals(SyncStatus.Snapshot(account = "A", sent = 1, failedPushes = mapOf(scope to setOf(one)), unansweredPushes = setOf(scope)),
+                withTimeout(5_000) { status.first { it.failedPushes.isNotEmpty() } })
+            engine.commit(scope, Gesture(listOf(Change.create("card", NewID.Given(two.id)))))
+            assertEquals(SyncStatus.Snapshot(account = "A", ready = 1, sent = 1, failedPushes = mapOf(scope to setOf(one, two)), unansweredPushes = setOf(scope)),
+                withTimeout(5_000) { status.first { it.ready == 1 } })
+            engine.recordPushFailure(request, PushFailure.answered)
+            assertEquals(SyncStatus.Snapshot(account = "A", ready = 1, sent = 1, failedPushes = mapOf(scope to setOf(one, two))),
+                withTimeout(5_000) { status.first { it.unansweredPushes.isEmpty() } })
+            engine.recordPushFailure(request, null)
+            assertEquals(SyncStatus.Snapshot(account = "A", ready = 1, sent = 1), withTimeout(5_000) { status.first { it.failedPushes.isEmpty() } })
+            engine.recordPushFailure(request, PushFailure.answered)
+            assertTrue(engine.signOut("discard").flag("complete"))
+            assertEquals(SyncStatus.Snapshot(), withTimeout(5_000) { status.first { it.account == null } })
+            engine.recordPushFailure(request, PushFailure.answered)
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), engine.pushFailures)
+        }
+    }
+    @Test fun aPushEndHoldsItsScopesBackUnlessTheServerTookItOrItChangesTheNextPush() {
+        val envelope = Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "as" to Json.of("A"))
+        val ends = listOf<Pair<String, Reply<SyncResponse>>>(
+            "no answer" to Reply.Unreachable,
+            "taken" to Reply.Answer(SyncResponse(200, envelope)),
+            "taken as another account" to Reply.Answer(SyncResponse(200, envelope.with("as" to Json.of("B")))),
+            "malformed" to Reply.Answer(SyncResponse(400)),
+            "too large" to Reply.Answer(SyncResponse(413)),
+            "conflict" to Reply.Answer(SyncResponse(409, envelope.with("error" to Json.of("gap")))),
+            "account mismatch" to Reply.Answer(SyncResponse(409, envelope.with("error" to Json.of("account-mismatch")))),
+            "conflict without an epoch" to Reply.Answer(SyncResponse(409, envelope.with("error" to Json.of("gap"), "epoch" to null))),
+            "conflict with an unknown code" to Reply.Answer(SyncResponse(409, envelope.with("error" to Json.of("unknown")))),
+            "unauthenticated" to Reply.Answer(SyncResponse(401)),
+            "forbidden" to Reply.Failed(SyncResponse(403)),
+            "a proxy's 426" to Reply.Answer(SyncResponse(426)),
+            "upgrade required" to Reply.Answer(SyncResponse(426, envelope.with("error" to Json.of("upgrade-required")))),
+            "unavailable" to Reply.Answer(SyncResponse(503, envelope.with("retryAfterMs" to Json.of(10)))),
+            "server fault" to Reply.Answer(SyncResponse(500)),
+        )
+        assertEquals(listOf("no answer" to PushFailure.unanswered, "taken" to null, "taken as another account" to null, "malformed" to null,
+            "too large" to null, "conflict" to null, "account mismatch" to null, "conflict without an epoch" to PushFailure.answered,
+            "conflict with an unknown code" to PushFailure.answered, "unauthenticated" to PushFailure.answered, "forbidden" to PushFailure.answered,
+            "a proxy's 426" to PushFailure.answered, "upgrade required" to PushFailure.answered, "unavailable" to PushFailure.answered,
+            "server fault" to PushFailure.answered), ends.map { (end, reply) -> end to reply.pushFailure("A") })
+    }
+    @Test fun signedInWorkIsHeldBackOfflinePausedForAnUpgradeOrByItsScopesFailedPush() {
+        val one = RecordKey("card", RecordID("card0001")); val two = RecordKey("card", RecordID("card0002"))
+        val sending = SyncStatus.Snapshot(account = "A")
+        val states = listOf("sending" to sending, "offline" to sending.copy(online = false), "paused" to sending.copy(authPaused = true),
+            "upgrade required" to sending.copy(upgradeRequired = true), "push failed" to sending.copy(failedPushes = mapOf(scope to setOf(one))),
+            "another scope's push failed" to sending.copy(failedPushes = mapOf(ScopeRef.tree("b_00000001") to setOf(one))),
+            "signed out and offline" to SyncStatus.Snapshot(online = false))
+        assertEquals(listOf("sending" to listOf(false, false), "offline" to listOf(true, true), "paused" to listOf(true, true),
+            "upgrade required" to listOf(true, true), "push failed" to listOf(true, false), "another scope's push failed" to listOf(false, false),
+            "signed out and offline" to listOf(false, false)), states.map { (state, status) -> state to listOf(one, two).map { status.holdsBack(scope, it) } })
+    }
     @Test fun smallViewReadFailureRetainsOldStateAndRetriesWithoutNewChanges() = runBlocking<Unit> {
         val delegate = MemoryStore(registry, initial)
         val failReads = java.util.concurrent.atomic.AtomicBoolean(false)
