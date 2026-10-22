@@ -100,12 +100,14 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/on-accent` | `#1B1408` | `#FFFFFF` | text and symbols on the accent fill |
 | `gym/done` | `#9AA859` | `#7D8C43` | a logged set's check, a fully logged movement, an applied proposal |
 | `gym/record` | `#D9B04C` | `#6E5217` | a personal record, and nothing else |
-| `gym/alarm` | `#D08268` | `#A84E35` | destructive labels, refusal text in a field |
+| `gym/alarm` | `#D08268` | `#A84E35` | refusal text in a field, a counter past its limit |
 | `gym/alarm-fill` | `#A84E35` | `#A84E35` | a removal proposal's primary; native destructive actions use the system red |
 
 These roles bind to Figma Theme `ios/gym/*` in Dark and Light. The native light accent is
 verdigris `#106B5F`, darkened from the shared Gym brand `#137A6C` so text holds 4.5:1 on the
-Gym grounds. Gold is a *record*, never a warning; brick is destructive only.
+Gym grounds. Gold is a *record*, never a warning; brick is a refusal or a removal proposal's
+primary. Every destructive control is `role: .destructive` with no tint of its own, so the system
+paints it red.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
 the keyline; the banner ground stays the system's. The workout control (§7.19) declares `gym/accent`
@@ -435,9 +437,9 @@ A sheet that edits a record commits from its bar's `.confirmationAction`, drawn 
 `.sheetCommit`: *Cancel* leading and, on iOS 26, a `role: .confirm` checkmark on `.glassProminent`
 whose glyph is `on-accent` and whose accessibility label is the commit's name (✓ above); on iOS 18
 the name in bold. Never a pill at its foot; its destructive act, when it has one, is the form's
-last row in `alarm`. That is how Calendar, Contacts, Reminders and Health's *Add Data* commit. The
-checkmark disables while the form cannot save: an empty or refused field, or an existing record
-left unchanged.
+last row, in the system red of `role: .destructive`. That is how Calendar, Contacts, Reminders
+and Health's *Add Data* commit. The checkmark disables while the form cannot save: an empty or
+refused field, or an existing record left unchanged.
 
 A sheet with two detents (*What Coach read*, the echo reader) shows the system's grabber, since it
 resizes; a sheet with one detent hides it. `presentationCornerRadius` is never
@@ -953,9 +955,9 @@ since-last-set clock trailing. Minimal: the room symbol.
   *Sharing needs your account. Sign in first.* The bar's `square.and.arrow.up`, the session row's
   context menu and its accessibility action open the same sheet in every account state, so the
   door reads the same from every place it is offered. While a link is live the primary reads *Copy
-  link* (*Copied* once copied) and *Revoke the link* stands under it, a quiet `alarm` button with
-  the destructive role; that band carries text outside a button, so it stands on the band's surface
-  while the link is live and keeps the soft edge otherwise (§4).
+  link* (*Copied* once copied) and *Revoke the link* stands under it, a quiet borderless button
+  with the destructive role, in the system red; that band carries text outside a button, so it
+  stands on the band's surface while the link is live and keeps the soft edge otherwise (§4).
 
 ### 7.9 Finish receipt
 

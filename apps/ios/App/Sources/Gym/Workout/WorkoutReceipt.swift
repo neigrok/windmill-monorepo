@@ -249,7 +249,7 @@ struct WorkoutReceipt: View {
       }
       Button(role: .destructive) { discard = true } label: {
         Text("Discard").frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
-      }.buttonStyle(.plain).foregroundStyle(GymPalette.destructive)
+      }.buttonStyle(.borderless)
         .accessibilityIdentifier("workout-discard-receipt")
       Button {
         gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "share"])

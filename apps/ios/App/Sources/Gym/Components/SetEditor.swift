@@ -301,8 +301,7 @@ struct SetEditor: View {
             }
           }
           Section {
-            Button("Delete set", systemImage: "trash", role: .destructive) { delete() }
-              .foregroundStyle(GymPalette.alarm).accessibilityIdentifier("\(identifier)-delete")
+            Button("Delete set", role: .destructive) { delete() }.accessibilityIdentifier("\(identifier)-delete")
           } footer: { if case .log(let routine?) = landing { Text("\(routine) keeps its planned targets.") } }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)

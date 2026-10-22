@@ -180,8 +180,8 @@ struct RoutineBuilder: View {
         }
         if !editing.draft.isNew {
           Section {
-            Button("Delete routine", systemImage: "trash", role: .destructive) { delete() }
-              .foregroundStyle(GymPalette.alarm).disabled(gym.accountTransition).accessibilityIdentifier("delete-routine")
+            Button("Delete routine", role: .destructive) { delete() }
+              .disabled(gym.accountTransition).accessibilityIdentifier("delete-routine")
           }
         }
       }.listRowBackground(GymPalette.card)

@@ -211,7 +211,7 @@ struct WeighInSheet: View {
             Button("Delete weigh-in", role: .destructive) {
               if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
               else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
-            }.foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-weigh-in-delete")
+            }.accessibilityIdentifier("gym-weigh-in-delete")
           }.listRowBackground(GymPalette.card)
         }
       }
