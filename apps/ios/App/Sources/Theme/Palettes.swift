@@ -6,7 +6,6 @@ import UIKit
 nonisolated enum GymPalette {
   static let control = Color(uiColor: .tertiarySystemFill)
   static let uiInkFaint = UIColor(named: "gym/ink-faint")!
-  static let destructive = Color(uiColor: .systemRed)
   static let canvas = Color("gym/canvas")
   static let card = Color("gym/card")
   static let line = Color("gym/line")

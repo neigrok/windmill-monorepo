@@ -42,9 +42,6 @@ struct WorkoutAssembly: View {
               }
               .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
               .deleteDisabled(!workout.canRemove(id)).moveDisabled(workout.finishing)
-              .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                if workout.canRemove(id) { Button("Remove", systemImage: "trash", role: .destructive) { workout.remove(id) } }
-              }
               .accessibilityAction(named: "Move up") {
                 if let index = workout.walk.order.firstIndex(of: id), index > 0 { workout.move(from: IndexSet(integer: index), to: index - 1) }
               }

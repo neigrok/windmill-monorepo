@@ -83,7 +83,7 @@ struct NotesScreen: View {
             Button { editor = NoteEditorIdentity(note: note) } label: {
               GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), trailing: .door, lineLimit: 2)
             }
-              .swipeActions(allowsFullSwipe: false) { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
+              .trashSwipe("Delete note") { _ = gym.run(DeleteNote(note.id)) }
               .contextMenu {
                 Button("Edit") { editor = NoteEditorIdentity(note: note) }
                 Button("Move up") { move(note, by: -1) }

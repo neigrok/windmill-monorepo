@@ -167,7 +167,7 @@ struct LogTab: View {
         Button("Share this workout", systemImage: "square.and.arrow.up") { share?(session.id) }
         Button("Discard workout", systemImage: "trash", role: .destructive) { discard = session.id }
       }
-      .swipeActions(allowsFullSwipe: false) { Button("Delete", systemImage: "trash", role: .destructive) { discard = session.id }.tint(GymPalette.destructive) }
+      .trashSwipe("Discard workout") { discard = session.id }
       .accessibilityAction(named: "Share this workout") { share?(session.id) }
       .accessibilityAction(named: "Discard workout") { discard = session.id }
   }

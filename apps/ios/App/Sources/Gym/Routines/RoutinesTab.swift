@@ -54,7 +54,7 @@ struct RoutinesTab: View {
                   Button { selectedID = routine.id } label: {
                     GymRow(title: routine.name, meta: gym.routineLine(routine))
                   }.accessibilityIdentifier("routine-\(routine.id)")
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .trashSwipe("Delete routine") { gym.run(DeleteRoutine(routine.id)) }
                     .contextMenu {
                       Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
                       Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }

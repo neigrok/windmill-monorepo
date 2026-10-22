@@ -364,7 +364,7 @@ import UIKit
     app.buttons["routine-close"].tap()
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 5)); row.swipeLeft()
-    app.buttons["Delete"].tap()
+    app.buttons["trash-swipe"].tap()
     XCTAssertTrue(row.waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
     XCTAssertTrue(app.staticTexts["No routines yet"].exists)

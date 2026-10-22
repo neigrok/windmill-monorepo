@@ -67,6 +67,30 @@ struct GymRow: View {
   }
 }
 
+// A row's trailing swipe (docs/design/ios/ios-redesign.md §5 Lists): the system's round red trash circle, no word, which
+// VoiceOver names by the act it commits. A full swipe never commits it. A swipe action fills with the tint around it, so
+// the button clears the room's accent and the system paints its destructive red.
+struct TrashSwipe: ViewModifier {
+  let act: String
+  var enabled = true
+  let action: () -> Void
+
+  func body(content: Content) -> some View {
+    content.swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      if enabled {
+        Button(role: .destructive, action: action) { Image(systemName: "trash") }.tint(nil)
+          .accessibilityLabel(act).accessibilityIdentifier("trash-swipe")
+      }
+    }
+  }
+}
+
+extension View {
+  func trashSwipe(_ act: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+    modifier(TrashSwipe(act: act, enabled: enabled, action: action))
+  }
+}
+
 // One set read back: its place, its numbers and, when present, a trailing caption and a second line of the time, the
 // effort and the note.
 struct SetRow: View {

@@ -40,7 +40,7 @@ struct SessionDetailScreen: View {
                 SetRow(marker: SetRow.marker(set, in: mine), set: set,
                        caption: LogPresentation.comparison(set, preceding: Array(mine.prefix(index)), plan: session.plan))
               }.accessibilityIdentifier("gym-finished-set-\(set.id)")
-                .swipeActions(allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteSet(set.id)) } }
+                .trashSwipe("Delete set") { gym.run(DeleteSet(set.id)) }
                 .contextMenu { Button("Fix set", systemImage: "pencil") { fixing = set }; Button("Delete set", systemImage: "trash", role: .destructive) { gym.run(DeleteSet(set.id)) } }
                 .accessibilityAction(named: "Delete set") { gym.run(DeleteSet(set.id)) }
             }

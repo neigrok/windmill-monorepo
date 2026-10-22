@@ -80,7 +80,7 @@ final class CoachCaptures: DesignCapture {
       capture("08.4-coach-history", look, app)
       let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
       XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
-      XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5)); app.buttons["Delete"].tap()
+      XCTAssertTrue(app.buttons["trash-swipe"].waitForExistence(timeout: 5)); app.buttons["trash-swipe"].tap()
       XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
       capture("gym-coach-history-delete-confirmation", look, app)
       app.buttons["Delete conversation"].tap()

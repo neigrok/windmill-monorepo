@@ -85,6 +85,29 @@ final class LogCaptures: DesignCapture {
   func testScreens() { for look in Look.both { screens(look) } }
   func testScreensLargestText() { for look in Look.bothAtLargestText { screens(look) } }
 
+  // Swipe deletes reveal the round red trash circle: a workout on The log, a set in the workout's detail.
+  func testSwipeDeletes() {
+    for look in Look.both {
+      let app = launch("shell-anonymous", look, arguments: ["-gym-log-fixture"])
+      openGymFromWelcome(app, opensOn: .coach)
+      open(.log, app)
+      let session = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
+      XCTAssertTrue(session.waitForExistence(timeout: 20))
+      revealInLog(session, app)
+      session.swipeLeft()
+      XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+      capture("05.2-log-discard-by-swipe", look, app)
+      session.swipeRight()
+      XCTAssertTrue(app.buttons["trash-swipe"].waitForNonExistence(timeout: 5)); session.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
+      let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).element(boundBy: 1)
+      XCTAssertTrue(set.waitForExistence(timeout: 5)); set.swipeLeft()
+      XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+      capture("05.4-workout-detail-delete-set-by-swipe", look, app)
+      app.terminate()
+    }
+  }
+
   func testOneSessionSignedIn() {
     for look in Look.both {
       let app = launchSignedInCoach(look)

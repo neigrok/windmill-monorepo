@@ -156,7 +156,6 @@ struct RoutineBuilder: View {
               }.buttonStyle(.borderless)
                 .accessibilityLabel("Remove exercise").accessibilityIdentifier("builder-remove-\(entry.exerciseId)")
             }
-              .swipeActions(allowsFullSwipe: false) { Button("Remove", systemImage: "trash", role: .destructive) { editing.remove(index) } }
               .contextMenu {
                 if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
                 Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)

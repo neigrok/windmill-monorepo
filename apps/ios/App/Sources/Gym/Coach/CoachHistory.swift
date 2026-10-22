@@ -145,7 +145,7 @@ struct CoachHistoryScreen: View {
                    trailing: opening == row.id ? .progress : row.askedAt > 0 ? .fact(gym.dates.day(Instant(ms: row.askedAt)), door: true) : .door,
                    lineLimit: 2).contentShape(Rectangle())
           }.disabled(opening != nil || coach.asking)
-            .swipeActions(allowsFullSwipe: false) { Button("Delete", systemImage: "trash", role: .destructive) { deletion = row }.tint(GymPalette.destructive) }
+            .trashSwipe("Delete conversation") { deletion = row }
             .contextMenu { Button("Delete conversation", role: .destructive) { deletion = row } }
         }
         if history.nextCursor != nil {

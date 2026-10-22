@@ -525,10 +525,11 @@ import XCTest
     back(app)
     let session = visibleSessionRow(app), id = session.identifier
     session.swipeLeft()
-    let discard = app.buttons["Delete"]
+    let discard = app.buttons["trash-swipe"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5))
     snapshot("log-actions-\(appearance)", app: app)
     discard.tap()
+    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
     app.buttons["Discard workout"].tap()
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))

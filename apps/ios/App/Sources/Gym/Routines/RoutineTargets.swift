@@ -260,7 +260,7 @@ struct RoutineTargetsSheet: View {
             fillMenu
             ForEach(draft.visibleRows.indices, id: \.self) { index in
               targetRow(index)
-                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
+                .trashSwipe("Delete set") { delete(index) }
                 .accessibilityAction(named: "Delete") { delete(index) }
                 .contextMenu {
                   fillActions

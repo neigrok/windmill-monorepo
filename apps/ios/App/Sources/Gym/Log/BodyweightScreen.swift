@@ -134,9 +134,7 @@ struct BodyweightScreen: View {
               .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
               .accessibilityHint("Correct this weigh-in")
               .accessibilityIdentifier("gym-weigh-in-\(entry.day.text)")
-              .swipeActions(allowsFullSwipe: false) {
-                Button("Delete", role: .destructive) { gym.logDeleteWeighIn(day: entry.day) }
-              }
+              .trashSwipe("Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
               .accessibilityAction(named: "Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
             }
           } header: {

@@ -500,25 +500,19 @@ these are the places it disagrees with a drawing, a brief or the build.
     reserved*), the photo captions and *The next question frees up…*.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
-  Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). Audit of the iOS code
-  (`apps/ios/App/Sources/Gym`, main) against the boards:
-
-  | Place | Code today | Board | Build work |
-  |---|---|---|---|
-  | Routines list | `RoutinesTab.swift:63` text *Delete*, no symbol | 02.1 `1181:4042` | text label |
-  | Routine editor movements | `RoutineBuilder.swift:159` `trash` + *Remove* | 02.8 `1149:2275` | text label |
-  | Targets, per set | `RoutineTargets.swift:262` text *Delete* | none (Vary by set rows not drawn) | text label |
-  | This workout movements | `WorkoutSheets.swift:28` text *Remove* | 03.4 `1135:1875` | text label |
-  | The log sessions | `LogTab.swift:167` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 05.2 `1185:4905` | custom tint, not the system red |
-  | Workout detail sets | `SessionDetailScreen.swift:40` text *Delete* | 05.4 `1188:5811` | text label |
-  | Bodyweight entries | `BodyweightScreen.swift:137` text *Delete* | 06.2 `1185:5500` | text label |
-  | Notes | `CoachScreens.swift:86` text *Delete*; `onDelete` in Edit | 09.1 `1186:5557` | text label |
-  | Coach History | `CoachHistory.swift:148` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 08.4 `1172:3561` | custom tint |
+  Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one
+  shared modifier, `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, Targets'
+  per-set rows, The log, workout detail sets, Bodyweight entries, Notes and Coach History. Still
+  open, as build work for the editor and This workout (tasks 28 and 33): the routine editor (02.8
+  `1149:2275`) and This workout (03.4 `1135:1875`) are lists always in edit mode, where iOS shows no
+  swipe actions, so they remove a movement with a trash button inside the row; 02.8 draws the drag
+  handle and the swipe together, which needs the list out of edit mode with its own handles. A
+  one-line row draws the system's capsule rather than a circle (05.4's set row).
 
   Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,
   *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
-  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*
-  (`WorkoutReceipt.swift:252`), which is the receipt's band action, not a swipe.
+  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*,
+  which is the receipt's band action, not a swipe.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

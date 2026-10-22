@@ -127,8 +127,9 @@ final class ChromeCaptures: DesignCapture {
     XCTAssertTrue(log.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
     revealInLog(session, log)
     session.swipeLeft()
-    let discard = log.buttons["Delete"]
+    let discard = log.buttons["trash-swipe"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
+    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
     XCTAssertTrue(log.buttons["Discard workout"].waitForExistence(timeout: 5))
     capture("gym-layout-log-discard-confirmation", look, log)
     log.cancelConfirmation()
