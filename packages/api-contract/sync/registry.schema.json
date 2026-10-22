@@ -324,7 +324,7 @@
           "const": true
         },
         "headline": {
-          "description": "The primary type an account's records in the product are counted by: hello's holdings count its visible records and name the newest one's creation (§9.2). At most one per product.",
+          "description": "The primary type of a product scope an account's records in the product are tallied by: hello's holdings count its visible records and name the last write among them (§9.2). At most one per product.",
           "const": true
         },
         "mint": {

@@ -220,8 +220,8 @@ enum AdoptionFixture {
 }
 
 #if DEBUG && targetEnvironment(simulator)
-// 02b–02c: an account holding 142 journal pages and 38 workouts, the gym's newest, which Apple opens on a phone holding
-// nothing. `held` serves small pages and holds every pull after the second, so the counts stop part-way.
+// 02b–02c: an account holding 142 journal pages and 38 workouts, the gym last written to, which Apple opens on a phone
+// holding nothing. `held` serves small pages and holds every pull after the second, so the counts stop part-way.
 enum ReturningFixture {
   static func prepare(_ model: AppModel, held: Bool) async {
     guard let server = model.runtime?.auth.fake else { return }
@@ -251,7 +251,7 @@ enum ReturningFixture {
       server.state.withLock { state in
         var landed = state.server.state
         let gym = ScopeKey(.product(account: identity.account, name: "gym"))
-        for (key, row) in landed.rows[gym] ?? [:] { landed.rows[gym]?[key]?.rc = (row.rc ?? now) + 60_000 }
+        for (key, row) in landed.rows[gym] ?? [:] { landed.rows[gym]?[key]?.ru = (row.ru ?? now) + 60_000 }
         var limits = ServerLimits()
         if held { limits.pullPageBytes = 2_000; state.pullsAnsweredBeforeHold = 2 }
         state.server = ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry),

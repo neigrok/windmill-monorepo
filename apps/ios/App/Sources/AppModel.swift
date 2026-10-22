@@ -261,7 +261,7 @@ final class AppModel {
     poll(); gym.refresh(); advanceRestore()
   }
 
-  // 02c: the room with the newest record opens once its own records are in, and the arrival ends when every room's are.
+  // 02c: the room last written to opens once its own records are in, and the arrival ends when every room's are.
   // A phone that loses its connection or its session opens that room at once, where the room says what is still missing.
   func advanceRestore() {
     guard var restore else { return }

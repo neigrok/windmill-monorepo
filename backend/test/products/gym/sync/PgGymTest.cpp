@@ -58,6 +58,16 @@ namespace {
             CHECK_EQ(jcs(locked.at(row.id.key()).toJson()), jcs(row.toJson()));
           }
           CHECK_EQ(store.count(*txn, scope, FeedQuery{}), expected.size());
+          Tally visibleRows;
+          for (const auto& [id, row] : expected) {
+            if (!visible(store.def(), row)) continue;
+            ++visibleRows.count;
+            visibleRows.lastWrittenAt = std::max(visibleRows.lastWrittenAt.value_or(0), row.ru);
+          }
+          const Tally tallied = store.tally(*txn, scope);
+          CHECK_EQ(tallied.count, visibleRows.count);
+          CHECK_EQ(tallied.lastWrittenAt, visibleRows.lastWrittenAt);
+          CHECK_EQ(store.count(*txn, scope, FeedQuery{.visibleOnly = true}), visibleRows.count);
           for (const Row& fed : store.feed(*txn, scope, FeedQuery{})) {
             CHECK_EQ(rowHash(fed.toJson()).hex(), rowHash(expected.at(fed.id.key()).toJson()).hex());
             CHECK_EQ(jcs(fed.toJson()), jcs(expected.at(fed.id.key()).toJson()));

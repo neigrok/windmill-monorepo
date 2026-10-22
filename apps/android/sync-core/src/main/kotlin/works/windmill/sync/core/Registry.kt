@@ -224,6 +224,8 @@ class TypeDef(val json: Json) {
     val seeded = json["seeded"]
     val mint = json["mint"]?.let(::Mint)
     val cap = json["cap"]?.long(1)
+    // §9.2 holdings: the one primary type a product's records are tallied by.
+    val headline = json["headline"]?.bool() == true
     val hasBorn: Boolean get() = identity == "minted" || identity == "derived"
     init {
         require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
@@ -301,6 +303,7 @@ class Registry(input: Json) {
     init {
         require(name.matches(Regex("[a-z][a-z0-9-]*")))
         require(types.map { it.name }.distinct().size == types.size)
+        require(types.filter { it.headline }.let { headlines -> headlines.distinctBy { it.scope }.size == headlines.size })
         require(commands.map { it.member("name").str() }.distinct().size == commands.size)
         val codes = mutableSetOf<String>()
         for ((name, product) in products) {

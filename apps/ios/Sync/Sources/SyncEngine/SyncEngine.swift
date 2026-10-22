@@ -120,7 +120,7 @@ public final class SyncEngine: Replica {
     return reply
   }
 
-  // §9.2 what the last hello served as `account` counted of each product's headline records: empty before one answers.
+  // §9.2 what the last hello served as `account` tallied of each product's headline records: empty before one answers.
   public func holdings(of account: String) -> [String: HelloResponse.Holding] {
     holdingsByAccount.withLock { $0[account] ?? [:] }
   }

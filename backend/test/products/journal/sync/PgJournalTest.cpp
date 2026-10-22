@@ -131,6 +131,16 @@ Json::Value retentionVector(const Json::Value& input) {
             CHECK_EQ(jcs(locked.at(row.id.key()).toJson()), jcs(row.toJson()));
           }
           CHECK_EQ(type.count(*txn, scope, FeedQuery{}), expected.size());
+          Tally visibleRows;
+          for (const auto& [id, row] : expected) {
+            if (!visible(type.def(), row)) continue;
+            ++visibleRows.count;
+            visibleRows.lastWrittenAt = std::max(visibleRows.lastWrittenAt.value_or(0), row.ru);
+          }
+          const Tally tallied = type.tally(*txn, scope);
+          CHECK_EQ(tallied.count, visibleRows.count);
+          CHECK_EQ(tallied.lastWrittenAt, visibleRows.lastWrittenAt);
+          CHECK_EQ(type.count(*txn, scope, FeedQuery{.visibleOnly = true}), visibleRows.count);
           for (const Row& fed : type.feed(*txn, scope, FeedQuery{})) {
             CHECK_EQ(jcs(fed.toJson()), jcs(expected.at(fed.id.key()).toJson()));
             CHECK_EQ(rowHash(fed.toJson()).hex(), rowHash(expected.at(fed.id.key()).toJson()).hex());
@@ -249,6 +259,50 @@ TEST(journal_admitted_pages_read_back_through_the_rest_reads_with_their_notices_
   REQUIRE(secondAudit.has_value());
   CHECK_EQ(*firstAudit, "  café\n");
   CHECK_EQ(*secondAudit, "Kept");
+}
+
+// §2.4 visibleWhen [body] where the rows sit: a page counts while its body holds a code point outside ECMAScript's
+// whitespace, the set the engine's isBlank reads, and the tally names the last write among those pages.
+TEST(journal_pages_are_visible_and_tallied_in_postgres_exactly_as_the_engine_reads_a_blank_body) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world(false, true);
+  world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
+  const auto user = world.account("A");
+  CountingWatcher watcher;
+  journal::engine::JournalFeed feed(watcher, world.feed);
+  Admission admission(world.catalog(), world.store(), feed, world.clock(), world.failures);
+  const Ms now = 1'760'000'000'000;
+  const std::vector<std::pair<std::string, std::string>> bodies{
+      {"2026-10-01", "A page"},
+      {"2026-10-02", "   "},
+      {"2026-10-03", "\t\n\v\f\r"},
+      {"2026-10-04", "\u00a0\u1680\u2000\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"},
+      {"2026-10-05", "\u200b"},
+      {"2026-10-06", " \u0085 "},
+      {"2026-10-07", ""},
+  };
+  for (std::size_t i = 0; i < bodies.size(); ++i)
+    admitted(admission, user, savePage(bodies[i].first, bodies[i].second, Json::nullValue, Json::nullValue, "typed", now + i, 0, "writer:phone"), now + i);
+  admitted(admission, user, savePage("2026-10-01", "A page, again", Json::nullValue, Json::nullValue, "typed", now + 10, 0, "writer:phone"), now + 10);
+
+  auto txn = world.store().begin(TxnMode::snapshot);
+  const auto scope = ScopeKey::product(user, "journal");
+  auto& pages = world.catalog().store("page");
+  std::vector<std::string> visibleToTheEngine;
+  for (const Row& row : pages.feed(*txn, scope, FeedQuery{})) {
+    if (visible(pages.def(), row)) visibleToTheEngine.push_back(row.id.column());
+  }
+  std::vector<std::string> visibleInPostgres;
+  for (const Row& row : pages.feed(*txn, scope, FeedQuery{.visibleOnly = true})) visibleInPostgres.push_back(row.id.column());
+  CHECK_EQ(visibleToTheEngine, (std::vector<std::string>{"2026-10-05", "2026-10-06", "2026-10-01"}));
+  CHECK_EQ(visibleInPostgres, visibleToTheEngine);
+  CHECK_EQ(pages.count(*txn, scope, FeedQuery{}), 7u);
+  CHECK_EQ(pages.count(*txn, scope, FeedQuery{.visibleOnly = true}), 3u);
+  CHECK_EQ(pages.count(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}), 1u);
+  const Tally tally = pages.tally(*txn, scope);
+  CHECK_EQ(tally.count, 3u);
+  CHECK_EQ(tally.lastWrittenAt, std::optional<Ms>(now + 10));
 }
 
 TEST(journal_partial_first_run_retirement_allows_a_later_state_save_page_save_and_claim) {

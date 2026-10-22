@@ -38,6 +38,7 @@ public:
   void apply(SyncTxn&, const ScopeKey& scope, const std::vector<RowWrite>& writes) override;
   std::vector<Row> feed(SyncTxn&, const ScopeKey& scope, const FeedQuery& query) override;
   std::uint64_t count(SyncTxn&, const ScopeKey& scope, const FeedQuery& query) override;
+  Tally tally(SyncTxn&, const ScopeKey& scope) override;
   std::optional<std::int64_t> maxSerial(SyncTxn&, const ScopeKey& scope, const std::string& field,
                                         const std::map<std::string, Json::Value>& match) override;
   std::optional<std::string> revisionText(SyncTxn&, const ScopeKey& scope, const RecordId& id, const std::string& field, Seq rev) override;

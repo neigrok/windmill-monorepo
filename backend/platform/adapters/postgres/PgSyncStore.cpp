@@ -2,8 +2,10 @@
 
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <stdexcept>
 #include <utility>
 
@@ -148,6 +150,30 @@ std::string idPlaceholders(pqxx::params& params, const std::vector<RecordId>& id
 std::string idOrder(const std::string& column, bool tupleIds) {
   if (tupleIds) return column + " collate \"C\"";
   return "(to_json(" + column + ")::text) collate \"C\"";
+}
+
+std::string holdsNonBlank(const std::string& column) {
+  auto escape = [](char32_t point) {
+    char hex[7];
+    std::snprintf(hex, sizeof hex, "\\u%04X", static_cast<unsigned>(point));
+    return std::string(hex);
+  };
+  std::string outside;
+  for (const auto& [first, last] : whitespace()) outside += first == last ? escape(first) : escape(first) + "-" + escape(last);
+  return column + " ~ '[^" + outside + "]'";
+}
+
+std::uint64_t countOf(SyncTxn& txn, const std::string& rows, const pqxx::params& params, std::size_t limit) {
+  const std::string picked = "select 1 from " + rows + (limit > 0 ? " limit " + std::to_string(limit) : "");
+  const pqxx::result result = sqlOf(txn).exec("select count(*) as total from (" + picked + ") picked", params);
+  return result[0]["total"].as<std::uint64_t>();
+}
+
+Tally tallyOf(SyncTxn& txn, const std::string& rows, const pqxx::params& params) {
+  const pqxx::result result = sqlOf(txn).exec("select count(*) as total, max(ru) as latest from " + rows, params);
+  Tally tally{.count = result[0]["total"].as<std::uint64_t>()};
+  if (!result[0]["latest"].is_null()) tally.lastWrittenAt = result[0]["latest"].as<Ms>();
+  return tally;
 }
 
 PgSyncStore::PgSyncStore(std::shared_ptr<PgPool> pool, std::uint64_t lockTimeoutMs,

@@ -65,6 +65,7 @@ object CoreCorpus {
             Json.objectOf("join" to result.json)
         },
         "derive/slug.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }))) },
+        "registry/refusals.json" to { input -> Json.objectOf("admitted" to Json.of(runCatching { Registry(input.member("registry")) }.isSuccess)) },
         "identity/seeded.json" to { input ->
             if (input.member("op").str() == "make") {
                 Json.objectOf("id" to Json.of(SeededId.make(input.member("seed").str(), input.member("n").long(), probe.type(input.member("type").str())!!).id))

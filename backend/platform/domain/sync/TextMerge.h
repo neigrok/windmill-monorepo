@@ -5,14 +5,19 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace wm::sync {
 
 // Whitespace is ECMAScript \s exactly: U+0009–U+000D, U+0020, U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F,
-// U+205F, U+3000, U+FEFF. Maximal runs of whitespace and of non-whitespace, over UTF-8 text.
+// U+205F, U+3000, U+FEFF, as inclusive code point ranges, so a store can test blankness where the text sits.
+std::span<const std::pair<char32_t, char32_t>> whitespace();
+
+// Maximal runs of whitespace and of non-whitespace, over UTF-8 text.
 std::vector<std::string> tokenize(std::string_view text);
 
 // Every code point is that whitespace; "" is blank.

@@ -13,6 +13,7 @@ import { between, compareMembers, dropKey } from '../../core/fracindex.js';
 import { jcs } from '../../core/jcs.js';
 import { INTENT_MACHINE, REPLICA_MACHINE, SCOPE_MACHINE, transition } from '../../core/machines.js';
 import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../core/merge.js';
+import { Registry } from '../../core/registry.js';
 import { Stamp } from '../../core/stamp.js';
 import { decide, opOf } from '../../server/identity.js';
 import { diff3, editScript, mergeText, mergedFlag, tokenize } from '../../server/textmerge.js';
@@ -74,6 +75,14 @@ const RUNNERS = {
   'join/born.json': ({ a, b }) => ({ join: orNull(joinBorn(orAbsent(a), orAbsent(b))) }),
   'join/record.json': ({ type, a, b }) => ({ join: joinRecord(registry.type(type), a, b) }),
   'derive/slug.json': ({ label, fallback, taken }) => ({ id: derive(label, fallback, new Set(taken)) }),
+  'registry/refusals.json': ({ registry: document }) => {
+    try {
+      new Registry(document);
+      return { admitted: true };
+    } catch {
+      return { admitted: false };
+    }
+  },
   'identity/seeded.json': (input) => (input.op === 'parse'
     ? { parsed: parseSeeded(input.id) }
     : attempt(() => ({ id: seededId(registry.type(input.type), input.seed, input.n) }))),

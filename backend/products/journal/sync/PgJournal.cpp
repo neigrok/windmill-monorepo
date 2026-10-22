@@ -66,6 +66,20 @@ std::string select(const std::string& type) {
 
 PgJournalType::PgJournalType(const TypeDef& type) : type_(type), table_(type.name == "page" ? "journal_page" : "journal_sync_state") {
   if (type.name != "page" && type.name != "journalState") throw std::logic_error("unsupported journal type " + type.name);
+  idOrder_ = idOrder(type.name == "page" ? "day::text" : "'journalState'::text", false);
+  // §7.6 visible(r) where the rows sit: a page while its body holds a non-blank text (visibleWhen [body]); the
+  // state row, a singleton, always.
+  if (type.name == "page") visibleWhere_ = " and body_rev is not null and " + holdsNonBlank("body");
+}
+
+std::string PgJournalType::keysetWhere(pqxx::params& params, const ScopeKey& scope, const FeedQuery& query) const {
+  params.append(scope.account().str());
+  params.append(static_cast<std::int64_t>(query.afterSeq));
+  params.append(query.afterKey);
+  std::string where = " where user_id=$1::uuid and seq is not null and (seq>$2 or (seq=$2 and " + idOrder_ + ">$3))";
+  if (query.throughSeq) { params.append(static_cast<std::int64_t>(*query.throughSeq)); where += " and seq<=$4"; }
+  if (query.visibleOnly) where += visibleWhere_;
+  return where;
 }
 
 std::map<std::string, Row> PgJournalType::lock(SyncTxn& txn, const ScopeKey& scope, const std::vector<RecordId>& ids) {
@@ -155,25 +169,24 @@ void PgJournalType::pruneRevisions(SyncTxn& txn, const ScopeKey& scope, const st
 }
 
 std::vector<Row> PgJournalType::feed(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
-  pqxx::params params{scope.account().str(), static_cast<std::int64_t>(query.afterSeq), query.afterKey};
-  const std::string id = type_.name == "page" ? "day::text" : "'journalState'::text";
-  std::string where = "user_id=$1::uuid and seq is not null and (seq>$2 or (seq=$2 and " + idOrder(id, false) + ">$3))";
-  if (query.throughSeq) { params.append(static_cast<std::int64_t>(*query.throughSeq)); where += " and seq<=$4"; }
-  const auto result = sqlOf(txn).exec("select " + select(type_.name) + " from " + table_ + " where " + where + " order by seq," + idOrder(id, false), params);
+  pqxx::params params;
+  std::string sql = "select " + select(type_.name) + " from " + table_ + keysetWhere(params, scope, query) + " order by seq," + idOrder_;
+  if (query.limit > 0) sql += " limit " + std::to_string(query.limit);
   std::vector<Row> rows;
-  for (const auto& value : result) {
-    Row row = readRow(type_, value);
-    if (query.visibleOnly && !visible(type_, row)) continue;
-    rows.push_back(std::move(row));
-    if (query.limit && rows.size() >= query.limit) break;
-  }
+  for (const auto& value : sqlOf(txn).exec(sql, params)) rows.push_back(readRow(type_, value));
   return rows;
 }
 
 std::uint64_t PgJournalType::count(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
-  FeedQuery all = query;
-  all.limit = 0;
-  return feed(txn, scope, all).size();
+  pqxx::params params;
+  const std::string where = keysetWhere(params, scope, query);
+  return countOf(txn, table_ + where, params, query.limit);
+}
+
+Tally PgJournalType::tally(SyncTxn& txn, const ScopeKey& scope) {
+  pqxx::params params;
+  const std::string where = keysetWhere(params, scope, FeedQuery{.visibleOnly = true});
+  return tallyOf(txn, table_ + where, params);
 }
 
 std::optional<std::string> PgJournalType::revisionText(SyncTxn& txn, const ScopeKey& scope, const RecordId& id, const std::string& field, Seq rev) {

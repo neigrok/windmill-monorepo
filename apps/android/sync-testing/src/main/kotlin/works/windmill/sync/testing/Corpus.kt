@@ -51,7 +51,7 @@ class Corpus(val root: File) {
         val roles = listOf(
             "constants.json" to CorpusRole.ALL, "stamp/" to CorpusRole.ALL, "hlc/tick.json" to CorpusRole.ALL,
             "hlc/observe.json" to CorpusRole.ALL, "jcs/" to CorpusRole.ALL, "join/" to CorpusRole.ALL,
-            "derive/" to CorpusRole.ALL, "identity/seeded.json" to CorpusRole.ALL, "digest/" to CorpusRole.ALL,
+            "derive/" to CorpusRole.ALL, "registry/" to CorpusRole.ALL, "identity/seeded.json" to CorpusRole.ALL, "digest/" to CorpusRole.ALL,
             "protocol/" to CorpusRole.ALL, "identity/table.json" to CorpusRole.SERVER, "admit/" to CorpusRole.SERVER,
             "text/" to CorpusRole.SERVER, "envelope/credentials.json" to CorpusRole.SERVER, "push/serve.json" to CorpusRole.SERVER,
             "pull/serve.json" to CorpusRole.SERVER, "pull/hello.json" to CorpusRole.SERVER, "live/death.json" to CorpusRole.SERVER,

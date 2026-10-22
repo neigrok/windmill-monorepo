@@ -1,7 +1,7 @@
 import SyncCore
 
 // Returning on a new phone (02c): each room's records arriving against the count the account's hello gave, and the room
-// whose newest record is latest opening once its own records are in, while the other keeps arriving behind it.
+// the person last wrote to opening once its own records are in, while the other keeps arriving behind it.
 struct SignInRestore: Equatable {
   enum Step: Equatable { case open(AppModel.Room), complete }
 
@@ -13,15 +13,15 @@ struct SignInRestore: Equatable {
   // Nothing to bring back, or a hello that counted nothing, leaves the phone as sign-in leaves it.
   init?(method: String, holdings: [String: HelloResponse.Holding]) {
     var totals: [AppModel.Room: Int] = [:]
-    var newest: (room: AppModel.Room, at: Int64)?
+    var lastWritten: (room: AppModel.Room, at: Int64)?
     for room in AppModel.Room.allCases {
       guard let holding = holdings[room.rawValue], holding.count > 0 else { continue }
       totals[room] = holding.count
-      let at = holding.newestAt ?? 0
-      if newest.map({ at > $0.at }) ?? true { newest = (room, at) }
+      let at = holding.lastWrittenAt ?? 0
+      if lastWritten.map({ at > $0.at }) ?? true { lastWritten = (room, at) }
     }
-    guard let newest else { return nil }
-    self.method = method; self.totals = totals; opening = newest.room
+    guard let lastWritten else { return nil }
+    self.method = method; self.totals = totals; opening = lastWritten.room
   }
 
   var rooms: [AppModel.Room] { AppModel.Room.allCases.filter { totals[$0] != nil } }

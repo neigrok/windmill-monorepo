@@ -121,6 +121,14 @@ enum Handlers {
       let id = DerivedID.from(label: label, fallback: try input.member("fallback").asString(), taken: taken)
       return ["id": .string(id)]
     },
+    "registry/refusals.json": { input in
+      do {
+        _ = try Registry(json: input.member("registry"))
+        return ["admitted": true]
+      } catch {
+        return ["admitted": false]
+      }
+    },
     "identity/seeded.json": { input in
       guard try input.member("op").asString() == "make" else {
         let parsed = SeededID(parsing: try input.member("id").asString())

@@ -169,8 +169,8 @@ export function frameFor(state, event, account = null) {
 }
 
 // §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type; holdings[p]
-// counts the visible rows of p's headline type and names the newest one's creation (rc). A sent credential
-// that fails answers 401 (§9.1); only a hello with none is anonymous.
+// counts the visible rows of p's headline type and names the last write among them (the greatest ru). A sent
+// credential that fails answers 401 (§9.1); only a hello with none is anonymous.
 export function hello({ state, registry, account = null, credential, serverTime }) {
   if (credentialFails(account, credential)) return { status: 401, body: { serverTime, epoch: state.epoch, as: null, error: 'unauthenticated' } };
   const body = { serverTime, epoch: state.epoch, as: account, schema: registry.version, minSchema: registry.minVersion };
@@ -184,7 +184,8 @@ export function hello({ state, registry, account = null, credential, serverTime 
     const headline = registry.headlineType(product);
     if (!headline) continue;
     const counted = rows.filter((row) => row.t === headline.type && isVisible(headline, row));
-    body.holdings[product] = { count: counted.length, newestAt: counted.length ? Math.max(...counted.map((row) => row.rc)) : null };
+    const lastWrittenAt = counted.reduce((latest, row) => (latest === null || row.ru > latest ? row.ru : latest), null);
+    body.holdings[product] = { count: counted.length, lastWrittenAt };
   }
   return { status: 200, body };
 }

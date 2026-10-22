@@ -46,6 +46,8 @@ if (registries.some((registry) => registry.version !== registries[0].version || 
 const SCHEMA = String(registries[0].version);
 const MIN_SCHEMA = registries[0].minVersion;
 const PRODUCTS = registries.flatMap((registry) => Object.keys(registry.products)).sort();
+// §9.2: hello's holdings carry each product that declares a headline type, and no other.
+const HEADLINED = registries.flatMap((registry) => registry.types.filter((type) => type.headline).map((type) => type.scope.replace(/^product:/, ''))).sort();
 const SCOPES = PRODUCTS.map((product) => `self/${product}`);
 
 const corpus = JSON.parse(readFileSync(corpusFile, 'utf8'));
@@ -288,9 +290,9 @@ async function served(endpoint, answer, connection) {
         if ('holdsRecords' in envelope || 'holdings' in envelope) return 'refused: anonymous hello has holdsRecords or holdings';
       } else if (!envelope.holdsRecords || JSON.stringify(Object.keys(envelope.holdsRecords).sort()) !== JSON.stringify(PRODUCTS) || Object.values(envelope.holdsRecords).some((holds) => typeof holds !== 'boolean')) {
         return `refused: hello does not declare the ${CATALOG} products`;
-      } else if (!envelope.holdings || JSON.stringify(Object.keys(envelope.holdings).sort()) !== JSON.stringify(PRODUCTS)
-        || Object.values(envelope.holdings).some(({ count, newestAt }) => !Number.isSafeInteger(count) || count < 0 || (newestAt !== null && !Number.isSafeInteger(newestAt)) || (count === 0) !== (newestAt === null))) {
-        return `refused: hello does not count the ${CATALOG} products' holdings`;
+      } else if (!envelope.holdings || JSON.stringify(Object.keys(envelope.holdings).sort()) !== JSON.stringify(HEADLINED)
+        || Object.values(envelope.holdings).some(({ count, lastWrittenAt }) => !Number.isSafeInteger(count) || count < 0 || (lastWrittenAt !== null && !Number.isSafeInteger(lastWrittenAt)) || (count === 0) !== (lastWrittenAt === null))) {
+        return `refused: hello does not tally the holdings of the ${CATALOG} products that declare a headline type`;
       }
     }
     if (endpoint === 'pull') {

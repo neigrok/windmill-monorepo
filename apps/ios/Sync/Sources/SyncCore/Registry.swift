@@ -71,8 +71,9 @@ public struct Registry: Sendable {
     ]
   }
 
-  // Rules that need the whole registry: unique names and refusal codes, every referenced type and product declared,
-  // every default a value its field admits, and no command predicting a type only deltas write.
+  // Rules that need the whole registry: unique names and refusal codes, at most one headline type per product, every
+  // referenced type and product declared, every default a value its field admits, and no command predicting a type only
+  // deltas write.
   func checkReferences() throws(RegistryError) {
     for (index, product) in products.enumerated() where products[..<index].contains(where: { $0.name == product.name }) {
       throw RegistryError("product \(product.name) is declared twice")
@@ -86,6 +87,10 @@ public struct Registry: Sendable {
     }
     for (index, command) in commands.enumerated() where commands[..<index].contains(where: { $0.name == command.name }) {
       throw RegistryError("command \(command.name) is declared twice")
+    }
+    let headlines = types.filter(\.headline)
+    for (index, type) in headlines.enumerated() where headlines[..<index].contains(where: { $0.scope == type.scope }) {
+      throw RegistryError("type \(type.name) is a second headline type of its product")
     }
     for type in types {
       let referenced = type.fields.compactMap(\.ref) + (type.key?.refs ?? [])
@@ -220,7 +225,7 @@ public struct TypeDef: Sendable {
   public let cap: Int?
   public let visibleWhen: [String]?
   public let primary: Bool
-  // §9.2 holdings: the one primary type a product's records are counted by.
+  // §9.2 holdings: the one primary type a product's records are tallied by.
   public let headline: Bool
 
   public var hasBorn: Bool { identity == .minted || identity == .derived }

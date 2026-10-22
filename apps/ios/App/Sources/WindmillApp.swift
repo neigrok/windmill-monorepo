@@ -226,7 +226,7 @@ struct RootScreen: View {
 }
 
 extension RootScreen {
-  // 02c: one plain row a room, its real count climbing as records land, until the room with the newest record opens.
+  // 02c: one plain row a room, its real count climbing as records land, until the room last written to opens.
   func arrival(_ restore: SignInRestore) -> some View {
     GeometryReader { geo in
       List {

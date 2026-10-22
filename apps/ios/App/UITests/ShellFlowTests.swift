@@ -86,9 +86,9 @@ import XCTest
     XCTAssertFalse(app.buttons["sign-out"].exists)
   }
 
-  // 02b–02c: Sign in on Where to start? names what comes back, counts each room as it arrives and opens the gym, whose
-  // record is the account's newest, once its own records are in.
-  func testReturningOnANewPhoneOpensTheNewestRoomOnceItArrives() {
+  // 02b–02c: Sign in on Where to start? names what comes back, counts each room as it arrives and opens the gym, the room
+  // the account last wrote to, once its own records are in.
+  func testReturningOnANewPhoneOpensTheRoomLastWrittenToOnceItArrives() {
     let app = launch("02-returning")
     let signIn = app.buttons["Sign in"]
     XCTAssertTrue(signIn.waitForExistence(timeout: 60)); signIn.tap()

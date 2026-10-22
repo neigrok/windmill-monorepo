@@ -43,7 +43,7 @@ for the `gym/` files, and `../journal.registry.json` for the `journal/` files.
 
 | Role | Files |
 |---|---|
-| all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
+| all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `registry/`, `identity/seeded.json`, `digest/`, `protocol/` |
 | server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json` |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
 
@@ -438,6 +438,13 @@ side, is kept as it is. Parts absent from both sides stay absent.
 `label`. Every byte outside `[A-Za-z0-9]` is a separator; the base stops at 40 characters before its
 trailing dash is removed; suffixes are `-2`, `-3`, … appended to the base.
 
+### `registry/refusals.json` — all
+
+`input: {registry}` · `expect: {admitted}`: whether an implementation loads `registry`, a whole registry
+document, or refuses it as it loads (engine.md §2.4). Each refused document breaks one rule beside an
+admitted one; the rules are `headline`'s: true or absent, on a primary type of a product scope, at most
+one per product.
+
 ### `identity/seeded.json` — all
 
 - `input: {op: "make", type, seed, n}` · `expect: {id}` or `{error: true}`: the D-8 seeded id
@@ -791,8 +798,8 @@ configure a limit skips those vectors.
   `minVersion`), and, for an account, `holdsRecords[product]`: a visible row of a primary type in
   `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible. For an account
   it also carries `holdings[product]` for each product that declares a `headline` type: `count`, the
-  visible rows of that type in `acct:<A>/<product>`, and `newestAt`, the greatest `rc` among them, or
-  `null` when there are none.
+  visible rows of that type in `acct:<A>/<product>`, and `lastWrittenAt`, the greatest `ru` among them,
+  or `null` when there are none.
 
 **Strict cursors.**
 

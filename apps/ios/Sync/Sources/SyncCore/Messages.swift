@@ -188,20 +188,20 @@ public struct HelloResponse: Hashable, ResponseBody {
   public let holdsRecords: [String: Bool]?
   public let holdings: [String: Holding]?
 
-  // §9.2 a product's headline records in the account: how many, and the newest one's creation.
+  // §9.2 a product's headline records in the account: how many, and when the server last received a write to one.
   public struct Holding: Sendable, Hashable {
     public let count: Int
-    public let newestAt: Int64?
+    public let lastWrittenAt: Int64?
 
-    public init(count: Int, newestAt: Int64?) {
+    public init(count: Int, lastWrittenAt: Int64?) {
       self.count = count
-      self.newestAt = newestAt
+      self.lastWrittenAt = lastWrittenAt
     }
 
     init(json: JSON) throws {
       count = Int(try json.member("count").asInteger())
-      let newest = try json.member("newestAt")
-      newestAt = newest.isNull ? nil : try newest.asInteger()
+      let lastWritten = try json.member("lastWrittenAt")
+      lastWrittenAt = lastWritten.isNull ? nil : try lastWritten.asInteger()
     }
   }
 

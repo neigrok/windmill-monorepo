@@ -387,7 +387,9 @@ The engine applies:
   delta or through a command as its binding allows, and the product's `check` re-checks it (§6.1
   step 10).
 - `primary` marks the types whose records make an account hold records in the product (§9.2).
-- `headline` marks at most one primary type per product: the type hello's `holdings` counts (§9.2).
+- `headline` marks at most one primary type of a product scope per product: the type hello's
+  `holdings` tallies (§9.2). A registry that marks a type of a tree or overlay scope, a type that is
+  not primary, or two types of one product is refused.
 - `visibleWhen` lists fields: a record of a type without life is visible iff one of them holds a
   value other than null or `""`; a text field must contain a non-whitespace code point under §6.11's
   ECMAScript whitespace set. Without it, the record is visible iff it holds any lattice register
@@ -1086,7 +1088,7 @@ MCP tools, REST writes, tending and server-internal commands call
 kept for capped types only. A new scope's counters are 0, an absent key reading 0; an adopted gym
 scope's started at C.6's counts. Only step 13 changes them. The cap check reads the counter and never counts rows.
 `holdsRecords` (§9.2) needs no counter: it is an existence query over visible rows of primary types.
-`holdings` (§9.2) reads the visible rows of one headline type in one snapshot, never a counter.
+`holdings` (§9.2) tallies the visible rows of one headline type where they are stored, in one snapshot, never a counter.
 
 ### §6.6 Faults and poison
 
@@ -2295,7 +2297,7 @@ A thin dead row is `{t, id, life, born?, seq}`.
 ```ts
 → { serverTime, epoch, as: string | null, schema: number, minSchema: number,
     holdsRecords?: Record<product, boolean>,   // authenticated callers; every product the registry declares
-    holdings?: Record<product, { count: number, newestAt: number | null }> }
+    holdings?: Record<product, { count: number, lastWrittenAt: number | null }> }
                                                 // authenticated callers; every product with a headline type
 ```
 
@@ -2308,9 +2310,10 @@ hello that precedes it (§7.10).
 
 `holdings` is present iff `holdsRecords` is, from the same snapshot. `holdings[p]` is present iff `p`
 declares a `headline` type (§2.4): `count` is the number of rows of that type in `acct:A/<p>` that
-`visible` accepts, and `newestAt` is the greatest `rc` among them, or `null` when `count` is 0. A
-client restoring onto an empty replica reads them to say what is arriving and which room fills first;
-a client that does not know the field ignores it.
+`visible` accepts, and `lastWrittenAt` is the greatest `ru` among them (the server's receipt of the
+last change to any of them, D-6), or `null` when `count` is 0. A client restoring onto an empty
+replica reads them to say what is arriving and to open first the product the person last wrote to; a
+client that does not know the field ignores it.
 
 ### §9.3 Push: `POST /v1/sync/push`
 

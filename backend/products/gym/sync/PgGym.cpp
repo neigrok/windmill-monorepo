@@ -6,6 +6,7 @@
 #include "products/gym/sync/GymDoorHash.h"
 
 #include <cctype>
+#include <stdexcept>
 
 namespace wm::gym::engine {
 
@@ -223,6 +224,26 @@ PgGymType::PgGymType(const TypeDef& type) : type_(type), owner_(type.name == "ex
   if (type.name == "exerciseName") id_ = "exercise_id";
   if (type.name == "weighin") id_ = "date_local";
   if (type.name == "prefs") id_ = "";
+  idOrder_ = idOrder(id_.empty() ? "'prefs'::text" : id_ + "::text", false);
+  // §7.6 visible(r) where the rows sit. Every gym type with life drops its dead rows (deadRows spent), so each
+  // stored row is alive; a lifeless keyed row is visible while it holds a register.
+  if (!type.visibleWhen.empty()) throw std::logic_error("gym stores no visibleWhen type, and " + type.name + " declares one");
+  if (type.life || type.identity == Identity::singleton) return;
+  std::string anyRegister;
+  for (const auto& [name, field] : type.fields) {
+    if (field.kind != FieldKind::serial) anyRegister += (anyRegister.empty() ? "" : " or ") + snake(name) + "_stamp is not null";
+  }
+  visibleWhere_ = anyRegister.empty() ? " and false" : " and (" + anyRegister + ")";
+}
+
+std::string PgGymType::keysetWhere(pqxx::params& params, const ScopeKey& scope, const FeedQuery& query) const {
+  params.append(scope.account().str());
+  params.append(static_cast<std::int64_t>(query.afterSeq));
+  params.append(query.afterKey);
+  std::string where = " where " + owner_ + "=$1::uuid and seq is not null and (seq>$2 or (seq=$2 and " + idOrder_ + ">$3))";
+  if (query.throughSeq) { params.append(static_cast<std::int64_t>(*query.throughSeq)); where += " and seq<=$4"; }
+  if (query.visibleOnly) where += visibleWhere_;
+  return where;
 }
 
 std::map<std::string, Row> PgGymType::lock(SyncTxn& txn, const ScopeKey& scope, const std::vector<RecordId>& ids) {
@@ -326,25 +347,24 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
 }
 
 std::vector<Row> PgGymType::feed(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
-  pqxx::params params{scope.account().str(), static_cast<std::int64_t>(query.afterSeq), query.afterKey};
-  const std::string key = id_.empty() ? "'prefs'::text" : id_ + "::text";
-  std::string where = " where " + owner_ + "=$1::uuid and seq is not null and (seq>$2 or (seq=$2 and " + idOrder(key, false) + ">$3))";
-  if (query.throughSeq) { params.append(static_cast<std::int64_t>(*query.throughSeq)); where += " and seq<=$4"; }
+  pqxx::params params;
+  std::string sql = "select " + selectColumns(type_, id_) + " from " + table_ + keysetWhere(params, scope, query) + " order by seq," + idOrder_;
+  if (query.limit > 0) sql += " limit " + std::to_string(query.limit);
   std::vector<Row> rows;
-  const auto result = sqlOf(txn).exec("select " + selectColumns(type_, id_) + " from " + table_ + where + " order by seq," + idOrder(key, false), params);
-  for (const auto& resultRow : result) {
-    Row row = readRow(txn, scope, type_, resultRow);
-    if (query.visibleOnly && !visible(type_, row)) continue;
-    rows.push_back(std::move(row));
-    if (query.limit && rows.size() >= query.limit) break;
-  }
+  for (const auto& resultRow : sqlOf(txn).exec(sql, params)) rows.push_back(readRow(txn, scope, type_, resultRow));
   return rows;
 }
 
 std::uint64_t PgGymType::count(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
-  FeedQuery all = query;
-  all.limit = 0;
-  return feed(txn, scope, all).size();
+  pqxx::params params;
+  const std::string where = keysetWhere(params, scope, query);
+  return countOf(txn, table_ + where, params, query.limit);
+}
+
+Tally PgGymType::tally(SyncTxn& txn, const ScopeKey& scope) {
+  pqxx::params params;
+  const std::string where = keysetWhere(params, scope, FeedQuery{.visibleOnly = true});
+  return tallyOf(txn, table_ + where, params);
 }
 
 std::optional<std::int64_t> PgGymType::maxSerial(SyncTxn& txn, const ScopeKey& scope, const std::string& field, const std::map<std::string, Json::Value>& match) {

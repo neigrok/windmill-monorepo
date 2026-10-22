@@ -192,7 +192,7 @@ TEST(sync_api_answers_401_to_credentials_sent_that_do_not_resolve_whatever_their
   CHECK_EQ(push({}), unauthenticated);
   CHECK_EQ(hello({{"Cookie", "theme=dark"}}), hello({}));
   const std::pair<int, std::string> annHello{
-      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"newestAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":2,"serverTime":1700000000000})"};
+      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"lastWrittenAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":2,"serverTime":1700000000000})"};
   CHECK_EQ(hello({{"Cookie", "wm_session=" + ann}}), annHello);
   CHECK_EQ(hello({{"Authorization", "Bearer " + ann}}), annHello);
   CHECK_EQ(hello({{"authorization", "bEaReR " + ann}}), annHello);
@@ -204,7 +204,7 @@ TEST(each_request_on_a_keep_alive_connection_is_read_with_its_own_header_lines_a
   sync::SyncApi api = harness.api(8);
   const std::string ann = harness.signIn("ann");
   const std::pair<int, std::string> annHello{
-      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"newestAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":2,"serverTime":1700000000000})"};
+      200, R"({"as":"u1","epoch":"ep-1","holdings":{"probe":{"count":0,"lastWrittenAt":null}},"holdsRecords":{"probe":false},"minSchema":2,"schema":2,"serverTime":1700000000000})"};
   const std::pair<int, std::string> anonymousHello{200, R"({"as":null,"epoch":"ep-1","minSchema":2,"schema":2,"serverTime":1700000000000})"};
   // Drogon hands a finished request's object to a later request on the connection, so a list it failed to clear would
   // carry one request's credentials into the next.

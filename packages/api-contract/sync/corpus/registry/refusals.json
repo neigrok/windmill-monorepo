@@ -1,0 +1,403 @@
+[
+  {
+    "name": "a primary type of a product scope is its headline type",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "two products each have a headline type",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          },
+          {
+            "type": "other",
+            "scope": "product:q",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a headline type is primary",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "headline": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "headline is true or absent",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": false
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a headline type lives in a product scope, never in a tree",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {},
+            "primary": true
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a product has at most one headline type",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          },
+          {
+            "type": "other",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "primary": true,
+            "headline": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  }
+]

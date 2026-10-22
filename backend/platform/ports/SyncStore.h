@@ -110,6 +110,12 @@ struct FeedQuery {
   std::size_t limit = 0;          // 0: every row
 };
 
+// §9.2 holdings: how many visible rows of one type a scope holds, and the greatest ru among them.
+struct Tally {
+  std::uint64_t count = 0;
+  std::optional<Ms> lastWrittenAt;
+};
+
 // The engine's own tables (§2.1): scopes, replicas and results, spent ids, requests and the epoch, plus
 // the advisory locks of §6.1 step 3. A product never reaches them but through the engine.
 class SyncStore {

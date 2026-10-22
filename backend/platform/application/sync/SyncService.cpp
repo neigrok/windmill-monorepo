@@ -550,8 +550,8 @@ bool TimeBudget::spent(std::size_t admitted) {
 SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock)
     : catalog_(catalog), store_(store), admission_(admission), clock_(clock) {}
 
-// §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type; holdings[p] counts the visible
-// rows of p's headline type and names the newest one's rc. Both read one snapshot.
+// §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type; holdings[p] tallies the visible
+// rows of p's headline type: how many, and the last write among them (the greatest ru). Both read one snapshot.
 SyncReply SyncService::hello(const Credential& credential) {
   const Ms serverTime = clock_.nowMs();
   const Registry& registry = catalog_.registry();
@@ -567,15 +567,14 @@ SyncReply SyncService::hello(const Credential& credential) {
       const ScopeKey scope = ScopeKey::product(*caller, product);
       const std::vector<const TypeDef*> types = catalog_.typesIn(scope.registryScope());
       holds[product] = std::any_of(types.begin(), types.end(), [&](const TypeDef* type) {
-        return type->primary && !catalog_.store(type->name).feed(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}).empty();
+        return type->primary && catalog_.store(type->name).count(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}) > 0;
       });
       const auto headline = std::find_if(types.begin(), types.end(), [](const TypeDef* type) { return type->headline; });
       if (headline == types.end()) continue;
-      const std::vector<Row> rows = catalog_.store((*headline)->name).feed(*txn, scope, FeedQuery{.visibleOnly = true});
+      const Tally tally = catalog_.store((*headline)->name).tally(*txn, scope);
       Json::Value holding(Json::objectValue);
-      holding["count"] = Json::UInt64(rows.size());
-      holding["newestAt"] = rows.empty() ? Json::Value()
-          : Json::Int64(std::max_element(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.rc < b.rc; })->rc);
+      holding["count"] = Json::UInt64(tally.count);
+      holding["lastWrittenAt"] = tally.lastWrittenAt ? Json::Value(Json::UInt64(*tally.lastWrittenAt)) : Json::Value();
       holdings[product] = std::move(holding);
     }
   }
