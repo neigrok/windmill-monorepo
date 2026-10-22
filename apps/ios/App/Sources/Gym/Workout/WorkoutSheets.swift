@@ -4,8 +4,7 @@ import GymDomain
 import SyncCore
 
 // This workout (03.4): each movement's working sets against its plan, a gym/done check once every planned set is logged, Add
-// movement as the list's last row, and Hide workout. Out of edit mode a long press lifts a row by its drawn handle and a
-// swipe shows the trash, which an editing list hides; VoiceOver moves and removes through the row's actions.
+// movement as the list's last row, and Hide workout.
 struct WorkoutAssembly: View {
   @Bindable var workout: WorkoutState
   let add: () -> Void
@@ -16,31 +15,16 @@ struct WorkoutAssembly: View {
       List {
         Group {
           Section {
-            ForEach(workout.walk.order, id: \.self) { id in
+            ForEach(Array(workout.walk.order.enumerated()), id: \.element) { index, id in
               let ledger = workout.ledger(id), exercise = workout.gym.catalogue.find(id)
-              let index = workout.walk.order.firstIndex(of: id) ?? 0, last = workout.walk.order.count - 1
-              Button {
-                workout.select(id)
-                if workout.selected == id { dismiss() }
-              } label: {
-                HStack(spacing: RoomSpace.related) {
-                  GymRow(title: exercise?.name ?? "Movement", meta: ledger.tally, trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
-                  Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
-                }
-              }.accessibilityIdentifier("workout-movement-\(id)")
-                .trashSwipe("Remove movement", enabled: workout.canRemove(id)) { workout.remove(id) }
-                .contextMenu {
-                  if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
-                  Button("Move up") { move(index, by: -1) }.disabled(index == 0)
-                  Button("Move down") { move(index, by: 1) }.disabled(index == last)
-                  if workout.canRemove(id) {
-                    Button("Remove movement", systemImage: "trash", role: .destructive) { workout.remove(id) }
-                  }
-                }
-                .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
+              OrderedMovementRow(exercise: exercise, index: index, count: workout.walk.order.count,
+                                 removable: workout.canRemove(id), identifier: "workout-movement-\(id)",
+                                 open: { workout.select(id); if workout.selected == id { dismiss() } },
+                                 move: { move(index, by: $0) }, remove: { workout.remove(id) }, edit: { exerciseToEdit = $0 }) {
+                GymRow(title: exercise?.name ?? "Movement", meta: ledger.tally, trailing: ledger.complete ? .check : nil)
+                  .tint(GymPalette.done)
+              }.accessibilityAddTraits(workout.selected == id ? .isSelected : [])
                 .moveDisabled(workout.finishing)
-                .accessibilityAction(named: "Move up") { move(index, by: -1) }
-                .accessibilityAction(named: "Move down") { move(index, by: 1) }
             }.onMove { workout.move(from: $0, to: $1) }
             Button("Add movement", systemImage: "plus.circle.fill", action: add).accessibilityIdentifier("workout-assembly-add")
           }

@@ -143,28 +143,15 @@ struct RoutineBuilder: View {
           if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }
         Section {
-          // Out of edit mode a long press lifts a row by its drawn handle and a swipe shows the trash, which an editing list hides.
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
-            Button {
-              if let exercise { editing.follow([.targets(exercise.id)]) }
-            } label: {
-              HStack(spacing: RoomSpace.related) {
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")",
-                       meta: RoutineLines.movement(entry.sets, equipment: MovementEquipment(exercise)))
-                Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
-              }
-            }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              .trashSwipe("Remove movement") { editing.remove(index) }
-              .contextMenu {
-                if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
-                Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
-                Button("Move down") { editing.move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
-                Button("Remove movement", systemImage: "trash", role: .destructive) { editing.remove(index) }
-              }
-              .accessibilityAction(named: "Move up") { editing.move(index, by: -1) }
-              .accessibilityAction(named: "Move down") { editing.move(index, by: 1) }
-              .accessibilityAction(named: "Remove movement") { editing.remove(index) }
+            OrderedMovementRow(exercise: exercise, index: index, count: editing.draft.current.entries.count,
+                               identifier: "builder-movement-\(entry.exerciseId)",
+                               open: { if let exercise { editing.follow([.targets(exercise.id)]) } },
+                               move: { editing.move(index, by: $0) }, remove: { editing.remove(index) }, edit: { exerciseToEdit = $0 }) {
+              GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")",
+                     meta: RoutineLines.movement(entry.sets, equipment: MovementEquipment(exercise)))
+            }
           }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
           Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
             .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)

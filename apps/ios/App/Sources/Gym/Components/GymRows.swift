@@ -91,6 +91,43 @@ extension View {
   }
 }
 
+// A movement in a list the lifter orders, as the routine editor and This workout draw it: the list stays out of edit mode, so
+// a long press lifts the row by its drawn handle and a swipe shows the trash. Its menu and VoiceOver's actions hold the same
+// acts: Edit exercise, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
+struct OrderedMovementRow<Label: View>: View {
+  let exercise: Exercise?
+  let index: Int
+  let count: Int
+  var removable = true
+  let identifier: String
+  let open: () -> Void
+  let move: (Int) -> Void
+  let remove: () -> Void
+  let edit: (Exercise) -> Void
+  @ViewBuilder let label: Label
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: RoomSpace.related) {
+        label
+        Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
+      }
+    }.accessibilityIdentifier(identifier)
+      .trashSwipe("Remove movement", enabled: removable, action: remove)
+      .contextMenu {
+        if let exercise { Button("Edit exercise", systemImage: "pencil") { edit(exercise) } }
+        Button("Move up") { move(-1) }.disabled(index == 0)
+        Button("Move down") { move(1) }.disabled(index == count - 1)
+        if removable { Button("Remove movement", systemImage: "trash", role: .destructive, action: remove) }
+      }
+      .accessibilityActions {
+        Button("Move up") { move(-1) }
+        Button("Move down") { move(1) }
+        if removable { Button("Remove movement", action: remove) }
+      }
+  }
+}
+
 // One set read back: its place, its numbers and, when present, a trailing caption and a second line of the time, the
 // effort and the note. Inline it reads *1 · 80 × 5*; in columns, as workout detail draws it, the place stands in its own
 // column and the numbers take the monospaced face.
