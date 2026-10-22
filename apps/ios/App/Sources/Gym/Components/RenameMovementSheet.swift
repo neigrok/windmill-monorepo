@@ -137,6 +137,8 @@ struct MovementEquipment {
   var title: String { value == "dumbbell" ? loadCount == 1 ? "One dumbbell" : "Dumbbells" : value.capitalized }
   // Its name in the Equipment menu, whatever the dumbbell count.
   var choice: String { value == "dumbbell" ? "Dumbbells" : value.capitalized }
+  // A pair of dumbbells, whose load is the weight of one, said per hand.
+  var each: Bool { value == "dumbbell" && loadCount == 2 }
   var symbol: String {
     switch value {
     case "barbell": "figure.strengthtraining.traditional"

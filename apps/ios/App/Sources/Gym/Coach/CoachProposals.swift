@@ -153,7 +153,7 @@ extension GymModel {
   // read while the proposal waited on the lifter, its moves among them.
   func coachDiff(_ proposal: Proposal) -> ProposalDiff {
     if let kept = waitingCoachDiffs[proposal.id], proposal.state != "pending" || coachQueuedDecision(proposal.id) != nil { return kept }
-    let each = proposal.changes.map(\.exerciseId).filter { id in catalogue.find(id).map { $0.equipment == "dumbbell" && $0.loadCount == 2 } ?? false }
+    let each = proposal.changes.map(\.exerciseId).filter { MovementEquipment(catalogue.find($0)).each }
     let diff = ProposalDiff(proposal, routine: coachRoutine(proposal), each: Set(each))
     if proposal.state == "pending", !coachProposalOutOfDate(proposal) { waitingCoachDiffs[proposal.id] = diff }
     return diff

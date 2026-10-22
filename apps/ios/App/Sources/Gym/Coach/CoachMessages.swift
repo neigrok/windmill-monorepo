@@ -52,16 +52,6 @@ struct CoachTyping: View {
   }
 }
 
-// *Today 18:40*, centred over the group of messages it starts.
-struct CoachStamp: View {
-  let dates: GymDate
-  let instant: Instant
-  var body: some View {
-    (Text(dates.day(instant)).fontWeight(.semibold) + Text(" " + dates.time(instant)))
-      .font(.caption).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity)
-  }
-}
-
 // The lifter's turn: each photo its own bubble, then the words in the bubble that closes the group, at the trailing edge.
 struct CoachQuestion: View {
   let gym: GymModel

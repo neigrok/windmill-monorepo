@@ -303,15 +303,12 @@ struct CoachTab: View {
       if let response = record.response, response.status == "completed" {
         if let message = response.message, !message.isEmpty { CoachAnswerText(text: message) }
         if coach.offersSignIn(record) {
-          Button {
-            gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
-            if let keepRoutines { keepRoutines() } else { openAccount?() }
-          } label: { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
+          Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
             .accessibilityIdentifier("coach-sign-in")
         }
         if record.results.isEmpty, !response.routines.isEmpty {
           CoachDraftsCard(coach: coach, id: record.id, routines: response.routines.map(\.domain),
-                          saves: [CoachRoutineReview(id: record.id, requestId: record.id, drafts: response.routines.map(\.domain), operationId: nil)])
+                          saves: [CoachDraftSave(requestId: record.id, operationId: nil)])
         }
       }
       if !record.results.isEmpty {
@@ -350,11 +347,14 @@ struct CoachTab: View {
     HStack(spacing: RoomSpace.related) { ProgressView(); Text(label).font(.footnote).foregroundStyle(GymPalette.inkDim) }
   }
 
-  // A question, under the time its group began when it begins one. A question the server has not stamped yet — still
-  // sending, or never answered — has no known time, so it draws none.
+  // A question, under the time its group began when it begins one, *Today 18:40* centred over the group. A question the
+  // server has not stamped yet — still sending, or never answered — has no known time, so it draws none.
   func question(_ text: String, attachments: [CoachAttachment], at: Int64?, stamps: CoachStamps) -> some View {
     VStack(spacing: RoomSpace.related) {
-      if let at, stamps.starts(at) { CoachStamp(dates: gym.dates, instant: Instant(ms: at)) }
+      if let at, stamps.starts(at) {
+        (Text(gym.dates.day(Instant(ms: at))).fontWeight(.semibold) + Text(" " + gym.dates.time(Instant(ms: at))))
+          .font(.caption).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity)
+      }
       CoachQuestion(gym: gym, thread: coach.saved.threadId, text: text, attachments: attachments,
                     draft: coach.saved.photo.flatMap { photo in coach.saved.photoData.map { (photo.id, $0) } }, uploading: coach.uploading)
     }
@@ -374,7 +374,7 @@ struct CoachTab: View {
     let pending = drafts.filter { $0.state == "pending" }
     if let first = pending.first {
       CoachDraftsCard(coach: coach, id: requestId ?? first.operationId, routines: pending.map(\.routine),
-                      saves: pending.map { CoachRoutineReview(id: $0.id, requestId: requestId, drafts: [$0.routine], operationId: $0.operationId) })
+                      saves: pending.map { CoachDraftSave(requestId: requestId, operationId: $0.operationId) })
     }
   }
 
@@ -405,12 +405,15 @@ struct CoachTab: View {
     switch recovery {
     case .signIn:
       Text(CoachCopy.signInToContinue)
-      Button("Sign in") {
-        gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
-        if let keepRoutines { keepRoutines() } else { openAccount?() }
-      }.font(.subheadline.weight(.semibold)).buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent)
+      Button("Sign in", action: signIn).font(.subheadline.weight(.semibold)).buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent)
         .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-sign-in")
     }
+  }
+
+  // Sign in from Coach keeps what this phone holds, where the room can keep it, and opens You otherwise.
+  func signIn() {
+    gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
+    if let keepRoutines { keepRoutines() } else { openAccount?() }
   }
 
   func generationView(_ generation: CoachGeneration, stamps: CoachStamps) -> some View {

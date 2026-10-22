@@ -67,7 +67,10 @@ struct ProposalCard: View {
   var body: some View {
     Group {
       if let proposal {
-        if stance == .rejected { rejected } else { card(proposal) }
+        if stance == .rejected {
+          RejectedLine(subject: routineName).accessibilityIdentifier("coach-proposal-header")
+            .accessibilityValue(CoachCopy.settled("dismissed", removal: removal) ?? "")
+        } else { card(proposal) }
       } else { Text("That proposal is gone.").font(.subheadline).foregroundStyle(GymPalette.inkDim).modifier(ChangeCard()) }
     }.sensoryFeedback(.success, trigger: landed)
       .onAppear { acknowledgeReceipt() }
@@ -80,13 +83,6 @@ struct ProposalCard: View {
         guard let proposal else { return }
         stalled = gym.coachDecisionStalled(proposal.id)
       }
-  }
-
-  // *× Rejected · Push A*, one quiet line where the card stood.
-  var rejected: some View {
-    Label("Rejected · " + routineName, systemImage: "xmark").labelStyle(ChangeBadgeStyle())
-      .font(.subheadline).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
-      .accessibilityElement(children: .combine).accessibilityIdentifier("coach-proposal-header").accessibilityValue(CoachCopy.settled("dismissed", removal: removal) ?? "")
   }
 
   func card(_ proposal: Proposal) -> some View {
@@ -108,8 +104,10 @@ struct ProposalCard: View {
       if blocks.count > 2 {
         Divider().overlay(GymPalette.line)
         Button { withAnimation { expanded.toggle() } } label: {
-          Label(expanded ? "Show less" : "Show all " + GymCount.of(gym.coachChangeCount(proposal), "change"), systemImage: expanded ? "chevron.up" : "chevron.down")
-            .labelStyle(TrailingSymbol()).font(.body.weight(.semibold)).foregroundStyle(GymPalette.accent)
+          HStack(spacing: 6) {
+            Text(expanded ? "Show less" : "Show all " + GymCount.of(gym.coachChangeCount(proposal), "change"))
+            Image(systemName: expanded ? "chevron.up" : "chevron.down").imageScale(.small).accessibilityHidden(true)
+          }.font(.body.weight(.semibold)).foregroundStyle(GymPalette.accent)
             .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("coach-proposal-expand")
       }
@@ -135,10 +133,13 @@ struct ProposalCard: View {
     let settled = outOfDate != nil ? CoachCopy.outOfDate : stance == .applied ? CoachCopy.settled("applied", removal: removal) : nil
     return HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
       if stance == .applied {
-        Label("Applied · " + routineName + (removal ? " · routine removed" : ""), systemImage: "checkmark.circle").labelStyle(ReceiptStyle(landed: landed))
-          .font(.headline).foregroundStyle(GymPalette.ink)
+        // The check bounces in once, when the Apply this phone sent lands.
+        HStack(spacing: RoomSpace.related) {
+          Image(systemName: "checkmark.circle").symbolEffect(.bounce, value: landed).accessibilityHidden(true)
+          Text("Applied · " + routineName + (removal ? " · routine removed" : ""))
+        }.font(.headline).foregroundStyle(GymPalette.ink)
       } else {
-        Text(removal ? "Remove a routine" : "Changes to " + routineName + (outOfDate != nil ? " · Out of date" : ""))
+        Text(removal ? "Remove a routine" : "Changes to " + routineName + (outOfDate != nil ? " · " + CoachCopy.outOfDate : ""))
           .font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(outOfDate != nil ? GymPalette.inkDim : GymPalette.accent)
       }
       Spacer(minLength: 0)
@@ -182,23 +183,6 @@ struct ProposalCard: View {
   func acknowledgeReceipt() {
     guard phase == .active, !pending, let proposal else { return }
     gym.coachRemovalReceiptShown(proposal.id, owner: gym.account)
-  }
-}
-
-// The applied card's check bounces in once, when the Apply this phone sent lands.
-struct ReceiptStyle: LabelStyle {
-  let landed: Bool
-  func makeBody(configuration: Configuration) -> some View {
-    HStack(spacing: RoomSpace.related) {
-      configuration.icon.symbolEffect(.bounce, value: landed)
-      configuration.title
-    }
-  }
-}
-
-struct TrailingSymbol: LabelStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    HStack(spacing: 6) { configuration.title; configuration.icon.imageScale(.small) }
   }
 }
 

@@ -51,6 +51,16 @@ struct ChangeBlock: View {
   }
 }
 
+// *× Rejected · Push A*: what a rejected card folds to, one quiet line where it stood.
+struct RejectedLine: View {
+  let subject: String
+  var body: some View {
+    Label("Rejected · " + subject, systemImage: "xmark").labelStyle(ChangeBadgeStyle())
+      .font(.subheadline).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
+      .accessibilityElement(children: .combine)
+  }
+}
+
 struct ChangeBadgeStyle: LabelStyle {
   func makeBody(configuration: Configuration) -> some View {
     HStack(spacing: 6) { configuration.icon.imageScale(.small); configuration.title }

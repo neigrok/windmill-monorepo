@@ -3,17 +3,14 @@ import DomainKit
 import GymDomain
 
 // One save of new routines: a server-held draft by its request and operation, or the phone's own drafts by their request.
-struct CoachRoutineReview: Identifiable {
-  let id: String
+struct CoachDraftSave {
+  // What a save came to: saved, a kept note that leaves Apply for another try, or a closed note that retires it.
+  enum Outcome: Equatable { case saved, kept(String), closed(String) }
   let requestId: String?
-  let drafts: [CoachRoutine]
   let operationId: String?
   // A signed-in draft is saved by its request and operation; one that arrived without its request cannot be.
   var savable: Bool { operationId == nil || requestId != nil }
 }
-
-// What a save came to: saved, a kept note that leaves Apply for another try, or a closed note that retires it.
-enum CoachRoutineSave: Equatable { case saved, kept(String), closed(String) }
 
 // Coach's new routines, decided on one card under its answer: each routine a heading that opens in place to its movements
 // as added blocks — one open at a time — then Apply, which saves every routine, and Reject, which drops them here.
@@ -23,7 +20,7 @@ struct CoachDraftsCard: View {
   let id: String
   let routines: [CoachRoutine]
   // What Apply saves, in order: each server-held draft by its operation, or the phone's own drafts at once.
-  let saves: [CoachRoutineReview]
+  let saves: [CoachDraftSave]
   @State var open = 0
   @State var busy = false
   @State var note: String?
@@ -32,9 +29,7 @@ struct CoachDraftsCard: View {
   var count: String { GymCount.of(routines.count, "routine") }
   var body: some View {
     if coach.saved.rejectedDrafts?.contains(id) == true {
-      Label("Rejected · " + count, systemImage: "xmark").labelStyle(ChangeBadgeStyle()).font(.subheadline).foregroundStyle(GymPalette.inkDim)
-        .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
-        .accessibilityElement(children: .combine).accessibilityIdentifier("coach-drafts-rejected")
+      RejectedLine(subject: count).accessibilityIdentifier("coach-drafts-rejected")
     } else { card }
   }
   var card: some View {
@@ -48,7 +43,7 @@ struct CoachDraftsCard: View {
           ForEach(Array(routine.entries.enumerated()), id: \.offset) { _, entry in
             Divider().overlay(GymPalette.line)
             ChangeBlock(kind: .added, title: gym.catalogue.find(entry.exerciseId)?.name ?? "New movement",
-                        fields: ProposalDiff.fields(before: nil, after: EntryTargets(entry), each: gym.catalogue.find(entry.exerciseId).map { $0.equipment == "dumbbell" && $0.loadCount == 2 } ?? false))
+                        fields: ProposalDiff.fields(before: nil, after: EntryTargets(entry), each: MovementEquipment(gym.catalogue.find(entry.exerciseId)).each))
               .padding(.vertical, 14)
           }
         }
@@ -105,10 +100,10 @@ extension CoachConversation {
     if keep(next, failure: "Your choice couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "drafts_rejected"]) }
   }
   // Signed in, Save confirms the server-held draft and reports started, then saved, refused (4xx) or failed (5xx or no answer).
-  func saveRoutines(_ review: CoachRoutineReview) async -> CoachRoutineSave {
+  func saveRoutines(_ save: CoachDraftSave) async -> CoachDraftSave.Outcome {
     guard let owner, allowed else { return .closed(CoachCopy.accountChanged) }
-    guard let operation = review.operationId else {
-      guard let record = saved.onboarding?.first(where: { $0.id == review.requestId }) else { return .closed(CoachCopy.draftGone) }
+    guard let operation = save.operationId else {
+      guard let record = saved.onboarding?.first(where: { $0.id == save.requestId }) else { return .closed(CoachCopy.draftGone) }
       do { try importOnboarding(record, owner: owner, generation: workGeneration); error = nil; return .saved }
       catch {
         gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "save_routines", "outcome": "failed"])
@@ -116,7 +111,7 @@ extension CoachConversation {
         return .kept((error as? AppFailure)?.message ?? CoachCopy.confirmRetry)
       }
     }
-    guard !anonymous, let requestId = review.requestId else { return .closed(CoachCopy.draftUnsavable) }
+    guard !anonymous, let requestId = save.requestId else { return .closed(CoachCopy.draftUnsavable) }
     let thread = saved.threadId
     gym.telemetry.event("gym_coach_routine_confirm", properties: ["outcome": "started"])
     let response: CoachSnapshot
