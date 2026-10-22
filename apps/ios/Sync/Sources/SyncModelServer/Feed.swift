@@ -137,6 +137,18 @@ struct Feed {
     }))
   }
 
+  // §9.2 `holdings[p]`, for each product with a headline type: the visible rows of that type in `acct:A/p`, and the
+  // greatest `rc` among them, or null when there are none.
+  func holdings(_ account: String, in state: ServerState) -> JSON {
+    .object(JSON.Object(uniqueKeysWithValues: registry.products.compactMap { product in
+      guard let headline = registry.types.first(where: { $0.headline && $0.scope == .product(product.name) }) else { return nil }
+      let rows = (state.rows[ScopeKey(.product(account: account, name: product.name))] ?? [:]).values
+        .filter { $0.key.type == headline.name && isVisible($0, of: headline) }
+      let newest = rows.compactMap(\.rc).max()
+      return (product.name, ["count": JSON(rows.count), "newestAt": newest.map { JSON($0) } ?? .null])
+    }))
+  }
+
   // §2.4: a lifeless record is visible when a `visibleWhen` field holds a value other than null or "", or, without
   // `visibleWhen`, when it holds any lattice register or text, whatever the value. Serial values never count.
   func isVisible(_ row: Row, of type: TypeDef) -> Bool {

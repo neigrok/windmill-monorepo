@@ -140,6 +140,7 @@ public enum Journal {
           ],
           "source": ["domain": ["enum": ["typed", "spoken"], "type": "string"], "kind": "lww", "writer": "server"],
         ],
+        "headline": true,
         "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         "identity": "keyed",
         "life": false,

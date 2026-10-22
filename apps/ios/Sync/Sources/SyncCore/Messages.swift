@@ -186,6 +186,24 @@ public struct HelloResponse: Hashable, ResponseBody {
   public let minSchema: Int
   // Present iff the hello was served as an account (§9.2).
   public let holdsRecords: [String: Bool]?
+  public let holdings: [String: Holding]?
+
+  // §9.2 a product's headline records in the account: how many, and the newest one's creation.
+  public struct Holding: Sendable, Hashable {
+    public let count: Int
+    public let newestAt: Int64?
+
+    public init(count: Int, newestAt: Int64?) {
+      self.count = count
+      self.newestAt = newestAt
+    }
+
+    init(json: JSON) throws {
+      count = Int(try json.member("count").asInteger())
+      let newest = try json.member("newestAt")
+      newestAt = newest.isNull ? nil : try newest.asInteger()
+    }
+  }
 
   public init(json: JSON) throws {
     serverTime = try json.member("serverTime").asInteger()
@@ -194,12 +212,13 @@ public struct HelloResponse: Hashable, ResponseBody {
     schema = Int(try json.member("schema").asInteger())
     minSchema = Int(try json.member("minSchema").asInteger())
     holdsRecords = try json["holdsRecords"].map { try JSON.map($0) { try $0.asBool() } }
+    holdings = try json["holdings"].map { try JSON.map($0) { try Holding(json: $0) } }
   }
 
   public static func == (lhs: HelloResponse, rhs: HelloResponse) -> Bool {
     lhs.serverTime == rhs.serverTime && lhs.epoch.utf8.elementsEqual(rhs.epoch.utf8)
       && lhs.servedAs.map { Array($0.utf8) } == rhs.servedAs.map { Array($0.utf8) } && lhs.schema == rhs.schema
-      && lhs.minSchema == rhs.minSchema && lhs.holdsRecords == rhs.holdsRecords
+      && lhs.minSchema == rhs.minSchema && lhs.holdsRecords == rhs.holdsRecords && lhs.holdings == rhs.holdings
   }
 
   public func hash(into hasher: inout Hasher) {
@@ -209,6 +228,7 @@ public struct HelloResponse: Hashable, ResponseBody {
     hasher.combine(schema)
     hasher.combine(minSchema)
     hasher.combine(holdsRecords)
+    hasher.combine(holdings)
   }
 }
 

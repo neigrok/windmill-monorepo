@@ -26,6 +26,7 @@ public final class SyncEngine: Replica {
   package let live: LiveChannel
   package let sweeper: Sweeper
   let loops = Mutex(Loops())
+  let holdingsByAccount = Mutex<[String: [String: HelloResponse.Holding]]>([:])
 
   public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
                           tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
@@ -111,10 +112,17 @@ public final class SyncEngine: Replica {
       _ = try? core.pauseAuth(seat.replica, sentUnder: token)
     }
     switch answer {
-    case .ok(let hello): if hello.minSchema > core.registry.version { core.requireUpgrade() }
+    case .ok(let hello):
+      if hello.minSchema > core.registry.version { core.requireUpgrade() }
+      if let account = hello.servedAs, let holdings = hello.holdings { holdingsByAccount.withLock { $0[account] = holdings } }
     case .failed(let failure): if failure.requiresUpgrade { core.requireUpgrade() }
     }
     return reply
+  }
+
+  // §9.2 what the last hello served as `account` counted of each product's headline records: empty before one answers.
+  public func holdings(of account: String) -> [String: HelloResponse.Holding] {
+    holdingsByAccount.withLock { $0[account] ?? [:] }
   }
 
   // MARK: Replica

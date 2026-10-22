@@ -50,6 +50,8 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var upgradeRequired = false
     // Every push gets no answer, after this many seconds in flight.
     var pushesUnansweredAfter: Double?
+    // Signed-in pulls past this many are held without an answer, so a restore stops part-way.
+    var pullsAnsweredBeforeHold: Int?
   }
   struct Ticket: Sendable {
     let subject: String
@@ -233,7 +235,16 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     }
   }
   func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    state.withLock { state in
+    let held = state.withLock { state in
+      guard token != nil, let answered = state.pullsAnsweredBeforeHold else { return false }
+      state.pullsAnsweredBeforeHold = max(0, answered - 1)
+      return answered == 0
+    }
+    if held {
+      try? await Task.sleep(for: .seconds(3_600))
+      return .unreachable
+    }
+    return state.withLock { state in
       if token != nil && state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.pull(request.json, credential: c, at: now)

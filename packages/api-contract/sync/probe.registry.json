@@ -41,6 +41,7 @@
       "origins": ["replica", "server"],
       "cap": 3,
       "primary": true,
+      "headline": true,
       "fields": {
         "title": { "kind": "lww", "writer": "client", "unit": "chars", "min": 1, "max": 12, "domain": { "type": "string" } },
         "body": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 24, "domain": { "type": "string" } },

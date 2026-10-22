@@ -58,7 +58,7 @@ journal.
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
 | `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete; a delete carries its life alone |
-| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary |
+| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary and headline |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
 | `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, whose `opens` values `unlisted` and `public` open the tree to every reader (D-4) |
@@ -789,7 +789,10 @@ configure a limit skips those vectors.
 - Every response body carries `serverTime`, `epoch` and `as`: `account`, or `null` on a 401.
 - `hello` carries `serverTime`, `epoch`, `as`, `schema` and `minSchema` (the registry's `version` and
   `minVersion`), and, for an account, `holdsRecords[product]`: a visible row of a primary type in
-  `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible.
+  `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible. For an account
+  it also carries `holdings[product]` for each product that declares a `headline` type: `count`, the
+  visible rows of that type in `acct:<A>/<product>`, and `newestAt`, the greatest `rc` among them, or
+  `null` when there are none.
 
 **Strict cursors.**
 

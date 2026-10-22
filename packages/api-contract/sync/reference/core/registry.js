@@ -259,6 +259,11 @@ export class Registry {
     return [...this.types.values()].filter((type) => type.primary === true && type.scope === `product:${product}`);
   }
 
+  // §9.2: the primary type a product's holdings count, or null when it declares none.
+  headlineType(product) {
+    return [...this.types.values()].find((type) => type.headline === true && type.scope === `product:${product}`) ?? null;
+  }
+
   validate() {
     const fail = (message) => {
       throw new RegistryError(`${this.name}: ${message}`);
@@ -278,6 +283,8 @@ export class Registry {
       }
       if (type.idPattern !== undefined && !isPortablePattern(type.idPattern)) fail(`${type.type}: idPattern ${type.idPattern} is outside §2.4's patterns`);
       if (!type.origins.includes('replica')) fail(`${type.type}: origins always include replica`);
+      if (type.headline && !type.primary) fail(`${type.type}: a headline type is primary`);
+      if (type.headline && this.typesIn(type.scope).some((other) => other !== type && other.headline)) fail(`${type.type}: a product has at most one headline type`);
       if (type.visibleWhen && type.life) fail(`${type.type}: visibleWhen is for types without life`);
       if (type.wholePut && (type.identity !== 'keyed' || !type.life)) fail(`${type.type}: wholePut is for keyed types with life`);
       if (type.wholePut && type.textFieldNames.length) fail(`${type.type}: a wholePut type has no text field`);

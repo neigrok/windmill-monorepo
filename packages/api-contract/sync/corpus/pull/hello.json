@@ -240,6 +240,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
+          },
+          "holdings": {
+            "probe": {
+              "count": 3,
+              "newestAt": 5000
+            }
           }
         }
       }
@@ -794,6 +800,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "newestAt": null
+            }
           }
         }
       }
@@ -852,6 +864,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "newestAt": null
+            }
           }
         }
       }
@@ -915,6 +933,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "newestAt": null
+            }
           }
         }
       }
@@ -978,6 +1002,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "newestAt": null
+            }
           }
         }
       }
@@ -1224,6 +1254,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "newestAt": null
+            }
           }
         }
       }

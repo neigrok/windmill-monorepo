@@ -122,6 +122,15 @@ struct TransportTests {
     #expect(sent.body == nil)
   }
 
+  // §9.2: an account's hello counts each product's headline records, null newest when it holds none.
+  @Test func anAccountsHelloCarriesItsHoldings() async throws {
+    let body = #"{"serverTime": 1000, "epoch": "ep-1", "as": "A", "schema": 3, "minSchema": 1, "holdsRecords": {"gym": true, "journal": false}, "#
+      + #""holdings": {"gym": {"count": 38, "newestAt": 900}, "journal": {"count": 0, "newestAt": null}}}"#
+    let transport = Stub.transport("holdings.test") { _, _ in (200, body) }
+    guard case .answered(.ok(let hello)) = await transport.hello(token: SessionToken("t")) else { throw RigError("the hello was not answered ok") }
+    #expect(hello.holdings == ["gym": .init(count: 38, newestAt: 900), "journal": .init(count: 0, newestAt: nil)])
+  }
+
   // MARK: The live socket (§9.5)
 
   // A listener on the loopback, told apart from the tests' other servers by its queue: `start` returns its port once it

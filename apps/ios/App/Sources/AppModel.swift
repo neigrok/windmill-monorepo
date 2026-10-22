@@ -63,6 +63,8 @@ final class AppModel {
   var resumingBackup = false
   var authGeneration = 0
   var signInSession: SignInSession?
+  // Returning on a new phone (02c): the account's rooms arriving after a sign-in from Where to start?.
+  var restore: SignInRestore?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
@@ -254,7 +256,37 @@ final class AppModel {
   }
 
   func refresh() {
-    poll(); gym.refresh()
+    poll(); gym.refresh(); advanceRestore()
+  }
+
+  // 02c: the room with the newest record opens once its own records are in, and the arrival ends when every room's are.
+  // A phone that loses its connection or its session opens that room at once, where the room says what is still missing.
+  func advanceRestore() {
+    guard var restore else { return }
+    let stalled = runtime?.engine.status.online == false || authPaused || updateRequired
+    let arrived = Set(restore.rooms.filter(restoreArrived))
+    if !restore.opened, stalled || arrived.contains(restore.opening) {
+      restore.opened = true; self.restore = restore
+      selectedRoom = restore.opening; preferences.set(false, forKey: "roomWelcomeRequired")
+      telemetry.event("sign_in_restore", properties: ["stage": "room_opened"])
+    }
+    if stalled { self.restore = nil; return }
+    if restore.step(arrived: arrived) == .complete {
+      self.restore = nil
+      telemetry.event("sign_in_restore", properties: ["stage": "complete"])
+    }
+  }
+
+  // What has landed of a room's records while it arrives, and whether all of them are in, read from the account's
+  // replica itself: a room's own view may still show the phone as it was before the sign-in.
+  func restoreLanded(_ room: Room) -> Int {
+    let landed = try? room == .journal
+      ? runner.read(Journal.scope) { try $0.repository(Page.self).all(in: .drawn).filter { $0.document.isWritten }.count }
+      : runner.read(Gym.scope) { try $0.repository(Session.self).all(in: .drawn).count }
+    return landed ?? 0
+  }
+  func restoreArrived(_ room: Room) -> Bool {
+    (try? runner.read(room == .journal ? Journal.scope : Gym.scope) { read in try !read.isAnonymous && read.firstPullComplete() }) ?? false
   }
 
   // The clock re-reads the journal, the account and the connection once the store moves; the gym observes its own records.
@@ -690,9 +722,16 @@ final class AppModel {
     if presentResult { presentSignInResult() }
   }
 
+  // A sign-in from Where to start? on a phone holding nothing brings the account's rooms back (02c).
   func presentSignInResult() {
-    if signInSession?.isComplete == false { sheet = .adoption }
-    else { sheet = nil; welcome = false; refresh() }
+    if signInSession?.isComplete == false { sheet = .adoption; return }
+    let returning = welcome
+    sheet = nil; welcome = false; refresh()
+    guard returning, let account, let restore = SignInRestore(method: pendingSignIn?.method ?? "email",
+                                                               holdings: runtime?.engine.holdings(of: account) ?? [:]) else { return }
+    self.restore = restore
+    telemetry.event("sign_in_restore", properties: ["stage": "started"])
+    advanceRestore()
   }
 
   func beginSignOut() async {

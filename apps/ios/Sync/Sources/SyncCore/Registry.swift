@@ -220,6 +220,8 @@ public struct TypeDef: Sendable {
   public let cap: Int?
   public let visibleWhen: [String]?
   public let primary: Bool
+  // §9.2 holdings: the one primary type a product's records are counted by.
+  public let headline: Bool
 
   public var hasBorn: Bool { identity == .minted || identity == .derived }
 
@@ -236,7 +238,7 @@ public struct TypeDef: Sendable {
       try object.expectKeys(
         required: ["type", "scope", "identity", "life", "origins", "fields"],
         optional: ["idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
-                   "governs", "cap", "visibleWhen", "primary"])
+                   "governs", "cap", "visibleWhen", "primary", "headline"])
       name = try object.member("type").asString()
       guard RegistryName.isTypeOrField(name) else { throw RegistryError("\(name) is not a type name") }
       scope = try ScopeKind(text: object.member("scope").asString())
@@ -273,6 +275,10 @@ public struct TypeDef: Sendable {
         guard try primary.asBool() else { throw RegistryError("primary is true or absent") }
         return true
       } ?? false
+      headline = try object["headline"].map { headline in
+        guard try headline.asBool() else { throw RegistryError("headline is true or absent") }
+        return true
+      } ?? false
       try checkRules()
     } catch {
       throw RegistryError(context: "type \(json["type"]?.jcsText ?? "without a name")", underlying: error)
@@ -299,6 +305,7 @@ public struct TypeDef: Sendable {
     guard seeded == nil || identity == .minted else { throw RegistryError("only a minted type is seeded") }
     guard mint == nil || hasBorn else { throw RegistryError("only a minted or derived type has mint") }
     guard key == nil || identity == .keyed else { throw RegistryError("only a keyed type has a key") }
+    guard !headline || (primary && scope.isProduct) else { throw RegistryError("a headline type is a primary type of a product scope") }
     guard !governsTree || scope.isProduct else { throw RegistryError("a governing type lives in a product scope") }
     guard !governsTree || (identity == .minted && revivable == false) else {
       throw RegistryError("a governing type is minted and not revivable")
@@ -367,6 +374,7 @@ public struct TypeDef: Sendable {
     object["cap"] = cap.map { JSON($0) }
     object["visibleWhen"] = visibleWhen.map { .array($0.map { .string($0) }) }
     object["primary"] = primary ? true : nil
+    object["headline"] = headline ? true : nil
     return .object(object)
   }
 }

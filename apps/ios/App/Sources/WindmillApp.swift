@@ -175,6 +175,7 @@ struct RootScreen: View {
   var body: some View {
     Group {
       if model.runtime?.settings.board == "01-launch" { ShellPalette.canvas.ignoresSafeArea() }
+      else if let restore = model.restore, !restore.opened { arrival(restore) }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
       else { GymRoom(gym: model.gym, app: model) }
@@ -220,6 +221,35 @@ struct RootScreen: View {
           }.padding(.horizontal, 24).padding(.bottom, 30).frame(minHeight: geo.size.height, alignment: .top)
         }
       }
+    }
+  }
+}
+
+extension RootScreen {
+  // 02c: one plain row a room, its real count climbing as records land, until the room with the newest record opens.
+  func arrival(_ restore: SignInRestore) -> some View {
+    GeometryReader { geo in
+      List {
+        Section {
+          ForEach(restore.rooms, id: \.self) { room in
+            LabeledContent {
+              HStack(spacing: 10) {
+                Text(restore.count(room, landed: model.restoreLanded(room))).foregroundStyle(ShellPalette.inkDim).monospacedDigit()
+                if !model.restoreArrived(room) { ProgressView().controlSize(.small) }
+              }
+            } label: {
+              Label { Text(room.title).foregroundStyle(ShellPalette.ink) } icon: { Image(systemName: room.symbol).foregroundStyle(ShellPalette.inkDim) }
+            }.accessibilityElement(children: .combine).accessibilityIdentifier("restore-" + room.rawValue)
+          }
+        } header: {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(restore.eyebrow).font(ShellType.caption).foregroundStyle(ShellPalette.inkDim)
+            Text("Bringing it back").font(ShellType.display).foregroundStyle(ShellPalette.ink)
+            Text(restore.line).font(ShellType.body).foregroundStyle(ShellPalette.inkDim)
+          }.textCase(nil).padding(.bottom, 12).accessibilityElement(children: .combine).accessibilityIdentifier("restore-head")
+        }.listRowBackground(ShellPalette.card)
+      }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(ShellPalette.canvas)
+        .contentMargins(.top, max(40, geo.size.height * 0.26), for: .scrollContent)
     }
   }
 }

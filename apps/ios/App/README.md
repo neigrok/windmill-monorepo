@@ -25,7 +25,9 @@ data; `empty` binds it to an empty account whose door can move. Boards `23-start
 interaction; `23c` holds the linked receipt for screenshot inspection. `-adoption-workouts N` and
 `-adoption-pages N` set what the phone holds before `23d`'s sign-in (one page by default; workouts give
 the account training too), so it asks the sign-in question of 23d–23j. Board `16e` leaves three
-changes the server never confirms, with You open on Sign out. A new address plus a valid
+changes the server never confirms, with You open on Sign out. Board `02-returning` seeds an account of 142 journal
+pages and 38 workouts, the gym's the newest, which Apple opens from Where to start?; `02-returning-held` serves small pull
+pages and holds every signed-in pull after the second, so *Bringing it back* stands part-way. A new address plus a valid
 code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
 the first authenticated engine hello after an Apple ticket and freezes the authentication backoff
 clock, so Try again exercises manual recovery without racing automatic recovery or reusing the
@@ -251,7 +253,10 @@ The 44 pt Write seat at bottom-right returns from history to today and opens wri
 becomes Done writing above the keyboard. It hides during read-only transitions and account sheets.
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
-introduction on Where to start?.
+introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
+sign-in, *Bringing it back* (02c) counts each room's records as they land against the totals the account's hello
+gives (`SignInRestore`), and opens the room with the newest record once its own records are in; the other keeps
+arriving behind it. A lost connection or session opens that room at once.
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
 stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;

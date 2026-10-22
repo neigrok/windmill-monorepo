@@ -285,9 +285,12 @@ async function served(endpoint, answer, connection) {
     if (endpoint === 'hello') {
       if (envelope.schema !== Number(SCHEMA) || envelope.minSchema !== MIN_SCHEMA) return `refused: hello has schema ${envelope.schema}/${envelope.minSchema}, want ${SCHEMA}/${MIN_SCHEMA}`;
       if (envelope.as === null) {
-        if ('holdsRecords' in envelope) return 'refused: anonymous hello has holdsRecords';
+        if ('holdsRecords' in envelope || 'holdings' in envelope) return 'refused: anonymous hello has holdsRecords or holdings';
       } else if (!envelope.holdsRecords || JSON.stringify(Object.keys(envelope.holdsRecords).sort()) !== JSON.stringify(PRODUCTS) || Object.values(envelope.holdsRecords).some((holds) => typeof holds !== 'boolean')) {
         return `refused: hello does not declare the ${CATALOG} products`;
+      } else if (!envelope.holdings || JSON.stringify(Object.keys(envelope.holdings).sort()) !== JSON.stringify(PRODUCTS)
+        || Object.values(envelope.holdings).some(({ count, newestAt }) => !Number.isSafeInteger(count) || count < 0 || (newestAt !== null && !Number.isSafeInteger(newestAt)) || (count === 0) !== (newestAt === null))) {
+        return `refused: hello does not count the ${CATALOG} products' holdings`;
       }
     }
     if (endpoint === 'pull') {

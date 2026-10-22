@@ -228,7 +228,7 @@ class TypeDef(val json: Json) {
     init {
         require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
         require(scope == "tree" || scope == "overlay" || scope.matches(Regex("product:[a-z][a-z0-9]*")))
-        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary"))
+        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary", "headline"))
         require(identity in listOf("minted", "derived", "keyed", "singleton"))
         val origins = json.member("origins").distinctStrings()
         require("replica" in origins && origins.all { it in listOf("replica", "server") })
@@ -236,6 +236,7 @@ class TypeDef(val json: Json) {
         json["deadRows"]?.let { require(it.str() in listOf("keep", "spent")) }
         json["singletonId"]?.str()
         json["primary"]?.let { require(it.bool()) }
+        json["headline"]?.let { require(it.bool() && json["primary"] != null && scope.startsWith("product:")) }
         json["derive"]?.let {
             it.expectKeys(listOf("fallback"))
             require(it.member("fallback").str().matches(Regex("[a-z0-9]+(-[a-z0-9]+)*")))

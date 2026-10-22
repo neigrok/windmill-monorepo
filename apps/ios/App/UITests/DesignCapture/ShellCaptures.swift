@@ -23,6 +23,22 @@ final class ShellCaptures: DesignCapture {
   func testOnboarding() { for look in Look.both { onboarding(look) } }
   func testOnboardingLargestText() { for look in Look.bothAtLargestText { onboarding(look) } }
 
+  // 02b–02c: the returning account's arrival is held part-way, so its counts stand still for the capture.
+  func testReturning() {
+    for look in Look.both {
+      let app = launch("02-returning-held", look)
+      let signIn = app.buttons["Sign in"]
+      XCTAssertTrue(signIn.waitForExistence(timeout: 60)); signIn.tap()
+      XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
+      capture("02b-pick-up-where-you-left-off", look, app)
+      app.buttons["apple-sign-in"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["restore-head"].waitForExistence(timeout: 30))
+      XCTAssertTrue(app.descendants(matching: .any)["restore-gym"].exists)
+      capture("02c-bringing-it-back", look, app, settle: 2)
+      app.terminate()
+    }
+  }
+
   func testGymKeepAndSignIn() {
     for look in Look.both {
       let app = launch("keep-gym", look)

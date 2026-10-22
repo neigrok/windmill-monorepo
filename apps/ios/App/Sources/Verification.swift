@@ -9,6 +9,9 @@ import SwiftUI
 import UIKit
 import SyncCore
 import struct SyncModelServer.ScopeKey
+import struct SyncModelServer.ModelServer
+import struct SyncModelServer.ServerLimits
+import struct SyncModelServer.ComposedServerRules
 #endif
 
 // Launch fixtures use the same actions, persistence and sign-in door as the app.
@@ -52,6 +55,7 @@ enum BoardFixture {
       return
     }
     model.welcome = board.hasPrefix("01") || board.hasPrefix("02")
+    if board.hasPrefix("02-returning") { await ReturningFixture.prepare(model, held: board == "02-returning-held") }
     guard !model.welcome else { return }
     model.preferences.set(true, forKey: "journalOpened")
     if board.hasPrefix("23") || board.hasPrefix("24") || board == "16e", let runtime = model.runtime, let server = runtime.auth.fake {
@@ -207,6 +211,49 @@ enum AdoptionFixture {
     #endif
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+// 02b–02c: an account holding 142 journal pages and 38 workouts, the gym's newest, which Apple opens on a phone holding
+// nothing. `held` serves small pages and holds every pull after the second, so the counts stop part-way.
+enum ReturningFixture {
+  static func prepare(_ model: AppModel, held: Bool) async {
+    guard let server = model.runtime?.auth.fake else { return }
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    do {
+      let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server"]),
+        directory: directory, service: UUID().uuidString, syncTransport: server)
+      let identity = server.identity(email: "apple@example.com")
+      defer { try? remote.tokens.delete(for: identity.account) }
+      _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+      // Each page is today to the runner that saves it, so the journal's past-day guard stays intact.
+      let now = BoardClock().nowMs(), wall = SystemClock().nowMs()
+      for offset in 0..<142 {
+        let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: wall)) - offset * 86_400)
+        let runner = ActionRunner(replica: remote.engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
+        let day = try runner.read(Journal.scope) { $0.moment.today }
+        _ = try runner.run(SavePage(day: day, document: PageDocument(body: BoardFixture.shortProse), retiring: ["placeholder", "scales"]))
+      }
+      for offset in 1...38 {
+        let id = remote.runner.mint(Session.self), start = now - Int64(offset) * 86_400_000
+        _ = try remote.runner.run(StartSession(id: id, startedAt: Instant(ms: start)))
+        _ = try remote.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 3_600_000)))
+      }
+      try remote.engine.leave()
+      for _ in 0..<40 where try remote.store.read({ try !$0.device().activeReplica.outbox.isEmpty }) { await remote.engine.flushOnLeave() }
+      server.state.withLock { state in
+        var landed = state.server.state
+        let gym = ScopeKey(.product(account: identity.account, name: "gym"))
+        for (key, row) in landed.rows[gym] ?? [:] { landed.rows[gym]?[key]?.rc = (row.rc ?? now) + 60_000 }
+        var limits = ServerLimits()
+        if held { limits.pullPageBytes = 2_000; state.pullsAnsweredBeforeHold = 2 }
+        state.server = ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
+                                   state: landed, limits: limits)
+      }
+    } catch { model.error = "Couldn't prepare the returning account." }
+  }
+}
+#endif
 
 enum AppScenario {
   static func run(model: AppModel) async {

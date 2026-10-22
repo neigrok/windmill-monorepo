@@ -242,12 +242,14 @@ struct AccountSheet: View {
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
+  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b).
   var keep: some View {
-    let journal = model.selectedRoom == .journal || model.welcome
+    let returning = model.welcome, journal = model.selectedRoom == .journal
     return VStack(alignment: .leading, spacing: 14) {
-      head("icloud.and.arrow.up")
-      Text(journal ? "Keep your pages" : model.keepRoutines ? "Keep your routines" : "Keep your log").font(ShellType.title)
-      Text(journal ? "They live only on this phone. Sign in to back them up and open them on the web."
+      head(returning ? "person.crop.circle.badge.checkmark" : "icloud.and.arrow.up")
+      Text(returning ? "Pick up where you left off" : journal ? "Keep your pages" : model.keepRoutines ? "Keep your routines" : "Keep your log").font(ShellType.title)
+      Text(returning ? "Your pages and log come back to this phone."
+           : journal ? "They live only on this phone. Sign in to back them up and open them on the web."
            : model.keepRoutines ? "Your routines live only on this phone. Sign in to back them up and open them on the web. This Coach conversation and photo stay on this phone." : "It lives only on this phone. Sign in to back it up and open it on the web.").foregroundStyle(dim).lineSpacing(4)
       if model.canSignIn {
         authDoors.padding(.top, 10)

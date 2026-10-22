@@ -110,6 +110,7 @@ TEST(the_probe_card_reads_as_declared) {
   CHECK(card->origins.replica && card->origins.server);
   CHECK_EQ(card->cap, std::optional<std::int64_t>(3));
   CHECK(card->primary);
+  CHECK(card->headline);
   CHECK_FALSE(card->governsTree);
 
   const FieldDef& title = card->fields.at("title");
@@ -239,6 +240,17 @@ TEST(a_registry_refuses_a_document_the_schema_refuses) {
            std::string("registry.types.item.fields.title has a bound without a \"unit\""));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["unit"] = "chars"; r["types"][0]["fields"]["title"]["max"] = 12; }),
            std::string("(admitted)"));
+}
+
+TEST(a_product_counts_its_records_by_at_most_one_primary_headline_type) {
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["primary"] = true; r["types"][0]["headline"] = true; }), std::string("(admitted)"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["headline"] = true; }),
+           std::string("registry.types.item is a headline type without being a primary type of a product scope"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["primary"] = true; r["types"][0]["headline"] = true;
+             r["types"].append(r["types"][0]); r["types"][1]["type"] = "other";
+           }),
+           std::string("registry.types.other is a second headline type of the product \"p\""));
 }
 
 TEST(a_registry_refuses_what_section_2_4_forbids) {

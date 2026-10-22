@@ -189,7 +189,8 @@ struct TypeDef {
   std::map<std::string, FieldDef> fields;
   std::optional<std::int64_t> cap;  // D-24
   std::vector<std::string> visibleWhen;
-  bool primary = false;  // §9.2 holdsRecords
+  bool primary = false;   // §9.2 holdsRecords
+  bool headline = false;  // §9.2 holdings: the one primary type a product's records are counted by
 
   const FieldDef* field(std::string_view fieldName) const;
 };

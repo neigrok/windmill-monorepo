@@ -142,6 +142,7 @@
       "deadRows": "spent",
       "origins": ["replica", "server"],
       "primary": true,
+      "headline": true,
       "fields": {
         "routineId": { "kind": "lww", "writer": "server", "ref": "routine", "domain": { "type": "id", "nullable": true } },
         "historyRoutineId": { "kind": "const", "writer": "server", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "nullable": true } },

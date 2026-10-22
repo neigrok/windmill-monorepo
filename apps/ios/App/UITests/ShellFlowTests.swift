@@ -86,6 +86,20 @@ import XCTest
     XCTAssertFalse(app.buttons["sign-out"].exists)
   }
 
+  // 02b–02c: Sign in on Where to start? names what comes back, counts each room as it arrives and opens the gym, whose
+  // record is the account's newest, once its own records are in.
+  func testReturningOnANewPhoneOpensTheNewestRoomOnceItArrives() {
+    let app = launch("02-returning")
+    let signIn = app.buttons["Sign in"]
+    XCTAssertTrue(signIn.waitForExistence(timeout: 60)); signIn.tap()
+    XCTAssertTrue(app.staticTexts["Pick up where you left off"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Your pages and log come back to this phone."].exists)
+    XCTAssertFalse(app.staticTexts["Keep your pages"].exists)
+    app.buttons["apple-sign-in"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 30))
+    XCTAssertFalse(app.descendants(matching: .any)["restore-head"].exists)
+  }
+
   func testSignInWithBothRoomsAsksOneQuestionBeforeBinding() {
     let app = launch("shell-adoption-two-rooms")
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
