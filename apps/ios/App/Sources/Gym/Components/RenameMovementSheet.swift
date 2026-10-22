@@ -132,7 +132,7 @@ struct MovementEquipment {
   let loadCount: Int
   init(_ value: String, loadCount: Int = 2) { self.value = value; self.loadCount = value == "dumbbell" ? loadCount : 1 }
   init(_ exercise: Exercise?) { self.init(exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 2) }
-  static let choices = ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"]
+  static let choices = ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"]
   var title: String { value == "dumbbell" ? loadCount == 1 ? "One dumbbell" : "Dumbbells" : value.capitalized }
   var symbol: String {
     switch value {

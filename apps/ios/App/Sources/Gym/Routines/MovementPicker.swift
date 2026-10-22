@@ -13,7 +13,7 @@ enum MovementPickerOptions {
     let alias: String?
     let selected: Bool
     var id: ID<Exercise> { exercise.id }
-    var line: String { [exercise.equipment.capitalized, alias.map { "was “\($0)”" }, meta].compactMap { $0 }.joined(separator: " · ") }
+    var line: String { [MovementEquipment(exercise).title, alias.map { "was “\($0)”" }, meta].compactMap { $0 }.joined(separator: " · ") }
   }
 
   // `create` is the query as a new movement's name, offered while no movement or former name is exactly it.
@@ -47,11 +47,12 @@ enum MovementPickerOptions {
                        log: TrainingLog?, featured: [ID<Exercise>]? = nil, readFailed: Bool = false) -> Result {
     let term = MovementName.trimmed(query).lowercased()
     let featured = term.isEmpty ? featured ?? mostTrained(catalogue: catalogue, log: log) : []
-    // A logged movement adds its last effort and when; before its first log the equipment says enough.
+    // A logged movement adds its last effort and when, bodyweight alone as its reps; before its first log the equipment says enough.
     let makeRow = { (exercise: Exercise, alias: String?) -> Row in
       var meta: String?
       if let log, case let last = log.lastTime(for: exercise.id), let set = last.sets.last, let session = last.session {
-        meta = "\(Readout.effort(weightKg: set.weightKg, reps: set.reps)) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
+        let effort = exercise.equipment == "bodyweight" && set.weightKg == 0 ? GymCount.of(set.reps, "rep") : Readout.effort(weightKg: set.weightKg, reps: set.reps)
+        meta = "\(effort) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
       }
       return Row(exercise: exercise, meta: meta, alias: alias, selected: selected.contains(exercise.id))
     }
@@ -120,15 +121,9 @@ extension GymModel {
 struct MovementPicker: View {
   // Where the picker opens decides its title, what a row does and what a created movement joins.
   enum Purpose {
-    case routine, workout, browse
+    case routine, workout
 
-    var title: String {
-      switch self {
-      case .routine: "Add movement"
-      case .workout: "Next movement"
-      case .browse: "Movements"
-      }
-    }
+    var title: String { self == .routine ? "Add movement" : "Next movement" }
     var screen: String { self == .routine ? "routine_movement" : "movement" }
   }
 
@@ -146,8 +141,6 @@ struct MovementPicker: View {
   @State var ranking = MovementPickerRanking()
   @State var creation: MovementCreationDraft?
   @State var showingCreation = false
-  @State private var created: ID<Exercise>?
-  @State private var opened: ID<Exercise>?
   @State private var pickingAccount: String?
   @State private var pickingAnonymous: Bool
 
@@ -176,9 +169,7 @@ struct MovementPicker: View {
     .modifier(GymPage())
     .navigationTitle(purpose.title)
     .toolbar {
-      if purpose != .browse {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
-      }
+      ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
       if MovementName.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
         ToolbarItem(placement: .topBarTrailing) {
           Button("New movement", systemImage: "plus") { create() }.labelStyle(.iconOnly)
@@ -194,19 +185,14 @@ struct MovementPicker: View {
     .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
+    .sheet(isPresented: $showingCreation) {
       if let draft = creation {
         NavigationStack {
           CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
-                              account: pickingAccount, anonymous: pickingAnonymous) { entry in
-            if purpose == .browse { created = entry.exerciseId; showingCreation = false }
-            else { onSelect(entry) }
-          }
+                              account: pickingAccount, anonymous: pickingAnonymous, onCreated: onSelect)
         }.modifier(GymPage()).presentationDetents([.medium])
       }
     }
-    .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
-    .gymTabBar(hidden: purpose == .browse)
   }
 
   // Create movement opens with the query as its name: the builder's own step, or this picker's sheet.
@@ -263,23 +249,17 @@ struct MovementPicker: View {
     }.listStyle(.insetGrouped)
   }
 
-  @ViewBuilder func movementRow(_ row: MovementPickerOptions.Row) -> some View {
-    if purpose == .browse {
-      NavigationLink { MovementRecordScreen(gym: gym, exerciseID: row.id) } label: {
-        GymRow(title: row.exercise.name, meta: row.line)
-      }.accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
-    } else {
-      Button {
-        onSelect(RoutineEntry(exerciseId: row.id))
-      } label: {
-        GymRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
-      }
-      .disabled(row.selected || gym.accountTransition)
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(row.selected ? [.isSelected] : [])
-      .accessibilityHint(row.selected ? "Already added" : "Add movement")
-      .accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
+  func movementRow(_ row: MovementPickerOptions.Row) -> some View {
+    Button {
+      onSelect(RoutineEntry(exerciseId: row.id))
+    } label: {
+      GymRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
     }
+    .disabled(row.selected || gym.accountTransition)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(row.selected ? [.isSelected] : [])
+    .accessibilityHint(row.selected ? "Already added" : "Add movement")
+    .accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
   }
 }
 

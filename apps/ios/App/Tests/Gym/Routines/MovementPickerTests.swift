@@ -73,6 +73,19 @@ import SyncModelServer
     #expect(result.matches.map(\.line) == ["Barbell · −5 × 6 · yesterday"])
   }
 
+  @Test func aRowNamesItsEquipmentAsCreationDoesAndBodyweightAloneByItsReps() {
+    let chin = Exercise(id: ID("chin"), name: "Chin-up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5)
+    let dumbbells = Exercise(id: ID("db-bench"), name: "Dumbbell Bench Press", pattern: "push", equipment: "dumbbell", stepKg: 2, loadCount: 2)
+    let curl = Exercise(id: ID("db-curl"), name: "Dumbbell Curl", pattern: "isolation", equipment: "dumbbell", stepKg: 1, loadCount: 1)
+    let earlier = session("session1", daysAgo: 9), today = session("session2")
+    let history = log(sessions: [earlier, today], sets: [
+      set("set-one1", session: earlier, exercise: chin.id, weight: 0, reps: 8),
+      set("set-two2", session: today, exercise: dumbbells.id, weight: 16, reps: 8),
+    ])
+    let result = MovementPickerOptions.matching(query: "", catalogue: [chin, dumbbells, curl], selected: [], log: history, featured: [])
+    #expect(result.matches.map(\.line) == ["Bodyweight · 8 reps · 9 days ago", "Dumbbells · 16 × 8 · today", "One dumbbell"])
+  }
+
   @Test func aMovementNeverLoggedReadsItsEquipmentAlone() {
     let movement = exercise("movement1", name: "Custom")
     for history in [nil, log(complete: false), log()] {
@@ -198,7 +211,7 @@ import SyncModelServer
   }
 
   @Test func creationPreservesAllEquipmentChoicesAndAcceptsOpenTargets() {
-    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"])
+    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
     #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
