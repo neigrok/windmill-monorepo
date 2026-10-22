@@ -379,11 +379,10 @@ struct CoachPhotoCover: View {
   }
 }
 
-// When a conversation's questions were asked, in order, and when the one still on its way was: a question starts a group
-// under its time when it is the first, or an hour or more after the one before.
+// When a conversation's questions were asked, as the server stamped them, in order: a question starts a group under its time
+// when it is the first, or an hour or more after the one before; one with no stamp starts none.
 struct CoachStamps {
   let times: [Int64]
-  let asked: Int64
   func starts(_ at: Int64) -> Bool {
     guard at > 0, let index = times.firstIndex(of: at) else { return false }
     return index == 0 || at - times[index - 1] >= 3_600_000

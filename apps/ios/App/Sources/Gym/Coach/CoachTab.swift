@@ -179,7 +179,7 @@ struct CoachTab: View {
             ForEach(coach.saved.exchanges) { generation in generationView(generation, stamps: stamps) }
             if let generation = coach.activeGeneration { generationView(generation, stamps: stamps) }
             else if let request = coach.saved.request, !capped {
-              question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [], at: stamps.asked, stamps: stamps)
+              question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [], at: nil, stamps: stamps)
               if coach.asking { CoachTyping() }
             }
             if let clarification = coach.activeClarification {
@@ -337,19 +337,19 @@ struct CoachTab: View {
     HStack(spacing: RoomSpace.related) { ProgressView(); Text(label).font(.footnote).foregroundStyle(GymPalette.inkDim) }
   }
 
-  // A question, under the time its group began when it begins one.
-  func question(_ text: String, attachments: [CoachAttachment], at: Int64, stamps: CoachStamps) -> some View {
+  // A question, under the time its group began when it begins one. A question the server has not stamped yet — still
+  // sending, or never answered — has no known time, so it draws none.
+  func question(_ text: String, attachments: [CoachAttachment], at: Int64?, stamps: CoachStamps) -> some View {
     VStack(spacing: RoomSpace.related) {
-      if stamps.starts(at) { CoachStamp(dates: gym.dates, instant: Instant(ms: at)) }
+      if let at, stamps.starts(at) { CoachStamp(dates: gym.dates, instant: Instant(ms: at)) }
       CoachQuestion(gym: gym, thread: coach.saved.threadId, text: text, attachments: attachments,
                     draft: coach.saved.photo.flatMap { photo in coach.saved.photoData.map { (photo.id, $0) } }, uploading: coach.uploading)
     }
   }
-  // When each of the conversation's questions was asked, in order: a question an hour or more after the one before starts a group.
+  // When each of the conversation's questions was asked, as the server stamped them, in order: a question an hour or more
+  // after the one before starts a group.
   var stamps: CoachStamps {
-    let asked = coach.saved.request != nil && coach.activeGeneration == nil ? gym.dates.moment.now.ms : nil
-    let times = coach.visibleTurns.filter { $0.from == "lifter" }.map(\.at) + coach.saved.exchanges.map(\.at) + [coach.activeGeneration?.at, asked].compactMap { $0 }
-    return CoachStamps(times: times, asked: asked ?? 0)
+    CoachStamps(times: coach.visibleTurns.filter { $0.from == "lifter" }.map(\.at) + coach.saved.exchanges.map(\.at) + [coach.activeGeneration?.at].compactMap { $0 })
   }
 
   func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult], requestId: String?) -> some View {
