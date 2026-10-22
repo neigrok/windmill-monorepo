@@ -76,6 +76,40 @@ struct WorkoutAssembly: View {
   }
 }
 
+// The rack's load and reps on the wheels (03.2), committed together by the checkmark; Cancel keeps the rack.
+struct SetWheelSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
+  let title: String
+  let movement: String
+  let basis: MovementEquipment
+  let commit: (Double, Int) -> Void
+  @State private var weightKg: Double
+  @State private var reps: Int
+
+  init(title: String, movement: String, basis: MovementEquipment, weightKg: Double, reps: Int, commit: @escaping (Double, Int) -> Void) {
+    self.title = title; self.movement = movement; self.basis = basis; self.commit = commit
+    _weightKg = State(initialValue: weightKg); _reps = State(initialValue: reps)
+  }
+
+  var body: some View {
+    NavigationStack {
+      SetWheels(weightKg: $weightKg, reps: $reps, basis: basis)
+        .padding(.horizontal, RoomSpace.inset)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(GymPalette.card.ignoresSafeArea())
+        .modifier(GymPage())
+        .roomTitle(title, subtitle: movement)
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("set-wheel-cancel") }
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Done", systemImage: "checkmark") { commit(weightKg, reps); dismiss() }.accessibilityIdentifier("set-wheel-done")
+          }
+        }.roomBar(.gym)
+    }.modifier(GymPage()).presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(380)])
+  }
+}
+
 struct WorkoutMovementPicker: View {
   let gym: GymModel
   let workout: WorkoutState

@@ -48,7 +48,6 @@ import XCTest
     for _ in 0..<count { app.buttons["workout-log"].tap() }
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
-    app.buttons["workout-fix-weight"].tap()
     app.turnLoadWheel(to: "62.5")
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
@@ -301,7 +300,7 @@ import XCTest
       if id == accountWorkout {
         XCTAssertNil(session["finishedAt"]); XCTAssertEqual(sets.count, 1)
         XCTAssertEqual(session["startedAt"] as? Int64, startedAt); XCTAssertEqual(sets.first?["completedAt"] as? Int64, completedAt)
-        XCTAssertEqual(sets.first?["kind"] as? String, "working"); XCTAssertEqual(sets.first?["note"] as? String, "")
+        XCTAssertNil(sets.first?["kind"]); XCTAssertEqual(sets.first?["note"] as? String, "")
         XCTAssertEqual(sets.first?["id"] as? String, accountSet)
         XCTAssertEqual(sets.first?["exerciseId"] as? String, "barbell-row")
         XCTAssertEqual(sets.first?["weightKg"] as? Double, 35); XCTAssertEqual(sets.first?["reps"] as? Int, 11)

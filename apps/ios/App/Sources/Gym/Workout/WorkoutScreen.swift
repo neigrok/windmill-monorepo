@@ -66,7 +66,7 @@ struct WorkoutScreen: View {
     }
     .sheet(isPresented: $addMovement) { WorkoutMovementPicker(gym: gym, workout: workout) }
     .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-      if let set = fixing { SetEditor(gym: gym, set: set, routine: workout.session?.plan?.routine, identifier: "workout-fix") }
+      if let set = fixing { SetEditor(gym: gym, set: set, identifier: "workout-fix") }
     }
     .sheet(isPresented: $wheel) {
       let movement = workout.selected.flatMap { gym.catalogue.find($0) }
@@ -318,19 +318,40 @@ struct WorkoutFacts: View {
   }
 }
 
-// The rack drafts the next set: each change of load or reps on one movement ticks, and Log set stays silent.
+// The rack drafts the next set (docs/design/ios/ios-redesign.md §5): the numeral, its unit at its baseline or under it at
+// accessibility sizes, opens the wheels and rolls to each new load; the ladder steps by the load's own band; each change
+// of load or reps on one movement ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.dynamicTypeSize) var typeSize
   struct Reading: Equatable {
     let movement: ID<Exercise>?
     let weightKg: Double
     let reps: Int
   }
   var body: some View {
+    let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
+    let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
     VStack(spacing: RoomSpace.inset) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) }), edit: edit)
+      numeral {
+        Button(action: edit) {
+          Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
+        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(workout.weightKg)) \(basis.unit)")
+          .accessibilityIdentifier("workout-weight")
+        Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
+      }.roomMotion(workout.weightKg)
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
+        ForEach(0..<4) { index in
+          let label = WeightLadder.labels(workout.weightKg)[index]
+          Button { workout.weightKg = WeightLadder.bump(workout.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
+            Text(label).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
+          }.accessibilityLabel("\(label) \(basis.unit)").accessibilityIdentifier("workout-weight-step-\(index)")
+        }
+      }.buttonStyle(GymInstrumentButtonStyle()).font(.body.monospacedDigit())
       HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
@@ -356,6 +377,21 @@ struct WorkoutRack: View {
       }
   }
 }
+
+// The rack's keys are instruments in ink, whatever tint the host carries; a pressed key takes the accent.
+struct GymInstrumentButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var enabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .foregroundStyle(!enabled ? GymPalette.inkFaint : configuration.isPressed ? GymPalette.onAccent : GymPalette.ink)
+      .background(configuration.isPressed && enabled ? GymPalette.accent : GymPalette.control,
+                  in: RoundedRectangle(cornerRadius: RoomSpace.inset))
+      .contentShape(Rectangle())
+      .scaleEffect(configuration.isPressed && enabled && !reduceMotion ? 0.96 : 1)
+  }
+}
+
 
 struct WorkoutPager: UIViewControllerRepresentable {
   let gym: GymModel

@@ -44,8 +44,8 @@ import Vision
     let logged = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "workout-set-", "Set 3, logged, 67.5 kilograms, 4 reps")).firstMatch
     XCTAssertTrue(logged.waitForExistence(timeout: 5))
     logged.tap()
-    XCTAssertTrue(app.buttons["workout-fix-weight"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["workout-fix-weight"].label, "Weight, 67.5 kg total")
+    XCTAssertTrue(app.buttons["workout-fix-save"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "67.5 kg total")
   }
 
   func testSeedRenameAndDumbbellCountKeepHistoryTogether() throws {
@@ -193,18 +193,19 @@ import Vision
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }
 
-  // Fix set commits from its bar, so the destructive row and its caption stand clear at rest.
-  func testFixSetSavesFromItsBarAndLeavesDeleteAndItsCaptionClear() {
+  // Fix set commits from its bar under the set's place, so Delete set, its last row, stands clear at rest with no caption.
+  func testFixSetSavesFromItsBarAndLeavesDeleteClear() {
     let app = launch(appearance: "light")
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
-    XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
+    XCTAssertTrue(set.waitForExistence(timeout: 5))
+    let place = String(set.label.prefix { $0 != "," }); set.tap()
     let save = app.buttons["workout-fix-save"]
     XCTAssertTrue(save.waitForExistence(timeout: 5))
     XCTAssertEqual(save.label, "Save")
-    XCTAssertLessThanOrEqual(save.frame.maxY, app.navigationBars["Fix set"].frame.maxY)
-    let delete = app.buttons["workout-fix-delete"], caption = app.staticTexts["Lower A keeps its planned targets."]
-    XCTAssertTrue(delete.isHittable && caption.exists)
-    XCTAssertTrue(app.frame.contains(caption.frame), "The caption \(caption.frame) is below the sheet at rest")
+    XCTAssertLessThanOrEqual(save.frame.maxY, app.navigationBars[place].frame.maxY)
+    let delete = app.buttons["workout-fix-delete"]
+    XCTAssertTrue(delete.isHittable && app.frame.contains(delete.frame), "Delete set \(delete.frame) is below the sheet at rest")
+    XCTAssertFalse(app.staticTexts["Lower A keeps its planned targets."].exists)
   }
 
   func testCompactSetsExposeLoggedCurrentAndPlannedValues() {

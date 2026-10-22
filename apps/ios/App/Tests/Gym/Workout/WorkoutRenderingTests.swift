@@ -93,7 +93,7 @@ import SyncTesting
       try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), purpose: .workout, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(GymPage()), name: "create-movement-" + name, appearance: appearance)
       try await capture(SetWheelSheet(title: "Set 4", movement: "Back squat", basis: MovementEquipment("barbell"), weightKg: 100, reps: 5, commit: { _, _ in }), name: "wheel-" + name, appearance: appearance)
       let set = try XCTUnwrap(gym.workout.sets.last)
-      try await capture(SetEditor(gym: gym, set: set, routine: "Lower A", identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
+      try await capture(SetEditor(gym: gym, set: set, identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
       gym.workout.weightKg = 105; gym.workout.logSet(); gym.workout.select(ID("romanian-deadlift"))
       let offer = try XCTUnwrap(gym.workout.deviation)
       try await capture(WorkoutDeviationSheet(workout: gym.workout, offer: offer), name: "heavier-" + name, appearance: appearance)
@@ -218,7 +218,7 @@ import SyncTesting
         gym.workout.weightKg = -500
         try await capture(WorkoutScreen(gym: gym), name: "live-\(name)-\(skin)", appearance: appearance, type: type)
         try await capture(SetWheelSheet(title: "Set 4", movement: "Pull-up", basis: MovementEquipment("bodyweight"), weightKg: -500, reps: 5, commit: { _, _ in }), name: "wheel-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), routine: "Lower A", identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
       }
     }
   }

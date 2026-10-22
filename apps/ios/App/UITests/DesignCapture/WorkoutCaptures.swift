@@ -19,8 +19,8 @@ final class WorkoutCaptures: DesignCapture {
       let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
       XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
       XCTAssertTrue(app.buttons["workout-fix-save"].waitForExistence(timeout: 5))
-      capture("03.3-fix-set", look, app)
-      app.navigationBars["Fix set"].buttons["Cancel"].tap()
+      capture("gym-workout-fix-set", look, app)
+      app.buttons["workout-fix-cancel"].tap()
       XCTAssertTrue(app.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
       capture("gym-workout-rack-second-movement", look, app)
@@ -53,6 +53,18 @@ final class WorkoutCaptures: DesignCapture {
     captureBoard("03.9-free-workout-start", settle: 1.5) { look in
       let app = launch("workout-blank", look)
       XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // Fix set over the second dumbbell press set.
+  func testFixSet() {
+    captureBoard("03.3-fix-set", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
+      XCTAssertTrue(set.waitForExistence(timeout: 10))
+      RunLoop.current.run(until: Date().addingTimeInterval(1)); set.tap()
+      XCTAssertTrue(app.staticTexts["Set 2"].waitForExistence(timeout: 5))
       return app
     }
   }

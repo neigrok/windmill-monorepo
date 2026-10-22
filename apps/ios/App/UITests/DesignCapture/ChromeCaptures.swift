@@ -72,7 +72,7 @@ final class ChromeCaptures: DesignCapture {
     XCTAssertTrue(ledger.waitForExistence(timeout: 5)); ledger.tap()
     XCTAssertTrue(workout.buttons["workout-fix-save"].waitForExistence(timeout: 5))
     capture("gym-layout-fix-set", look, workout)
-    workout.navigationBars["Fix set"].buttons["Cancel"].tap()
+    workout.buttons["workout-fix-cancel"].tap()
     XCTAssertTrue(workout.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
     workout.buttons["workout-weight"].tap()
     workout.turnLoadWheel(to: "105")

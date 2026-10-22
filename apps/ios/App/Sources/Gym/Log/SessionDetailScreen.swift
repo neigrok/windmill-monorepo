@@ -93,7 +93,7 @@ struct SessionDetailScreen: View {
       } message: { Text("This permanently removes the workout and its sets.") }
       .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error") }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-        if let fixing { SetEditor(gym: gym, set: fixing, routine: session?.plan?.routine, identifier: "gym-fix") }
+        if let fixing { SetEditor(gym: gym, set: fixing, identifier: "gym-fix") }
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session"]) }
   }

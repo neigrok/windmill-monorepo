@@ -26,9 +26,9 @@ final class RecoveryCaptures: DesignCapture {
         let held = app.descendants(matching: .any)["recovery-fix-held"]
         for _ in 0..<8 where !(set.isHittable && (!held.exists || set.frame.maxY < held.frame.minY)) { app.swipeUp(velocity: .slow) }
         set.tap()
-        XCTAssertTrue(app.navigationBars["Fix set"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["recovery-set-save"].waitForExistence(timeout: 5))
         capture("gym-recovery-fix-set", look, app)
-        app.navigationBars["Fix set"].buttons["Cancel"].tap()
+        app.buttons["recovery-set-cancel"].tap()
         XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
         app.navigationBars["Fix workout"].buttons["Cancel"].tap()
         XCTAssertTrue(app.navigationBars["Fix workout"].waitForNonExistence(timeout: 5))

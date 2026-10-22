@@ -61,10 +61,10 @@ final class LogCaptures: DesignCapture {
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
-    XCTAssertTrue(app.buttons["gym-fix-weight"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["gym-fix-save"].waitForExistence(timeout: 5))
     capture("gym-finished-set-fix-sheet", look, app)
-    app.navigationBars["Fix set"].buttons["Cancel"].tap()
-    XCTAssertTrue(app.buttons["gym-fix-weight"].waitForNonExistence(timeout: 5))
+    app.buttons["gym-fix-cancel"].tap()
+    XCTAssertTrue(app.buttons["gym-fix-save"].waitForNonExistence(timeout: 5))
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     choose("gym-record-rename", from: "gym-record-more", app, capturing: "gym-movement-record-menu", look)

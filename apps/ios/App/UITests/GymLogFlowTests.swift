@@ -439,15 +439,13 @@ import XCTest
     snapshot("session-\(appearance)", app: app)
     let correctedSet = firstSet(app)
     correctedSet.tap()
-    let weight = app.buttons["gym-fix-weight"]
-    XCTAssertTrue(weight.waitForExistence(timeout: 5))
+    let save = app.buttons["gym-fix-save"]
+    XCTAssertTrue(save.waitForExistence(timeout: 5))
     snapshot("fix-\(appearance)", app: app)
-    weight.tap()
-    // The checkmark and Save each land before their sheet leaves, so what they wrote is read, not awaited: a wait drops a slow accessibility read at its timeout.
     app.turnLoadWheel(to: "90")
-    XCTAssertEqual(weight.label, "Weight, 90 kg total")
-    app.buttons["gym-fix-save"].tap()
-    XCTAssertTrue(weight.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "90 kg total")
+    save.tap()
+    XCTAssertTrue(save.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     XCTAssertEqual(correctedSet.label, "1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.")
     app.buttons["gym-session-movement"].firstMatch.tap()

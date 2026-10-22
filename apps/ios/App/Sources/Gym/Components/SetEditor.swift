@@ -3,25 +3,20 @@ import Observation
 import DomainKit
 import GymDomain
 
-// Load and reps on two native wheels (03.2), committed together by the checkmark: the load in the movement's steps and
-// labelled by its basis, bodyweight running from assistance through zero to added load. A value off the steps keeps its
-// row, so opening the wheel never moves a number. The rack's ladder keys and the reps buttons edit the same draft.
-struct SetWheelSheet: View {
-  @Environment(\.dismiss) private var dismiss
-  @Environment(\.dynamicTypeSize) private var typeSize
-  let title: String
-  let movement: String
+// Load and reps on two native wheels, one beside the other: the load in the movement's steps and labelled by its basis,
+// bodyweight running from assistance through zero to added load, the reps 1 to 99. A value off the steps keeps its row,
+// so the wheels never move a number they were opened on. The rack's sheet (03.2) and Fix set (03.3) both draw them.
+struct SetWheels: View {
+  @Binding var weightKg: Double
+  @Binding var reps: Int
   let basis: MovementEquipment
-  let loads: [Double]
-  let repCounts: [Int]
-  let commit: (Double, Int) -> Void
-  @State private var weightKg: Double
-  @State private var reps: Int
+  @State private var loads: [Double]
+  @State private var repCounts: [Int]
 
-  init(title: String, movement: String, basis: MovementEquipment, weightKg: Double, reps: Int, commit: @escaping (Double, Int) -> Void) {
-    self.title = title; self.movement = movement; self.basis = basis; self.commit = commit
-    loads = Self.loads(around: weightKg, basis: basis); repCounts = Self.reps(around: reps)
-    _weightKg = State(initialValue: weightKg); _reps = State(initialValue: reps)
+  init(weightKg: Binding<Double>, reps: Binding<Int>, basis: MovementEquipment) {
+    _weightKg = weightKg; _reps = reps; self.basis = basis
+    _loads = State(initialValue: Self.loads(around: weightKg.wrappedValue, basis: basis))
+    _repCounts = State(initialValue: Self.reps(around: reps.wrappedValue))
   }
 
   static func loads(around weightKg: Double, basis: MovementEquipment) -> [Double] {
@@ -36,22 +31,10 @@ struct SetWheelSheet: View {
   }
 
   var body: some View {
-    NavigationStack {
-      HStack(spacing: 0) {
-        wheel("Load", unit: basis.unit, selection: $weightKg, values: loads, reading: { Readout.weight($0) }, identifier: "set-wheel-load")
-        wheel("Reps", unit: "reps", selection: $reps, values: repCounts, reading: { "\($0)" }, identifier: "set-wheel-reps")
-      }.padding(.horizontal, RoomSpace.inset)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(GymPalette.card.ignoresSafeArea())
-        .modifier(GymPage())
-        .roomTitle(title, subtitle: movement)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("set-wheel-cancel") }
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("Done", systemImage: "checkmark") { commit(weightKg, reps); dismiss() }.accessibilityIdentifier("set-wheel-done")
-          }
-        }.roomBar(.gym)
-    }.modifier(GymPage()).presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(380)])
+    HStack(spacing: 0) {
+      wheel("Load", unit: basis.unit, selection: $weightKg, values: loads, reading: { Readout.weight($0) }, identifier: "set-wheel-load")
+      wheel("Reps", unit: "reps", selection: $reps, values: repCounts, reading: { "\($0)" }, identifier: "set-wheel-reps")
+    }
   }
 
   // One wheel: its numbers end at the column's middle and the unit stands beside the selected one, as Clock's timer does.
@@ -72,55 +55,6 @@ struct SetWheelSheet: View {
         }.allowsHitTesting(false).accessibilityHidden(true)
       }
       .accessibilityIdentifier(identifier)
-  }
-}
-
-// One instrument wherever it is drawn (docs/design/ios/ios-redesign.md §5): the numeral, its unit at its baseline or under it
-// at accessibility sizes, opens the wheel and rolls to each new load, and the ladder steps by the load's own band with its
-// keys in ink, whatever tint the host carries.
-struct WeightInstrument: View {
-  @Binding var weightKg: Double
-  let identifier: String
-  var basis = MovementEquipment("")
-  let edit: () -> Void
-  @Environment(\.dynamicTypeSize) private var typeSize
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
-      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
-    VStack(spacing: RoomSpace.related) {
-      numeral {
-        Button(action: edit) {
-          Text(Readout.weight(weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
-            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: weightKg))
-        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(weightKg)) \(basis.unit)")
-          .accessibilityIdentifier(identifier)
-        Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("\(identifier)-unit")
-      }.roomMotion(weightKg)
-      LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
-        ForEach(0..<4) { index in
-          let label = WeightLadder.labels(weightKg)[index]
-          Button { weightKg = WeightLadder.bump(weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
-            Text(label).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
-          }.buttonStyle(GymInstrumentButtonStyle())
-            .accessibilityLabel("\(label) \(basis.unit)").accessibilityIdentifier("\(identifier)-step-\(index)")
-        }
-      }.font(.body.monospacedDigit())
-    }.frame(maxWidth: .infinity)
-  }
-}
-
-struct GymInstrumentButtonStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var enabled
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .foregroundStyle(!enabled ? GymPalette.inkFaint : configuration.isPressed ? GymPalette.onAccent : GymPalette.ink)
-      .background(configuration.isPressed && enabled ? GymPalette.accent : GymPalette.control,
-                  in: RoundedRectangle(cornerRadius: RoomSpace.inset))
-      .contentShape(Rectangle())
-      .scaleEffect(configuration.isPressed && enabled && !reduceMotion ? 0.96 : 1)
   }
 }
 
@@ -186,24 +120,25 @@ struct GymInstrumentButtonStyle: ButtonStyle {
   }
 }
 
-// The Fix set sheet; `identifier` prefixes each control's accessibility identifier. A logged set's fix lands on the log;
-// a saved workout's set returns to the caller's draft, and may take another movement and time, since a copy can carry
-// either wrong.
+// Fix set (03.3): the set's place as the title over its movement, the load and reps on the wheels, Effort and Note, and
+// Delete set as the last row; `identifier` prefixes each control's accessibility identifier. A logged set's fix lands on
+// the log; a saved workout's set returns to the caller's draft, and may take another movement and time, since a copy can
+// carry either wrong.
 struct SetEditor: View {
   enum Landing {
-    case log(routine: String?)
+    case log
     case draft((TrainingSet?) -> Void)
   }
   let gym: GymModel
   let landing: Landing
   let identifier: String
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State private var draft: SetFixDraft
-  @State private var wheel = false
   @State private var saved = false
 
-  init(gym: GymModel, set: TrainingSet, routine: String?, identifier: String) {
-    self.gym = gym; landing = .log(routine: routine); self.identifier = identifier
+  init(gym: GymModel, set: TrainingSet, identifier: String) {
+    self.gym = gym; landing = .log; self.identifier = identifier
     _draft = State(initialValue: SetFixDraft(set, account: gym.account))
   }
 
@@ -214,10 +149,12 @@ struct SetEditor: View {
 
   var logged: Bool { if case .log = landing { true } else { false } }
   var movement: String { gym.catalogue.find(draft.exerciseId)?.name ?? (logged ? "Movement" : "Missing movement") }
-  // The set's place among its movement's sets in its workout, as the ledger numbers it.
+  // The set's place among its movement's sets in its workout, as the ledger numbers it; a saved workout's copy keeps the
+  // number it was logged under.
   var place: String {
-    let siblings = gym.sets.filter { $0.sessionId == draft.original.sessionId && $0.exerciseId == draft.original.exerciseId }
-    return siblings.contains { $0.id == draft.original.id } ? "Set " + SetRow.marker(draft.original, in: siblings) : "Set"
+    let siblings = (gym.log?.sets(session: draft.original.sessionId) ?? []).filter { $0.exerciseId == draft.original.exerciseId }
+    if siblings.contains(where: { $0.id == draft.original.id }) { return "Set " + SetRow.marker(draft.original, in: siblings) }
+    return draft.original.setNumber.map { "Set \($0)" } ?? "Fix set"
   }
 
   var body: some View {
@@ -225,16 +162,16 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight", basis: MovementEquipment(gym.catalogue.find(draft.exerciseId))) { wheel = true }
-            LabeledContent("Reps") {
-              Button("\(draft.reps)") { wheel = true }.font(.title2.monospacedDigit()).accessibilityIdentifier("\(identifier)-reps")
-            }
+            SetWheels(weightKg: $draft.weightKg, reps: $draft.reps, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)))
+              .frame(height: 180).clipped().id(draft.exerciseId)
+          }
+          Section {
             Picker("Effort", selection: $draft.rpe) {
               Text("Not rated").tag(Optional<Double>.none)
               ForEach(Array(stride(from: 6.0, through: 10.0, by: 0.5)), id: \.self) { value in
                 Text("RPE \(Readout.weight(value))").tag(Optional(value))
               }
-            }.accessibilityIdentifier("\(identifier)-effort")
+            }.pickerStyle(.menu).accessibilityIdentifier("\(identifier)-effort")
             TextField("Note", text: $draft.note, axis: .vertical).lineLimit(1...6).accessibilityLabel("Set note")
               .accessibilityIdentifier("\(identifier)-note")
             if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }
@@ -255,21 +192,18 @@ struct SetEditor: View {
           }
           Section {
             Button("Delete set", role: .destructive) { delete() }.accessibilityIdentifier("\(identifier)-delete")
-          } footer: { if case .log(let routine?) = landing { Text("\(routine) keeps its planned targets.") } }
+          }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
-        .roomTitle("Fix set", subtitle: movement)
-        .sheetCommit("Save", identifier: "\(identifier)-save", disabled: draft.problem != nil || gym.accountTransition,
+      }.listSectionSpacing(.compact).contentMargins(.top, RoomSpace.related, for: .scrollContent)
+        .modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
+        .roomTitle(place, subtitle: movement)
+        .sheetCommit("Save", identifier: "\(identifier)-save", dismissalIdentifier: "\(identifier)-cancel", disabled: draft.problem != nil || gym.accountTransition,
                      busy: draft.busy, dismiss: { dismiss() }, commit: save)
         .reachBand {
           GymTransient(gym: gym, message: draft.failure ?? draft.problem,
                        dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")
         }
-    }.modifier(GymPage()).presentationDetents([.large])
-      .sheet(isPresented: $wheel) {
-        SetWheelSheet(title: place, movement: movement, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
-                      weightKg: draft.weightKg, reps: draft.reps) { weightKg, reps in draft.weightKg = weightKg; draft.reps = reps }
-      }
+    }.modifier(GymPage()).presentationDetents(logged && !typeSize.isAccessibilitySize ? [.height(470), .large] : [.large])
       .sensoryFeedback(.success, trigger: saved)
       .onChange(of: draft.value) { _, _ in draft.failure = nil }
       .onChange(of: gym.sets) { _, sets in

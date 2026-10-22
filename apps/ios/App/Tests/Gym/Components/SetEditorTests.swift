@@ -13,16 +13,16 @@ import SyncTesting
   @Test func loadWheelStepsByTheLadderBandsAndKeepsALoadOffTheSteps() {
     let ones: [Double] = (0...20).map(Double.init), bands: [Double] = Array(stride(from: 22.5, through: 500, by: 2.5))
     let grid = ones + bands, assistance: [Double] = grid.dropFirst().reversed().map { -$0 }
-    #expect(SetWheelSheet.loads(around: 16, basis: MovementEquipment("dumbbell")) == grid)
-    #expect(SetWheelSheet.loads(around: -10, basis: MovementEquipment("bodyweight")) == assistance + grid)
+    #expect(SetWheels.loads(around: 16, basis: MovementEquipment("dumbbell")) == grid)
+    #expect(SetWheels.loads(around: -10, basis: MovementEquipment("bodyweight")) == assistance + grid)
     let offTheSteps: [Double] = ones.prefix(17) + [16.25] + ones.suffix(4) + bands
-    #expect(SetWheelSheet.loads(around: 16.25, basis: MovementEquipment("barbell")) == offTheSteps)
-    #expect(SetWheelSheet.loads(around: -12.5, basis: MovementEquipment("machine")) == [-12.5] + grid)
+    #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")) == offTheSteps)
+    #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("machine")) == [-12.5] + grid)
   }
 
   @Test func repsWheelRunsOneToNinetyNineAndKeepsACountOutsideIt() {
-    #expect(SetWheelSheet.reps(around: 8) == Array(1...99))
-    #expect(SetWheelSheet.reps(around: 120) == Array(1...99) + [120])
+    #expect(SetWheels.reps(around: 8) == Array(1...99))
+    #expect(SetWheels.reps(around: 120) == Array(1...99) + [120])
   }
 
   @Test func draftAcceptsSignedLoadsClearEffortAndNotesAndRefusesEachBoundInOrder() throws {
