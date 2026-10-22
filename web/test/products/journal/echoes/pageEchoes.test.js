@@ -312,7 +312,7 @@ test('the live region says the tab’s own words, and never a word the tab does 
 test('THE LANE IS ALWAYS RESERVED: an echo landing may not re-wrap the sentence being written', () => {
   // With `:has(.je-tab)` the 40px lane existed only once the tab did, so an echo landing on tonight's
   // page narrowed the composer mid-sentence and every line re-wrapped under the caret — measured at
-  // 40% of prose lengths gaining a line. journal.md rules the opposite in bold, and the same selector
+  // 40% of prose lengths gaining a line. The reading column never moves, and the same selector
   // made the measure narrower on a page with an echo than on one without, down one canvas.
   assert.ok(!/\.journal-page:has\(/.test(CSS), 'the lane appears with the tab again');
   assert.match(CSS, /\.journal-page \{[^}]*padding-right: 40px;/);

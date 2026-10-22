@@ -230,7 +230,7 @@ struct CoachChange: Equatable {
 }
 
 extension RoomColors {
-  // A removal's primary: the alarm fill with white on it (ios-redesign.md §6).
+  // A removal's primary: the alarm fill with white on it.
   static let gymRemoval = RoomColors(ink: GymPalette.ink, inkDim: GymPalette.inkDim, card: GymPalette.card, accent: GymPalette.alarmFill,
                                      onAccent: GymPalette.onAlarm)
 }

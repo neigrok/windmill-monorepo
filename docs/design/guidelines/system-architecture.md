@@ -60,6 +60,35 @@ product · re-hued semantics.
 - **No spinners.** Waits are skeletons at the real height, or nothing at all below 400ms.
 - **Sentence case everywhere · no emoji · second person · one idea per sentence.**
 
+**Native idiom.** Where the platform has a control, the platform's control wins; where it does not,
+Windmill's own vocabulary wins, identically on every surface. A tab bar, navigation stack, list,
+switch, segmented control, sheet, snackbar, date field, share sheet, progress indicator and
+confirmation dialog are the platform's — and so is what leaving one means: a tap outside a sheet
+dismisses it and commits nothing. A weight numeral, a plate ladder, a set row, a proposal diff, a
+read receipt and a routine card are ours, and look the same everywhere. Surfaces diverge only where
+the device's capability differs; divergence in vocabulary, palette values, motion physics or
+refusal codes is a defect.
+
+**Gestures.** Five laws:
+
+1. **Every action has an accessible alternative.** A swipe action is in the Actions rotor on iOS; an
+   Android swipe row declares a custom accessibility action unless a real control offers the same
+   act; a long-press menu has equivalent accessible actions.
+2. **A destructive gesture follows its surface.** On the phones a swipe delete is immediate, with
+   no Undo and no hold. On iOS it is the native trash circle; a full swipe never deletes. On Android
+   it is the Material swipe-to-dismiss row: the error-red ground with a trash icon, and the row is
+   gone on release past the threshold. A confirmation stays only where iOS keeps one: discarding a
+   workout and deleting a conversation. On the web a delete is held for nine seconds with Undo
+   before it is sent. Turning a proposal down is never a swipe.
+3. **One gesture has one owner.** System Back owns the leading edge and a sheet owns its dismissal;
+   a product gesture starts outside the system edge and never competes with a second scroller.
+4. **Removing a control never loses delivery state.** A failure stays recoverable after its row is
+   gone.
+5. **Feedback is restrained and native.** None on scrolling, and never two for one act.
+
+**A window decides which rows are drawn; it never decides what state a screen is in.** Limits,
+first-run states, write positions and verdicts read stored data, a held delete included.
+
 ## 4. Authoring a new hue
 
 Only when the product's brand can't come from the existing set.
@@ -160,15 +189,15 @@ shell's nav and tab labels use `--text-secondary` for this reason.
    doc, not a local override.
 4. **Build the one screen the product is about** — the equivalent of the tree canvas — and only
    then the chrome around it.
-5. **Mobile from the priority ladder** (`mobile.md` §1): list the jobs by how often they happen
-   on a phone, decide which surface is primary, *then* lay out.
+5. **Mobile from the priority ladder:** list the jobs by how often they happen on a phone, decide
+   which surface is primary, *then* lay out.
 6. **Empty, loading and offline states before the happy path is polished.**
 7. **One verb per page.** If a screen has two primary actions, one of them is a different
    screen.
 8. **Voice pass:** read every string aloud; cut it to one idea; check no default is being sold
    back to the user.
-9. **Register what's new** — a sibling's L4 goes in its own `guidelines/` doc with its own spec
-   code, never inside an existing one.
+9. **Register what's new** — a sibling's L4 goes in its own Figma file and its own code, and its
+   standing principles in `brand-foundations.md`, never inside another product's.
 10. **Report back what didn't fit.** Two products disagreeing about the same pattern is the
     signal to promote or split it here.
 

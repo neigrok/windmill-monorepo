@@ -28,7 +28,7 @@ that runtime for gym, with signed-out workout imports and account decisions.
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
 The app is portrait-only. Shared gym rules live in
 [backend architecture](../../backend/products/gym/ARCHITECTURE.md), UI rules in
-[gym design](../../docs/design/gym/briefs/00-README.md), and Coach's retry/stream/image rules in
+[brand foundations](../../docs/design/brand-foundations.md) and the Gym Figma file, and Coach's retry/stream/image rules in
 [the conversation contract](../../docs/gym-coach-contract.md).
 
 ## Build

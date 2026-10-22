@@ -40,7 +40,7 @@ import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
-// `13-gestures.md:214-215`: a window decides which ROWS are drawn; it never decides what state a
+// `docs/design/guidelines/system-architecture.md` §3: a window decides which ROWS are drawn; it never decides what state a
 // screen is in. The three rooms below each read a list the withheld window thins, and each of them
 // used to read its STANCE off that list — so deleting the only session, the only routine or the only
 // conversation put the room into the stance for a lifter who has never had one, with Undo still on

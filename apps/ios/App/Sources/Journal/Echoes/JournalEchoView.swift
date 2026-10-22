@@ -202,7 +202,7 @@ struct JournalEchoTrail: View {
   }
 }
 
-// The echo stamp (ios-redesign §8): 29 MAY over 4 MO, naming the year only when nothing around it does; months as `echoDates.js` counts.
+// The echo stamp (Figma Journal · iOS 2c): 29 MAY over 4 MO, naming the year only when nothing around it does; months as `echoDates.js` counts.
 enum JournalEchoStamp {
   static let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 

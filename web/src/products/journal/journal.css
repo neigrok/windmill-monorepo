@@ -23,7 +23,7 @@
   --mood-9: #E0B972;
   --mood-10: #ECC27C;
 
-  /* The scale control's four static edges (scales.md §2.4–§2.6) and the arc's hot core. */
+  /* The scale control's four static edges and the arc's hot core. */
   --journal-swatch-edge: color-mix(in srgb, var(--journal-ink) 34%, transparent);
   --journal-head-ring: color-mix(in srgb, var(--journal-ink) 78%, transparent);
   --journal-focus: #D5D5D2;   /* ink 88% over the night canvas, flattened: an alpha would let the head's glow through */
@@ -88,7 +88,7 @@
   --mood-9: #8A5E12;
   --mood-10: #7D530B;
 
-  /* Paper has no light: every day edge is ink, and the "glow" is an ink shadow (scales.md §2.5). */
+  /* Paper has no light: every day edge is ink, and the "glow" is an ink shadow. */
   --journal-swatch-edge: color-mix(in srgb, var(--journal-ink) 46%, transparent);
   --journal-head-ring: color-mix(in srgb, var(--journal-ink) 68%, transparent);
   --journal-focus: #433B33;   /* ink 88% over paper, flattened, for the same reason */
@@ -265,9 +265,9 @@
 }
 /* THE LIT ROW — the third part of the tie, and the only mark the tie leaves on the canvas. Colour and
    nothing else: no background, no border, and NO WEIGHT CHANGE, because a weight change would reflow
-   a sticky row and journal.md:56 forbids any canvas geometry change at any scroll speed. The mood pip
+   a sticky row, and the canvas's geometry never changes at any scroll speed. The mood pip
    and the energy tick keep their own colours — those encode data, and lamp would overwrite meaning.
-   The 180ms is journal.md §10's state-change beat, and it is left to the site-wide reduced-motion
+   The 180ms is the state-change beat, and it is left to the site-wide reduced-motion
    clamp on purpose: with no fade the change is a hard cut, which is what the preference asks for. */
 .journal-marker.is-addressed .journal-meta { color: var(--je-addressed); }
 
@@ -446,7 +446,7 @@ a.journal-link:focus-visible {
    Two labelled rows, [label][track][numeral]. Identity is carried three times: the mono word, the hue,
    and the head shape (mood a circle, energy a capsule — the same two shapes the day glyphs draw).
    The track is a snapping scrubber with eleven stops; the 44px thumb rule is honoured by the ROW.
-   Geometry, colour and motion are docs/design/journal/scales.md §§2, 4, 6. */
+   The scales' honesty rules are Journal's in docs/design/brand-foundations.md. */
 
 .journal-controls {
   position: relative;

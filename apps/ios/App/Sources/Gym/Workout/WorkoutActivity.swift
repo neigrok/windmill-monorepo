@@ -182,7 +182,7 @@ extension WorkoutState {
   var reconciling = false
   var seatChanging = false
   var pending = false
-  // The control's state as last published to the App Group (docs/design/ios/ios-redesign.md §7.19).
+  // The control's state as last published to the App Group (Figma Gym · iOS 04.1).
   let board: WorkoutControlBoard?
   var published: WorkoutControlState?
   init(gym: GymModel, board: WorkoutControlBoard? = WorkoutControlBoard()) { self.gym = gym; self.board = board }
@@ -325,7 +325,7 @@ extension GymModel {
   }
 }
 
-// What a Log set from outside the app did (docs/design/ios/ios-redesign.md §7.19).
+// What a Log set from outside the app did (Figma Gym · iOS 04).
 nonisolated enum WorkoutLogAnswer: Equatable {
   case logged(shown: String, spoken: String)
   case opened

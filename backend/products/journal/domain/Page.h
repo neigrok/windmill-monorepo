@@ -34,7 +34,7 @@ private:
   std::string iso_;
 };
 
-// A point on either 0…10 scale — canon `docs/design/journal/scales.md`. Both scales share this
+// A point on either 0…10 scale — Journal's principles in `docs/design/brand-foundations.md`. Both scales share this
 // one shape. `std::optional<Score>` with no value is the unanswered state; 0 is an answer.
 class Score {
 public:

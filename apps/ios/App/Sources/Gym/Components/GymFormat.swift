@@ -1,7 +1,7 @@
 import SwiftUI
 import DomainKit
 
-// The one place a count's noun agrees with its number (docs/design/ios/ios-redesign.md §3).
+// The one place a count's noun agrees with its number.
 nonisolated enum GymCount {
   static func of(_ count: Int, _ singular: String, plural: String? = nil) -> String {
     "\(count) \(noun(count, singular, plural: plural))"
@@ -13,7 +13,7 @@ nonisolated enum GymCount {
   }
 }
 
-// The one date formatter (docs/design/ios/ios-redesign.md §3 "Dates"): five forms in the person's locale and calendar,
+// The one date formatter: five forms in the person's locale and calendar,
 // each day read in the zone the domain reads it in. No view orders a day and a month of its own.
 nonisolated struct GymDate {
   let moment: Moment

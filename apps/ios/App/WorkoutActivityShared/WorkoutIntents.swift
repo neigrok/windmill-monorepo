@@ -4,7 +4,7 @@ import Foundation
 import UIKit
 #endif
 
-// Where a workout act outside the app came from (docs/design/ios/ios-redesign.md §7.19); each one runs in the app.
+// Where a workout act outside the app came from (Figma Gym · iOS 04); each one runs in the app.
 nonisolated enum WorkoutSurface: String, Sendable { case activity, control, shortcut }
 
 // What an act outside the app answers: Siri's words, or none, and the app brought forward when it opens.

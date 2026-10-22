@@ -689,8 +689,8 @@ export function useEchoes({
     // localStorage latch set the first time a read came back carrying any echo — so the space
     // appeared mid-session at the moment an account was first paired, and the reading column slid
     // 150px sideways under the writer at exactly the moment the arrival light was asking to be
-    // looked at. `journal.md:56` reserves the space "whether or not the panel has anything in it";
-    // ruled 2026-09-02 that it means every account at this width. An empty column costs a reader
+    // looked at. The margin's space is reserved whether or not the panel has anything in it, for
+    // every account at this width (ruled 2026-09-02). An empty column costs a reader
     // nothing; a canvas that moves costs them the sentence they were writing.
     marginOpen: wide,
     // The arrival. `lit` is orthogonal to every tab state there is — a page can be aged and lit, held

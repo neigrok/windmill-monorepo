@@ -5,7 +5,7 @@ import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-// Every string the screen draws, pinned byte for byte to docs/design/gym/briefs/19-connected-log.md.
+// Every string the screen draws, pinned byte for byte.
 class ConnectedLogTests {
     // Word counts off the strings a lifter reads: a token is a run of letters, digits or an
     // apostrophe, so `weigh-ins` is two and `·` and `→` are none.

@@ -221,6 +221,17 @@ Also on this surface: `PATCH /v1/me`,
 The Windmill account is an email address: one `users` row, `email citext unique`. Magic link,
 Google and Apple all resolve onto it.
 
+Four rules govern every door:
+
+1. **Continue with Apple never makes a second account by surprise.** When Apple finds no account,
+   nothing is created until the person answers (the Apple ticket).
+2. **Accounts that both hold data never merge.** A door moves to another account only when the
+   account it leaves holds nothing (`AccountFootprint::anyData`).
+3. **Nothing is said about an address until the person proves it with a code.** No answer reveals
+   whether an address has an account to someone who has not read that address's mail.
+4. **The email door always exists.** Every account is an email address, so Apple is added beside
+   email and can be removed without locking anyone out.
+
 ### `user_identities` — the key that outlives an address
 
 ```sql

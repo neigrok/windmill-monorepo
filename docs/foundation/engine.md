@@ -2688,16 +2688,16 @@ routine id, including when that routine is spent.
 `gym_routine_creations`),
 [TypeStore reads/writes](../../backend/products/gym/sync/adapters/postgres/PgGym.cpp),
 [count and revision rules](../../backend/products/gym/sync/domain/GymRules.cpp),
-[nullable history count and creation replay](../../backend/products/gym/adapters/postgres/PgProgramRepository.cpp),
-and [Coach canon](../design/gym/briefs/09-coach.md) (creation receipts, Apply's store count and
-history from stored evidence), [Notes canon](../design/gym/briefs/10-notes.md).
+and [nullable history count and creation replay](../../backend/products/gym/adapters/postgres/PgProgramRepository.cpp).
 `packages/api-contract/gym/domain/training-reads.json` includes the 36 captured read cases; the
 web, Swift and Kotlin domain suites claim them alongside training-rule regressions.
 
 **Coach conversations** (gym Coach §9.1) are not engine records yet: they stay in the gym backend's
 Coach tables, and the phone Coach adds `thread` and `message` to gym's registry, with their binding
 (§2.4). A proposal's `threadId` names such a conversation. Deleting a conversation first admits, as
-the server, `threadId = null` on every proposal that names it.
+the server, `threadId = null` on every proposal that names it. On Android and the web the gym room
+holds a conversation delete for the same window as the **Held** gestures, on the room's own clock
+rather than the engine's.
 
 **Cross-record checks** read stored records with the intent’s joined records and earlier staged
 consequences over them. Consequences run in intent order. A routine’s death clears `routineId` on
@@ -2973,8 +2973,9 @@ With page edits, backed up requires the reconciled save's result and covering pu
 confirmation alone is insufficient. `journal/claim-edit.json` includes the T+4/T+100 loss as a
 negative control and the required delayed-admission, restart and reordered-response outcomes.
 
-**First run.** The UI follows [journal onboarding](../design/journal/onboarding.md) and
-[the shell flow](../design/guidelines/superapp-flow.md). Mood and energy are visible on first open,
+**First run.** The UI follows Journal's first-run principle in
+[brand foundations](../design/brand-foundations.md) and the first-run boards on
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5). Mood and energy are visible on first open,
 unasked. The privacy fact is "Only you. No prompts, no fields, nothing to fill in — write a line or
 a page." Native first run writes today's page only; past days remain read-only, as on web.
 A first keystroke retires `placeholder`; the first successful durable written-page commit retires

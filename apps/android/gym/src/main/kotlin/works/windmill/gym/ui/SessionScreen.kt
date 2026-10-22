@@ -306,7 +306,7 @@ fun SessionScreen(
                 }
             }
             // The drawn door into the act the log row's long press also reaches: a gesture may
-            // replace a control and may never be the only way to an action (13-gestures Law 1). It
+            // replace a control and may never be the only way to an action (gesture law 1, `docs/design/guidelines/system-architecture.md` §3). It
             // asks nothing first — the window and its transient ARE the way back, and a confirmation
             // over an act that has an undo is a tap that buys nothing (Law 2). Same words, same
             // window, same undo as every other door into it.

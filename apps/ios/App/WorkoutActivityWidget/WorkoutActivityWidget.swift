@@ -10,7 +10,7 @@ struct WorkoutActivityBundle: WidgetBundle {
   }
 }
 
-// The workout's one control (docs/design/ios/ios-redesign.md §7.19): it draws what the app last published.
+// The workout's one control (Figma Gym · iOS 04.1): it draws what the app last published.
 struct WorkoutControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
     StaticControlConfiguration(kind: WorkoutControlState.kind, provider: Board()) { state in

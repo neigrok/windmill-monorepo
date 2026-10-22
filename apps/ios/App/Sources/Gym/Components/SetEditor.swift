@@ -124,7 +124,7 @@ struct NumeralAndUnit<Numeral: View>: View {
   }
 }
 
-// One instrument wherever it is drawn (docs/design/ios/ios-redesign.md §5): the numeral opens the keypad and rolls to each
+// One instrument wherever it is drawn: the numeral opens the keypad and rolls to each
 // new load, and the ladder steps by the load's own band with its keys in ink, whatever tint the host carries.
 struct WeightInstrument: View {
   @Binding var weightKg: Double

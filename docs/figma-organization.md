@@ -5,6 +5,8 @@ account and onboarding belong to Shell; product screens belong to their product 
 System owns reusable foundations and published components.
 
 The Design System file is in the Library project. Roadmap, Journal, Shell and Gym are in Products.
+The Library project also holds the published, unedited iOS 26 UI Kit and Material 3 Design Kit:
+boards take system controls, keyboards, sheets and symbols from them and brand from the Design System.
 The Marketing file is in Marketing. Sandbox is empty and available for exploratory work.
 The approved-logo source file remains in Team project, outside the six working files.
 

@@ -388,8 +388,7 @@ Rules:
   entity back (§3.4 step 7). It reads serial and server-written values from the engine's `Record`, or
   from a second, read-only entity.
 - An entity is `Removable` only if its registry type has life and its product binding lets a client
-  delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held"),
-  as the product's canon lists it among its delete windows (gym: `docs/design/gym/briefs/13-gestures.md`).
+  delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held").
 - `Ordered.orderField` names a client `lww` field whose domain is `fracKey`.
 - `Draftable.savesGuarded` is true iff the binding guards the type's editor save.
 - A registry type flagged `wholePut` (engine §2.4) is one fact, saved whole: its entity writes every
@@ -1726,9 +1725,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 
 ## Appendix A: Example: the gym routine editor
 
-Illustrative. The canon is [routines](../design/gym/briefs/15-the-routine.md),
-[set targets](../design/gym/briefs/17-set-targets.md), [gestures](../design/gym/briefs/13-gestures.md)
-and engine A.2. The routine is an aggregate of one record: its entries and their set targets are
+Illustrative. The canon is engine A.2 and the gym vectors (`packages/api-contract/gym/domain/`). The routine is an aggregate of one record: its entries and their set targets are
 value objects in its fields.
 
 ### A.1 Swift
@@ -1928,8 +1925,7 @@ class RoutineEditor(private val runner: ActionRunner, opened: Routine) {
 
 ## Appendix B: Example: gym notes
 
-Illustrative. The canon is [notes](../design/gym/briefs/10-notes.md),
-[gestures](../design/gym/briefs/13-gestures.md) and engine A.2. An ordered list with a cap of 10: a
+Illustrative. The canon is engine A.2 and the gym vectors (`packages/api-contract/gym/domain/`). An ordered list with a cap of 10: a
 held delete keeps its slot until it lands; a reorder writes one `ord`; a new note goes at the bottom.
 Its `note.cap`, `note.gone`, `note.stale` and `note.taken` rules are the book's standard rules (§6.3).
 
@@ -1999,8 +1995,8 @@ What the kit guarantees:
 
 ## Appendix C: Example: the journal page
 
-Illustrative. The canon is [journal](../design/journal/journal.md),
-[scales](../design/journal/scales.md), [first run](../design/journal/onboarding.md) and engine A.3.
+Illustrative. The canon is engine A.3 and Journal's principles in
+[brand foundations](../design/brand-foundations.md).
 Web and iOS write pages through the engine, over the same adopted rows. Journal has no Android
 surface.
 

@@ -76,5 +76,5 @@ export function comparison(against, catalog) {
 }
 
 // Discarding deletes the session and its sets, held like every other delete in this room, so the
-// transient's sentence is all there is: a confirmation on an act with an undo is ceremony (13-gestures.md Law 2).
+// transient's sentence is all there is: a confirmation on an act with an undo is ceremony.
 export const SESSION_DELETED = 'Session deleted.';

@@ -803,7 +803,7 @@ final class AppModel {
   // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
   static let signOutFailed = "Couldn't sign out. Try again."
 
-  // superapp-flow.md §7: one question, and when the account has not confirmed some changes it says how many.
+  // Sign out asks one question, and when the account has not confirmed some changes it says how many.
   static func signOutMessage(unsent count: Int) -> String {
     if count == 0 { return "Your pages and log stay in your account and leave this phone." }
     let changes = count == 1 ? "1 change hasn't" : "\(count) changes haven't"

@@ -33,9 +33,8 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.sync.core.Json
 
-// The one row 13-gestures says is ready for a swipe today, and the four things that make it safe:
-// one trailing action, no leading one, a tap that still opens the fix sheet, and — the Android half
-// of Law 1 — a custom accessibility action declared by hand, because TalkBack sees a drag and this
+// The set row's swipe, and the four things that make it safe: one trailing action, no leading one,
+// a tap that still opens the fix sheet, and — the Android half of gesture law 1 — a custom accessibility action declared by hand, because TalkBack sees a drag and this
 // row carries no overflow to inherit a real button from.
 //
 // And the two that make it survivable: a stroke carried the WHOLE way across performs exactly one

@@ -222,7 +222,7 @@ private fun AgainstBlock(comparison: Finish.Comparison) {
     }
 }
 
-// The body of the sheet the room presents over the session it just closed (16-the-workout). It owns
+// The body of the sheet the room presents over the session it just closed. It owns
 // its own scroll, because a sheet that cannot scroll cannot be finished, and its own refusal line,
 // because a sheet covers the room's bottom bar. `failure` defaults to nothing so a caller that has
 // no refusal to draw names none. `onShareWithCoach` is null where Coach cannot be reached — signed

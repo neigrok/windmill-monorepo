@@ -237,7 +237,7 @@ struct CoachTab: View {
     }
   }
 
-  // One capsule: Add photo, the question, and Send, which dims and never reshapes when it cannot go (ios-redesign.md §6).
+  // One capsule: Add photo, the question, and Send, which dims and never reshapes when it cannot go.
   var composer: some View {
     VStack(alignment: .leading, spacing: RoomSpace.related) {
       if preparing {

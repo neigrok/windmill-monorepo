@@ -474,7 +474,7 @@ class KeepAsRoutineTests {
         )
     }
 
-    // 17-set-targets: the routine the receipt mints transcribes the working sets per set, and the
+    // The routine the receipt mints transcribes the working sets per set, and the
     // card's preview prints each line's scheme in the one readout formula — a ramp reads its ranges.
     @Test
     fun thePreviewPrintsTheSetsAsLiftedInTheReadoutFormula() {

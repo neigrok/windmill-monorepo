@@ -1,6 +1,6 @@
 # Windmill Journal — backend architecture
 
-Product canon: `docs/design/journal/journal.md`. Layering rules: `backend/CLAUDE.md`.
+Product principles: `docs/design/brand-foundations.md` (Journal). Layering rules: `backend/CLAUDE.md`.
 `STRUCTURE.md` holds the dependency rule.
 
 Journal has `domain/ · ports/ · application/ · adapters/{http,json,postgres,llm,email}`, mounts its

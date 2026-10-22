@@ -1138,8 +1138,9 @@ Machine identifiers retain `Ask` (`AskService`, `/v1/gym/ask`, `ask-*` error cod
 copy calls it Coach. Clients preserve server error text and branch on machine codes.
 
 The [Coach contract](../../../docs/gym-coach-contract.md) defines request identity, conversations,
-streaming, pictures, Stop and durable note saves. The design canon is
-[the Coach brief](../../../docs/design/gym/briefs/09-coach.md).
+streaming, pictures, Stop and durable note saves. The Coach drawings are the Gym file's
+[section 08](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703), and its standing
+rules are Gym's principles in [brand foundations](../../../docs/design/brand-foundations.md).
 
 ### 12.1 The narrowing
 

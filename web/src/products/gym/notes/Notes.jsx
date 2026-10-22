@@ -66,8 +66,7 @@ export function Notes({ log }) {
   };
 
   // The durable death is held while Undo is available, and the editor leaves in the same act.
-  // Nothing is confirmed — a question in front of an act that can be undone is ceremony
-  // (13-gestures.md Law 2).
+  // Nothing is confirmed — a question in front of an act that can be undone is ceremony.
   const remove = (note) => {
     log.holdDelete({
       kind: 'note',

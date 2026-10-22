@@ -1,6 +1,6 @@
 import SwiftUI
 
-// The one band (docs/design/ios/ios-redesign.md §5): a message with at most one control, an accent action or the
+// The one band (Figma Gym · iOS 00.3): a message with at most one control, an accent action or the
 // dismiss xmark. Where its host keys `roomMotion` on what it says, it rises on the system spring and leaves the way it
 // came, a 200 ms fade with Reduce Motion; a band with a way to be dismissed also goes by a swipe down, unless its text
 // scrolls within a bounded band, where a drag reads the text and its control sends it away.

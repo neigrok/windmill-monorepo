@@ -40,7 +40,8 @@ logging. Each platform's layering tests fail the build on a breach; what each on
 ### 1. Read the registry, the binding and the canon
 
 Read the type in `packages/api-contract/sync/<product>.registry.json`, its binding in engine Appendix A.2 (gym) or A.3
-(journal), and the feature's brief in `docs/design/<product>/briefs/`. The generated schema module (`SyncSchema`,
+(journal), the product's principles in `docs/design/brand-foundations.md`, and the feature's boards in its product's
+Figma file. The generated schema module (`SyncSchema`,
 `:sync-schema`) names everything: `Gym.scope`, `Gym.Types.weighin`, product refusal codes `Gym.Codes.badInstant`,
 defaults `Gym.Defaults.Prefs.units`.
 
@@ -51,7 +52,7 @@ defaults `Gym.Defaults.Prefs.units`.
 | `wholePut: true` (keyed, with life): each record is one fact | `Draftable`, `savesGuarded = false`, writing every client field |
 | a field that records each save's moment (A.2 `weighin.recordedAt`) | `Timestamped`, naming it `timestampField`, with no check |
 | `life: true`, and the binding lets a client delete it | `Removable` |
-| the delete is in the canon's delete windows (gym: `docs/design/gym/briefs/13-gestures.md`) | `heldRemoval = true`; A.2's **Held** list must agree, else record the drift in `docs/design/consistency.md` |
+| the delete is in A.2's **Held** list (a delete held for its Undo window) | `heldRemoval = true`; if the product wants a held delete A.2 does not list, record the drift in `docs/design/consistency.md` |
 | a client `lww` field with a `fracKey` domain | `Ordered`, naming it `orderField` |
 | "Editor save guards the fields it writes" | `savesGuarded = true`, and so no `text` field |
 | the `writer: client` fields, with bounds, enum, `quantum` | `fields`, and a spec no looser than the registry |
