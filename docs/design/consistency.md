@@ -517,11 +517,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   which is the receipt's band action, not a swipe.
 - **10x · The log's boards ahead of other canon (build, 2026-10-22).** The iOS build follows the
   🚧 targets (10o), and other canon still says otherwise in these places:
-  - Workout detail (05.3): a movement is its section's header, its name over the plan in the monospaced
-    face (*plan 4 × 5 · 100*), and opens its Record; its set rows draw the place in its own column and
-    the numbers in the monospaced face (*1  100 × 5*), with no separators. §3 reserves the monospaced
-    face for the journal, and §5's `SetRow` and §7.8 still read *1 · 100 × 5* under a movement row. The
-    head's tiles share one card parted by hairlines. Inspect and Fix workout (07.2, 07.3) keep *1 · 80 × 5*.
+  - Workout detail's tiles share one card parted by hairlines (05.3), and the one session
+    constructor draws them so on Inspect and the receipt too, where 07.2 draws one card without
+    hairlines and 03.7 three cards. Settle one form and redraw the others.
   - Record (05.6–05.8) and Bodyweight's chart draw dots only, no segment between them, where
     `briefs/11-bodyweight.md` and `briefs/18-progress.md` still join dots within the gap threshold.
     The Record draws no *Most reps* tile, no Recent sets and no estimates footer;

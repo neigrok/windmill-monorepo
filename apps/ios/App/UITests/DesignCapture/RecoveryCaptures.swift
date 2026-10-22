@@ -11,17 +11,16 @@ final class RecoveryCaptures: DesignCapture {
     app.buttons["recovery-summary"].tap()
     XCTAssertTrue(app.buttons["recovery-row-fixture-overlap"].waitForExistence(timeout: 10))
     capture("07.1-on-this-phone", look, app)
-    for (id, screen) in [("fixture-open-copy", "gym-recovery-inspect-keep"), ("fixture-overlap", "07.2-inspect"),
+    for (id, screen) in [("fixture-open-copy", "gym-recovery-inspect-keep"), ("fixture-overlap", nil),
                          ("fixture-landed-push", "gym-recovery-inspect-retry"), ("fixture-id-taken", "gym-recovery-inspect-discard-only")] {
       let row = app.buttons["recovery-row-" + id]
       for _ in 0..<8 where !row.isHittable { app.swipeUp(velocity: .slow) }
       row.tap()
       XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
-      capture(screen, look, app)
+      if let screen { capture(screen, look, app) }
       if id == "fixture-overlap" {
         app.buttons["recovery-primary"].tap()
         XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
-        capture("07.3-fix-workout", look, app)
         // A set row reached at the largest text sits under the band at the sheet's foot until it scrolls clear of it.
         let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-fix-set-")).firstMatch
         let held = app.descendants(matching: .any)["recovery-fix-held"]
@@ -62,5 +61,26 @@ final class RecoveryCaptures: DesignCapture {
     capture("gym-recovery-inspect-blocked", look, paused)
   }
   func testRecovery() { for look in Look.both { recovery(look) } }
+
+  func openOverlap(_ look: Look) -> XCUIApplication {
+    let app = launch("recovery", look)
+    XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 30)); app.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(app.buttons["recovery-summary"].waitForExistence(timeout: 20)); app.buttons["recovery-summary"].tap()
+    let row = app.buttons["recovery-row-fixture-overlap"]
+    XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
+    return app
+  }
+  func testInspect() {
+    captureBoard("07.2-inspect") { look in openOverlap(look) }
+  }
+  func testFixWorkout() {
+    captureBoard("07.3-fix-workout") { look in
+      let app = openOverlap(look)
+      app.buttons["recovery-primary"].tap()
+      XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
   func testRecoveryLargestText() { for look in Look.bothAtLargestText { recovery(look) } }
 }
