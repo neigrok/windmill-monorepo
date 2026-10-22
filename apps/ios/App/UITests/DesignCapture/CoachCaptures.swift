@@ -32,6 +32,28 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  func testPhotoCaption() {
+    captureBoard("01.4-coach-photo-signed-out") { look in
+      let app = launch("shell-last-room", look, arguments: ["-coach-draft-photo"])
+      openGymFromJournal(app, opensOn: .coach)
+      typeOverPhoto(app)
+      return app
+    }
+    captureBoard("01.5-coach-photo-signed-in") { look in
+      let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture", "-coach-draft-photo"])
+      openGymFromJournal(app, opensOn: .coach)
+      typeOverPhoto(app)
+      return app
+    }
+  }
+  // The draft photo stands in the field; the question goes in under it with the keyboard up.
+  func typeOverPhoto(_ app: XCUIApplication) {
+    XCTAssertTrue(app.staticTexts["coach-photo-caption"].waitForExistence(timeout: 15))
+    let field = app.descendants(matching: .any)["coach-question"]
+    field.tap(); field.typeText("My program, 3 days a week")
+    XCTAssertTrue(app.buttons["coach-send"].waitForExistence(timeout: 5))
+  }
+
   func testEmpty() {
     captureBoard("08.1-coach-empty") { look in launchSignedInCoach(look) }
   }

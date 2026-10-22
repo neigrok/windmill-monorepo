@@ -106,6 +106,14 @@ enum CoachFixture {
     return true
   }
 
+  // A draft program screenshot in the composer, as if just chosen from the photo picker (`-coach-draft-photo`).
+  static func seedDraftPhoto(_ coach: CoachConversation) {
+    #if DEBUG && targetEnvironment(simulator)
+    guard ProcessInfo.processInfo.arguments.contains("-coach-draft-photo"), coach.allowed, coach.saved.photo == nil else { return }
+    try? coach.addPhoto(CoachFixtureConversation.program())
+    #endif
+  }
+
   static func applySetupResults(_ results: [CoachResult], gym: GymModel) {
     #if DEBUG && targetEnvironment(simulator)
     guard ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") else { return }

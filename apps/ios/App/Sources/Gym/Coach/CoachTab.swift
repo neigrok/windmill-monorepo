@@ -100,7 +100,7 @@ struct CoachTab: View {
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
         if !CoachFixture.setup, !fixturePrepared { fixturePrepared = await CoachFixture.prepare(gym) }
-        history.resetOwner(); await coach.activate()
+        history.resetOwner(); await coach.activate(); CoachFixture.seedDraftPhoto(coach)
         if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
         coach.noteOffline()
       }
@@ -236,34 +236,38 @@ struct CoachTab: View {
     }
   }
 
-  // A round Add photo beside the field, the question in the field, and in its trailing end Send while there is something to
-  // send, or Stop while Coach answers.
+  // A round Add photo beside the field; in the field a chosen photo over the question, and in its trailing end Send while
+  // there is something to send, or Stop while Coach answers. A chosen photo says where it is kept, once, over the field.
   var composer: some View {
-    VStack(alignment: .leading, spacing: RoomSpace.related) {
-      if preparing {
-        ProgressView().frame(width: 56, height: 56).background(GymPalette.line, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-          .accessibilityLabel("Preparing photo").padding(.leading, 52).padding(.top, RoomSpace.related)
-      }
-      else if let photo = coach.saved.photo, !coach.asking {
-        CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: photo, local: coach.saved.photoData)
-          .overlay(alignment: .topTrailing) {
-            Button { coach.removePhoto() } label: {
-              Image(systemName: "xmark.circle.fill").font(.title3).symbolRenderingMode(.palette).foregroundStyle(GymPalette.card, GymPalette.inkDim)
-                .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
-            }.buttonStyle(.plain).offset(x: 18, y: -18).accessibilityLabel("Remove photo")
-          }.padding(.leading, 52).padding(.top, RoomSpace.related)
-        Text(coach.anonymous ? "Sent to our AI provider when you send. Windmill keeps this photo only on this phone." : "Sent to Coach when you send. Kept privately with this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
+    VStack(spacing: RoomSpace.related) {
+      if (preparing || coach.saved.photo != nil) && !coach.asking {
+        Text(coach.anonymous ? "Sent to Coach. Saved only on this phone." : "Saved only in this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
+          .accessibilityIdentifier("coach-photo-caption")
       }
       HStack(alignment: .bottom, spacing: RoomSpace.related) {
         PhotosPicker(selection: $photo, matching: .images) {
           Image(systemName: "plus").font(.body.weight(.semibold)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(GymPalette.ink)
         }.buttonStyle(RoomSeatStyle(diameter: 40))
           .accessibilityLabel("Add photo").disabled(coach.asking || preparing || !coach.draftReadable)
-        HStack(alignment: .bottom, spacing: 0) {
-          TextField("Ask about your training", text: Binding(get: { coach.asking ? "" : coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
-            .lineLimit(1...(typeSize.isAccessibilitySize ? 2 : 5)).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
-            .id(coach.asking).padding(.leading, 14).padding(.trailing, 4).padding(.vertical, 9)
-          send
+        VStack(alignment: .leading, spacing: 0) {
+          if preparing && !coach.asking {
+            ProgressView().frame(width: 60, height: 80).background(GymPalette.line, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+              .accessibilityLabel("Preparing photo").padding([.top, .leading], 10)
+          } else if let photo = coach.saved.photo, !coach.asking {
+            CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: photo, local: coach.saved.photoData, side: 80)
+              .overlay(alignment: .topTrailing) {
+                Button { coach.removePhoto() } label: {
+                  Image(systemName: "xmark.circle.fill").font(.title3).symbolRenderingMode(.palette).foregroundStyle(GymPalette.card, GymPalette.ink)
+                    .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
+                }.buttonStyle(.plain).offset(x: 16, y: -16).accessibilityLabel("Remove photo")
+              }.padding([.top, .leading], 10)
+          }
+          HStack(alignment: .bottom, spacing: 0) {
+            TextField("Ask about your training", text: Binding(get: { coach.asking ? "" : coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
+              .lineLimit(1...(typeSize.isAccessibilitySize ? 2 : 5)).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
+              .id(coach.asking).padding(.leading, 14).padding(.trailing, 4).padding(.vertical, 9)
+            send
+          }
         }.frame(minHeight: 40).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
           .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(GymPalette.line, lineWidth: 1))
           .padding(.vertical, 2)

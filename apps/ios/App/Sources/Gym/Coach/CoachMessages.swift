@@ -74,7 +74,7 @@ struct CoachQuestion: View {
     VStack(alignment: .trailing, spacing: RoomSpace.small) {
       ForEach(attachments) { attachment in
         let local = draft?.id == attachment.id ? draft?.data : nil
-        CoachPhotoView(gym: gym, thread: thread, attachment: attachment, local: local, bubble: true)
+        CoachPhotoView(gym: gym, thread: thread, attachment: attachment, local: local, side: 200)
           .overlay { if uploading, local != nil { ProgressView().accessibilityLabel("Photo upload") } }
       }
       if !text.isEmpty {
@@ -244,23 +244,23 @@ struct CoachMarkdown: View {
   }
 }
 
-// A photo that opens full size: a sent one is a bubble at most 200 pt on its long side, a drafted one a 56 pt thumbnail.
+// A photo that opens full size, fitted to its side: a sent one is a bubble 200 pt on its long side, a drafted one 80 pt.
 struct CoachPhotoView: View {
   let gym: GymModel
   let thread: String
   let attachment: CoachAttachment
   let local: Data?
   let owner: String?
-  let bubble: Bool
-  init(gym: GymModel, thread: String, attachment: CoachAttachment, local: Data?, bubble: Bool = false) {
-    self.gym = gym; self.thread = thread; self.attachment = attachment; self.local = local; self.bubble = bubble; owner = gym.account
+  let side: CGFloat
+  init(gym: GymModel, thread: String, attachment: CoachAttachment, local: Data?, side: CGFloat) {
+    self.gym = gym; self.thread = thread; self.attachment = attachment; self.local = local; self.side = side; owner = gym.account
   }
   var size: CGSize {
-    guard bubble, attachment.width > 0, attachment.height > 0 else { return CGSize(width: 56, height: 56) }
-    let scale = 200 / CGFloat(max(attachment.width, attachment.height))
+    guard attachment.width > 0, attachment.height > 0 else { return CGSize(width: side, height: side) }
+    let scale = side / CGFloat(max(attachment.width, attachment.height))
     return CGSize(width: CGFloat(attachment.width) * scale, height: CGFloat(attachment.height) * scale)
   }
-  var shape: RoundedRectangle { RoundedRectangle(cornerRadius: bubble ? 18 : 8, style: .continuous) }
+  var shape: RoundedRectangle { RoundedRectangle(cornerRadius: side > 100 ? 18 : 10, style: .continuous) }
   @State var data: Data?
   @State var loadedOwner: String?
   @State var failed = false

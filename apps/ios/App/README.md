@@ -194,7 +194,7 @@ asks for it from your totals,
 four seconds in flight, then unanswered,
 `-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer, `-coach-thinking` holds it before its
 first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
-proposal board and answers its questions,
+proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
