@@ -211,8 +211,11 @@ struct CoachDraftStore {
       if let record = anonymousRequest, !record.finished, !record.stopped, !asking { launchOnboarding(owner: owner) }
       return
     }
+    // The day's cap and the ceiling lapse here: the server refills them, so the next Send asks again.
+    switch refusal { case .daily?, .ceiling?: refusal = nil; error = nil; default: break }
     if let allowance = saved.allowance ?? activeGeneration?.allowanceRefusal { refusal = .allowance(allowance); error = allowance.message }
     if gym.coachUnavailable { refusal = .absent; error = CoachCopy.absent; return }
+    // Only a question still on its way resumes; a refused one left no request behind.
     if let request = saved.request, saved.allowance == nil, activeGeneration?.terminal != true, !asking {
       launch(request, owner: owner)
     }
@@ -411,6 +414,11 @@ struct CoachDraftStore {
           } else { refusal = CoachRefusal(status: failure.status, code: object["code"] as? String, message: failure.message) }
           if refusal == .absent { gym.coachUnavailable = true }
           self.error = refusal?.message
+          // A refused question never reached Coach: the field keeps it, and only Send asks again, with what the field then holds.
+          switch refusal {
+          case .retry?, .allowance?: break
+          default: if activeGeneration == nil { var next = saved; next.request = nil; _ = keep(next, failure: "Your message couldn’t be saved. Try again.") }
+          }
         } else if let failure = error as? AppFailure { self.error = failure.message }
         else { refusal = .retry(CoachCopy.noAnswer); self.error = CoachCopy.noAnswer }
         var properties = ["screen": "coach", "outcome": "failed"]

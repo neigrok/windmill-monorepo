@@ -846,7 +846,7 @@ import SyncTesting
     #expect(telemetry.entries.withLock { $0.filter { ["api_request_failed", "client_error", "gym_ask_outcome"].contains($0.name) }.map { [$0.name: $0.properties] } } == [
       ["api_request_failed": ["operation": "gym_rest", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": deployment == "unmounted" ? "404" : "503"]],
       ["gym_ask_outcome": ["screen": "coach", "outcome": "absent"]]])
-    #expect(coach.saved.text == "Training question" && coach.saved.request != nil)
+    #expect(coach.saved.text == "Training question" && coach.saved.request == nil)
     #expect(coach.available && gym.coachAccountAvailable)
     let reopened = CoachConversation(gym: gym, rest: rest, store: cache); await reopened.activate()
     #expect(reopened.refusal == .absent && !reopened.canCompose && !reopened.asking)
@@ -1518,6 +1518,32 @@ import SyncTesting
     #expect(coach.blockedReason == "This conversation is unavailable. Start a new one.")
     coach.newChat(seed: "Private question")
     #expect(coach.blockedReason == nil && coach.canCompose)
+  }
+  @Test func aCappedQuestionIsNeverSentAgainUntilSendAndThenWithTheFieldsText() async throws {
+    let (gym, rest, telemetry) = try await authed(.http(429, #"{"code":"ask-daily-limit","error":"the next question frees up in a couple of hours"}"#)), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    coach.edit("How heavy?"); coach.send()
+    try await settle { !coach.asking }
+    #expect(coach.refusal == .daily(CoachCopy.daily) && coach.saved.request == nil && coach.saved.text == "How heavy?")
+    #expect(try cache.read(gym.account!).request == nil)
+    coach.edit("I changed my mind")
+    await coach.activate()
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(coach.refusal == nil && coach.error == nil && !coach.asking && coach.canCompose)
+    let relaunched = CoachConversation(gym: gym, rest: rest, store: cache); await relaunched.activate()
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(!relaunched.asking && relaunched.saved.text == "I changed my mind")
+    #expect(CoachTestProtocol.state.withLock { $0.requests.count } == 1)
+    CoachTestProtocol.state.withLock { $0.reply = .stalled }
+    relaunched.send()
+    try await settle { CoachTestProtocol.state.withLock { $0.requests.count } == 2 }
+    let bodies = try CoachTestProtocol.state.withLock { $0.requests }.map { try JSONDecoder().decode(CoachSaved.Request.self, from: #require($0.body)) }
+    #expect(bodies.map(\.question) == ["How heavy?", "I changed my mind"] && bodies[0].requestId != bodies[1].requestId)
+    relaunched.work?.cancel()
+    #expect(telemetry.entries.withLock { $0.filter { $0.name.hasPrefix("gym_ask_") }.map { [$0.name: $0.properties] } } == [
+      ["gym_ask_started": ["screen": "coach"]], ["gym_ask_outcome": ["screen": "coach", "outcome": "capped", "cap": "daily"]],
+      ["gym_ask_started": ["screen": "coach"]]])
   }
   // The card reads the domain's blocks, named from the catalogue: the new name, the changed movements, removals, then
   // additions, with the movements it keeps folded into one count.
