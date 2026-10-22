@@ -108,7 +108,8 @@ request cannot be applied. A draft the server no longer holds, or cannot write, 
 Apply; a signed-out, busy or unanswered confirmation keeps Apply for another try, and an account change
 during the save says so without claiming a failure. Anonymous results commit all routines and the
 replay receipt in one domain action only after Apply; a retained result can also be applied after
-account adoption. Creation links appear after that save succeeds. Existing routine changes are decided
+account adoption. After sign-in and *Add* the adopted conversation stays on screen and the next question
+goes to signed-in Coach, which can answer it with a change to a routine the conversation created. Creation links appear after that save succeeds. Existing routine changes are decided
 on their proposal card.
 
 Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
@@ -200,7 +201,8 @@ first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) 
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
 with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
 with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
-one routine,
+one routine, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
+change to *Full body B*,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

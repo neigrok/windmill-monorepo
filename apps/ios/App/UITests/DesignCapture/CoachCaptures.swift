@@ -392,6 +392,36 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  func testAfterSignIn() {
+    captureBoard("01.13-coach-after-sign-in") { look in
+      let app = XCUIApplication()
+      app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
+                             "-coach-fixture", "-coach-board", "after-sign-in", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+      app.launch()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 30))
+      ask("Build me a three day full body program", app)
+      let apply = app.buttons["coach-save-routines"]
+      XCTAssertTrue(apply.waitForExistence(timeout: 30))
+      for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+      apply.tap()
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch.waitForExistence(timeout: 30))
+      app.buttons["you"].tap()
+      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10)); app.buttons["email-sign-in"].tap()
+      let address = app.textFields["email-address"]; address.tap(); address.typeText("after-sign-in-" + UUID().uuidString.prefix(8).lowercased() + "@example.com")
+      app.buttons["Send code"].tap()
+      let code = app.textFields["email-code"]; XCTAssertTrue(code.waitForExistence(timeout: 10)); code.tap(); code.typeText("482913")
+      if app.alerts.buttons["Add"].waitForExistence(timeout: 15) { app.alerts.buttons["Add"].tap() }
+      if app.buttons["Close"].waitForExistence(timeout: 3) { app.buttons["Close"].tap() }
+      ask("Swap chin-ups for pulldowns", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 20))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      let reject = app.buttons["coach-reject-proposal"]
+      for _ in 0..<4 where !reject.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+      return app
+    }
+  }
+
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]

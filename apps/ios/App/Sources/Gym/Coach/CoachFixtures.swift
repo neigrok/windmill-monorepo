@@ -60,7 +60,8 @@ enum CoachFixture {
       }
       guard let owner = gym.account, gym.coachAccountAvailable else { throw AppFailure(message: "Coach fixture account is unavailable.") }
       CoachFixtureProtocol.now.withLock { $0 = gym.dates.moment.now.ms }
-      if !ProcessInfo.processInfo.arguments.contains("-restore-board") {
+      // An account the lifter signed into after a signed-out start keeps the conversation it adopted.
+      if !ProcessInfo.processInfo.arguments.contains("-restore-board"), runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
       if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }
@@ -75,9 +76,11 @@ enum CoachFixture {
         _ = gym.save(&routine)
       }
       await runtime.engine.flushOnLeave(); gym.refresh()
-      _ = gym.run(ImportSession(id: ID("coach-fixture-session"), startedAt: Instant(ms: 1_790_423_000_000), finishedAt: Instant(ms: 1_790_424_000_000),
-        sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))],
-        routineId: ID(RecordID(routines[0].id))))
+      if let first = routines.first {
+        _ = gym.run(ImportSession(id: ID("coach-fixture-session"), startedAt: Instant(ms: 1_790_423_000_000), finishedAt: Instant(ms: 1_790_424_000_000),
+          sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))],
+          routineId: ID(RecordID(first.id))))
+      }
       let removing = ProcessInfo.processInfo.arguments.contains("-coach-removal")
       let proposals = board?.proposals ?? [CoachBoard.Proposed(id: "coach-fixture-proposal", routine: "coach-fixture-routine", name: "Push A2",
         entries: [CoachBoard.entry("back-squat", 1, 3, 90), RoutineEntry(exerciseId: ID("bench-press"))], removing: removing)]
@@ -132,6 +135,10 @@ enum CoachFixture {
       switch write {
       case .exercise(let exercise, let name, let equipment, let loadCount): _ = gym.run(UpdateExercise(exercise.id, name: name, equipment: equipment, loadCount: loadCount))
       case .note(let title, let body): _ = gym.run(SaveNoteCall(Note(id: ID("board-note"), title: title, body: body)))
+      case .swap(let name, let from, let to):
+        guard let routine = gym.routines.first(where: { $0.name == name }) else { continue }
+        let entries = routine.entries.map { $0.exerciseId == ID(RecordID(from)) ? to : $0 }
+        _ = gym.run(ProposeRoutine(id: ID("board-proposal"), routineId: routine.id, name: routine.name, entries: entries, summary: ""))
       }
     }
     #endif
@@ -242,8 +249,8 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
           "errorCode": NSNull(), "allowance": allowance, "message": "Here are your routine drafts. Review them before saving.",
           "routines": CoachFixture.draftNames.map { suffix in
-            ["name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces), "entries": ["back-squat", "bench-press", "barbell-row"].map { exercise in
-              ["exerciseId": exercise, "sets": Array(repeating: ["reps": 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
+            ["name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces), "entries": ["back-squat", "bench-press", suffix == "B" ? "chin-up" : "barbell-row"].map { exercise in
+              ["exerciseId": exercise, "sets": Array(repeating: ["reps": exercise == "chin-up" ? 8 : 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
             }] as [String: Any]
           }]
       } else {
@@ -354,7 +361,7 @@ nonisolated struct CoachFixtureConversation {
       let tools = turn.tools ?? [board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"]
       steps.append(contentsOf: tools.map { ["tool": $0] })
       receipt = ["version": 1, "read": read, "steps": steps, "proposals": turn.proposals, "observations": observations]
-      outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines[0].id, "routine": board.routines[0].name]
+      outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines.first?.id ?? NSNull(), "routine": board.routines.first?.name ?? NSNull()]
     } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
       held = !arguments.contains("-coach-markdown"); screenshot = arguments.contains("-coach-thinking")
       question = screenshot ? "My program, 3 days a week" : "What should Thursday look like?"
@@ -433,7 +440,11 @@ nonisolated struct CoachBoard {
     var tools: [String]?
   }
   // What Coach writes on the log while it answers: a movement it corrects, or a note it saves.
-  enum Write { case exercise(Exercise, name: String?, equipment: String?, loadCount: Int?), note(String, String) }
+  enum Write {
+    case exercise(Exercise, name: String?, equipment: String?, loadCount: Int?), note(String, String)
+    // Coach proposes to swap one movement in a routine the lifter already holds, found by its name.
+    case swap(routine: String, from: String, to: RoutineEntry)
+  }
   var routines: [(id: String, name: String, entries: [RoutineEntry])]
   var proposals: [Proposed]
   var turns: [Turn]
@@ -473,6 +484,9 @@ nonisolated struct CoachBoard {
 
   static let squatsAnswer = "Choose a weight you can lift 8 times with good form. Do 5 reps. The app remembers it for next time."
   static let all: [String: CoachBoard] = [
+    "after-sign-in": CoachBoard(routines: [], proposals: [],
+      turns: [Turn(question: "Swap chin-ups for pulldowns", answer: "Here is a change for Full body B.", proposals: ["board-proposal"])],
+      writes: [.swap(routine: "Full body B", from: "chin-up", to: RoutineEntry(exerciseId: ID("lat-pulldown"), sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3), restSeconds: 120))]),
     "squats": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
       turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer, tools: [])]),
     "stalled": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
