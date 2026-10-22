@@ -23,7 +23,7 @@
   - Carry the time in `WorkoutNotification` (the domain snapshot), so a test can read it without a device.
 - Expanded (04.2): the title, *{movement} · {w} kg × {r}*, *set n of N*, and the one action **Log set** (unlock required, as today).
 - Collapsed: the same facts on one line.
-- Title *Free session* becomes *Free workout* (`domain/WorkoutNotification.kt:54`).
+- The title is the routine name. A workout with no routine (one a connected agent started) reads `Readout.noRoutine` (13), not its own *Free session* (`domain/WorkoutNotification.kt:54`).
 - Live Update chip (04.3): the promoted notification shows the same chronometer in the status-bar chip. API 35 and older have no chip; nothing else changes there.
 - Lock screen (04.4):
   - Create a new channel id at `IMPORTANCE_DEFAULT`, kept silent: `setSilent(true)`, no sound, no vibration. An app cannot raise an existing channel's importance, so the id must change. Delete the old `gym_workout` channel after the new one exists.
@@ -32,7 +32,8 @@
 
 **Out of scope:**
 - The Quick Settings tile (16).
-- The logger's own clock row and the workout bar (03, 09).
+- The logger's own clock row (09) and the workout bar above the tabs (45).
+- Swiping the notification away: it turns the notification off and This workout offers **Show** (45).
 
 **Done when**
 - Screenshots of 04.2, 04.3 and 04.4 match in Dark and Daylight on an API 36+ emulator; the rig (01) adds `04.2-ongoing-notification-dark/light`, `04.3-live-update-chip-dark/light`, `04.4-lock-screen-dark/light`.
@@ -44,4 +45,4 @@
 
 **Depends on:** 01.
 
-**Ledger:** 11l; dogfood `android-gym-target-page`.
+**Ledger:** 11l, 12c, 9z; dogfood `android-gym-target-page`.

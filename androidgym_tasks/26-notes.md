@@ -17,8 +17,9 @@
   - *Delete note* in alarm ink (:276-279). It is held: the editor closes and *Note deleted.* shows with *Undo* for nine seconds (`store/WithheldDelete.kt:67`).
 
 **Change**
+- Head: one line, *Any agent you connect can read these too.* Delete the subtitle *what you write for Coach* (`Notes.sub`) and the footer *Top note wins.* (`Notes.topWins`, `ui/NotesScreen.kt:116`). The reorder handle stays.
 - Note rows swipe end-to-start on `DeleteSwipeRow` (04), a11y label *Delete note*. Past the threshold the note is deleted at once: no hold, no Undo.
-  - The reorder handle, *Top note wins.* and *Add a note* stay as they are.
+  - The reorder handle and *Add a note* stay as they are.
   - A swipe and a long-press drag must not fight: the drag starts only from the handle, the swipe only from the row body.
 - Note editor (09.2):
   - Bar: `Android / Top app bar` Pushed, back + *Note* + the text action *Save* (tertiary text while there is nothing to save).
@@ -28,8 +29,7 @@
 - 05 already makes the store's note delete immediate; this task adds the swipe and the button.
 
 **Out of scope:**
-- Signed-out Notes (09.6 matches today), Connected log and Gym settings (09.3–09.5 match; their Daylight accent is 02's).
-- Whether *Top note wins.* stays on every surface (9s, an open ruling; keep it until ruled).
+- Signed-out Notes (09.6) and Connected log (09.3, 09.4): 51.
 
 **Done when**
 - Screenshots of 09.1 (one row mid-swipe) and 09.2 match in Dark and Daylight, signed in; the rig (01) adds `09.1-notes-swipe-delete-dark/light` and `09.2-note-editor-dark/light`.
@@ -40,4 +40,4 @@
 
 **Depends on:** 02, 03, 04, 05.
 
-**Ledger:** 11b, 11c, 9s; dogfood `android-gym-target-page`.
+**Ledger:** 11b, 11c, 9s, 12h; dogfood `android-gym-target-page`.

@@ -24,10 +24,10 @@
   - 02.2: *3 × 8 · 75 kg total* (barbell, machine), *3 × 10 · 24 kg each* (dumbbells).
   - 02.5: the same strings under each movement in the editor.
 - One equipment word list: *Barbell*, *Dumbbells*, *Bodyweight*, *Machine*.
-- Build `ui/EquipmentIcon.kt` from `Android / Equipment icon`. Machine draws `table_rows` (a weight stack). Later tasks place it (09, 10, 13, 19, 20, 21, 23).
+- Build `ui/EquipmentIcon.kt` from `Android / Equipment icon`. Machine draws `table_rows` (a weight stack). Later tasks place it (09, 10, 19, 20, 21, 23).
 - 02.5: the lifted row is raised with a shadow (`Modifier.shadow`, M3 level 3); handles stay always shown.
 
-**Out of scope:** the rack (09); Create movement (19); Edit exercise (20); the picker rows (13).
+**Out of scope:** the rack (09); Create movement (19); Edit movement (20); the picker rows (02.4 matches today); *· yours* on the summary's rows (50).
 
 **Done when**
 - Screenshots of 02.2 and 02.5 match in Dark and Daylight; the rig (01) adds `02.2-routine-summary-dark/light`, `02.5-editor-sortable-dark/light`.

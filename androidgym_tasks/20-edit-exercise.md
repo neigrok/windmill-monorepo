@@ -1,8 +1,8 @@
-# Edit exercise replaces Rename movement
+# Edit movement replaces Rename movement
 
 **Figma:**
-- 05.9 Edit exercise, name and Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31338)
-- 05.10 Edit exercise, the Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6469) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31377)
+- 05.9 Edit movement, name and Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31338)
+- 05.10 Edit movement, the Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6469) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31377)
 - Components (Gym Components page, section `🧩 Android · Material 3`):
   - `Android / Equipment icon` `1247:2247` (Kind=Machine `1263:34603`, Material Symbol `table_rows`)
   - `Android / Menu` `1260:2608`
@@ -18,9 +18,9 @@
 - The model already holds equipment and the dumbbell count: `ExerciseName` carries `equipment` and `loadCount` overrides (`…/domain/sync/Catalogue.kt:31-47`), `Exercise.loadCount` (`domain/Training.kt:42`).
 
 **Change**
-- Rename `RenameSheet` to an Edit exercise sheet (one file, `ui/EditExerciseSheet.kt`), opened from the Record's ⋮ (21).
+- Rename `RenameSheet` to an Edit movement sheet (one file, `ui/EditMovementSheet.kt`), opened from the Record's ⋮ (21).
 - 05.9:
-  - Title *Edit exercise*.
+  - Title *Edit movement*.
   - `OutlinedTextField` *Name*, with the note *The new name shows in your routines and history. Search still finds the old name.*
   - Exposed dropdown *Equipment* with the leading equipment icon (08).
   - For Dumbbells: *Dumbbells lifted*, M3 segmented button *One* / *Two*.
@@ -38,11 +38,11 @@
 - Coach changing a movement (35).
 
 **Done when**
-- Screenshots of 05.9 and 05.10 match in Dark and Daylight; the rig (01) adds `05.9-edit-exercise-dark/light` and `05.10-edit-exercise-equipment-menu-dark/light`.
+- Screenshots of 05.9 and 05.10 match in Dark and Daylight; the rig (01) adds `05.9-edit-movement-dark/light` and `05.10-edit-movement-equipment-menu-dark/light`.
 - Rename emits no event today. Add `gym_action` with `screen=record`, `action=edit`, `outcome=ok` / `refused` / `failed`; no name or equipment in properties. List it in `docs/ANDROID_OBSERVABILITY.md`.
 - The failure operation `gym.rename` becomes `gym.editExercise`.
 - Tests: `store/EngineTrainingTests.kt`, `store/TrainingStoreTests.kt`, `ui/SheetDismissTests.kt` (rename cases become edit cases), and the domain tests next to `CataloguePreferencesTests.kt` in `apps/android/gym/domain/src/test/`.
 
 **Depends on:** 08.
 
-**Ledger:** 11e; dogfood `android-gym-target-page`.
+**Ledger:** 11e, 9z; dogfood `android-gym-target-page`.

@@ -13,22 +13,28 @@ The [Figma Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?nod
 - [09](09-rack.md) — The rack: equipment icon, load and reps steppers, the ladder
 - [10](10-fix-set.md) — Fix set on steppers, Delete set in red
 - [11](11-this-workout.md) — This workout sheet
-- [12](12-heavier-than-plan.md) — Heavier than the plan
-- [13](13-free-workout-start.md) — Free workout before the first movement
-- [14](14-finish-receipt.md) — Finish receipt, Ended early, and Discard this workout?
+- [45](45-hide-workout.md) — Hide workout: the workout bar above the tabs, and the notification's swipe only turns it off (builds after 11)
+- [12](12-heavier-than-plan.md) — Remove the Heavier than the plan sheet
+- [13](13-free-workout-start.md) — Remove the free workout: no Start logging, no first-movement start, no Save a routine
+- [14](14-finish-receipt.md) — Finish receipt as iOS draws it, Ended early, Discard this workout?, and the first workout's Keep line
 - [15](15-ongoing-notification.md) — The ongoing notification and Live Update show the time since the last set
 - [16](16-quick-settings-tile.md) — Quick Settings tile for the workout
 - [17](17-routines-list.md) — Routines list and empty Routines with the FAB
 - [18](18-targets.md) — Targets sheet on steppers, and each set
 - [19](19-create-movement.md) — Create movement: name, equipment, dumbbells lifted
-- [20](20-edit-exercise.md) — Edit exercise replaces Rename movement
-- [21](21-record.md) — Record: Edit exercise in the overflow, no set kinds, workouts
-- [22](22-the-log.md) — The Log: Weigh in extended FAB, discard by swipe, workout wording
+- [50](50-routine-history-yours.md) — The routine editor's History, and *· yours* on a movement the lifter made (builds after 19)
+- [20](20-edit-exercise.md) — Edit movement replaces Rename movement
+- [21](21-record.md) — Record: Edit movement in the overflow, Earlier records, no set kinds, workouts
+- [22](22-the-log.md) — The log: its head, rows and moments as iOS draws them, Weigh in FAB, discard by swipe
 - [23](23-workout-detail.md) — Workout detail
 - [24](24-bodyweight.md) — Bodyweight list and correcting a weigh-in
-- [25](25-on-this-phone.md) — On this phone: inspect, fix, the sign-in decision
+- [25](25-on-this-phone.md) — On this phone: the head of The log, the list, Inspect, Fix workout, Discard, the sign-in decision
 - [26](26-notes.md) — Notes and the note editor
-- [27](27-sign-in-fields.md) — Sign-in: outlined email and code fields (Shell file)
+- [51](51-connected-log-notes-signed-out.md) — Connected log names ChatGPT or Claude and says it saves notes; Notes signed out (builds after 26)
+- [27](27-sign-in-fields.md) — Sign-in: outlined fields, no standing line, the server's refusal (Shell file)
+- [46](46-remove-gym-settings.md) — Remove Gym settings and the lb toggle; You holds Notes, Connected log, About Windmill (Shell file; builds after 27)
+- [47](47-sign-out-asks.md) — Sign out asks first, with Keep or Discard for unconfirmed changes (Shell file; builds after 46)
+- [48](48-delete-account.md) — Delete account from You, signed in (Shell file; builds after 47 and the backend's `account-delete-grace-enforced`)
 - [28](28-coach-messages-chat.md) — Coach chat in the Google Messages style
 - [29](29-coach-change-card.md) — The proposal card in the conversation, with a field diff (no review sheet)
 - [30](30-proposal-decided-states.md) — Proposal decided states: Applied, Rejected, Out of date, two proposals
@@ -37,8 +43,8 @@ The [Figma Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?nod
 - [33](33-proposal-target-changes.md) — Proposal: sets, reps and load; vary by set; ramp up; rest and a first target
 - [34](34-proposal-long-failure-retry.md) — Proposal: a very long card, apply failed, retry in flight
 - [35](35-coach-write-receipts.md) — Coach write receipts: changed a movement, saved a note
-- [36](36-coach-access-states.md) — Coach access states: no seat, the day's cap, a change needs an account
-- [37](37-coach-history-sources.md) — History, deleting a conversation, What Coach read
+- [36](36-coach-access-states.md) — Coach access states: no seat, not on this Windmill, the day's cap, a change needs an account
+- [37](37-coach-history-sources.md) — History, deleting a conversation, What Coach read as a sheet
 - [38](38-signed-out-coach.md) — Signed-out Coach on this phone (installation credential, onboarding endpoint)
 - [39](39-coach-greeting.md) — First open: Coach greets in two bubbles; an empty Gym opens on Coach
 - [40](40-coach-photo-caption.md) — The photo in the composer and its caption
@@ -46,3 +52,4 @@ The [Figma Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?nod
 - [42](42-coach-drafts-saved.md) — After Apply: receipts, one tap from Start
 - [43](43-coach-allowance-used.md) — Allowance used: signed out, signed in (interim), Windmill One
 - [44](44-coach-after-sign-in.md) — After sign-in, the conversation continues and proposes a change
+- [49](49-coach-choices-kept-draft.md) — Coach asks with choice chips; a draft written signed out waits as Draft kept on this phone (builds after 44)

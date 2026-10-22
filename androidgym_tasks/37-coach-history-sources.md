@@ -13,7 +13,7 @@
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ThreadsScreen` (`coach/ThreadsScreen.kt:61`): title *History* (`coach/Thread.kt:156`), pull to refresh (`coach/ThreadsScreen.kt:104`).
 - Rows (`ThreadRow`, `coach/ThreadsScreen.kt:190-205`): the first question, then *{day} · {outcome}* and a chevron. Outcomes: *2 changes → Push*, *1 change turned down*, *created Push*, *2 changes waiting*, *2 changes superseded* (`coach/Thread.kt:83-92`).
-- A pinned accent button *Ask something new* (`coach/ThreadsScreen.kt:143-154`, `coach/Thread.kt:157`).
+- A pinned accent button *Ask something new* (`coach/ThreadsScreen.kt:143-154`, `coach/Thread.kt:157`). Empty, it reads *Nothing here yet. Every conversation you have with Coach is kept until you delete it.* (`coach/Thread.kt:168`).
 - Swipe end-to-start (`SwipeableThreadRow`, `coach/ThreadsScreen.kt:164-187`) on `RowDeleteGround` (`:180`). The delete is held 9 s: *Conversation deleted.* / *your routine keeps what you applied* + Undo (`store/WithheldDelete.kt:51-57`).
 - What Coach read is the tally line under the answer (`coach/CoachAnswer.kt:167-202`):
   - *Read 18 sets · 6 weeks · 3 sessions* (`coach/Ask.kt:265-272`), with a *+* / *−* toggle (`coach/CoachAnswer.kt:184`).
@@ -24,17 +24,19 @@
   - Rows are two-line M3 `ListItem`s: the first question as the headline, the outcome or the answer's first words as the supporting line, and the date trailing (*Today*, *Yesterday*, *Sep 27*).
   - Outcome lines: *Push A · 5 changes*, *Changed a movement*, *Created 3 routines*. A settled proposal uses 30's words (*Applied*, *Rejected*, *Out of date*).
   - Board copy: *Is Push A still doing anything?* / *Push A · 5 changes* / *Today*; *Pull-ups are bodyweight for me. I add a 10 kg belt.* / *Changed a movement* / *Yesterday*; *How heavy should I start squats?* / *Choose a weight you can lift 8 times with good form.* / *Sep 27*; *My program, 3 days a week* / *Created 3 routines* / *Sep 26*.
-  - *Ask something new* becomes an `ExtendedFloatingActionButton` *New chat* (`add` icon), bottom end.
+  - *Ask something new* becomes an `ExtendedFloatingActionButton` *New chat* (`add` icon), bottom end. *New chat* is the one way to start a conversation; *Ask something new* goes from every screen.
+  - Empty: *No conversations* (replaces `Threads.none`).
 - Delete a conversation (08.34):
   - The row swipes on `DeleteSwipeRow` (04), a11y label *Delete conversation*.
-  - Past the threshold, an M3 `AlertDialog`: *Delete this conversation?* / *Your routines keep what you applied.* / **Cancel** · **Delete** (error role, 02). Cancel puts the row back.
+  - Past the threshold, an M3 `AlertDialog`: *Delete this conversation?* / *You can’t undo this.* / **Cancel** · **Delete** (error role, 02). Cancel puts the row back. Both phones use these words (ledger 12g).
   - On Delete the conversation goes at once: no hold, no Undo snackbar. A refusal brings the row back and the note line explains.
   - Delete `Deletion.Thread`'s *Conversation deleted.* and *your routine keeps what you applied*. The last of 14 and 37 to land deletes `store/WithheldDelete.kt`.
-- What Coach read (08.5):
-  - The tally line reads *Read 1 workout · 1 week* with a chevron (down, up when open). Use *workouts* (9z).
-  - It expands in place into a card under the bubble: one row per workout, *Push A* over *Sat, Sep 26 · 1 working set · 400 kg*, with a chevron. Each row opens that workout (23).
+- What Coach read (08.5), a bottom sheet:
+  - The tally line under the bubble reads *Read 1 workout · 1 week ›* (`chevron_forward`). Use *workouts* (9z). A tap opens an M3 `ModalBottomSheet` over a 32 % scrim; the thread lifts so the tally stays visible above it.
+  - The sheet: handle, title *What Coach read*, the line *1 workout · 1 week*, then one row card per workout, *Push A* over *Sat, Sep 26 · 1 working set · 400 kg*, with a chevron. Each row opens that workout (23).
+  - **Close** (`Android / Button` Quiet, 56 dp) at the foot.
   - Volume is rounded like the rest of the app, with a space before *kg*.
-  - Footer *Also read your notes.* when Coach read them.
+  - *Also read your notes.* under the rows when Coach read them.
   - Tool phrases leave this card; Coach's writes have their own receipts (35).
 
 **Out of scope:** the swipe row itself (04), the chat (28), the write receipts (35).
@@ -48,4 +50,4 @@
 
 **Depends on:** 04, 05, 28, 30.
 
-**Ledger:** 11k, 10v, 11b; dogfood `android-gym-target-page`.
+**Ledger:** 11k, 10v, 11b, 12g, 12h; dogfood `android-gym-target-page`.

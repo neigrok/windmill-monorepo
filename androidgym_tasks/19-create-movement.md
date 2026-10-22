@@ -32,7 +32,7 @@
 
 **Out of scope:**
 - The Targets block (18), the picker list (02.4 matches today, apart from the *Dumbbells* word).
-- Edit exercise on an existing movement (20).
+- Edit movement on an existing movement (20).
 
 **Done when**
 - Screenshots of 02.9 match in Dark and Daylight; the rig (01) adds `02.9-create-movement-dark/light`, and one capture taken after a mode switch with the sheet open.

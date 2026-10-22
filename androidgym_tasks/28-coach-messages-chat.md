@@ -6,7 +6,6 @@
 - 08.11 an answer streaming into its bubble: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30653) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41382)
 - 08.32 copy a message: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31101) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41499)
 - 08.33 jump to latest: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31296) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41540)
-- 08.35 more menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31791) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41596)
 - 01.6 Coach is thinking: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30742) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39416)
 - Components (Gym Components page, section `🧩 Android · Material 3`):
   - `Android / Chat bubble` `1247:2983`: Coach left on the card fill, lifter right on the accent; First / Middle / Last corners; Width = Full for long Markdown
@@ -29,8 +28,7 @@
   - a 48 dp `raised` circle that always shows *↑*, and *■* while Coach answers (`:115-130`)
 
 **Change**
-- Top app bar (the bar itself is 03): title *Coach*, then icon buttons *History* (Material Symbol `history`; the kit draws `schedule`) and *More* (`more_vert`), then the account seat (03).
-- *More* is an M3 `DropdownMenu` on the card surface (08.35): *Notes*, *Connected log*, *New chat* (only with a conversation), *Account*.
+- Top app bar (the bar itself is 03): title *Coach*, then the icon button *History* (Material Symbol `history`; the kit draws `schedule`), then the account seat (03). No ⋮ More, as on iOS: delete the menu (`coach/AskScreen.kt:140-154`). *New chat* lives in History (37); Notes and Connected log are reached from You (46); the account is the seat.
 - Bubbles, in a new `coach/CoachBubble.kt` (tasks 29–44 reuse it):
   - Lifter: right-aligned on the accent with on-accent text.
   - Coach: left-aligned on the card fill, ink text.
@@ -40,7 +38,7 @@
 - Markdown (08.10): add a `CoachBlock.Table` to `coach/CoachMarkdown.kt` and draw it inside the bubble. Example copy: heading *Thursday · Push A*, bullets *Bench Press — 3 × 3 at 90 kg*, table *Movement / Sets / Load*.
 - Thinking (01.6): a Coach typing bubble with three dots replaces *reading your log…*. Delete `Ask.waiting`.
 - Streaming (08.11): the first revealed characters replace the typing bubble, and the text grows inside the same bubble. Find why the emulator shows the answer whole, and fix it (the running generation's partial text must reach `rememberRevealedText`).
-- Copy (08.32): a long press on a bubble shows a 16 % state layer on it and an M3 `DropdownMenu` under it with one item, *Copy*. A plain tap does nothing. Keep the TalkBack *Copy* action.
+- Copy (08.32): a long press on a bubble shows a 16 % state layer on it and an M3 `DropdownMenu` under it with one item: *Copy answer* on Coach's bubble, *Copy question* on the lifter's. A plain tap does nothing. The TalkBack action carries the same words.
 - Jump to latest (08.33): an M3 `ElevatedButton` (small) *Jump to latest* with `keyboard_arrow_down`, centred 12 dp above the composer.
 - Composer (08.1):
   - *Add photo* is an icon button (`image`) outside the field.
@@ -56,12 +54,13 @@
 - The greeting (39), the photo in the composer and its caption (40).
 
 **Done when**
-- Screenshots of 08.1, 08.10, 08.11, 08.32, 08.33, 08.35 and 01.6 match in Dark and Daylight on the emulator; the rig (01) adds `08.1-coach-empty-dark` / `-light`, `08.10-coach-markdown-dark` / `-light`, `08.11-coach-streaming-dark` / `-light`, `08.32-coach-copy-dark` / `-light`, `08.33-coach-jump-latest-dark` / `-light`, `08.35-coach-more-menu-dark` / `-light`, `01.6-coach-thinking-dark` / `-light`.
+- Screenshots of 08.1, 08.10, 08.11, 08.32, 08.33 and 01.6 match in Dark and Daylight on the emulator; the rig (01) adds `08.1-coach-empty-dark` / `-light`, `08.10-coach-markdown-dark` / `-light`, `08.11-coach-streaming-dark` / `-light`, `08.32-coach-copy-dark` / `-light`, `08.33-coach-jump-latest-dark` / `-light`, `01.6-coach-thinking-dark` / `-light`.
 - `gym_ask_started` and `gym_ask_outcome` still fire with the same properties; `gym_screen_viewed` `coach` still fires.
-- *Copy* emits `gym_action` `{screen: coach, action: copy, outcome: ok}` (05 introduces the event). No message text in any event.
+- *Copy answer* / *Copy question* emit `gym_action` `{screen: coach, action: copy, outcome: ok}` (05 introduces the event). No message text in any event.
+- `coach/AskScreenTests.kt` asserts the bar holds History and the seat and no *More*.
 - A stream failure still reports under `gym.ask`.
 - Tests to update: `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `coach/CoachComposerTests.kt`, `coach/CoachMarkdownTests.kt` (a table block), `coach/CoachRevealTests.kt` (partial text inside the bubble).
 
 **Depends on:** 03, 05.
 
-**Ledger:** 11g; dogfood `android-gym-target-page`.
+**Ledger:** 11g, 12h, 9r; dogfood `android-gym-target-page`.

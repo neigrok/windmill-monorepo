@@ -1,6 +1,7 @@
 # Bodyweight list and correcting a weigh-in
 
 **Figma:**
+- 06.1 Weigh in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46006)
 - 06.2 Bodyweight: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32141) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46157)
 - 06.3 Correct a weigh-in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32246) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46256)
 - Components (Gym Components page, section `🧩 Android · Material 3`):
@@ -17,6 +18,7 @@
 - Delete is held: the sheet closes and *Weigh-in deleted.* shows with *Undo* for nine seconds (:344; `store/WithheldDelete.kt:80`). A failed delete after the window reports nothing to the lifter (`store/TrainingStore.kt:1233` reports `gym.deleteWeighIn`).
 
 **Change**
+- 06.1, Weigh in: the sheet matches today (*Weigh in*, *Weight* with the decimal keyboard, *Date*, **Save weight**). What changed is the log behind it, titled *The log* with rows *Pull A* / *18 working sets · 1 h 03 min* (22); check the sheet over that backdrop.
 - Window toggle: a standard M3 `SingleChoiceSegmentedButtonRow`, *90 days* | *All*, with the default outline, shape and check icon on the chosen segment (`SegmentedButtonDefaults.itemShape`). Remove the custom colours and the empty `icon = {}`.
 - Every weigh-in row swipes end-to-start on `DeleteSwipeRow` (04), a11y label *Delete weigh-in*. Past the threshold the weigh-in is deleted at once: no hold, no Undo.
 - Correct sheet (06.3): *Weigh in*, *81.1 kg*, the fixed date *19 October 2026*, **Save weight**, then **Delete weigh-in** as `Android / Button` Quiet · Tone=Error (error role, 02). It deletes at once and closes the sheet.
@@ -24,16 +26,15 @@
 - 05 already makes the store's weigh-in delete immediate; this task adds the swipe and the button.
 
 **Out of scope:**
-- The new weigh-in sheet (06.1 matches today; its Daylight accent is 02's).
-- The Log's Weigh in FAB (22).
+- The log behind 06.1 and its Weigh in FAB (22).
 
 **Done when**
-- Screenshots of 06.2 (one row mid-swipe) and 06.3 match in Dark and Daylight; the rig (01) adds `06.2-bodyweight-dark/light` and `06.3-correct-weigh-in-dark/light`.
+- Screenshots of 06.1, 06.2 (one row mid-swipe) and 06.3 match in Dark and Daylight; the rig (01) adds `06.1-weigh-in-dark/light`, `06.2-bodyweight-dark/light` and `06.3-correct-weigh-in-dark/light`.
 - `gym_bodyweight_saved` still fires on save.
 - A weigh-in delete emits nothing today. Add `gym_action` with `screen=bodyweight`, `action=delete`, `outcome=ok` / `refused` / `failed`.
 - Failures still report as `gym.deleteWeighIn`; an expected refusal is an event, not a Sentry issue.
 - Tests: `ui/BodyweightScreenTests.kt`, `ui/BodyweightStateTests.kt`, `ui/BodyweightLayoutTests.kt`, `store/BodyweightWriteTests.kt`, `store/WithheldWindowTests.kt` (the bodyweight case goes).
 
-**Depends on:** 02, 04, 05.
+**Depends on:** 02, 04, 05, 22.
 
 **Ledger:** 11b, 11c; dogfood `android-gym-target-page`.

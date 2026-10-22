@@ -7,11 +7,6 @@
   - 02.4 Movement picker: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44782)
   - 05.5 Share this workout: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31081)
   - 05.13 Share, the link is live: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31139)
-  - 06.1 Weigh in: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46006)
-  - 07.1 Saved workouts need review: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-36592)
-  - 08.7 Coach, not on this Windmill: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41292)
-  - 09.3 Connected log: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44042)
-  - 09.4 Connected log, How this works: [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44074)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Roles live in `ui/GymSkin.kt`: `Instrument` (:53-61) and `Daylight` (:62-70).
@@ -36,7 +31,7 @@
 
 **Done when**
 - A colour test asserts each role's hex in both modes, including `error`, `onError`, the verdigris accent and the Daylight record ink.
-- Screenshots of the nine Daylight twins above match their boards on the emulator; the rig (01) adds `02.3-routine-editor-new-light`, `02.4-movement-picker-light`, `05.5-share-light`, `05.13-share-live-light`, `06.1-weigh-in-light`, `07.1-review-light`, `08.7-coach-absent-light`, `09.3-connected-log-light`, `09.4-connected-how-light`.
+- Screenshots of the four Daylight twins above match their boards on the emulator; the rig (01) adds `02.3-routine-editor-new-light`, `02.4-movement-picker-light`, `05.5-share-light`, `05.13-share-live-light`.
 - No new events: colour only.
 - `ui/GymMaterialTests.kt` (including `personalRecordGoldNeverBecomesANativeControlColor`) and `ui/SignInDoorSkinTests.kt` pass with the new values.
 

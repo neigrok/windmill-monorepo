@@ -27,7 +27,7 @@
 - States that do not survive a recreation (dialogs, menus, snackbars, swipes in progress) are captured in each mode after the switch, not across it.
 - Each later task adds its own captures to this script.
 
-**Out of scope:** the screens themselves (02–44).
+**Out of scope:** the screens themselves (every later task).
 
 **Done when**
 - The script runs green on a Pixel emulator (API 36 or newer) in Dark and Daylight, with one PNG per capture named with its board number.

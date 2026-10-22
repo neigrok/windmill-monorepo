@@ -10,7 +10,7 @@
   - `Android / Button` `656:6699` (Log set)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `MovementHead` (`ui/LoggerScreen.kt:571`): *‹* / *›* step keys (:588, :609), the name auto-sized 28 → 20 sp (:600-601), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`). No equipment icon.
+- `MovementHead` (`ui/LoggerScreen.kt:571`): *‹* / *›* step keys (:588, :609), the name auto-sized 28 → 20 sp (:600-601), the pager *Exercise {i} / {n}*, spoken *Exercise {i} of {n}* (`domain/LiveSession.kt:134-135`). No equipment icon.
 - `Rack` (`ui/LoggerScreen.kt:836-868`): a `surface` panel with an accent top edge.
   - *Weight* label (:860), `WeightReadout` (:873) auto-sized 40–96 sp (:887) with plain *kg* (:891). A tap opens the keypad.
   - `LadderRow` (:898): four 56 dp pills from `Ladder.labels` (`domain/Ladder.kt:52-56`): *−2.5 −1 +1 +2.5* under 20 kg, *−5 −2.5 +2.5 +5* from 20 to 50, *−10 −2.5 +2.5 +10* above.
@@ -20,6 +20,7 @@
 
 **Change**
 - Movement head: the equipment icon (08) left of the name. The name sizes 28 → 22 for long names. Step keys stay.
+- Pager: *Movement 3 of 5*, shown and spoken the same (`LiveSession.Place`). Every board with the pager draws it (03.1–03.4, 03.10–03.13).
 - Load: `NumberStepper` (04, Display size) with the label *Load*, the numeral, and the unit by equipment (08):
   - 03.1 Dumbbells: **16** *kg each*.
   - 03.13 Barbell: **60** *kg total*.
@@ -36,8 +37,8 @@
 **Done when**
 - Screenshots of 03.1, 03.12 and 03.13 match in Dark and Daylight; the rig (01) adds `03.1-rack-dumbbells-dark/light`, `03.12-rack-bodyweight-dark/light`, `03.13-rack-barbell-dark/light` (the fixture gains a bodyweight movement with added load).
 - `gym_set_logged` fires once per **Log set**. A rack refusal still reports under `gym.editRack` / `gym.acceptSet` only when unexpected.
-- `ui/LoggerScreenTests.kt`, `ui/LargestTypeTests.kt` and `domain/LadderTests.kt` pass with the new layout, including a 200 % font test that the load stepper and Log set stay on screen.
+- `ui/LoggerScreenTests.kt`, `ui/LargestTypeTests.kt`, `domain/LadderTests.kt` and `domain/LiveSessionTests.kt` (*Movement 3 of 5*) pass with the new layout, including a 200 % font test that the load stepper and Log set stay on screen.
 
 **Depends on:** 06, 07, 08.
 
-**Ledger:** 11d, 11e, 9c; dogfood `android-gym-target-page`.
+**Ledger:** 11d, 11e, 9c, 9z; dogfood `android-gym-target-page`.

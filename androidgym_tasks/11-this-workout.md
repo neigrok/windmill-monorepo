@@ -14,21 +14,21 @@
 - Dropping a movement emits no event.
 
 **Change**
-- Title *This workout*. Subtitle *{N sets} logged · {routine}*, or *· Free workout*.
+- Title *This workout*. Subtitle *{N sets} logged · {routine}*: *4 sets logged · Push A*. A workout with no routine (one a connected agent started) ends the subtitle with `Readout.noRoutine` (13).
 - Rows are M3 `ListItem`s: `drag_handle` leading (always shown), name and meta, the forward arrow trailing.
 - Meta units follow equipment (08): *24 kg each*, *25 kg total*.
 - Only a movement with no sets swipes, **end-to-start only**, on `DeleteSwipeRow` (04) with the label *Remove movement*. The row is gone on release, with no Undo. A refused drop snaps the row back and the note line says why.
 - Delete `DropGround`.
 - Keep the TalkBack actions and **Add movement**.
 
-**Out of scope:** the rack (09); the free-workout picker (13).
+**Out of scope:** the rack (09); the pager *Movement 3 of 5* (09); the sheet's *Hide workout* item and the *Notification off* · *Show* row, both drawn on 03.4 (45).
 
 **Done when**
-- Screenshots of 03.4 match in Dark and Daylight; the rig (01) adds `03.4-this-workout-dark/light`.
+- Screenshots of 03.4 match in Dark and Daylight, apart from the *Hide workout* and *Notification off* rows (45); the rig (01) adds `03.4-this-workout-dark/light`.
 - New `gym_action` with `screen` `workout`, `action` `remove`, `outcome` `ok` / `refused`, content-free. `gym_screen_viewed` is unchanged.
 - `TrainingStore.drop` (`store/TrainingStore.kt:722`) refuses with `false` and has no failure path, so a refusal is the event only.
 - `ui/AssemblySwipeTests.kt` asserts one direction only and the new ground; `domain/LiveSessionTests.kt` asserts the new meta strings in full.
 
 **Depends on:** 04, 05, 08.
 
-**Ledger:** 11b; dogfood `android-gym-target-page`.
+**Ledger:** 11b, 9z; dogfood `android-gym-target-page`.
