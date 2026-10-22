@@ -213,7 +213,8 @@ import UIKit
   }
 
   // A removal's receipt row and a waiting proposal's row read the word their card stands on: Removed once the log took the
-  // removal, Not applied once it refused an Apply — never Out of date for a refusal that says nothing of the routine.
+  // removal, Not applied once it refused an Apply — never Out of date for a refusal that says nothing of the routine. A
+  // refused removal still waits, and is its receipt's row alone.
   @Test func aProposalsRowReadsTheWordItsCardStandsOn() throws {
     let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
@@ -232,9 +233,10 @@ import UIKit
       harness.sync(); gym.refresh()
     }
     try decide("word-removed", false); try decide("word-refused-removal", true); try decide("word-refused-change", true)
-    #expect(gym.coachRemovalReceipts.map { [$0.proposal.id.description, gym.coachProposalWord($0.proposal) ?? "-"] } == [
+    #expect(gym.routineRemovalReceipts.map { [$0.proposal.id.description, gym.coachProposalWord($0.proposal) ?? "-"] } == [
       ["word-refused-removal", "Not applied"], ["word-removed", "Removed"]])
-    #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"], ["word-refused-removal", "Not applied"]])
+    #expect(gym.proposals.first { $0.id == ID("word-refused-removal") }?.state == "pending")
+    #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"]])
     let cards = ["word-removed", "word-refused-removal", "word-refused-change"].map { ProposalCard(gym: gym, id: $0) }
     #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.retryable ? $0.primaryTitle : "-"] } == [
       ["applied", "-", "-"], ["open", "Not applied.", "Try again"], ["open", "Not applied.", "Try again"]])

@@ -20,7 +20,7 @@ struct RoutinesTab: View {
 
   var body: some View {
     let proposals = gym.routineProposals
-    let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
+    let receipts = gym.routineRemovalReceipts
     Group {
       if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
         ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")
@@ -241,8 +241,12 @@ extension GymModel {
     }
   }
 
+  // The removals the log answered, each a row on Routines until its card is seen.
+  var routineRemovalReceipts: [RoutineRemovalReceipt] { coachRemovalReceipts.filter { $0.outcome != .pending } }
+
   // The proposals Routines draws, newest first: each one still waiting, and a connected tool's gone out of date while it is
   // the newest proposal on a routine in sight. A Coach proposal out of date leaves for its card; a tool's has no other door.
+  // A removal the log answered is its receipt's row alone, though a refused one still waits.
   var routineProposals: [Proposal] {
     let born: [ID<Proposal>: Stamp]
     do {
@@ -254,7 +258,9 @@ extension GymModel {
       let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
       return a == b ? $0.id < $1.id : a > b
     }
+    let answered = Set(routineRemovalReceipts.map(\.proposal.id))
     return newest.filter { proposal in
+      guard !answered.contains(proposal.id) else { return false }
       guard coachProposalOutOfDate(proposal) else { return proposal.state == "pending" }
       if case .ask = proposal.provenance { return false }
       return coachRoutine(proposal) != nil && newest.first { $0.routineId == proposal.routineId }?.id == proposal.id
