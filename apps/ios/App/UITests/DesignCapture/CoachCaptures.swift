@@ -178,7 +178,7 @@ final class CoachCaptures: DesignCapture {
       ask("Build me a routine.", app)
       XCTAssertTrue(app.buttons["Open routine · Push A"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      capture("01.8-coach-routine-saved", look, app)
+      capture("gym-coach-routine-created", look, app)
     }
   }
 
@@ -371,6 +371,23 @@ final class CoachCaptures: DesignCapture {
       let app = askDrafts(look)
       app.buttons["coach-reject-routines"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["coach-drafts-rejected"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  func testDraftsSaved() {
+    captureBoard("01.8-coach-drafts-saved") { look in
+      let app = askDrafts(look)
+      app.buttons["coach-save-routines"].tap()
+      XCTAssertTrue(app.buttons["coach-created-setup-operation-C"].waitForExistence(timeout: 15))
+      return app
+    }
+    captureBoard("01.9-coach-routine-summary") { look in
+      let app = askDrafts(look)
+      app.buttons["coach-save-routines"].tap()
+      let first = app.buttons["coach-created-setup-operation-A"]
+      XCTAssertTrue(first.waitForExistence(timeout: 15)); first.tap()
+      XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10))
       return app
     }
   }

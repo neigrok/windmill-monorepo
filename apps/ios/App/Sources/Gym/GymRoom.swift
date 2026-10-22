@@ -71,7 +71,7 @@ struct GymRoom: View {
     }
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachKeepRoutines, { app.keep(routines: true) })
-    .environment(\.coachOpenRoutine, { id in tab = .routines; routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
+    .environment(\.coachOpenRoutine, { id in routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
     .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send, purpose: handoff.purpose) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })

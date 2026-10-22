@@ -151,23 +151,22 @@ struct CoachAnswerView: View {
       }
       ForEach(receipt?.proposals ?? [], id: \.self) { id in ProposalCard(gym: gym, id: id) }
       if !created.isEmpty {
+        // After Apply, one receipt per routine created, each a door to its summary and Start.
         VStack(spacing: 0) {
           ForEach(Array(created.enumerated()), id: \.element.id) { index, result in
-            if index > 0 { Divider().overlay(GymPalette.line).padding(.leading, 48) }
             Button {
               gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "open_routine"])
               openRoutine?(result.routineId)
             } label: {
               HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle").font(.title3).foregroundStyle(GymPalette.accent)
+                Image(systemName: "checkmark.circle").font(.title3).foregroundStyle(GymPalette.ink)
                 GymRow(title: result.routineName, meta: "Routine created" + (result.movementCount.map { " · " + GymCount.of($0, "movement") } ?? ""))
                 Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(GymPalette.inkFaint)
-              }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 14).contentShape(Rectangle())
+              }.padding(.vertical, 10).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
               .accessibilityIdentifier("coach-created-" + result.operationId)
           }
-        }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 22))
-          .overlay(RoundedRectangle(cornerRadius: 22).stroke(GymPalette.line, lineWidth: 1))
+        }.modifier(ChangeCard())
       }
       if let receipt, !created.isEmpty { receiptRow(receipt) }
       let writes = CoachWrites(held: held, gym: gym)
