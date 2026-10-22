@@ -58,10 +58,11 @@ struct CoachUnavailable: View {
   }
 }
 
-// A note reads and edits as one text. A first line of up to 60 characters is the title and the rest the body. A longer
-// first line keeps the whole text in the body under a title cut from that line: at its last space within 60 characters,
-// or at 59 when no space falls there, then "…". The text reads back as the body whenever the title is that cut of the
-// body's first line, so nothing the lifter did not type appears.
+// A note reads and edits as one text, taken as the domain stores it: composed and trimmed, so blank lines before the first
+// words fall away. A first line of up to 60 characters is the title and the rest the body. A longer first line keeps the
+// whole text in the body under a title cut from that line: at its last space within 60 characters, or at 59 when no space
+// falls there, then "…". The text reads back as the body whenever the title is that cut of the body's first line, so
+// nothing the lifter did not type appears.
 extension Note {
   var text: String {
     get {
@@ -70,9 +71,10 @@ extension Note {
       return body.isEmpty ? title : title + "\n" + body
     }
     set {
-      let lines = newValue.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+      let text = NoteRules.body.normalised(newValue)
+      let lines = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
       let firstLine = lines.first ?? ""
-      if let cut = Note.title(cutting: firstLine) { title = cut; body = newValue; return }
+      if let cut = Note.title(cutting: firstLine) { title = cut; body = text; return }
       title = String(firstLine); body = lines.count > 1 ? String(lines[1]) : ""
     }
   }
@@ -156,23 +158,26 @@ struct NoteEditorIdentity: Identifiable {
   var id: String { note.id.description }
 }
 
-// One note, its text focused on open and saved from the bar's checkmark; a swipe down the form puts the keyboard away.
+// One note, its text focused on open and saved from the bar's checkmark; a swipe down the form puts the keyboard away. The
+// field keeps what the lifter types and the draft takes it as the note stores it.
 struct NoteEditor: View {
   let gym: GymModel
   let identity: NoteEditorIdentity
   let owner: String?
   @State var draft: Draft<Note>
+  @State var typed: String
   @State var saved = false
   @FocusState var writing: Bool
   @Environment(\.dismiss) var dismiss
   init(gym: GymModel, identity: NoteEditorIdentity) {
     self.gym = gym; self.identity = identity; owner = gym.account
     _draft = State(initialValue: identity.isNew ? Draft(new: identity.note, placed: .bottom) : Draft(opening: identity.note))
+    _typed = State(initialValue: identity.note.text)
   }
   var current: Bool { owner == gym.account && gym.coachAccountAvailable }
   var bytes: Int { NoteRules.body.measure(draft.current.body) }
   var savable: Bool {
-    current && !draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && bytes <= 500 && (identity.isNew || draft.isDirty)
+    current && !draft.current.title.isEmpty && bytes <= 500 && (identity.isNew || draft.isDirty)
   }
   var body: some View {
     NavigationStack {
@@ -181,8 +186,9 @@ struct NoteEditor: View {
           Text("The account changed. Open this note again.").listRowBackground(GymPalette.card)
         } else {
           Section {
-            TextField(identity.hint, text: $draft.current.text, axis: .vertical).lineLimit(5...20)
+            TextField(identity.hint, text: $typed, axis: .vertical).lineLimit(5...20)
               .focused($writing).accessibilityIdentifier("coach-note-text")
+              .onChange(of: typed) { _, typed in draft.current.text = typed }
             if bytes > 500 {
               Text("This note runs past 500 bytes. Shorten it to save.").font(.caption).foregroundStyle(GymPalette.alarm)
                 .accessibilityIdentifier("coach-note-refusal")
