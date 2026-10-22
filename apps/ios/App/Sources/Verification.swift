@@ -166,6 +166,7 @@ enum BoardFixture {
   }
 }
 
+#if DEBUG && targetEnvironment(simulator)
 // The sign-in question's boards (23d–23j) and sign-out's (16e): `-adoption-workouts N` finished workouts and
 // `-adoption-pages N` written days left on the phone before sign-in, the account holding training when workouts are due.
 enum AdoptionFixture {
@@ -178,15 +179,12 @@ enum AdoptionFixture {
   static var pages: Int { count("pages") ?? 1 }
 
   static func accountTraining(_ model: AppModel) {
-    #if DEBUG && targetEnvironment(simulator)
     var routine = Draft(new: Routine(id: model.runner.mint(Routine.self), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
     _ = model.gym.save(&routine)
-    #endif
   }
 
   // Finished workouts of one set each on the days before today, and every page but today's on the days before that.
   static func phone(_ model: AppModel) {
-    #if DEBUG && targetEnvironment(simulator)
     let now = BoardClock().nowMs(), day: Int64 = 86_400_000
     for offset in 0..<Int64(workouts) {
       let id = model.runner.mint(Session.self), start = now - (offset + 1) * day
@@ -203,25 +201,20 @@ enum AdoptionFixture {
       let document = PageDocument(body: BoardFixture.shortProse)
       _ = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"]))
     }
-    #endif
   }
 
   // 16e: an account with Apple beside its email whose next three changes the server never confirms, on You.
   static func unconfirmed(_ model: AppModel, runtime: AppRuntime, server: JournalModelTransport) async {
-    #if DEBUG && targetEnvironment(simulator)
     await model.authenticateApple { token in try runtime.auth.authorizeFakeApple(token: token) }
     server.state.withLock { $0.pushesUnansweredAfter = 3_600 }
     for line in ["A first line.", "A second line.", "A third line."] {
       model.journal.type(line); model.journal.save(); model.journal.done()
     }
     model.sheet = .you; await model.loadSignInMethods()
-    #endif
   }
 }
 
-#if DEBUG && targetEnvironment(simulator)
-// 02b–02c: an account holding 142 journal pages and 38 workouts, the gym last written to, which Apple opens on a phone
-// holding nothing. `held` serves small pages and holds every pull after the second, so the counts stop part-way.
+// 02b–02c: 142 journal pages and 38 workouts, the gym last written to; `held` lands four small pulls a second apart, then holds.
 enum ReturningFixture {
   static func prepare(_ model: AppModel, held: Bool) async {
     guard let server = model.runtime?.auth.fake else { return }
@@ -253,7 +246,7 @@ enum ReturningFixture {
         let gym = ScopeKey(.product(account: identity.account, name: "gym"))
         for (key, row) in landed.rows[gym] ?? [:] { landed.rows[gym]?[key]?.ru = (row.ru ?? now) + 60_000 }
         var limits = ServerLimits()
-        if held { limits.pullPageBytes = 2_000; state.pullsAnsweredBeforeHold = 2 }
+        if held { limits.pullPageBytes = 2_000; state.pullsAnsweredBeforeHold = 4; state.pullDelaySeconds = 1 }
         state.server = ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                                    state: landed, limits: limits)
       }
@@ -300,7 +293,7 @@ enum AppScenario {
       if runtime.settings.codeFile == nil { await model.sendCode() } else { model.sheet = .code }
       if let path = runtime.settings.codeFile { model.code = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) }
       else { model.code = "482913" }
-      await model.verifyCode(); if model.sheet == .adoption { await model.adopt(.add) }
+      await model.verifyCode(); if model.sheet == .adoption { await model.adopt(.add, asked: model.pendingAdoptions) }
       try await backedUp(model); let expectedPage = model.journal.document.body; steps.append("email-sign-in-backed-up")
       let account = try runtime.account() ?? ""
       let replica = try runtime.store.read { try $0.device().activeReplica.meta.replica }

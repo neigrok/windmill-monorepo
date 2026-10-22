@@ -2,7 +2,7 @@ import JournalDomain
 import GymDomain
 
 // The sign-in question (23d–23j), one for every room due: what the phone holds by kind, sets inside their workouts, and
-// what the account holds. Settings, movement names and proposals go unnamed; a phone holding only those counts changes.
+// what the account holds. Settings, movement names and proposals go unnamed; a room holding only those counts changes.
 struct AdoptionQuestion: Equatable {
   static let named = [(Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"), (WeighIn.type, "weigh-in", "weigh-ins"),
                       (Exercise.type, "movement", "movements"), (Note.type, "note", "notes"), (Page.type, "journal page", "journal pages")]
@@ -11,15 +11,17 @@ struct AdoptionQuestion: Equatable {
   let single: Bool
   let account: String
 
-  // `counts` holds each pending room's records by type; `rooms` the rooms whose account already holds records.
-  init(counts: [String: Int], rooms: Set<AppModel.Room>) {
-    let held = Self.named.compactMap { type, one, many in counts[type].flatMap { $0 > 0 ? "\($0) \($0 == 1 ? one : many)" : nil } }
-    let changes = counts.filter { $0.key != JournalState.type }.values.reduce(0, +)
-    let parts = held.isEmpty ? ["\(changes) \(changes == 1 ? "change" : "changes")"] : held
-    phrase = Self.joined(parts)
+  // `counts` holds each pending room's records by type, so every room the answer applies to is named.
+  init(counts: [AppModel.Room: [String: Int]]) {
+    let parts = [AppModel.Room.gym, .journal].compactMap { counts[$0] }.flatMap { room in
+      let held = Self.named.compactMap { type, one, many in room[type].flatMap { $0 > 0 ? ($0, "\($0) \($0 == 1 ? one : many)") : nil } }
+      let changes = room.filter { $0.key != JournalState.type }.values.reduce(0, +)
+      return held.isEmpty ? [(changes, "\(changes) \(changes == 1 ? "change" : "changes")")] : held
+    }
+    phrase = Self.joined(parts.map(\.1))
     kinds = parts.count
-    single = held.isEmpty ? changes == 1 : Self.named.compactMap { counts[$0.0] }.reduce(0, +) == 1
-    account = Self.joined([rooms.contains(.gym) ? "training" : nil, rooms.contains(.journal) ? "journal pages" : nil].compactMap { $0 })
+    single = parts.count == 1 && parts[0].0 == 1
+    account = Self.joined([counts[.gym] != nil ? "training" : nil, counts[.journal] != nil ? "journal pages" : nil].compactMap { $0 })
   }
 
   var title: String { "Add to your account?" }

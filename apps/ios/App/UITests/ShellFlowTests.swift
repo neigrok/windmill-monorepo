@@ -100,6 +100,25 @@ import XCTest
     XCTAssertFalse(app.descendants(matching: .any)["restore-head"].exists)
   }
 
+  // 02c: the counts climb as pulls land, and once nothing lands for ten seconds the gym opens rather than waiting on.
+  func testReturningCountsClimbAndAStillArrivalOpensTheRoom() {
+    let app = launch("02-returning-held")
+    let signIn = app.buttons["Sign in"]
+    XCTAssertTrue(signIn.waitForExistence(timeout: 60)); signIn.tap()
+    XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 5)); app.buttons["apple-sign-in"].tap()
+    let journal = app.descendants(matching: .any)["restore-journal"], gym = app.descendants(matching: .any)["restore-gym"]
+    XCTAssertTrue(journal.waitForExistence(timeout: 30))
+    let first = journal.label + gym.label
+    var climbed = false
+    for _ in 0..<16 where !climbed {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+      climbed = journal.label + gym.label != first
+    }
+    XCTAssertTrue(climbed, "the counts stood at \(first)")
+    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 25))
+    XCTAssertFalse(app.descendants(matching: .any)["restore-head"].exists)
+  }
+
   func testSignInWithBothRoomsAsksOneQuestionBeforeBinding() {
     let app = launch("shell-adoption-two-rooms")
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))

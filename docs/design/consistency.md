@@ -768,7 +768,11 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   *Sign in before Nov 21 to bring it back.*, and *Couldn’t delete your account. Check your connection
   and try again.* (Shell iOS section 4c `47:3852`, boards 27a–27e; Shell Android `33:1568`, 27a
   `54:1269`–27e `54:1606`). iOS builds it (`AccountDeletion.swift`); Android does not. iOS's 27f/27g
-  count is the engine's live unsent entries (ready and sent), which leaves out pending device work. The
+  count is the engine's live unsent entries (ready and sent), which leaves out pending device work,
+  as the engine's live status does not carry it. Two iOS states have no board: a failure on the phone
+  itself (a room that cannot save, the discard owed after the close) says 27e's *Check your
+  connection* sentence, and a 401 after the confirm closes the page onto You signed out, as 27d needs
+  the day the server names; designer to rule. The
   server keeps the copy's promise: `DELETE /v1/me`
   closes with `closingOn` = now + 30 days, a sign-in before then brings the account back, and from
   then on it is erased with all its data (`backend/AUTH.md`).

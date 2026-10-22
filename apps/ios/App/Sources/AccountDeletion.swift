@@ -1,8 +1,8 @@
 import SwiftUI
 import SyncEngine
+import SyncStore
 
-// Delete account (27a–27g), from You signed in. In order: the engine's sign-out flush, DELETE /v1/me naming the signed-in
-// user id, the discard finish that deletes this phone's copy of the account, and Coach's drafts for it.
+// Delete account (27a–27g): the sign-out flush, DELETE /v1/me naming the signed-in id, then this phone's discard.
 enum AccountDeletion: Equatable {
   case confirming, deleting, failed, deleted(closingOn: Date)
 
@@ -24,6 +24,21 @@ enum AccountDeletion: Equatable {
   }
 }
 
+// An account the server closed, or whose session is gone, that this phone still holds until its discard lands.
+struct OwedDiscard: Codable, Equatable {
+  static let key = "accountDiscardOwed"
+  let account: String
+  // The day the server named for the close; nil when its answer was a 401.
+  let closingOn: Date?
+
+  init(account: String, closingOn: Date?) { self.account = account; self.closingOn = closingOn }
+
+  init?(_ preferences: UserDefaults) {
+    guard let data = preferences.data(forKey: Self.key), let owed = try? JSONDecoder().decode(Self.self, from: data) else { return nil }
+    self = owed
+  }
+}
+
 extension AppModel {
   // What the engine has not had confirmed: entries ready to send and sent without an answer.
   var unsentChanges: Int { (runtime?.engine.status.ready ?? 0) + (runtime?.engine.status.sent ?? 0) }
@@ -39,41 +54,84 @@ extension AppModel {
     telemetry.event("account_delete", properties: ["outcome": "cancelled"])
   }
 
+  // The server's close, or a 401 after the person confirmed, leaves the phone owing the discard; 27d waits for it to land.
   func deleteAccount() async {
-    guard deletion != .deleting, !accountTransition, let runtime, let account, let token = runtime.tokens.token(for: account) else { return }
-    deletion = .deleting; accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
-    guard flushRooms() else { deletion = .failed; telemetry.event("account_delete", properties: ["outcome": "failed"]); return }
-    var session: SignOutSession
+    guard deletion != .deleting, let runtime, let account else { return }
+    guard !accountTransition else { return failDeletion() }
+    if let owed = discardOwed {
+      deletion = .deleting; accountTransition = true; journal.editing = false
+      defer { accountTransition = false }
+      return await settleDeletion(owed)
+    }
+    guard let token = runtime.tokens.token(for: account) else { return failDeletion(reporting: "keychain") }
+    journal.editing = false
+    guard flushRooms() else { return failDeletion(reporting: "flush") }
+    deletion = .deleting; accountTransition = true; signingOut = true
+    defer { accountTransition = false; signingOut = false }
+    let session: SignOutSession
     do { session = try await runtime.engine.signOut() } catch {
       reportBoundary("account_delete", error: error)
-      deletion = .failed; telemetry.event("account_delete", properties: ["outcome": "failed"]); return
+      return failDeletion()
     }
-    let closingOn: Date
+    let closingOn: Date?
     do { closingOn = try await runtime.auth.deleteAccount(account, token: token) } catch {
-      await session.cancel()
-      telemetry.event("account_delete", properties: ["outcome": "failed"])
-      // A session already gone, or another account signed in meanwhile, closes the page; You says what holds now.
-      let code = (error as? AuthRefusal)?.code
-      deletion = code == "unauthorized" || code == "account-mismatch" ? nil : .failed
-      return
-    }
-    do {
-      for attempt in 1...3 {
-        do { _ = try await session.finish(.discard); break }
-        catch EngineError.signOutChanged where attempt < 3 { session = try await runtime.engine.signOut() }
+      switch (error as? AuthRefusal)?.code {
+      case "unauthorized": closingOn = nil
+      case "account-mismatch":
+        await session.cancel(); deletion = nil
+        telemetry.event("account_delete", properties: ["outcome": "failed"]); return
+      default:
+        await session.cancel()
+        return failDeletion()
       }
-      try CoachDraftStore().delete(account)
-    } catch { reportBoundary("account_delete", error: error) }
-    runtime.updateTelemetryIdentity()
-    forgetAccount(account)
+    }
+    let owed = OwedDiscard(account: account, closingOn: closingOn)
+    discardOwed = owed
+    await settleDeletion(owed, session: session)
+  }
+
+  // 27d once the phone holds none of the account; after a 401 there is no day to name, so the page closes onto You.
+  func settleDeletion(_ owed: OwedDiscard, session: SignOutSession? = nil) async {
+    guard await discard(owed, session: session) else { return failDeletion() }
+    guard let closingOn = owed.closingOn else {
+      deletion = nil; telemetry.event("account_delete", properties: ["outcome": "failed"]); return
+    }
     deletion = .deleted(closingOn: closingOn)
     telemetry.event("account_delete", properties: ["outcome": "ok"])
   }
+
+  // 27e: the field keeps the email and the button reads Try again; `kind` names a phone-side failure Sentry hears of.
+  func failDeletion(reporting kind: String? = nil) {
+    if let kind { telemetry.failure("account_delete", kind: kind) }
+    deletion = .failed
+    telemetry.event("account_delete", properties: ["outcome": "failed"])
+  }
+
+  // This phone's copy of a closed account and its Coach drafts go; a failure stays owed, holds the rooms and reports.
+  func discard(_ owed: OwedDiscard, session held: SignOutSession? = nil) async -> Bool {
+    guard let runtime else { return false }
+    do {
+      let bound = try runtime.account() == owed.account
+      if bound {
+        var session: SignOutSession
+        if let held { session = held } else { session = try await runtime.engine.signOut() }
+        for attempt in 1...3 {
+          do { try await session.finish(.discard); break }
+          catch EngineError.signOutChanged where attempt < 3 { session = try await runtime.engine.signOut() }
+        }
+      } else { try runtime.engine.discardDormant(account: owed.account) }
+      try CoachDraftStore().delete(owed.account)
+      discardOwed = nil
+      if bound { runtime.updateTelemetryIdentity(); forgetAccount(owed.account) }
+      return true
+    } catch {
+      telemetry.failure("account_delete", kind: Store.failureKind(error) ?? "unexpected")
+      return false
+    }
+  }
 }
 
-// 27a–27g: the page You pushes. The facts, the email that confirms, and the act pinned above the home indicator; 27d once
-// the account is closed, whose Done returns to You signed out.
+// 27a–27g: the facts, the email that confirms and the act pinned above the home indicator; 27d's Done returns to You.
 struct DeleteAccountScreen: View {
   @Bindable var model: AppModel
   @State var typed = ""

@@ -67,6 +67,7 @@ struct WindmillApp: App {
           let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry,
             authRetryNow: { authenticationTime ?? Date() })
           WorkoutActivityIntentHandler.model = created
+          if let owed = created.discardOwed { _ = await created.discard(owed) }
           created.gym.startWorkoutActivity()
           var onboardingFixture = false
           if let board = settings.board, !settings.restoreBoard {
@@ -234,8 +235,8 @@ extension RootScreen {
           ForEach(restore.rooms, id: \.self) { room in
             LabeledContent {
               HStack(spacing: 10) {
-                Text(restore.count(room, landed: model.restoreLanded(room))).foregroundStyle(ShellPalette.inkDim).monospacedDigit()
-                if !model.restoreArrived(room) { ProgressView().controlSize(.small) }
+                Text(restore.count(room)).foregroundStyle(ShellPalette.inkDim).monospacedDigit()
+                if !restore.arrived.contains(room) { ProgressView().controlSize(.small) }
               }
             } label: {
               Label { Text(room.title).foregroundStyle(ShellPalette.ink) } icon: { Image(systemName: room.symbol).foregroundStyle(ShellPalette.inkDim) }

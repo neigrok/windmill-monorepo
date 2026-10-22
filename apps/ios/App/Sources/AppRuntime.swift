@@ -518,7 +518,10 @@ final class NativeAuth {
       let (data, response) = try await Self.data(for: request, session: session)
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       status = response.statusCode
-      if response.statusCode == 204 || (allowUnauthorized && response.statusCode == 401) || (allowNotFound && response.statusCode == 404) { return try decode([:]) }
+      if response.statusCode == 204 || (allowUnauthorized && response.statusCode == 401) || (allowNotFound && response.statusCode == 404) {
+        kind = response.statusCode == 204 ? "decode" : "http"
+        return try decode([:])
+      }
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]

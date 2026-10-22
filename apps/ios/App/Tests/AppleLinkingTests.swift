@@ -104,13 +104,13 @@ import Synchronization
     #expect(model.sheet == .appleAdded && model.account == nil && model.signInSession == nil)
     #expect(model.appleReceiptEmail == "sam@example.com" && model.appleTicket == nil && model.editorReadOnly)
     await verification.value
-    #expect(model.sheet == .adoption && model.adoptionCounts[Page.type] == 1)
+    #expect(model.sheet == .adoption && model.adoptionCounts[.journal]?[Page.type] == 1)
     #expect(model.adoptionAlertMessage == "This phone has 1 journal page from before you signed in. Your account already has journal pages. Add it, or discard it from this phone.")
     if !add {
       model.sheet = .discardAdoption
       #expect(model.adoptionAlertTitle == "Discard 1 journal page?")
     }
-    await model.adopt(add ? .add : .discard)
+    await model.adopt(add ? .add : .discard, asked: model.pendingAdoptions)
     #expect(model.account == "model-sam@example.com" && model.sheet == nil)
     #expect(server.state.withLock { $0.appleDoors["fake-apple"] == "model-sam@example.com" })
   }
@@ -270,8 +270,8 @@ import Synchronization
     await model.retryAuthenticatedSignIn()
     #expect(model.pendingSignIn == nil && server.state.withLock { $0.sessions == sessions })
     if link {
-      #expect(model.sheet == .adoption && model.adoptionCounts[Page.type] == 1)
-      await model.adopt(.add)
+      #expect(model.sheet == .adoption && model.adoptionCounts[.journal]?[Page.type] == 1)
+      await model.adopt(.add, asked: model.pendingAdoptions)
     }
     #expect(model.account == (link ? "model-sam@example.com" : "model-apple@example.com") && model.sheet == nil)
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)

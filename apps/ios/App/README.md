@@ -27,7 +27,7 @@ interaction; `23c` holds the linked receipt for screenshot inspection. `-adoptio
 the account training too), so it asks the sign-in question of 23d–23j. Board `16e` leaves three
 changes the server never confirms, with You open on Sign out. Board `02-returning` seeds an account of 142 journal
 pages and 38 workouts, the gym last written to, which Apple opens from Where to start?; `02-returning-held` serves small pull
-pages and holds every signed-in pull after the second, so *Bringing it back* stands part-way. A new address plus a valid
+pages, answers four signed-in pulls a second apart and holds the rest, so *Bringing it back* climbs, then stands part-way. A new address plus a valid
 code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
 the first authenticated engine hello after an Apple ticket and freezes the authentication backoff
 clock, so Try again exercises manual recovery without racing automatic recovery or reusing the
@@ -254,9 +254,10 @@ becomes Done writing above the keyboard. It hides during read-only transitions a
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
 introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
-sign-in, *Bringing it back* (02c) counts each room's records as they land against the totals the account's hello
-gives (`SignInRestore`), and opens the room the person last wrote to once its own records are in; the other keeps
-arriving behind it. A lost connection or session opens that room at once.
+sign-in, *Bringing it back* (02c) counts each room's visible records as they land against the totals the account's
+hello tallies by the same rule (`SignInRestore`), and opens the room the person last wrote to once its own records are
+in; the other keeps arriving behind it. A lost connection or session opens that room at once, and so do ten seconds
+in which nothing lands (a hung pull, a server backing off).
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
 stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
@@ -276,10 +277,13 @@ local editing. Account requests can be dismissed with Back, Close or Done; cance
 late navigation, and a pending sign-in or adoption can be deferred while the phone remains usable. Adoption and
 sign-out flush dirty writing and recount before completion. A paused session plainly shows that backup
 is paused and offers email or Apple sign-in to the same account; reauthentication retains its replica.
-Delete account, from You signed in, confirms with the account's email, flushes as sign-out does,
-sends `DELETE /v1/me` naming the signed-in user id, then discards this phone's copy and the account's Coach
-drafts; Done returns to You signed out. The `-delete-fixture held` and `offline` launch arguments hold or
-refuse that request on the model server. Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
+Delete account, from You signed in, confirms with the account's email, flushes and holds every
+room and door as sign-out does, sends `DELETE /v1/me` naming the signed-in user id, then
+discards this phone's copy and the account's Coach drafts; 27d waits for that discard, and Done returns
+to You signed out. From the server's close, or a 401 after the confirm (which lands on You signed out),
+the phone owes the discard: preferences keep `accountDiscardOwed`, the rooms stay held, and Try again or
+the next launch, before any room opens, settles it. The `-delete-fixture held` and `offline` launch
+arguments hold or refuse that request on the model server. Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
 

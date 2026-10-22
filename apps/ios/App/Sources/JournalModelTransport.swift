@@ -54,8 +54,9 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var closedAccounts: [String: Int64] = [:]
     var closeHeldSeconds: Double?
     var closeOffline = false
-    // Signed-in pulls past this many are held without an answer, so a restore stops part-way.
+    // Signed-in pulls past this many are held without an answer, so a restore stops part-way; each answered one waits first.
     var pullsAnsweredBeforeHold: Int?
+    var pullDelaySeconds: Double?
   }
   struct Ticket: Sendable {
     let subject: String
@@ -251,15 +252,16 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     }
   }
   func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    let held = state.withLock { state in
-      guard token != nil, let answered = state.pullsAnsweredBeforeHold else { return false }
+    let (held, delay) = state.withLock { state in
+      guard token != nil, let answered = state.pullsAnsweredBeforeHold else { return (false, nil as Double?) }
       state.pullsAnsweredBeforeHold = max(0, answered - 1)
-      return answered == 0
+      return (answered == 0, state.pullDelaySeconds)
     }
     if held {
       try? await Task.sleep(for: .seconds(3_600))
       return .unreachable
     }
+    if let delay { try? await Task.sleep(for: .seconds(delay)) }
     return state.withLock { state in
       if token != nil && state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)

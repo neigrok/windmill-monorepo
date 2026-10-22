@@ -7,30 +7,49 @@ import GymDomain
 
 @Suite @MainActor struct SignInRestoreTests {
   @Test func theRoomLastWrittenToOpensAndTheCountsSayWhatHasLanded() throws {
-    let restore = try #require(SignInRestore(method: "apple", holdings: [
+    let start = Date(timeIntervalSince1970: 1_000)
+    var restore = try #require(SignInRestore(method: "apple", holdings: [
       "journal": .init(count: 142, lastWrittenAt: 1_000), "gym": .init(count: 38, lastWrittenAt: 2_000),
-    ]))
+    ], at: start))
     #expect(restore.rooms == [.journal, .gym] && restore.opening == .gym)
     #expect([restore.eyebrow, restore.line] == ["SIGNED IN WITH APPLE", "Opening Gym as soon as it’s ready."])
-    #expect([restore.count(.journal, landed: 64), restore.count(.gym, landed: 31), restore.count(.gym, landed: 40)]
-            == ["64 of 142 pages", "31 of 38 workouts", "38 of 38 workouts"])
-    #expect(restore.step(arrived: [.journal]) == nil)
-    #expect(restore.step(arrived: [.gym]) == .open(.gym))
-    var opened = restore
-    opened.opened = true
-    #expect(opened.step(arrived: [.gym]) == nil)
-    #expect(opened.step(arrived: [.gym, .journal]) == .complete)
+    restore.land([.journal: 64, .gym: 31], arrived: [.journal], at: start)
+    #expect([restore.count(.journal), restore.count(.gym)] == ["64 of 142 pages", "31 of 38 workouts"])
+    #expect(restore.step(at: start, reachable: true) == nil)
+    restore.land([.journal: 142, .gym: 40], arrived: [.journal, .gym], at: start)
+    #expect(restore.count(.gym) == "38 of 38 workouts")
+    #expect(restore.step(at: start, reachable: true) == .open(.gym))
+    restore.opened = true
+    restore.land([.journal: 142, .gym: 38], arrived: [.gym], at: start)
+    #expect(restore.step(at: start, reachable: true) == nil)
+    restore.land([.journal: 142, .gym: 38], arrived: [.gym, .journal], at: start)
+    #expect(restore.step(at: start, reachable: true) == .complete)
+  }
+
+  // A hung pull or a server backing off lands nothing: after ten still seconds the room opens, as out of reach does at once.
+  @Test func theRoomOpensWhenNothingLandsForTenSecondsOrTheServerIsOutOfReach() throws {
+    let start = Date(timeIntervalSince1970: 1_000)
+    var restore = try #require(SignInRestore(method: "email", holdings: [
+      "journal": .init(count: 142, lastWrittenAt: 3_000), "gym": .init(count: 38, lastWrittenAt: 2_000),
+    ], at: start))
+    #expect(restore.step(at: start, reachable: false) == .open(.journal))
+    restore.land([.journal: 7, .gym: 12], arrived: [], at: start.addingTimeInterval(6))
+    #expect(restore.step(at: start.addingTimeInterval(12), reachable: true) == nil)
+    restore.land([.journal: 7, .gym: 12], arrived: [], at: start.addingTimeInterval(14))
+    #expect(restore.movedAt == start.addingTimeInterval(6))
+    #expect(restore.step(at: start.addingTimeInterval(15.9), reachable: true) == nil)
+    #expect(restore.step(at: start.addingTimeInterval(16), reachable: true) == .open(.journal))
   }
 
   @Test func aRoomTheAccountHoldsNothingInIsLeftOutAndNothingAtAllBringsNothingBack() throws {
     let restore = try #require(SignInRestore(method: "email", holdings: [
       "journal": .init(count: 1, lastWrittenAt: 5), "gym": .init(count: 0, lastWrittenAt: nil),
-    ]))
+    ], at: Date()))
     #expect(restore.rooms == [.journal] && restore.opening == .journal)
-    #expect([restore.eyebrow, restore.line, restore.count(.journal, landed: 0)]
+    #expect([restore.eyebrow, restore.line, restore.count(.journal)]
             == ["SIGNED IN WITH EMAIL", "Opening Journal as soon as it’s ready.", "0 of 1 page"])
-    #expect(SignInRestore(method: "email", holdings: ["journal": .init(count: 0, lastWrittenAt: nil), "gym": .init(count: 0, lastWrittenAt: nil)]) == nil)
-    #expect(SignInRestore(method: "email", holdings: [:]) == nil)
+    #expect(SignInRestore(method: "email", holdings: ["journal": .init(count: 0, lastWrittenAt: nil), "gym": .init(count: 0, lastWrittenAt: nil)], at: Date()) == nil)
+    #expect(SignInRestore(method: "email", holdings: [:], at: Date()) == nil)
   }
 
   // The page is made before the workout and written again after it, so the journal is the room last written to.
@@ -63,6 +82,8 @@ import GymDomain
       try await Task.sleep(for: .milliseconds(25))
     }
     #expect(model.restore == nil && model.selectedRoom == .journal)
+    let account = try #require(model.account), holdings = try #require(model.runtime).engine.holdings(of: account)
+    #expect(model.restoreLanded(.journal) == holdings["journal"]?.count && model.restoreLanded(.gym) == holdings["gym"]?.count)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "sign_in_restore" }.map(\.properties) } ==
             [["stage": "started"], ["stage": "room_opened"], ["stage": "complete"]])
     #expect(TelemetryPrivacy.properties(["stage": "complete", "count": "142", "room": "gym"]) == ["stage": .label("complete"), "room": .label("gym")])

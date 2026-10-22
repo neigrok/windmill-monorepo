@@ -554,9 +554,9 @@ import SyncTesting
 
     connectivity.set(online: true)
     await local.retryAuthenticatedSignIn()
-    await local.adopt(.add)
-    #expect(local.account == nil && local.adoptionCounts["set"] == 2)
-    for _ in 0..<3 where !local.pendingAdoptions.isEmpty { await local.adopt(.add) }
+    await local.adopt(.add, asked: local.pendingAdoptions)
+    #expect(local.account == nil && local.adoptionCounts[.gym]?["set"] == 2)
+    for _ in 0..<3 where !local.pendingAdoptions.isEmpty { await local.adopt(.add, asked: local.pendingAdoptions) }
     #expect(local.account == identity.account)
     await local.runtime?.engine.start()
     #expect(await WorkoutStateTests.until {
@@ -591,7 +591,7 @@ import SyncTesting
     workout.reconcile()
     let retained = workout.sets
     #expect(retained.count == 1 && !retained.contains { $0.id == deleted.id })
-    for _ in 0..<4 where !local.pendingAdoptions.isEmpty { await local.adopt(.add) }
+    for _ in 0..<4 where !local.pendingAdoptions.isEmpty { await local.adopt(.add, asked: local.pendingAdoptions) }
     #expect(local.account == identity.account)
     #expect(!local.gym.sets.contains { $0.id == deleted.id })
     await local.runtime?.engine.start()

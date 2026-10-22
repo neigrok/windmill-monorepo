@@ -23,7 +23,7 @@ final class ShellCaptures: DesignCapture {
   func testOnboarding() { for look in Look.both { onboarding(look) } }
   func testOnboardingLargestText() { for look in Look.bothAtLargestText { onboarding(look) } }
 
-  // 02b–02c: the returning account's arrival is held part-way, so its counts stand still for the capture.
+  // 02b–02c: the returning account's arrival lands four pulls and holds, so its counts stand still for the capture.
   func testReturning() {
     for look in Look.both {
       let app = launch("02-returning-held", look)
@@ -34,7 +34,7 @@ final class ShellCaptures: DesignCapture {
       app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["restore-head"].waitForExistence(timeout: 30))
       XCTAssertTrue(app.descendants(matching: .any)["restore-gym"].exists)
-      capture("02c-bringing-it-back", look, app, settle: 2)
+      capture("02c-bringing-it-back", look, app, settle: 5)
       app.terminate()
     }
   }

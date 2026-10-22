@@ -22,7 +22,7 @@ import SyncTesting
     await model.resumeBackup()
     #expect(model.signInSession === session && model.pendingAdoptions == pending && pending.map(\.product) == ["journal", "gym"])
     #expect(model.adoptionAnswers.isEmpty && model.account == nil && model.sheet == .adoption)
-    await model.adopt(.add)
+    await model.adopt(.add, asked: model.pendingAdoptions)
     #expect(model.account == owner.account && model.sheet == nil && !model.editorReadOnly)
     #expect(model.journal.document.body == "Local page" && model.gym.routines.contains { $0.id == localRoutine })
   }
@@ -132,7 +132,7 @@ import SyncTesting
     }
     try await local.signIn(server.identity(email: identity.email))
     #expect(local.pendingAdoptions.map(\.product) == ["gym"])
-    await local.adopt(.add)
+    await local.adopt(.add, asked: local.pendingAdoptions)
     await local.runtime?.engine.start()
     try await workoutSettled(local, finished)
     local.refresh()
@@ -179,13 +179,13 @@ import SyncTesting
     let recorder = TelemetryRecorder()
     let (_, owner, model, localRoutine) = try await twoRooms(telemetry: recorder)
     #expect(model.account == nil && model.editorReadOnly && model.sheet == .adoption)
-    #expect(model.pendingAdoptions.map(\.product) == ["journal", "gym"] && model.adoptionCounts[Page.type] == 1)
+    #expect(model.pendingAdoptions.map(\.product) == ["journal", "gym"] && model.adoptionCounts[.journal]?[Page.type] == 1)
     #expect(model.adoptionAlertTitle == "Add to your account?")
     #expect(model.adoptionAlertMessage == "This phone has 1 routine and 1 journal page from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.")
     model.sheet = .discardAdoption
     #expect(model.adoptionAlertTitle == "Discard 1 routine and 1 journal page?")
     #expect(model.adoptionAlertMessage == "They are deleted from this phone. You can’t undo this.")
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account == owner.account && !model.editorReadOnly && model.sheet == nil)
     #expect(model.adoptionAnswers.isEmpty && model.preferences.data(forKey: "roomAdoption") == nil)
     #expect(!model.gym.routines.contains { $0.id == localRoutine })
@@ -203,8 +203,8 @@ import SyncTesting
     }
     #expect(restored.account == nil && restored.sheet == .adoption && restored.editorReadOnly)
     #expect(restored.adoptionAnswers == ["journal": .add])
-    #expect(restored.pendingAdoptions.map(\.product) == ["gym"] && restored.adoptionCounts == ["routine": 1])
-    await restored.adopt(.add)
+    #expect(restored.pendingAdoptions.map(\.product) == ["gym"] && restored.adoptionCounts == [.gym: ["routine": 1]])
+    await restored.adopt(.add, asked: restored.pendingAdoptions)
     #expect(restored.account == owner.account && restored.sheet == nil && restored.pendingAdoptions.isEmpty)
     #expect(restored.gym.routines.contains { $0.id == localRoutine })
   }
@@ -212,12 +212,12 @@ import SyncTesting
   @Test func changedGymWorkAsksAgainAboutTheGymAloneAndKeepsTheJournalAnswer() async throws {
     let (_, _, model, _) = try await twoRooms()
     _ = try routine(model, name: "Another local routine")
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account == nil && model.sheet == .adoption && model.error != nil)
     #expect(model.adoptionAnswers == ["journal": .discard])
-    #expect(model.pendingAdoptions.map(\.product) == ["gym"] && model.adoptionCounts == [Routine.type: 2])
+    #expect(model.pendingAdoptions.map(\.product) == ["gym"] && model.adoptionCounts == [.gym: [Routine.type: 2]])
     #expect(model.gym.routines.count == 2)
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account != nil && model.sheet == nil)
     #expect(!model.gym.routines.contains { $0.name == "Local routine" || $0.name == "Another local routine" })
   }
@@ -240,7 +240,7 @@ import SyncTesting
     _ = try #require(try model.runner.run(RenameExercise(ID("back-squat"), name: "Renamed squat")).receipt)
     try await model.signIn(server.identity(email: "gym-counts@example.com"))
     #expect(model.account == nil && model.pendingAdoptions.map(\.product) == ["gym"])
-    #expect(model.adoptionCounts == [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1])
+    #expect(model.adoptionCounts == [.gym: [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1]])
     #expect(model.adoptionAlertMessage == "This phone has 1 weigh-in from before you signed in. Your account already has training. Add it, or discard it from this phone.")
     model.sheet = .discardAdoption
     #expect(model.adoptionAlertTitle == "Discard 1 weigh-in?")
@@ -459,10 +459,12 @@ import SyncTesting
     let residue = { ["accountName:", "accountEmail:"].map { model.preferences.string(forKey: $0 + identity.account) } }
     let steps = { [model.email, model.code, model.appleReceiptEmail, model.codeSentAt == nil ? "-" : "sent"] }
     model.email = "residue@example.com"; model.code = "482913"; model.codeSentAt = Date(); model.appleReceiptEmail = "residue@example.com"
+    model.preferences.set("first-workout", forKey: GymModel.keepReceipt)
     try await model.signIn(identity)
     #expect(residue() == ["Sam", "residue@example.com"])
     await model.beginSignOut(); await model.finishSignOut(choice)
     #expect(model.account == nil && residue() == [nil, nil])
+    #expect(model.preferences.string(forKey: GymModel.keepReceipt) == "first-workout", "the receipt's Keep it is offered once per phone")
     #expect(steps() == ["", "", "", "-"])
   }
 

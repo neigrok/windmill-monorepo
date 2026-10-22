@@ -187,7 +187,7 @@ struct SaveSignedOutWorkouts: Action {
     #expect(try local.runner.run(FinishSession(id: crossing, finishedAt: Instant(ms: now - 36_000))).receipt != nil)
     try await local.signIn(server.identity(email: identity.email))
     #expect(local.pendingAdoptions.map(\.product) == ["gym"])
-    await local.adopt(.add)
+    await local.adopt(.add, asked: local.pendingAdoptions)
     await local.runtime?.engine.start()
     for _ in 0..<200 where local.gym.recoveryNotices.isEmpty { try await Task.sleep(for: .milliseconds(50)); local.refresh() }
 
@@ -311,7 +311,7 @@ struct SaveSignedOutWorkouts: Action {
       $0.command.name == Gym.Commands.importSession && $0.command.args["id"] == finished.json
     }.count } == 1)
     #expect(local.gym.workout.activityOffer() == nil && !local.gym.workout.logActivityOffer(openOffer))
-    await local.adopt(.add)
+    await local.adopt(.add, asked: local.pendingAdoptions)
     await local.runtime?.engine.start()
     try await AppModelTests().workoutSettled(local, finished)
     #expect(await WorkoutStateTests.until {
