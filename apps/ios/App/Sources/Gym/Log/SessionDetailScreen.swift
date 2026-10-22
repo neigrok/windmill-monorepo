@@ -17,7 +17,7 @@ struct SessionDetailScreen: View {
   var body: some View {
     List {
       if let session {
-        let readout = SessionReadout(session: session, sets: sets)
+        let readout = SessionReadout(session: session, sets: sets, catalogue: gym.catalogue)
         Section {
           FactTiles(readout)
         } footer: {
@@ -30,7 +30,10 @@ struct SessionDetailScreen: View {
           let mine = sets.filter { $0.exerciseId == id }
           Section {
             NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: {
-              GymRow(title: gym.catalogue.find(id)?.name ?? "Movement", meta: LogPresentation.planLine(id, plan: session.plan))
+              GymRow(title: gym.catalogue.find(id)?.name ?? "Movement", meta: [
+                gym.catalogue.find(id).map { MovementEquipment($0).unit },
+                LogPresentation.planLine(id, plan: session.plan)
+              ].compactMap { $0 }.joined(separator: " · "))
             }.accessibilityIdentifier("gym-session-movement")
             ForEach(Array(mine.enumerated()), id: \.element.id) { index, set in
               Button { fixing = set } label: {

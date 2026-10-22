@@ -98,7 +98,7 @@ class TrainingRulesTests {
         assertEquals(1450.0, log.volumeKg(sessionId), 0.0)
         assertEquals(95.0 * (1 + 10 / 30.0), log.topE1rm(sessionId)!!, 0.0)
         assertEquals(listOf(first, ignored, assisted, best).sortedWith(compareBy({ it.completedAt }, { it.id })), log.sets(sessionId))
-        val stale = TrainingLog(listOf(workout), listOf(first), Moment(Instant(first.completedAt.ms + SessionRules.staleAfterMs), FixedZone(0)))
+        val stale = log.copy(sessions = listOf(workout), sets = listOf(first), moment = Moment(Instant(first.completedAt.ms + SessionRules.staleAfterMs), FixedZone(0)))
         assertNull(stale.open)
         assertFalse(stale.liveHint)
         assertEquals(listOf(workout.copy(finishedAt = first.completedAt, closedBy = "stale")), stale.drawnSessions)

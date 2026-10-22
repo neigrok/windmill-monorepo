@@ -529,10 +529,21 @@ export function slotRows(sets, entry) {
   return [...others, ...lifted, ...coming];
 }
 
+// What an entered load counts for its movement: each of a pair of dumbbells, weight added to the body (assistance
+// below zero), or the whole bar. One dumbbell, other equipment and a movement the log does not know read the unit.
+export function loadBasisLabel(exercise, weightKg = 0, unit = weightUnit()) {
+  switch (exercise?.equipment) {
+    case 'dumbbell': return exercise.loadCount === 1 ? unit : `${unit} each`;
+    case 'bodyweight': return `${unit} ${weightKg < 0 ? 'assisted' : 'added'}`;
+    case 'barbell': return `${unit} total`;
+    default: return unit;
+  }
+}
+
 // Zero is the absence of a load: the movement done at bodyweight. A band-assisted −20 prints itself.
-export function setLoadLabel(set, unit = weightUnit()) {
+export function setLoadLabel(set, unit = weightUnit(), basis = null) {
   if (set.weightKg === 0) return `bodyweight × ${set.reps}`;
-  return `${fmt(set.weightKg, unit)} × ${set.reps}`;
+  return `${fmt(set.weightKg, unit)}${basis ? ` ${basis}` : ''} × ${set.reps}`;
 }
 
 export const NO_ROUTINE = 'Free session';

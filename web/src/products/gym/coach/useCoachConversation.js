@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gymApi } from '../gymApi.js';
+import { track } from '../../../telemetry/beacon.js';
+import { captureError } from '../../../telemetry/sentry.js';
 import { mintId } from '../mint.js';
 import {
-  answerTurn, askFailure, generationTurns, mergeTurns, NO_ANSWER_NOTE, questionTooLong,
+  answerTurn, askFailure, confirmFailure, generationTurns, mergeTurns, NO_ANSWER_NOTE, questionTooLong,
   requestFromGeneration, THREAD_PREFIX, TOO_LONG_NOTE,
 } from './coach.js';
 import { coachPhotos } from './photos.js';
@@ -36,7 +38,8 @@ export function forgetCoachDraft(accountId, threadId) {
   }
 }
 
-export function useCoachConversation({ accountId, initialThread, workoutInProgress = false, api = gymApi, photos = coachPhotos }) {
+export function useCoachConversation({ accountId, initialThread, workoutInProgress = false, api = gymApi, photos = coachPhotos,
+  telemetry = { track, captureError } }) {
   const [state, setState] = useState(() => {
     const stored = readCoachDraft(accountId, initialThread?.id);
     const generation = initialThread?.generation;
@@ -50,7 +53,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       photo: complete ? null : stored?.photo ? { ...stored.photo, status: 'draft' } : null,
       request, nextCursor: initialThread?.nextCursor ?? null,
       phase: !initialThread && stored ? 'loading' : 'ready',
-      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', closed: '',
+      busy: false, pending: false, attempt: 0, stopRequested: false, note: '', closed: '', confirmBusy: null, confirmNote: null,
     };
   });
   const current = useRef(state);
@@ -303,6 +306,32 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     return () => clearTimeout(timer);
   }, [state.pending, state.busy, state.attempt, workoutInProgress]);
 
+  const confirmRoutine = async (turn, draft) => {
+    const thread = current.current.thread;
+    const key = `${turn.requestId}:${draft.operationId}`;
+    const held = current.current.turns.find((value) => value.from === 'ask' && value.requestId === turn.requestId);
+    if (!accountId || !turn.requestId || current.current.confirmBusy || (current.current.confirmNote?.key === key && current.current.confirmNote.closed)
+      || held?.routineDrafts?.find((value) => value.operationId === draft.operationId)?.state !== 'pending') return;
+    const event = (outcome) => { try { telemetry.track('gym_coach_routine_confirm', { outcome }); } catch { /* reporting cannot stop a save */ } };
+    change({ confirmBusy: key, confirmNote: null });
+    event('started');
+    try {
+      const reply = await api.confirmCoachRoutine(thread, turn.requestId, draft.operationId);
+      const confirmed = reply?.thread === thread && reply.generation?.requestId === turn.requestId
+        ? reply.generation.routineDrafts?.find((value) => value.operationId === draft.operationId) : null;
+      if (confirmed?.state !== 'saved' || confirmed.routineId !== draft.routineId) throw new Error('The confirmation answered another draft.');
+      event('saved');
+      if (mounted.current && current.current.thread === thread) change({ turns: mergeTurns(current.current.turns, generationTurns(reply.generation)) });
+    } catch (error) {
+      const failure = confirmFailure(error);
+      event(failure.outcome);
+      if (failure.outcome === 'failed') { try { telemetry.captureError('gym', 'gym-coach-routine-confirm', '', '/gym'); } catch { /* reporting cannot stop a retry */ } }
+      if (mounted.current && current.current.thread === thread) change({ confirmNote: { key, text: failure.note, closed: failure.closed } });
+    } finally {
+      if (mounted.current && current.current.thread === thread) change({ confirmBusy: null });
+    }
+  };
+
   const older = async () => {
     if (!current.current.nextCursor || current.current.olderBusy) return;
     change({ olderBusy: true, olderNote: '' });
@@ -326,7 +355,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
 
   return {
     ...state, turns,
-    send, stop, older, selectPhoto, uploadPhoto,
+    send, stop, older, selectPhoto, uploadPhoto, confirmRoutine,
     cancelUpload: () => upload.current?.abort(),
     removePhoto: async () => {
       if (current.current.request) return;
@@ -337,10 +366,10 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     },
     setDraft: (draft) => change({ draft }),
     newChat: () => {
-      if (active.current || upload.current || current.current.photoBusy) return;
+      if (active.current || upload.current || current.current.photoBusy || current.current.confirmBusy) return;
       forgetCoachDraft(accountId);
       change({ thread: mintId(THREAD_PREFIX), turns: [], draft: '', photo: null, request: null, nextCursor: null,
-        pending: false, attempt: 0, stopRequested: false, note: '', closed: '' });
+        pending: false, attempt: 0, stopRequested: false, note: '', closed: '', confirmNote: null });
     },
   };
 }

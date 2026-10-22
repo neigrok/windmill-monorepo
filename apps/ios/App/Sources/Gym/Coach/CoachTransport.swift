@@ -3,9 +3,13 @@ import UIKit
 import ImageIO
 import SyncEngine
 
+struct CoachStreamActivity {
+  let receive: @MainActor () throws -> Void
+}
+
 extension GymRESTClient {
   func coachRequest(_ path: String, method: String = "GET", body: Data? = nil,
-                    mediaType: String? = nil, expectedAccount: String? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
+                    mediaType: String? = nil, expectedAccount: String? = nil, idleTimeout: TimeInterval = 60, reportsFailure: Bool = true, activity: CoachStreamActivity? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
     if let expectedAccount {
       guard let runtime, try runtime.account() == expectedAccount else { throw CancellationError() }
     }
@@ -24,11 +28,12 @@ extension GymRESTClient {
     request.httpMethod = method; request.httpBody = body
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue(mediaType ?? "application/json", forHTTPHeaderField: "Content-Type") }
-    if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
+    if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept"); request.timeoutInterval = idleTimeout }
     let requestGeneration = generation
     let id = UUID()
     let streamConfiguration = session.configuration
-    streamConfiguration.timeoutIntervalForResource = 120
+    streamConfiguration.timeoutIntervalForRequest = idleTimeout
+    streamConfiguration.timeoutIntervalForResource = 3600
     let transport = snapshot == nil ? session : URLSession(configuration: streamConfiguration)
     defer { if snapshot != nil { transport.invalidateAndCancel() } }
     let wireRequest = request
@@ -56,6 +61,14 @@ extension GymRESTClient {
           if line.last == 13 { line.removeLast() }
           guard let text = String(data: line, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
           line.removeAll(keepingCapacity: true)
+          if let activity {
+            try await MainActor.run {
+              try Task.checkCancellation()
+              guard generation == requestGeneration, !blocked,
+                    try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
+              try activity.receive()
+            }
+          }
           if let (event, data) = parser.consume(text) {
             if event == "error" {
               try await MainActor.run {
@@ -102,19 +115,29 @@ extension GymRESTClient {
       return data
     } catch {
       if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
-      let status = (error as? GymRESTFailure)?.status
-      let offline = [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains((error as? URLError)?.code)
-      let kind = offline ? "offline" : (error as? URLError)?.code == .timedOut ? "timeout" : status != nil ? "http" : error is DecodingError ? "decode" : "transport"
-      var properties = ["operation": "gym_rest", "route": "/v1/gym", "method": method, "failure_kind": kind]
-      if let status { properties["status"] = String(status) }
-      telemetry.event("api_request_failed", properties: properties)
-      let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
-      let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
-      if !offline, !unavailable, !ExpectedStatuses.contains(status) {
-        telemetry.failure("gym_rest", kind: kind, properties: properties)
-      }
+      telemetry.event("api_request_failed", properties: coachFailure(error, method: method).properties)
+      if reportsFailure { reportCoachFailure(error, method: method) }
       throw error
     }
+  }
+
+  // A Coach request's failure as its event says it, and whether it is unexpected enough to report.
+  nonisolated func coachFailure(_ error: any Error, method: String) -> (properties: [String: String], reportable: Bool) {
+    let status = (error as? GymRESTFailure)?.status
+    let offline = [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains((error as? URLError)?.code)
+    let kind = offline ? "offline" : (error as? URLError)?.code == .timedOut ? "timeout" : status != nil ? "http" : error is DecodingError ? "decode" : "transport"
+    var properties = ["operation": "gym_rest", "route": "/v1/gym", "method": method, "failure_kind": kind]
+    if let status { properties["status"] = String(status) }
+    let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
+    let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
+    return (properties, !offline && !unavailable && !ExpectedStatuses.contains(status))
+  }
+
+  // A Coach request's unexpected failure, reported once: a streamed ask reports only the failure it gives up on.
+  func reportCoachFailure(_ error: any Error, method: String) {
+    guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
+    let failure = coachFailure(error, method: method)
+    if failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
   }
 }
 

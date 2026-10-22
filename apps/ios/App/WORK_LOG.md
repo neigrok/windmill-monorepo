@@ -40,16 +40,11 @@ Coach history deletion and authentication handoffs. Local first-party events and
 contain only bounded technical labels; the known content and credential scan finds no matches.
 External Amplitude forwarding and production Sentry delivery are not exercised by this local run.
 
-Signed-in Coach setup uses the existing conversation, attachment transport and Gym sync door.
-Native verification covers selecting a photo, restoring its unsent draft after relaunch, uploading
-its bytes, receiving two durable routine receipts, reopening the remote photo and starting a
-created routine. The native run uses the real client and local C++ backend with a fixture provider;
-the separate opt-in backend workflow exercises the actual provider with isolated free and One
-accounts. Setup exposes only its eight supported tools, reducing request context while preserving
-owned training history, movement IDs and durable writes. Reservations use each request's estimated
-input and its enforced output ceiling. Coach offers up to 2,000 output tokens; its budget transaction
-can select a smaller ceiling, at least 1,024, that fits every applicable balance. The provider receives
-that exact reserved ceiling. The cost offer is durable so retries preserve the original reservation.
+Signed-in Coach uses the existing conversation, attachment transport and Gym sync door. Draft
+creation holds a durable operation; explicit user confirmation settles it with the exact server-held
+document. There is no model confirmation tool. One shared RoutineEntry serializer serves saved
+routines and review drafts. Equipment and one/two-dumbbell overrides are additive exerciseName
+metadata, keeping immutable seed equipment and raw logged weights intact.
 
 Actual-provider verification on `ff00193b` passes all 77 checks across four generations and 13
 healthy model rounds. Typed goal setup and creation cost $0.141863500, a fresh free-account photo
@@ -101,25 +96,15 @@ Anonymous Coach uses one installation boundary, one durable request record and o
 Action. The import validates every routine before one engine Plan commits routines and replay metadata.
 Installation issuance is coalesced across account transitions; its Keychain record is separate from
 account credentials. Local draft adoption writes the target archive and source marker atomically before
-removing the source, so retry preserves pending responses, photos, goal choices and unsent drafts.
+removing the source, so retry preserves pending responses, photos and unsent drafts.
 Stop waiting preserves the original request and cannot promise cancellation of provider spending.
 Static refusal copy is shared by current errors and retained records. Model-server UI fixtures exercise
 the same transport decoding and domain import as the opt-in HTTP verification.
 
-Anonymous onboarding verification passes the three atomic-import domain cases, 89 native Coach
-cases, nine real-tree architecture checks and 42 app-tool checks. The final Coach run includes the
-replay case where newer goal choices remain in the composer. Light, dark and Accessibility XXXL UI
-flows verify creation receipts, Keep, opening a routine and starting an anonymous workout. Real HTTP
-verification against the isolated C++ backend and fixture provider covers goal and normalized-photo
-generation, atomic import, workout start, installation binding, account adoption and local archive
-retention. The native UI's bounded setup events reach the first-party intake and local observer.
-These native checks use a deterministic provider; they do not establish actual-provider quality.
-
-[Full native CI](https://github.com/neigrok/windmill-monorepo/actions/runs/39523283374) passes packages,
-App unit tests, Debug and Release builds, and all 152 UI cases. Two UI shards passed 120 cases on the
-first attempt; the 32 Coach/offline cases passed on one unchanged-source rerun after two offline UI interaction
-timeouts. Both affected cases also passed unchanged locally. The Coach shard includes all three
-anonymous appearance variants.
+The current anonymous HTTP harness passes 112 checks against the isolated backend and deterministic
+provider, including greeting, context continuation, drafts without server routine writes, replay,
+legacy goal/program/photo inputs, budget accounting, injected failure reporting and local event/log
+privacy. Deterministic checks do not establish actual-provider response quality.
 
 Coach fixture authentication completes before the app model is published. Anonymous fixture scenarios
 retain their local seat until the test uses the account flow; view-time preparation only seeds data for
@@ -132,6 +117,93 @@ Offline verification fixtures use a fixed clock across cold launches and resumes
 not change the page under a local-persistence assertion. UI shards assign integration cases with the
 workout/account group and onboarding/shell cases with routines/journal; all 16 UI classes remain
 selected exactly once. The grouping balances the measured class durations without reducing coverage.
-Local verification covers all 11 corrected UI cases and the three anonymous appearance variants,
-89 Coach unit tests and 42 app-tool tests. Fixture boundaries and the final navigation assertion pass
-independent review.
+Native verification is repeated for the current Coach review and dialogue flow; the retained CI and
+release artifacts identify their own source revisions and do not establish this working tree’s checks.
+
+Coach greeting visibility has its own durable acceptance state, independent of draft text, attachments
+and navigation choices. The anonymous dialogue request retains its exact bounded context and request
+identity; successful dialogue may have no routines. A result is separate from a save: both anonymous
+and account drafts use one review surface, and only explicit Save produces creation receipts.
+Anonymous result replay remains one atomic domain import and is available after deliberate account
+adoption; resumed bound-installation work reads the retained request without dispatching another model
+call. Account confirmation consumes the immutable server document and updates the conversation’s
+held draft and receipt together.
+
+Stream liveness comes from transport activity, including SSE comments. The app does not infer a
+broken Coach connection from a quiet model interval or the sync channel’s separate reconnect state.
+A real dropped active stream retries its stable request a bounded number of times, preserving partial
+output; accepted transport activity clears the reconnect notice. Allowance recovery is separate from
+balance display, and the Windmill One destination reflects the closed checkout.
+
+Exercise identity and equipment share one editor. Read paths resolve current names from the stable
+catalogue identity. External-load volume uses each set’s equipment basis and one/two-dumbbell count,
+while displayed load and strength estimates retain the entered per-dumbbell amount. Workout rack
+feedback updates immediately; persistence coalesces rapid taps into one save, which also runs before
+sign-out, a seat change and backgrounding, so the last accepted value is kept. A tap made while an
+account change is under way is refused with *The rack could not be changed. Try again.* Routine rows
+expose reorder handles directly; root creation controls use one bottom-trailing plus. The Live
+Activity’s primary clock anchors to the most recent valid set, or session start before the first set.
+
+The focused native Coach suite passes 93 tests, including a transport configured from the production
+8-second authentication session: Coach overrides its idle timeout to 60 seconds and stays live
+between heartbeat comments. The fixture-backed anonymous light and signed-in review/save UI cases
+pass. These checks exercise explicit Save, durable replay, failed-send draft retention, greeting
+persistence, and the absence of automatic routine creation. A final simplification removes unused
+allowance-display and automatic-import progress state; broad final verification belongs to the phase
+gauntlet. The actual provider and external production telemetry are not exercised by this run.
+
+Coach offers routine drafts only to a client that sends `routineReview: true`, which every current
+client does on each ask; an older build that omits it gets no draft tool, and Coach tells it new
+routines need an app update or Routines. Nothing is ever written without the lifter's Save.
+
+Exercise edits use an account-scoped receipt committed with the sync-engine mutation. Lost Coach
+acknowledgements recover that original result without overwriting a later user edit. Swift history
+reads resolve the same equipment quantity as the other surfaces; their tests cover paired/single
+dumbbells and changed equipment while preserving the original set values.
+
+The review fix passes all 128 Swift GymDomain tests across 13 suites. Backend verification passes
+2,178 domain cases (28 intentional skips), 280 MCP cases, 729 sync cases and 1,291 adapter cases,
+including lost-acknowledgement recovery after a newer exercise edit.
+
+Native iOS 26.5 simulator verification passes 11 affected UI flows across focused runs, including a full
+routine/workout/history/weigh-in/note flow against the local sync backend. Seed renaming preserves
+history identity and raw set values; the keyboard leaves the One/Two dumbbell selector reachable.
+Rapid minus/plus presses update the visible rack and log those exact values. Both root empty states
+have one reachable plus, native reorder handles stay active while target editing remains available,
+and keypad digits clear the commit footer. At the largest text size the current workout row remains
+whole, Coach greeting actions scroll above the composer, and the actual final review target clears
+the Save footer by at least 28 points. Dark review contrast and the equipment load-basis captions
+have retained native PNG evidence. Coach HTTP checks use a deterministic local provider fixture;
+actual-model response quality and physical-device interaction feel are not established by them.
+
+The rack save task weakly captures its owning GymModel. Its regression retains WorkoutState while
+releasing that owner, and delayed work cannot dereference the state's unowned model. Durability and
+failure tests exercise explicit flush boundaries, rapid edits through reconciliation, and account
+transitions. The layout pass shares ledger header content between normal and accessible layouts,
+and permanent reorder uses the existing target-navigation state without adding another route.
+
+The affected app unit suites pass 367 tests across twelve suites: 269 in the ten unchanged suites,
+then 98 in the final workout/picker run, including owner teardown and the explicit flush boundaries.
+The complete app unit target passes CI run 39597020292, job 119211740948, alongside the packages and
+build gate. Local focused execution succeeds after preparing the dedicated simulator. The final
+rapid-button UI check also exercises the weak-owner persistence fix.
+
+The Coach composer uses a direct safe-area inset with a bar-material surface. Its native field and
+the parent focus state share the same host, so Done and tab-bar visibility follow keyboard focus;
+the greeting retains its scrollable layout at accessible text sizes. The signed-in UI helper requires
+Done to dismiss the keyboard without losing the draft, then refocuses and sends. Anonymous checks
+require the same keyboard, Done and tab-bar behavior. CI and local verification both use Xcode 26.3
+with iOS 26.5; CI uses iPhone 17 and the dedicated local simulator is iPhone 17 Pro. All five focused
+UI flows pass: signed-in Coach in light and dark, anonymous Coach at the largest text size, and Log
+in light and dark. The Log correction retains an exact assertion for the barbell label,
+`Weight, 90 kg total`. The native flows use local model-server fixtures; they verify keyboard focus, draft
+retention, navigation, review clearance and weight editing without making a claim about live model
+quality. The build-for-testing is clean, and the focused result contains five tests with zero failures.
+
+A Coach handoff carries the account it was asked under. An account change drops only a handoff
+asked under another account, so the sign-in that a receipt's Share with Coach waited for keeps its
+question, and Coach refuses a handoff from another account. The greeting steps aside while a message
+is on its way and returns after a failed or refused one. Confirming a draft reports
+`gym_coach_routine_confirm` and words each answer by what the draft can still do; access recovery is
+drawn once, only where signing in or Windmill One can help. Movement edits write only the fields
+that changed, and the load basis reads *kg each* for two dumbbells and *kg* for one.

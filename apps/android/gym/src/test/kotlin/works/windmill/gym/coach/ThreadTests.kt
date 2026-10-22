@@ -156,7 +156,7 @@ class ThreadTests {
     }
 
     @Test
-    fun aQuestionCarriesBothItsThreadAndItsWordsOnTheWire() {
+    fun aKeptQuestionCarriesBothItsThreadAndItsWords() {
         val encoded = WindmillJson.encodeToString(
             AskQuestion.serializer(),
             AskQuestion(thread = "thr_1", question = "what's stalled?"),

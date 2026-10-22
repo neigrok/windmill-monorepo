@@ -72,6 +72,7 @@ std::vector<ThreadTurn> turnsOf(pqxx::work& txn, const ThreadId& id, std::uint64
       turns.back().purpose = generation.purpose;
       if (!fromLifter) {
         turns.back().clarification = generation.clarification;
+        turns.back().routineDrafts = generation.routineDrafts;
         turns.back().allowanceRefusal = generation.allowanceRefusal;
       }
     }
@@ -298,11 +299,23 @@ std::optional<AskThread> PgAskThreadRepository::messagePage(const UserId& user, 
 }
 
 namespace {
+// A session advisory lock on the conversation; a zero wait tries once, a positive one waits under lock_timeout.
 class PgThreadLease final : public ThreadLease {
 public:
-  PgThreadLease(PgPool& pool, std::string key) : conn_(pool), key_(std::move(key)) {
+  PgThreadLease(PgPool& pool, std::string key, std::chrono::milliseconds wait) : conn_(pool), key_(std::move(key)) {
     pqxx::work txn{*conn_};
-    acquired = txn.exec_params("SELECT pg_try_advisory_lock(hashtextextended($1, 0))", key_)[0][0].as<bool>();
+    if (wait.count() == 0) {
+      acquired = txn.exec_params("SELECT pg_try_advisory_lock(hashtextextended($1, 0))", key_)[0][0].as<bool>();
+    } else {
+      txn.exec("SET LOCAL lock_timeout = '" + std::to_string(wait.count()) + "ms'");
+      try {
+        txn.exec_params("SELECT pg_advisory_lock(hashtextextended($1, 0))", key_);
+        acquired = true;
+      } catch (const pqxx::sql_error& error) {
+        if (std::string{error.sqlstate()} != "55P03") throw;
+        return;
+      }
+    }
     txn.commit();
   }
   ~PgThreadLease() override {
@@ -320,8 +333,12 @@ private:
 };
 }
 
-std::unique_ptr<ThreadLease> PgAskThreadRepository::tryLease(const UserId&, const ThreadId& id) {
-  auto lease = std::make_unique<PgThreadLease>(*pool_, "gym-ask:" + id.str());
+std::unique_ptr<ThreadLease> PgAskThreadRepository::tryLease(const UserId& user, const ThreadId& id) {
+  return awaitLease(user, id, std::chrono::milliseconds{0});
+}
+
+std::unique_ptr<ThreadLease> PgAskThreadRepository::awaitLease(const UserId&, const ThreadId& id, std::chrono::milliseconds wait) {
+  auto lease = std::make_unique<PgThreadLease>(*pool_, "gym-ask:" + id.str(), wait);
   if (!lease->acquired) return nullptr;
   return lease;
 }
@@ -340,7 +357,7 @@ std::optional<AskGeneration> PgAskThreadRepository::generation(const UserId& use
 }
 
 void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& thread,
-                                            AskGeneration& generation) {
+                                            AskGeneration& generation, bool settleDraft) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (txn.exec_params("SELECT 1 FROM gym_ask_threads WHERE id = $1 AND user_id = $2::uuid FOR UPDATE",
@@ -350,8 +367,10 @@ void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& t
       user.str(), thread.str(), generation.requestId);
   if (!prior.empty()) {
     const auto stored = generationFrom(parse(prior[0][0].as<std::string>()));
-    if (stored.status == "completed" || stored.status == "stopped") { generation = stored; return; }
-    if (stored.id != generation.id || stored.question != generation.question || stored.purpose != generation.purpose ||
+    if ((stored.status == "completed" || stored.status == "stopped") && !settleDraft) { generation = stored; return; }
+    if (settleDraft && (stored.status == "running" || stored.answer != generation.answer || stored.status != generation.status))
+      throw std::runtime_error("only a settled answer can confirm a routine");
+    if (stored.id != generation.id || stored.question != generation.question || stored.purpose != generation.purpose || stored.routineReview != generation.routineReview ||
         stored.attachments != generation.attachments) throw std::runtime_error("conversation request is immutable");
     generation.revision = stored.revision;
   }

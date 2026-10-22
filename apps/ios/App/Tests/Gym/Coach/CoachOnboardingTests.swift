@@ -88,41 +88,46 @@ extension CoachTests {
     #expect(service.resolvedAccount == "two" && credentials.value == String(repeating: "a", count: 43))
   }
 
-  @Test func anonymousGoalCollectsChoicesWithoutSendingThenCommitsUsableRoutinesOnce() async throws {
+  @Test func anonymousDialogueKeepsGreetingUntilAcceptedAndDraftsRequireExplicitSave() async throws {
     let (coach, cache) = try await anonymousCoach()
     defer { coach.work?.cancel(); try? FileManager.default.removeItem(at: cache.directory) }
-    #expect(coach.allowed && coach.anonymous && coach.installationAllowance?.limit == "0.050000000")
-    #expect(coach.chooseSetup(.goal)); coach.edit("Get stronger")
-    coach.send()
-    #expect(!coach.asking && coach.saved.onboarding == nil)
-    let choices = try #require(coach.activeClarification)
-    coach.select(choices.groups[0].options[2], in: choices.groups[0], clarification: choices)
-    coach.select(choices.groups[1].options[0], in: choices.groups[1], clarification: choices)
-    #expect(coach.saved.text == "Get stronger" && !coach.asking)
+    #expect(coach.allowed && coach.anonymous && coach.showsGreeting)
+    coach.edit("Get stronger")
+    #expect(coach.showsGreeting && coach.activeClarification == nil)
     coach.send()
     try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] != nil } }
+    #expect(coach.asking && !coach.showsGreeting)
     let record = try #require(coach.anonymousRequest)
-    #expect(record.request.mode == "goal" && record.request.daysPerWeek == 3 && record.request.equipment == "gym")
+    #expect(record.request.mode == "conversation" && record.request.text == "Get stronger" && record.request.context == [])
     let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
     #expect(call.request.value(forHTTPHeaderField: "Authorization") == nil)
-    call.respond(200, try onboardingResponse(record.request))
-    await coach.work?.value
-    #expect(coach.anonymousRequest?.results.count == 1)
-    let routine = try #require(coach.gym.routines.first)
-    #expect(routine.name == "Upper" && routine.entries == [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8)], restSeconds: 120)])
+    call.respond(200, try onboardingResponse(record.request)); await coach.work?.value
+    #expect(coach.gym.routines.isEmpty && coach.anonymousRequest?.results.isEmpty == true)
+    #expect(!coach.showsGreeting && coach.saved.text.isEmpty)
+    let completed = try #require(coach.anonymousRequest)
     let restored = CoachConversation(gym: coach.gym, store: cache)
     await restored.activate()
-    #expect(restored.saved.onboarding == coach.saved.onboarding && restored.gym.routines.count == 1)
-    #expect(coach.saved.setupChoice == nil && coach.saved.text.isEmpty)
-    var completed = try #require(coach.anonymousRequest); completed.results = []
-    #expect(coach.chooseSetup(.goal)); coach.edit("Get stronger")
-    let revised = try #require(coach.activeClarification)
-    coach.select(revised.groups[0].options[3], in: revised.groups[0], clarification: revised)
-    coach.select(revised.groups[1].options[0], in: revised.groups[1], clarification: revised)
-    try coach.importOnboarding(completed, owner: #require(coach.owner), generation: coach.workGeneration)
-    #expect(coach.saved.text == "Get stronger" && coach.saved.choices?.groups["days"] == ["4"])
-    coach.gym.startWorkout(routineId: routine.id)
-    #expect(coach.gym.openSession != nil && coach.gym.isAnonymous)
+    #expect(!restored.showsGreeting && !restored.asking && restored.gym.routines.isEmpty)
+    let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
+    #expect(await restored.saveRoutines(review) == .saved)
+    #expect(await restored.saveRoutines(review) == .saved)
+    #expect(restored.gym.routines.count == 1 && restored.anonymousRequest?.results.count == 1)
+    #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
+  }
+
+  @Test func anonymousGreetingAndFollowupKeepBoundedConversationWithoutCreatingRoutines() async throws {
+    let (coach, cache) = try await anonymousCoach()
+    defer { coach.work?.cancel(); try? FileManager.default.removeItem(at: cache.directory) }
+    coach.edit("Hi"); coach.send()
+    try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] != nil } }
+    let request = try #require(coach.anonymousRequest?.request)
+    var response = try #require(JSONSerialization.jsonObject(with: Data(onboardingResponse(request).utf8)) as? [String: Any])
+    response["message"] = "Hello. What are you working on?"; response["routines"] = []
+    let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
+    call.respond(200, String(decoding: try JSONSerialization.data(withJSONObject: response), as: UTF8.self)); await coach.work?.value
+    #expect(coach.anonymousRequest?.finished == true && !coach.anonymousRetryable && coach.gym.routines.isEmpty)
+    coach.edit("My first pull-up"); coach.send()
+    #expect(coach.anonymousRequest?.request.context == [.init(role: "user", text: "Hi"), .init(role: "assistant", text: "Hello. What are you working on?")])
   }
 
   @Test func stoppedAnonymousRequestKeepsIdentityAndEditedDraftAndCannotImportIntoAnotherSeat() async throws {
@@ -155,14 +160,16 @@ extension CoachTests {
     #expect(coach.chooseSetup(.describe)); coach.edit("Bench press 3 by 8"); coach.send()
     try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] != nil } }
     let record = try #require(coach.anonymousRequest)
-    fault.point.withLock { $0 = .beforeCommit(.commit) }
     let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
-    call.respond(200, try onboardingResponse(record.request))
-    await coach.work?.value
+    call.respond(200, try onboardingResponse(record.request)); await coach.work?.value
+    let completed = try #require(coach.anonymousRequest)
+    let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
+    fault.point.withLock { $0 = .beforeCommit(.commit) }
+    #expect(await coach.saveRoutines(review) == .kept("Your routines couldn’t be saved. The response is kept on this phone; try again."))
     #expect(coach.gym.routines.isEmpty && coach.anonymousRequest?.results == [])
-    #expect(coach.anonymousRequest?.response?.status == "completed" && coach.saved.text == "Bench press 3 by 8")
+    #expect(coach.anonymousRequest?.response?.status == "completed")
     fault.point.withLock { $0 = nil }
-    coach.retry(); await coach.work?.value
+    #expect(await coach.saveRoutines(review) == .saved)
     #expect(coach.gym.routines.count == 1 && coach.anonymousRequest?.results.count == 1)
     #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
   }
@@ -173,7 +180,7 @@ extension CoachTests {
     CoachTestProtocol.state.withLock { $0.replies["/v1/gym/coach/onboarding"] = .http(400, "{\"code\":\"invalid_input\"}") }
     #expect(coach.chooseSetup(.describe)); coach.edit("Program one"); coach.send(); await coach.work?.value
     let first = try #require(coach.anonymousRequest?.id)
-    #expect(coach.anonymousRequest?.refusalCode == "invalid_input" && !coach.anonymousRetryable)
+    #expect(coach.anonymousRequest?.refusalCode == "invalid_input" && !coach.anonymousRetryable && coach.showsGreeting)
     coach.edit("Program two"); coach.send(); await coach.work?.value
     #expect(coach.anonymousRequest?.id != first && coach.saved.text == "Program two")
     var account = CoachSaved(); account.text = "Existing account draft"
@@ -198,9 +205,11 @@ extension CoachTests {
       coach.send()
       try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] != nil } }
       let request = try #require(coach.anonymousRequest?.request)
-      #expect(request.mode == "photo" && request.image != nil)
+      #expect(request.mode == "conversation" && request.image != nil)
       let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
       call.respond(200, try onboardingResponse(request)); await coach.work?.value
+      let response = try #require(coach.anonymousRequest?.response)
+      #expect(await coach.saveRoutines(CoachRoutineReview(id: request.requestId, requestId: request.requestId, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
       #expect(coach.gym.routines.count == 1)
       try cache.adopt(from: #require(coach.owner), account: "photo-account", discard: false)
       #expect(try cache.read("photo-account").onboarding == coach.saved.onboarding)
@@ -224,13 +233,11 @@ extension CoachTests {
       try? FileManager.default.removeItem(at: coach.store.file(owner))
       try? FileManager.default.removeItem(at: coach.store.file(account))
     }
-    #expect(coach.chooseSetup(.goal)); coach.edit("Get stronger with a short full gym routine")
-    let choices = try #require(coach.activeClarification)
-    coach.select(choices.groups[0].options[2], in: choices.groups[0], clarification: choices)
-    coach.select(choices.groups[1].options[0], in: choices.groups[1], clarification: choices)
+    coach.edit("Build a short full gym routine for three days per week")
     coach.send(); await coach.work?.value
-    let goal = try #require(coach.anonymousRequest)
-    #expect(!goal.results.isEmpty && model.gym.isAnonymous)
+    let goal = try #require(coach.anonymousRequest), response = try #require(goal.response)
+    #expect(model.gym.routines.isEmpty && goal.results.isEmpty && model.gym.isAnonymous)
+    #expect(await coach.saveRoutines(CoachRoutineReview(id: goal.id, requestId: goal.id, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
     let count = model.gym.routines.count
     #expect(coach.chooseSetup(.screenshot))
     let photo = UIGraphicsImageRenderer(size: CGSize(width: 480, height: 240)).image { context in
@@ -238,7 +245,9 @@ extension CoachTests {
       ("Bench press 3 x 8\nSquat 3 x 5" as NSString).draw(at: CGPoint(x: 25, y: 25), withAttributes: [.font: UIFont.systemFont(ofSize: 30), .foregroundColor: UIColor.black])
     }
     try coach.addPhoto(#require(photo.pngData())); coach.send(); await coach.work?.value
-    #expect(coach.anonymousRequest?.request.mode == "photo" && coach.anonymousRequest?.results.isEmpty == false)
+    let photoRecord = try #require(coach.anonymousRequest), photoResponse = try #require(photoRecord.response)
+    #expect(photoRecord.request.mode == "conversation" && photoRecord.results.isEmpty)
+    #expect(await coach.saveRoutines(CoachRoutineReview(id: photoRecord.id, requestId: photoRecord.id, drafts: photoResponse.routines.map(\.domain), operationId: nil)) == .saved)
     #expect(model.gym.routines.count > count)
     let routine = try #require(model.gym.routines.first)
     model.gym.startWorkout(routineId: routine.id)

@@ -22,8 +22,9 @@ struct TopWorkingSet {
 };
 
 // setCount counts every kind; workingSetCount only the working ones.
-// tonnageKg is `sum(greatest(weight_kg, 0) * reps)` over working sets — a negative (band-assisted)
-// load must not subtract. Zero means nothing measurable moved, never "no work".
+// tonnageKg is `sum(greatest(weight_kg, 0) * reps * count)` over working sets, where count is the movement's
+// dumbbell count (2 unless it holds one) and 1 for any other equipment (liftedVolume, domain/Training.h) — a
+// negative (band-assisted) load must not subtract. Zero means nothing measurable moved, never "no work".
 // workingMarks: working sets collapsed to one row per (movement, load) carrying the best reps at it,
 // grouped by movement, heaviest first inside each, dated by the SESSION's start. Loads at or below
 // zero ride along unfiltered.

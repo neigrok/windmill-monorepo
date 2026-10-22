@@ -18,6 +18,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val pending: Map<String, Map<String, AskQuestion>> = emptyMap(),
         val snapshots: Map<String, Map<String, AskGeneration>> = emptyMap(),
         val drafts: Map<String, Map<String, CoachDraft>> = emptyMap(),
+        val confirmations: Map<String, Map<String, CoachRoutineConfirmation>> = emptyMap(),
     )
 
     private val restored = runCatching {
@@ -59,15 +60,31 @@ class LocalCoach internal constructor(private val file: File, private val write:
         document = next
     }
 
+    @Synchronized fun confirmed(owner: String, requestId: String): AskGeneration? = document.confirmations[owner]?.get(requestId)?.generation
+
+    @Synchronized fun confirm(owner: String, confirmation: CoachRoutineConfirmation) {
+        restored.getOrThrow()
+        val generation = confirmation.generation
+        val current = document.confirmations[owner]?.get(generation.requestId)
+        if (current != null && current.generation.revision >= generation.revision) return
+        val next = document.copy(confirmations = document.confirmations +
+            (owner to (document.confirmations[owner].orEmpty() + (generation.requestId to confirmation))))
+        write(file, diskJson.encodeToString(Document.serializer(), next))
+        document = next
+    }
+
     @Synchronized fun clear(owner: String, threadId: String, requestId: String? = null) {
         restored.getOrThrow()
         val mine = document.pending[owner].orEmpty()
         val kept = mine.filterValues { it.thread != threadId || (requestId != null && it.requestId != requestId) }
-        if (kept == mine && (requestId != null || document.drafts[owner]?.containsKey(threadId) != true)) return
+        val hasDraft = document.drafts[owner]?.containsKey(threadId) == true
+        val hasConfirmation = document.confirmations[owner].orEmpty().values.any { it.thread == threadId }
+        if (kept == mine && (requestId != null || !hasDraft && !hasConfirmation)) return
         val removed = mine.keys - kept.keys
         val next = document.copy(pending = (document.pending + (owner to kept)).filterValues { it.isNotEmpty() },
             snapshots = (document.snapshots + (owner to (document.snapshots[owner].orEmpty() - removed))).filterValues { it.isNotEmpty() },
-            drafts = if (requestId == null) document.drafts + (owner to (document.drafts[owner].orEmpty() - threadId)) else document.drafts)
+            drafts = if (requestId == null) document.drafts + (owner to (document.drafts[owner].orEmpty() - threadId)) else document.drafts,
+            confirmations = if (requestId == null) document.confirmations + (owner to document.confirmations[owner].orEmpty().filterValues { it.thread != threadId }) else document.confirmations)
         write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
         discardUnusedPhotos(owner)

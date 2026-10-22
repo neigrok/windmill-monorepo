@@ -184,7 +184,7 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
                "save_note gym:write", "start_session gym:write",
                "log_set gym:write", "finish_session gym:write",
                "create_routine gym:write", "propose_routine_change gym:write",
-               "create_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
+               "create_exercise gym:write", "update_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
                "discard_session gym:delete", "propose_routine_removal gym:delete",
                "revoke_share gym:delete"}));
 }
@@ -511,7 +511,7 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
                                        "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
   const std::vector<std::string> writes{"save_note", "start_session",  "log_set",
                                         "finish_session", "create_routine",
-                                        "propose_routine_change", "create_exercise",
+                                        "propose_routine_change", "create_exercise", "update_exercise",
                                         "share_session", "log_sets", "import_session"};
   const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
                                          "revoke_share"};

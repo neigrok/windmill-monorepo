@@ -24,8 +24,9 @@ board `837:14824`, `18-progress.md`): *Weighed in · 82.4 kg* sits between the s
 at its own date, with the change since the previous month under it, and opens Bodyweight. The head
 of the Android log carries no number at all.
 
-**The writing** is one chip pinned in the reach band, opening a decimal sheet — on every surface,
-Android included.
+**The writing** is pinned in the reach band and opens the decimal sheet. iOS uses one bottom-right
+`plus` seat, accessible as **Weigh in**, with no duplicate top-right action. Web and Android retain
+their weight-entry chip.
 
 The split is not fussiness. `../../guidelines/thumb-reach.md` forbids **a required input** in the top
 band by name, and the log's header sits inside the scroll on every surface — so a field at the top
@@ -33,10 +34,10 @@ scrolls away exactly when you reach for it, and the Log tab would carry two top-
 nothing in the reach band at all. Pinned, the Log tab has exactly one primary action, in the band, at
 every scroll position.
 
-**One door, not two.** The chip on the log is the only place a weigh-in is entered. The chart screen
+**One door, not two.** The control on the log is the only place a weigh-in is entered. The chart screen
 carries no second input — it is where you go to *look* and to *repair*, and a field there would be
 two doors onto one value and two code paths behind it. Someone standing on the chart who wants to add
-today's number is one back-gesture from the chip.
+today's number is one back-gesture from the log's entry control.
 
 The chart screen does carry the repair path, because that is a different verb and it belongs where
 the mistake is visible.

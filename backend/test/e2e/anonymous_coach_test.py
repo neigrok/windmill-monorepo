@@ -7,10 +7,19 @@ import struct
 import unittest
 import zlib
 
-from anonymous_coach import photo_bytes
+from anonymous_coach import photo_bytes, fixture_result
 
 
 class AnonymousCoachTest(unittest.TestCase):
+    def test_dialogue_fixture_greets_and_continues_without_a_routine(self):
+        self.assertEqual(fixture_result({"mode": "conversation", "text": "Hi", "context": []}),
+                         {"message": "Hello. What would you like to work on?", "routines": []})
+        self.assertEqual(fixture_result({"mode": "conversation", "text": "Three days", "context": [{"role": "user", "text": "Hi"}]}),
+                         {"message": "Three days gives us room to build gradually. Would you like a routine draft?", "routines": []})
+        draft = fixture_result({"mode": "conversation", "text": "Make a routine", "context": []})
+        self.assertEqual(draft["message"], "Here are your routine drafts. Review them before saving.")
+        self.assertEqual(draft["routines"], fixture_result({"mode": "program"})["routines"])
+
     def test_maximum_photo_preserves_the_original_png_pixels(self):
         original = photo_bytes()
         maximum = photo_bytes(maximum=True)
@@ -36,7 +45,7 @@ class AnonymousCoachTest(unittest.TestCase):
         self.assertIsNotNone(image_limit)
         decoded_limit = math.prod(int(factor.strip()) for factor in image_limit[1].split("*"))
         self.assertEqual(decoded_limit, len(photo_bytes(maximum=True)))
-        self.assertLess(4 * ((decoded_limit + 2) // 3) + 8192, memory_limit)
+        self.assertLess(4 * ((decoded_limit + 2) // 3) + 131072, memory_limit)
         request = {"requestId": "12345678-1234-1234-1234-123456789abc", "mode": "photo",
                    "image": {"mimeType": "image/png", "data": base64.b64encode(photo_bytes(maximum=True)).decode()},
                    "note": "\x01" * 1000}

@@ -15,9 +15,9 @@ class LogReadoutTests {
         val now = Instant.parse("2026-09-24T18:00:00Z").toEpochMilli()
         val sets = listOf(TrainingSet("best", "bench", weightKg = 60.0, reps = 10, completedAtMs = at),
             TrainingSet("heavy", "row", weightKg = 120.0, reps = 12, completedAtMs = at))
-        val summary = SessionSummary(Session("s", at, at + 3_600_000, plan = PlanSnapshot("Push A")), sets)
-        val stats = StatsProgress.of(listOf(SessionDetail(summary.session, sets)), now)
         val catalog = listOf(Exercise("bench", "Bench Press"), Exercise("row", "Barbell Row"))
+        val summary = SessionSummary(Session("s", at, at + 3_600_000, plan = PlanSnapshot("Push A")), sets, catalog)
+        val stats = StatsProgress.of(listOf(SessionDetail(summary.session, sets)), now)
         assertEquals(LogReadout.Row(summary, "Push A", "Record · Bench Press 60 × 10", "Mon 21", true, true),
             LogReadout.row(summary, true, stats, catalog, now, zone))
         assertEquals(LogReadout.Row(summary, "Push A", "60 min", "Mon 21", false, false),

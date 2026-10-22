@@ -90,7 +90,7 @@ class LiveCoachProof:
         self.stage = label
         self.check("generation_bound_" + label, len(self.results["generations"]) < 4)
         self.check("cost_before_" + label, self.usage()["costNanos"] < 750_000_000)
-        payload = {"thread": thread, "requestId": "req_" + uuid.uuid4().hex, "purpose": "routine_setup", "question": question}
+        payload = {"thread": thread, "requestId": "req_" + uuid.uuid4().hex, "purpose": "routine_setup", "question": question, "routineReview": True}
         if attachments:
             payload["attachmentIds"] = attachments
         answer = []
@@ -136,6 +136,7 @@ class LiveCoachProof:
             self.check(role + ("_photo_foreign" if foreign else "_photo_anonymous"), status == expected)
         _, vision = self.ask(role, role + "_photo", photo_thread,
             "Turn the program in this picture into the two routines it specifies. Preserve exactly its movements, working-set counts and rep targets, with no prescribed weights. The picture contains my weekly availability and equipment.", [attachment])
+        vision = self.confirm_routines(role, photo_thread, vision)
         observed = []
         self.check(role + "_two_photo_receipts", len(vision.get("results", [])) == 2)
         for receipt in vision["results"]:
@@ -153,6 +154,21 @@ class LiveCoachProof:
         self.check(role + "_photo_history_receipts", status == 200 and history["turns"][-1]["results"] == vision["results"] and
                    history["turns"][-2]["attachments"] == [upload["attachment"]])
 
+    def confirm_routines(self, role, thread, reply):
+        generation = reply["generation"]
+        drafts = generation.get("routineDrafts", [])
+        self.check(role + "_routines_wait_for_review", bool(drafts) and not reply.get("results"))
+        for draft in drafts:
+            status, _, _ = self.request("GET", "/v1/gym/routines/" + draft["routineId"], role=role)
+            self.check(role + "_draft_not_created_" + draft["operationId"], status == 404)
+            path = f"/v1/gym/threads/{thread}/generations/{generation['requestId']}/routines/{draft['operationId']}/confirm"
+            status, saved, _ = self.request("POST", path, {}, role)
+            self.check(role + "_draft_saved_" + draft["operationId"], status == 200)
+            status, replay, _ = self.request("POST", path, {}, role)
+            self.check(role + "_draft_save_replays_" + draft["operationId"], status == 200 and replay == saved)
+            reply["generation"], reply["results"] = saved["generation"], saved["results"]
+        return reply
+
     def run(self):
         for role, tier, limit in [("free", "logged_in", "0.250000000"), ("free_photo", "logged_in", "0.250000000"), ("owner", "windmill_one", "7.000000000")]:
             status, allowance, headers = self.request("GET", "/v1/ai/allowance", role=role)
@@ -161,12 +177,12 @@ class LiveCoachProof:
         goal_thread = "thr_" + uuid.uuid4().hex
         _, goal = self.ask("free", "free_goal", goal_thread,
             "COACH_LIVE_PRIVATE_CANARY. I want to get stronger with a simple plan. Help me choose my weekly days and equipment before making routines.")
-        clarification = goal["generation"].get("clarification", {})
-        self.check("typed_days_and_equipment", {group["id"] for group in clarification.get("groups", [])} == {"days", "equipment"})
+        self.check("conversational_followup", bool(goal["generation"].get("answer")) and not goal.get("results"))
         status, history, _ = self.request("GET", "/v1/gym/threads/" + goal_thread)
-        self.check("clarification_history", status == 200 and history["turns"][-1].get("clarification") == clarification)
+        self.check("followup_history", status == 200 and history["turns"][-1]["text"] == goal["generation"]["answer"])
         payload, created = self.ask("free", "free_routines", goal_thread,
             "Three days each week, with a full gym. Create exactly two short alternating full-body routines with three movements each and three working sets per movement. Use rep targets and no prescribed weights.")
+        created = self.confirm_routines("free", goal_thread, created)
         self.check("two_free_routines", len(created.get("results", [])) == 2 and all(row.get("movementCount") == 3 for row in created["results"]))
         before = self.usage()
         status, replay, _ = self.request("POST", "/v1/gym/ask", payload)

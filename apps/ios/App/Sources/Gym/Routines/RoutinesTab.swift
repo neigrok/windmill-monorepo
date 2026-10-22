@@ -25,12 +25,6 @@ struct RoutinesTab: View {
       if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
         ContentUnavailableView {
           Label("No routines yet", systemImage: "list.bullet.rectangle")
-        } actions: {
-          if gym.workout.coachAvailable || (gym.isAnonymous && !gym.accountTransition) {
-            Button("Set up routines") { if let onSetup { onSetup() } else { ask?(CoachHandoff(question: "", purpose: .routineSetup)) } }
-              .accessibilityIdentifier("routines-setup")
-              .modifier(RoomSecondaryStyle()).controlSize(.large)
-          }
         }
       } else {
         List {
@@ -76,14 +70,19 @@ struct RoutinesTab: View {
     }.modifier(GymPage(titleDisplayMode: .large))
       .navigationTitle("Routines").accessibilityElement(children: .contain).accessibilityIdentifier("gym-routines")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
-            .labelStyle(.iconOnly).accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
-        }
-        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
-      .reachBand { GymTransient(gym: gym) }
+      .reachBand {
+        VStack(spacing: RoomSpace.related) {
+          GymTransient(gym: gym)
+          HStack {
+            Spacer()
+            Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
+              .labelStyle(.iconOnly).buttonStyle(RoomSeatStyle()).font(.title3.weight(.semibold))
+              .accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
+          }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+        }
+      }
       .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }
       .sheet(isPresented: Binding(get: { selectedID != nil && building == nil }, set: { if !$0 { selectedID = nil } }), onDismiss: {
         if let id = startID { startID = nil; gym.startWorkout(routineId: id) }

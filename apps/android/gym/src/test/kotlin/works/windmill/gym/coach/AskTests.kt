@@ -32,7 +32,7 @@ class AskTests {
         assertEquals("Coach isn’t part of this Windmill. Your log is still yours to read.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
-            (listOf(Ask.whatItIs, Ask.freeDoor, Ask.interrupted, Ask.notHere) + Ask.openers)
+            (listOf(Ask.freeDoor, Ask.interrupted, Ask.notHere, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry, Ask.draftSignIn) + Ask.openers)
                 .filter { it.contains('\'') })
     }
 
@@ -71,27 +71,52 @@ class AskTests {
 
     @Test
     fun aStepIsSaidInTheLiftersWordsAndAFailedOneSaysSo() {
-        assertEquals("read your recent workouts", AskStep("list_sessions").phrase)
-        assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase)
-        assertEquals("read your notes", AskStep("list_notes").phrase)
-        assertEquals("saved a note", AskStep("save_note").phrase)
-        assertEquals("could not confirm a note save", AskStep("save_note", failed = true).phrase)
-        assertEquals("read your bodyweight", AskStep("list_bodyweight").phrase)
+        assertEquals("read your recent workouts", AskStep("list_sessions").phrase())
+        assertEquals("read your movement history (nothing came back)", AskStep("get_stats", failed = true).phrase())
+        assertEquals("read your notes", AskStep("list_notes").phrase())
+        assertEquals("saved a note", AskStep("save_note").phrase())
+        assertEquals("could not confirm a note save", AskStep("save_note", failed = true).phrase())
+        assertEquals("read your bodyweight", AskStep("list_bodyweight").phrase())
+        assertEquals("updated a movement", AskStep("update_exercise").phrase())
+    }
+
+    @Test
+    fun onlyATurnCarryingDraftsSaysCoachDraftedARoutine() {
+        val steps = listOf(AskStep("list_exercises"), AskStep("create_routine"))
+        assertEquals(listOf("read your movement list", "drafted a routine for your review"), Ask.steps(steps, drafted = true))
+        assertEquals(listOf("read your movement list", "created a routine"), Ask.steps(steps, drafted = false))
+        assertEquals("created a routine (nothing came back)", AskStep("create_routine", failed = true).phrase(drafted = false))
+        assertEquals("read your program", AskStep("list_routines").phrase(drafted = false))
     }
 
     @Test
     fun aToolThisBuildCannotNamePrintsNothingAndTheRestStillDo() {
-        assertNull(AskStep("get_preferences").phrase)
-        assertNull(AskStep("get_preferences", failed = true).phrase)
+        assertNull(AskStep("get_preferences").phrase())
+        assertNull(AskStep("get_preferences", failed = true).phrase())
         assertEquals(
             listOf("read your program", "read your movement history"),
             Ask.steps(listOf(AskStep("list_routines"), AskStep("summon_lightning"),
-                AskStep("get_stats"), AskStep("list_routines"))),
+                AskStep("get_stats"), AskStep("list_routines")), drafted = true),
         )
         assertEquals("the same table the web draws from, plus the notes and bodyweight reads",
-            setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines",
-                "get_stats", "list_notes", "save_note", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
+            setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines", "get_stats", "list_notes",
+                "save_note", "list_bodyweight", "create_routine", "update_exercise", "propose_routine_change", "propose_routine_removal"),
             Ask.phrases.keys)
+    }
+
+    @Test
+    fun aDraftIsSavedWhenEitherTheLogOrThisPhonesConfirmationSaysSo() {
+        fun draft(id: String, state: String) = CoachRoutineDraft(id, "routine-$id", "Routine $id", 1, emptyList(), state)
+        fun created(id: String) = CoachResult("routine-created", id, "routine-$id", "Routine $id")
+        val fromLog = AskAnswer("Two plans", ReadTally(), routineDrafts = listOf(draft("a", "saved"), draft("b", "saved")),
+            results = listOf(created("a"), created("b")))
+        val olderConfirmation = AskGeneration("generation-a", "request-a", "Plans", "completed", revision = 2,
+            routineDrafts = listOf(draft("a", "saved"), draft("b", "pending")), results = listOf(created("a")))
+        assertEquals(fromLog, fromLog.confirmedBy(olderConfirmation))
+        val pending = fromLog.copy(routineDrafts = listOf(draft("a", "pending"), draft("b", "pending")), results = emptyList())
+        assertEquals(pending.copy(routineDrafts = listOf(draft("a", "saved"), draft("b", "pending")), results = listOf(created("a"))),
+            pending.confirmedBy(olderConfirmation))
+        assertEquals(pending, pending.confirmedBy(null))
     }
 
     @Test

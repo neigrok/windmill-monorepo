@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  answerTurn, askFailure, coachWorkout, generationTurns, mergeTurns, questionTooLong, readLine, stepsLine,
+  answerTurn, askFailure, coachWorkout, draftEntryLine, generationTurns, mergeTurns, questionTooLong, readLine, stepsLine,
 } from '../../../../src/products/gym/coach/coach.js';
 
 test('live mirror uses frozen targets and actual sets without comparing ambiguous or unplanned movements', () => {
@@ -49,9 +49,10 @@ test('read receipts preserve the server counts, including a real zero, and never
 });
 
 test('tool descriptions are ordered, deduplicated and bounded to known facts', () => {
-  assert.equal(stepsLine([
-    { tool: 'list_notes' }, { tool: 'list_notes' }, { tool: 'list_exercises', failed: true }, { tool: 'create_routine' },
-  ]), 'It read your notes, then read your movement list (nothing came back), then created a routine.');
+  const steps = [{ tool: 'list_notes' }, { tool: 'list_notes' }, { tool: 'list_exercises', failed: true }, { tool: 'create_routine' }];
+  assert.equal(stepsLine(steps, { drafted: true }), 'It read your notes, then read your movement list (nothing came back), then drafted a routine for your review.');
+  assert.equal(stepsLine(steps), 'It read your notes, then read your movement list (nothing came back), then created a routine.');
+  assert.equal(stepsLine([{ tool: 'update_exercise' }]), 'It updated a movement.');
   assert.equal(stepsLine([{ tool: 'save_note' }, { tool: 'save_note' }]), 'It saved a note.');
   assert.equal(stepsLine([{ tool: 'save_note', failed: true }]), 'It could not confirm a note save.');
   assert.equal(stepsLine([{ tool: 'new_tool' }]), null);
@@ -103,4 +104,27 @@ test('overlapping pages merge by server position with ordered complete messages'
   const older = turns.slice(200, 260);
   assert.deepEqual(mergeTurns(latest, older), turns.slice(200));
   assert.deepEqual(mergeTurns(mergeTurns(latest, older), turns.slice(0, 210)), turns);
+});
+
+test('stale history cannot revert a confirmed routine draft or lose its receipt', () => {
+  const draft = { operationId: 'op1', routineId: 'rt1', name: 'Push', position: 1, entries: [], state: 'saved' };
+  const saved = { from: 'ask', requestId: 'request1', routineDrafts: [draft], revision: 5,
+    results: [{ kind: 'routine-created', operationId: 'op1', routineId: 'rt1', routineName: 'Push' }] };
+  assert.deepEqual(mergeTurns([saved], [{ ...saved, revision: 4, routineDrafts: [{ ...draft, state: 'pending' }], results: [] }]), [saved]);
+  assert.deepEqual(mergeTurns([saved], [{ from: 'ask', requestId: 'request1', routineDrafts: [{ ...draft, state: 'pending' }], results: [] }]), [saved]);
+});
+
+test('a draft line names its movement as the log knows it, its load basis in the lifter’s unit, and nothing the log does not know', () => {
+  const catalog = [{ id: 'pull-up', name: 'Pull Up', equipment: 'bodyweight' }, { id: 'goblet-squat', name: 'Goblet Squat', equipment: 'dumbbell', loadCount: 1 }];
+  assert.deepEqual([
+    draftEntryLine({ exerciseId: 'pull-up', sets: [{ reps: 8, weightKg: -10 }] }, catalog),
+    draftEntryLine({ exerciseId: 'goblet-squat', sets: [{ reps: 8, weightKg: 24 }], restSeconds: 90 }, catalog),
+    draftEntryLine({ exerciseId: 'ex_new_custom', sets: [{ reps: 8, weightKg: 16 }] }, catalog),
+    draftEntryLine({ exerciseId: 'pull-up', sets: [{ reps: 8 }] }, catalog),
+  ], [
+    { name: 'Pull Up', detail: '1 × 8 · −10 kg assisted · Bodyweight' },
+    { name: 'Goblet Squat', detail: '1 × 8 · 24 kg · One dumbbell · 90s rest' },
+    { name: 'New movement', detail: '1 × 8 · 16' },
+    { name: 'Pull Up', detail: '1 × 8 · Bodyweight' },
+  ]);
 });

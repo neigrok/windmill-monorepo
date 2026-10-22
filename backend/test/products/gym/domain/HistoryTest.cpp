@@ -34,3 +34,16 @@ TEST(gym_history_share_intersection_never_widens_a_range_and_supports_empty_over
   query.exercise = "dip";
   query.validate();
 }
+
+TEST(gym_history_volume_respects_single_and_paired_dumbbells_without_changing_entered_loads) {
+  HistoryWorkout workout{"ses_history01", 1, 2, "", "", {
+    {"set_pair0001", "pair", "Pair", 1, 16, 10, {}, 1, true, Equipment::dumbbell, 2},
+    {"set_single01", "single", "Single", 1, 16, 10, {}, 1, true, Equipment::dumbbell, 1},
+    {"set_bar00001", "bar", "Bar", 1, 32, 10, {}, 1, true, Equipment::barbell, 2},
+    {"set_body0001", "body", "Body", 1, 5, 10, {}, 1, true, Equipment::bodyweight, 2},
+    {"set_assist01", "assist", "Assist", 1, -10, 10, {}, 1, true, Equipment::bodyweight},
+    {"set_warm0001", "pair", "Pair", 2, 100, 10, {}, 1, false, Equipment::dumbbell, 2}}};
+  CHECK_EQ(workout.totals().tonnageKg, 850.0);
+  CHECK_EQ(workout.totals("pair").tonnageKg, 320.0);
+  CHECK_EQ(workout.sets.front().weightKg, 16.0);
+}

@@ -83,7 +83,10 @@ public struct TrainingSet: Writable, Removable, Equatable {
     ["sessionId": sessionId.json, "exerciseId": exerciseId.json, "weightKg": .of(weightKg), "reps": JSON(reps),
      "kind": .string(kind), "rpe": .of(rpe), "note": .string(note), "completedAt": .of(completedAt)]
   }
-  public var volumeKg: Double { kind == "working" ? max(0, weightKg) * Double(reps) : 0 }
+  public func volumeKg(on exercise: Exercise?) -> Double {
+    guard kind == "working" else { return 0 }
+    return max(0, weightKg) * Double(reps) * Double(exercise?.loadCount ?? 1)
+  }
   public var e1rm: Double? { GymEstimate.value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) }
 
   public static let checks: [Check<TrainingSet>] = [
@@ -173,13 +176,15 @@ public struct TrainingLog: Sendable {
   public let sets: [TrainingSet]
   public let moment: Moment
   public let firstPullComplete: Bool
+  public let catalogue: Catalogue
 
-  public init(sessions: [Session], sets: [TrainingSet], moment: Moment, firstPullComplete: Bool = true) {
+  public init(sessions: [Session], sets: [TrainingSet], moment: Moment, firstPullComplete: Bool = true, catalogue: Catalogue) {
+    self.catalogue = catalogue
     self.sessions = sessions; self.sets = sets; self.moment = moment; self.firstPullComplete = firstPullComplete
   }
   public init(_ read: Reader) throws {
     self.init(sessions: try read.repository(Session.self).all(in: .drawn), sets: try read.repository(TrainingSet.self).all(in: .drawn),
-              moment: read.moment, firstPullComplete: try read.firstPullComplete())
+              moment: read.moment, firstPullComplete: try read.firstPullComplete(), catalogue: try Catalogue(read))
   }
   public var drawnSessions: [Session] {
     sessions.map { SessionRules.drawn($0, sets: sets, now: moment.now) }.sorted {
@@ -193,14 +198,16 @@ public struct TrainingLog: Sendable {
   // moments (a stale workout closes on the millisecond), and both moments fall in one local minute (days and ages).
   public func drawsTheSame(as other: TrainingLog) -> Bool {
     let minute = { (moment: Moment) in (moment.now.ms / 1000 + Int64(moment.zone.offsetSeconds(at: moment.now))) / 60 }
-    return sessions == other.sessions && sets == other.sets && firstPullComplete == other.firstPullComplete
+    return sessions == other.sessions && sets == other.sets && catalogue == other.catalogue && firstPullComplete == other.firstPullComplete
       && minute(moment) == minute(other.moment) && drawnSessions == other.drawnSessions
   }
   public func sets(session: ID<Session>) -> [TrainingSet] {
     guard sessions.contains(where: { $0.id == session }) else { return [] }
     return sets.filter { $0.sessionId == session }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
   }
-  public func volumeKg(session: ID<Session>) -> Double { sets(session: session).reduce(0) { $0 + $1.volumeKg } }
+  public func volumeKg(session: ID<Session>) -> Double {
+    sets(session: session).reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
+  }
   public func topE1rm(session: ID<Session>) -> Double? { sets(session: session).compactMap(\.e1rm).max() }
 }
 

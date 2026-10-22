@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { RPE_RUNGS, SET_NOTE_CAPTION } from '../../../src/products/gym/fix.js';
 import { browserWith, elementsOf, findByClass, loadScreen, renderHook, textOf } from './harness.mjs';
 
-async function sheet(t, changes = {}, refused = null) {
+async function sheet(t, changes = {}, refused = null, exercise = { id: 'overhead-press', name: 'Overhead Press', equipment: 'barbell' }) {
   browserWith();
   const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
   const saved = [];
   const view = renderHook(t, () => FixSheet({
     set: { id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4, kind: 'working', rpe: 8.5, note: 'felt heavy', ...changes },
-    movement: 'Overhead Press', session: { id: 'ses_1', plan: null },
+    movement: 'Overhead Press', exercise, session: { id: 'ses_1', plan: null },
     onSave: (fix) => { saved.push(fix); return refused; }, onDelete() {}, onClose() {},
   }));
   const noteField = () => elementsOf(view.tree).find((each) => each.type === 'textarea' && each.props?.name === 'note');
@@ -65,7 +65,7 @@ test('byte limits preserve typed notes and explain refusal without sending an in
 
 test('web corrections edit actual numbers in place and retain stored kind through a refused retry', async (t) => {
   const fix = await sheet(t, { kind: 'warmup' }, 'The log didn’t answer.');
-  assert.deepEqual(elementsOf(fix.tree()).filter((each) => each.type === 'input').map((each) => each.props['aria-label']), ['Load in kg', 'Reps']);
+  assert.deepEqual(elementsOf(fix.tree()).filter((each) => each.type === 'input').map((each) => each.props['aria-label']), ['Load in kg total', 'Reps']);
   fix.field('reps').props.onChange({ target: { value: '5' } });
   await fix.submit();
   assert.deepEqual(fix.saved, [{ reps: 5 }]);
@@ -115,4 +115,14 @@ test('focused correction disables fields and navigation while its write is pendi
   await pending;
   assert.equal(elementsOf(view.tree).find((each) => each.type === 'fieldset').props.disabled, false);
   assert.deepEqual(findByClass(view.tree, 'gym-fix-refusal').map(textOf), ['The log didn’t answer.']);
+});
+
+test('the fix sheet names what a load counts for its movement, in kilograms', async (t) => {
+  const single = await sheet(t, { exerciseId: 'dumbbell-row' }, null, { id: 'dumbbell-row', name: 'Dumbbell Row', equipment: 'dumbbell', loadCount: 1 });
+  assert.deepEqual(findByClass(single.tree(), 'gym-fix-units').map(textOf), ['kg × reps']);
+  assert.equal(single.field('weightKg').props['aria-label'], 'Load in kg');
+  const assisted = await sheet(t, { exerciseId: 'pull-up', weightKg: -10 }, null, { id: 'pull-up', name: 'Pull Up', equipment: 'bodyweight' });
+  assert.deepEqual(findByClass(assisted.tree(), 'gym-fix-units').map(textOf), ['kg added × reps']);
+  const unknown = await sheet(t, {}, null, null);
+  assert.equal(unknown.field('weightKg').props['aria-label'], 'Load in kg');
 });

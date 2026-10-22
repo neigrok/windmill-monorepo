@@ -10,7 +10,7 @@ import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fixSetHref, fromSession,
   groupByExercise, isFinished, logWhenLabel, NO_ROUTINE, planFrozenLabel, recordHref,
-  routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel,
+  loadBasisLabel, routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel,
 } from './log.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
@@ -269,12 +269,12 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   const hiddenSets = log.hidden('set');
   const logged = setsAfter(storedSets.data ?? view.data.detail.sets, moves).filter((set) => !settledSets.has(set.id));
   const sets = setsAfter(view.data.detail.sets, moves).filter((set) => !hiddenSets.has(set.id));
-  const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
+  const movements = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise]));
   const frozen = planFrozenLabel(session);
-  const totals = workoutTotals(sets);
+  const totals = workoutTotals(sets, view.data.catalog);
   if (edit && isFinished(session)) return <WorkoutEditor session={session} sets={sets} catalog={view.data.catalog} log={log} from={from} onDelete={discard} />;
   const focusedSet = fixSetId ? sets.find((set) => set.id === fixSetId) : fixing;
-  if (focusedSet) return <FixSheet key={focusedSet.id} set={focusedSet} sets={sets} movement={names.get(focusedSet.exerciseId) ?? focusedSet.exerciseId} session={session} onSave={(fix) => saveFix(focusedSet, fix)} onDelete={() => dropSet(focusedSet)} onClose={closeFix} />;
+  if (focusedSet) return <FixSheet key={focusedSet.id} set={focusedSet} sets={sets} movement={movements.get(focusedSet.exerciseId)?.name ?? focusedSet.exerciseId} exercise={movements.get(focusedSet.exerciseId) ?? null} session={session} onSave={(fix) => saveFix(focusedSet, fix)} onDelete={() => dropSet(focusedSet)} onClose={closeFix} />;
   if (fixSetId) return <><Back href={`${sessionHref(id)}?from=${encodeURIComponent(from)}`}>{routineNameOf(session) ?? NO_ROUTINE}</Back><p className="gym-quiet">That set isn’t in this workout any more.</p></>;
   return (
     <>
@@ -287,16 +287,16 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       </header>
       {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
-        const movementTotals = workoutTotals(group);
+        const movementTotals = workoutTotals(group, view.data.catalog);
         const scheme = collapsedScheme(group);
         const collapsed = scheme && !expanded.has(exerciseId);
         return (
           <section className="gym-exercise" key={exerciseId}>
             <div className="gym-exercise-head">
               <h2 className="gym-exercise-name">
-                <a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id, `${sessionHref(id)}?from=${encodeURIComponent(from)}`))}>{names.get(exerciseId) ?? exerciseId}</a>
+                <a className="gym-movement-door" href={recordHref(exerciseId, fromSession(id, `${sessionHref(id)}?from=${encodeURIComponent(from)}`))}>{movements.get(exerciseId)?.name ?? exerciseId}</a>
               </h2>
-              {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${names.get(exerciseId) ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
+              {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${movements.get(exerciseId)?.name ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
               {!scheme && <span className="gym-movement-state" aria-hidden="true"><img src={new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
               <span className="gym-movement-totals">{movementTotals.reps} reps · {group.filter((set) => set.kind === 'working').every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageLabel(movementTotals.tonnageKg) ?? '0'} ${weightUnit()}`}</span>
             </div>
@@ -314,7 +314,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
                       onClick={() => { setFixing(set); window.location.hash = fixSetHref(id, set.id, from); }}
                     >
                       <span className="gym-set-rail" aria-hidden="true"><i /></span>
-                      <span className="gym-set-load">{setLoadLabel(set)}</span>
+                      <span className="gym-set-load">{setLoadLabel(set, weightUnit(), loadBasisLabel(movements.get(exerciseId), set.weightKg))}</span>
                       {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
                       <span className="gym-set-tail">
                         <span className="gym-set-fix">Fix set</span>

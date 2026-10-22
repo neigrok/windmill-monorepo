@@ -5,6 +5,7 @@ import works.windmill.gym.coach.AskGeneration
 import works.windmill.gym.coach.AskQuestion
 import works.windmill.gym.coach.AskThread
 import works.windmill.gym.coach.CoachAttachment
+import works.windmill.gym.coach.CoachRoutineConfirmation
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.sharing.SessionShare
@@ -25,6 +26,8 @@ interface GymRest {
         ask(question).also { it.generation?.let { generation -> onSnapshot(generation) } }
 
     suspend fun stop(threadId: String, requestId: String): AskGeneration = throw UnsupportedOperationException()
+
+    suspend fun confirmRoutine(threadId: String, requestId: String, operationId: String): CoachRoutineConfirmation = throw UnsupportedOperationException()
 
     suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment = throw UnsupportedOperationException()
 

@@ -97,6 +97,7 @@ void OnboardingService::generate(AiInstallationPrincipal installation, Onboardin
   WriteObservation observation{"gym.coach.onboarding.generate", "gym", "coach", "", failures_.get()};
   WriteContext context(observation);
   try {
+    std::string completed = "completed";
     if (workers_.stopping() || clock_.nowMs() >= static_cast<std::uint64_t>(record.leaseUntilMs)) {
       record.state = "failed";
       record.errorCode = "interrupted";
@@ -105,10 +106,15 @@ void OnboardingService::generate(AiInstallationPrincipal installation, Onboardin
       const auto answer = model_->generate(installation, record.resultId, input, seeds);
       record.state = answer.refusal.empty() ? "completed" : "failed";
       record.errorCode = answer.refusal;
-      if (answer.refusal.empty()) record.payload = onboardingRoutines(answer.routines);
+      if (answer.refusal.empty()) {
+        const auto message = onboardingMessage(answer.message);
+        record.payload = onboardingRoutines(answer.routines);
+        record.payload["message"] = message.text;
+        if (message.clipped) completed = "message_clipped";
+      }
     }
     const bool saved = repository_->finish(record, clock_.nowMs());
-    observation.finish(saved ? (record.errorCode.empty() ? "completed" : record.errorCode) : "interrupted");
+    observation.finish(!saved ? "interrupted" : record.errorCode.empty() ? completed : record.errorCode);
   } catch (const std::exception& error) {
     observation.fail(error);
     try {

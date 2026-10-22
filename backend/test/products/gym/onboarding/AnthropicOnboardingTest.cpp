@@ -133,3 +133,25 @@ TEST(gym_anonymous_transport_unknown_holds_reservation_and_budget_refusal_makes_
   CHECK_EQ(denied.refusal,"subject_exhausted");
   CHECK_EQ(messages->requests.size(),1U);
 }
+
+TEST(gym_anonymous_dialogue_preserves_prior_context_without_tools_and_retains_answer) {
+  Harness h;
+  fake::FakeAuthRepository accounts;
+  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions,usage,{},{},h.budgets};
+  auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
+  auto messages=std::make_shared<Messages>();
+  messages->reply=readMessagesReply(200,R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"{\"message\":\"Hi. What would you like to work on?\",\"routines\":[]}"}]})");
+  const auto input=*readOnboardingIn(parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"Hello","context":[{"role":"user","text":"I am new"}]})"));
+  AnthropicOnboarding model{messages,budget,nullptr,h.failures};
+  const auto answer=model.generate(*h.issue.principal,"onb_dialogue",input,h.catalog->seeds);
+  CHECK(answer.refusal.empty());
+  CHECK_EQ(answer.message,"Hi. What would you like to work on?");
+  CHECK(answer.routines.empty());
+  REQUIRE_EQ(messages->requests.size(),1U);
+  CHECK_EQ(parse(messages->requests[0].user)["context"],input.context);
+  CHECK_FALSE(messagesBody(messages->requests[0]).isMember("tools"));
+  CHECK_EQ(messages->requests[0].schema["properties"]["message"]["type"],"string");
+  CHECK(h.failures->reports.empty());
+}

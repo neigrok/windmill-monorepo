@@ -186,6 +186,22 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
   CHECK_EQ(writeHttpOutcome(error(drogon::k502BadGateway, "private"), "gym.write"), std::string("failed"));
 }
 
+TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {
+  const std::string confirm = "gym.coach.routine.confirm";
+  CHECK_EQ(writeHttpOutcome(error(drogon::k404NotFound, "private", "coach-draft-not-found"), confirm),
+           std::string("coach-draft-not-found"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "ask-generation-active"), confirm),
+           std::string("ask-generation-active"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "routine-save-in-progress"), confirm),
+           std::string("routine-save-in-progress"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k422UnprocessableEntity, "private", "coach-draft-invalid"), confirm),
+           std::string("coach-draft-invalid"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "gym-engine-unavailable"), confirm),
+           std::string("gym-engine-unavailable"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "routine could not be saved; try again shortly"), confirm),
+           std::string("failed"));
+}
+
 TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issues) {
   HttpWriteCapture capture;
   installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));

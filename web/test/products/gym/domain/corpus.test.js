@@ -9,7 +9,7 @@ import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
-import { Catalogue, CreateExercise, Exercise, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
@@ -243,9 +243,9 @@ const handlers = {
   'gym/domain/catalogue-actions.json': (vector) => {
     const input = vector.input.input;
     if (vector.input.action === 'CreateExercise') {
-      const value = input.exercise;
-      return corpus.decision(new CreateExercise(Exercise.decode(Fields.values('exercise', value.id, value.fields))), vector,
-        (id) => id.json, refusalForm);
+      const value = Exercise.decode(Fields.values('exercise', input.exercise.id, input.exercise.fields));
+      return corpus.decision(new CreateExercise(new ExerciseValue(value.id, value.name, value.pattern, value.equipment, value.stepKg,
+        value.aliases, input.loadCount)), vector, (id) => id.json, refusalForm);
     }
     if (vector.input.action === 'RenameExercise') {
       return corpus.decision(new RenameExercise(new Id(input.id, Exercise), input.name), vector, () => null, refusalForm);
@@ -399,8 +399,9 @@ test('every book entity agrees with the registry and every writable sample round
   const values = Contract.vectors(valuesFile);
   for (const type of book.entities) {
     if (!type.isWritable) { RegistryCheck.entity(type, null, book); continue; }
-    const sample = values.find((vector) => vector.input.entity === type.type);
-    assert.ok(sample, `${type.type} has no entity sample`);
+    const sample = values.find((vector) => vector.input.entity === type.type
+      && (type.checks ?? []).every((check) => check.field === null || (vector.input.fields[check.field] ?? null) !== null));
+    assert.ok(sample, `${type.type} has no entity sample setting every checked field`);
     RegistryCheck.entity(type, type.decode(Fields.values(type.type, sample.input.id, sample.input.fields)), book);
   }
 });

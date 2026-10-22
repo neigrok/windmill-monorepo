@@ -15,7 +15,7 @@ import {
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
-  sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
+  loadBasisLabel, sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
   setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel,
   threadHref, threadIdOf, THREADS_HREF,
   topSetLabel, topSetOf, weekdayName, whenLabel, workingSetsOf,
@@ -752,6 +752,18 @@ test('setLoadLabel — what a set was, in the one spelling a weight has here', (
   assert.equal(setLoadLabel({ weightKg: 0, reps: 9 }), 'bodyweight × 9');
   assert.equal(setLoadLabel({ weightKg: -20, reps: 9 }), '−20 × 9');
   assert.equal(setLoadLabel({ weightKg: 100, reps: 1 }), '100 × 1');
+});
+
+test('loadBasisLabel — a load says whether it is each of a pair of dumbbells, one dumbbell, added to the body, assisting it or the whole bar', () => {
+  assert.deepEqual([
+    loadBasisLabel({ equipment: 'dumbbell', loadCount: 1 }, 16, 'kg'), loadBasisLabel({ equipment: 'dumbbell', loadCount: 2 }, 16, 'lb'),
+    loadBasisLabel({ equipment: 'bodyweight' }, 10, 'kg'), loadBasisLabel({ equipment: 'bodyweight' }, -10, 'kg'),
+    loadBasisLabel({ equipment: 'bodyweight' }, 0, 'kg'), loadBasisLabel({ equipment: 'barbell' }, 60, 'kg'),
+    loadBasisLabel({ equipment: 'machine' }, 40, 'lb'), loadBasisLabel(null, 40, 'kg'),
+  ], ['kg', 'lb each', 'kg added', 'kg assisted', 'kg added', 'kg total', 'lb', 'kg']);
+  assert.equal(setLoadLabel({ weightKg: 16, reps: 8 }, 'lb', loadBasisLabel({ equipment: 'dumbbell' }, 16, 'lb')), '35.3 lb each × 8');
+  assert.equal(setLoadLabel({ weightKg: -10, reps: 6 }, 'kg', loadBasisLabel({ equipment: 'bodyweight' }, -10, 'kg')), '−10 kg assisted × 6');
+  assert.equal(setLoadLabel({ weightKg: 0, reps: 9 }, 'kg', loadBasisLabel({ equipment: 'bodyweight' }, 0, 'kg')), 'bodyweight × 9');
 });
 
 test('focused set correction preserves the filtered history origin in its dedicated route', () => {

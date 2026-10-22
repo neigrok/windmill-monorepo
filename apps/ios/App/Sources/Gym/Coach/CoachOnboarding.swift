@@ -14,7 +14,10 @@ nonisolated struct CoachOnboardingIn: Codable, Equatable, Sendable {
   var program: String?
   var image: Image?
   var note: String?
-  var question: String { goal ?? program ?? note ?? "Turn this program into routines." }
+  struct Context: Codable, Equatable, Sendable { let role: String; let text: String }
+  var text: String?
+  var context: [Context]?
+  var question: String { text ?? goal ?? program ?? note ?? "Turn this program into routines." }
 }
 
 nonisolated struct CoachOnboardingOut: Codable, Equatable, Sendable {
@@ -40,6 +43,7 @@ nonisolated struct CoachOnboardingOut: Codable, Equatable, Sendable {
   let routines: [Routine]
   let errorCode: String?
   let allowance: AiAllowance
+  var message: String?
 }
 
 nonisolated struct CoachOnboardingRecord: Codable, Equatable, Identifiable {
@@ -50,7 +54,7 @@ nonisolated struct CoachOnboardingRecord: Codable, Equatable, Identifiable {
   var stopped = false
   var refusalCode: String?
   var id: String { request.requestId }
-  var finished: Bool { refusalCode != nil || !results.isEmpty || response?.status == "failed" || response?.status == "expired" }
+  var finished: Bool { refusalCode != nil || !results.isEmpty || response?.status == "completed" || response?.status == "failed" || response?.status == "expired" }
 }
 
 extension CoachConversation {
@@ -62,33 +66,8 @@ extension CoachConversation {
   }
   var anonymousRequest: CoachOnboardingRecord? { saved.onboarding?.last }
   var anonymousRetryable: Bool { anonymousRequest.map { !$0.finished && !asking } ?? false }
-  var textLimit: Int { anonymous ? (saved.photo != nil || saved.setupChoice == .goal ? 1000 : 4000) : 8000 }
-  var anonymousGoalChoices: CoachClarification? {
-    guard anonymous, saved.setupChoice == .goal, saved.photo == nil, !asking else { return nil }
-    return CoachClarification(id: "onboarding-goal", question: "What can you fit into your week?", groups: [
-      .init(id: "days", label: "Days per week", multiple: false, options: (1...6).map { .init(id: String($0), label: String($0)) }),
-      .init(id: "equipment", label: "Equipment", multiple: false, options: [
-        .init(id: "gym", label: "Full gym"), .init(id: "dumbbells", label: "Dumbbells"),
-        .init(id: "barbell", label: "Barbell"), .init(id: "bodyweight", label: "Bodyweight")])])
-  }
+  var textLimit: Int { anonymous ? 4000 : 8000 }
 
-  func loadInstallationAllowance() async {
-    guard anonymous, let owner, let installation = gym.runtime?.installation, !offline else { return }
-    do {
-      let credential = try await installation.credential()
-      let data = try await installation.request("/v1/ai/installations/current", credential: credential)
-      let state = try installation.decodeState(data)
-      guard self.owner == owner, allowed else { return }
-      installationAllowance = state.allowance
-      if state.bound { showOnboardingRefusal("installation_bound", allowance: nil) }
-    } catch {
-      guard self.owner == owner, allowed, !(error is CancellationError) else { return }
-      if let failure = error as? AiRequestFailure, let body = try? JSONDecoder().decode(InstallationFailure.self, from: failure.body) {
-        showOnboardingRefusal(body.code ?? "unavailable", allowance: body.allowance)
-      } else if GymRESTClient.needsConnection(error) { self.error = CoachCopy.offline }
-      else { self.error = "Coach couldn’t check this phone’s AI access. Try again."; gym.report("gym_rest", error) }
-    }
-  }
 
   func sendOnboarding() {
     guard allowed, !asking, draftReadable, let owner else { return }
@@ -96,20 +75,15 @@ extension CoachConversation {
     if anonymousRetryable { resumeOnboarding(); return }
     let text = saved.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard text.utf8.count <= textLimit else { error = "Keep your message within \(textLimit) bytes."; return }
-    let request: CoachOnboardingIn
-    if let photo = saved.photo, let bytes = saved.photoData {
-      request = CoachOnboardingIn(requestId: UUID().uuidString.lowercased(), mode: "photo", image: .init(mimeType: photo.mediaType, data: bytes.base64EncodedString()), note: text)
-    } else if saved.setupChoice == .goal {
-      guard !text.isEmpty, text != CoachSetupChoice.goal.draft.trimmingCharacters(in: .whitespaces),
-            let day = saved.choices?.groups["days"]?.first.flatMap(Int.init),
-            let equipment = saved.choices?.groups["equipment"]?.first else {
-        error = "Add your goal, then choose days and equipment."; return
-      }
-      request = CoachOnboardingIn(requestId: UUID().uuidString.lowercased(), mode: "goal", goal: text, daysPerWeek: day, equipment: equipment)
-    } else {
-      guard !text.isEmpty, text != CoachSetupChoice.describe.draft.trimmingCharacters(in: .whitespaces) else { error = "Describe your program or add its photo."; return }
-      request = CoachOnboardingIn(requestId: UUID().uuidString.lowercased(), mode: "program", program: text)
+    guard !text.isEmpty || saved.photo != nil else { return }
+    var context: [CoachOnboardingIn.Context] = []
+    for record in saved.onboarding ?? [] where record.response?.status == "completed" {
+      if !record.request.question.isEmpty { context.append(.init(role: "user", text: record.request.question)) }
+      if let message = record.response?.message, !message.isEmpty { context.append(.init(role: "assistant", text: message)) }
     }
+    while context.count > 12 || context.reduce(0, { $0 + $1.text.utf8.count }) > 16000 { context.removeFirst() }
+    let image = saved.photo.flatMap { photo in saved.photoData.map { CoachOnboardingIn.Image(mimeType: photo.mediaType, data: $0.base64EncodedString()) } }
+    let request = CoachOnboardingIn(requestId: UUID().uuidString.lowercased(), mode: "conversation", image: image, text: text, context: context)
     var next = saved
     next.onboarding = (next.onboarding ?? []) + [CoachOnboardingRecord(request: request, photo: saved.photo)]
     next.allowance = nil
@@ -118,7 +92,7 @@ extension CoachConversation {
   }
 
   func resumeOnboarding() {
-    guard anonymous, allowed, !asking, let owner, var record = anonymousRequest, !record.finished else { return }
+    guard allowed, !asking, let owner, var record = anonymousRequest, !record.finished else { return }
     record.stopped = false
     var next = saved; if let index = next.onboarding?.indices.last { next.onboarding?[index] = record }
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
@@ -128,31 +102,36 @@ extension CoachConversation {
   func launchOnboarding(owner: String) {
     guard let record = anonymousRequest, !record.finished, let installation = gym.runtime?.installation else { return }
     workGeneration += 1; let generation = workGeneration
-    asking = true; savingOnboarding = false; refusal = nil; error = nil
+    asking = true; refusal = nil; error = nil
     let started = ProcessInfo.processInfo.systemUptime
     gym.telemetry.event("gym_ask_started", properties: ["screen": "coach"])
     work = Task { [weak self] in
       guard let self else { return }
-      defer { if self.owner == owner, self.workGeneration == generation { self.asking = false; self.savingOnboarding = false; self.work = nil } }
+      defer { if self.owner == owner, self.workGeneration == generation { self.asking = false; self.work = nil } }
       do {
-        if record.response?.status == "completed" {
-          try importOnboarding(record, owner: owner, generation: generation)
-          return
-        }
         let credential = try await installation.credential()
         guard self.owner == owner, self.allowed, self.workGeneration == generation else { throw CancellationError() }
-        let data = try await installation.request("/v1/gym/coach/onboarding", method: "POST", body: try JSONEncoder().encode(record.request), credential: credential)
+        let data: Data
+        if anonymous {
+          data = try await installation.request("/v1/gym/coach/onboarding", method: "POST", body: try JSONEncoder().encode(record.request), credential: credential)
+        } else {
+          data = try await installation.request("/v1/gym/coach/onboarding/" + record.id, credential: credential)
+        }
         var response = try JSONDecoder().decode(CoachOnboardingOut.self, from: data)
         while true {
           try Task.checkCancellation()
           guard self.owner == owner, self.allowed, self.workGeneration == generation,
                 self.anonymousRequest?.id == record.id else { throw CancellationError() }
           guard response.requestId == record.id, ["pending", "completed", "failed", "expired"].contains(response.status) else { throw URLError(.badServerResponse) }
-          installationAllowance = response.allowance
           var updated = record; updated.response = response
           var next = saved; if let index = next.onboarding?.indices.last { next.onboarding?[index] = updated }
+          if response.status == "completed" { next.acceptedFirstMessage = true }
+          if response.status == "completed", next.text.trimmingCharacters(in: .whitespacesAndNewlines) == record.request.question,
+             next.photo == record.photo {
+            next.text = ""; next.photo = nil; next.photoData = nil; next.choices = nil; next.setupChoice = nil
+          }
           guard keep(next, failure: "Coach’s response couldn’t be saved. Check it again.") else { throw AppFailure(message: "Coach’s response couldn’t be saved. Check it again.") }
-          if response.status == "completed" { try importOnboarding(updated, owner: owner, generation: generation); break }
+          if response.status == "completed" { break }
           if response.status != "pending" { showOnboardingRefusal(response.errorCode ?? "expired", allowance: response.allowance); break }
           try await Task.sleep(for: .seconds(1))
           let data = try await installation.request("/v1/gym/coach/onboarding/" + record.id, credential: credential)
@@ -182,11 +161,11 @@ extension CoachConversation {
 
   func importOnboarding(_ record: CoachOnboardingRecord, owner: String, generation: Int) throws {
     guard self.owner == owner, allowed, workGeneration == generation, let response = record.response,
-          response.status == "completed", owner.hasPrefix("anonymous:") else { throw CancellationError() }
-    savingOnboarding = true
+          response.status == "completed" else { throw CancellationError() }
     let result: Outcome<[ID<Routine>], GymRefusal>
     do {
-      result = try gym.runner.run(ImportCoachRoutines(replica: String(owner.dropFirst("anonymous:".count)), requestId: record.id,
+      let replica = try gym.runner.read(Gym.scope) { $0.replica }
+      result = try gym.runner.run(ImportCoachRoutines(replica: replica, requestId: record.id,
         resultId: response.resultId, routines: response.routines.map(\.domain)))
     } catch {
       gym.report("gym_action", error)
@@ -204,20 +183,14 @@ extension CoachConversation {
       CoachResult(kind: "routine-created", operationId: response.resultId + "-" + String(index), routineId: item.0.description,
         routineName: item.1.name, movementCount: item.1.entries.count)
     }
-    var next = saved; if let index = next.onboarding?.indices.last { next.onboarding?[index] = completed }
-    let samePhoto = record.request.image == nil ? next.photo == nil : next.photo?.mediaType == record.request.image?.mimeType && next.photoData?.base64EncodedString() == record.request.image?.data
-    let sameChoices = record.request.mode != "goal" ||
-      (next.choices?.groups["days"] == record.request.daysPerWeek.map { [String($0)] } && next.choices?.groups["equipment"] == record.request.equipment.map { [$0] })
-    if samePhoto, sameChoices, next.text.trimmingCharacters(in: .whitespacesAndNewlines) == record.request.question {
-      next.text = ""; next.photo = nil; next.photoData = nil; next.choices = nil; next.setupChoice = nil
-    }
+    var next = saved; if let index = next.onboarding?.firstIndex(where: { $0.id == record.id }) { next.onboarding?[index] = completed }
     guard keep(next, failure: "Your routines are saved. Check the response to restore their links.") else { throw AppFailure(message: "Your routines are saved. Check the response to restore their links.") }
     gym.refresh()
     gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "routines_saved"])
   }
 
   func stopOnboarding() {
-    workGeneration += 1; work?.cancel(); work = nil; asking = false; savingOnboarding = false
+    workGeneration += 1; work?.cancel(); work = nil; asking = false
     var next = saved
     if let index = next.onboarding?.indices.last { next.onboarding?[index].stopped = true }
     _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
@@ -231,22 +204,22 @@ extension CoachConversation {
       return
     }
     error = Self.onboardingRefusalMessage(code)
-    refusal = .said(error!)
+    refusal = ["invalid_installation", "installation_bound", "device_bound"].contains(code) ? .installation(error!) : .said(error!)
   }
 
   static func onboardingRefusalMessage(_ code: String) -> String {
     switch code {
-    case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept. Sign in to continue."
-    case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account. Sign in to use Coach."
+    case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept."
+    case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account."
     case "installation_rate_limited", "onboarding_rate_limited", "request_limit": return "Too many requests from this connection. Your draft is kept; try again later."
     case "insufficient_details": return "Coach needs a clearer program. Add the movements and sets, or a clearer photo."
     case "expired", "result_expired": return "This response has expired. Your draft is still on this phone."
     case "anonymous_ai_unavailable", "unconfigured": return "Coach setup is unavailable right now. Your draft is kept."
-    case "unsupported_equipment": return "Choose Full gym, Dumbbells, Barbell or Bodyweight."
-    case "invalid_input", "invalid_image": return "Check your program details or choose a different photo, then send again."
-    case "model_refused": return "Coach couldn’t help with that request. Edit your program details and try again."
+    case "unsupported_equipment": return "Coach can’t plan with that equipment yet. Your draft is kept."
+    case "invalid_input", "invalid_image": return "Check your message or choose a different photo, then send again."
+    case "model_refused": return "Coach couldn’t help with that request. Edit your message and try again."
     case "output_truncated", "invalid_result": return "Coach couldn’t make complete routines. Your draft is kept."
-    default: return "Coach couldn’t finish these routines. Your draft is kept."
+    default: return "Coach couldn’t answer that. Your draft is kept."
     }
   }
 }

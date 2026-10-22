@@ -141,6 +141,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Motion settings | technical failure `onboarding_motion_settings` | static operation; motion falls back to reduced |
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
+| Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
@@ -231,3 +232,5 @@ server-refused saves through the gym engine.
 
 Native crash delivery and vendor receipt require a separate installed-app check. Local collectors
 and a successful build do not establish either.
+
+Coach routine confirmation runs in the training store's scope, so leaving Coach mid-save still records `saved`, `refused` or `failed`. It uses the static HTTP operation `gym_coach_routine_confirm`; 5xx statuses, timeouts, interrupted connections and malformed replies report within that transport boundary, while offline and expected 4xx statuses are metrics only. Response validation failures, and a saved routine this phone fails to keep, report `gym.coachRoutineConfirm`; a routine the server saved still counts as saved. A 404 or 422 takes Save away; other refusals and failures leave the same operation available to retry. Account changes prevent late replies from appearing in another account.

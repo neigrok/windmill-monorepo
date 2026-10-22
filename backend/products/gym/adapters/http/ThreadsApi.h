@@ -38,6 +38,8 @@ public:
 
   void putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id);
   void getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id);
+  void confirmRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread,
+                      const std::string& requestId, const std::string& operationId);
   void stopGeneration(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& requestId);
 
 private:

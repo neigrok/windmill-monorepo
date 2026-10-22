@@ -29,8 +29,8 @@ std::uint64_t instantFrom(const Field& field) {
 // id at $1. Aliases cross as a JSON array, since a display name may hold any character a text column
 // can.
 constexpr std::string_view kExerciseColumns =
-    "e.id, coalesce(n.name, e.name) AS name, e.pattern, e.equipment, "
-    "e.step_kg::float8 AS step_kg, e.created_by, al.aliases";
+    "e.id, coalesce(n.name, e.name) AS name, e.pattern, coalesce(n.equipment,e.equipment) AS equipment, "
+    "e.step_kg::float8 AS step_kg, e.created_by, al.aliases, coalesce(n.load_count,e.load_count,0) AS load_count";
 
 constexpr std::string_view kExerciseFrom =
     "gym_exercises e LEFT JOIN gym_exercise_names n "
@@ -57,7 +57,7 @@ Exercise exerciseFrom(const Row& row) {
                   equipmentFromStored(row["equipment"].template as<std::string>()),
                   row["step_kg"].template as<double>(),
                   !row["created_by"].is_null(),
-                  std::move(aliases)};
+                  std::move(aliases), row["load_count"].template as<int>()};
 }
 
 }

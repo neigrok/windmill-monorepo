@@ -56,11 +56,11 @@ export const gymApi = {
     return json(await call(`/shared-logs/${encodeURIComponent(token)}?${query}`, { credentials: 'omit' }));
   },
 
-  // One question into one thread, its answer streamed as snapshots.
+  // One question into one thread, its answer streamed as snapshots. This client reviews Coach's new routines before saving them.
   async askStream(thread, question, requestId, { attachmentIds, signal, onSnapshot } = {}) {
     const response = await call('/ask', {
       method: 'POST', signal,
-      body: JSON.stringify({ thread, question, requestId, stream: true, ...(attachmentIds?.length ? { attachmentIds } : {}) }),
+      body: JSON.stringify({ thread, question, requestId, stream: true, routineReview: true, ...(attachmentIds?.length ? { attachmentIds } : {}) }),
     });
     if (!response.ok) return json(response);
     if (!response.headers.get('content-type')?.includes('text/event-stream')) {
@@ -75,6 +75,12 @@ export const gymApi = {
 
   async stopCoach(thread, requestId) {
     return json(await call(`/threads/${encodeURIComponent(thread)}/generations/${encodeURIComponent(requestId)}/stop`, { method: 'POST' }));
+  },
+
+  async confirmCoachRoutine(thread, requestId, operationId) {
+    return json(await call(`/threads/${encodeURIComponent(thread)}/generations/${encodeURIComponent(requestId)}/routines/${encodeURIComponent(operationId)}/confirm`, {
+      method: 'POST', body: '{}',
+    }));
   },
 
   async uploadCoachPhoto(thread, id, blob, { signal, onProgress } = {}) {

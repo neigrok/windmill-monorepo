@@ -17,6 +17,7 @@ on:
       - '.github/workflows/deploy.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
+  # The restore proof drives the web sync engine, so a pull request that changes it runs here too.
   pull_request:
     paths:
       - 'backend/**'
@@ -25,6 +26,8 @@ on:
       - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
       - 'packages/api-contract/sync/reference/core/**'
+      - 'packages/api-contract/sync/reference/client/**'
+      - 'web/src/platform/sync/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
       - '!backend/**/*.md'

@@ -11,7 +11,7 @@ export const SeedExercises = Object.freeze({
     if (seeds === null) seeds = Object.freeze([
       new ExerciseValue(new Id('back-squat', Exercise), 'Back Squat', 'squat', 'barbell', 2.5),
       new ExerciseValue(new Id('front-squat', Exercise), 'Front Squat', 'squat', 'barbell', 2.5),
-      new ExerciseValue(new Id('goblet-squat', Exercise), 'Goblet Squat', 'squat', 'dumbbell', 2.0),
+      new ExerciseValue(new Id('goblet-squat', Exercise), 'Goblet Squat', 'squat', 'dumbbell', 2.0, [], 1),
       new ExerciseValue(new Id('bulgarian-split-squat', Exercise), 'Bulgarian Split Squat', 'squat', 'dumbbell', 2.0),
       new ExerciseValue(new Id('walking-lunge', Exercise), 'Walking Lunge', 'squat', 'dumbbell', 2.0),
       new ExerciseValue(new Id('step-up', Exercise), 'Step Up', 'squat', 'dumbbell', 2.0),
@@ -42,14 +42,14 @@ export const SeedExercises = Object.freeze({
       new ExerciseValue(new Id('muscle-up', Exercise), 'Muscle Up', 'pull', 'bodyweight', 2.5),
       new ExerciseValue(new Id('lat-pulldown', Exercise), 'Lat Pulldown', 'pull', 'cable', 2.5),
       new ExerciseValue(new Id('barbell-row', Exercise), 'Barbell Row', 'pull', 'barbell', 2.5),
-      new ExerciseValue(new Id('dumbbell-row', Exercise), 'Dumbbell Row', 'pull', 'dumbbell', 2.0),
+      new ExerciseValue(new Id('dumbbell-row', Exercise), 'Dumbbell Row', 'pull', 'dumbbell', 2.0, [], 1),
       new ExerciseValue(new Id('chest-supported-row', Exercise), 'Chest Supported Row', 'pull', 'machine', 5.0),
       new ExerciseValue(new Id('seated-cable-row', Exercise), 'Seated Cable Row', 'pull', 'cable', 2.5),
       new ExerciseValue(new Id('face-pull', Exercise), 'Face Pull', 'pull', 'cable', 2.5),
       new ExerciseValue(new Id('barbell-shrug', Exercise), 'Barbell Shrug', 'pull', 'barbell', 2.5),
       new ExerciseValue(new Id('inverted-row', Exercise), 'Inverted Row', 'pull', 'bodyweight', 2.5),
       new ExerciseValue(new Id('farmers-carry', Exercise), 'Farmers Carry', 'carry', 'dumbbell', 2.0),
-      new ExerciseValue(new Id('suitcase-carry', Exercise), 'Suitcase Carry', 'carry', 'dumbbell', 2.0),
+      new ExerciseValue(new Id('suitcase-carry', Exercise), 'Suitcase Carry', 'carry', 'dumbbell', 2.0, [], 1),
       new ExerciseValue(new Id('overhead-carry', Exercise), 'Overhead Carry', 'carry', 'dumbbell', 2.0),
       new ExerciseValue(new Id('plank', Exercise), 'Plank', 'core', 'bodyweight', 2.5),
       new ExerciseValue(new Id('hanging-leg-raise', Exercise), 'Hanging Leg Raise', 'core', 'bodyweight', 2.5),
@@ -62,7 +62,7 @@ export const SeedExercises = Object.freeze({
       new ExerciseValue(new Id('hammer-curl', Exercise), 'Hammer Curl', 'isolation', 'dumbbell', 2.0),
       new ExerciseValue(new Id('triceps-pushdown', Exercise), 'Triceps Pushdown', 'isolation', 'cable', 2.5),
       new ExerciseValue(new Id('skull-crusher', Exercise), 'Skull Crusher', 'isolation', 'barbell', 2.5),
-      new ExerciseValue(new Id('overhead-triceps-extension', Exercise), 'Overhead Triceps Extension', 'isolation', 'dumbbell', 2.0),
+      new ExerciseValue(new Id('overhead-triceps-extension', Exercise), 'Overhead Triceps Extension', 'isolation', 'dumbbell', 2.0, [], 1),
       new ExerciseValue(new Id('lateral-raise', Exercise), 'Lateral Raise', 'isolation', 'dumbbell', 2.0),
       new ExerciseValue(new Id('rear-delt-fly', Exercise), 'Rear Delt Fly', 'isolation', 'dumbbell', 2.0),
       new ExerciseValue(new Id('dumbbell-fly', Exercise), 'Dumbbell Fly', 'isolation', 'dumbbell', 2.0),
@@ -76,4 +76,6 @@ export const SeedExercises = Object.freeze({
     ]);
     return seeds;
   },
+  /** @param {Id<ExerciseValue>} id */
+  has(id) { return SeedExercises.all.some((seed) => seed.id.equals(id)); },
 });

@@ -217,8 +217,9 @@ TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
 
 // The room is Coach, and the prompt draws the one trust boundary the notes create: the notes
 // document is followed; set notes, movement names and routine names stay data.
-TEST(the_prompt_preserves_the_owner_text_and_draws_the_notes_trust_boundary) {
+TEST(the_prompt_allows_natural_dialogue_and_preserves_the_notes_trust_boundary) {
   FakeToolHost host;
+  host.catalog.push_back(declared("create_routine", "Prepare a routine draft", Access::write));
   FakeModel model;
   model.replies.push_back(textReply("end_turn", "fine"));
 
@@ -227,32 +228,9 @@ TEST(the_prompt_preserves_the_owner_text_and_draws_the_notes_trust_boundary) {
 
   REQUIRE_EQ(model.requests.size(), 1u);
   const std::string prompt = model.requests[0]["system"][0]["text"].asString();
-  const std::string owner = R"coach(# main
-
-You're a strength and conditioniig coach inside the "Windmill" Gym app
-Your role is to analyze training data, spot trends and help human to maintain progress
-Human is aware he talks to AI, be helpful rather than protective or defensive
-
-# style
-
-Use short paragraphs. Use bullet points for lists of changes
-Reference actual numbers from the user's data
-Be direct and specific. Lead with the insight
-Use standard S&C terminology (volume, intensity, RPE, deload, progressive overload) but keep it accessible
-Be fiendly and infromal.
-Paragraphs should open with the thesis
-Every claim shoul carry a reason
-
-# workflow
-
-fetch user data before making any decision
-if you have question - ask, never assume
-leave a note if you find user has provided useful insight
-
-# boundaries
-
-avoid asking question outside wellbeing and general health, strictly follow this boundary)coach";
-  CHECK_EQ(prompt.substr(0, owner.size()), owner);
+  CHECK(prompt.find("do not force every exchange into training analysis or refuse harmless conversation outside fitness") != std::string::npos);
+  CHECK(prompt.find("ordinary dialogue rather than a questionnaire") != std::string::npos);
+  CHECK(prompt.find("tap Save routine") != std::string::npos);
   CHECK(prompt.find("not there to encourage") == std::string::npos);
   CHECK(prompt.find("no bullet lists") == std::string::npos);
   CHECK(prompt.find("outside what a training log can answer and stop") == std::string::npos);
@@ -276,6 +254,38 @@ avoid asking question outside wellbeing and general health, strictly follow this
   driveAsk(question("anything else"), asked(), host, again.asCall(), rec.report());
   REQUIRE_EQ(again.requests.size(), 1u);
   CHECK_EQ(again.requests[0]["system"], model.requests[0]["system"]);
+}
+
+// The routine line follows the catalog: with create_routine offered the prompt describes the draft and its
+// Save routine control, and without it the prompt says new routines are not saved from this app version.
+TEST(the_prompt_describes_routine_drafts_only_when_the_catalog_offers_them) {
+  FakeToolHost reviewing;
+  reviewing.catalog.push_back(declared("create_routine", "Prepare a routine draft", Access::write));
+  FakeToolHost installed;
+  Recorder rec;
+  FakeModel drafts;
+  drafts.replies.push_back(textReply("end_turn", "fine"));
+  driveAsk(question("make me a routine"), asked(), reviewing, drafts.asCall(), rec.report());
+  FakeModel noDrafts;
+  noDrafts.replies.push_back(textReply("end_turn", "fine"));
+  driveAsk(question("make me a routine"), asked(), installed, noDrafts.asCall(), rec.report());
+
+  REQUIRE_EQ(drafts.requests.size(), 1u);
+  REQUIRE_EQ(noDrafts.requests.size(), 1u);
+  const std::string withDrafts = drafts.requests[0]["system"][0]["text"].asString();
+  const std::string withoutDrafts = noDrafts.requests[0]["system"][0]["text"].asString();
+  CHECK(withDrafts.find("- create_routine prepares a new routine draft for review.") != std::string::npos);
+  CHECK(withDrafts.find("tap Save routine") != std::string::npos);
+  CHECK(withoutDrafts.find("create_routine") == std::string::npos);
+  CHECK(withoutDrafts.find("Save routine") == std::string::npos);
+  CHECK(withoutDrafts.find("- New routines cannot be saved from this version of the app. When the lifter wants a new "
+                           "routine, describe the plan in your answer and tell them they can update the app or build "
+                           "it themselves in Routines. Never claim that a routine was created or saved.\n- save_note") != std::string::npos);
+  const std::size_t drafted = withDrafts.find("- create_routine");
+  const std::size_t notDrafted = withoutDrafts.find("- New routines");
+  CHECK_EQ(withDrafts.substr(0, drafted), withoutDrafts.substr(0, notDrafted));
+  CHECK_EQ(withDrafts.substr(withDrafts.find("- save_note")), withoutDrafts.substr(withoutDrafts.find("- save_note")));
+  CHECK(rec.failures.empty());
 }
 
 // An empty notes list still welds a document and still lands the step, so "read your notes" is

@@ -1,5 +1,6 @@
 #include "products/gym/application/AskService.h"
 #include "platform/application/WriteObservation.h"
+#include "platform/domain/sync/Digest.h"
 
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/json/GymJson.h"
@@ -64,6 +65,9 @@ const char* askOutcome(AskRefusal refusal) {
   return "refused";
 }
 
+// How long a confirmation waits for another confirmation of the same conversation to finish.
+constexpr std::chrono::milliseconds kConfirmLeaseWait{3000};
+
 // After this long idle any bucket is full whatever it held, so it can be forgotten.
 constexpr double kQuestionsPerSecond = kAskPerDay / 86400.0;
 constexpr double kRefilledSeconds = kAskBackToBack / kQuestionsPerSecond;
@@ -112,11 +116,37 @@ void AskTools::observe(const ToolResult& result, const std::string& name, const 
     const auto id = result.payload["proposal"]["id"].asString();
     if (std::find(proposals_.begin(), proposals_.end(), id) == proposals_.end()) proposals_.push_back(id);
   }
-  if (name == "create_routine" && generation_ &&
-      std::none_of(generation_->results.begin(), generation_->results.end(), [&](const auto& held) { return held.operationId == operationId; })) {
-    generation_->results.push_back({operationId, result.payload["id"].asString(), result.payload["name"].asString()});
-    if (result.payload["entries"].isArray()) generation_->results.back().movementCount = result.payload["entries"].size();
+  if (name != "create_routine" || !generation_) return;
+  if (result.payload["confirmationRequired"].asBool()) {
+    auto& drafts = generation_->routineDrafts;
+    if (std::any_of(drafts.begin(), drafts.end(), [&](const auto& draft) { return draft.operationId == operationId; })) return;
+    const auto routine = parseRoutineWrite(result.payload);
+    drafts.push_back({operationId, routine.id.str(), routine.name, routine.position, routine.entries});
+    return;
   }
+  auto& results = generation_->results;
+  if (std::any_of(results.begin(), results.end(), [&](const auto& held) { return held.operationId == operationId; })) return;
+  results.push_back({operationId, result.payload["id"].asString(), result.payload["name"].asString()});
+  if (result.payload["entries"].isArray()) results.back().movementCount = result.payload["entries"].size();
+}
+
+bool AskTools::writes(const std::string& name) const {
+  if (!repository_) return false;
+  if (name == "create_routine") return generation_->routineReview;
+  return name == "save_note" || name == "update_exercise";
+}
+
+ToolResult AskTools::draftRoutine(const Json::Value& document, const ToolCaller& caller) {
+  const auto routine = parseRoutineWrite(document);
+  const auto catalog = inner_.callTool("list_exercises", Json::Value(Json::objectValue), caller);
+  if (catalog.isError) return catalog;
+  const auto& exercises = catalog.payload["exercises"];
+  for (const auto& entry : routine.entries)
+    if (std::none_of(exercises.begin(), exercises.end(), [&](const auto& exercise) { return exercise["id"].asString() == entry.exercise.str(); }))
+      return ToolResult::failure("a routine draft names an unknown exercise; read list_exercises first");
+  auto draft = document;
+  draft["confirmationRequired"] = true;
+  return ToolResult::json(draft);
 }
 
 void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
@@ -125,7 +155,9 @@ void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
   if (operations_.empty()) return;
   for (auto& operation : operations_) {
     if (!operation.result) {
-      operation.result = inner_.completedAction(caller.user, operation.name, operation.arguments["id"].asString());
+      operation.result = inner_.completedAction(caller.user, operation.name,
+        operation.arguments[operation.name == "update_exercise" ? "requestId" : "id"].asString());
+      if (!operation.result && operation.name == "create_routine") operation.result = draftRoutine(operation.arguments, caller);
       if (!operation.result && !allowWrite) continue;
       if (operation.result) repository_->saveOperation(caller.user, thread_, generation_->id, operation);
     }
@@ -167,9 +199,11 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
           name != "list_exercises" && name != "list_routines" && name != "save_note" &&
           name != "create_routine") continue;
     }
-    if (declaration.access == Access::read || mintsProposal(declaration.name()) ||
-        (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note")))
+    if (declaration.access == Access::read || mintsProposal(declaration.name()) || writes(declaration.name())) {
+      if (declaration.name() == "create_routine")
+        declaration.descriptor["description"] = "Prepare a new routine for the lifter to review. This saves only a draft. No routine exists until the lifter taps Save routine. Use actual exercise IDs from list_exercises and read list_notes first. Explain the plan and ask the lifter to review it. Each routine needs a distinct stable id; replay exactly the same document.";
       offered.push_back(std::move(declaration));
+    }
   }
   if (setup) {
     offered.push_back({parse(R"({
@@ -252,13 +286,15 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
       return ToolResult::failure(name + ": " + retired->sentence);
     return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
   }
+  if (name == "create_routine" && !writes(name))
+    return ToolResult::failure(name + ": this version of the app cannot review routine drafts. Describe the routine in your answer "
+                               "and tell the lifter to update the app or build it in Routines.");
   if (repository_ && generation_->purpose == "routine_setup") {
     const auto offered = declareTools();
     if (std::none_of(offered.begin(), offered.end(), [&](const auto& tool) { return tool.name() == name; }))
       return ToolResult::failure(name + ": not available during routine setup — use the declared setup tools.");
   }
-  if (declared->access != Access::read && name != "ask_setup_details" && !mintsProposal(name) &&
-      !(repository_ && (name == "create_routine" || name == "save_note")))
+  if (declared->access != Access::read && name != "ask_setup_details" && !mintsProposal(name) && !writes(name))
     // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
     // every grant.
     return ToolResult::failure(name +
@@ -283,6 +319,26 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
     generation_->clarification = clarification;
     repository_->saveGeneration(caller.user, thread_, *generation_);
     return ToolResult::json(toJson(*clarification));
+  }
+
+  if (name == "update_exercise") {
+    if (!arguments["exerciseId"].isString()) return ToolResult::failure("exerciseId must name an existing movement");
+    if (std::none_of(steps_.begin(), steps_.end(), [](const auto& step) { return step.tool == "list_exercises" && !step.failed; }))
+      return ToolResult::failure("read list_exercises before editing an existing exercise");
+    const std::string id = sync::sha256("update_exercise:" + generation_->id + ":" + arguments["exerciseId"].asString()).hex();
+    const auto held = std::find_if(operations_.begin(), operations_.end(), [&](const auto& operation) { return operation.id == id; });
+    if (held != operations_.end()) {
+      if (held->input != arguments) return ToolResult::failure("this answer already holds a different edit for that exercise");
+      if (held->result) return *held->result;
+    }
+    auto input = arguments;
+    input["requestId"] = id;
+    CoachOperation edit{id, name, input, std::nullopt, arguments};
+    repository_->saveOperation(caller.user, thread_, generation_->id, edit);
+    edit.result = inner_.callTool(name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+    repository_->saveOperation(caller.user, thread_, generation_->id, edit);
+    if (held == operations_.end()) operations_.push_back(edit); else *held = edit;
+    return *edit.result;
   }
 
   Json::Value input = arguments;
@@ -374,8 +430,8 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
   } else if (mintsProposal(name) && !proposals_.empty()) {
     return ToolResult::failure(name + ": you already wrote a proposal this turn; fold both into one document");
   }
-  const ToolResult outcome = inner_.callTool(
-      name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+  const ToolResult outcome = name == "create_routine" && operation ? draftRoutine(input, caller)
+      : inner_.callTool(name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
   if (operation) {
     operation->result = outcome;
     repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
@@ -393,6 +449,45 @@ AskService::AskService(TrainingService& training, AskThreadRepository& threads, 
   workers_.start();
   readers_.start();
   admissions_.start();
+}
+
+ConfirmReply AskService::confirmRoutine(const UserId& user, const ThreadId& thread, const std::string& requestId,
+                                        const std::string& operationId) {
+  if (!threads_.threadAvailable(user, thread)) return {ConfirmRefusal::draftNotFound};
+  auto lease = threads_.tryLease(user, thread);
+  if (!lease) {
+    const auto held = threads_.generation(user, thread, requestId);
+    if (!held) return {ConfirmRefusal::draftNotFound};
+    if (held->status == "running") return {ConfirmRefusal::generationActive};
+    lease = threads_.awaitLease(user, thread, kConfirmLeaseWait);
+    if (!lease) return {ConfirmRefusal::saveInProgress};
+  }
+  auto generation = threads_.generation(user, thread, requestId);
+  if (!generation) return {ConfirmRefusal::draftNotFound};
+  if (generation->status == "running") return {ConfirmRefusal::generationActive};
+  auto draft = std::find_if(generation->routineDrafts.begin(), generation->routineDrafts.end(),
+                           [&](const auto& item) { return item.operationId == operationId; });
+  if (draft == generation->routineDrafts.end()) return {ConfirmRefusal::draftNotFound};
+  if (draft->state == "saved") return {ConfirmRefusal::none, generation};
+  auto operations = threads_.operations(user, thread, generation->id);
+  auto operation = std::find_if(operations.begin(), operations.end(),
+                              [&](const auto& item) { return item.id == operationId && item.name == "create_routine"; });
+  if (operation == operations.end()) throw std::logic_error("routine draft has no held document");
+  ReadReceipt read;
+  const ToolCaller caller{user, ToolScope({{"gym", Access::write}})};
+  const auto result = gymTools_.callTool("create_routine", operation->arguments, caller,
+                                      ProposalSource{ProposalDoor::ask, "", "", thread}, read);
+  if (result.isError && result.outcomeCode.rfind("gym-engine-", 0) == 0)
+    throw GymUnavailable{result.outcomeCode, "the routine could not be saved now; try again shortly"};
+  if (result.isError && result.outcomeCode == "failed") throw std::runtime_error("routine draft save failed");
+  if (result.isError) return {ConfirmRefusal::draftInvalid};
+  operation->result = result;
+  threads_.saveOperation(user, thread, generation->id, *operation);
+  draft->state = "saved";
+  if (std::none_of(generation->results.begin(), generation->results.end(), [&](const auto& item) { return item.operationId == operationId; }))
+    generation->results.push_back({operationId, draft->routineId, draft->name, static_cast<unsigned>(draft->entries.size())});
+  threads_.saveGeneration(user, thread, *generation, true);
+  return {ConfirmRefusal::none, generation};
 }
 
 bool AskService::configured() const { return agent_.configured(); }
@@ -454,12 +549,8 @@ std::optional<AskGeneration> AskService::stop(const UserId& user, const ThreadId
 struct AskService::Job {
   UserId caller;
   std::string email;
-  ThreadId thread;
-  std::string question;
-  std::string requestId;
-  std::vector<std::string> attachmentIds;
+  AskRequest request;
   std::function<void(AskReply)> done;
-  std::string purpose;
   AskReply reply;
   std::optional<AskGeneration> generation;
   std::unique_ptr<ThreadLease> lease;
@@ -473,8 +564,7 @@ struct AskService::Job {
   std::shared_ptr<WriteObservation> observation;
 };
 
-void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
-                     std::string question, std::function<void(AskReply)> done, std::string requestId, std::vector<std::string> attachmentIds, std::string purpose) {
+void AskService::ask(const UserId& caller, const std::string& email, AskRequest request, std::function<void(AskReply)> done) {
   auto observation = std::make_shared<WriteObservation>("ask.run", "gym", "Coach", "", failures_.get());
   WriteContext context{*observation};
   done = [done = std::move(done), observation](AskReply reply) {
@@ -484,27 +574,27 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
                         !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
     done(std::move(reply));
   };
-  if (!purpose.empty() && purpose != "conversation" && purpose != "routine_setup") { done(AskReply{AskRefusal::requestMalformed}); return; }
-  if (!wellFormedId(thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
-  if (!requestId.empty() && !wellFormedId(requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
-  if (attachmentIds.size() > 1 || std::any_of(attachmentIds.begin(), attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
-  if (attachmentIds.empty() && question.find_first_not_of(" \t\r\n") == std::string::npos) { done(AskReply{AskRefusal::questionEmpty}); return; }
-  if (question.size() > kMaxAskTurnBytes) { done(AskReply{AskRefusal::questionTooLong}); return; }
-  if (!storableText(question)) { done(AskReply{AskRefusal::questionUnstorable}); return; }
+  if (!request.purpose.empty() && request.purpose != "conversation" && request.purpose != "routine_setup") { done(AskReply{AskRefusal::requestMalformed}); return; }
+  if (!wellFormedId(request.thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
+  if (!request.requestId.empty() && !wellFormedId(request.requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
+  if (request.attachmentIds.size() > 1 || std::any_of(request.attachmentIds.begin(), request.attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
+  if (request.attachmentIds.empty() && request.question.find_first_not_of(" \t\r\n") == std::string::npos) { done(AskReply{AskRefusal::questionEmpty}); return; }
+  if (request.question.size() > kMaxAskTurnBytes) { done(AskReply{AskRefusal::questionTooLong}); return; }
+  if (!storableText(request.question)) { done(AskReply{AskRefusal::questionUnstorable}); return; }
   if (admissionCount_.fetch_add(1) >= 64) {
     --admissionCount_;
     done(AskReply{AskRefusal::busy});
     return;
   }
-  if (requestId.empty()) requestId = drogon::utils::getUuid();
-  auto job = std::make_shared<Job>(Job{caller, email, thread, std::move(question), std::move(requestId), std::move(attachmentIds), std::move(done)});
-  job->purpose = std::move(purpose);
+  if (request.requestId.empty()) request.requestId = drogon::utils::getUuid();
+  auto job = std::make_shared<Job>(Job{caller, email, std::move(request), std::move(done)});
   job->observation = observation;
+  const ThreadId& thread = job->request.thread;
   std::lock_guard lock(admissionMutex_);
   const auto active = active_.find(thread.str());
   if (active != active_.end()) {
     job->overlap = true;
-    job->duplicate = active->second->caller == caller && active->second->requestId == job->requestId;
+    job->duplicate = active->second->caller == caller && active->second->request.requestId == job->request.requestId;
   } else {
     for (std::size_t index = 0; index < workerBusy_.size(); ++index) {
       if (workerBusy_[index]) continue;
@@ -525,10 +615,11 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
   WriteContext context{*job->observation};
   const auto& caller = job->caller;
   const auto& email = job->email;
-  const auto& thread = job->thread;
-  const auto& question = job->question;
-  const auto& requestId = job->requestId;
-  const auto& attachmentIds = job->attachmentIds;
+  const auto& thread = job->request.thread;
+  const auto& question = job->request.question;
+  const auto& requestId = job->request.requestId;
+  const auto& attachmentIds = job->request.attachmentIds;
+  const auto& purpose = job->request.purpose;
   auto& generation = job->generation;
   auto& reply = job->reply;
   auto& charged = job->charged;
@@ -542,7 +633,7 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
       if (!generation) return false;
       std::vector<std::string> heldAttachments;
       for (const auto& attachment : generation->attachments) heldAttachments.push_back(attachment.id);
-      if (generation->question != question || heldAttachments != attachmentIds || (!job->purpose.empty() && generation->purpose != job->purpose)) {
+      if (generation->question != question || heldAttachments != attachmentIds || (!purpose.empty() && generation->purpose != purpose)) {
         reply.refusal = AskRefusal::requestConflict; finish(job); return true;
       }
       if (generation->status == "completed" || generation->status == "stopped") {
@@ -602,7 +693,8 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
     charged = true;
     if (!generation) {
       generation = AskGeneration{drogon::utils::getUuid(), requestId, question};
-      generation->purpose = job->purpose.empty() ? "conversation" : job->purpose;
+      generation->purpose = purpose.empty() ? "conversation" : purpose;
+      generation->routineReview = job->request.routineReview;
       generation->atMs = clock_.nowMs();
       for (const auto& image : images) generation->attachments.push_back(image.attachment);
     }
@@ -623,9 +715,9 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
 void AskService::run(const std::shared_ptr<Job>& job) {
   WriteContext context{*job->observation};
   const auto& caller = job->caller;
-  const auto& thread = job->thread;
-  const auto& question = job->question;
-  const auto& requestId = job->requestId;
+  const auto& thread = job->request.thread;
+  const auto& question = job->request.question;
+  const auto& requestId = job->request.requestId;
   auto& generation = job->generation;
   auto& reply = job->reply;
   auto& charged = job->charged;
@@ -752,7 +844,7 @@ void AskService::fail(const std::shared_ptr<Job>& job, const std::exception& err
   job->reply.answer.error = "Coach failed at " + job->where;
   if (job->generation) {
     job->generation->status = "failed";
-    try { threads_.saveGeneration(job->caller, job->thread, *job->generation); } catch (const std::exception&) {}
+    try { threads_.saveGeneration(job->caller, job->request.thread, *job->generation); } catch (const std::exception&) {}
   }
 
 }
@@ -773,7 +865,7 @@ void AskService::finish(const std::shared_ptr<Job>& job) {
   if (job->worker) {
     std::lock_guard lock(admissionMutex_);
     workerBusy_[*job->worker] = false;
-    active_.erase(job->thread.str());
+    active_.erase(job->request.thread.str());
     job->worker.reset();
   }
   auto done = std::move(job->done);

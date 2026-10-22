@@ -912,7 +912,8 @@ with 7.11 and 7.12.
 - A Finish the phone cannot complete says what holds it back, in the refusal band: *Finish needs a
   connection — keep logging, or hide the workout.*, or, while the server needs a newer app (§7.15),
   *Finish needs the update — keep logging, or hide the workout.*
-- *This workout* lists each movement with *2 of 4 sets* against plan (*3 sets* without one), the
+- *This workout* always exposes reorder handles and accessible move actions, without an Edit mode
+  button; a movement's context menu offers *Edit exercise*. It lists each movement with *2 of 4 sets* against plan (*3 sets* without one), the
   same at zero (*0 of 3 sets*, *0 sets*). The count is of every logged set, the sets the ledger
   numbers (`SetRow`, §5). A `gym/done` check only when every planned set is logged;
   *Add movement* is the section's last row, `plus.circle.fill`. *Hide workout* has no footer: the way

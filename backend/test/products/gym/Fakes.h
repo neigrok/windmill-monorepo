@@ -23,6 +23,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -743,6 +744,7 @@ public:
   // The seeds under this account's names, then its own movements.
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
   std::vector<Exercise> seedCatalog() override { return db.seeds; }
+  std::optional<Exercise> exerciseUpdate(const UserId&, const std::string&) override { return std::nullopt; }
 };
 
 class FakeProgramRepository : public ProgramRepository {
@@ -889,6 +891,13 @@ public:
     if (!active.insert(id.str()).second) return nullptr;
     return std::make_unique<Lease>(*this, id.str());
   }
+  std::unique_ptr<ThreadLease> awaitLease(const UserId& user, const ThreadId& id, std::chrono::milliseconds wait) override {
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    for (auto lease = tryLease(user, id);; lease = tryLease(user, id)) {
+      if (lease || std::chrono::steady_clock::now() >= deadline) return lease;
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+  }
   std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override {
     std::vector<AskThread> result;
     for (const auto& held : db.threadRows)
@@ -915,9 +924,9 @@ public:
       if (row.user == user && row.thread == thread && row.generation.requestId == requestId) return row.generation;
     return std::nullopt;
   }
-  void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation) override {
+  void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation, bool settleDraft = false) override {
     auto prior = this->generation(user, thread, generation.requestId);
-    if (prior && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
+    if (prior && !settleDraft && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
     generation.revision = prior ? prior->revision + 1 : 1;
     generation.stopRequested = prior && prior->stopRequested;
     bool found = false;
@@ -1186,6 +1195,7 @@ struct ReadOnlyDoor : GymWriteDoor {
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
                                      const ProposalSource&) override { refuse(); }
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override { refuse(); }
+  std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override { refuse(); }
   NoteWriteOutcome saveInsight(const Note&) override { refuse(); }
 };
 

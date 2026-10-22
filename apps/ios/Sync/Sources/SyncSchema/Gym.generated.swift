@@ -356,6 +356,19 @@ public enum Gym {
             "kind": "lww",
             "writer": "server",
           ],
+          "equipment": [
+            "domain": [
+              "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+              "type": "string",
+            ],
+            "kind": "lww",
+            "writer": "client",
+          ],
+          "loadCount": [
+            "domain": ["integer": true, "max": 2, "min": 1, "type": "number"],
+            "kind": "lww",
+            "writer": "client",
+          ],
           "name": [
             "domain": ["type": "string"],
             "kind": "lww",
@@ -653,6 +666,6 @@ public enum Gym {
         "type": "proposal",
       ],
     ],
-    "version": 6,
+    "version": 7,
   ]
 }

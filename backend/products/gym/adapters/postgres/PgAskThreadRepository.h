@@ -22,13 +22,14 @@ public:
                                              const std::string& requestId) override;
   bool threadAvailable(const UserId& user, const ThreadId& id) override;
   std::unique_ptr<ThreadLease> tryLease(const UserId& user, const ThreadId& id) override;
+  std::unique_ptr<ThreadLease> awaitLease(const UserId& user, const ThreadId& id, std::chrono::milliseconds wait) override;
   std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override;
   std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id,
                                       std::uint64_t before, int limit) override;
   std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread,
                                          const std::string& requestId) override;
   void saveGeneration(const UserId& user, const ThreadId& thread,
-                      AskGeneration& generation) override;
+                      AskGeneration& generation, bool settleDraft = false) override;
   std::vector<CoachOperation> operations(const UserId& user, const ThreadId& thread,
                                         const std::string& generationId) override;
   void saveOperation(const UserId& user, const ThreadId& thread,

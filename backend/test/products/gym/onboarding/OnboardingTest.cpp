@@ -132,3 +132,56 @@ TEST(gym_onboarding_stale_work_is_terminal_and_expiry_removes_result_content) {
   CHECK(expired.payload.isNull());
   CHECK_EQ(expired.inputHash, "digest");
 }
+
+TEST(gym_onboarding_conversation_has_bounded_context_and_accepts_dialogue_without_routines) {
+  auto body=parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"I am new here","context":[{"role":"user","text":"Hello"},{"role":"assistant","text":"Hi. What are you working on?"}]})");
+  const auto input=readOnboardingIn(body);
+  REQUIRE(input);
+  CHECK_EQ(onboardingInput(*input),body);
+  const auto answer=parse(R"({"message":"Welcome. What would you like to work on?","routines":[]})");
+  const auto routines=readOnboardingRoutines(answer,*input,{});
+  REQUIRE(routines);
+  CHECK(routines->empty());
+  auto invalid=body;
+  invalid["context"][0]["role"]="system";
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body;
+  for (int index=0;index<11;++index) invalid["context"].append(body["context"][0]);
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body;
+  invalid["context"]=Json::Value(Json::arrayValue);
+  for (int index=0;index<5;++index) {
+    auto turn=body["context"][0]; turn["text"]=std::string(4000,'x'); invalid["context"].append(turn);
+  }
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body; invalid["text"]=std::string(4001,'x');
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body; invalid["text"]=" ";
+  CHECK_FALSE(readOnboardingIn(invalid));
+  auto oversized=answer; oversized["message"]=std::string(4001,'x');
+  CHECK(readOnboardingRoutines(oversized,*input,{}));
+  auto blank=answer; blank["message"]=" ";
+  CHECK_FALSE(readOnboardingRoutines(blank,*input,{}));
+}
+
+// A reply over the byte bound keeps the words that fit and says it was cut; a bound inside a character never
+// splits it, and a reply with no space to cut at stops at the last whole character.
+TEST(gym_onboarding_message_over_the_bound_keeps_whole_words_and_whole_characters) {
+  const std::string fits(kOnboardingMessageBytes,'x');
+  CHECK_EQ(onboardingMessage(fits).text,fits);
+  CHECK_FALSE(onboardingMessage(fits).clipped);
+
+  std::string words;
+  while (words.size()<=kOnboardingMessageBytes) words+="squat deep  ";
+  const auto clipped=onboardingMessage(words);
+  CHECK(clipped.clipped);
+  CHECK_EQ(clipped.text,words.substr(0,3994)+"…");
+  CHECK(clipped.text.size()<=kOnboardingMessageBytes);
+
+  std::string cyrillic;
+  for (int index=0;index<2001;++index) cyrillic+="ж";
+  const auto unbroken=onboardingMessage(cyrillic);
+  CHECK(unbroken.clipped);
+  CHECK_EQ(unbroken.text,cyrillic.substr(0,3996)+"…");
+  CHECK(storableText(unbroken.text));
+}

@@ -115,7 +115,13 @@ threads, attachments, shares and connected-log credentials use REST, through `Gy
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
 retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and
 routine refresh. `LocalCoach` retains account-scoped drafts, request identities and partial replies;
-retry retains identity and Stop preserves completed work. Shared HTTP framing lives in `net/GymHttp.kt`.
+retry retains identity and Stop preserves completed work. Every ask declares `routineReview`, and new Coach routines
+remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
+dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
+server no longer holds or cannot write loses its Save. Confirmation receipts survive relaunch under their account,
+retries retain the same server operation, and a draft reads as saved when the thread or this phone's receipt says so.
+Equipment metadata resolves through the current catalogue for history and training receipts; working-set volume
+counts one or two dumbbells while estimates keep the entered weight unit. Shared HTTP framing lives in `net/GymHttp.kt`.
 `sharing/` owns public workout links and their card; sharing a workout does not involve a Coach conversation.
 
 Notes live with the account. They retain an unread state until the account's first pull

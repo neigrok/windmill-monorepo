@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { fixOf, fixSubtitle, NO_RPE_LABEL, RPE_RUNGS, SET_NOTE_CAPTION, SET_NOTE_LABEL, setNoteRefusal, showsSetNoteCount, setNoteCountLabel, isSetNoteOverCap } from './fix.js';
-import { alsoReadsLabel, dayLabel, setLoadLabel } from './log.js';
+import { alsoReadsLabel, dayLabel, loadBasisLabel, setLoadLabel } from './log.js';
+import { KG } from './units.js';
 import { correctionScheme, readSetFields, setFields } from './correction/correction.js';
 
-export function FixSheet({ set, sets = [set], movement, session, onSave, onDelete, onClose }) {
+export function FixSheet({ set, sets = [set], movement, exercise, session, onSave, onDelete, onClose }) {
   const [draft, setDraft] = useState(() => setFields(set));
   const [failure, setFailure] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -12,6 +13,7 @@ export function FixSheet({ set, sets = [set], movement, session, onSave, onDelet
   const parsed = readSetFields(draft);
   const noteRefusal = parsed.field === 'note' ? parsed.reason : setNoteRefusal(draft.note);
   const group = sets.filter((row) => row.exerciseId === set.exerciseId);
+  const basis = loadBasisLabel(exercise, 0, KG);
   const ratings = [null, ...(set.rpe != null && !RPE_RUNGS.includes(set.rpe) ? [set.rpe] : []), ...RPE_RUNGS];
   const save = async (event) => {
     event.preventDefault();
@@ -37,12 +39,12 @@ export function FixSheet({ set, sets = [set], movement, session, onSave, onDelet
     </header>
     <form ref={form} className="gym-fix-form" onSubmit={save}>
       <fieldset disabled={busy}>
-        <p className="gym-fix-units">kg × reps</p>
+        <p className="gym-fix-units">{basis} × reps</p>
         <div className="gym-fix-movement"><h2>{movement}</h2><p>{correctionScheme(group.map((row) => ({ fields: setFields(row) })))}</p></div>
         {group.map((row) => row.id !== set.id ? <div key={row.id} className="gym-fix-sibling"><span className="gym-set-rail" aria-hidden="true"><i /></span><span>{setLoadLabel(row, 'kg')}</span></div> : <React.Fragment key={row.id}>
           <div className="gym-fix-row">
             <span className="gym-set-rail" aria-hidden="true"><i /></span>
-            <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, draft.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label="Load in kg" aria-invalid={failure?.field === 'weightKg'} aria-describedby={failure?.field === 'weightKg' ? 'gym-fix-refusal' : undefined} value={draft.weightKg} onChange={(event) => update('weightKg', event.target.value)} />
+            <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, draft.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={`Load in ${basis}`} aria-invalid={failure?.field === 'weightKg'} aria-describedby={failure?.field === 'weightKg' ? 'gym-fix-refusal' : undefined} value={draft.weightKg} onChange={(event) => update('weightKg', event.target.value)} />
             <span className="gym-number-times" aria-hidden="true">×</span>
             <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, draft.reps.length) }} name="reps" inputMode="numeric" aria-label="Reps" aria-invalid={failure?.field === 'reps'} aria-describedby={failure?.field === 'reps' ? 'gym-fix-refusal' : undefined} value={draft.reps} onChange={(event) => update('reps', event.target.value)} />
             <button type="button" className="gym-fix-remove" aria-label="Delete set" onClick={onDelete}>×</button>

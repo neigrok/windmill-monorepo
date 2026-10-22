@@ -202,19 +202,23 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
       ((*json)["purpose"].asString() != "conversation" && (*json)["purpose"].asString() != "routine_setup"))) {
     cb(error(drogon::k400BadRequest, "expected conversation or routine_setup purpose")); return;
   }
-  const std::string purpose = json->get("purpose", "").asString();
-  const std::string requestId = json->get("requestId", "").asString();
-  std::vector<std::string> attachments;
+  if (json->isMember("routineReview") && !(*json)["routineReview"].isBool()) {
+    cb(error(drogon::k400BadRequest, "expected routineReview to be true or false")); return;
+  }
+  AskRequest request{ThreadId{(*json)["thread"].asString()}, json->get("question", "").asString(),
+                     json->get("requestId", "").asString(), {}, json->get("purpose", "").asString(),
+                     json->get("routineReview", false).asBool()};
   if (json->isMember("attachmentIds")) {
     if (!(*json)["attachmentIds"].isArray() || (*json)["attachmentIds"].size() > 1) {
       cb(error(drogon::k400BadRequest, "attach at most one photo")); return;
     }
     for (const auto& id : (*json)["attachmentIds"]) {
       if (!id.isString()) { cb(error(drogon::k400BadRequest, "invalid attachment id")); return; }
-      attachments.push_back(id.asString());
+      request.attachmentIds.push_back(id.asString());
     }
   }
-  const std::string question = json->get("question", "").asString();
+  const ThreadId thread = request.thread;
+  const std::string requestId = request.requestId;
   const bool streamRequested = json->get("stream", false).isBool() && json->get("stream", false).asBool();
   if (streamRequested && requestId.empty()) {
     cb(error(drogon::k400BadRequest, "streaming requires a stable request id")); return;
@@ -226,12 +230,10 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   const bool bufferedStream = streamRequested &&
       (req->version() == drogon::Version::kHttp10 || connectionOptions.count("close"));
   if (streamRequested && !bufferedStream) {
-    const ThreadId thread{(*json)["thread"].asString()};
     auto response = drogon::HttpResponse::newAsyncStreamResponse(
-        [ask = ask_, caller = *caller, thread, question, requestId, attachments, purpose](drogon::ResponseStreamPtr stream) {
-          auto reply = std::make_shared<CoachStream>(std::move(stream), ask, caller.id, thread, requestId);
-          ask->ask(caller.id, caller.email.value, thread, question,
-                   [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
+        [ask = ask_, caller = *caller, request](drogon::ResponseStreamPtr stream) {
+          auto reply = std::make_shared<CoachStream>(std::move(stream), ask, caller.id, request.thread, request.requestId);
+          ask->ask(caller.id, caller.email.value, request, [reply](AskReply answer) { reply->finish(answer); });
           reply->poll();
         }, true);
     response->setContentTypeString("text/event-stream");
@@ -243,18 +245,14 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
 
   if (bufferedStream) {
     // Drogon skips async stream callbacks on closing connections; send one final SSE frame instead.
-    const ThreadId thread{(*json)["thread"].asString()};
     auto reply = std::make_shared<CoachStream>(std::move(cb), ask_, caller->id, thread, requestId);
-    ask_->ask(caller->id, caller->email.value, thread, question,
-              [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
+    ask_->ask(caller->id, caller->email.value, std::move(request), [reply](AskReply answer) { reply->finish(answer); });
     reply->poll();
     return;
   }
 
   // The reply lands on a worker thread: no handler thread blocks on the vendor.
-  const ThreadId thread{(*json)["thread"].asString()};
-  ask_->ask(caller->id, caller->email.value, thread, question,
-            [cb = std::move(cb), thread](AskReply reply) {
+  ask_->ask(caller->id, caller->email.value, std::move(request), [cb = std::move(cb), thread](AskReply reply) {
     if (reply.refusal != AskRefusal::none) {
       auto response = refusalOf(reply);
       if (reply.generation) {
@@ -309,7 +307,7 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     if (reply.generation && reply.generation->clarification) body["clarification"] = toJson(*reply.generation->clarification);
     if (reply.receipt) body["receipt"] = toJson(*reply.receipt);
     cb(jsonResponse(body));
-  }, requestId, attachments, purpose);
+  });
 } catch (const GymUnavailable& unavailable) {
   cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }

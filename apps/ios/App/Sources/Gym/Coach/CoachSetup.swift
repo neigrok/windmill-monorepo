@@ -1,28 +1,9 @@
 import SwiftUI
 
+// The greeting offers Add screenshot and Build myself; the other cases stay so drafts kept by earlier versions still read.
 nonisolated enum CoachSetupChoice: String, Codable, CaseIterable {
   case screenshot, describe, goal, justLog = "just_log", buildManually = "build_manually"
   var starter: Bool { self == .screenshot || self == .describe || self == .goal }
-  var title: String {
-    switch self {
-    case .screenshot: "Add a screenshot"
-    case .describe: "Describe your program"
-    case .goal: "Share your goal"
-    case .justLog: "Just log"
-    case .buildManually: "Build it myself"
-    }
-  }
-  var symbol: String {
-    switch self { case .screenshot: "photo.on.rectangle"; case .describe: "text.alignleft"; case .goal: "target"; default: "" }
-  }
-  var draft: String {
-    switch self {
-    case .screenshot: "Turn this program into routines."
-    case .describe: "My program: "
-    case .goal: "My goal: "
-    default: ""
-    }
-  }
 }
 
 nonisolated enum CoachSetupEligibility {
@@ -33,37 +14,29 @@ nonisolated enum CoachSetupEligibility {
 }
 
 struct CoachSetupView: View {
-  @ScaledMetric(relativeTo: .title3) private var symbolWidth = 20
   let choose: (CoachSetupChoice) -> Void
+  @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      VStack(alignment: .leading, spacing: RoomSpace.related) {
-        Text("Set up your routines").font(ShellType.title).accessibilityAddTraits(.isHeader)
-        Text("Built from what you bring.").font(.body).foregroundStyle(GymPalette.inkDim)
-      }.padding(.horizontal, RoomSpace.related)
-      VStack(spacing: 0) {
-        ForEach(CoachSetupChoice.allCases.filter(\.starter), id: \.self) { choice in
-          if choice != .screenshot { Divider().overlay(GymPalette.line).padding(.leading, 48) }
-          Button { choose(choice) } label: {
-            HStack(spacing: 12) {
-              Image(systemName: choice.symbol).font(.title3).foregroundStyle(GymPalette.accent).frame(width: symbolWidth)
-              Text(choice.title).font(.body).foregroundStyle(GymPalette.ink)
-              Spacer(minLength: 0)
-            }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 14).frame(minHeight: 50).contentShape(Rectangle())
-          }.buttonStyle(.plain).accessibilityIdentifier("coach-setup-" + choice.rawValue)
+    VStack(alignment: .leading, spacing: RoomSpace.related) {
+      Text("I’m Coach. I can help you plan training and understand your log. Tell me what you’re working on, or share a routine.")
+        .font(.body).accessibilityIdentifier("coach-greeting")
+      if typeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: RoomSpace.related) { actions }
+      } else {
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: RoomSpace.related) { actions }
+          VStack(alignment: .leading, spacing: RoomSpace.related) { actions }
         }
-      }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(GymPalette.line, lineWidth: 1))
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 20) { escapes }
-        VStack(alignment: .leading, spacing: 0) { escapes }
-      }.padding(.horizontal, RoomSpace.inset)
+      }
     }
   }
-  @ViewBuilder var escapes: some View {
-    ForEach([CoachSetupChoice.justLog, .buildManually], id: \.self) { choice in
-      Button(choice.title) { choose(choice) }.font(.subheadline.weight(.semibold))
-        .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-setup-" + choice.rawValue)
+  @ViewBuilder var actions: some View {
+    ForEach([CoachSetupChoice.screenshot, .buildManually], id: \.self) { choice in
+      Button { choose(choice) } label: {
+        Label(choice == .screenshot ? "Add screenshot" : "Build myself", systemImage: choice == .screenshot ? "photo.badge.plus" : "plus")
+          .font(.subheadline).fixedSize(horizontal: false, vertical: true)
+          .frame(minHeight: RoomSpace.minimumTarget)
+      }.buttonStyle(.borderless).accessibilityIdentifier("coach-setup-" + choice.rawValue)
     }
   }
 }

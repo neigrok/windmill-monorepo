@@ -95,13 +95,16 @@ TEST(workout_evidence_counts_working_rows_and_positive_load_without_promoting_ot
     sets.emplace_back(SetId{"set_evidence" + std::to_string(++number)}, session.id,
                       ExerciseId{"bench-press"}, number, kg, 5, kind, std::nullopt, "", 2000);
 
-  const WorkoutObservation total{session, sets};
+  const std::vector<Exercise> catalog{
+      Exercise{ExerciseId{"bench-press"}, "Bench press", Pattern::press, Equipment::barbell, 2.5, false}};
+
+  const WorkoutObservation total{session, sets, catalog};
   CHECK_EQ(total.workingSetCount, 3);
   CHECK_EQ(total.tonnageKg, 412.5);
   CHECK_EQ(total.durationMs, std::optional<std::uint64_t>{8000});
   const Session open{session.id, session.user, session.startedAtMs};
-  CHECK_FALSE(WorkoutObservation(open, sets).durationMs.has_value());
-  CHECK_EQ(WorkoutObservation(session, {}).workingSetCount, 0);
+  CHECK_FALSE(WorkoutObservation(open, sets, catalog).durationMs.has_value());
+  CHECK_EQ(WorkoutObservation(session, {}, catalog).workingSetCount, 0);
 }
 
 TEST(evidence_keeps_ordered_snapshots_when_repeat_reads_deduplicate_the_tally) {

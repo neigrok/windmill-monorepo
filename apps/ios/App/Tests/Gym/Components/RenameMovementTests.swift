@@ -32,12 +32,12 @@ import SyncTesting
     #expect(MovementName.capped(String(repeating: "e\u{301}", count: 31)).unicodeScalars.count == 60)
   }
 
-  @Test func anonymousCatalogueRenameRefusesAndCustomRenameCanStayOnDevice() throws {
+  @Test func anonymousCatalogueAndCustomRenamesStayOnDevice() throws {
     let (harness, gym) = fixture()
     let seed = try #require(gym.catalogue.find(ID("back-squat")))
-    #expect(!gym.renameMovement(seed, to: "My squat"))
-    #expect(gym.error == "renaming a catalog movement needs your account — sign in first")
-    #expect(gym.catalogue.find(seed.id) == seed)
+    #expect(gym.renameMovement(seed, to: "My squat"))
+    #expect(gym.catalogue.find(seed.id)?.name == "My squat")
+    #expect(gym.catalogue.find(seed.id)?.aliases == ["Back Squat"])
     let custom = Exercise(id: gym.runner.mint(Exercise.self), name: "Custom squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)
     gym.run(CreateExercise(custom))
     #expect(gym.renameMovement(custom, to: " Renamed squat "))

@@ -126,6 +126,7 @@ enum CoachFixture {
 #if DEBUG && targetEnvironment(simulator)
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let deletedThreads = Mutex<Set<String>>([])
+  static let setupGenerations = Mutex<[String: Data]>([:])
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
@@ -153,23 +154,15 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []
       if (body["attachmentIds"] as? [String])?.isEmpty != false { generation["attachments"] = [] }
       generation["receipt"] = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": [], "proposals": [], "observations": []]
-      if (body["question"] as? String ?? "").hasPrefix("My goal:") {
-        let lastOption = ProcessInfo.processInfo.arguments.contains("-coach-long-choices") ? "Adjustable dumbbells and a bench" : "Nothing yet"
-        generation["answer"] = ""
-        generation["clarification"] = ["id": "setup-choices", "question": "Two things, so it fits your week.", "groups": [
-          ["id": "days", "label": "How many days a week?", "multiple": false, "options": [
-            ["id": "two", "label": "2 days"], ["id": "three", "label": "3 days"], ["id": "four", "label": "4 days"]]],
-          ["id": "equipment", "label": "What’s at home?", "multiple": true, "options": [
-            ["id": "dumbbells", "label": "Dumbbells"], ["id": "bands", "label": "Bands"], ["id": "pullup", "label": "Pull-up bar"], ["id": "none", "label": lastOption]]]
-        ]]
-      } else {
-        generation["answer"] = "I made three routines. Open one to check the movements and start your workout."
-        generation["results"] = ["A", "B", "C"].map { suffix in
-          ["kind": "routine-created", "operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix,
-           "routineName": "Full body " + suffix, "movementCount": 3] as [String: Any]
-        }
+      generation["answer"] = "Here are three drafts. Review each routine and save the ones you want."
+      generation["routineDrafts"] = ["A", "B", "C"].enumerated().map { index, suffix in
+        ["operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix, "name": "Full body " + suffix,
+         "position": index, "state": "pending", "entries": ["back-squat", "bench-press", "barbell-row"].enumerated().map { position, exercise in
+           ["position": position, "exerciseId": exercise, "sets": [["reps": 5, "weightKg": NSNull()]], "restSeconds": 120] as [String: Any]
+         }] as [String: Any]
       }
     }
+
     let row: [String: Any] = ["id": "coach-fixture-thread", "title": said.question, "askedAt": 1_790_424_000_000,
       "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
     var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
@@ -178,7 +171,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
       if path == "/v1/gym/coach/onboarding" {
         response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
-          "errorCode": NSNull(), "allowance": allowance,
+          "errorCode": NSNull(), "allowance": allowance, "message": "Here are your routine drafts. Review them before saving.",
           "routines": ["A", "B", "C"].map { suffix in
             ["name": "Full body " + suffix, "entries": ["back-squat", "bench-press", "barbell-row"].map { exercise in
               ["exerciseId": exercise, "sets": Array(repeating: ["reps": 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
@@ -188,11 +181,32 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         response = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
         if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
       }
+    } else if path.hasSuffix("/confirm"), path.contains("/routines/") {
+      let parts = path.split(separator: "/").map(String.init)
+      let key = parts[5], operation = parts[7]
+      if let stored = Self.setupGenerations.withLock({ $0[key] }),
+         var snapshot = (try? JSONSerialization.jsonObject(with: stored)) as? [String: Any],
+         var value = snapshot["generation"] as? [String: Any], var drafts = value["routineDrafts"] as? [[String: Any]],
+         let index = drafts.firstIndex(where: { $0["operationId"] as? String == operation }) {
+        drafts[index]["state"] = "saved"; value["routineDrafts"] = drafts
+        value["revision"] = (value["revision"] as? Int ?? 2) + 1
+        value["results"] = drafts.filter { $0["state"] as? String == "saved" }.map { draft in
+          ["kind": "routine-created", "operationId": draft["operationId"]!, "routineId": draft["routineId"]!,
+           "routineName": draft["name"]!, "movementCount": 3]
+        }
+        snapshot["generation"] = value
+        Self.setupGenerations.withLock { $0[key] = try? JSONSerialization.data(withJSONObject: snapshot) }
+        response = snapshot
+      } else { status = 404; response = ["code": "not-found"] }
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
       _ = Self.deletedThreads.withLock { $0.remove("coach-fixture-thread") }
       var partial = generation; partial["status"] = "running"; partial["answer"] = ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") ? "" : said.partial; partial["revision"] = 1
+      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") {
+        Self.setupGenerations.withLock { $0[requestId] = try? JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]) }
+        partial["routineDrafts"] = []
+      }
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"

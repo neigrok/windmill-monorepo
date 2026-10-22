@@ -38,22 +38,55 @@ import XCTest
     if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
     app.launch()
     let suffix = appearance + (largeText ? "-large" : "")
-    let goal = app.buttons["coach-setup-goal"]
-    XCTAssertTrue(goal.waitForExistence(timeout: 25))
+    XCTAssertTrue(app.staticTexts["coach-greeting"].waitForExistence(timeout: 25))
     XCTAssertFalse(app.buttons["coach-history"].exists)
-    try capture(app, "anonymous-starters-" + suffix)
-    goal.tap()
-    let question = app.descendants(matching: .any)["coach-question"]
-    XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Get stronger with short workouts")
-    let done = app.buttons["coach-keyboard-done"]
-    if done.wait(for: \.isHittable, toEqual: true, timeout: 3) { done.tap() }
-    for id in ["coach-choice-days-3", "coach-choice-equipment-gym"] {
-      let choice = app.buttons[id]
-      reveal(choice, in: app); choice.tap()
-      XCTAssertTrue(choice.wait(for: \.isSelected, toEqual: true, timeout: 3))
+    XCTAssertFalse(app.descendants(matching: .any)["coach-installation-allowance"].exists)
+    try capture(app, "anonymous-greeting-" + suffix)
+    if largeText {
+      let screenshot = app.buttons["coach-setup-screenshot"], build = app.buttons["coach-setup-build_manually"]
+      reveal(screenshot, in: app); XCTAssertTrue(screenshot.isHittable)
+      reveal(build, in: app); XCTAssertTrue(build.isHittable)
+      try capture(app, "anonymous-greeting-actions-" + suffix)
     }
-    try capture(app, "anonymous-choices-" + suffix)
-    XCTAssertTrue(app.buttons["coach-send"].isHittable); app.buttons["coach-send"].tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    question.tap(); question.typeText("Build a short full body routine for three days each week")
+    let done = app.buttons["coach-keyboard-done"], keyboard = app.keyboards.firstMatch
+    let tab = app.tabBars.buttons["Coach"]
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+    XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
+    XCTAssertFalse(done.frame.intersects(app.buttons["coach-send"].frame))
+    try capture(app, "anonymous-composer-focused-" + suffix)
+    done.tap()
+    XCTAssertTrue(done.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(question.value as? String, "Build a short full body routine for three days each week")
+    XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
+    app.buttons["coach-send"].tap()
+    let review = app.buttons["coach-review-routines"]
+    XCTAssertTrue(review.waitForExistence(timeout: 30))
+    reveal(review, in: app); review.tap()
+    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
+    try capture(app, "anonymous-review-" + suffix)
+    if largeText {
+      let lastTarget = app.staticTexts["coach-review-final-set"]
+      let save = app.buttons["coach-save-routines"]
+      for _ in 0..<16 {
+        if lastTarget.exists, lastTarget.isHittable, lastTarget.frame.maxY <= save.frame.minY - 28 { break }
+        let top = app.navigationBars.firstMatch.frame.maxY + 24
+        let bottom = save.frame.minY - 40
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: bottom))
+        let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: top))
+        start.press(forDuration: 0.05, thenDragTo: end)
+      }
+      XCTAssertTrue(lastTarget.isHittable)
+      XCTAssertLessThanOrEqual(lastTarget.frame.maxY, save.frame.minY - 28)
+      XCTAssertTrue(save.isHittable)
+      try capture(app, "anonymous-review-bottom-" + suffix)
+    }
+    app.buttons["coach-save-routines"].tap()
     let receipt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch
     XCTAssertTrue(receipt.waitForExistence(timeout: 30))
     XCTAssertTrue(app.buttons["coach-keep-routines"].exists)
@@ -72,7 +105,7 @@ import XCTest
     app.terminate()
   }
 
-  func testAnonymousGoalLight() throws { try flow(appearance: "light") }
-  func testAnonymousGoalDark() throws { try flow(appearance: "dark") }
-  func testAnonymousGoalLargeText() throws { try flow(appearance: "light", largeText: true) }
+  func testAnonymousDialogueLight() throws { try flow(appearance: "light") }
+  func testAnonymousDialogueDark() throws { try flow(appearance: "dark") }
+  func testAnonymousDialogueLargeText() throws { try flow(appearance: "light", largeText: true) }
 }

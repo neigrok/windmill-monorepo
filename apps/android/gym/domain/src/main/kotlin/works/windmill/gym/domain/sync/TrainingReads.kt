@@ -20,13 +20,13 @@ object GymEstimate {
     fun stated(e1rm: Double): Double = Quantum(0.1).rounded(e1rm)
 }
 
-class SessionReadout(session: Session, sets: List<TrainingSet>) {
+class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catalogue) {
     val sessionId = session.id
     val name = session.name
     val durationMs = session.finishedAt?.let { maxOf(0, it.ms - session.startedAt.ms) }
     val workingSetCount = sets.count { it.sessionId == session.id && it.kind == "working" }
     val movementCount = sets.filter { it.sessionId == session.id }.map { it.exerciseId }.toSet().size
-    val volumeKg = sets.filter { it.sessionId == session.id }.sumOf { it.volumeKg }
+    val volumeKg = sets.filter { it.sessionId == session.id }.sumOf { it.volumeFor(catalogue.find(it.exerciseId)) }
     val topE1rm = sets.filter { it.sessionId == session.id }.mapNotNull { it.e1rm }.maxOrNull()
 }
 
@@ -203,7 +203,7 @@ class ProgressRecords(val progress: StatsProgress) {
     }
 }
 
-fun TrainingLog.readout(session: Id<Session>): SessionReadout? = drawnSessions.firstOrNull { it.id == session }?.let { SessionReadout(it, sets(session)) }
+fun TrainingLog.readout(session: Id<Session>): SessionReadout? = drawnSessions.firstOrNull { it.id == session }?.let { SessionReadout(it, sets(session), catalogue) }
 fun TrainingLog.lastTime(exerciseId: Id<Exercise>): LastTime = LastTime.of(exerciseId, this)
 val TrainingLog.progress: StatsProgress get() = StatsProgress(this)
 

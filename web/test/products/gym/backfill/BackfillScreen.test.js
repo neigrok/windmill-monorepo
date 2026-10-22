@@ -165,6 +165,23 @@ test('a routine arrives filled: agreeing sets fold to a line and a rail, bodywei
   assert.deepEqual(textOf(source.type(source.props)), 'Bench PressTarget3 × 8 · 60Last time · 19 Sep60 × 860 × 857.5 × 8Filled from the target. A blank load or rep count takes last time’s set.');
 });
 
+test('each movement says what its typed load counts, after the one kilogram head over every row', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  browserWith();
+  await pushAAccount(t);
+  const equipment = { 'bench-press': 'barbell', 'overhead-press': 'dumbbell', 'chin-up': 'bodyweight', 'face-pull': 'cable' };
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG.map((exercise) => ({ ...exercise, equipment: equipment[exercise.id] })) }));
+  assert.deepEqual(findByClass(view.tree, 'gym-past-units').map(textOf), ['kg × reps']);
+  const drawn = movements(view.tree);
+  assert.deepEqual(drawn.map(({ props, tree }) => [props.name, textOf(findByClass(tree, 'gym-past-scheme')[0])]), [
+    ['Bench Press', '3 × 8 · 60 · kg total'],
+    ['Overhead Press', '3 × 8 · 32.5 · kg each'],
+    ['Chin-up', '3 × 6–8 · kg added'],
+    ['Face Pull', 'open · no last time'],
+  ]);
+  assert.deepEqual(rowsOf(drawn[2]).slice(0, 2).map((cell) => cell.label), ['Chin-up, set 1, load in kg added', 'Chin-up, set 1, reps']);
+});
+
 test('an edit carries down into the untouched sets below it, the carried numerals lift in turn, and the caption says so', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();

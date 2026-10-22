@@ -284,6 +284,7 @@ final class GymModel {
 
   @discardableResult
   func flush() -> Bool {
+    guard workout.flushRack() else { return false }
     rest.cancel()
     refresh()
     guard !readFailed else { return false }
@@ -301,6 +302,7 @@ final class GymModel {
   }
 
   func background() {
+    workout.flushRack()
     rest.cancel()
     do { try runtime?.engine.leave(); refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }

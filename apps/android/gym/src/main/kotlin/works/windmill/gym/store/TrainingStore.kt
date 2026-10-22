@@ -90,7 +90,7 @@ class TrainingStore(
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = { readProgram() },
-        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos,
+        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
     )
 
     // A refusal is an answer the screen says, never a failure to report.
@@ -604,7 +604,7 @@ class TrainingStore(
     private fun refusedImports(): List<SessionSummary> {
         val drawn = training.details().mapTo(mutableSetOf()) { it.session.id }
         return training.imports.refusals().mapNotNull { refused -> refused.session?.let { session ->
-            SessionSummary(session, refused.sets)
+            SessionSummary(session, refused.sets, catalog)
         } }.filterNot { it.id in drawn }
     }
 

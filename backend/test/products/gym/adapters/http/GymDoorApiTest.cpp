@@ -3,8 +3,13 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/application/AskService.h"
 
+#include "platform/adapters/http/WriteRoutes.h"
+
 #include <cstdlib>
+#include <future>
 #include <set>
+#include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -42,6 +47,7 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   note["title"] = "Goal";
   note["body"] = "Build strength";
   admit("save_note", note);
+  admit("update_exercise", parse(R"({"exerciseId":"bench-press","equipment":"dumbbell","loadCount":2})"));
   const auto started = admit("start_session", startBody("ses_door0001", h.clock.now - 120000));
   CHECK_EQ(started.payload["id"].asString(), "ses_door0001");
   Json::Value set = setBody("set_door0001", "bench-press", 80, h.clock.now - 100000);
@@ -76,7 +82,7 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   admit("discard_session", sessionArgs("ses_door0001"));
   for (const auto& tool : h.tools.declareTools())
     if (tool.access != Access::read) CHECK(written.contains(tool.name()));
-  CHECK_EQ(written.size(), std::size_t{13});
+  CHECK_EQ(written.size(), std::size_t{14});
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   const auto spent = txn.exec_params("select type,id from sync_spent where scope_key=$1 order by type,id", "acct:" + h.user.str() + "/gym");
@@ -97,6 +103,7 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   AskGeneration generation;
   generation.id = "gen_doorcoach";
   generation.requestId = "req_doorcoach";
+  generation.routineReview = true;
   generation.atMs = h.clock.now;
   h.repo.threads.saveGeneration(h.user, thread, generation);
   AskTools coach{h.tools, thread, &h.repo.threads, &generation};
@@ -107,6 +114,15 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE(!created.isError);
   const auto routineId = created.payload["id"].asString();
   CHECK_EQ(routineId, "rt_gen_doorcoach_0");
+  CHECK(h.repo.program.routines(h.user).empty());
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
+  FakeAsk agent;
+  AskService service{h.training, h.repo.threads, h.clock, agent, h.tools, entitlements};
+  generation.status = "completed";
+  h.repo.threads.saveGeneration(h.user, thread, generation);
+  REQUIRE(service.confirmRoutine(h.user, thread, generation.requestId, generation.routineDrafts.front().operationId).generation);
   Json::Value note(Json::objectValue);
   note["id"] = "note_doorcoach";
   note["title"] = "Goal";
@@ -146,5 +162,71 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE_EQ(unlink.size(), std::size_t{1});
   CHECK(unlink[0]["thread_id"].is_null());
   CHECK_FALSE(unlink[0]["thread_id_stamp"].is_null());
+  CHECK(h.failures.messages.empty());
+}
+
+// The confirmation route answers each outcome with its code, and the door's write line carries the route's
+// request id although the save runs on the upload pool.
+TEST(gym_engine_coach_confirmation_route_answers_each_outcome_under_one_request_id) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  DoorApis h;
+  const ThreadId thread{"thr_doorconf1"};
+  REQUIRE_EQ(h.threads.openThread(h.user, thread, "Upper day").error, ThreadOpenError::none);
+  AskGeneration generation;
+  generation.id = "gen_doorconf";
+  generation.requestId = "req_doorconf";
+  generation.routineReview = true;
+  generation.atMs = h.clock.now;
+  h.repo.threads.saveGeneration(h.user, thread, generation);
+  AskTools coach{h.tools, thread, &h.repo.threads, &generation};
+  const ToolCaller caller{h.user, ToolScope::everything()};
+  REQUIRE(!coach.callTool("list_notes", Json::Value(Json::objectValue), caller).isError);
+  REQUIRE(!coach.callTool("list_exercises", Json::Value(Json::objectValue), caller).isError);
+  REQUIRE(!coach.callTool("create_routine", routineBody("rt_unused001"), caller).isError);
+  generation.status = "completed";
+  h.repo.threads.saveGeneration(h.user, thread, generation);
+  const auto draft = generation.routineDrafts.front();
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
+  FakeAsk agent;
+  auto service = std::make_shared<AskService>(h.training, h.repo.threads, h.clock, agent, h.tools, entitlements);
+  ThreadsApi api{doortest::borrowed(h.threads), h.auth, service};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  const auto confirm = [&](const std::string& operationId) {
+    const std::string path = "/v1/gym/threads/" + thread.str() + "/generations/req_doorconf/routines/" + operationId + "/confirm";
+    const auto request = postRequest(path, Json::Value(Json::objectValue), "s-door");
+    const auto observation = beginWriteRequest(request, WriteRoute{path, "gym.coach.routine.confirm", "gym", "rest", {drogon::Post}});
+    std::promise<drogon::HttpResponsePtr> reply;
+    api.confirmRoutine(request, [&](const drogon::HttpResponsePtr& response) { reply.set_value(response); },
+                       thread.str(), "req_doorconf", operationId);
+    const auto response = reply.get_future().get();
+    finishWriteRequest(request, response);
+    return std::pair{response, observation->requestId()};
+  };
+
+  const auto [saved, savedRequest] = confirm(draft.operationId);
+  REQUIRE_EQ(saved->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(saved)["generation"]["routineDrafts"][0]["state"].asString(), std::string("saved"));
+  CHECK_EQ(bodyOf(saved)["results"], toJson(std::vector<CoachResult>{{draft.operationId, draft.routineId, "Push A", 1}}));
+  const auto [again, againRequest] = confirm(draft.operationId);
+  CHECK_EQ(again->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(bodyOf(again)["results"], bodyOf(saved)["results"]);
+  const auto [absent, absentRequest] = confirm("op_unknown01");
+  CHECK_EQ(absent->getStatusCode(), drogon::k404NotFound);
+  CHECK_EQ(bodyOf(absent)["code"].asString(), std::string("coach-draft-not-found"));
+  installWriteSink({});
+
+  std::vector<std::string> lines;
+  for (const auto& completion : completions)
+    lines.push_back(completion.operation + " | " + completion.outcome + " | " +
+                    (completion.requestId == savedRequest ? "saved" : completion.requestId == againRequest ? "again" :
+                     completion.requestId == absentRequest ? "absent" : "other"));
+  CHECK_EQ(lines, (std::vector<std::string>{"auth.session.refresh | ok | other", "sync.publish | ok | saved",
+      "sync.admit | ok | saved", "gym.server_call | ok | saved", "gym.coach.routine.confirm | ok | saved",
+      "auth.session.refresh | ok | other", "gym.coach.routine.confirm | ok | again",
+      "auth.session.refresh | ok | other", "gym.coach.routine.confirm | coach-draft-not-found | absent"}));
+  CHECK_EQ(h.repo.program.routines(h.user).size(), 1u);
   CHECK(h.failures.messages.empty());
 }

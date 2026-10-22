@@ -108,8 +108,12 @@ test('every field a lifter types into spells the kilogram, not the reading', () 
 test('every kilogram field on a screen carries the word kg', () => {
   // The past workout names it once, in the column head over every row, and in each cell's name.
   assert.equal(read('backfill/Backfill.jsx').includes('kg <span className="gym-past-times">×</span> reps'), true);
-  assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', spoken: 'load in kg' },"), true);
-  assert.equal(read('FixSheet.jsx').includes('aria-label="Load in kg"'), true);
+  assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', spoken: (basis) => `load in ${basis}` },"), true);
+  assert.equal(read('backfill/Backfill.jsx').includes('basis={loadBasisLabel(movementOf(log.catalog, movement.exerciseId), 0, KG)}'), true);
+  // A typed load names its basis in kilograms: kg each, kg, kg added or kg total.
+  assert.equal(read('FixSheet.jsx').includes('const basis = loadBasisLabel(exercise, 0, KG);'), true);
+  assert.equal(read('FixSheet.jsx').includes('aria-label={`Load in ${basis}`}'), true);
+  assert.equal(read('correction/WorkoutEditor.jsx').includes('load in ${loadBasisLabel(movementOf(catalog, exerciseId), 0, KG)}'), true);
   // The unit rides in the field beside the sign control, and neither is part of the field's name.
   assert.equal(read('planning/TargetEditor.jsx').includes('label="Weight · kg"'), true);
   assert.equal(read('logger/entry.js').includes("WEIGHT_UNIT = 'kg'"), true);

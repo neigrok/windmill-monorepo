@@ -231,7 +231,8 @@ class GymServerRules : ServerRules {
                     if (changed(change, "name") && bn != null && an != null) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))
                 }
                 "exerciseName" -> {
-                    val seed = c.product["seeds"]?.get(row.key.id.toString()) ?: throw Refusal("invalid")
+                    val seed = c.product["seeds"]?.get(row.key.id.toString())
+                    if (seed == null) { if (!known(row.key.id.json) || "name" in row.lattice.fields) throw Refusal("invalid"); continue }
                     if (blankNamed(change, "name")) throw Refusal("invalid")
                     val bn = value(before, "name") ?: seed.member("name"); val an = value(row, "name") ?: seed.member("name")
                     if (bn != an) append(PlannedDelta.update(row.key, null, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))

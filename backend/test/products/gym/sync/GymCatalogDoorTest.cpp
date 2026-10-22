@@ -21,7 +21,7 @@ std::vector<Exercise> seedCatalog() {
   return {
       {ExerciseId{"farmers-carry"}, "Farmers Carry", Pattern::carry, Equipment::dumbbell, 2.0, false},
       {ExerciseId{"overhead-carry"}, "Overhead Carry", Pattern::carry, Equipment::dumbbell, 2.0, false},
-      {ExerciseId{"suitcase-carry"}, "Suitcase Carry", Pattern::carry, Equipment::dumbbell, 2.0, false},
+      {ExerciseId{"suitcase-carry"}, "Suitcase Carry", Pattern::carry, Equipment::dumbbell, 2.0, false, {}, 1},
       {ExerciseId{"ab-wheel-rollout"}, "Ab Wheel Rollout", Pattern::core, Equipment::bodyweight, 2.5, false},
       {ExerciseId{"cable-crunch"}, "Cable Crunch", Pattern::core, Equipment::cable, 2.5, false},
       {ExerciseId{"hanging-leg-raise"}, "Hanging Leg Raise", Pattern::core, Equipment::bodyweight, 2.5, false},
@@ -46,7 +46,7 @@ std::vector<Exercise> seedCatalog() {
       {ExerciseId{"leg-extension"}, "Leg Extension", Pattern::isolation, Equipment::machine, 5.0, false},
       {ExerciseId{"lying-leg-curl"}, "Lying Leg Curl", Pattern::isolation, Equipment::machine, 5.0, false},
       {ExerciseId{"overhead-triceps-extension"}, "Overhead Triceps Extension", Pattern::isolation,
-       Equipment::dumbbell, 2.0, false},
+       Equipment::dumbbell, 2.0, false, {}, 1},
       {ExerciseId{"rear-delt-fly"}, "Rear Delt Fly", Pattern::isolation, Equipment::dumbbell, 2.0, false},
       {ExerciseId{"seated-calf-raise"}, "Seated Calf Raise", Pattern::isolation, Equipment::machine, 5.0, false},
       {ExerciseId{"skull-crusher"}, "Skull Crusher", Pattern::isolation, Equipment::barbell, 2.5, false},
@@ -75,7 +75,7 @@ std::vector<Exercise> seedCatalog() {
       {ExerciseId{"barbell-shrug"}, "Barbell Shrug", Pattern::pull, Equipment::barbell, 2.5, false},
       {ExerciseId{"chest-supported-row"}, "Chest Supported Row", Pattern::pull, Equipment::machine, 5.0, false},
       {ExerciseId{"chin-up"}, "Chin Up", Pattern::pull, Equipment::bodyweight, 2.5, false},
-      {ExerciseId{"dumbbell-row"}, "Dumbbell Row", Pattern::pull, Equipment::dumbbell, 2.0, false},
+      {ExerciseId{"dumbbell-row"}, "Dumbbell Row", Pattern::pull, Equipment::dumbbell, 2.0, false, {}, 1},
       {ExerciseId{"face-pull"}, "Face Pull", Pattern::pull, Equipment::cable, 2.5, false},
       {ExerciseId{"inverted-row"}, "Inverted Row", Pattern::pull, Equipment::bodyweight, 2.5, false},
       {ExerciseId{"lat-pulldown"}, "Lat Pulldown", Pattern::pull, Equipment::cable, 2.5, false},
@@ -86,7 +86,7 @@ std::vector<Exercise> seedCatalog() {
       {ExerciseId{"bulgarian-split-squat"}, "Bulgarian Split Squat", Pattern::squat, Equipment::dumbbell, 2.0,
        false},
       {ExerciseId{"front-squat"}, "Front Squat", Pattern::squat, Equipment::barbell, 2.5, false},
-      {ExerciseId{"goblet-squat"}, "Goblet Squat", Pattern::squat, Equipment::dumbbell, 2.0, false},
+      {ExerciseId{"goblet-squat"}, "Goblet Squat", Pattern::squat, Equipment::dumbbell, 2.0, false, {}, 1},
       {ExerciseId{"hack-squat"}, "Hack Squat", Pattern::squat, Equipment::machine, 5.0, false},
       {ExerciseId{"leg-press"}, "Leg Press", Pattern::squat, Equipment::machine, 5.0, false},
       {ExerciseId{"step-up"}, "Step Up", Pattern::squat, Equipment::dumbbell, 2.0, false},
@@ -236,6 +236,29 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   CHECK_EQ(listed[0].summary.exerciseNames, std::vector<std::string>{"Low-bar Squat"});
 }
 
+// A custom movement's aliases live on its exercise row: an equipment override under the same id leaves them
+// in place, a name on that override is refused, and the stored digest stays the sum of the rows.
+TEST(a_custom_movements_equipment_override_keeps_its_aliases_and_the_scope_digest) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Harness h;
+  REQUIRE(h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_custom01"}, "Sled push", Pattern::carry,
+                                                      Equipment::machine, 5.0}).exercise);
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Prowler", {}, {}}));
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, {}, Equipment::dumbbell, 1}));
+
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedsWith({Exercise{ExerciseId{"ex_custom01"}, "Prowler", Pattern::carry,
+                                                               Equipment::dumbbell, 5.0, true, {"Sled push"}, 1}}));
+  CHECK(doortest::scopeConsistent(h.user));
+
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Custom carry", Equipment::dumbbell, 2}));
+  CHECK_EQ(GymDoor::refusal(renamed(h, h.user, "exerciseName", "ex_custom01", "Sled")), std::string("invalid"));
+
+  CHECK_EQ(h.repo.catalog.catalog(h.user),
+           seedsWith({Exercise{ExerciseId{"ex_custom01"}, "Custom carry", Pattern::carry, Equipment::dumbbell, 5.0, true,
+                               {"Prowler", "Sled push"}, 2}}));
+  CHECK(doortest::scopeConsistent(h.user));
+}
+
 // A rename names a movement this account can see and a name it can hold, or nothing is written.
 TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
@@ -251,4 +274,36 @@ TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bou
 
   CHECK_EQ(h.repo.catalog.catalog(h.user), seedCatalog());
   CHECK_EQ(h.repo.catalog.catalog(h.other), seedsWith({*theirs.exercise}));
+}
+
+TEST(exercise_loading_edits_keep_history_identity_and_account_scope) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Harness h;
+  h.door.start(h.user, SessionStart{sid(), h.clock.now, true});
+  h.door.append(h.user, sid(), SetWrite{setId(), ExerciseId{"bench-press"}, 16, 10,
+      SetKind::working, std::nullopt, "", h.clock.now});
+  h.door.finish(h.user, sid(), h.clock.now + 1000);
+  const ToolCaller owner{h.user, ToolScope::everything()};
+  const auto result = h.tools.callTool("update_exercise",
+      parse(R"({"exerciseId":"bench-press","name":"My press","equipment":"dumbbell","loadCount":2})"), owner);
+  REQUIRE(!result.isError);
+  CHECK_EQ(result.payload["id"].asString(), std::string("bench-press"));
+  const auto history = h.repo.log.history(h.user, HistoryQuery{});
+  REQUIRE_EQ(history.sessions.size(), 1u);
+  CHECK_EQ(history.sessions.front().sets.front().exercise, std::string("My press"));
+  CHECK_EQ(history.sessions.front().sets.front().weightKg, 16.0);
+  CHECK_EQ(history.summary.tonnageKg, 320.0);
+  CHECK_EQ(history.sessions.front().totals().tonnageKg, 320.0);
+  const auto log = h.repo.log.log(h.user, LogCursor{h.clock.now + 2000, std::nullopt, 50});
+  CHECK_EQ(log.sessions.front().tonnageKg, 320.0);
+  const auto other = h.repo.catalog.catalog(h.other);
+  const auto seed = std::find_if(other.begin(), other.end(), [](const auto& exercise) { return exercise.id == ExerciseId{"bench-press"}; });
+  REQUIRE(seed != other.end());
+  CHECK_EQ(seed->name, std::string("Bench Press"));
+  CHECK(seed->equipment == Equipment::barbell);
+  h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"bench-press"}, {}, {}, 1});
+  CHECK_EQ(h.repo.log.history(h.user, HistoryQuery{}).summary.tonnageKg, 160.0);
+  REQUIRE(h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_custom01"}, "Custom", Pattern::press, Equipment::barbell, 2.5}).exercise);
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Custom press", Equipment::dumbbell, 2}));
+  CHECK_FALSE(h.door.updateExercise(h.other, ExerciseUpdate{ExerciseId{"ex_custom01"}, {}, Equipment::dumbbell, 1}));
 }

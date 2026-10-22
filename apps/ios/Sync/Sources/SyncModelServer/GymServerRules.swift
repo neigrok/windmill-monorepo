@@ -401,7 +401,10 @@ public struct GymServerRules: ServerRules {
           append(.serverUpdate(row.key, born: row.lattice.born, fields: ["aliases": renamed(value(row, "aliases"), before: beforeName, after: afterName)]))
         }
       case "exerciseName":
-        guard let seed = context.product["seeds"]?[row.key.id.description] else { throw Refusal(.invalid) }
+        guard let seed = context.product["seeds"]?[row.key.id.description] else {
+          guard knownExercise(row.key.id.json), row.lattice.fields["name"] == nil else { throw Refusal(.invalid) }
+          continue
+        }
         if blankNamed(change, field: "name") { throw Refusal(.invalid) }
         let beforeName = value(before, "name") ?? seed["name"]!
         let afterName = value(row, "name") ?? seed["name"]!

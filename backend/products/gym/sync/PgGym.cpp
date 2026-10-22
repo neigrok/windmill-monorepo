@@ -119,6 +119,9 @@ void writeChanges(SyncTxn& txn, const ScopeKey& scope, const std::string& id, co
   }
 }
 
+// An id's aliases register lives on one row: a custom movement's exercise or a seed's exerciseName (GymRules).
+bool holdsAliases(const Row& row) { return row.lattice.f.contains("aliases"); }
+
 void writeAliases(SyncTxn& txn, const ScopeKey& scope, const Row& row) {
   auto& sql = sqlOf(txn);
   sql.exec("delete from gym_exercise_aliases where user_id=$1::uuid and exercise_id=$2", pqxx::params{scope.account().str(), row.id.column()});
@@ -179,7 +182,7 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
 }
 
 std::string fallback(const std::string& type, const std::string& name) {
-  if (type == "exerciseName" && name == "name") return "null";
+  if (type == "exerciseName" && (name == "name" || name == "equipment" || name == "loadCount")) return "null";
   if (name == "name" || name == "body" || name == "summary" || name == "connection" || name == "agent" || name == "proposedName" || name == "note") return "''";
   if (name == "revision" || name == "baseRevision") return "1";
   if (name == "baseName") return "''";
@@ -261,7 +264,7 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
       std::string where = owner_ + "=$1::uuid";
       pqxx::params params{scope.account().str()};
       if (!id_.empty()) { where += " and " + id_ + "::text=$2"; params.append(write.id.column()); }
-      if (type_.name == "exercise" || type_.name == "exerciseName") sql.exec("delete from gym_exercise_aliases where user_id=$1::uuid and exercise_id=$2", pqxx::params{scope.account().str(), write.id.column()});
+      if (write.before && holdsAliases(*write.before)) sql.exec("delete from gym_exercise_aliases where user_id=$1::uuid and exercise_id=$2", pqxx::params{scope.account().str(), write.id.column()});
       sql.exec("delete from " + table_ + " where " + where, params);
       continue;
     }
@@ -317,7 +320,7 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
     }
     if (type_.name == "routine") writeEntries(txn, row.id.column(), value(&row, "entries"));
     if (type_.name == "proposal") writeChanges(txn, scope, row.id.column(), value(&row, "changes"));
-    if (type_.name == "exercise" || type_.name == "exerciseName") writeAliases(txn, scope, row);
+    if (holdsAliases(row)) writeAliases(txn, scope, row);
   }
   if (type_.name == "note") sql.exec("update gym_notes n set position=ranked.position from (select id,(row_number() over(order by ord collate \"C\" nulls first,id collate \"C\")-1)::int as position from gym_notes where user_id=$1::uuid) ranked where n.id=ranked.id", pqxx::params{scope.account().str()});
 }

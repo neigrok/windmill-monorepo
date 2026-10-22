@@ -23,6 +23,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,11 +74,63 @@ internal fun CoachAnswer(
     legacySteps: List<AskStep> = emptyList(),
     results: List<CoachResult> = emptyList(),
     onOpenRoutine: ((String) -> Unit)? = null,
+    routineDrafts: List<CoachRoutineDraft> = emptyList(),
+    onConfirmRoutine: (suspend (CoachRoutineDraft) -> DraftOutcome)? = null,
 ) {
     val skin = LocalGymColors.current
     val evidence = receipt?.takeIf { it.supported }
     Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxWidth()) {
         if (text.isNotEmpty()) CoachMessage({ CoachMarkdown.plain(text) }) { CoachProse(text) }
+        routineDrafts.filter { it.state == "pending" }.forEach { draft ->
+            key(draft.operationId) {
+                val scope = rememberCoroutineScope()
+                var busy by remember { mutableStateOf(false) }
+                var note by remember { mutableStateOf<String?>(null) }
+                var closed by remember { mutableStateOf(false) }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp)) {
+                    Text("Review routine", style = WindmillFont.body(14), color = skin.inkDim)
+                    Text(draft.name, style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+                    draft.entries.forEach { entry ->
+                        val exercise = catalog.firstOrNull { it.id == entry.exerciseId }
+                        val equipment = when (exercise?.equipment) {
+                            "bodyweight" -> "Bodyweight"
+                            "dumbbell" -> if (exercise.loadCount == 1) "One dumbbell" else "Two dumbbells"
+                            null -> "Equipment not available"
+                            else -> exercise.equipment.replaceFirstChar { it.uppercase() }
+                        }
+                        val basis = when (exercise?.equipment) {
+                            "dumbbell" -> if (exercise.loadCount == 1) "" else " each"
+                            "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) " assisted" else " added"
+                            "barbell" -> " total"
+                            else -> ""
+                        }
+                        val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
+                        val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(Readout.movement(entry.exerciseId, catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                            Text("$scheme · $equipment$rest", style = WindmillFont.body(14), color = skin.inkDim)
+                        }
+                    }
+                    note?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+                    if (!closed) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
+                        if (!busy && onConfirmRoutine != null) {
+                            busy = true
+                            note = null
+                            scope.launch {
+                                try {
+                                    when (val saved = onConfirmRoutine(draft)) {
+                                        is DraftOutcome.Saved -> Unit
+                                        is DraftOutcome.Closed -> { note = saved.said; closed = true }
+                                        is DraftOutcome.Failed -> note = saved.said
+                                    }
+                                } finally { busy = false }
+                            }
+                        }
+                    })
+                }
+            }
+        }
         results.filter { it.kind == "routine-created" }.distinctBy { it.operationId }.forEach { result ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp)) {
@@ -112,7 +166,7 @@ internal fun CoachAnswer(
         }
         val tally = evidence?.read ?: legacyRead
         if (tally != null) {
-            val phrases = Ask.steps(evidence?.steps ?: legacySteps)
+            val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
             val observations = evidence?.observed.orEmpty()
             val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
             var expanded by rememberSaveable { mutableStateOf(false) }

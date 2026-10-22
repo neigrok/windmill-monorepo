@@ -1,4 +1,7 @@
 import Foundation
+import DomainKit
+import GymDomain
+import SyncCore
 
 nonisolated struct CoachAttachment: Codable, Equatable, Identifiable, Sendable {
   let id: String
@@ -97,6 +100,27 @@ nonisolated struct CoachResult: Codable, Equatable, Identifiable, Sendable {
   var id: String { operationId }
 }
 
+nonisolated struct CoachRoutineDraft: Codable, Equatable, Identifiable, Sendable {
+  struct Entry: Codable, Equatable, Sendable {
+    struct Target: Codable, Equatable, Sendable { let reps: Int?; let weightKg: Double? }
+    let exerciseId: String
+    let sets: [Target]?
+    let restSeconds: Int?
+  }
+  let operationId: String
+  let routineId: String
+  let name: String
+  let position: Int
+  let entries: [Entry]
+  var state: String
+  var id: String { operationId }
+  var routine: CoachRoutine {
+    CoachRoutine(name: name, entries: entries.map { entry in
+      RoutineEntry(exerciseId: DomainKit.ID(RecordID(entry.exerciseId)), sets: entry.sets.map { $0.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) } }, restSeconds: entry.restSeconds)
+    })
+  }
+}
+
 nonisolated enum CoachPurpose: String, Codable, Sendable {
   case conversation, routineSetup = "routine_setup"
 }
@@ -131,7 +155,8 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let at: Int64
   let steps: [CoachStep]
   let receipt: CoachReceipt?
-  let results: [CoachResult]
+  var results: [CoachResult]
+  var routineDrafts: [CoachRoutineDraft]
   let revision: Int64
   let stopRequested: Bool
   let attachments: [CoachAttachment]
@@ -139,13 +164,14 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let clarification: CoachClarification?
   let allowanceRefusal: AiAllowance?
   var terminal: Bool { ["completed", "failed", "stopped"].contains(status) }
-  enum CodingKeys: String, CodingKey { case id, requestId, question, status, answer, at, steps, receipt, results, revision, stopRequested, attachments, purpose, clarification, allowanceRefusal }
+  enum CodingKeys: String, CodingKey { case id, requestId, question, status, answer, at, steps, receipt, results, routineDrafts, revision, stopRequested, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     id = try c.decode(String.self, forKey: .id); requestId = try c.decode(String.self, forKey: .requestId)
     question = try c.decode(String.self, forKey: .question); status = try c.decode(String.self, forKey: .status)
     answer = try c.decodeIfPresent(String.self, forKey: .answer) ?? ""; at = try c.decodeIfPresent(Int64.self, forKey: .at) ?? 0
     steps = try c.decodeIfPresent([CoachStep].self, forKey: .steps) ?? []; receipt = try c.decodeIfPresent(CoachReceipt.self, forKey: .receipt)
+    routineDrafts = try c.decodeIfPresent([CoachRoutineDraft].self, forKey: .routineDrafts) ?? []
     results = try c.decodeIfPresent([CoachResult].self, forKey: .results) ?? []; revision = try c.decodeIfPresent(Int64.self, forKey: .revision) ?? 0
     stopRequested = try c.decodeIfPresent(Bool.self, forKey: .stopRequested) ?? false
     attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
@@ -162,7 +188,8 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
   let receipt: CoachReceipt?
   let position: Int64
   let generationId: String?
-  let results: [CoachResult]
+  var results: [CoachResult]
+  var routineDrafts: [CoachRoutineDraft]
   let status: String
   let requestId: String?
   let attachments: [CoachAttachment]
@@ -170,12 +197,13 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
   let clarification: CoachClarification?
   let allowanceRefusal: AiAllowance?
   var id: Int64 { position }
-  enum CodingKeys: String, CodingKey { case from, text, at, receipt, position, generationId, results, status, requestId, attachments, purpose, clarification, allowanceRefusal }
+  enum CodingKeys: String, CodingKey { case from, text, at, receipt, position, generationId, results, routineDrafts, status, requestId, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     from = try c.decode(String.self, forKey: .from); text = try c.decode(String.self, forKey: .text)
     at = try c.decodeIfPresent(Int64.self, forKey: .at) ?? 0; receipt = try c.decodeIfPresent(CoachReceipt.self, forKey: .receipt)
     position = try c.decodeIfPresent(Int64.self, forKey: .position) ?? 0; generationId = try c.decodeIfPresent(String.self, forKey: .generationId)
+    routineDrafts = try c.decodeIfPresent([CoachRoutineDraft].self, forKey: .routineDrafts) ?? []
     results = try c.decodeIfPresent([CoachResult].self, forKey: .results) ?? []; status = try c.decodeIfPresent(String.self, forKey: .status) ?? "completed"
     requestId = try c.decodeIfPresent(String.self, forKey: .requestId); attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
     purpose = try c.decodeIfPresent(CoachPurpose.self, forKey: .purpose) ?? .conversation
@@ -238,6 +266,13 @@ nonisolated enum CoachCopy {
   static let signedOut = "Coach reads your log, so it needs you signed in."
   static let absent = "Coach isn’t part of this Windmill. Your log is still yours to read."
   static let unreadableDraft = "Your draft couldn’t be read."
+  static let reconnecting = "Reconnecting…"
+  static let signInToContinue = "Sign in to continue."
+  static let confirmRetry = "Couldn’t save the routine. Try again."
+  static let draftGone = "This draft is no longer available."
+  static let draftUnsavable = "This draft can’t be saved. Ask Coach for a new one."
+  static let draftSignIn = "Sign in again to save this routine."
+  static let accountChanged = "The account changed. Open this again."
   static func sendable(_ text: String, photo: Bool) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return (!text.isEmpty || photo) && text.utf8.count <= 8000
@@ -263,10 +298,33 @@ nonisolated enum CoachCopy {
     if saves.contains(where: { !$0.failed }) { return "Saved a note" }
     return saves.isEmpty ? nil : "Could not confirm a note save"
   }
+  // A movement Coach corrected lands at once, so its row says so, or that the change could not be confirmed.
+  static func movementUpdate(_ steps: [CoachStep]) -> String? {
+    let updates = steps.filter { $0.tool == "update_exercise" }
+    if updates.contains(where: { !$0.failed }) { return "Updated a movement" }
+    return updates.isEmpty ? nil : "Could not confirm a movement update"
+  }
+}
+
+// Recovery for a refused send: sign-in where the phone's own AI access is spent or bound, Windmill One for a non-One account's own allowance.
+nonisolated enum CoachRecovery: Equatable {
+  case signIn, windmillOne
+  init?(code: String, tier: String?, anonymous: Bool) {
+    if anonymous, ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"].contains(code) { self = .signIn }
+    else if !anonymous, code == "subject_exhausted", tier == "logged_in" { self = .windmillOne }
+    else { return nil }
+  }
+  init?(_ refusal: CoachRefusal?, anonymous: Bool) {
+    switch refusal {
+    case .allowance(let allowance): self.init(code: allowance.code, tier: allowance.tier, anonymous: anonymous)
+    case .installation: if anonymous { self = .signIn } else { return nil }
+    default: return nil
+    }
+  }
 }
 
 nonisolated enum CoachRefusal: Equatable {
-  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance)
+  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance), installation(String)
   init(status: Int?, code: String?, message: String?) {
     if status == nil { self = .retry(CoachCopy.noAnswer); return }
     if status == 404 || (status == 503 && code == "ask-not-configured") { self = .absent; return }
@@ -280,7 +338,7 @@ nonisolated enum CoachRefusal: Equatable {
     }
   }
   var message: String {
-    switch self { case .retry(let m), .daily(let m), .ceiling(let m), .fresh(let m), .said(let m): m; case .absent: CoachCopy.absent; case .allowance(let allowance): allowance.message }
+    switch self { case .retry(let m), .daily(let m), .ceiling(let m), .fresh(let m), .said(let m), .installation(let m): m; case .absent: CoachCopy.absent; case .allowance(let allowance): allowance.message }
   }
 }
 
@@ -310,18 +368,13 @@ nonisolated extension AiAllowance {
     case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
     case "concurrency_exhausted": return "Another AI request is still in progress. Try again when it finishes."
     case "funding_required": return "Your plan has no funded AI allowance for this period."
-    case "device_bound": return "This phone’s AI access belongs to an account. Sign in to use Coach."
+    case "device_bound": return "This phone’s AI access belongs to an account."
     default: return "Coach’s AI allowance is unavailable right now."
     }
   }
   var detail: String? {
-    guard currency == "USD", let limit, let total = Decimal(string: limit, locale: Locale(identifier: "en_US_POSIX")),
-          let available = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), total >= 0, available >= 0 else { return nil }
-    let balance = "\(available.formatted(.currency(code: "USD").precision(.fractionLength(2...5)))) remaining of \(total.formatted(.currency(code: "USD").precision(.fractionLength(2...5))))."
-    if ["free_day_exhausted", "free_month_exhausted"].contains(code), let reset = budgetResetsAtMs {
-      return balance + " Shared free capacity resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
-    }
-    guard code == "subject_exhausted", let reset = resetsAtMs else { return balance }
-    return balance + " Your allowance resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
+    let reset = ["free_day_exhausted", "free_month_exhausted"].contains(code) ? budgetResetsAtMs : resetsAtMs
+    guard let reset else { return nil }
+    return "Available again " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
   }
 }

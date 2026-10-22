@@ -24,6 +24,8 @@ Show one refusal at a time, name first: **Name it to save it.** then
 - Movement rows open their targets. They do not navigate away from an unsaved draft.
 - Add movement is the list's last row. Routine deletion belongs to the routine row; there is no Duplicate.
 - Web and Android editors contain the plan only. iOS keeps its History section.
+- iOS movement rows expose native drag handles immediately, without a Reorder/Done mode toggle.
+  Native red trash removes a row from the draft; its exercise history remains.
 - Reordering supports drag and accessible alternatives. Web uses the shared `rail.js` pick/place,
   ArrowUp/ArrowDown and Escape behavior; native controls expose movement actions. Announce the
   new position once and keep focus with the moved row.
@@ -74,7 +76,11 @@ open so paging and account claims cannot reshuffle it beneath a touch.
 If a placeholder includes a catalog count, use the real count. Never invent a larger fixture count.
 Create movement stays available within the picker, including with an empty query. Its nested
 sheet preserves the query and frozen ranking on Cancel and uses its own keyboard inset. It asks
-for a name and loading equipment. Preserve the draft on failure and prevent duplicate writes.
+for a name and loading equipment. iOS offers labeled equipment symbols and, for Dumbbells, a
+**Dumbbells lifted** One/Two choice. Existing Machine, Cable and Kettlebell values remain supported.
+Barbell is total bar-and-plates load; Dumbbells is per dumbbell; Bodyweight is added/assisted load.
+Exercise editing keeps identity and raw set facts, updates its name throughout history, and states
+that equipment changes recalculate historical volume. Preserve drafts on failure and prevent duplicate writes.
 
 ## Routine list and detail
 

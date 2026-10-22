@@ -546,10 +546,15 @@ const RULES = {
     }
   },
 
-  exerciseName(ctx, record, { append }) {
+  // A seed's line carries its name and equipment; a custom movement's carries only equipment, its name lives on the exercise.
+  exerciseName(ctx, record, { rowsOf, append }) {
     const { after } = record;
     const seed = ownValue(ctx.productState.seeds, after.id);
-    if (!seed) throw new Refusal('invalid');
+    if (!seed) {
+      const custom = rowsOf('exercise').find((row) => row.id === after.id && isAlive(row));
+      if (!custom || Object.hasOwn(after.f ?? {}, 'name')) throw new Refusal('invalid');
+      return;
+    }
     if (blankNamed(record, 'name')) throw new Refusal('invalid');
     const before = valueOf(record.original, 'name') ?? seed.name;
     const now = valueOf(after, 'name') ?? seed.name;

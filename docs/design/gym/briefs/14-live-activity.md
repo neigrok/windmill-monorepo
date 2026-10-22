@@ -8,7 +8,9 @@ a second writer. Logging uses the same domain command, owner and action identity
 The presentations are the Lock Screen banner and Dynamic Island compact, expanded and
 minimal forms. Show the routine or free workout title, current movement, prefilled next set
 (load × reps and working-set ordinal of the plan count), workout elapsed and time since the last
-set. Both clocks count up from timestamps drawn by the system. There is no rest-target bar or countdown.
+set. The banner and expanded Island top-right clock is since last set, falling back to session
+start before the first set. Compact Island keeps workout elapsed leading and since-set trailing.
+Both clocks count up from persisted timestamps drawn by the system. There is no rest-target bar or countdown.
 The in-app logger's two clocks remain governed by [feedback](../feedback-contract.md).
 
 **Log set** is the only action and requires device authentication. Reading remains available while

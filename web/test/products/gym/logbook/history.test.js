@@ -19,7 +19,15 @@ test('a saved scheme collapses only equal facts and never hides a note or a diff
   assert.equal(collapsedScheme([sets[0], { ...sets[1], reps: 7 }]), null);
   assert.equal(collapsedScheme([sets[0], { ...sets[1], rpe: 9 }]), null);
   assert.equal(collapsedScheme([sets[0], { ...sets[1], note: 'heavy' }]), null);
-  assert.deepEqual(workoutTotals([...sets, { weightKg: 100, reps: 8, kind: 'warmup' }, { weightKg: -20, reps: 8, kind: 'working' }]), { sets: 4, reps: 32, tonnageKg: 1440 });
+});
+
+test('workout totals count each dumbbell a movement holds and never an assisted or warmup load', () => {
+  const catalog = [{ id: 'bench-press', equipment: 'barbell' }, { id: 'dumbbell-bench-press', equipment: 'dumbbell', loadCount: 2 },
+    { id: 'dumbbell-row', equipment: 'dumbbell', loadCount: 1 }, { id: 'pull-up', equipment: 'bodyweight' }];
+  const sets = [{ exerciseId: 'bench-press', weightKg: 60, reps: 8, kind: 'working' }, { exerciseId: 'bench-press', weightKg: 100, reps: 8, kind: 'warmup' },
+    { exerciseId: 'dumbbell-bench-press', weightKg: 20, reps: 10, kind: 'working' }, { exerciseId: 'dumbbell-row', weightKg: 30, reps: 10, kind: 'working' },
+    { exerciseId: 'pull-up', weightKg: -20, reps: 8, kind: 'working' }, { exerciseId: 'pull-up', weightKg: 10, reps: 5, kind: 'working' }];
+  assert.deepEqual(workoutTotals(sets, catalog), { sets: 5, reps: 41, tonnageKg: 480 + 400 + 300 + 50 });
 });
 
 test('a month is a complete local calendar range and an invalid month cannot escape its year', () => {

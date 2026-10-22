@@ -389,3 +389,17 @@ test('opening a short reader keeps the history page offset for the return', asyn
   assert.equal(page.scrollTop, 495);
   assert.deepEqual([...pagePositions], [['#/gym/log', 495]]);
 });
+
+test('a session’s set rows say what each load counts for its movement', async (t) => {
+  browserWith();
+  await gymAccount(t, [
+    confirmed('session', 'session0001', { startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000 }),
+    ...[['set0000001', 'dumbbell-bench-press', 16], ['set0000002', 'goblet-squat', 24], ['set0000003', 'pull-up', -10],
+      ['set0000004', 'back-squat', 100], ['set0000005', 'leg-press', 140]].map(([id, exerciseId, weightKg], index) =>
+      confirmed('set', id, { sessionId: 'session0001', exerciseId, setNumber: 1, weightKg, reps: 8, kind: 'working', note: '',
+        completedAt: 1_755_000_600_000 + index * 1000 })),
+  ]);
+  const room = await sessionInARoom(t);
+  assert.deepEqual(findByClass(room.screen(), 'gym-set-load').map(textOf),
+    ['16 kg each × 8', '24 kg × 8', '−10 kg assisted × 8', '100 kg total × 8', '140 kg × 8']);
+});

@@ -3,9 +3,62 @@ import DomainKitTesting
 import GymDomain
 import SyncAPI
 import SyncCore
+import SyncSchema
 import Testing
 
 struct TrainingReadsTests {
+  @Test func historyUsesCurrentEquipmentAndQuantityWithoutChangingRecordedSets() throws {
+    let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: nil)
+    let session = phone.runner.mint(Session.self)
+    let exercise = ID<Exercise>("dumbbell-bench-press")
+    #expect(try phone.runner.run(StartSession(id: session)).receipt != nil)
+    let set = TrainingSet(id: phone.runner.mint(TrainingSet.self), sessionId: session, exerciseId: exercise,
+                          weightKg: 16, reps: 8, completedAt: Instant(ms: 1_800_000_000_001))
+    #expect(try phone.runner.run(AppendSet(set)).receipt != nil)
+    #expect(try phone.runner.run(FinishSession(id: session, finishedAt: Instant(ms: 1_800_000_000_002))).receipt != nil)
+    for (equipment, quantity, expected) in [("dumbbell", 2, 256), ("dumbbell", 1, 128), ("barbell", 1, 128), ("bodyweight", 1, 128)] {
+      _ = try phone.runner.run(UpdateExercise(exercise, name: "My press", equipment: equipment, loadCount: quantity))
+      let result = try phone.runner.read(Gym.scope) { read -> JSON in
+        let history = try TrainingHistory(read)
+        let catalog = try history.exercises().asArray()
+        let movement = catalog.first { $0["id"] == exercise.json }
+        return ["summary": try history.history()["summary"] ?? .null,
+                "sessions": .array(try history.sessions().asArray().map { $0["tonnageKg"] ?? .null }),
+                "equipment": movement?["equipment"] ?? .null, "loadCount": movement?["loadCount"] ?? .null]
+      }
+      #expect(result == ["summary": ["sessions": 1, "sets": 1, "reps": 8, "tonnageKg": JSON(expected)],
+                         "sessions": [JSON(expected)], "equipment": .string(equipment),
+                         "loadCount": equipment == "dumbbell" ? JSON(quantity) : .null])
+      #expect(try phone.runner.read(Gym.scope) { try TrainingLog($0).sets } == [set])
+    }
+  }
+
+  @Test func equipmentVolumeCountsExternalLoadAndPreservesEnteredEstimates() {
+    let session = Session(id: ID("volume-session"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 10))
+    let catalogue = Catalogue(exercises: [
+      Exercise(id: ID("pair"), name: "Press", pattern: "press", equipment: "dumbbell", stepKg: 2),
+      Exercise(id: ID("single"), name: "Row", pattern: "pull", equipment: "dumbbell", stepKg: 2, loadCount: 1),
+      Exercise(id: ID("bar"), name: "Press", pattern: "press", equipment: "barbell", stepKg: 2.5),
+      Exercise(id: ID("body"), name: "Pull up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5),
+    ])
+    let sets = [
+      TrainingSet(id: ID("pair-set"), sessionId: session.id, exerciseId: ID("pair"), weightKg: 16, reps: 10, completedAt: Instant(ms: 2)),
+      TrainingSet(id: ID("single-set"), sessionId: session.id, exerciseId: ID("single"), weightKg: 16, reps: 10, completedAt: Instant(ms: 3)),
+      TrainingSet(id: ID("bar-set"), sessionId: session.id, exerciseId: ID("bar"), weightKg: 32, reps: 10, completedAt: Instant(ms: 4)),
+      TrainingSet(id: ID("weighted"), sessionId: session.id, exerciseId: ID("body"), weightKg: 10, reps: 5, completedAt: Instant(ms: 5)),
+      TrainingSet(id: ID("assisted"), sessionId: session.id, exerciseId: ID("body"), weightKg: -10, reps: 5, completedAt: Instant(ms: 6)),
+      TrainingSet(id: ID("unweighted"), sessionId: session.id, exerciseId: ID("body"), weightKg: 0, reps: 5, completedAt: Instant(ms: 7)),
+      TrainingSet(id: ID("warmup"), sessionId: session.id, exerciseId: ID("pair"), weightKg: 16, reps: 10, kind: "warmup", completedAt: Instant(ms: 8)),
+    ]
+    #expect(sets.map { $0.volumeKg(on: catalogue.find($0.exerciseId)) } == [320, 160, 320, 50, 0, 0, 0])
+    let readout = SessionReadout(session: session, sets: sets, catalogue: catalogue)
+    #expect(readout.volumeKg == 850)
+    #expect(readout.workingSetCount == 6 && readout.movementCount == 4)
+    #expect(sets[0].e1rm == GymEstimate.value(weightKg: 16, reps: 10))
+    #expect(SeedExercises.all.filter { $0.equipment == "dumbbell" && $0.loadCount == 1 }.map(\.id) ==
+      [ID("goblet-squat"), ID("dumbbell-row"), ID("suitcase-carry"), ID("overhead-triceps-extension")])
+  }
+
   @Test(arguments: try Contract.vectors("gym/domain/training-reads.json"))
   func vector(_ vector: Vector) throws {
     let result = try ProductCorpus(GymRules.book).read(vector, in: Session.scope) { read in

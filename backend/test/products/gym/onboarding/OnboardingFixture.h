@@ -71,6 +71,7 @@ struct Catalog : CatalogRepository {
   std::atomic<int> seedReads=0;
   std::vector<Exercise> catalog(const UserId&) override { ++ownerReads; throw std::runtime_error("private catalog must not be read"); }
   std::vector<Exercise> seedCatalog() override { ++seedReads; return seeds; }
+  std::optional<Exercise> exerciseUpdate(const UserId&, const std::string&) override { return std::nullopt; }
 };
 
 struct Model : OnboardingModel {
@@ -78,12 +79,13 @@ struct Model : OnboardingModel {
   std::atomic<int> calls=0;
   std::function<void()> before;
   std::string error;
+  std::string message;
   bool configured() const override { return available; }
   OnboardingAnswer generate(const AiInstallationPrincipal&,const std::string&,const OnboardingIn&,const std::vector<Exercise>&) override {
     ++calls;
     if (before) before();
     if (!error.empty()) return {{},error};
-    return {{{"Push",{RoutineEntry{1,ExerciseId{"bench-press"},{SetTarget{8,std::nullopt}},120}}}}, {}};
+    return {{{"Push",{RoutineEntry{1,ExerciseId{"bench-press"},{SetTarget{8,std::nullopt}},120}}}}, {}, message};
   }
 };
 

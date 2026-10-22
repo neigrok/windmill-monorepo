@@ -41,6 +41,34 @@ std::optional<OnboardingIn> readOnboardingIn(const Json::Value& body) {
   OnboardingIn input;
   input.requestId = body["requestId"].asString();
   input.mode = body["mode"].asString();
+  if (input.mode == "conversation") {
+    if (!(fields(body, {"requestId", "mode", "text", "context"}) ||
+          fields(body, {"requestId", "mode", "text", "context", "image"})) ||
+        !body["text"].isString() || body["text"].asString().size() > 4000 ||
+        !storableText(body["text"].asString()) || !body["context"].isArray() || body["context"].size() > 12)
+      return std::nullopt;
+    if (!body.isMember("image") && sync::isBlank(body["text"].asString())) return std::nullopt;
+    std::size_t contextBytes = 0;
+    for (const auto& turn : body["context"]) {
+      if (!fields(turn, {"role", "text"}) || !turn["role"].isString() ||
+          (turn["role"].asString() != "user" && turn["role"].asString() != "assistant") ||
+          !label(turn["text"], 4000)) return std::nullopt;
+      contextBytes += turn["text"].asString().size();
+    }
+    if (contextBytes > 16000) return std::nullopt;
+    input.text = body["text"].asString();
+    input.context = body["context"];
+    if (!body.isMember("image")) return input;
+    Json::Value photo(Json::objectValue);
+    photo["requestId"] = input.requestId;
+    photo["mode"] = "photo";
+    photo["image"] = body["image"];
+    const auto checked = readOnboardingIn(photo);
+    if (!checked) return std::nullopt;
+    input.imageMimeType = checked->imageMimeType;
+    input.imageBase64 = checked->imageBase64;
+    return input;
+  }
   if (input.mode == "goal") {
     if (!fields(body, {"requestId", "mode", "goal", "daysPerWeek", "equipment"}) ||
         !label(body["goal"], 1000) || !body["daysPerWeek"].isInt() ||
@@ -86,6 +114,15 @@ Json::Value onboardingInput(const OnboardingIn& input) {
   Json::Value out(Json::objectValue);
   out["requestId"] = input.requestId;
   out["mode"] = input.mode;
+  if (input.mode == "conversation") {
+    out["text"] = input.text;
+    out["context"] = input.context;
+    if (!input.imageBase64.empty()) {
+      out["image"]["mimeType"] = input.imageMimeType;
+      out["image"]["data"] = input.imageBase64;
+    }
+    return out;
+  }
   if (input.mode == "goal") {
     out["goal"] = input.goal;
     out["daysPerWeek"] = input.daysPerWeek;
@@ -104,8 +141,9 @@ Json::Value onboardingInput(const OnboardingIn& input) {
 
 std::optional<std::vector<OnboardingRoutine>> readOnboardingRoutines(
     const Json::Value& output, const OnboardingIn& input, const std::vector<Exercise>& seeds) {
-  if (!fields(output, {"routines"}) || !output["routines"].isArray() ||
-      output["routines"].empty() || output["routines"].size() > 3 ||
+  const bool dialogue = input.mode == "conversation";
+  if (!(dialogue ? fields(output, {"message", "routines"}) && label(output["message"], std::string::npos) : fields(output, {"routines"})) || !output["routines"].isArray() ||
+      (!dialogue && output["routines"].empty()) || output["routines"].size() > 3 ||
       (input.mode == "goal" && output["routines"].size() > static_cast<unsigned>(input.daysPerWeek))) return std::nullopt;
   if (input.mode == "goal" && (input.equipment == "bands" || input.equipment == "other")) return std::nullopt;
   std::vector<OnboardingRoutine> routines;
@@ -182,6 +220,18 @@ Json::Value onboardingRoutines(const std::vector<OnboardingRoutine>& routines) {
     out["routines"].append(row);
   }
   return out;
+}
+
+OnboardingMessage onboardingMessage(const std::string& said) {
+  if (said.size() <= kOnboardingMessageBytes) return {said, false};
+  const std::string ellipsis = "…";
+  const auto whitespace = [](char byte) { return byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n'; };
+  std::size_t boundary = kOnboardingMessageBytes - ellipsis.size();
+  while (boundary > 0 && (static_cast<unsigned char>(said[boundary]) & 0xC0) == 0x80) --boundary;
+  std::size_t end = boundary;
+  while (end > 0 && !whitespace(said[end])) --end;
+  while (end > 0 && whitespace(said[end - 1])) --end;
+  return {said.substr(0, end == 0 ? boundary : end) + ellipsis, true};
 }
 
 OnboardingRecord expireOnboarding(OnboardingRecord record, long long nowMs) {

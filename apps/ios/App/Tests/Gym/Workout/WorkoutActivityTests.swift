@@ -14,6 +14,36 @@ import SyncTesting
 @Suite(.serialized) @MainActor struct WorkoutActivityTests {
   let fixtures = WorkoutStateTests()
 
+  @Test func rackEditsUpdateImmediatelyCoalesceAndSurviveRefreshAndFlush() async throws {
+    let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
+    let previous = try #require(workout.activityOffer())
+    workout.weightKg = 62.5; workout.reps = 9
+    #expect(workout.weightKg == 62.5 && workout.reps == 9)
+    #expect(try workout.activityRecord()?.offer == previous)
+    gym.refresh(); workout.reconcile()
+    #expect(workout.weightKg == 62.5 && workout.reps == 9)
+    try await Task.sleep(for: .milliseconds(80))
+    let saved = try #require(try workout.activityRecord()?.offer)
+    #expect(saved.weightKg == 62.5 && saved.reps == 9 && saved.setID != previous.setID)
+    workout.weightKg = 65
+    #expect(gym.flush())
+    let reopened = GymModel(runner: harness.runner)
+    #expect(reopened.workout.weightKg == 65 && reopened.workout.reps == 9)
+    #expect(!workout.logActivityOffer(previous) && workout.sets.isEmpty)
+  }
+
+  @Test func failedRackFlushRestoresTheLastDurableValue() throws {
+    let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
+    let original = workout.weightKg
+    _ = workout.activityOffer()
+    workout.weightKg = 65
+    #expect(workout.weightKg == 65)
+    harness.failNextCommit()
+    #expect(!workout.flushRack())
+    #expect(workout.weightKg == original)
+    #expect(workout.message == "The rack could not be changed. Try again.")
+  }
+
   @Test func currentOfferLogsPremintedSetThroughTheDurableEngineQueue() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixtures.fixture(anonymous: false, telemetry: recorder)
     let workout = try fixtures.begin(gym)
@@ -480,6 +510,7 @@ import SyncTesting
     #expect(!workout.activityIdentityResolved && workout.activityOffer() == nil)
     #expect(!workout.logActivityOffer(stale) && workout.sets == original)
     workout.weightKg = 62.5; workout.reps = 9
+    #expect(workout.flushRack())
     let coldGym = GymModel(runner: local.runner, runtime: local.runtime), cold = coldGym.workout
     #expect(cold.weightKg == 62.5 && cold.reps == 9)
     #expect(cold.activityOffer() == nil && !cold.logActivityOffer(stale))
@@ -792,6 +823,7 @@ import SyncTesting
     let workout = try fixtures.begin(gym), previous = try #require(workout.activityOffer())
     workout.rackEditing = true
     workout.weightKg = 65
+    #expect(workout.flushRack())
     workout.rackEditing = false
     harness.failNextCommit()
     #expect(workout.activityOffer() == nil && workout.sets.isEmpty)

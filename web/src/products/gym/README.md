@@ -52,7 +52,14 @@ and preserve history depth and editor drafts. Hook reads reuse results while the
 selector inputs stay unchanged; retry and clock refreshes invalidate them. Live sessions refresh at
 their idle deadline. Each training read indexes sets by session and caches progress; record receipts
 come from one chronological pass. Equal cent-load estimate scores keep the earliest record, and
-bodyweight repetition records remain independent of assisted and loaded sets.
+bodyweight repetition records remain independent of assisted and loaded sets. Equipment and load-count overrides
+resolve through the current catalogue for old and new sets. Dumbbell entries are per dumbbell; working-set volume
+multiplies by the configured one or two dumbbells. Other equipment counts the entered external load once. Estimates
+retain the entered unit. Seed and custom names continue to identify the same movement throughout history. Set rows,
+the fix sheet, workout corrections and past-workout entry name each load's basis from the catalogue: `kg each` for
+a pair of dumbbells, `kg added` for bodyweight (`assisted` below zero on a row), `kg total` for barbells and the
+plain unit for one dumbbell and otherwise; rows read in the display unit, typed fields in kilograms. Every volume
+read takes the catalogue.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist workout fields, correction removals and routine deaths from removal proposals
 through offline restart. Set numbers arrive with server admission; a pending correction retains the
@@ -63,7 +70,7 @@ admission. Workout forms preflight known conflicts in their commit transaction a
 submitted draft in `rack:workoutDrafts` until admission succeeds. Pending saves stay on the form;
 refusals keep it editable, survive reload, and offer a route back from the log. Only acceptance shows
 Saved or leaves the editor. HTTP refusals also recover through the engine's durable notices.
-The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
+The composition is schema v7 with minimum v4. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
 right after the row drawn above it. The independent `routineCreation.snapshot` record is read-only
@@ -81,14 +88,27 @@ a `GymRefusal` is expected and reports nothing, and a store failure is the engin
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.
 
+Every ask sends `routineReview: true`, so Coach drafts new routines for review instead of saving them. The review card
+lists movements, targets in the display unit with their load basis, and equipment; a movement the log has not synced yet
+reads "New movement" with no basis. Only **Save routine** confirms its persisted operation. Drafts survive interrupted
+responses and thread history; confirmation retries retain the thread, request and operation identity. Saved state and its
+receipt survive older streamed or paged snapshots. An unsaved confirmation answers inside its card: a missing draft (404)
+or one the server cannot write (400, 422) closes the card's Save; signed out (401) asks for sign-in; a busy lease (409),
+an unavailable engine (5xx) or a lost reply offers a retry without asserting the routine was not saved. New chat waits
+while a routine saves and clears the card's note. `gym_coach_routine_confirm` reports only `outcome`: `started`, `saved`
+(even after the room unmounts), `refused` (a 4xx answer) or `failed` (5xx, network or a reply naming another draft).
+Only `failed` reports static `gym-coach-routine-confirm` to Sentry. Neither report contains routine or conversation content.
+A step receipt says `drafted a routine for your review` on a turn that carries drafts, `created a routine` on an older
+turn that saved directly, and `updated a movement` for a catalogue change Coach applied.
+
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
 and a replica change recomputes each read once. These render checks have no timing budget.
-The gym domain claims 13 of the 14 corpus files and 610 vectors, compared by JCS and with reversed record
-order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 116 vectors (including 36 promoted REST samples, 22 regression cases
+The gym domain claims 13 of the 14 corpus files and 630 vectors, compared by JCS and with reversed record
+order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 121 vectors (including 36 promoted REST samples, 22 regression cases
 and the `ProgressRecords` new bests), proposals claim 56 (the proposal state over the log-confirmed routine and its `OutOfDate` read
 included), units claim 57 and the weight ladder claims 36. Training actions claim 133; nothing remains pending.
 The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the

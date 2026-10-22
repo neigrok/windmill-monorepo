@@ -39,7 +39,7 @@ struct WorkoutObservation {
 
   WorkoutObservation() = default;
   WorkoutObservation(const Session& session, int workingSetCount, double tonnageKg);
-  WorkoutObservation(const Session& session, const std::vector<Set>& sets);
+  WorkoutObservation(const Session& session, const std::vector<Set>& sets, const std::vector<Exercise>& catalog);
   bool operator==(const WorkoutObservation&) const = default;
 };
 

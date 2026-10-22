@@ -44,7 +44,7 @@ class GymHttpTests {
         assertEquals("", pending.answer)
         assertEquals("older+/=", gym.threads("old+/=").nextCursor)
         assertEquals("before+/=", gym.thread("thread-old", "old+/=")?.nextCursor)
-        assertEquals(listOf("""{"thread":"thread-old","question":"Question","requestId":"request-a"}"""), bodies)
+        assertEquals(listOf("""{"thread":"thread-old","question":"Question","requestId":"request-a","attachmentIds":[],"stream":false,"routineReview":true}"""), bodies)
         assertEquals(listOf("/v1/gym/ask", "/v1/gym/threads?limit=50&cursor=old%2B%2F%3D", "/v1/gym/threads/thread-old?limit=50&before=old%2B%2F%3D"), paths)
     }
 

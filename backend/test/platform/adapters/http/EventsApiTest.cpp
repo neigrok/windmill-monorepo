@@ -366,23 +366,37 @@ TEST(events_a_session_past_its_daily_ceiling_is_refused_and_writes_nothing) {
   CHECK_EQ(h.repo->appended.size(), 1u);
 }
 
-TEST(events_gym_setup_preserves_the_native_step_labels_and_platform) {
+TEST(events_gym_feedback_preserves_bounded_client_labels_and_platform) {
   Harness h;
   Json::Value events(Json::arrayValue);
-  for (const auto* action : {"shown", "screenshot", "describe", "goal", "just_log", "build_manually", "clarify", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed"}) {
+  for (const auto* action : {"shown", "screenshot", "describe", "build_manually", "clarify", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "review_routines", "review_closed", "save_routines", "sign_in", "windmill_one"}) {
     auto event = entry("gym_setup_step", 1000);
     event["props"] = Json::Value(Json::objectValue);
     event["props"]["screen"] = "coach";
     event["props"]["action"] = action;
+    if (std::string(action) == "save_routines") event["props"]["outcome"] = "failed";
     events.append(event);
   }
+  auto workout = entry("gym_workout_adjusted", 1001);
+  workout["props"]["screen"] = "workout";
+  workout["props"]["field"] = "weight";
+  workout["props"]["outcome"] = "ok";
+  events.append(workout);
+  auto exercise = entry("gym_exercise_updated", 1002);
+  exercise["props"]["screen"] = "movement";
+  exercise["props"]["action"] = "equipment";
+  exercise["props"]["outcome"] = "refused";
+  events.append(exercise);
+  auto confirm = entry("gym_coach_routine_confirm", 1003);
+  confirm["props"]["outcome"] = "saved";
+  events.append(confirm);
   auto body = batch("setup-session", events);
   body["platform"] = "ios";
   const auto response = send(h.api, post(body));
-  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":12})"));
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":18})"));
   REQUIRE_EQ(h.repo->appended.size(), 1u);
-  REQUIRE_EQ(h.repo->appended.front().events.size(), 12u);
-  for (std::size_t index = 0; index < 12; ++index) {
+  REQUIRE_EQ(h.repo->appended.front().events.size(), 18u);
+  for (std::size_t index = 0; index < 18; ++index) {
     auto expected = events[static_cast<Json::ArrayIndex>(index)]["props"];
     expected["platform"] = "ios";
     CHECK_EQ(h.repo->appended.front().events[index].props, dump(expected));

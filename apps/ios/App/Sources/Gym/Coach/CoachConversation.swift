@@ -10,7 +10,7 @@ nonisolated struct CoachSaved: Codable {
     let attachmentIds: [String]
     let purpose: CoachPurpose
     var stream: Bool { true }
-    enum CodingKeys: String, CodingKey { case thread, question, requestId, attachmentIds, stream, purpose }
+    enum CodingKeys: String, CodingKey { case thread, question, requestId, attachmentIds, stream, purpose, routineReview }
     init(thread: String, question: String, requestId: String, attachmentIds: [String], purpose: CoachPurpose = .conversation) {
       self.thread = thread; self.question = question; self.requestId = requestId; self.attachmentIds = attachmentIds; self.purpose = purpose
     }
@@ -24,6 +24,7 @@ nonisolated struct CoachSaved: Codable {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(thread, forKey: .thread); try c.encode(question, forKey: .question); try c.encode(requestId, forKey: .requestId)
       try c.encode(attachmentIds, forKey: .attachmentIds); try c.encode(true, forKey: .stream); try c.encode(purpose, forKey: .purpose)
+      try c.encode(true, forKey: .routineReview)
     }
   }
   struct Choices: Codable, Equatable {
@@ -34,6 +35,7 @@ nonisolated struct CoachSaved: Codable {
   var adoptedSources: [String]?
   var phoneDrafts: [CoachPhoneDraft]?
   var onboarding: [CoachOnboardingRecord]?
+  var acceptedFirstMessage: Bool?
   var purpose: CoachPurpose?
   var setupChoice: CoachSetupChoice?
   var choices: Choices?
@@ -57,8 +59,10 @@ nonisolated struct CoachPhoneDraft: Codable, Equatable {
   var choices: CoachSaved.Choices?
 }
 
+// A question handed to Coach from elsewhere in the room, for the account it was asked under.
 nonisolated struct CoachHandoff: Identifiable, Equatable {
   var id = UUID()
+  let account: String?
   let question: String
   var send = false
   var purpose: CoachPurpose = .conversation
@@ -83,6 +87,7 @@ struct CoachDraftStore {
       let local = try read(source)
       var target = try read(account)
       if target.adoptedSources?.contains(source) == true { try FileManager.default.removeItem(at: sourceURL); return }
+      if local.acceptedFirstMessage == true { target.acceptedFirstMessage = true }
       let existing = Set((target.onboarding ?? []).map(\.id))
       target.onboarding = (target.onboarding ?? []) + (local.onboarding ?? []).filter { !existing.contains($0.id) }
       if !local.text.isEmpty || local.photo != nil {
@@ -112,8 +117,6 @@ struct CoachDraftStore {
   var refusal: CoachRefusal?
   var error: String?
   var asking = false
-  var installationAllowance: AiAllowance?
-  var savingOnboarding = false
   var uploading = false
   var stopping = false
   var reading = false
@@ -133,6 +136,18 @@ struct CoachDraftStore {
     guard allowed, draftReadable else { return false }
     switch refusal { case .daily, .ceiling, .fresh, .absent: return false; default: return true }
   }
+  // The first-run greeting stands until Coach accepts a first message; it steps aside while one is on its way.
+  var showsGreeting: Bool {
+    !asking && saved.acceptedFirstMessage != true && saved.thread?.turns.isEmpty != false
+      && saved.exchanges.allSatisfy { $0.allowanceRefusal != nil || $0.status == "failed" }
+      && !(saved.onboarding ?? []).contains { $0.response?.status == "completed" }
+  }
+  // The refusal the conversation's last turn draws with its reason and recovery; the composer band then repeats neither.
+  var transcriptAllowance: AiAllowance? {
+    guard anonymous else { return activeGeneration?.allowanceRefusal }
+    guard let response = anonymousRequest?.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") else { return nil }
+    return response.allowance
+  }
   var hasConversation: Bool {
     !saved.text.isEmpty || saved.photo != nil || saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty || !(saved.onboarding ?? []).isEmpty
   }
@@ -140,7 +155,6 @@ struct CoachDraftStore {
     saved.purpose == .routineSetup && (!saved.text.isEmpty || saved.photo != nil || activeGeneration?.terminal == false || activeClarification != nil)
   }
   var activeClarification: CoachClarification? {
-    if let choices = anonymousGoalChoices { return choices }
     guard !asking, saved.text.utf8.count <= 8000 else { return nil }
     let latest: CoachClarification?
     if let generation = activeGeneration { latest = generation.clarification }
@@ -174,14 +188,13 @@ struct CoachDraftStore {
     if next != owner {
       invalidateRead(); workGeneration += 1; stopGeneration += 1
       work?.cancel(); work = nil; stopWork?.cancel(); stopWork = nil; asking = false; uploading = false; stopping = false
-      owner = next; saved = CoachSaved(); installationAllowance = nil; refusal = nil; error = nil; draftReadable = true
+      owner = next; saved = CoachSaved(); refusal = nil; error = nil; draftReadable = true
       guard let next else { return }
       do { saved = try store.read(next); if anonymous { saved.purpose = .routineSetup } }
       catch { draftReadable = false; self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error); return }
     }
     guard let owner, draftReadable else { return }
     if anonymous {
-      if installationAllowance == nil { await loadInstallationAllowance() }
       guard self.owner == owner, allowed, anonymous else { return }
       if let record = anonymousRequest, !record.finished, !record.stopped, !asking { launchOnboarding(owner: owner) }
       return
@@ -219,24 +232,21 @@ struct CoachDraftStore {
   @discardableResult func newChat(seed: String = "", purpose: CoachPurpose = .conversation) -> Bool {
     guard !asking, !anonymous else { return false }
     invalidateRead()
-    var next = CoachSaved(); next.adoptedSources = saved.adoptedSources; next.onboarding = saved.onboarding; next.phoneDrafts = saved.phoneDrafts; next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
+    var next = CoachSaved(); next.acceptedFirstMessage = saved.acceptedFirstMessage; next.adoptedSources = saved.adoptedSources; next.onboarding = saved.onboarding; next.phoneDrafts = saved.phoneDrafts; next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
   }
   func begin(_ handoff: CoachHandoff) -> Bool {
     guard !asking else { error = "Coach is answering another message. Try again when it finishes."; return false }
-    guard allowed, draftReadable, newChat(seed: handoff.question, purpose: handoff.purpose) else { return false }
+    guard allowed, draftReadable, handoff.account == owner, newChat(seed: handoff.question, purpose: handoff.purpose) else { return false }
     if handoff.send { send() }
     return true
   }
   @discardableResult func chooseSetup(_ choice: CoachSetupChoice) -> Bool {
     guard allowed, draftReadable, !asking else { return false }
     var next = saved; next.setupChoice = choice
-    if choice.starter {
-      next.purpose = .routineSetup
-      if next.text.isEmpty || next.text == saved.setupChoice?.draft { next.text = choice.draft }
-    } else { next.purpose = .conversation }
+    next.purpose = choice.starter ? .routineSetup : .conversation
     guard keep(next, failure: "Your setup choice couldn’t be saved. Try again.") else { return false }
     gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": choice.rawValue])
     return true
@@ -265,7 +275,7 @@ struct CoachDraftStore {
     }
   }
   func noteOffline() {
-    if offline, error == nil { error = CoachCopy.offline }
+    if offline, !asking, error == nil { error = CoachCopy.offline }
   }
   func send() {
     if anonymous { sendOnboarding(); return }
@@ -332,16 +342,31 @@ struct CoachDraftStore {
           uploading = false
         }
         let body = try JSONEncoder().encode(request)
-        var backoff = 1
+        var reconnects = 0, backoff = 1
         while true {
-          let data = try await rest.coachRequest("/v1/gym/ask", method: "POST", body: body, expectedAccount: owner) { [weak self] snapshot in
-            guard let self, self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
-            try self.accept(snapshot, request: request)
+          do {
+            let data = try await rest.coachRequest("/v1/gym/ask", method: "POST", body: body, expectedAccount: owner, reportsFailure: false, activity: CoachStreamActivity { [weak self] in
+              guard let self, self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
+              if self.error == CoachCopy.reconnecting { self.error = nil }
+            }) { [weak self] snapshot in
+              guard let self, self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
+              try self.accept(snapshot, request: request)
+            }
+            guard self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
+            if !data.isEmpty { try accept(JSONDecoder().decode(CoachSnapshot.self, from: data), request: request) }
+            if activeGeneration?.terminal == true { break }
+            try await Task.sleep(for: .seconds(backoff)); backoff = min(16, backoff * 2)
+          } catch {
+            let code = (error as? URLError)?.code
+            guard [.networkConnectionLost, .timedOut].contains(code), activeGeneration != nil, reconnects < 3 else {
+              if !(error is DecodingError) { rest.reportCoachFailure(error, method: "POST") }
+              throw error
+            }
+            guard self.owner == owner, self.allowed, self.workGeneration == generation else { throw CancellationError() }
+            reconnects += 1
+            self.error = CoachCopy.reconnecting
+            try await Task.sleep(for: .seconds(min(8, 1 << reconnects)))
           }
-          guard self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
-          if !data.isEmpty { try accept(JSONDecoder().decode(CoachSnapshot.self, from: data), request: request) }
-          if activeGeneration?.terminal == true { break }
-          try await Task.sleep(for: .seconds(backoff)); backoff = min(16, backoff * 2)
         }
         guard self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation else { return }
         gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": activeGeneration?.allowanceRefusal != nil ? "capped" : activeGeneration?.status == "completed" ? "answered" : activeGeneration?.status == "stopped" ? "cancelled" : "failed"], durationMs: Int64((ProcessInfo.processInfo.systemUptime - started) * 1000))
@@ -355,7 +380,8 @@ struct CoachDraftStore {
         }
         if error is DecodingError { gym.report("gym_rest", error) }
         if GymRESTClient.needsConnection(error) {
-          refusal = .retry(CoachCopy.offline); self.error = CoachCopy.offline
+          let message = activeGeneration == nil ? CoachCopy.offline : CoachCopy.interrupted
+          refusal = .retry(message); self.error = message
         } else if uploading {
           self.error = "Photo didn’t upload."
         } else if let failure = error as? GymRESTFailure {
@@ -393,10 +419,11 @@ struct CoachDraftStore {
     if let previous = activeGeneration, previous.id == snapshot.generation.id, snapshot.generation.revision <= previous.revision { return }
     CoachFixture.applySetupResults(snapshot.generation.results, gym: gym)
     var next = saved; next.generation = snapshot.generation; next.allowance = snapshot.generation.allowanceRefusal
+    if snapshot.generation.allowanceRefusal == nil, snapshot.generation.status != "failed" { next.acceptedFirstMessage = true }
     // Composer edits keep their request marker through Stop and recovery, even after an edit is reverted.
     let ownsDraft = next.editedRequestId != request.requestId && next.text.trimmingCharacters(in: .whitespacesAndNewlines) == request.question
       && (next.photo.map { [$0.id] } ?? []) == request.attachmentIds
-    if snapshot.generation.terminal && snapshot.generation.allowanceRefusal == nil && ownsDraft { next.text = ""; next.photo = nil; next.photoData = nil; next.editedRequestId = nil }
+    if ["completed", "stopped"].contains(snapshot.generation.status) && snapshot.generation.allowanceRefusal == nil && ownsDraft { next.text = ""; next.photo = nil; next.photoData = nil; next.editedRequestId = nil }
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { throw AppFailure(message: "Your message couldn’t be saved. Try again.") }
     if let allowance = snapshot.generation.allowanceRefusal { refusal = .allowance(allowance); error = allowance.message; return }
     error = snapshot.generation.status == "failed" ? CoachCopy.interrupted : snapshot.generation.status == "stopped" ? CoachCopy.stopped : nil
@@ -436,7 +463,7 @@ struct CoachDraftStore {
     do {
       let previous = owner == account ? saved : try store.read(account)
       guard previous.threadId == id else { return true }
-      var next = CoachSaved(); next.setupChoice = previous.setupChoice; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
+      var next = CoachSaved(); next.acceptedFirstMessage = previous.acceptedFirstMessage; next.setupChoice = previous.setupChoice; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
       try store.write(next, account: account)
       guard owner == account, saved.threadId == id else { return true }
       saved = next

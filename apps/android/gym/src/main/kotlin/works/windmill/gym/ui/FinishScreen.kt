@@ -161,8 +161,7 @@ data class FinishedSession(
     val reviewRead: Boolean = true,
 ) {
     val routine: String? get() = session.plan?.routine
-    val summary: SessionSummary get() = SessionSummary(session, sets)
-    val slight: Boolean get() = (summary.workingSetCount ?: 0) < 4
+    val slight: Boolean get() = sets.count { it.kind == SetKind.Working } < Review.slightWorkingSets
 
     // Offered only for a session that had nothing written down for it, and never over a slight one.
     val offersRoutine: Boolean
@@ -262,7 +261,7 @@ fun FinishScreen(
             Text("${finished.routine ?: "Free session"} · Workout saved", style = WindmillFont.body(16), color = skin.inkDim)
         }
 
-        val summary = finished.summary
+        val summary = SessionSummary(finished.session, finished.sets, catalog)
         val facts = listOf(summary.setCount.toString() to "Sets",
             Readout.weight(summary.tonnageKg ?: 0.0) to "kg lifted",
             summary.exercises.size.toString() to "Movements")

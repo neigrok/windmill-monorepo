@@ -12,7 +12,7 @@ import SyncModelServer
   let now = Instant(ms: 1_790_424_000_000)
 
   func log(sessions: [Session] = [], sets: [TrainingSet] = [], complete: Bool = true) -> TrainingLog {
-    TrainingLog(sessions: sessions, sets: sets, moment: Moment(now: now, zone: FixedZone(offsetSeconds: 0)), firstPullComplete: complete)
+    TrainingLog(sessions: sessions, sets: sets, moment: Moment(now: now, zone: FixedZone(offsetSeconds: 0)), firstPullComplete: complete, catalogue: Catalogue(custom: [], names: []))
   }
 
   func exercise(_ id: String, name: String, aliases: [String] = []) -> Exercise {
@@ -198,15 +198,19 @@ import SyncModelServer
     #expect(draft.name == "Cable curl kept")
   }
 
-  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {
-    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "bodyweight"])
+  @Test func creationPreservesAllEquipmentChoicesAndAcceptsOpenTargets() {
+    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
     #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
     #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
     #expect(draft.problem == nil)
-    draft.equipment = "cable"
+    for equipment in MovementCreationDraft.equipmentChoices {
+      draft.equipment = equipment
+      #expect(draft.problem == nil)
+    }
+    draft.equipment = "unknown"
     #expect(draft.problem == "check the movement name and equipment")
   }
 

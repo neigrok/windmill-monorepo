@@ -4,7 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +29,7 @@ class CoachStore internal constructor(
     private val localCoach: LocalCoach?,
     private val telemetry: Telemetry,
     private val elapsedNanos: () -> Long,
+    private val scope: CoroutineScope,
 ) {
     private val owner: String? get() = accountOwner()
     val accountKey: String get() = Seat.of(owner)
@@ -39,6 +42,7 @@ class CoachStore internal constructor(
 
     internal fun resetThreads() {
         conversations = emptyList()
+        confirmations = emptyMap()
         nextThreadCursor = null
     }
 
@@ -114,6 +118,54 @@ class CoachStore internal constructor(
         if (current.status in listOf("completed", "stopped")) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
         check(seat == owner) { accountChanged }
         return current
+    }
+
+    private var confirmations by mutableStateOf<Map<Pair<String, String>, CoachRoutineConfirmation>>(emptyMap())
+    private val routineConfirmation = Mutex()
+
+    fun confirmedGeneration(requestId: String): AskGeneration? = owner?.let { seat ->
+        confirmations[seat to requestId]?.generation ?: localCoach?.confirmed(seat, requestId)
+    }
+
+    // Runs in the store's scope, so leaving Coach mid-save still lands the routine, its refresh and its outcome.
+    // A save the log confirmed stands even when this phone fails to keep its copy.
+    suspend fun confirmRoutine(threadId: String, requestId: String, draft: CoachRoutineDraft): DraftOutcome {
+        val seat = owner ?: return DraftOutcome.Failed(Ask.draftSignIn)
+        val coach = rest() ?: return DraftOutcome.Failed(Ask.draftSignIn)
+        return scope.async {
+            routineConfirmation.withLock {
+                if (seat != owner) return@withLock DraftOutcome.Failed(accountChanged)
+                confirmedGeneration(requestId)?.takeIf { generation -> generation.routineDrafts.any { it.operationId == draft.operationId && it.state == "saved" } }
+                    ?.let { return@withLock DraftOutcome.Saved(it) }
+                telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to "started"))
+                val reply = try {
+                    coach.confirmRoutine(threadId, requestId, draft.operationId).also { reply ->
+                        if (reply.thread != threadId || reply.generation.requestId != requestId ||
+                            reply.generation.routineDrafts.none { it.operationId == draft.operationId && it.routineId == draft.routineId && it.state == "saved" }) error("routine-confirmation-mismatch")
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    reportFailure("gym.coachRoutineConfirm", failure)
+                    val refused = failure is WindmillApiException.Refused && failure.status in 400..499
+                    telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to if (refused) "refused" else "failed"))
+                    return@withLock DraftOutcome.of(failure)
+                }
+                telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to "saved"))
+                if (seat != owner) return@withLock DraftOutcome.Failed(accountChanged)
+                try {
+                    withContext(Dispatchers.IO) { localCoach?.confirm(seat, reply) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    reportFailure("gym.coachRoutineConfirm", failure)
+                }
+                if (seat != owner) return@withLock DraftOutcome.Failed(accountChanged)
+                confirmations = confirmations + ((seat to requestId) to reply)
+                onProgramChanged()
+                DraftOutcome.Saved(reply.generation)
+            }
+        }.await()
     }
 
     fun pendingExchange(question: AskQuestion): AskExchange {
@@ -289,6 +341,7 @@ class CoachStore internal constructor(
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 conversations = conversations.filterNot { it.id == id }
                 if (seat != null) localCoach?.clear(seat, id)
+                confirmations = confirmations.filter { (key, value) -> key.first != seat || value.thread != id }
                 GymResult.Ok(Unit)
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -302,6 +355,27 @@ class CoachStore internal constructor(
         }
     }
 
+}
+
+// `Saved` is the log's word, also for a draft an earlier tap saved. `Closed` is a draft no retry can save,
+// so the card takes Save away; `Failed` keeps Save for another tap.
+sealed interface DraftOutcome {
+    data class Saved(val generation: AskGeneration) : DraftOutcome
+    data class Closed(val said: String) : DraftOutcome
+    data class Failed(val said: String) : DraftOutcome
+
+    companion object {
+        // Told apart by status, never by the English.
+        fun of(failure: Exception): DraftOutcome {
+            val refused = failure as? WindmillApiException.Refused ?: return Failed(Ask.draftRetry)
+            return when (refused.status) {
+                401 -> Failed(Ask.draftSignIn)
+                404 -> Closed(Ask.draftGone)
+                400, 422 -> Closed(Ask.draftInvalid)
+                else -> Failed(Ask.draftRetry)
+            }
+        }
+    }
 }
 
 // `Answered` carries the reply whole and the screen draws it without adding to it. `Refused` is the

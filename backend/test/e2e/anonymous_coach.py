@@ -25,6 +25,23 @@ def photo_bytes(maximum=False):
     return source[:-12] + struct.pack(">I", len(padding)) + chunk + struct.pack(">I", zlib.crc32(chunk)) + source[-12:]
 
 
+def fixture_result(details):
+    days = [
+        [("back-squat", 3, 5), ("bench-press", 3, 8), ("barbell-row", 3, 8)],
+        [("deadlift", 2, 5), ("overhead-press", 3, 8), ("lat-pulldown", 3, 10)],
+        [("back-squat", 3, 8), ("bench-press", 3, 5), ("barbell-row", 3, 10)],
+    ]
+    count = min(details.get("daysPerWeek", 2), 3)
+    result = {"routines": [{"name": "Training " + str(index + 1), "entries": [
+        {"exerciseId": exercise, "sets": [{"reps": reps, "weightKg": None} for _ in range(sets)], "restSeconds": None}
+        for exercise, sets, reps in day]} for index, day in enumerate(days[:count])]}
+    if details.get("mode") == "conversation":
+        if "routine" not in details.get("text", "").lower():
+            return {"message": "Hello. What would you like to work on?" if not details.get("context") else "Three days gives us room to build gradually. Would you like a routine draft?", "routines": []}
+        result["message"] = "Here are your routine drafts. Review them before saving."
+    return result
+
+
 def fixture(evidence, port):
     lock = threading.Lock()
 
@@ -46,18 +63,10 @@ def fixture(evidence, port):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            days = [
-                [("back-squat", 3, 5), ("bench-press", 3, 8), ("barbell-row", 3, 8)],
-                [("deadlift", 2, 5), ("overhead-press", 3, 8), ("lat-pulldown", 3, 10)],
-                [("back-squat", 3, 8), ("bench-press", 3, 5), ("barbell-row", 3, 10)],
-            ]
-            count = min(details.get("daysPerWeek", 2), 3)
-            result = {"routines": [{"name": "Training " + str(index + 1), "entries": [
-                {"exerciseId": exercise, "sets": [{"reps": reps, "weightKg": None} for _ in range(sets)], "restSeconds": None}
-                for exercise, sets, reps in day]} for index, day in enumerate(days[:count])]}
+            result = fixture_result(details)
             stop = "max_tokens" if details.get("program") == "fixture_truncated" else "end_turn"
             raw = json.dumps({"stop_reason": stop, "content": [{"type": "text", "text": json.dumps(result)}],
-                              "usage": {"input_tokens": 1000, "output_tokens": min(1000, request["max_tokens"]),
+                              "usage": {"input_tokens": 1000, "output_tokens": min(100 if not result["routines"] else 1000, request["max_tokens"]),
                                         "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -118,7 +127,7 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
         self.check("no_debt_" + label, self.sql("SELECT count(*) FROM ai_budget_balances WHERE debt_nanos<>0") == "0")
         original = body
         status, replay, _ = self.call("POST", "/v1/gym/coach/onboarding", payload, credential)
-        self.check("durable_replay_" + label, status == 200 and replay["resultId"] == original["resultId"] and replay["status"] == original["status"] and replay["routines"] == original["routines"] and replay["errorCode"] == original["errorCode"])
+        self.check("durable_replay_" + label, status == 200 and replay["resultId"] == original["resultId"] and replay["status"] == original["status"] and replay["routines"] == original["routines"] and replay.get("message") == original.get("message") and replay["errorCode"] == original["errorCode"])
         expected_rounds = before + (0 if expected == "failed" and body.get("errorCode") in ("free_day_exhausted", "free_month_exhausted") else 1)
         deadline = time.monotonic() + 5
         while self.usage()["rounds"] < expected_rounds and time.monotonic() < deadline:
@@ -161,6 +170,15 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
         self.check("immutable_request", status == 409 and conflict.get("code") == "request_conflict")
         status, invalid, _ = self.call("POST", "/v1/gym/coach/onboarding", {"requestId": str(uuid.uuid4()), "mode": "photo", "image": {"mimeType": "image/png", "data": "AAAA"}}, issued["photo"])
         self.check("invalid_photo_before_claim", status == 400 and invalid.get("code") == "invalid_image" and self.sql("SELECT count(*) FROM gym_coach_onboarding") == "3")
+        if self.provider == "fixture":
+            _, greeting = self.generate("greeting", issued["program"], {"mode": "conversation", "text": "Hi", "context": []})
+            self.check("greeting_without_routines", greeting["message"] == "Hello. What would you like to work on?" and greeting["routines"] == [])
+            context = [{"role": "user", "text": "Hi"}, {"role": "assistant", "text": greeting["message"]}]
+            _, followup = self.generate("followup", issued["program"], {"mode": "conversation", "text": "I can train three days each week", "context": context})
+            self.check("dialogue_followup_without_routines", followup["message"] == "Three days gives us room to build gradually. Would you like a routine draft?" and followup["routines"] == [])
+            context += [{"role": "user", "text": "I can train three days each week"}, {"role": "assistant", "text": followup["message"]}]
+            _, draft = self.generate("dialogue_draft", issued["program"], {"mode": "conversation", "text": "Yes, draft a routine", "context": context})
+            self.check("dialogue_draft_not_imported", bool(draft["routines"]) and self.sql("SELECT count(*) FROM gym_routines") == "0")
         for path in ("/v1/gym/threads", "/v1/gym/exercises", "/v1/gym/routines", "/v1/gym/threads/thr_private/attachments/img_private"):
             status, _, _ = self.call("GET", path, credential=issued["goal"])
             self.check("account_route_locked_" + path.split("/")[-1], status == 401)
@@ -195,7 +213,7 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
                 self.check("global_pause_reset", paused["errorCode"] == "free_day_exhausted" and paused["allowance"]["code"] == "free_day_exhausted" and paused["allowance"]["budgetResetsAtMs"] > int(time.time() * 1000))
             finally:
                 self.sql(f"UPDATE ai_budget_balances SET spent_nanos={prior_day_spend} WHERE scope='free_day'")
-        actions = ["goal", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "open_routine"]
+        actions = ["review_routines", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "open_routine"]
         events = [{"id": "evt_" + uuid.uuid4().hex, "name": "gym_setup_step", "clientMs": int(time.time()*1000), "props": {"screen": "coach", "action": action}} for action in actions]
         status, accepted, _ = self.call("POST", "/v1/events", {"sessionKey": "anonymous-coach-proof", "platform": "ios", "events": events})
         self.check("first_party_events", status == 202 and accepted.get("accepted") == len(actions))

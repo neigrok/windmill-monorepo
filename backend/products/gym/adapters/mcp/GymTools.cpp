@@ -125,12 +125,13 @@ ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value&
   return ToolResult::json(out);
 }
 
-ToolResult getSessions(TrainingService& training, const UserId& caller, const Json::Value& args, ReadReceipt& served) {
+ToolResult getSessions(TrainingService& training, CatalogRepository& catalog, const UserId& caller, const Json::Value& args, ReadReceipt& served) {
   const auto names = batchIds(args, "sessionIds");
   if (!args["review"].isNull() && !args["review"].isBool()) throw InvalidTraining("review must be true or false");
   std::vector<SessionId> ids;
   for (const std::string& name : names) ids.emplace_back(name);
   const std::vector<SessionRows> sessions = training.sessions(caller, ids);
+  const auto exercises = catalog.catalog(caller);
   std::set<std::string> present;
   Json::Value out(Json::objectValue);
   out["sessions"] = Json::Value(Json::arrayValue);
@@ -140,7 +141,7 @@ ToolResult getSessions(TrainingService& training, const UserId& caller, const Js
     served.sawSession(detail.session.id, detail.session.startedAtMs);
     for (const Set& set : detail.sets) served.sawSet(set.id, set.completedAtMs);
     served.observed(SessionObservation{"get_sessions", detail.session, ReadCoverage::session,
-        static_cast<int>(detail.sets.size()), WorkoutObservation{detail.session, detail.sets}});
+        static_cast<int>(detail.sets.size()), WorkoutObservation{detail.session, detail.sets, exercises}});
     Json::Value row(Json::objectValue);
     row["session"] = toJson(detail.session);
     row["sets"] = toJson(detail.sets);
@@ -227,7 +228,7 @@ ToolResult listSessions(TrainingService& training, const UserId& caller, const J
   return ToolResult::json(out);
 }
 
-ToolResult getSession(TrainingService& training, const UserId& caller, const Json::Value& args,
+ToolResult getSession(TrainingService& training, CatalogRepository& catalog, const UserId& caller, const Json::Value& args,
                       ReadReceipt& served) {
   std::string id;
   if (std::optional<std::string> bad =
@@ -241,7 +242,7 @@ ToolResult getSession(TrainingService& training, const UserId& caller, const Jso
   served.sawSession(detail->session.id, detail->session.startedAtMs);
   for (const Set& set : detail->sets) served.sawSet(set.id, set.completedAtMs);
   served.observed(SessionObservation{"get_session", detail->session, ReadCoverage::session,
-      static_cast<int>(detail->sets.size()), WorkoutObservation{detail->session, detail->sets}});
+      static_cast<int>(detail->sets.size()), WorkoutObservation{detail->session, detail->sets, catalog.catalog(caller)}});
   Json::Value out(Json::objectValue);
   out["session"] = toJson(detail->session);
   out["sets"] = toJson(detail->sets);
@@ -629,6 +630,10 @@ ToolResult revokeShare(TrainingService& training, const UserId& caller, const Js
 }  // namespace
 
 std::optional<ToolResult> GymTools::completedAction(const UserId& user, const std::string& name, const std::string& id) {
+  if (name == "update_exercise") {
+    if (const auto exercise = catalog_.exerciseUpdate(user, id)) return ToolResult::json(toJson(*exercise));
+    return std::nullopt;
+  }
   if (name == "create_routine") {
     if (const auto routine = program_.routineCreation(user, RoutineId{id})) return ToolResult::json(toJson(*routine));
     return std::nullopt;
@@ -713,7 +718,7 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
     reportCurrentWriteFailure(error);
     return ToolResult::failure(name + ": that call failed inside the server; the detail is in the "
                                "server log. Read the workout back before retrying a write, and "
-                               "reuse the SAME id if you do.");
+                               "reuse the SAME id if you do.", "failed");
   }
 }
 
@@ -727,9 +732,9 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
 
   if (name == "list_exercises")  return listExercises(catalog_, caller);
   if (name == "list_sessions")   return listSessions(training_, caller, arguments, served);
-  if (name == "get_sessions")    return getSessions(training_, caller, arguments, served);
+  if (name == "get_sessions")    return getSessions(training_, catalog_, caller, arguments, served);
   if (name == "get_last_times")  return getLastTimes(training_, caller, arguments, served);
-  if (name == "get_session")     return getSession(training_, caller, arguments, served);
+  if (name == "get_session")     return getSession(training_, catalog_, caller, arguments, served);
   if (name == "last_time")       return lastTime(training_, caller, arguments, served);
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
   if (name == "get_stats")       return getStats(training_, caller, arguments, served);
@@ -745,6 +750,30 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "create_routine")  return createRoutine(program_, door_, caller, arguments, source.door);
   if (name == "propose_routine_change")
     return proposeRoutineChange(program_, door_, caller, arguments, source, appBaseUrl_);
+  if (name == "update_exercise") {
+    if (!arguments["exerciseId"].isString()) return ToolResult::failure("exerciseId must name an existing movement");
+    ExerciseUpdate update{ExerciseId{arguments["exerciseId"].asString()}};
+    if (arguments.isMember("requestId")) {
+      if (!arguments["requestId"].isString()) return ToolResult::failure("requestId must be a string");
+      update.requestId = arguments["requestId"].asString();
+    }
+    if (arguments.isMember("name")) {
+      if (!arguments["name"].isString()) return ToolResult::failure("name must be a string");
+      update.name = arguments["name"].asString();
+    }
+    if (arguments.isMember("equipment")) {
+      if (!arguments["equipment"].isString()) return ToolResult::failure("equipment must be a string");
+      update.equipment = parseEquipment(arguments["equipment"].asString());
+    }
+    if (arguments.isMember("loadCount")) {
+      if (!arguments["loadCount"].isInt()) return ToolResult::failure("loadCount must be 1 or 2");
+      update.loadCount = arguments["loadCount"].asInt();
+    }
+    if (!update.name && !update.equipment && !update.loadCount) return ToolResult::failure("name at least one field to update");
+    const auto exercise = door_.updateExercise(caller, update);
+    if (!exercise) return ToolResult::failure(kNoExercise);
+    return ToolResult::json(toJson(*exercise));
+  }
   if (name == "create_exercise") return createExercise(door_, caller, arguments);
   if (name == "share_session")   return shareSession(training_, caller, arguments, appBaseUrl_);
 

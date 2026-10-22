@@ -191,7 +191,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
   {
     tools.push_back(tool("list_exercises", Access::read,
         "The movement catalog you log against: the seeded movements plus the ones you created. Each "
-        "row is {id, name, pattern, equipment, stepKg, custom}, and that `id` is the `exerciseId` "
+        "row is {id, name, pattern, equipment, stepKg, custom}, plus `loadCount` for dumbbells, and that `id` is the `exerciseId` "
         "every set and routine entry names. Takes no arguments.",
         Json::Value(Json::objectValue), {}));
   }
@@ -204,7 +204,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "Your training log, newest first — one row per workout: the session, `setCount` (every set "
         "it held) beside `workingSetCount` (only the working ones, which are the only sets that "
         "count toward anything), `tonnageKg` (the load those working sets moved, an assisted or "
-        "bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was "
+        "zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was "
         "done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley "
         "estimate any working set in it earned — the session's own number, not the heaviest set's), "
         "`record` (a personal record happened in that workout — best e1RM, most reps at a load, or "
@@ -433,6 +433,17 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "nothing merges them back.",
         p, {"id", "name", "pattern", "equipment"}));
   }
+  {
+    Json::Value p(Json::objectValue);
+    p["exerciseId"] = str("The existing stable movement id from list_exercises. History keeps this id.");
+    p["requestId"] = str("Optional stable edit identity. Retry the same identity and fields after an interrupted reply; replay never overwrites a later edit.");
+    p["name"] = cappedStr("The new display name, including in past workouts.", kMaxNameLength);
+    p["equipment"] = enumStr("How the entered load is measured: barbell includes the bar; dumbbell is per dumbbell; bodyweight is added load only.", kEquipment);
+    p["loadCount"] = boundedInt("Number of dumbbells represented by each repetition, 1 or 2. Ignored for other equipment.", 1, 2);
+    tools.push_back(tool("update_exercise", Access::write,
+        "Update an existing exercise only when the user asks to rename it or change its equipment/load count. Read list_exercises first and retain its exact exerciseId, so every past set remains attached. Never create a replacement movement for an edit. Omit fields to retain their current values.", p, {"exerciseId"}));
+  }
+
   {
     Json::Value p(Json::objectValue);
     p["sessionId"] = sessionHandle();

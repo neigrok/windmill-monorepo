@@ -159,15 +159,15 @@ These rules hold on every surface.
   routines, planting steps, editing and every read.
 - **Anonymous AI policy is $0.05 for the lifetime of an installation credential**, with no promised
   question count (`gym/briefs/09-coach.md`). Server-issued credentials, IP limits and global free
-  budgets protect Coach onboarding; resets are not guaranteed to preserve identity. The allowance
-  line appears only after a server read establishes access. An action that
-  needs an account opens the sign-in door at that moment and preserves the draft. Admission is
+  budgets protect Coach onboarding; resets are not guaranteed to preserve identity. No standing
+  allowance or remaining-balance line is drawn. An action that needs an account opens the sign-in
+  door at that moment and preserves the draft. Admission is
   checked again after sign-in; signing in does not promise immediate AI capacity.
 - Anonymous public text import remains refused before dispatch in enabled USD mode; installation
   access is limited to Gym Coach onboarding.
 - Hosted background Echoes use individual USD allowance; existing Echoes remain readable.
 - Every first run still reaches a real thing with zero agent calls: Journal's cursor, Gym's
-  **Just log** and **Build it myself**, the roadmap's starter quests and blank tree.
+  **Build myself** and the Routines/Log tabs, the roadmap's starter quests and blank tree.
 
 ## 10. Constants — copy into the build
 

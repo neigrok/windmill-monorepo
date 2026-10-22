@@ -740,7 +740,7 @@ TEST(gym_setup_rejects_malformed_choices_and_only_offers_the_tool_for_setup) {
   CHECK_FALSE(bodyOf(response)["generation"].isMember("clarification"));
 }
 
-TEST(gym_setup_http_retains_multiple_creation_receipts_after_later_usd_refusal) {
+TEST(gym_setup_http_retains_multiple_routine_drafts_after_later_usd_refusal) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
   FakeSubscriptionRepository subs;
@@ -767,7 +767,7 @@ TEST(gym_setup_http_retains_multiple_creation_receipts_after_later_usd_refusal) 
   auto failures = std::make_shared<CoachFailures>();
   auto service = std::make_shared<AskService>(h.training, h.repo.threads, h.clock, agent, h.tools, entitlements, failures);
   AskApi api{service, h.auth};
-  const auto request = parse(R"({"thread":"thr_httpmulti","requestId":"req_httpmulti","question":"Build three days","purpose":"routine_setup"})");
+  const auto request = parse(R"({"thread":"thr_httpmulti","requestId":"req_httpmulti","question":"Build three days","purpose":"routine_setup","routineReview":true})");
   std::promise<drogon::HttpResponsePtr> settled;
   api.ask(postRequest("/v1/gym/ask", request, "s-door"), [&](const auto& response) { settled.set_value(response); });
   const auto response = settled.get_future().get();
@@ -776,24 +776,26 @@ TEST(gym_setup_http_retains_multiple_creation_receipts_after_later_usd_refusal) 
   CHECK_EQ(body["code"], Json::Value("subject_exhausted"));
   CHECK_EQ(body["reason"], Json::Value("request_exceeds_remaining"));
   CHECK_EQ(body["allowance"]["currency"], Json::Value("USD"));
-  REQUIRE_EQ(body["results"].size(), 3u);
+  REQUIRE_EQ(body["generation"]["routineDrafts"].size(), 3u);
+  CHECK(body["results"].empty());
   CHECK_EQ(body["results"], body["generation"]["results"]);
   CHECK_EQ(body["generation"]["purpose"], Json::Value("routine_setup"));
   CHECK_EQ(body["generation"]["allowanceRefusal"], body["allowance"]);
   Json::Value results(Json::arrayValue);
   for (int index = 0; index < 3; ++index) {
     Json::Value result(Json::objectValue);
-    result["kind"] = "routine-created";
+    result["state"] = "pending";
+    result["position"] = index;
+    result["entries"] = parse(R"([{"position":1,"exerciseId":"bench-press","sets":[{"reps":8}]}])");
     result["operationId"] = "op_create_" + std::to_string(index) + "_" + body["generation"]["id"].asString();
     result["routineId"] = "rt_" + body["generation"]["id"].asString() + "_" + std::to_string(index);
-    result["routineName"] = "Day " + std::to_string(index + 1);
-    result["movementCount"] = Json::UInt(1);
+    result["name"] = "Day " + std::to_string(index + 1);
     results.append(result);
   }
-  CHECK_EQ(body["results"], results);
+  CHECK_EQ(body["generation"]["routineDrafts"], results);
   const auto stored = h.repo.threads.thread(h.user, ThreadId{"thr_httpmulti"});
   REQUIRE(stored);
-  CHECK_EQ(toJson(*stored)["turns"][1]["results"], results);
+  CHECK_EQ(toJson(*stored)["turns"][1]["routineDrafts"], results);
   CHECK_EQ(toJson(*stored)["turns"][1]["allowanceRefusal"], body["allowance"]);
   CHECK(failures->reports.empty());
 }

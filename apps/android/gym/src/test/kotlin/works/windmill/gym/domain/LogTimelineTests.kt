@@ -19,7 +19,7 @@ class LogTimelineTests {
         }
         val now = at("2026-08-27")
         val stats = StatsProgress.of(details.reversed(), now)
-        val summaries = details.map { SessionSummary(it.session, it.sets) }
+        val summaries = details.map { SessionSummary(it.session, it.sets, listOf(Exercise("bench", "Bench Press"))) }
         val best = NewBest("bench", "s2", at("2026-08-17"), "s0", at("2026-08-03"), estimate = 90.0, gain = 10.0)
         val expected = listOf(
             LogEntry.Workout(summaries[3]),
@@ -42,7 +42,7 @@ class LogTimelineTests {
                 TrainingSet("set$index", "bench", weightKg = lift.first, reps = lift.second, completedAtMs = at(day))))
         }
         val now = at("2026-08-20")
-        val summaries = details.map { SessionSummary(it.session, it.sets) }
+        val summaries = details.map { SessionSummary(it.session, it.sets, listOf(Exercise("bench", "Bench Press"))) }
         val best = NewBest("bench", "s2", at("2026-08-17"), "s0", at("2026-08-03"), estimate = 58.4, gain = 0.1)
         assertEquals(listOf(
             LogEntry.Workout(summaries[2]), LogEntry.Moment.Best(best),

@@ -13,6 +13,7 @@ namespace wm::gym {
 constexpr std::size_t kOnboardingImageBytes = 1024 * 1024;
 constexpr long long kOnboardingLeaseMs = 15 * 60 * 1000;
 constexpr long long kOnboardingRetentionMs = 7 * 24 * 60 * 60 * 1000LL;
+constexpr std::size_t kOnboardingMessageBytes = 4000;
 
 struct OnboardingIn {
   std::string requestId;
@@ -24,12 +25,21 @@ struct OnboardingIn {
   std::string note;
   std::string imageMimeType;
   std::string imageBase64;
+  std::string text;
+  Json::Value context{Json::arrayValue};
 };
 
 struct OnboardingRoutine {
   std::string name;
   std::vector<RoutineEntry> entries;
   bool operator==(const OnboardingRoutine&) const = default;
+};
+
+// A conversation reply as the lifter reads it: the model's whole message, or the words that fit the byte
+// bound followed by an ellipsis.
+struct OnboardingMessage {
+  std::string text;
+  bool clipped = false;
 };
 
 struct OnboardingRecord {
@@ -67,6 +77,7 @@ Json::Value onboardingInput(const OnboardingIn& input);
 std::optional<std::vector<OnboardingRoutine>> readOnboardingRoutines(
     const Json::Value& output, const OnboardingIn& input, const std::vector<Exercise>& seeds);
 Json::Value onboardingRoutines(const std::vector<OnboardingRoutine>& routines);
+OnboardingMessage onboardingMessage(const std::string& said);
 OnboardingRecord expireOnboarding(OnboardingRecord record, long long nowMs);
 
 }

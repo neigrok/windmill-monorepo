@@ -7,7 +7,7 @@ import works.windmill.sync.core.compareBytes
 
 class TrainingHistory(private val read: Reader) {
     val log = TrainingLog(read)
-    private val catalogue = Catalogue(read)
+    private val catalogue = log.catalogue
     private val routineValues = read.repository(Routine).all(ViewMode.drawn).filter { it.entries.isNotEmpty() }
     private val proposalValues = read.repository(Proposal).all(ViewMode.drawn).sortedWith { a, b ->
         val dates = (read.repository(Proposal).record(b.id, ViewMode.drawn)?.rc ?: 0).compareTo(read.repository(Proposal).record(a.id, ViewMode.drawn)?.rc ?: 0)
@@ -17,6 +17,7 @@ class TrainingHistory(private val read: Reader) {
 
     private fun exerciseDocument(value: Exercise): Json = Json.Obj((value.fields() + mapOf("id" to value.id.json,
         "custom" to Json.of(SeedExercises.all.none { it.id == value.id })) +
+        (if (value.equipment == "dumbbell") mapOf("loadCount" to Json.of(value.loadCount)) else emptyMap()) +
         if (value.aliases.isEmpty()) emptyMap() else mapOf("aliases" to Json.Arr(value.aliases.map(Json::of)))).toList())
 
     fun exercises(): Json = Json.Arr(catalogue.exercises.sortedWith { a, b ->
@@ -44,7 +45,7 @@ class TrainingHistory(private val read: Reader) {
 
     private fun top(sets: List<TrainingSet>): TrainingSet? = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
 
-    private fun tonnage(sets: List<TrainingSet>): Double = sets.filter { it.kind == "working" }.sumOf { maxOf(0.0, works.windmill.sync.core.Quantum.halfAway(it.weightKg * 100)) * it.reps } / 100
+    private fun tonnage(sets: List<TrainingSet>): Double = sets.filter { it.kind == "working" }.sumOf { maxOf(0.0, works.windmill.sync.core.Quantum.halfAway(it.weightKg * 100)) * it.reps * (catalogue.find(it.exerciseId)?.loadCount ?: 1) } / 100
 
     private fun summary(value: Session): Json {
         val sets = log.sets(value.id)
@@ -156,7 +157,7 @@ class TrainingHistory(private val read: Reader) {
             add("months" to Json.Arr(months.keys.sortedDescending().map { Json.objectOf("month" to Json.of(it), "sessions" to Json.of(months.getValue(it))) }))
             add("exercises" to Json.Arr(exercises.sortedWith(facetOrder))); add("routines" to Json.Arr(routines.sortedWith(facetOrder)))
             add("next" to if (afterCursor.size > limit && page.isNotEmpty()) Json.objectOf("before" to Json.of(page.last().startedAt.ms), "beforeId" to page.last().id.json) else Json.Null)
-            if (f.optionalString("projection") == "progress") add("progress" to StatsProgress(TrainingLog(scoped, allSets, read.moment, log.firstPullComplete)).json)
+            if (f.optionalString("projection") == "progress") add("progress" to StatsProgress(log.copy(sessions = scoped, sets = allSets)).json)
         })
     }
 
@@ -247,8 +248,8 @@ class TrainingHistory(private val read: Reader) {
     private fun recordFor(value: Session): Json? {
         if (!log.firstPullComplete) return null
         val previous = finished.filter { it.startedAt < value.startedAt || (it.startedAt == value.startedAt && it.id < value.id) }
-        val prior = StatsProgress(TrainingLog(previous, log.sets, read.moment))
-        val current = StatsProgress(TrainingLog(listOf(value), log.sets, read.moment))
+        val prior = StatsProgress(log.copy(sessions = previous))
+        val current = StatsProgress(log.copy(sessions = listOf(value)))
         data class Candidate(val rank: Int, val kind: String, val exercise: Id<Exercise>, val fact: PerformedFact, val amount: Double, val before: Double, val beforeAt: Instant) {
             val score get() = GymEstimate.score(fact.weightKg, fact.reps, rpe = fact.rpe) ?: 0.0
         }

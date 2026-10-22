@@ -249,7 +249,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
   strip. The brief now says so.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. iOS code on main and on `codex/gym-coach-feedback` still carries
+  the Gym boards state none. iOS code still carries
   `SetKind`: `GymRows.swift` dims warm-ups and prints the *W* prefix, and `SetEditor` offers Kind;
   Android's `FixSheet.kt` carries a set's kind through. Build work: remove it on every surface.
 - **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
@@ -396,8 +396,8 @@ these are the places it disagrees with a drawing, a brief or the build.
   The Live Activity double tap (`177:29`, 04.5) draws what the app does not do: verify on a device
   and either rule it in or retire the board.
 - **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
-  2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from branch
-  `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). Each target holds
+  2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from
+  `gym/feedback-2026-10-21.md`. Each target holds
   the slot and number of the board it replaced; the replaced boards are deleted. Targets:
   - 01 and 08: listed under 10q.
   - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
@@ -413,22 +413,22 @@ these are the places it disagrees with a drawing, a brief or the build.
     Label=Text, the labelled *Weigh in* capsule on The log (05.1), since a bare + did not say what it
     adds.
   - The rack names its equipment as a symbol in the movement header (03.1, 03.10–03.12); the
-    branch's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
+    build's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
   - Tapping the load or reps opens a native wheel, 03.2 `1180:3930`, load in the movement's steps
     and reps beside it; the ladder keys stay for one-tap nudges. Fix set, 03.3 `1180:4021`, is
     rebuilt on the same wheel with Effort and Note and Delete set as its last row. The weigh-in
     (06.1 `1191:5884`) uses the system `.decimalPad` in a focused field. The owner settled each of
     these; the spec now states them (§4 Buttons, §5 Lists, §7.5, §7.6, §7.7, §7.10).
 
-  Choices the branch forced or left open, for the build and the owner:
-  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Add screenshot*, *Sign in
+  Choices the build forced or left open, for the owner:
+  - The build's words win: *Equipment* (not *load basis*), *Dumbbells*, *Add screenshot*, *Sign in
     to continue.* The owner's later rulings replace two: *Build my own* (not *Build myself*) and
     **Apply** / **Reject** on drafts (not *Save routine(s)*) — build work in 10v.
-  - The greeting's actions are drawn `.bordered` with the accent tint; the branch uses `.borderless`.
-  - The branch adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
+  - The greeting's actions are drawn `.bordered` with the accent tint; the build uses `.borderless`.
+  - The build adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
     available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
     entry; board (b) is the owner's paid upsell and must wait for checkout.
-  - The set-editing haptic is a `.selection` tick per accepted rack change. The branch keeps the
+  - The set-editing haptic is a `.selection` tick per accepted rack change. The build keeps the
     canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
     `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
@@ -502,7 +502,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   | Place | Code today | Board | Build work |
   |---|---|---|---|
   | Routines list | `RoutinesTab.swift:63` text *Delete*, no symbol | 02.1 `1181:4042` | text label |
-  | Routine editor movements | `RoutineBuilder.swift:149` text *Remove* (the branch adds `trash`) | 02.8 `1149:2275` | text label |
+  | Routine editor movements | `RoutineBuilder.swift:159` `trash` + *Remove* | 02.8 `1149:2275` | text label |
   | Targets, per set | `RoutineTargets.swift:262` text *Delete* | none (Vary by set rows not drawn) | text label |
   | This workout movements | `WorkoutSheets.swift:28` text *Remove* | 03.4 `1135:1875` | text label |
   | The log sessions | `LogTab.swift:167` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 05.2 `1185:4905` | custom tint, not the system red |

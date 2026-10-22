@@ -16,7 +16,7 @@ drogon::HttpResponsePtr privateResponse(const drogon::HttpResponsePtr& response)
 }
 
 drogon::HttpResponsePtr refusal(drogon::HttpStatusCode status, const std::string& code) {
-  return privateResponse(error(status, "Coach could not prepare this routine.", code.c_str()));
+  return privateResponse(error(status, "Coach could not take this message.", code.c_str()));
 }
 
 drogon::HttpResponsePtr response(const OnboardingRecord& record, const AiBudgetView& allowance, bool post) {
@@ -25,6 +25,7 @@ drogon::HttpResponsePtr response(const OnboardingRecord& record, const AiBudgetV
   out["resultId"] = record.resultId;
   out["status"] = record.state;
   out["expiresAtMs"] = Json::Int64(record.expiresAtMs);
+  out["message"] = record.payload.isObject() ? record.payload.get("message", "") : Json::Value("");
   out["routines"] = record.payload.isObject() ? record.payload["routines"] : Json::Value(Json::arrayValue);
   out["errorCode"] = record.errorCode.empty() ? Json::Value() : Json::Value(record.errorCode);
   out["allowance"] = aiAllowanceJson(allowance);
@@ -41,7 +42,7 @@ void OnboardingApi::stop() { workers_.stopAndJoin(); }
 
 void OnboardingApi::start(const drogon::HttpRequestPtr& request,
                          std::function<void(const drogon::HttpResponsePtr&)>&& reply) {
-  if (request->body().size() > 4 * ((kOnboardingImageBytes + 2) / 3) + 8192) {
+  if (request->body().size() > 4 * ((kOnboardingImageBytes + 2) / 3) + 131072) {
     reply(refusal(drogon::k413RequestEntityTooLarge, "input_too_large")); return;
   }
   auto callback = std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(std::move(reply));
@@ -56,7 +57,7 @@ void OnboardingApi::start(const drogon::HttpRequestPtr& request,
         const auto body = request->getJsonObject();
         auto input = body ? readOnboardingIn(*body) : std::nullopt;
         if (!input) { (*callback)(refusal(drogon::k400BadRequest, "invalid_input")); return; }
-        if (input->mode == "photo") {
+        if (!input->imageBase64.empty()) {
           const auto bytes = drogon::utils::base64Decode(input->imageBase64);
           if (bytes.size() > kOnboardingImageBytes || drogon::utils::base64Encode(bytes) != input->imageBase64 ||
               !decodeCoachImage("onboarding", input->imageMimeType, bytes)) {

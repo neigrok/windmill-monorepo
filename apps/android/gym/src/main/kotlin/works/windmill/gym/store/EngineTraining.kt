@@ -261,12 +261,13 @@ class EngineTraining(val engine: Engine) {
     fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
         if (!anonymous && !firstPullComplete && details().isEmpty()) throw TrainingUnanswered
         val history = details()
-        val names = if (anonymous) emptyMap() else catalogue().associate { it.id to it.name }
+        val catalog = catalogue()
+        val names = catalog.associate { it.id to it.name }
         return history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
             .filter { before == null || it.session.startedAtMs < before || it.session.startedAtMs == before && (beforeId == null || it.session.id < beforeId) }
             .take(limit).map { detail ->
                 val stale = read { TrainingLog(it).drawnSessions.firstOrNull { it.id.text == detail.session.id }?.closedBy == "stale" }
-                val summary = SessionSummary.of(detail, history)
+                val summary = SessionSummary.of(detail, history, catalog)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
@@ -604,7 +605,7 @@ class EngineTraining(val engine: Engine) {
     }
 
     private fun EngineExercise.ui() = Exercise(id.text, name, pattern, equipment, stepKg,
-        SeedExercises.all.none { it.id == id }, aliases)
+        SeedExercises.all.none { it.id == id }, aliases, loadCount)
     private fun EngineSession.ui() = Session(id.text, startedAt.ms, finishedAt?.ms, (historyRoutineId ?: routineId)?.text,
         plan?.let { PlanSnapshot(name ?: it.routine, it.entries.map { entry -> PlanEntry(entry.exerciseId.text, entry.sets.orEmpty().map { set -> SetTarget(set.reps, set.weightKg) }) }) })
     private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, SetKind.parse(kind), rpe, note, completedAt.ms)

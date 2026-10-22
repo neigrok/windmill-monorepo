@@ -18,7 +18,6 @@ final class RoutineEditingSession: Identifiable {
   var targetDraft = RoutineTargetDraft(sets: nil)
   var saving = false
   var saved = false
-  var editMode = EditMode.inactive
   var refusal: String?
   var appeared = false
 
@@ -103,9 +102,9 @@ struct RoutineBuilder: View {
   let gym: GymModel
   @Bindable var editing: RoutineEditingSession
   let onSave: (ID<Routine>) -> Void
+  @State private var exerciseToEdit: Exercise?
   @FocusState private var nameFocused: Bool
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
     NavigationStack(path: Binding(get: { editing.path }, set: { editing.follow($0) })) {
@@ -130,6 +129,9 @@ struct RoutineBuilder: View {
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
     }.modifier(GymPage()).presentationDetents([.large])
+      .sheet(isPresented: Binding(get: { exerciseToEdit != nil }, set: { if !$0 { exerciseToEdit = nil } })) {
+        if let exerciseToEdit { RenameMovementSheet(gym: gym, exercise: exerciseToEdit) }
+      }
   }
 
   var plan: some View {
@@ -143,14 +145,23 @@ struct RoutineBuilder: View {
         Section {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
-            NavigationLink(value: exercise.map { RoutineEditingSession.Step.targets($0.id) }) {
-              GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets))
-            }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              .swipeActions(allowsFullSwipe: false) { Button("Remove", role: .destructive) { editing.remove(index) } }
+            HStack {
+              Button {
+                if let exercise { editing.follow([.targets(exercise.id)]) }
+              } label: {
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets), trailing: .door)
+              }.buttonStyle(.borderless).accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
+              Button(role: .destructive) { editing.remove(index) } label: {
+                Image(systemName: "trash").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+              }.buttonStyle(.borderless)
+                .accessibilityLabel("Remove exercise").accessibilityIdentifier("builder-remove-\(entry.exerciseId)")
+            }
+              .swipeActions(allowsFullSwipe: false) { Button("Remove", systemImage: "trash", role: .destructive) { editing.remove(index) } }
               .contextMenu {
+                if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
                 Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
                 Button("Move down") { editing.move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
-                Button("Remove movement", role: .destructive) { editing.remove(index) }
+                Button("Remove movement", systemImage: "trash", role: .destructive) { editing.remove(index) }
               }
               .accessibilityAction(named: "Move up") { editing.move(index, by: -1) }
               .accessibilityAction(named: "Move down") { editing.move(index, by: 1) }
@@ -158,22 +169,12 @@ struct RoutineBuilder: View {
           }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
           Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
             .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
-        } header: {
-          // At accessibility sizes Reorder stands under the header, so the header's one word never breaks.
-          let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small)) : AnyLayout(HStackLayout())
-          layout {
-            Text("Movements").frame(maxWidth: .infinity, alignment: .leading)
-            if editing.draft.current.entries.count > 1 {
-              Button(editing.editMode.isEditing ? "Done" : "Reorder") { editing.editMode = editing.editMode.isEditing ? .inactive : .active }
-                .font(.subheadline).textCase(nil).accessibilityIdentifier("reorder-movements")
-            }
-          }
-        }
+        } header: { Text("Movements") }
         let history = gym.routineHistory(editing.draft.id).prefix(20), dates = gym.dates
         if !history.isEmpty {
           Section("History") {
             ForEach(history, id: \.id) { session in
-              GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
+              GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets, catalogue: gym.catalogue)))
             }
           }
         }
@@ -184,7 +185,7 @@ struct RoutineBuilder: View {
           }
         }
       }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, $editing.editMode)
+    }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, .constant(.active))
   }
 
   @ViewBuilder func destination(_ step: RoutineEditingSession.Step) -> some View {

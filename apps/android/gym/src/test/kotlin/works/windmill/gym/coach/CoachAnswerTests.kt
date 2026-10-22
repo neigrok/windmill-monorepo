@@ -149,4 +149,65 @@ class CoachAnswerTests {
         compose.onNodeWithText("From your log").assertDoesNotExist()
         compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
     }
+    @Test fun routineDraftShowsEquipmentAndTargetsBeforeAnExplicitSave() {
+        val draft = CoachRoutineDraft("operation-a", "routine-a", "Push", 1,
+            listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))), "pending")
+        val requests = mutableListOf<CoachRoutineDraft>()
+        compose.setContent { GymMaterial {
+            CoachAnswer("Review this plan", null, listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")), 0,
+                routineDrafts = listOf(draft), onConfirmRoutine = {
+                    requests += it
+                    if (requests.size == 1) DraftOutcome.Failed(Ask.draftRetry) else DraftOutcome.Closed(Ask.draftGone)
+                })
+        } }
+        compose.onNodeWithText("Review routine").assertIsDisplayed()
+        compose.onNodeWithText("Push").assertIsDisplayed()
+        compose.onNodeWithText("Flat press").assertIsDisplayed()
+        compose.onNodeWithText("1 × 8 · 16 kg each · Two dumbbells").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(emptyList<CoachRoutineDraft>(), requests) }
+        compose.onNodeWithText("Save routine").performClick()
+        compose.onNodeWithText("Couldn’t save the routine. Try again.").assertIsDisplayed()
+        compose.onNodeWithText("Save routine").performClick()
+        compose.onNodeWithText("This draft is no longer available.").assertIsDisplayed()
+        compose.onNodeWithText("Save routine").assertDoesNotExist()
+        compose.onNodeWithText("Couldn’t save the routine. Try again.").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(draft, draft), requests) }
+    }
+    @Test fun routineDraftNamesEachLoadBasisByEquipmentAndCount() {
+        val draft = CoachRoutineDraft("operation-b", "routine-b", "Mixed", 1, listOf(
+            RoutineEntry(0, "goblet-squat", listOf(SetTarget(8, 24.0))),
+            RoutineEntry(1, "back-squat", listOf(SetTarget(5, 100.0))),
+            RoutineEntry(2, "pull-up", listOf(SetTarget(6, -10.0))),
+            RoutineEntry(3, "cable-row", listOf(SetTarget(10, 40.0)))), "pending")
+        compose.setContent { GymMaterial {
+            CoachAnswer("Review this plan", null, listOf(
+                Exercise("goblet-squat", "Goblet Squat", equipment = "dumbbell", loadCount = 1),
+                Exercise("back-squat", "Back Squat", equipment = "barbell"),
+                Exercise("pull-up", "Pull Up", equipment = "bodyweight"),
+                Exercise("cable-row", "Cable Row", equipment = "cable")), 0,
+                routineDrafts = listOf(draft), onConfirmRoutine = { DraftOutcome.Closed(Ask.draftGone) })
+        } }
+        compose.onNodeWithText("1 × 8 · 24 kg · One dumbbell").assertIsDisplayed()
+        compose.onNodeWithText("1 × 5 · 100 kg total · Barbell").assertIsDisplayed()
+        compose.onNodeWithText(Readout.target(listOf(SetTarget(6, -10.0))) + " kg assisted · Bodyweight").assertIsDisplayed()
+        compose.onNodeWithText("1 × 10 · 40 kg · Cable").assertIsDisplayed()
+    }
+
+    @Test fun aTurnThatCreatedItsRoutineAtOnceKeepsThePastTenseStep() {
+        compose.setContent { GymMaterial {
+            Column {
+                CoachAnswer("Made it", null, emptyList(), 0, legacyRead = ReadTally(sets = 1), legacySteps = listOf(AskStep("create_routine")),
+                    results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Push")))
+                CoachAnswer("Drafted it", null, emptyList(), 0, legacyRead = ReadTally(sets = 2), legacySteps = listOf(AskStep("update_exercise"), AskStep("create_routine")),
+                    routineDrafts = listOf(CoachRoutineDraft("operation-b", "routine-b", "Pull", 1, emptyList(), "saved")),
+                    results = listOf(CoachResult("routine-created", "operation-b", "routine-b", "Pull")))
+            }
+        } }
+        compose.onNodeWithText("Read 1 set").performClick()
+        compose.onNodeWithText("Created a routine").assertIsDisplayed()
+        compose.onNodeWithText("Read 2 sets").performClick()
+        compose.onNodeWithText("Updated a movement").assertIsDisplayed()
+        compose.onNodeWithText("Drafted a routine for your review").assertIsDisplayed()
+    }
+
 }

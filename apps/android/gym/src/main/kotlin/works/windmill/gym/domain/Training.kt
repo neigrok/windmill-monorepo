@@ -39,6 +39,7 @@ data class Exercise(
     val stepKg: Double? = null,
     val custom: Boolean = false,
     val aliases: List<String> = emptyList(),
+    val loadCount: Int = works.windmill.gym.domain.sync.ExerciseRules.defaultLoadCount(equipment, id),
 ) {
     companion object {
         val loadings = listOf("barbell", "dumbbell", "machine", "bodyweight")
@@ -183,7 +184,7 @@ data class SessionSummary(
     val record: Boolean = false,
     val closedItself: Boolean = false,
 ) {
-    constructor(session: Session, sets: List<TrainingSet>) : this(
+    constructor(session: Session, sets: List<TrainingSet>, catalog: List<Exercise>) : this(
         id = session.id,
         startedAtMs = session.startedAtMs,
         finishedAtMs = session.finishedAtMs,
@@ -193,7 +194,7 @@ data class SessionSummary(
         workingSetCount = sets.count { it.kind == SetKind.Working },
         // Clamped the server's way: an assisted set adds zero rather than subtracting.
         tonnageKg = sets.filter { it.kind == SetKind.Working }
-            .sumOf { max(0.0, it.weightKg) * it.reps },
+            .sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.filter { it.kind == SetKind.Working }
             .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
@@ -208,9 +209,9 @@ data class SessionSummary(
     companion object {
         // Read against the account's history: its best estimate, and the dot when a session full
         // enough to count earned a record.
-        fun of(detail: SessionDetail, history: List<SessionDetail>): SessionSummary {
+        fun of(detail: SessionDetail, history: List<SessionDetail>, catalog: List<Exercise>): SessionSummary {
             val sets = working(detail)
-            return SessionSummary(detail.session, detail.sets).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
+            return SessionSummary(detail.session, detail.sets, catalog).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
                 record = sets.size >= Review.slightWorkingSets && earned(detail, history) != null)
         }
     }
@@ -287,6 +288,7 @@ data class RoutineEntry(
     val position: Int = 0,
     val exerciseId: String,
     val sets: List<SetTarget> = emptyList(),
+    val restSeconds: Int? = null,
 ) {
     val isOpen: Boolean get() = sets.isEmpty()
 }

@@ -73,6 +73,7 @@ const std::vector<Row> kGym = {
     {"create_routine", "Gym · Create routine", false, false, true},
     {"propose_routine_change", "Gym · Propose routine change", false, false, true},
     {"create_exercise", "Gym · Create exercise", false, false, true},
+    {"update_exercise", "Gym · Update exercise", false, false, true},
     {"share_session", "Gym · Share session", false, false, true},
     {"log_sets", "Gym · Log sets", false, false, true},
     {"import_session", "Gym · Import session", false, false, true},

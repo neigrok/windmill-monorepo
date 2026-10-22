@@ -185,7 +185,7 @@ test('the word coach names exactly one thing — the room — and the share neve
   for (const file of gymFiles()) {
     const said = spoken(fs.readFileSync(file, 'utf8'));
     assert.equal(/Share with a coach|coach link|to your coach|to a coach/i.test(said), false, file);
-    assert.equal(/\bAsk\b(?! (about|something|again))/.test(said), false, `${file} still names the room Ask`);
+    assert.equal(/\bAsk\b(?! (about|something|again|Coach))/.test(said), false, `${file} still names the room Ask`);
   }
   assert.equal(fs.existsSync(path.join(GYM, 'ask')), false, 'the directory follows the room’s name');
   assert.equal(/\.gym-ask|is-ask\b/.test(read('gym.css')), false);
@@ -293,8 +293,8 @@ test('changes stay in Coach, and proposal cards link back only outside their con
 test('workout rows read actual facts and collapse only an honest common scheme', () => {
   const source = read('Log.jsx');
   assert.equal(source.includes('const scheme = collapsedScheme(group);'), true);
-  assert.equal(source.includes('setLoadLabel(set)'), true);
-  assert.equal(source.includes('workoutTotals(sets)'), true);
+  assert.equal(source.includes('setLoadLabel(set, weightUnit(), loadBasisLabel(movements.get(exerciseId), set.weightKg))'), true);
+  assert.equal(source.includes('workoutTotals(sets, view.data.catalog)'), true);
   assert.equal(source.includes('setNoteOf('), false);
   assert.equal(source.includes('planFrozenLabel(session)'), true);
 });

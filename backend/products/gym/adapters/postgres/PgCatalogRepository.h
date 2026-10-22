@@ -14,6 +14,7 @@ public:
 
   std::vector<Exercise> catalog(const UserId& user) override;
   std::vector<Exercise> seedCatalog() override;
+  std::optional<Exercise> exerciseUpdate(const UserId&, const std::string& requestId) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

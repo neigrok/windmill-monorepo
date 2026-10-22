@@ -2,7 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v6/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
+v7/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
 Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
 R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
@@ -16,7 +16,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, reorder, delete, ordered targets, frozen-plan decoding |
-| `catalogue-actions.json` | Create, rename, seed overrides, aliases, byte-sensitive search, decoding failures |
+| `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
@@ -43,6 +43,17 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
 
+`ExerciseName` is a metadata override keyed by a movement: a seed's carries `name`, `equipment` and
+`loadCount`, a custom movement's only `equipment` and `loadCount` (its name lives on `exercise.name`). Its
+writable form omits every null field, `name` included.
+
+**Load count.** Volume and tonnage count each working set as `max(0, weightKg) × reps × count`: a load is
+entered per dumbbell, so `count` is the resolved `loadCount` for a movement whose resolved equipment is
+`dumbbell` (the override's `loadCount`, else the seed's, else two; `goblet-squat`, `dumbbell-row`,
+`suitcase-carry` and `overhead-triceps-extension` hold one), and one for every other equipment, a
+`loadCount` left on a non-dumbbell override included. A bodyweight set counts only positive added load;
+an assisted set counts nothing. Warmups never count. Every volume read takes the resolved catalogue.
+
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
@@ -67,8 +78,8 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `SaveWeighIn` | `{day,kg}`; vectors open the drawn day or a new blank draft | `{id,fields}`; every save writes the whole fact with the save's moment |
 | `DeleteRoutine`, `DeleteSet`, `DeleteWeighIn` | `{id}` or `{day}` | `null`; held, with Undo on a real engine |
 | `ReorderRoutines` | `{order:[routineId]}` | `null`; a complete permutation, changed positions only |
-| `CreateExercise` | `{exercise:{id,fields}}` | Exercise id |
-| `RenameExercise` | `{id,name}` | `null`; a custom rename or seed override |
+| `CreateExercise` | `{exercise:{id,fields},loadCount?}`; `loadCount` is how many dumbbells a dumbbell movement holds, two when absent | Exercise id; a dumbbell movement holding one also writes `exerciseName` `{loadCount:1}` under the new id in the same gesture |
+| `RenameExercise` | `{id,name}` | `null`; a custom rename, or a seed override writing `{name}` alone over any equipment or count it holds |
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
 | `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
 | `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
@@ -113,7 +124,7 @@ finish behavior, start bounds and half-open overlap. `SetRules` pins next-number
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
 last-time rows and today's working-set override. `SessionReadout` provides duration, working-set
-and movement counts, positive working tonnage and the session estimate. `StatsProgress` groups
+and movement counts, working volume and the session estimate. `StatsProgress` groups
 finished working facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
 and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
@@ -136,7 +147,8 @@ session summaries, reviews, record details and weekly totals. History filters ap
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
-The 116 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
+The training-read cases include complete mirror documents, adversarial read scenes and one override scene
+read through history, session summaries, exercise documents, `SessionReadout` and `TrainingLog`.
 
 The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;

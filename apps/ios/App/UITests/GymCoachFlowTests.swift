@@ -82,13 +82,27 @@ import UIKit
     XCTAssertFalse(app.buttons["coach-send"].isEnabled, "An empty question cannot be sent.")
     field.tap(); field.typeText(question)
     let done = app.buttons["coach-keyboard-done"], send = app.buttons["coach-send"]
+    let keyboard = app.keyboards.firstMatch, tab = app.tabBars.buttons["Coach"]
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
     XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
     XCTAssertFalse(done.frame.intersects(send.frame))
+    capture("coach-composer-focused", app)
+    done.tap()
+    XCTAssertTrue(done.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(field.value as? String, question)
+    field.tap()
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+    XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
     send.tap()
     XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(done.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil, control: String = "coach-history") {
     let previous = app.navigationBars.firstMatch
@@ -393,8 +407,8 @@ import UIKit
   func testAnonymousCoachOffersSetupAndKeepsAccountDoors() {
     for appearance in ["Light", "Dark"] {
       let suffix = appearance.lowercased(), app = launch(appearance, fixture: false)
-      XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.buttons["coach-setup-describe"].exists)
+      XCTAssertTrue(app.staticTexts["coach-greeting"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["coach-setup-build_manually"].exists)
       XCTAssertTrue(app.buttons["coach-setup-screenshot"].exists)
       XCTAssertTrue(app.descendants(matching: .any)["coach-question"].exists)
       XCTAssertFalse(app.buttons["coach-history"].exists)
@@ -404,7 +418,7 @@ import UIKit
       XCTAssertTrue(app.staticTexts["Notes live with your account, so they need you signed in."].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["coach-sign-in"].exists)
       capture("coach-notes-account-only-\(suffix)", app)
-      back(app, expecting: "Coach", control: "coach-setup-goal"); openDestination("Connected log", app)
+      back(app, expecting: "Coach", control: "coach-setup-screenshot"); openDestination("Connected log", app)
       XCTAssertTrue(app.buttons["coach-connect-tool"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.buttons["coach-connect-tool"].label, "Sign in first")
       XCTAssertTrue(app.staticTexts["Your log, read by ChatGPT or Claude."].exists)
@@ -481,96 +495,65 @@ import UIKit
     return app
   }
 
-  func testSetupGoalChipsAndThreeRoutineReceiptsOpenExistingWorkout() {
+  func testSetupDraftReviewIsRequiredBeforeRoutineExists() {
     let app = launchSetup()
-    XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 10))
-    XCTAssertFalse(app.buttons["coach-send"].isEnabled)
-    capture("Coach setup entry", app)
-    app.buttons["coach-setup-goal"].tap()
+    XCTAssertTrue(app.staticTexts["coach-greeting"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["coach-setup-goal"].exists)
+    XCTAssertFalse(app.buttons["coach-setup-just_log"].exists)
     let field = app.descendants(matching: .any)["coach-question"]
-    XCTAssertEqual(field.value as? String, "My goal: ")
-    XCTAssertFalse(app.buttons["coach-choice-days-three"].exists)
-    field.typeText("Get stronger. I train at home.")
+    field.tap(); field.typeText("Build a three day full body routine.")
+    XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
-    let days = app.buttons["coach-choice-days-three"]
-    XCTAssertTrue(days.waitForExistence(timeout: 10)); days.tap()
-    app.buttons["coach-choice-equipment-dumbbells"].tap()
-    XCTAssertEqual(field.value as? String, "3 days. Dumbbells.")
-    XCTAssertFalse(app.buttons["coach-created-setup-operation-A"].exists)
-    capture("Coach setup clarification", app)
-    app.buttons["coach-send"].tap()
-    for suffix in ["A", "B", "C"] {
-      XCTAssertTrue(app.buttons["coach-created-setup-operation-" + suffix].waitForExistence(timeout: 10))
-    }
-    capture("Coach setup results", app)
+    let review = app.buttons["coach-review-routine-setup-operation-B"]
+    XCTAssertTrue(review.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
+    for _ in 0..<4 where !review.isHittable { app.swipeUp() }
+    review.tap()
+    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Barbell"].firstMatch.exists)
+    app.buttons["Close"].tap()
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
+    review.tap(); app.buttons["coach-save-routines"].tap()
     let receipt = app.buttons["coach-created-setup-operation-B"]
-    for _ in 0..<3 where !receipt.isHittable { app.swipeUp() }
-    receipt.tap()
+    XCTAssertTrue(receipt.waitForExistence(timeout: 10)); receipt.tap()
     XCTAssertTrue(app.navigationBars["Full body B"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5))
     app.buttons["routine-start"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
-    capture("Coach setup first workout", app)
   }
 
-  func testSetupDraftAndSelectionsSurviveRelaunchWithoutSending() {
+  func testSetupGreetingAndDraftSurviveRelaunchWithoutSending() {
     var app = launchSetup()
-    app.buttons["coach-setup-goal"].tap()
-    app.buttons["coach-send"].tap()
-    let days = app.buttons["coach-choice-days-three"]
-    XCTAssertTrue(days.waitForExistence(timeout: 10)); days.tap()
-    app.buttons["coach-choice-equipment-bands"].tap()
-    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "3 days. Bands.")
-    app.terminate()
-    app = launchSetup(restore: true)
-    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "3 days. Bands.")
-    XCTAssertTrue(app.buttons["coach-choice-days-three"].isSelected)
-    XCTAssertTrue(app.buttons["coach-choice-equipment-bands"].isSelected)
+    let field = app.descendants(matching: .any)["coach-question"]
+    field.tap(); field.typeText("Three days with dumbbells")
+    app.terminate(); app = launchSetup(restore: true)
+    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "Three days with dumbbells")
+    XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
+    XCTAssertTrue(app.buttons["coach-setup-screenshot"].exists)
     XCTAssertFalse(app.buttons["coach-created-setup-operation-A"].exists)
   }
 
-  func testSetupManualEscapesRemainAvailableAfterBuilderCancel() {
+  func testSetupManualEscapePreservesGreetingAfterBuilderCancel() {
     let app = launchSetup("light")
     app.buttons["coach-setup-build_manually"].tap()
     XCTAssertTrue(app.navigationBars["New routine"].waitForExistence(timeout: 10))
     let close = app.buttons["sheet-close"]
     if close.exists { close.tap() } else { app.navigationBars["New routine"].buttons.firstMatch.tap() }
-    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 10)); app.buttons["routines-setup"].tap()
-    XCTAssertTrue(app.buttons["coach-setup-just_log"].waitForExistence(timeout: 5)); app.buttons["coach-setup-just_log"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
-    app.buttons["workout-assembly"].tap()
-    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
-    openTab("Routines", app)
-    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.buttons["coach-setup-goal"].exists)
+    openTab("Coach", app)
+    XCTAssertTrue(app.staticTexts["coach-greeting"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["coach-setup-build_manually"].exists)
+    XCTAssertFalse(app.buttons["coach-setup-just_log"].exists)
   }
 
-  func testSetupStartersStayReachableAtAccessibilitySize() {
+  func testSetupActionsStayReachableAtAccessibilitySize() {
     let app = launchSetup(largeText: true)
-    let goal = app.buttons["coach-setup-goal"]
-    XCTAssertTrue(goal.waitForExistence(timeout: 10))
-    for _ in 0..<4 where !goal.isHittable { app.swipeUp() }
-    XCTAssertTrue(goal.isHittable)
-    capture("Coach setup accessibility", app)
-    goal.tap()
-    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "My goal: ")
-    XCTAssertFalse(app.buttons["coach-stop"].exists)
-    app.buttons["coach-send"].tap()
-    let longChoice = app.buttons["coach-choice-equipment-none"]
-    XCTAssertTrue(longChoice.waitForExistence(timeout: 10))
-    for _ in 0..<6 where !longChoice.isHittable { app.swipeUp() }
-    XCTAssertTrue(longChoice.isHittable)
-    XCTAssertEqual(longChoice.label, "Adjustable dumbbells and a bench")
-    XCTAssertGreaterThanOrEqual(longChoice.frame.height, 44)
-    XCTAssertGreaterThanOrEqual(longChoice.frame.minX, app.frame.minX)
-    XCTAssertLessThanOrEqual(longChoice.frame.maxX, app.frame.maxX)
-    longChoice.tap()
-    XCTAssertTrue(longChoice.isSelected)
-    let field = app.descendants(matching: .any)["coach-question"]
-    XCTAssertEqual(field.value as? String, "Adjustable dumbbells and a bench.")
-    XCTAssertLessThan(field.frame.height, app.frame.height / 3)
-    for _ in 0..<6 where !longChoice.isHittable { app.swipeUp() }
-    XCTAssertTrue(longChoice.isHittable)
-    capture("Coach setup long choices accessibility", app)
+    let manual = app.buttons["coach-setup-build_manually"]
+    XCTAssertTrue(manual.waitForExistence(timeout: 10))
+    for _ in 0..<4 where !manual.isHittable { app.swipeUp() }
+    XCTAssertTrue(manual.isHittable)
+    XCTAssertGreaterThanOrEqual(manual.frame.height, 44)
+    XCTAssertGreaterThanOrEqual(manual.frame.minX, app.frame.minX)
+    XCTAssertLessThanOrEqual(manual.frame.maxX, app.frame.maxX)
+    XCTAssertFalse(app.buttons["coach-setup-goal"].exists)
+    capture("Coach greeting accessibility", app)
   }
 }

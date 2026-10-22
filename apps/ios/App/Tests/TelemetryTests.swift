@@ -86,6 +86,10 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["screen": "settings"]).isEmpty && TelemetryPrivacy.properties(["screen": "sign_out"]).isEmpty)
     #expect(TelemetryPrivacy.events.contains("gym_hidden_workout") && TelemetryPrivacy.properties(["action": "hide"]) == ["action": .label("hide")])
     #expect(TelemetryPrivacy.properties(["action": "open", "door": "accessory", "name": "private-marker"]) == ["action": .label("open"), "door": .label("accessory")])
+    #expect(TelemetryPrivacy.events.contains("gym_coach_routine_confirm"))
+    for outcome in ["started", "saved", "refused", "failed"] {
+      #expect(TelemetryPrivacy.properties(["outcome": outcome, "routine": "private-marker"]) == ["outcome": .label(outcome)])
+    }
   }
 
   @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {

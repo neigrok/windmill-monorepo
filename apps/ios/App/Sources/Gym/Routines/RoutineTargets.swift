@@ -248,10 +248,11 @@ struct RoutineTargetsSheet: View {
         Section {
           headField("Sets", field: .sets, placeholder: "open", focus: .sets)
           headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
-          headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+          headField(MovementEquipment(exercise).unit, field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
           Toggle("Vary by set", isOn: $draft.varyBySet)
             .disabled(!draft.canChangeVariation)
         } footer: {
+          Text(MovementEquipment(exercise).help)
           if draft.isOpen && draft.refusal == nil { Text("You decide the numbers at the rack.") }
         }
         if !draft.isOpen && draft.varyBySet {
@@ -306,7 +307,7 @@ struct RoutineTargetsSheet: View {
       if dynamicTypeSize.isAccessibilitySize { Text(label) }
       HStack {
         if !dynamicTypeSize.isAccessibilitySize { Text(label); Spacer(minLength: 12) }
-        Button { draft.step(field, direction: -1); feedback += 1 } label: { Image(systemName: "minus").frame(minWidth: 44, minHeight: 44) }
+        Button { draft.step(field, direction: -1); feedback += 1 } label: { Image(systemName: "minus").frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }
           .accessibilityLabel("Decrease \(label)")
         TextField(placeholder, text: Binding(get: { draft.shared(field) }, set: { draft.type($0, field: field) }))
           .keyboardType(field == .weight ? .decimalPad : .numberPad)
@@ -318,11 +319,11 @@ struct RoutineTargetsSheet: View {
           .accessibilityHint(refused ? draft.headRefusal?.message ?? "" : "")
           .accessibilityIdentifier("gym-target-\(field)")
           .onSubmit { nextField() }
-        Button { draft.step(field, direction: 1); feedback += 1 } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }
+        Button { draft.step(field, direction: 1); feedback += 1 } label: { Image(systemName: "plus").frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }
           .accessibilityLabel("Increase \(label)")
         if field == .weight && exercise.equipment == "bodyweight" { signButton(row: nil) }
       }
-      .buttonStyle(.borderless)
+      .buttonStyle(GymInstrumentButtonStyle())
       .disabled(!enabled)
       if refused, let refusal = draft.headRefusal { refusalLine(refusal.message) }
     }
@@ -335,13 +336,13 @@ struct RoutineTargetsSheet: View {
       if dynamicTypeSize.isAccessibilitySize {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
-          rowField("kg", field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
+          rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
           if exercise.equipment == "bodyweight" { signButton(row: index) }
         }
       } else {
         HStack(spacing: 16) {
           rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
-          rowField("kg", field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
+          rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
           if exercise.equipment == "bodyweight" { signButton(row: index) }
         }
       }

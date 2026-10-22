@@ -32,6 +32,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.PlannedLine
 import works.windmill.gym.domain.SetTarget
@@ -300,18 +301,21 @@ class FinishedSessionTests {
         val bench = List(3) { index -> TrainingSet("bench_$index", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 100L + index) }
         val press = List(3) { index -> TrainingSet("press_$index", "overhead-press", weightKg = 30.0, reps = 8, completedAtMs = 200L + index) }
         val raise = List(3) { index -> TrainingSet("raise_$index", "lateral-raise", weightKg = 18.0, reps = 10, completedAtMs = 300L + index) }
+        val movements = listOf(Exercise("bench-press", "Bench Press"), Exercise("overhead-press", "Overhead Press"),
+            Exercise("lateral-raise", "Lateral Raise", equipment = "dumbbell"))
+        fun summary(finished: FinishedSession) = SessionSummary(finished.session, finished.sets, movements)
         for (count in 1..3) {
             val partial = FinishedSession(session(null), bench.take(count), null, false)
             assertEquals(listOf(count, count * 480.0, listOf("bench-press"), true),
-                listOf(partial.summary.setCount, partial.summary.tonnageKg, partial.summary.exercises, partial.slight))
+                listOf(summary(partial).setCount, summary(partial).tonnageKg, summary(partial).exercises, partial.slight))
         }
         val full = FinishedSession(session(null), bench + press + raise, null, false)
-        assertEquals(listOf(9, 2700.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
-            listOf(full.summary.setCount, full.summary.tonnageKg, full.summary.exercises, full.slight))
+        assertEquals(listOf(9, 3240.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
+            listOf(summary(full).setCount, summary(full).tonnageKg, summary(full).exercises, full.slight))
         val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null, false)
-        assertEquals(listOf(1, 460.0, true), listOf(free.summary.setCount, free.summary.tonnageKg, free.slight))
+        assertEquals(listOf(1, 460.0, true), listOf(summary(free).setCount, summary(free).tonnageKg, free.slight))
         val warm = full.copy(sets = full.sets + bench.first().copy(id = "warm", kind = SetKind.Warmup))
-        assertEquals(listOf(10, 9, 2700.0), listOf(warm.summary.setCount, warm.summary.workingSetCount, warm.summary.tonnageKg))
+        assertEquals(listOf(10, 9, 3240.0), listOf(summary(warm).setCount, summary(warm).workingSetCount, summary(warm).tonnageKg))
     }
 
 }

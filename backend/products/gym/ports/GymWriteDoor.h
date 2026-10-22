@@ -64,6 +64,14 @@ struct ExerciseWrite {
   std::optional<double> stepKg;
 };
 
+struct ExerciseUpdate {
+  ExerciseId id;
+  std::optional<std::string> name;
+  std::optional<Equipment> equipment;
+  std::optional<int> loadCount;
+  std::optional<std::string> requestId;
+};
+
 // The proposal's id is the caller's to mint, so a lost reply is replayed rather than turned into a
 // second proposal. `name` absent keeps the routine's name; `source` is provenance, carried on the write.
 struct ProposalWrite {
@@ -184,6 +192,7 @@ public:
   virtual ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                              const std::string&, const ProposalSource&) = 0;
   virtual ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) = 0;
+  virtual std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) = 0;
   virtual NoteWriteOutcome saveInsight(const Note&) = 0;
 };
 

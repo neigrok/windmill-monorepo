@@ -119,11 +119,11 @@ accepted rows, but no automatic replay to Amplitude runs. Repeated accepted clie
 create duplicate Postgres rows; the stable event ID deduplicates the Amplitude mirror. An unset
 Amplitude key intentionally disables forwarding.
 
-The inventory has 89 HTTP write registrations: REST platform 27, roadmap 13, gym 29 (20 of them
+The inventory has 90 HTTP write registrations: REST platform 27, roadmap 13, gym 30 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 85 production HTTP operations. MCP has 36 write declarations
-(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 28 operations
-(ask 2, gym abilities 5, scoped roadmap abilities 21). The catalogs have nine production commands
+standalone transport duplicates leaves 86 production HTTP operations. MCP has 37 write declarations
+(roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
+(ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have nine production commands
 (gym 7, journal 2), plus four probe commands. Background coverage includes 21 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (24 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh
@@ -270,6 +270,7 @@ listed separately because their only server writes are authentication refresh or
 | `MCP gym_finish_session` (and unambiguous `finish_session` alias) | `mcp.gym_finish_session` | completion; bounded refusal or result | unexpected |
 | `MCP gym_create_routine` (and unambiguous `create_routine` alias) | `mcp.gym_create_routine` | completion; bounded refusal or result | unexpected |
 | `MCP gym_propose_routine_change` (and unambiguous `propose_routine_change` alias) | `mcp.gym_propose_routine_change` | completion; bounded refusal or result | unexpected |
+| `MCP gym_update_exercise` (and unambiguous `update_exercise` alias) | `mcp.gym_update_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_create_exercise` (and unambiguous `create_exercise` alias) | `mcp.gym_create_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_share_session` (and unambiguous `share_session` alias) | `mcp.gym_share_session` | completion; bounded refusal or result | unexpected |
 | `MCP gym_discard_session` (and unambiguous `discard_session` alias) | `mcp.gym_discard_session` | completion; bounded refusal or result | unexpected |
@@ -301,7 +302,9 @@ listed separately because their only server writes are authentication refresh or
 | `SyncApi::onWorker` async exception boundary | route operation `sync.hello`, `sync.push`, `sync.pull` | completion; bounded refusal or result | unexpected |
 | `products/gym/application/AskService.cpp ask admission + generation/thread persistence` (coach) | `ask.run` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp stop` (coach) | `ask.stop` | completion; bounded stage outcome | unexpected |
-| `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.create_routine` | completion; bounded stage outcome | unexpected |
+| `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.create_routine` | completion; draft prepared, catalog or slot refusal, `refused` when the asking client does not review drafts | unexpected |
+| `products/gym/adapters/http/ThreadsApi.cpp confirmRoutine` | `gym.coach.routine.confirm` | completion; `ok` (saved, or already saved by an earlier or overlapping confirmation), `http_400`, `http_401`, `coach-draft-not-found` (404), `ask-generation-active` or `routine-save-in-progress` (409), `coach-draft-invalid` (422), `gym-engine-busy` or `gym-engine-unavailable` (503) | unexpected |
+| `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.update_exercise` | completion; bounded validation or unknown exercise refusal | unexpected |
 | `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.save_note` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.propose_routine_change` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.propose_routine_removal` | completion; bounded stage outcome | unexpected |
@@ -367,7 +370,7 @@ listed separately because their only server writes are authentication refresh or
 | Anonymous generation network admission | `ai.installation.admit` | bounded success, replay, disabled, rate limit or bound refusal | unexpected counter failures |
 | Expired network-key sweep | `ai.installation.prune` | committed deletion only | unexpected retention failures |
 | `POST /v1/gym/coach/onboarding` | `gym.coach.onboarding.start` | acceptance, replay or bounded refusal | unexpected request/storage failures |
-| Anonymous Coach worker | `gym.coach.onboarding.generate` | completed or bounded failure outcome | unexpected generation/storage failures |
+| Anonymous Coach worker | `gym.coach.onboarding.generate` | `completed`, `message_clipped` (a completed reply over 4,000 bytes, kept clipped) or bounded failure outcome | unexpected generation/storage failures |
 | Anonymous Coach model boundary | `gym.coach.onboarding.model` | expected refusal and provider rate limits are log-only outcomes | transport, truncation or invalid result failures |
 | Anonymous Coach fallback persistence | `gym.coach.onboarding.persist` | bounded terminal persistence failure | unexpected fallback write failures |
 | `GET /v1/gym/coach/onboarding/{requestId}` | `gym.coach.onboarding.read` | HTTP status; no routine or credential data | unexpected result read failures |
@@ -396,8 +399,10 @@ repeat the report. Neither path logs request content, token-estimator inputs or 
 
 ## Signed-in Gym routine setup
 
-Coach's `ask.run` observation covers setup admission, model turns and terminal persistence. `gym.ask_setup_details` logs the typed question write with `ok` or `refused`; unexpected storage failures report under that static operation. Its text, choices and IDs never enter logs. Every routine addition retains its own `gym.create_routine` and GymDoor write observations, including replay and expected immutable-slot/cap refusals. Stop and later allowance failures retain the existing static operations and factual creation receipts.
+Coach's `ask.run` observation covers setup admission, model turns and terminal persistence. `gym.ask_setup_details` logs the typed question write with `ok` or `refused`; unexpected storage failures report under that static operation. Its text, choices and IDs never enter logs. Coach's `gym.create_routine` completion covers draft preparation, recovery, replay and the expected catalog, immutable-slot and cap refusals; a draft writes nothing through GymDoor. A generation whose client does not review drafts (`routineReview`) is never offered the tool, and a call to it completes `refused`. Confirmation logs the route's `gym.coach.routine.confirm` line; the save runs on the upload pool under the route's request id, so GymDoor's `gym.server_call` and the engine's `sync.admit` lines carry the same request id, and no `gym.create_routine` line is written. Every confirmation refusal code is on the refusal allowlist and logs without an Issue; an unexpected failure reports once under the request. Stop and later allowance failures retain the existing static operations, pending drafts and factual creation receipts.
 
 Routine setup refuses writes outside its focused tool catalog before any action is persisted. Those attempts retain the tool's static `gym.<tool>` completion with `refused` and create no Issue.
 
-Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`, `routines_saved`, `keep_routines`, `photo_selected`, `photo_removed`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.
+Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `build_manually`, `clarify`, `open_routine`, `routines_saved`, `keep_routines`, `photo_selected`, `photo_removed`, `review_routines`, `review_closed`, `save_routines`, `sign_in`, `windmill_one`. A failed save includes `outcome:failed`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.
+
+Native workout adjustments emit `gym_workout_adjusted` with `screen:workout`, `field:weight|reps` and `outcome:ok|failed`. Movement edits emit `gym_exercise_updated` with `screen:movement`, `action:rename|equipment` and `outcome:ok|refused|failed`. Web, iOS and Android routine confirmation emits `gym_coach_routine_confirm` with `outcome:started|saved|refused|failed`: `refused` when the server answers 4xx, `failed` for a 5xx or no answer. These events contain no exercise IDs, names, entered loads, reps, drafts or user text. Client schemas constrain the labels; the product-neutral intake preserves them and supplies platform attribution.
