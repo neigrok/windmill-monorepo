@@ -143,7 +143,7 @@ extension CoachConversation {
       } catch {
         guard self.owner == owner, self.allowed, self.workGeneration == generation else { return }
         if error is CancellationError || (error as? URLError)?.code == .cancelled {
-          self.error = "Stopped waiting. Coach may still finish. Check the same response when you’re ready."
+          self.error = "Stopped waiting. Coach may still answer. Check again later."
           return
         }
         if let failure = error as? AiRequestFailure, let body = try? JSONDecoder().decode(InstallationFailure.self, from: failure.body) {
@@ -196,7 +196,7 @@ extension CoachConversation {
     var next = saved
     if let index = next.onboarding?.indices.last { next.onboarding?[index].stopped = true }
     _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
-    error = "Stopped waiting. Coach may still finish. Check the same response when you’re ready."
+    error = "Stopped waiting. Coach may still answer. Check again later."
     gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "cancelled"])
   }
 

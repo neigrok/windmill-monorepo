@@ -258,7 +258,7 @@ extension CoachTests {
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
     await coach.activate(); await coach.open("capped-thread")
     #expect(coach.saved.allowance?.code == "subject_exhausted" && !coach.retryable && !coach.asking)
-    #expect(coach.error == "Your AI allowance is fully used or reserved." && coach.activeGeneration?.results.map(\.operationId) == ["done"])
+    #expect(coach.error == "You have used all of your AI allowance." && coach.activeGeneration?.results.map(\.operationId) == ["done"])
     #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.method) } == ["GET"])
     CoachTestProtocol.state.withLock { $0.reply = .http(200, #"{"id":"normal-thread","turns":[]}"#) }
     await coach.open("normal-thread")

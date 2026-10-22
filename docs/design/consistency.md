@@ -509,11 +509,11 @@ these are the places it disagrees with a drawing, a brief or the build.
     on the simulator fixture.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only; the signed-out *Sign in* answer for a change request (08.31) is built nowhere.
-  - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets
-    stay saved…*, *You decide the numbers at the rack.*, the
-    greeting (*Adjust*, *With an account*, *Build myself*), *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…*, `AiAllowance.message` (*fully used or
-    reserved*), the photo captions and *The next question frees up…*.
+  - Strings in code still carry the cut and pre-simple-English copy: *Your sets stay saved…* (iOS
+    `WorkoutSheets.swift`), *You decide the numbers at the rack.* (iOS, Android `Program.kt`, web
+    `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
+    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. iOS Coach's
+    greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one

@@ -785,15 +785,13 @@ import SyncTesting
 
   @Test func recoveryIsOfferedOnlyWhereSigningInOrWindmillOneCanHelp() {
     for code in ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"] {
-      #expect(CoachRecovery(code: code, tier: "anonymous", anonymous: true) == .signIn)
+      #expect(CoachRecovery(code: code, anonymous: true) == .signIn)
     }
     for code in ["free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required", "unconfigured"] {
-      #expect(CoachRecovery(code: code, tier: "anonymous", anonymous: true) == nil)
-      #expect(CoachRecovery(code: code, tier: "logged_in", anonymous: false) == nil)
+      #expect(CoachRecovery(code: code, anonymous: true) == nil)
+      #expect(CoachRecovery(code: code, anonymous: false) == nil)
     }
-    #expect(CoachRecovery(code: "subject_exhausted", tier: "logged_in", anonymous: false) == .windmillOne)
-    #expect(CoachRecovery(code: "subject_exhausted", tier: "windmill_one", anonymous: false) == nil)
-    #expect(CoachRecovery(code: "subject_exhausted", tier: "unknown", anonymous: false) == nil)
+    #expect(CoachRecovery(code: "subject_exhausted", anonymous: false) == nil, "Signed in, a spent allowance offers nothing while paid plans are closed")
     #expect(CoachRecovery(.daily("Later"), anonymous: false) == nil && CoachRecovery(.ceiling("Later"), anonymous: false) == nil)
     #expect(CoachRecovery(.installation("Bound"), anonymous: true) == .signIn && CoachRecovery(.installation("Bound"), anonymous: false) == nil)
     #expect(CoachCopy.movementUpdate([CoachStep(tool: "list_exercises"), CoachStep(tool: "update_exercise")]) == "Changed a movement")

@@ -109,13 +109,14 @@ Anonymous results commit all routines and the replay receipt in one domain actio
 retained result can also be explicitly saved after account adoption. Creation links appear after that
 save succeeds. Existing routine changes continue through Review and Apply.
 
-Allowance refusals preserve drafts and retained results, with no balance indicator. The refusal and
-its reset time are drawn once, on the turn it belongs to or in the composer band, and only the
-refusal the conversation ends on offers recovery. Signed out, *Sign in to continue.* and Sign in
-appear only where the phone's own AI access is used up or belongs to an account; shared free-pool,
-concurrency and rate refusals offer nothing to do. Signed in, Windmill One appears only when an
-account without it has used its own allowance; its informational sheet states that subscriptions are
-not available yet. One members, and daily or ceiling limits, receive the actual refusal and any
+Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
+question stays in the field, and the refusal and its reset time are drawn once, centred in the
+conversation — *You have used all of your AI allowance.*, then *You can use Coach again on Nov 1 at
+12:00 AM.* — and only the refusal the conversation ends on offers recovery. Signed out, *Sign in to
+continue.* and Sign in appear only where the phone's own AI access is used up or belongs to an
+account; shared free-pool, concurrency and rate refusals offer nothing to do. Signed in there is no
+upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again in
+about 2 hours.* with *Use your own AI agent*; a ceiling receives the actual refusal and any
 server-provided reset time. An unchanged deliberate Send preserves its original request identity.
 
 Anonymous Coach accepts bounded conversation text, up to twelve prior text messages within 16 KB,
@@ -195,7 +196,8 @@ four seconds in flight, then unanswered,
 `-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer, `-coach-thinking` holds it before its
 first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
-with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account,
+with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
+with a spent allowance,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

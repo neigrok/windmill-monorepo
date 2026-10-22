@@ -215,7 +215,17 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     if path.hasPrefix("/v1/ai/installations") || path == "/v1/gym/coach/onboarding" {
       let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
         "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
-      if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-needs-account") {
+      // A spent allowance answers the first question and refuses the next, as the lifter's own allowance runs out.
+      let spent = ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent") && path == "/v1/gym/coach/onboarding"
+        && Self.asked.withLock({ $0 += 1; return $0 }) > 1
+      if spent {
+        var exhausted = allowance; exhausted["code"] = "subject_exhausted"; exhausted["remaining"] = "0.000000000"; exhausted["used"] = "0.050000000"
+        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "c", count: 64), "status": "failed", "expiresAtMs": 1_900_000_000_000 as Int64,
+          "errorCode": "subject_exhausted", "allowance": exhausted, "routines": []]
+      } else if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent") {
+        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "d", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
+          "errorCode": NSNull(), "allowance": allowance, "routines": [], "message": CoachBoard.squatsAnswer]
+      } else if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-needs-account") {
         response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "b", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
           "errorCode": NSNull(), "allowance": allowance, "message": "I need your account to change a routine. Sign in, then ask again.", "routines": [],
           "needsAccount": true]
@@ -248,6 +258,11 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         Self.setupGenerations.withLock { $0[key] = try? JSONSerialization.data(withJSONObject: snapshot) }
         response = snapshot
       } else { status = 404; response = ["code": "not-found"] }
+    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
+      status = 402
+      response = ["code": "ai-allowance", "error": "allowance", "allowance": ["code": "subject_exhausted", "currency": "USD", "period": "month", "tier": "logged_in",
+        "configured": true, "limit": "1.000000000", "used": "1.000000000", "reserved": "0.000000000", "remaining": "0.000000000",
+        "resetsAtMs": 1_793_491_200_000 as Int64, "budgetResetsAtMs": NSNull()] as [String: Any]]
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-daily-cap"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
       status = 429; response = ["code": "ask-daily-limit", "error": "the next question frees up in a couple of hours"]
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
@@ -436,7 +451,10 @@ nonisolated struct CoachBoard {
     return board
   }
 
+  static let squatsAnswer = "Choose a weight you can lift 8 times with good form. Do 5 reps. The app remembers it for next time."
   static let all: [String: CoachBoard] = [
+    "squats": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+      turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer, tools: [])]),
     "stalled": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
       turns: [Turn(question: "Bench has stalled for three weeks. Is Push A still doing anything?",
                    answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.", tools: [])]),

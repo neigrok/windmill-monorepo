@@ -308,17 +308,17 @@ nonisolated enum CoachCopy {
   }
 }
 
-// Recovery for a refused send: sign-in where the phone's own AI access is spent or bound, Windmill One for a non-One account's own allowance.
+// Recovery for a refused send: sign-in where the phone's own AI access is spent or bound. Signed in there is none to offer
+// while paid plans are closed.
 nonisolated enum CoachRecovery: Equatable {
-  case signIn, windmillOne
-  init?(code: String, tier: String?, anonymous: Bool) {
-    if anonymous, ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"].contains(code) { self = .signIn }
-    else if !anonymous, code == "subject_exhausted", tier == "logged_in" { self = .windmillOne }
-    else { return nil }
+  case signIn
+  init?(code: String, anonymous: Bool) {
+    guard anonymous, ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"].contains(code) else { return nil }
+    self = .signIn
   }
   init?(_ refusal: CoachRefusal?, anonymous: Bool) {
     switch refusal {
-    case .allowance(let allowance): self.init(code: allowance.code, tier: allowance.tier, anonymous: anonymous)
+    case .allowance(let allowance): self.init(code: allowance.code, anonymous: anonymous)
     case .installation: if anonymous { self = .signIn } else { return nil }
     default: return nil
     }
@@ -365,7 +365,7 @@ nonisolated extension AiAllowance {
       if let amount = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), amount > 0 {
         return "This request needs more AI capacity than your remaining allowance."
       }
-      return "Your AI allowance is fully used or reserved."
+      return "You have used all of your AI allowance."
     case "free_month_exhausted": return "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit."
     case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
     case "concurrency_exhausted": return "Another AI request is still in progress. Try again when it finishes."
@@ -377,6 +377,7 @@ nonisolated extension AiAllowance {
   var detail: String? {
     let reset = ["free_day_exhausted", "free_month_exhausted"].contains(code) ? budgetResetsAtMs : resetsAtMs
     guard let reset else { return nil }
-    return "Available again " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
+    let date = Date(timeIntervalSince1970: Double(reset) / 1000)
+    return "You can use Coach again on " + date.formatted(.dateTime.month(.abbreviated).day()) + " at " + date.formatted(date: .omitted, time: .shortened) + "."
   }
 }

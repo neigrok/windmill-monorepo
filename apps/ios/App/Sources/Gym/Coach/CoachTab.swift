@@ -41,7 +41,6 @@ struct CoachTab: View {
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
   @State var routineReview: CoachRoutineReview?
-  @State var showWindmillOne = false
   @State var sources: CoachReading?
   @State var photo: PhotosPickerItem?
   @State var preparing = false
@@ -87,16 +86,6 @@ struct CoachTab: View {
         }.background { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
       }
       .sheet(item: $routineReview) { review in CoachRoutineReviewSheet(coach: coach, review: review) }
-      .sheet(isPresented: $showWindmillOne) {
-        NavigationStack {
-          VStack(alignment: .leading, spacing: RoomSpace.related) {
-            Text("Subscriptions aren’t available yet.").font(.body)
-            Text("Your conversation and draft are kept.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-            Spacer()
-          }.padding(RoomSpace.inset).navigationTitle("Windmill One").modifier(GymPage())
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { showWindmillOne = false } } }
-        }.presentationDetents([.medium])
-      }
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
@@ -139,7 +128,7 @@ struct CoachTab: View {
   }
 
   // A capped question never reached Coach: it stays in the field, not in the conversation.
-  var capped: Bool { switch coach.refusal { case .daily, .ceiling: true; default: false } }
+  var capped: Bool { switch coach.refusal { case .daily, .ceiling, .allowance: true; default: false } }
 
   // The greeting stands for a gym Coach has nothing to build on yet; one that holds routines opens on an empty canvas.
   var greets: Bool { coach.showsGreeting && (gym.isAnonymous || gym.routines.isEmpty) }
@@ -201,6 +190,7 @@ struct CoachTab: View {
               if let receipt { answer("", receipt: receipt, steps: [], results: [], requestId: nil) }
             }
             if case .daily(let sentence) = coach.refusal { dailyCap(sentence) }
+            if case .allowance(let allowance) = coach.refusal, coach.transcriptAllowance == nil { allowanceMessage(allowance, current: true) }
             Color.clear.frame(height: 1).id("latest")
           }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
         }.contentShape(Rectangle()).onTapGesture { composing = false }
@@ -223,18 +213,15 @@ struct CoachTab: View {
 
   var band: some View {
     let tooLong = coach.saved.text.utf8.count > coach.textLimit
-    let transcribed = coach.transcriptAllowance != nil && { if case .allowance = coach.refusal { true } else { false } }()
-    let daily = { if case .daily = coach.refusal { true } else { false } }()
-    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent || transcribed || daily ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
+    // The day's cap and a spent allowance speak in the conversation; the band keeps everything else.
+    let spoken = { switch coach.refusal { case .daily, .allowance: true; default: false } }()
+    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent || spoken ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
-    let detail: String? = tooLong || transcribed ? nil : { if case .allowance(let allowance) = coach.refusal { allowance.detail } else { nil } }()
-    let recovery = tooLong || transcribed ? nil : CoachRecovery(coach.refusal, anonymous: coach.anonymous)
+    let recovery = tooLong || spoken ? nil : CoachRecovery(coach.refusal, anonymous: coach.anonymous)
     return VStack(alignment: .leading, spacing: RoomSpace.small) {
-      if detail != nil || recovery != nil {
-        VStack(alignment: .leading, spacing: RoomSpace.small) {
-          if let detail { Text(detail) }
-          if let recovery { accessRecovery(recovery) }
-        }.font(.footnote).foregroundStyle(GymPalette.inkDim).padding(.horizontal, RoomSpace.inset)
+      if let recovery {
+        VStack(alignment: .leading, spacing: RoomSpace.small) { accessRecovery(recovery) }
+          .font(.footnote).foregroundStyle(GymPalette.inkDim).padding(.horizontal, RoomSpace.inset)
       }
       GymTransient(gym: gym, message: message, dismiss: tooLong || retry != nil ? nil : { coach.error = nil }, retryMessage: retry,
                         errorIdentifier: "gym-coach-error")
@@ -295,9 +282,13 @@ struct CoachTab: View {
   }
 
   @ViewBuilder func onboarding(_ record: CoachOnboardingRecord) -> some View {
+    let refused = record.response.map { $0.status == "failed" && AiAllowance.refusalCodes.contains($0.errorCode ?? "") } ?? false
     VStack(alignment: .leading, spacing: 16) {
-      CoachQuestion(gym: gym, thread: coach.saved.threadId, text: record.request.question, attachments: record.photo.map { [$0] } ?? [],
-        draft: record.photo.flatMap { photo in record.request.image.flatMap { Data(base64Encoded: $0.data).map { (photo.id, $0) } } })
+      // A question the allowance refused never reached Coach; it stays in the field.
+      if !refused {
+        CoachQuestion(gym: gym, thread: coach.saved.threadId, text: record.request.question, attachments: record.photo.map { [$0] } ?? [],
+          draft: record.photo.flatMap { photo in record.request.image.flatMap { Data(base64Encoded: $0.data).map { (photo.id, $0) } } })
+      }
       if let response = record.response, response.status == "completed" {
         if let message = response.message, !message.isEmpty { CoachAnswerText(text: message) }
         if response.needsAccount == true, record.id == coach.anonymousRequest?.id {
@@ -402,13 +393,15 @@ struct CoachTab: View {
     }.frame(maxWidth: .infinity).padding(.top, 40).accessibilityIdentifier("coach-daily-cap")
   }
 
-  // A refusal's reason and reset stay with its turn; only the refusal the conversation ends on offers its recovery.
+  // A spent allowance, centred where the refused question would have gone: why, when Coach answers again, and, where it can
+  // help, Sign in. Only the refusal the conversation ends on offers its recovery.
   func allowanceMessage(_ allowance: AiAllowance, current: Bool) -> some View {
-    VStack(alignment: .leading, spacing: RoomSpace.small) {
+    VStack(spacing: RoomSpace.small) {
       Text(allowance.message)
       if let detail = allowance.detail { Text(detail) }
-      if current, let recovery = CoachRecovery(code: allowance.code, tier: allowance.tier, anonymous: coach.anonymous) { accessRecovery(recovery) }
-    }.font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-allowance")
+      if current, let recovery = CoachRecovery(code: allowance.code, anonymous: coach.anonymous) { accessRecovery(recovery) }
+    }.font(.footnote).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center).frame(maxWidth: .infinity)
+      .padding(.top, 40).accessibilityElement(children: .contain).accessibilityIdentifier("coach-allowance")
   }
 
   @ViewBuilder func accessRecovery(_ recovery: CoachRecovery) -> some View {
@@ -418,18 +411,14 @@ struct CoachTab: View {
       Button("Sign in") {
         gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
         if let keepRoutines { keepRoutines() } else { openAccount?() }
-      }.frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-sign-in")
-    case .windmillOne:
-      Button("Windmill One") {
-        gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "windmill_one"])
-        showWindmillOne = true
-      }.frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-windmill-one")
+      }.font(.subheadline.weight(.semibold)).buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent)
+        .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-sign-in")
     }
   }
 
   func generationView(_ generation: CoachGeneration, stamps: CoachStamps) -> some View {
     VStack(alignment: .leading, spacing: 16) {
-      question(generation.question, attachments: generation.attachments, at: generation.at, stamps: stamps)
+      if generation.allowanceRefusal == nil { question(generation.question, attachments: generation.attachments, at: generation.at, stamps: stamps) }
       if generation.answer.isEmpty, generation.status == "running" { CoachTyping() }
       answer(generation.answer, receipt: generation.clarification != nil && generation.clarification?.id == coach.activeClarification?.id ? nil : generation.receipt, steps: generation.steps, results: generation.results, requestId: generation.requestId)
       routineDrafts(generation.routineDrafts, requestId: generation.requestId)

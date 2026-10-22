@@ -314,6 +314,33 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  func testAllowanceUsed() {
+    captureBoard("01.10-coach-allowance-signed-out") { look in
+      let app = XCUIApplication()
+      app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
+                             "-coach-fixture", "-coach-allowance-spent", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+      app.launch()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 30))
+      ask("How heavy should I start squats?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-answer"].waitForExistence(timeout: 15))
+      ask("Swap chin-ups for pulldowns", app)
+      XCTAssertTrue(app.buttons["coach-sign-in"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+    captureBoard("01.11-coach-allowance-signed-in") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "squats", "-coach-allowance-spent"])
+      ask("How heavy should I start squats?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-answer"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      ask("Swap chin-ups for pulldowns", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-allowance"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["coach-sign-in"].exists, "Signed in, a spent allowance offers no upgrade")
+      return app
+    }
+  }
+
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]
