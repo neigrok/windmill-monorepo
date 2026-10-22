@@ -5,7 +5,7 @@
 - 08.13 rejected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30875) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41438)
 - 08.14 out of date: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30957) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41464)
 - 08.28 two proposals, one decided, one open: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38117) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41848)
-- Components: `Android / Change row` `1247:2908`, `Android / Diff field` `1247:2753`, `Android / Button` `656:6699`.
+- Components: `Android / Change row` `337:2686`, `Android / Diff field` `337:2531`, `Android / Button` `210:181`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - After a decision, `ReceiptLine` (`coach/AskScreen.kt:378-384`) draws the receipt under the unchanged card: *Applied · Push A · 3 changes* in bold accent on `surface` (`domain/Proposal.kt:181-189`).

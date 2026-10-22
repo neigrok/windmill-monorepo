@@ -4,7 +4,7 @@
 - 04.2 Ongoing notification, since last set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46754) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46949)
 - 04.3 Live Update chip, since last set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46826) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46963)
 - 04.4 Lock screen: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46875) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46971)
-- Component (Gym Components page, section `🧩 Android · Material 3`): `Android / Ongoing notification` `1247:3067`
+- Component (Design System library, Android page): `Android / Ongoing notification` `337:2845`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `notification/WorkoutNotifications.kt:189-227` builds the notification:
@@ -27,7 +27,7 @@
 - Live Update chip (04.3): the promoted notification shows the same chronometer in the status-bar chip. API 35 and older have no chip; nothing else changes there.
 - Lock screen (04.4):
   - Create a new channel id at `IMPORTANCE_DEFAULT`, kept silent: `setSilent(true)`, no sound, no vibration. An app cannot raise an existing channel's importance, so the id must change. Delete the old `gym_workout` channel after the new one exists.
-  - `setVisibility(NotificationCompat.VISIBILITY_PUBLIC)`. This shows the routine name on the lock screen; ledger 11l asks the owner to rule public or private. Build it behind one constant and use what the owner rules.
+  - The lock screen shows only the routine and the clock, never set content (owner ruling, ledger 11l): `setVisibility(NotificationCompat.VISIBILITY_PRIVATE)` with `setPublicVersion(...)`, a notification on the same channel with the routine as its title, the same chronometer, no text lines and no actions. The movement, *{w} kg × {r}*, *set n of N* and **Log set** show after unlock.
 - Use `NotificationCompat` throughout; keep `setOnlyAlertOnce(true)` so the chronometer never re-alerts.
 
 **Out of scope:**
@@ -41,7 +41,7 @@
 - `gym_set_logged` still fires once for a set logged from the notification (`store/TrainingStore.kt:218`).
 - Notification actions emit nothing today. Add the content-free event `gym_action` with `screen=notification`, `action=log_set` or `open`, `outcome=ok` / `refused` (a stale or locked offer). List it in `docs/ANDROID_OBSERVABILITY.md`.
 - Failures still report as `gym.notification.post`, `gym.notification.receive` and `gym.notification.capabilities`.
-- Tests: `notification/WorkoutNotificationsTests.kt` (channel id and importance, when-time before and after the first set, *Free workout*).
+- Tests: `notification/WorkoutNotificationsTests.kt` (channel id and importance, when-time before and after the first set, *Free workout*, and a public version that holds the routine and the chronometer and no set content or action).
 
 **Depends on:** 01.
 

@@ -4,9 +4,9 @@
 - 01.8 routines saved, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32583) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39546)
 - 01.16 routines saved, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32725) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39578)
 - 01.9 the routine, one tap from Start: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-33374) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39613)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Button` `656:6699`: Primary *Start workout*, Quiet *Edit routine*, Text *Keep it*
-  - `Android / Chat bubble` `1247:2983`
+- Components (Design System library, Android page):
+  - `Android / Button` `210:181`: Filled *Start workout*, Text *Edit routine*, Text *Keep it*
+  - `Android / Chat bubble` `337:2761`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Each created routine gets its own card (`coach/CoachAnswer.kt:134-141`): *Routine created*, the name, and **Open routine** (:137, :139).
@@ -25,8 +25,8 @@
   - *1 Back Squat* *3 × 5 · 60 kg total*
   - *2 Bench Press* *3 × 5 · 50 kg total*
   - *3 Dumbbell Row* *3 × 10 · 22 kg each* (units from 08)
-  - **Start workout** (Primary), which starts the routine's workout
-  - **Edit routine** (Quiet)
+  - **Start workout** (Filled), which starts the routine's workout
+  - **Edit routine** (Text)
 - Signed out (01.16): under the card, *Only on this phone ·* and a text button **Keep it** that opens the sign-in door. After sign-in, Add / Discard adopts the routines (`app/MainActivity.kt:248`).
 - Delete the per-routine *Routine created* card and **Open routine**.
 

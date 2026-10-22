@@ -3,10 +3,10 @@
 **Figma:**
 - 05.6 Record, Edit movement in the overflow: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30001) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31197)
 - 05.7 Record, a point inspected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30215) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31281)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Top app bar` `1260:2948`
-  - `Android / Menu` `1260:2608`
-  - `Android / Equipment icon` `1247:2247`
+- Components (Design System library, Android page):
+  - `Android / Top app bar` `342:2953`
+  - `Android / Menu` `342:2725`
+  - `Android / Equipment icon` `337:2025`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/RecordScreen.kt:72`: the bar's trailing action is the text *Rename*, shown once the record has loaded.

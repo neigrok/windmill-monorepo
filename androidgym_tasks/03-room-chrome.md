@@ -2,10 +2,10 @@
 
 **Figma:**
 - 00.1 Top app bar and navigation bar anatomy: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38215) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46397)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Top app bar` `1260:2948` (Type=Workout `1260:2933`: Finish, the routine, ⌄ Hide)
-  - `Android / NavigationBar` `659:6945` (*Routines* · *The log* · *Coach*)
-  - `Android / Button` `656:6699` (the bar's text actions)
+- Components (Design System library, Android page):
+  - `Android / Top app bar` `342:2953` (Type=Workout `342:2941`: Finish, the routine, ⌄ Hide)
+  - `Android / Navigation bar` `348:2762` (*Routines* · *The log* · *Coach*)
+  - `Android / Button` `210:181` (the bar's text actions)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `GymScreen` (`ui/GymScreen.kt:87-143`) draws two bars:

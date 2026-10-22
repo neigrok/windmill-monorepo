@@ -2,11 +2,11 @@
 
 **Figma:**
 - 03.3 Fix set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29581) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34337)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Number stepper` `1247:2736` (load numeral at 56, and reps)
-  - `Android / Equipment icon` `1247:2247`
-  - `Android / Button` `656:6699`: Primary (Save fix), Quiet · Tone=Error (Delete set)
-  - `Android / Menu` `1260:2608` (the Effort dropdown)
+- Components (Design System library, Android page):
+  - `Android / Number stepper` `337:2514` (load numeral at 56, and reps)
+  - `Android / Equipment icon` `337:2025`
+  - `Android / Button` `210:181`: Filled (Save fix), Text · Tone=Error (Delete set)
+  - `Android / Menu` `342:2725` (the Effort dropdown)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `FixSheet` (`ui/FixSheet.kt:69`) opens from a landed ledger row (`ui/LoggerScreen.kt`) or a set on workout detail (`ui/SessionScreen.kt`).
@@ -27,7 +27,7 @@
 - *Effort*: a filled `ExposedDropdownMenuBox` with the same options (*Not rated*, *RPE 6* … *RPE 10*).
 - Note: a filled `TextField`, label *Set note*, placeholder *Add a note*. The board draws no caption under it; keep the spoken state until 9n is ruled.
 - **Save fix** stays the 64 dp primary.
-- **Delete set**: Quiet · Tone=Error (`TextButton` in `colorScheme.error`, 02/04). It deletes at once (05).
+- **Delete set**: Text · Tone=Error (`TextButton` in `colorScheme.error`, 02/04). It deletes at once (05).
 - Footer *{routine} keeps its planned targets.* stays.
 - No kind control; `SetFix` has no kind (06).
 

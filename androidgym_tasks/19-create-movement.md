@@ -2,12 +2,12 @@
 
 **Figma:**
 - 02.9 Create movement: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29027) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45281)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Equipment icon` `1247:2247` (Machine is Kind=Machine `1263:34603`)
-  - `Android / Menu` `1260:2608` (the Equipment options)
-  - `Android / Number stepper` `1247:2736`
-  - `Android / Keyboard` `1247:2625`
-  - `Android / Button` `656:6699`
+- Components (Design System library, Android page):
+  - `Android / Equipment icon` `337:2025` (Machine is Kind=Machine `343:2377`)
+  - `Android / Menu` `342:2725` (the Equipment options)
+  - `Android / Number stepper` `337:2514`
+  - `Android / Keyboard` `337:2403`
+  - `Android / Button` `210:181`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `CreateMovementSheet` (`ui/MovementPicker.kt:379-449`), in a `ModalBottomSheet` (:336-347):
@@ -26,7 +26,7 @@
 - For Dumbbells only: *Dumbbells lifted* as an M3 `SingleChoiceSegmentedButtonRow`, *One* / *Two*, with the hint *Enter the weight of one dumbbell. Volume counts both.*
   - Default to the domain's default count; pass the choice through `create` → `ExerciseWrite` → `CreateExercise`.
 - Targets use the shared steppers (18), with the suffix of the chosen basis: 02.9 reads *Sets* 3 *sets* · *Reps* 10 *reps* · *Load* — *kg each*.
-- Button *Add to routine* (Primary, 56 dp); *Create and add* from the logger; *Creating…* while busy.
+- Button *Add to routine* (Filled, 56 dp); *Create and add* from the logger; *Creating…* while busy.
 - *Choose at least one set.* uses the error role (02).
 - Fix the recreation defect: the sheet must respect the status-bar inset after the activity is recreated (check `WindmillSheetWindow()` and the sheet's `contentWindowInsets`). The same defect in other sheets is 25's.
 

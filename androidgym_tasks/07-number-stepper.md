@@ -4,9 +4,9 @@
 - 03.2 Load tapped, decimal keyboard: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28178) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34080)
 - 03.10 Rack, pressed: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28389) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34112)
 - 03.11 Rack, changed, with 48 dp hit areas: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28534) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34166)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Number stepper` `1247:2736`: Default, Pressed, Changed, Focused
-  - `Android / Keyboard` `1247:2625`: Decimal
+- Components (Design System library, Android page):
+  - `Android / Number stepper` `337:2514`: Default, Pressed, Changed, Focused
+  - `Android / Keyboard` `337:2403`: Decimal
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Tapping the rack's load or reps opens `KeypadSheet` (`ui/KeypadSheet.kt:135`; opened at `ui/LoggerScreen.kt:466`, :470). Fix set opens the same sheet (`ui/FixSheet.kt:104`).

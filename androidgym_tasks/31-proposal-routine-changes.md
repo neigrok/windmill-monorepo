@@ -3,7 +3,7 @@
 **Figma:**
 - 08.15 rename a routine: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37242) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41642)
 - 08.16 remove a routine: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37272) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41657)
-- Components: `Android / Change row` `1247:2908` (Renamed, Removed), `Android / Diff field` `1247:2753`, `Android / Button` `656:6699` (Primary · Tone=Error, Tonal).
+- Components: `Android / Change row` `337:2686` (Renamed, Removed), `Android / Diff field` `337:2531`, `Android / Button` `210:181` (Filled · Tone=Error, Tonal).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Rename: a separate *Routine name* card with a move line *Push A → Push Day* after the movement rows (`ui/ReviewSheet.kt:254-257`), shown when `renames` is true (`domain/Proposal.kt:193`).

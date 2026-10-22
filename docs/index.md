@@ -7,9 +7,9 @@ that ships it. Status lives in the Figma layer names. Gym on iOS and Android is 
 
 Figma: Gym file, page [iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2).
 Code: `apps/ios/App/Sources/Gym/`. Colour roles: [ios-redesign.md](design/ios/ios-redesign.md).
-The page is the target: 🚀 boards match the app, 🚧 boards are what the next build draws, and each
-target holds the slot and number of the board it replaced ([consistency.md](design/consistency.md)
-10o, 10p, 10q, 10r, 12a–12j).
+The page is the target: 🚀 boards match the app, ✅ boards are final and have a build task, 🚧 boards
+are still open and their captions name what. Each target holds the slot and number of the board it
+replaced ([consistency.md](design/consistency.md) 10o, 10p, 10q, 10r, 12a–12n).
 
 | Flow | Section | Entry → exit |
 |---|---|---|
@@ -29,9 +29,9 @@ First run, sign-in, You, sign out and Delete account (section 4c `47:3852`): She
 ## Gym · Android
 
 Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=56-2).
-Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Gym file, Components page,
-section `🧩 Android · Material 3`. Numbers match the iOS page where the flow matches; the page is the
-target ([consistency.md](design/consistency.md) 11a–11o); build tasks: `androidgym_tasks/`.
+Code: `apps/android/gym/src/main/kotlin/works/windmill/gym/`. Components: Design System library,
+Android page. Numbers match the iOS page where the flow matches; the page is the
+target ([consistency.md](design/consistency.md) 11a–11o, 12a–12n); build tasks: `androidgym_tasks/`.
 
 | Flow | Section | Entry → exit |
 |---|---|---|

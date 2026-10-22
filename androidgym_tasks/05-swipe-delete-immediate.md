@@ -6,7 +6,7 @@
 - 02.10 Routine deleted by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29196) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45437)
 - 02.12 Routine menu, Delete: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29480) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45706)
 - 05.4 Workout detail, delete a set by swipe: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27713) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31027)
-- Components (Gym Components page, section `🧩 Android · Material 3`): `Android / Swipe row` `1247:2439`, `Android / Menu` `1260:2608`.
+- Components (Design System library, Android page): `Android / Swipe row` `337:2217`, `Android / Menu` `342:2725`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Deletes are held for `Withheld.windowMs = 9_000L` (`store/WithheldDelete.kt:108`) behind an *Undo* snackbar (`GymRoom.kt:507-530`). Callers of `store.withhold(…)`:

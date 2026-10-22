@@ -30,7 +30,7 @@ The [Figma Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?nod
 - [24](24-bodyweight.md) — Bodyweight list and correcting a weigh-in
 - [25](25-on-this-phone.md) — On this phone: the head of The log, the list, Inspect, Fix workout, Discard, the sign-in decision
 - [26](26-notes.md) — Notes and the note editor
-- [51](51-connected-log-notes-signed-out.md) — Connected log names ChatGPT or Claude and says it saves notes; Notes signed out (builds after 26)
+- [51](51-connected-log-notes-signed-out.md) — Connected log follows iOS, names ChatGPT or Claude and says it saves notes; Notes signed out (builds after 26)
 - [27](27-sign-in-fields.md) — Sign-in: outlined fields, no standing line, the server's refusal (Shell file)
 - [46](46-remove-gym-settings.md) — Remove Gym settings and the lb toggle; You holds Notes, Connected log, About Windmill (Shell file; builds after 27)
 - [47](47-sign-out-asks.md) — Sign out asks first, with Keep or Discard for unconfirmed changes (Shell file; builds after 46)

@@ -3,9 +3,9 @@
 **Figma:**
 - 03.5 Hide workout, the workout waits above the tabs: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41318) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41409)
 - 03.4 This workout draws the *Hide workout* item and the *Notification off* · *Show* row (board linked from 11); 00.1 draws the workout bar's anatomy (board linked from 03).
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Workout bar` `1283:28333`: 412 × 48, the routine and the time since start, `keyboard_arrow_up` trailing
-  - `Android / Top app bar` Type=Workout `1260:2933`: **Finish**, the routine, ⌄ Hide
+- Components (Design System library, Android page):
+  - `Android / Workout bar` `349:2488`: 412 × 48, the routine and the time since start, `keyboard_arrow_up` trailing
+  - `Android / Top app bar` Type=Workout `342:2941`: **Finish**, the routine, ⌄ Hide
 - The iOS build is the model: *Hide workout* in This workout (`apps/ios/App/Sources/Gym/Workout/WorkoutSheets.swift:59`, `hideWorkout` at `Workout/WorkoutState.swift:750`) and the hidden workout's tab-bar accessory (`HiddenWorkoutAccessory`, `apps/ios/App/Sources/Gym/GymRoom.swift:214`).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)

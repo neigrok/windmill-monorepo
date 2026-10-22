@@ -4,9 +4,9 @@
 - 01.3 Screenshot, the Android photo picker: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38808) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39781)
 - 01.4 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30368) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39355)
 - 01.5 signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30626) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39385)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Chat bubble` `1247:2983`
-  - `Android / Keyboard` `1247:2625`: Base, on 01.4
+- Components (Design System library, Android page):
+  - `Android / Chat bubble` `337:2761`
+  - `Android / Keyboard` `337:2403`: Base, on 01.4
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `coach/CoachComposer.kt`, signed in only:

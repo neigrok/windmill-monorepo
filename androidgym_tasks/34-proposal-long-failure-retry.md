@@ -4,7 +4,7 @@
 - 08.27 a very long proposal, expanded: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38014) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41815)
 - 08.29 apply failed, no connection: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38166) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41876)
 - 08.30 retry, applying: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38211) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41894)
-- Components: `Android / Change row` `1247:2908`, `Android / Diff field` `1247:2753`, `Android / Button` `656:6699` (Primary, Tonal, disabled).
+- Components: `Android / Change row` `337:2686`, `Android / Diff field` `337:2531`, `Android / Button` `210:181` (Filled, Tonal, disabled).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - While deciding, the sheet's Apply drops to 40 % with its label unchanged (`ui/ReviewSheet.kt:446-457`); *Turn this down* is disabled (`:489`).

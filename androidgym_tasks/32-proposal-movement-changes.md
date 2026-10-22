@@ -5,7 +5,7 @@
 - 08.18 remove a movement: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37338) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41684)
 - 08.19 swap a movement: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37391) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41699)
 - 08.20 move a movement: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37434) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41716)
-- Components: `Android / Change row` `1247:2908` (Added, Removed, Moved), `Android / Diff field` `1247:2753` (New, Gone, Changed).
+- Components: `Android / Change row` `337:2686` (Added, Removed, Moved), `Android / Diff field` `337:2531` (New, Gone, Changed).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The review sheet's `ChangeRow` (`ui/ReviewSheet.kt:325-356`) titles a row *Add {m}* or *Remove {m}* (`:330-331`):

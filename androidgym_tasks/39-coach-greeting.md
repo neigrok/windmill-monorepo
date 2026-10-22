@@ -3,10 +3,10 @@
 **Figma:**
 - 01.1 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-4776) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39315)
 - 01.2 signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28196) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39335)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Chat bubble` `1247:2983`: Coach, First and Last
-  - `Android / Button` `656:6699`: Tonal, for *Add screenshot* and *Build my own*
-  - `Android / Top app bar` `1260:2948`
+- Components (Design System library, Android page):
+  - `Android / Chat bubble` `337:2761`: Coach, First and Last
+  - `Android / Button` `210:181`: Tonal, for *Add screenshot* and *Build my own*
+  - `Android / Top app bar` `342:2953`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The room always opens on Routines: `var tab … mutableStateOf(Tab.Routines)` (`GymRoom.kt:292`).
@@ -26,7 +26,6 @@
   - **Goals** — tell me your goals, and I will plan for them.
   - **Notes** — I save important facts, like an old injury.
   - **Changes** — ask me, and I suggest changes to your routines.
-- The iOS line says *as you train*; Android says *ask me*. Use the Android board's words and leave the single wording to 11i.
 - Under the last bubble, two tonal buttons:
   - **Add screenshot** (image icon) opens the system photo picker: `PickVisualMedia(ImageOnly)`, the same launcher as the composer.
   - **Build my own** (add icon) opens the new-routine editor.
@@ -55,4 +54,4 @@
 
 **Depends on:** 28, 38.
 
-**Ledger:** 11h, 11i, 6p, 10v; dogfood `android-gym-target-page`.
+**Ledger:** 11h, 12l, 6p, 10v; dogfood `android-gym-target-page`.

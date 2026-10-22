@@ -27,6 +27,8 @@ Journal's Model page and Marketing's Store listings page are empty.
 Gym's iOS page is organized as one section per user flow (see [the flow index](index.md)).
 The organization check does not establish visual acceptance of the screens.
 Superseded boards are deleted, not archived.
+Every board and section name starts with its status: 🚀 In production (matches the app), ✅ Ready for
+dev (final, with a task) or 🚧 In progress (still open; the caption names what).
 
 The library has three variable collections: Brand (Roadmap, Journal, Gym), Theme (Light, Dark),
 and Scale (one Value mode). Theme colour values alias Brand. Theme `ios/*` roles hold iOS

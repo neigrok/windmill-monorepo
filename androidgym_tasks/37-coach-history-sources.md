@@ -4,11 +4,11 @@
 - 08.4 History: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41230)
 - 08.5 What Coach read: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28654) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41250)
 - 08.34 History, delete a conversation: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31663) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41570)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Swipe row` `1247:2439` (Rest, Swiping, Past threshold)
-  - `Android / FAB` `1247:2332` (Extended)
-  - `Android / Button` `656:6699` (Quiet · Tone=Error for the dialog's *Delete*)
-  - `Android / Top app bar` `1260:2948`
+- Components (Design System library, Android page):
+  - `Android / Swipe row` `337:2217` (Rest, Swiping, Past threshold)
+  - `Android / FAB` `337:2110` (Extended)
+  - `Android / Button` `210:181` (Text · Tone=Error for the dialog's *Delete*)
+  - `Android / Top app bar` `342:2953`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ThreadsScreen` (`coach/ThreadsScreen.kt:61`): title *History* (`coach/Thread.kt:156`), pull to refresh (`coach/ThreadsScreen.kt:104`).
@@ -34,7 +34,7 @@
 - What Coach read (08.5), a bottom sheet:
   - The tally line under the bubble reads *Read 1 workout · 1 week ›* (`chevron_forward`). Use *workouts* (9z). A tap opens an M3 `ModalBottomSheet` over a 32 % scrim; the thread lifts so the tally stays visible above it.
   - The sheet: handle, title *What Coach read*, the line *1 workout · 1 week*, then one row card per workout, *Push A* over *Sat, Sep 26 · 1 working set · 400 kg*, with a chevron. Each row opens that workout (23).
-  - **Close** (`Android / Button` Quiet, 56 dp) at the foot.
+  - **Close** (`Android / Button` Text, 56 dp) at the foot.
   - Volume is rounded like the rest of the app, with a space before *kg*.
   - *Also read your notes.* under the rows when Coach read them.
   - Tool phrases leave this card; Coach's writes have their own receipts (35).

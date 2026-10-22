@@ -3,10 +3,10 @@
 **Figma:**
 - 09.1 Notes, swipe delete: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39045) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-43995)
 - 09.2 Note editor: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39104) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44029)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Swipe row` `1247:2439`
-  - `Android / Button` `656:6699` (Quiet · Tone=Error)
-  - `Android / Top app bar` `1260:2948` (Pushed, with the optional text action *Save*)
+- Components (Design System library, Android page):
+  - `Android / Swipe row` `337:2217`
+  - `Android / Button` `210:181` (Text · Tone=Error)
+  - `Android / Top app bar` `342:2953` (Pushed, with the optional text action *Save*)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Notes (`ui/NotesScreen.kt:42-132`): *what you write for Coach* / *Any agent you connect can read these too.* (`domain/Notes.kt:36-37`); rows with a reorder handle (long-press drag, two or more notes), the title, the first line or *empty · tap to write*, a chevron (:173-217); *Top note wins.* (`domain/Notes.kt:40`); a bottom *Add a note* on `raised`.
@@ -24,7 +24,7 @@
 - Note editor (09.2):
   - Bar: `Android / Top app bar` Pushed, back + *Note* + the text action *Save* (tertiary text while there is nothing to save).
   - Fields: M3 `OutlinedTextField`s with the label inside the outline, *Title* and *Note*. A new note's second field is also *Note* (today *Body*).
-  - **Delete note** as `Android / Button` Quiet · Tone=Error (error role, 02). It deletes at once and closes the editor.
+  - **Delete note** as `Android / Button` Text · Tone=Error (error role, 02). It deletes at once and closes the editor.
 - A refused or failed delete brings the note back and the note line says why (today's *that note is still here* line).
 - 05 already makes the store's note delete immediate; this task adds the swipe and the button.
 

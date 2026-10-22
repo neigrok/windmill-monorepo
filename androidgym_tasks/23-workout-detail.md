@@ -3,10 +3,10 @@
 **Figma:**
 - 05.3 Workout detail: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27642) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30969)
 - 05.14 Workout detail, Discard asks once: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40948) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41023)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Top app bar` `1260:2948`
-  - `Android / Equipment icon` `1247:2247`
-  - `Android / Button` `656:6699` (Quiet · Tone=Error)
+- Components (Design System library, Android page):
+  - `Android / Top app bar` `342:2953`
+  - `Android / Equipment icon` `337:2025`
+  - `Android / Button` `210:181` (Text · Tone=Error)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `SessionScreen` (`ui/SessionScreen.kt`):
@@ -23,7 +23,7 @@
 - Movement header: the equipment icon (08) before the name.
 - Plan line with the load basis and a space: *Plan 3 × 8 · 75 kg total* (barbell), *Plan 3 × 10 · 24 kg each* (two dumbbells). 08 changes `Readout.targetWithUnit`; this screen only uses it.
 - Set notes never print a kind (the kind itself goes with 06).
-- *Discard session* → *Discard workout*, an `Android / Button` Quiet in the error role (02).
+- *Discard session* → *Discard workout*, an `Android / Button` Text in the error role (02).
   - A tap opens the dialog from 14 (05.14): *Discard this workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / **Cancel** · **Discard** (error role).
   - Discard removes the workout at once, then the room goes back to The log. No hold, no Undo.
 - *Share this workout* is unchanged.

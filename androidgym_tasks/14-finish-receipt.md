@@ -5,7 +5,7 @@
 - 03.8 Finish receipt, ended early: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32441) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34614)
 - 03.14 Discard this workout?: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41920) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41989)
 - 03.15 Finish receipt, first workout, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42292) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42368)
-- Components (Gym Components page, section `🧩 Android · Material 3`): `Android / Button` `656:6699` (Tonal for Share with Coach; Quiet · Tone=Error for Discard; Primary for Done; Primary · Tone=Error in the dialog).
+- Components (Design System library, Android page): `Android / Button` `210:181` (Tonal for Share with Coach; Text · Tone=Error for Discard; Filled for Done; Filled · Tone=Error in the dialog).
 - The iOS receipt is the reference: iOS boards 03.7 and 03.8, `apps/ios/App/Sources/Gym/Workout/WorkoutReceipt.swift`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
@@ -26,7 +26,7 @@
   - The personal record card as today (*Personal record* / *Bench Press e1RM 101.3 kg — past 95 from Fri 9 Oct.*).
   - Head **Performed**, then each movement and its sets in the performed form: *Bench Press* / *3 × 6–8 · 75–80 kg*, *Incline Dumbbell Press* / *1 × 10 · 24 kg each* (units from 08).
   - Delete the *Against plan* / *Against last* block from the receipt, and the Coach line.
-  - A band pinned at the bottom, in thumb reach: **👑 Share with Coach** (Tonal, full width) above a row of **Discard** (Quiet · Tone=Error) and **Done** (Primary, on the thumb side).
+  - A band pinned at the bottom, in thumb reach: **👑 Share with Coach** (Tonal, full width) above a row of **Discard** (Text · Tone=Error) and **Done** (Filled, on the thumb side).
   - **Done** closes the sheet onto the workout detail. **Share with Coach** sends *Check my last workout.* (`FinishCoach.question`, the iOS words in `WorkoutState.swift:724`) through the same path as today.
 - 03.8, ended early: *Ended early.* / *Push A · Thu, Oct 22*, tiles *9m* · *2* · *960 kg*, **Performed** · *Bench Press* / *2 × 8 · 60 kg*, and the same band.
 - 03.14: **Discard** opens an M3 `AlertDialog`: *Discard this workout?* / *This deletes the workout and its 2 sets. You can’t undo this.* (*This deletes the workout and its {n} sets. You can’t undo this.*) / **Cancel** · **Discard** (error role).

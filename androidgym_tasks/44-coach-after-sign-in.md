@@ -2,11 +2,11 @@
 
 **Figma:**
 - 01.13 after sign-in and Add, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-36454) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39744)
-- Components (Gym Components page, section `🧩 Android · Material 3`):
-  - `Android / Change row` `1247:2908`: Removed, Added
-  - `Android / Diff field` `1247:2753`: Gone, New
-  - `Android / Button` `656:6699`: Primary *Apply*, Tonal *Reject*
-  - `Android / Chat bubble` `1247:2983`
+- Components (Design System library, Android page):
+  - `Android / Change row` `337:2686`: Removed, Added
+  - `Android / Diff field` `337:2531`: Gone, New
+  - `Android / Button` `210:181`: Filled *Apply*, Tonal *Reject*
+  - `Android / Chat bubble` `337:2761`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `app/` or `platform/`)
 - There is no signed-out conversation to continue (38).
