@@ -68,6 +68,10 @@ extension CoachConversation {
   }
   var anonymousRequest: CoachOnboardingRecord? { saved.onboarding?.last }
   var anonymousRetryable: Bool { anonymousRequest.map { !$0.finished && !asking } ?? false }
+  // Signed out, the newest answer that needs an account offers Sign in; once signed in, its adopted answer offers nothing.
+  func offersSignIn(_ record: CoachOnboardingRecord) -> Bool {
+    anonymous && record.response?.needsAccount == true && record.id == anonymousRequest?.id
+  }
   var textLimit: Int { anonymous ? 4000 : 8000 }
 
 

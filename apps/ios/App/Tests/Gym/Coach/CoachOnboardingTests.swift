@@ -265,4 +265,25 @@ extension CoachTests {
     let current = try await runtime.installation.request("/v1/ai/installations/current", credential: credential)
     #expect(try JSONDecoder().decode(AiInstallation.State.self, from: current).bound)
   }
+
+  func onboardingRecord(_ id: String, response: String) throws -> CoachOnboardingRecord {
+    var record = CoachOnboardingRecord(request: CoachOnboardingIn(requestId: id, mode: "conversation", text: "Make Push A harder"))
+    record.response = try JSONDecoder().decode(CoachOnboardingOut.self, from: Data(response.utf8))
+    return record
+  }
+
+  @Test func onlyASignedOutAnswerThatNeedsAnAccountOffersSignIn() async throws {
+    let allowance = #""allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.01","reserved":"0","remaining":"0.04","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let needs = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in, then ask again.","needsAccount":true,"#+allowance+"}")
+    let earlier = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Sign in first.","needsAccount":true,"#+allowance+"}")
+    let (anonymous, anonymousCache) = try await anonymousCoach()
+    defer { try? FileManager.default.removeItem(at: anonymousCache.directory) }
+    var next = anonymous.saved; next.onboarding = [earlier, needs]; #expect(anonymous.keep(next, failure: "x"))
+    #expect([anonymous.offersSignIn(earlier), anonymous.offersSignIn(needs)] == [false, true])
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let account = CoachConversation(gym: gym, rest: rest, store: cache); await account.activate()
+    var adopted = account.saved; adopted.onboarding = [earlier, needs]; #expect(account.keep(adopted, failure: "x"))
+    #expect([account.offersSignIn(earlier), account.offersSignIn(needs)] == [false, false])
+  }
 }

@@ -302,7 +302,7 @@ struct CoachTab: View {
       }
       if let response = record.response, response.status == "completed" {
         if let message = response.message, !message.isEmpty { CoachAnswerText(text: message) }
-        if response.needsAccount == true, record.id == coach.anonymousRequest?.id {
+        if coach.offersSignIn(record) {
           Button {
             gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
             if let keepRoutines { keepRoutines() } else { openAccount?() }
