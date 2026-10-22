@@ -104,15 +104,15 @@ struct StartWorkoutCommand: ServerCommand {
   static let name = Gym.Commands.start
   static let specs: [any ValueSpec] = []
   let args: [String: JSON]
-  init(id: ID<Session>, routineId: ID<Routine>?, at: Instant) {
-    var args: [String: JSON] = ["id": id.json, "startedAt": .of(at), "joinOpenSession": false]
-    if let routineId { args["routineId"] = routineId.json }; self.args = args
+  init(id: ID<Session>, routineId: ID<Routine>, at: Instant) {
+    args = ["id": id.json, "routineId": routineId.json, "startedAt": .of(at), "joinOpenSession": false]
   }
 }
 
+// Every workout this phone starts follows a routine; one without arrives only from elsewhere, as a connected agent's.
 struct StartWorkout: Action {
   let id: ID<Session>
-  let routineId: ID<Routine>?
+  let routineId: ID<Routine>
   var scope: ScopeRef { Gym.scope }
   typealias Loaded = (state: TrainingState, routine: Routine?, prior: Bool, replica: String, anonymous: Bool)
   func load(_ read: Reader) throws -> Loaded {
@@ -121,13 +121,13 @@ struct StartWorkout: Action {
   }
   func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
     if loaded.prior { return .unchanged(id) }
-    if let routineId, loaded.routine == nil { return .refuse(.gone(routineId.ref, .predicted)) }
+    guard let routine = loaded.routine else { return .refuse(.gone(routineId.ref, .predicted)) }
     if loaded.state.drawn.contains(where: { SessionRules.drawn($0, sets: loaded.state.sets, now: loaded.state.moment.now).isOpen }) {
       return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
     }
-    let at = loaded.state.moment.now, routine = loaded.routine
-    let value = Session(id: id, startedAt: at, routineId: routine?.id, plan: routine.map(SessionPlan.init))
-    var plan = try Plan(running: StartWorkoutCommand(id: id, routineId: routine?.id, at: at),
+    let at = loaded.state.moment.now
+    let value = Session(id: id, startedAt: at, routineId: routine.id, plan: SessionPlan(routine))
+    var plan = try Plan(running: StartWorkoutCommand(id: id, routineId: routine.id, at: at),
                         predicting: [.create(Session.self, id, value.fields)])
     plan.device(WorkoutActivityRecord.key, WorkoutActivityRecord(sessionID: id.description, replica: loaded.replica, anonymous: loaded.anonymous).json)
     return .write(plan, id)
@@ -578,9 +578,9 @@ extension GymModel {
     if let state = Self.workoutStates.object(forKey: self) { return state }
     let state = WorkoutState(gym: self); Self.workoutStates.setObject(state, forKey: self); return state
   }
-  @discardableResult func startWorkout(routineId: ID<Routine>? = nil) -> ID<Session>? {
+  @discardableResult func startWorkout(routineId: ID<Routine>) -> ID<Session>? {
     guard !readFailed else { error = "Your routines could not be read. Try again."; return nil }
-    if let routineId, !routines.contains(where: { $0.id == routineId }) {
+    guard routines.contains(where: { $0.id == routineId }) else {
       error = "That routine can’t be found. No workout was started."; return nil
     }
     let id = runner.mint(Session.self)

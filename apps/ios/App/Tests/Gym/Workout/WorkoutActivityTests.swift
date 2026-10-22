@@ -144,7 +144,7 @@ import SyncTesting
   // movement it names none of them and offers nothing.
   @Test func cardReadsTheSetItWouldLogAndNothingBeforeAMovement() throws {
     let (_, gym) = try fixtures.fixture()
-    _ = try #require(gym.startWorkout(routineId: nil))
+    #expect(gym.run(StartSession(id: gym.runner.mint(Session.self)))?.refusal == nil && gym.restoreWorkout())
     let workout = gym.workout, session = try #require(workout.session), controller = WorkoutActivityController(gym: gym)
     let blank = try controller.content(session: session, offer: workout.activityOffer()).state
     #expect([blank.title, blank.movement, blank.load, "\(blank.workingSetOrdinal)"] == ["Free workout", "", "", "1"] && blank.offer == nil)
@@ -263,9 +263,9 @@ import SyncTesting
   func activityOpeningDuringPendingSignInRestoresLocalWorkoutWithoutLogging(viaIntent: Bool, deferred: Bool) async throws {
     let server = JournalModelTransport(), connectivity = SwitchedConnectivity(), recorder = TelemetryRecorder()
     let initial = try LineageFlowTests().fixture(server, connectivity: connectivity, telemetry: recorder)
-    let runtime = try #require(initial.runtime), id = try #require(initial.gym.startWorkout())
+    let runtime = try #require(initial.runtime), id = try #require(initial.gym.startWorkout(following: ID("bench-press")))
     let initialWorkout = initial.gym.workout
-    initialWorkout.add(ID("bench-press")); #expect(initialWorkout.logSet())
+    #expect(initialWorkout.logSet())
     initialWorkout.weightKg = 62.5; initialWorkout.reps = 9
     let stale = try #require(initialWorkout.activityOffer()), sets = initialWorkout.sets
     #expect(initial.gym.hideWorkout())
@@ -374,15 +374,14 @@ import SyncTesting
     harness.sync()
     let otherGym = GymModel(runner: other.runner), restored = otherGym.workout
     otherGym.refresh(); restored.reconcile()
-    #expect(restored.sessionId == sessionID && restored.selected == nil)
+    #expect(restored.sessionId == sessionID && restored.selected == fixtures.first)
     #expect(try restored.activityRecord() == nil)
     #expect(restored.activityOffer() == nil && !restored.logActivityOffer(old))
     #expect(otherGym.restoreWorkout())
     let authority = try #require(try restored.activityRecord())
     #expect(authority.sessionID == sessionID.description && authority.ownerID != old.ownerID && !authority.anonymous)
     #expect(authority.replica == (try other.runner.read(Gym.scope) { $0.replica }))
-    #expect(authority.offer == nil && restored.activityOffer() == nil && restored.selected == nil)
-    restored.add(fixtures.first)
+    #expect(authority.offer == nil)
     let current = try #require(restored.activityOffer())
     #expect(current.ownerID == authority.ownerID && current.sessionID == old.sessionID && current.setID != old.setID)
     #expect(!restored.logActivityOffer(old) && restored.sets.isEmpty && restored.activityOffer() == current)
@@ -424,7 +423,7 @@ import SyncTesting
     #expect(try restored.activityRecord() == nil)
     #expect(otherGym.restoreWorkout())
     #expect(try restored.activityRecord()?.sessionID == gym.openSession?.id.description)
-    #expect(restored.activityOffer() == nil && restored.sets.isEmpty)
+    #expect(restored.activityOffer()?.sessionID == gym.openSession?.id.description && restored.sets.isEmpty)
   }
 
   @Test func explicitRestoreClearsManualDismissalAndPreservesTheCurrentDraft() throws {
@@ -451,7 +450,7 @@ import SyncTesting
     defer { try? runtime.tokens.delete(for: owner.account) }
     #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
     let gym = GymModel(runner: runtime.runner, runtime: runtime)
-    _ = try #require(gym.startWorkout())
+    _ = try #require(gym.startWorkout(following: ID("back-squat")))
     let workout = gym.workout, replica = try runtime.engine.activeReplica()
     gym.startWorkoutActivity()
     var record = try #require(try workout.activityRecord())
@@ -494,9 +493,8 @@ import SyncTesting
 
     let runtime = try WorkoutStateTests.faultRuntime(fault), recorder = TelemetryRecorder()
     let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: recorder)
-    _ = try #require(gym.startWorkout())
+    _ = try #require(gym.startWorkout(following: ID("back-squat")))
     let workout = gym.workout
-    workout.add(ID("back-squat"))
     let old = try #require(workout.activityOffer()), replica = try runtime.engine.activeReplica()
     #expect(gym.isAnonymous && workout.sets.isEmpty)
     let signIn = try await runtime.engine.signIn(account: owner.account, token: owner.token)
@@ -524,14 +522,13 @@ import SyncTesting
     let server = JournalModelTransport(), remote = try LineageFlowTests().fixture(server)
     let identity = server.identity(email: "activity-pending-adoption@example.com")
     try await remote.signIn(identity)
-    let accountWorkout = try #require(remote.gym.startWorkout())
+    let accountWorkout = try #require(remote.gym.startWorkout(following: ID("bench-press")))
     await remote.runtime?.engine.start()
     try await AppModelTests().workoutSettled(remote, accountWorkout)
     let connectivity = SwitchedConnectivity()
     let local = try LineageFlowTests().fixture(server, seed: 122, connectivity: connectivity)
     defer { remote.gym.stop(); local.gym.stop() }
-    let id = try #require(local.gym.startWorkout()), workout = local.gym.workout
-    workout.add(ID("bench-press"))
+    let id = try #require(local.gym.startWorkout(following: ID("bench-press"))), workout = local.gym.workout
     #expect(workout.logSet())
     let original = workout.sets, stale = try #require(workout.activityOffer())
     try await local.signIn(server.identity(email: identity.email))
@@ -580,13 +577,12 @@ import SyncTesting
     let server = JournalModelTransport(), remote = try LineageFlowTests().fixture(server)
     let identity = server.identity(email: "activity-pending-delete@example.com")
     try await remote.signIn(identity)
-    let accountWorkout = try #require(remote.gym.startWorkout())
+    let accountWorkout = try #require(remote.gym.startWorkout(following: ID("bench-press")))
     await remote.runtime?.engine.start()
     try await AppModelTests().workoutSettled(remote, accountWorkout)
     let local = try LineageFlowTests().fixture(server, seed: 124)
     defer { remote.gym.stop(); local.gym.stop() }
-    let id = try #require(local.gym.startWorkout()), workout = local.gym.workout
-    workout.add(ID("bench-press"))
+    let id = try #require(local.gym.startWorkout(following: ID("bench-press"))), workout = local.gym.workout
     #expect(workout.logSet()); #expect(workout.logSet())
     let deleted = try #require(workout.sets.first)
     try await local.signIn(server.identity(email: identity.email))
@@ -619,8 +615,7 @@ import SyncTesting
     let delayed = CapturedWorkoutHelloTransport(base: server)
     let local = try LineageFlowTests().fixture(server, syncTransport: delayed, seed: 123)
     defer { remote.gym.stop(); local.gym.stop() }
-    let id = try #require(local.gym.startWorkout()), workout = local.gym.workout
-    workout.add(ID("bench-press"))
+    let id = try #require(local.gym.startWorkout(following: ID("bench-press"))), workout = local.gym.workout
     #expect(workout.logSet()); #expect(workout.logSet())
     let first = try #require(workout.sets.first)
     let signIn = Task { try await local.signIn(identity) }
@@ -637,7 +632,7 @@ import SyncTesting
     }
     workout.reconcile()
     let retained = workout.sets
-    let accountWorkout = try #require(remote.gym.startWorkout())
+    let accountWorkout = try #require(remote.gym.startWorkout(following: ID("bench-press")))
     await remote.runtime?.engine.start()
     try await AppModelTests().workoutSettled(remote, accountWorkout)
     await delayed.gate.release(); try await signIn.value
@@ -665,9 +660,9 @@ import SyncTesting
       if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private recovery snapshot detail") }
     }, telemetry: telemetry)
     let runtime = try #require(model.runtime), originalReplica = try runtime.engine.activeReplica()
-    _ = try #require(model.gym.startWorkout())
+    _ = try #require(model.gym.startWorkout(following: ID("bench-press")))
     let workout = model.gym.workout
-    workout.add(ID("bench-press")); #expect(workout.logSet())
+    #expect(workout.logSet())
     let identity = server.identity(email: "activity-capture-failure@example.com")
     let signingIn = Task { try await model.signIn(identity) }
     await delayed.gate.untilWaiting()
@@ -695,9 +690,9 @@ import SyncTesting
     let server = JournalModelTransport(), gate = WorkoutSeatGate()
     let model = try LineageFlowTests().fixture(server, bindings: [gate])
     let runtime = try #require(model.runtime), originalReplica = try runtime.engine.activeReplica()
-    _ = try #require(model.gym.startWorkout())
+    _ = try #require(model.gym.startWorkout(following: ID("bench-press")))
     let workout = model.gym.workout
-    workout.add(ID("bench-press")); #expect(workout.logSet())
+    #expect(workout.logSet())
     let retained = workout.sets, identity = server.identity(email: "activity-capture-cancel@example.com")
     let signingIn = Task { try await model.signIn(identity) }
     await gate.gate.untilWaiting()

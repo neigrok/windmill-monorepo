@@ -53,8 +53,7 @@ import Synchronization
       try? runtime.tokens.delete(for: identity.account)
       preferences.removePersistentDomain(forName: service)
     }
-    let id = try #require(model.gym.startWorkout()), workout = model.gym.workout
-    workout.add(ID("bench-press"))
+    let id = try #require(model.gym.startWorkout(following: ID("bench-press"))), workout = model.gym.workout
     await transport.hold()
     let start = Task { await model.start() }
     defer { start.cancel() }

@@ -72,11 +72,11 @@ import XCTest
       ("fixture-overlap", "Push A · \(september(24)) · 12 sets", "Overlaps another workout — fix its times."),
       ("fixture-landed-push", "1 set from Push A · \(september(23))", "A set missed its workout — retry puts it back."),
       ("fixture-late-set", "Legs · \(september(22)) · 4 sets", "Its times don't line up — fix the times."),
-      ("fixture-missing-movement", "Free workout · \(september(21)) · 3 sets", "A movement is missing — fix its sets, then retry."),
-      ("fixture-id-taken", "Free workout · \(september(20)) · 4 sets", "Already added once — discard this copy."),
-      ("fixture-parent-dead", "Free workout · \(september(19)) · 3 sets", "Refused by the log — fix the workout, then retry."),
-      ("fixture-many-sets", "Free workout · \(september(18)) · 201 sets", "Over 200 sets — remove some, then retry."),
-      ("fixture-unsent", "Free workout · \(september(17)) · 3 sets", "Not on your log yet — retry to add it."),
+      ("fixture-missing-movement", "Push A · \(september(21)) · 3 sets", "A movement is missing — fix its sets, then retry."),
+      ("fixture-id-taken", "Legs · \(september(20)) · 4 sets", "Already added once — discard this copy."),
+      ("fixture-parent-dead", "Pull A · \(september(19)) · 3 sets", "Refused by the log — fix the workout, then retry."),
+      ("fixture-many-sets", "Push A · \(september(18)) · 201 sets", "Over 200 sets — remove some, then retry."),
+      ("fixture-unsent", "Legs · \(september(17)) · 3 sets", "Not on your log yet — retry to add it."),
     ]
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-row-")).count, rows.count)
     for (id, title, line) in rows { XCTAssertEqual(reach(row(id, app), app).label, "\(title), \(line)", id) }
@@ -152,7 +152,7 @@ import XCTest
     openList("2 workouts", "1 needs you", app)
     XCTAssertTrue(app.staticTexts["Needs you"].exists && app.staticTexts["Adding"].exists)
     XCTAssertEqual(reach(row("fixture-sending", app), app).label, "Push A · Yesterday · 6 sets, Adding…")
-    XCTAssertEqual(row("fixture-unsent", app).label, "Free workout · \(september(24)) · 3 sets, Not on your log yet — retry to add it.")
+    XCTAssertEqual(row("fixture-unsent", app).label, "Legs · \(september(24)) · 3 sets, Not on your log yet — retry to add it.")
     XCTAssertLessThan(row("fixture-unsent", app).frame.minY, row("fixture-sending", app).frame.minY, "Needs you comes first")
     inspect("fixture-sending", app)
     XCTAssertFalse(app.buttons["recovery-primary"].exists || app.buttons["recovery-more"].exists)

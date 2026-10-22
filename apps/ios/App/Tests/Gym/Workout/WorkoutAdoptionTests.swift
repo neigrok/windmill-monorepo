@@ -22,8 +22,10 @@ struct SaveSignedOutWorkouts: Action {
 }
 
 @Suite @MainActor struct WorkoutAdoptionTests {
-  func finished(_ id: String, exercise: ID<Exercise>, from start: Int64, to finish: Int64, sets: [Int64]) -> SignedOutWorkout {
-    let session = Session(id: ID(RecordID(id)), startedAt: Instant(ms: start), finishedAt: Instant(ms: finish), closedBy: "finish")
+  func finished(_ id: String, routine: String? = nil, exercise: ID<Exercise>, from start: Int64, to finish: Int64, sets: [Int64]) -> SignedOutWorkout {
+    let session = Session(id: ID(RecordID(id)), startedAt: Instant(ms: start), finishedAt: Instant(ms: finish), closedBy: "finish",
+                          routineId: routine.map { _ in ID(RecordID("\(id)-routine")) },
+                          plan: routine.map { SessionPlan(routine: $0, entries: [RoutineEntry(exerciseId: exercise)]) })
     return SignedOutWorkout(session: session, sets: sets.enumerated().map { index, offset in
       TrainingSet(id: ID(RecordID("\(id)-set-\(index)")), sessionId: session.id, exerciseId: exercise, weightKg: 60, reps: 5,
                   note: "Private set note", completedAt: Instant(ms: start + offset))
@@ -50,17 +52,17 @@ struct SaveSignedOutWorkouts: Action {
   @Test func onThisPhoneIsOneRowWhateverWaits() throws {
     let fixture = WorkoutStateTests(), (_, gym) = try fixture.fixture(anonymous: false)
     let now = fixture.start.ms, day = gym.dates.day(Instant(ms: now - 60_000))
-    let first = finished("first-copy", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
-    let second = finished("second-copy", exercise: fixture.first, from: now - 40_000, to: now - 30_000, sets: [1_000, 2_000])
+    let first = finished("first-copy", routine: "Push A", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
+    let second = finished("second-copy", routine: "Legs", exercise: fixture.first, from: now - 40_000, to: now - 30_000, sets: [1_000, 2_000])
     let read = { gym.waitingRows.map { "\($0.title) | \($0.reason ?? "on its way")" } }
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [first]))?.receipt != nil)
-    #expect(read() == ["Free workout · \(day) · 1 set | Not on your log yet — retry to add it."])
+    #expect(read() == ["Push A · \(day) · 1 set | Not on your log yet — retry to add it."])
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [second]))?.receipt != nil)
-    #expect(read() == ["Free workout · \(day) · 2 sets | Not on your log yet — retry to add it.",
-                       "Free workout · \(day) · 1 set | Not on your log yet — retry to add it."])
+    #expect(read() == ["Legs · \(day) · 2 sets | Not on your log yet — retry to add it.",
+                       "Push A · \(day) · 1 set | Not on your log yet — retry to add it."])
     #expect(OnThisPhoneSection.summary(gym.waitingRows) == "2 need you")
     #expect(gym.keepAdoptedWorkout(first.session.id))
-    #expect(read().last == "Free workout · \(day) · 1 set | on its way" && OnThisPhoneSection.summary(gym.waitingRows) == "1 needs you")
+    #expect(read().last == "Push A · \(day) · 1 set | on its way" && OnThisPhoneSection.summary(gym.waitingRows) == "1 needs you")
     #expect(gym.keepAdoptedWorkout(second.session.id) && OnThisPhoneSection.summary(gym.waitingRows) == "Adding…")
   }
 
@@ -287,20 +289,18 @@ struct SaveSignedOutWorkouts: Action {
     let server = JournalModelTransport(), remote = try LineageFlowTests().fixture(server)
     let identity = server.identity(email: "activity-conflict-adoption@example.com")
     try await remote.signIn(identity)
-    let accountWorkout = try #require(remote.gym.startWorkout())
+    let accountWorkout = try #require(remote.gym.startWorkout(following: ID("bench-press")))
     await remote.runtime?.engine.start()
     try await AppModelTests().workoutSettled(remote, accountWorkout)
 
     let connectivity = SwitchedConnectivity()
     let local = try LineageFlowTests().fixture(server, seed: 22, connectivity: connectivity)
-    let finished = try #require(local.gym.startWorkout())
-    local.gym.workout.add(ID("bench-press"))
+    let finished = try #require(local.gym.startWorkout(following: ID("bench-press")))
     let finishedOffer = try #require(local.gym.workout.activityOffer())
     #expect(local.gym.workout.logActivityOffer(finishedOffer))
     await local.gym.workout.finish()
     #expect(local.gym.sessions.first { $0.id == finished }?.isOpen == false)
-    let open = try #require(local.gym.startWorkout())
-    local.gym.workout.add(ID("bench-press"))
+    let open = try #require(local.gym.startWorkout(following: ID("bench-press")))
     let openOffer = try #require(local.gym.workout.activityOffer())
     #expect(local.gym.workout.logActivityOffer(openOffer))
     let expected = local.gym.sets

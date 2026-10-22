@@ -49,14 +49,6 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
-  func testFreeWorkoutStart() {
-    captureBoard("03.9-free-workout-start", settle: 1.5) { look in
-      let app = launch("workout-blank", look)
-      XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 10))
-      return app
-    }
-  }
-
   // Fix set over the second dumbbell press set.
   func testFixSet() {
     captureBoard("03.3-fix-set", settle: 1.5) { look in
@@ -149,17 +141,17 @@ final class WorkoutCaptures: DesignCapture {
     XCUIDevice.shared.appearance = .light
   }
 
-  // 04.4's first state: a free workout before its first movement offers no set and says where to choose one.
-  func testLiveActivityBeforeTheFirstMovement() {
+  // 04.4's first state: a routine workout before its first set, its clock counting from the start.
+  func testLiveActivityBeforeTheFirstSet() {
     for look in Look.both {
-      let app = launchOutside("workout-live-activity-blank", look, ready: "workout-add")
+      let app = launchOutside("workout-live-activity-planned-empty", look, ready: "workout-log")
       RunLoop.current.run(until: Date().addingTimeInterval(3))
       XCUIDevice.shared.press(.home)
       let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
       showLockScreen(springboard)
-      XCTAssertTrue(springboard.staticTexts["Pick a movement in the app."].waitForExistence(timeout: 20))
-      XCTAssertFalse(springboard.buttons["Log set"].exists)
-      capture("04.4-live-activity-before-the-first-movement", look, springboard)
+      XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: 20))
+      XCTAssertTrue(springboard.staticTexts["Set 1 of 4"].exists)
+      capture("04.4-live-activity-before-the-first-set", look, springboard)
       finishOutside(app)
     }
     XCUIDevice.shared.appearance = .light

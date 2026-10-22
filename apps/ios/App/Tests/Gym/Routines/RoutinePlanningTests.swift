@@ -302,7 +302,7 @@ import UIKit
     #expect(GymModel(runner: harness.runner).routines.isEmpty)
   }
 
-  @Test func routineStartFreezesPlanAndFreeStartKeepsNoRoutine() throws {
+  @Test func routineStartFreezesPlanAndTheNextStartTakesTheEditedRoutine() throws {
     let (_, gym) = fixture()
     var draft = draft(gym)
     #expect(gym.saveRoutine(&draft))
@@ -316,8 +316,8 @@ import UIKit
     #expect(gym.openSession?.id == session.id && gym.sessions.count == 1 && gym.refusal != nil)
     #expect(gym.error == "Finish the open workout first.")
     gym.run(FinishSession(id: session.id))
-    #expect(gym.startWorkout() != nil)
-    #expect(gym.openSession?.routineId == nil && gym.openSession?.plan == nil)
+    #expect(gym.startWorkout(routineId: draft.id) != nil)
+    #expect(gym.openSession?.routineId == draft.id && gym.openSession?.plan == SessionPlan(draft.current))
   }
 
   @Test func missingRoutineReadFailureAndAccountTransitionCannotStartOrSave() {
@@ -326,11 +326,11 @@ import UIKit
     #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.error == "That routine can’t be found. No workout was started.")
     gym.readFailed = true
-    #expect(gym.startWorkout() == nil)
+    #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.openSession == nil)
     gym.readFailed = false; gym.accountChanging = true
     #expect(!gym.saveRoutine(&draft))
-    #expect(gym.startWorkout() == nil)
+    #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.routines.isEmpty && gym.openSession == nil)
   }
 

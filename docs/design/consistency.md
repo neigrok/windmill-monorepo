@@ -751,8 +751,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   Center control and the Quick Settings tile open Routines when no workout is open (both 04.1).
   Boards 03.9 are deleted on both pages. Android still offers *Start logging*
   (`ui/RoutinesScreen.kt:162-177`), the first-movement picker (`ui/LoggerScreen.kt:364`) and *Save a
-  routine* on the receipt (`ui/FinishScreen.kt:68,379-395`); iOS still draws *Choose your first
-  movement* (`Workout/WorkoutScreen.swift:107-113`).
+  routine* on the receipt (`ui/FinishScreen.kt:68,379-395`). iOS starts only from a routine, but a
+  connected agent's `start_session` may still open one without (its `routineId` is optional), and
+  iOS draws *Choose your first movement* for it (`Workout/WorkoutScreen.swift`, `WorkoutScreen.live`),
+  the one way to add its first movement. No board draws that state; designer to rule.
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:

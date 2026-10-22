@@ -26,17 +26,16 @@ import SyncTesting
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner)
     models.append(gym)
-    var routineId: ID<Routine>?
+    let started: ID<Session>?
     if planned {
       var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Lower A", entries: [
         RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 4)),
         RoutineEntry(exerciseId: ID("romanian-deadlift"), sets: Array(repeating: SetTarget(reps: 6, weightKg: 82.5), count: 3)),
       ]))
       guard case .saved = gym.save(&draft) else { XCTFail("Fixture routine failed"); return (harness, gym) }
-      routineId = draft.current.id
-    }
-    guard let id = gym.startWorkout(routineId: routineId) else { XCTFail("Fixture start failed"); return (harness, gym) }
-    if !planned { gym.workout.add(ID("back-squat")) }
+      started = gym.startWorkout(routineId: draft.current.id)
+    } else { started = gym.startWorkout(following: ID("back-squat")) }
+    guard let id = started else { XCTFail("Fixture start failed"); return (harness, gym) }
     for index in 0..<count {
       let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
                             weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
@@ -166,8 +165,8 @@ import SyncTesting
       for _ in 0..<100 where engine.status.online { try await Task.sleep(for: .milliseconds(2)) }
       XCTAssertFalse(engine.status.online)
       let offline = GymModel(runner: runner, runtime: runtime); models.append(offline)
-      XCTAssertNotNil(offline.startWorkout())
-      offline.workout.add(ID("back-squat")); offline.workout.weightKg = 100; offline.workout.logSet()
+      XCTAssertNotNil(offline.startWorkout(following: ID("back-squat")))
+      offline.workout.weightKg = 100; offline.workout.logSet()
       XCTAssertEqual(offline.workout.sets.count, 1)
       try await capture(WorkoutScreen(gym: offline), name: "offline-" + name, appearance: appearance)
       let fault = WorkoutFaultTransport(), failedRuntime = try WorkoutStateTests.faultRuntime(fault)
@@ -175,8 +174,8 @@ import SyncTesting
       let failedAdmission = try await failedRuntime.engine.signIn(account: failedIdentity.account, token: failedIdentity.token)
       XCTAssertTrue(failedAdmission.isComplete)
       let failed = GymModel(runner: failedRuntime.runner, runtime: failedRuntime); models.append(failed)
-      XCTAssertNotNil(failed.startWorkout())
-      failed.workout.add(ID("back-squat")); failed.workout.logSet()
+      XCTAssertNotNil(failed.startWorkout(following: ID("back-squat")))
+      failed.workout.logSet()
       fault.failure.withLock { $0 = 503 }
       await failedRuntime.engine.flushOnLeave()
       for _ in 0..<100 where !failed.workout.syncFailed { try await Task.sleep(for: .milliseconds(2)) }
