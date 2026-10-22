@@ -1271,6 +1271,30 @@ TEST(gym_a_replayed_proposal_reads_back_the_one_already_waiting) {
   CHECK_EQ(stored("select id from gym_proposals"), std::vector<std::string>{"prop_00000001"});
 }
 
+// The lifter's word for a dismissed proposal is "rejected", and the receipt an agent reads back says it that way.
+TEST(gym_a_replay_after_the_lifter_rejected_the_proposal_says_so_and_changes_nothing) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Agent me{h.tools, h.user};
+  createPushA(h);
+  me.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
+  Json::Value decision(Json::objectValue);
+  decision["proposalId"] = "prop_00000001";
+  REQUIRE_EQ(GymDoor::refusal(h.door.command(h.user, "gym.dismissProposal", decision)), std::string());
+  const std::vector<Routine> before = h.repo.program.routines(h.user);
+
+  const ToolResult replayed =
+      me.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
+
+  REQUIRE(!replayed.isError);
+  CHECK_EQ(body(replayed)["proposal"]["state"].asString(), std::string("dismissed"));
+  CHECK_EQ(body(replayed)["note"].asString(),
+           std::string("The lifter rejected this proposal. Nothing changed. It stays in the routine's "
+                       "history. Do not resend the same id; propose again only if you have something "
+                       "different to say."));
+  CHECK_EQ(h.repo.program.routines(h.user), before);
+}
+
 // A replay is decided on the DOCUMENT and never on the id alone: a different diff under a spent id is refused.
 TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_answered_ok) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");

@@ -275,7 +275,8 @@ routine is deleted.
   would apply it. Apply writes the proposal's standing rows into the routine's `entries` and its
   proposed name into `name`, or kills the routine for a removal; dismiss writes only the proposal's
   `state` and `settledAt`. Settling is a lifter's push through `/v1/sync`; no server door admits
-  either command. Every successful apply records its account and proposal id in
+  either command. `gym.dismissProposal` and the state `dismissed` are wire names only: every
+  sentence the server writes about that decision, like the MCP receipt, says *rejected*. Every successful apply records its account and proposal id in
   `gym_proposal_applies` in the same transaction. That receipt answers replay before identity and
   guard checks, survives proposal and routine death, and is removed only with its account.
 - **The revision moves when the document or the name moves, and not otherwise.** A write that lands
@@ -1262,9 +1263,9 @@ remain separate. No tool reads the gym's settings.
   performed workout. Missing evidence cannot establish a decision or a Read only outcome; answers
   stored without a receipt cannot establish which records are missing. When every
   referenced proposal is available, something that landed beats something waiting, waiting beats
-  something turned down, and a proposal the routine outran is the last thing left to say. A
+  something rejected, and a proposal the routine outran is the last thing left to say. A
   still-`proposed` thread minted something; `superseded` means the routine moved underneath it,
-  not that the lifter turned it down.
+  not that the lifter rejected it.
 - **Every row's detail is something the server observed.** A dismissed row carries what was dismissed —
   the count — and nothing about why.
 - **Delete deletes the conversation, not the consequence.** `GymDoor::unlinkThread` admits

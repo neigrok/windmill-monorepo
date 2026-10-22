@@ -477,7 +477,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   08.1–08.31 now say so. Build work, none of it in code today:
   - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in every surface
     (iOS card and History table, Android `Proposal.kt` and its review actions, web `proposals.js`
-    `receiptLine`) and in the server's dead-proposal sentences (*…so it was not turned down*).
+    `receiptLine`).
   - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
     are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
     routines* line.
