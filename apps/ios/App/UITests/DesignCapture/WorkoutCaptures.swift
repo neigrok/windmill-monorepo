@@ -214,8 +214,8 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
-  // 03.7: four squat sets and a deadlift set read Well done.; 03.8: finishing on two sets reads Ended early. with the
-  // deadlift not started.
+  // 03.7: four squat sets and a deadlift set read Well done.; 03.15: the same, the phone's first receipt, suggests Keep once;
+  // 03.8: finishing on two sets reads Ended early. with the deadlift not started.
   func testReceipt() {
     captureBoard("03.7-finish-receipt", settle: 1.5) { look in
       let app = launch("workout-planned", look)
@@ -225,6 +225,17 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 10))
+      XCTAssertFalse(app.buttons["workout-keep"].exists)
+      return app
+    }
+    captureBoard("03.15-first-workout-signed-out", settle: 1.5) { look in
+      let app = launch("workout-planned-first", look)
+      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+      app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["workout-keep"].waitForExistence(timeout: 10))
       return app
     }
     captureBoard("03.8-ended-early", settle: 1.5) { look in

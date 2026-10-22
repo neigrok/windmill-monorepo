@@ -116,7 +116,7 @@ final class AppModel {
   init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), authRetryNow: @escaping () -> Date = Date.init) throws {
     self.runner = runner; self.preferences = preferences; self.runtime = runtime; self.telemetry = telemetry; self.authRetryNow = authRetryNow
     journal = try JournalModel(runner: runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
-    gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry)
+    gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
     selectedRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     welcome = preferences.string(forKey: "lastRoom") == nil && (!preferences.bool(forKey: "journalOpened") || preferences.bool(forKey: "roomWelcomeRequired"))
     keepDismissed = preferences.bool(forKey: "keepDismissed")

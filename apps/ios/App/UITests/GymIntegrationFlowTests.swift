@@ -381,6 +381,34 @@ import XCTest
     XCTAssertEqual(anonymous.staticTexts.matching(NSPredicate(format: "label == %@", "Check my last workout.")).count, 1)
   }
 
+  // The phone's first receipt, signed out, suggests Keep once: Keep it opens Keep your log, and the next receipt says nothing.
+  func testFirstSignedOutReceiptSuggestsKeepOnce() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous"]
+    app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 15)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    logAndFinish(app, close: false)
+    let keep = app.buttons["workout-keep"]
+    XCTAssertTrue(keep.waitForExistence(timeout: 5)); XCTAssertEqual(keep.label, "Only on this phone · Keep it")
+    keep.tap()
+    XCTAssertTrue(app.staticTexts["Keep your log"].waitForExistence(timeout: 10))
+    app.navigationBars.buttons["Close"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
+    back(app); app.tabBars.buttons["Routines"].tap()
+    if !app.buttons["routine-start"].exists {
+      let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "routine-", "Training day")).firstMatch
+      XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
+    }
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    logAndFinish(app, close: false)
+    XCTAssertFalse(app.buttons["workout-keep"].exists)
+  }
+
   func testCancelledReceiptCoachSignInDoesNotSendAfterLaterSignIn() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous", "-coach-fixture"]

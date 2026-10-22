@@ -95,6 +95,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {
     #expect(TelemetryPrivacy.properties(["screen": "workout", "action": "share", "sessionId": "private-id", "question": "private-text"]) ==
             ["screen": .label("workout"), "action": .label("share")])
+    #expect(TelemetryPrivacy.properties(["screen": "receipt", "action": "keep", "sessionId": "private-id"]) == ["screen": .label("receipt"), "action": .label("keep")])
     for screen in ["workout", "log", "session", "on_this_phone", "history"] {
       #expect(TelemetryPrivacy.properties(["screen": screen, "action": "discard", "state": "shown", "name": "private-title"]) ==
               ["screen": .label(screen), "action": .label("discard"), "state": .label("shown")])

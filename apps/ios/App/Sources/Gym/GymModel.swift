@@ -16,6 +16,8 @@ final class GymModel {
   let telemetry: any Telemetry
   let rest: GymRESTClient
   let locale: Locale
+  // What this phone remembers under any account or none.
+  let phone: UserDefaults?
   var log: TrainingLog? { didSet { logRecordsRead = nil } }
   // The log's records, worked out on the first read after the log changes (Log/LogPresentation.swift).
   @ObservationIgnored var logRecordsRead: ProgressRecords?
@@ -60,8 +62,9 @@ final class GymModel {
   @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
-  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil) {
-    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale
+  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
+       phone: UserDefaults? = nil) {
+    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale; self.phone = phone
     self.rest = rest ?? GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()

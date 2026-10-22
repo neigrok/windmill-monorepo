@@ -14,6 +14,8 @@ enum WorkoutFixture {
     guard board.hasPrefix("workout-") else { return false }
     model.openRoom(.gym)
     let gym = model.gym
+    // Only 03.15's receipt is the phone's first; every other board's comes after it.
+    if !board.hasSuffix("-first") { model.preferences.set("earlier", forKey: GymModel.keepReceipt) }
     if board == "workout-notice", let runtime = gym.runtime, let server = runtime.auth.fake {
       do {
         let identity = server.identity(email: "workout-notice-fixture@example.com")

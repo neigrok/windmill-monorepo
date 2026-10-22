@@ -20,7 +20,7 @@ import SyncTesting
   var second: ID<Exercise> { SeedExercises.all[1].id }
   var third: ID<Exercise> { SeedExercises.all[2].id }
 
-  func fixture(anonymous: Bool = true, telemetry: any Telemetry = NoopTelemetry()) throws -> (Harness, GymModel) {
+  func fixture(anonymous: Bool = true, telemetry: any Telemetry = NoopTelemetry(), phone: UserDefaults? = nil) throws -> (Harness, GymModel) {
     let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: start, account: anonymous ? nil : "workout-tests",
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     // The model server starts without the app's seed catalogue.
@@ -30,7 +30,7 @@ import SyncTesting
       harness.sync()
       #expect(try harness.notices(GymRefusal.self).isEmpty)
     }
-    return (harness, GymModel(runner: harness.runner, telemetry: telemetry))
+    return (harness, GymModel(runner: harness.runner, telemetry: telemetry, phone: phone))
   }
 
   func routine(_ gym: GymModel, scheme: [SetTarget]) throws -> Routine {
@@ -1199,6 +1199,25 @@ import SyncTesting
     #expect(gym.openSession == nil && workout.message == nil && SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue).durationMs == 5_000)
     workout.closeReceipt()
     #expect(workout.receipt == nil && workout.handoff == .detail(workout.sessionId))
+  }
+
+  @Test func onlyThePhonesFirstSignedOutReceiptSuggestsKeep() async throws {
+    let suite = "gym-keep-receipt-tests.\(UUID())", phone = try #require(UserDefaults(suiteName: suite))
+    defer { phone.removePersistentDomain(forName: suite) }
+    let (harness, gym) = try fixture(phone: phone)
+    var workout = try begin(gym)
+    workout.logSet(); harness.advance(ms: 5_000); await workout.finish()
+    let first = try #require(workout.receipt)
+    #expect(first.suggestsKeep && GymModel(runner: harness.runner, phone: phone).suggestsKeep(first.session.id))
+    workout.closeReceipt()
+    workout = try begin(gym)
+    workout.logSet(); harness.advance(ms: 5_000); await workout.finish()
+    #expect(workout.receipt?.suggestsKeep == false)
+    let signedInSuite = "gym-keep-receipt-tests.\(UUID())", signedInPhone = try #require(UserDefaults(suiteName: signedInSuite))
+    defer { signedInPhone.removePersistentDomain(forName: signedInSuite) }
+    let (_, signedIn) = try fixture(anonymous: false, phone: signedInPhone)
+    signedIn.workout.completeFinish(finished(signedIn))
+    #expect(!signedIn.isAnonymous && signedIn.workout.receipt?.suggestsKeep == false && signedInPhone.string(forKey: GymModel.keepReceipt) == nil)
   }
 
   @Test func confirmedFinishQueuesCommandWithoutPredictingClosedSession() throws {

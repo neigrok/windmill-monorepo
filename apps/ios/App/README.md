@@ -148,11 +148,14 @@ adoption and are removed on explicit Discard. An authenticated bind returning in
 permits account Coach; other authentication, transport and accounting failures block dispatch until
 recovered. Work from a previous account/replica cannot publish into the active seat.
 
-The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
+The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action. Signed
+out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
+tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
+suggests it and no later receipt does, signed out or in.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
-dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
-opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation (a
+dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, the
+receipt's Keep it opens it there with Keep over it, Share with Coach sends *Check my last workout.* in a new conversation (a
 handoff belongs to the account it was asked under, so the sign-in it waited for keeps it), and
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one

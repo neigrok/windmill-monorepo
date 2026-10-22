@@ -196,6 +196,7 @@ struct GymRoom: View {
     finishedHandoff = nil; gym.workout.handoff = nil
     switch handoff {
     case .detail(let id): tab = .log; if let id { logPath.append(Destination.session(id.description)) }
+    case .keep(let id): tab = .log; logPath.append(Destination.session(id.description)); app.keep()
     case .coach:
       if gym.sharingNeedsSignIn { coachAfterSignIn = true; app.keep() }
       else { ask(WorkoutHandoff.coachQuestion, send: true) }

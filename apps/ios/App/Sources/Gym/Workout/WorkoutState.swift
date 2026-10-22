@@ -685,7 +685,7 @@ struct FinishWorkout: Action {
   func completeFinish(_ session: Session) {
     receiptOwed = false
     guard receipt == nil, handoff == nil else { return }
-    receipt = WorkoutReceiptData(session: session, sets: sets)
+    receipt = WorkoutReceiptData(session: session, sets: sets, suggestsKeep: gym.suggestsKeep(session.id))
     message = nil
     gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "ok"])
   }
@@ -725,12 +725,21 @@ enum HiddenWorkoutDoor: String { case accessory, row }
 
 enum WorkoutHandoff: Equatable {
   case detail(ID<Session>?)
+  case keep(ID<Session>)
   case coach
   case writtenProgram
   static let coachQuestion = "Check my last workout."
 }
 
 extension GymModel {
+  // Signed out, the first receipt that suggests Keep is the only one: the phone keeps its workout's id, so the same receipt
+  // drawn again still suggests it and no later one does, signed out or in (03.15).
+  static let keepReceipt = "gymKeepReceipt"
+  func suggestsKeep(_ session: ID<Session>) -> Bool {
+    guard isAnonymous, let phone, (phone.string(forKey: Self.keepReceipt) ?? session.description) == session.description else { return false }
+    phone.set(session.description, forKey: Self.keepReceipt)
+    return true
+  }
   private static let workoutStates = NSMapTable<AnyObject, WorkoutState>.weakToStrongObjects()
   var workout: WorkoutState {
     if let state = Self.workoutStates.object(forKey: self) { return state }

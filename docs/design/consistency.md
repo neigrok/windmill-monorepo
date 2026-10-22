@@ -778,9 +778,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   account's data (dogfood `account-delete-grace-enforced`).
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
-  `1283:42292`). Neither phone builds it: iOS offers Keep only from Coach's receipts and from Share
-  with Coach signed out (`Coach/CoachTab.swift:318`, `GymRoom.swift:200`); Android shows a standing
-  card on Routines (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
+  `1283:42292`). iOS builds it; Android does not, and shows a standing card on Routines
+  (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
   (`plat/auth/SignInDoor.kt:117`), both removed from the boards.
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
