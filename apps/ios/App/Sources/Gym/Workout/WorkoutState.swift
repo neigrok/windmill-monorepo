@@ -739,7 +739,7 @@ extension GymModel {
   @discardableResult func startWorkout(routineId: ID<Routine>? = nil) -> ID<Session>? {
     guard !readFailed else { error = "Your routines could not be read. Try again."; return nil }
     if let routineId, !routines.contains(where: { $0.id == routineId }) {
-      error = "That routine was deleted. Everything you logged is still in the log."; return nil
+      error = "That routine can’t be found. No workout was started."; return nil
     }
     let id = runner.mint(Session.self)
     guard let result = run(StartWorkout(id: id, routineId: routineId)), result.refusal == nil else {
