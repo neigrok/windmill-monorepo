@@ -463,8 +463,9 @@ and Android disagree.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
     - 08.9, 08.25 and 08.26: *Changed a movement* and *Saved a note* stand alone on their cards, without the boards'
       *Changed* block or note text. The answer's steps name only the tool (`tool`, `failed`), so the phone cannot tell
-      Coach's write from the lifter's later edit; the backend would need to return the written note and movement ids
-      on each step before the cards can show what changed.
+      Coach's write from the lifter's later edit. Owner ruling (2026-10-22): the cards gain their content with the
+      local Coach, whose abilities run on the phone's replica ([gym_coach.md](../foundation/mobile/gym_coach.md)),
+      not before.
     - 08.8: the day's cap reads *You can ask again later.*, where the board draws *You can ask again in about 2 hours.*
       The server refills the day's questions steadily and returns no retry time, so no duration can be promised.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
