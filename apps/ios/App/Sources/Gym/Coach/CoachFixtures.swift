@@ -397,7 +397,7 @@ nonisolated struct CoachBoard {
       turns: [Turn(question: "Is Push A still doing anything?", answer: "You did 5 × 5 at 82.5 kg nine times and finished every rep. Try 3 sets of 3 at 90 kg for a heavier top set.", proposals: ["board-proposal"]),
               Turn(question: "And Pull A?", answer: "Do Barbell Row first, when you are fresh.", proposals: ["board-pull-proposal"])]),
     "rename": one("Can Push A have a better name?", "Here is a better name for Push A.",
-      routine: ("Push A", pushB + [entry("dip", 3, 10)]), proposed: ("Push Day", pushB + [entry("dip", 3, 10)])),
+      routine: ("Push A", pushB), proposed: ("Push Day", pushB)),
     "remove": one("Should I keep Arms?", "You have not done Arms in 8 weeks. You can remove it.",
       routine: ("Arms", [entry("triceps-pushdown", 3, 12, 30), entry("lateral-raise", 3, 15, 8), entry("cable-fly", 3, 12, 15), entry("overhead-triceps-extension", 3, 12, 14)]),
       proposed: ("Arms", []), removing: true),

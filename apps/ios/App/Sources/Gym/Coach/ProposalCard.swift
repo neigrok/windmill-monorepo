@@ -26,7 +26,8 @@ struct ProposalCard: View {
   init(gym: GymModel, id: String, stallAfter: Duration = .seconds(15)) { self.gym = gym; self.id = id; self.stallAfter = stallAfter }
 
   var proposal: Proposal? { gym.proposals.first { $0.id.record.string == id } }
-  var routineName: String { proposal.flatMap(gym.coachRoutine)?.name ?? proposal?.baseName ?? "Routine" }
+  // The routine as the proposal found it, so an applied rename still reads *Applied · Push A*.
+  var routineName: String { proposal?.baseName ?? proposal.flatMap(gym.coachRoutine)?.name ?? "Routine" }
   var removal: Bool { proposal?.intent == "remove" }
   // The decision the log has not answered yet, while it waits.
   var waiting: CoachQueuedDecision? { proposal.flatMap { gym.coachQueuedDecision($0.id) } }
@@ -135,7 +136,7 @@ struct ProposalCard: View {
     let settled = outOfDate != nil ? CoachCopy.outOfDate : stance == .applied ? CoachCopy.settled("applied", removal: removal) : nil
     return HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
       if stance == .applied {
-        Label("Applied · " + routineName, systemImage: "checkmark.circle").labelStyle(ReceiptStyle(landed: landed))
+        Label("Applied · " + routineName + (removal ? " · routine removed" : ""), systemImage: "checkmark.circle").labelStyle(ReceiptStyle(landed: landed))
           .font(.headline).foregroundStyle(GymPalette.ink)
       } else {
         Text(removal ? "Remove a routine" : "Changes to " + routineName + (outOfDate != nil ? " · Out of date" : ""))
@@ -151,8 +152,11 @@ struct ProposalCard: View {
     block.exerciseId.map { gym.catalogue.find($0)?.name ?? "Movement unavailable" }
   }
 
+  // A removal's one block: the routine struck, how many movements go with it and when it was last done.
   func removalBlock(_ proposal: Proposal) -> (ProposalDiff.Kind, String?, [ProposalDiff.Field]) {
-    (.removed, routineName, [ProposalDiff.Field("Movements", before: String(proposal.changes.count), after: nil)])
+    let done = gym.routineHistory(proposal.routineId).first.map { gym.dates.day($0.startedAt) }
+    return (.removed, routineName, [ProposalDiff.Field("Movements", before: String(proposal.changes.count), after: nil)]
+      + (done.map { [ProposalDiff.Field("Last done", before: $0, after: nil)] } ?? []))
   }
 
   func buttons(_ proposal: Proposal) -> some View {

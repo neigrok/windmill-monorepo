@@ -62,7 +62,7 @@ struct ChangeBadgeStyle: LabelStyle {
 struct DiffField: View {
   let field: ProposalDiff.Field
   var dimmed = false
-  @ScaledMetric(relativeTo: .body) var labelWidth = 100.0
+  @ScaledMetric(relativeTo: .body) var labelWidth = 110.0
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))

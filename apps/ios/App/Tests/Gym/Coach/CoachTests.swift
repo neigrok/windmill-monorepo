@@ -1343,7 +1343,7 @@ import SyncTesting
     #expect(proposals.map(\.state) == ["pending", "superseded", "superseded", "pending", "applied", "dismissed"])
     #expect(proposals.map(gym.coachProposalOutOfDate) == [false, true, true, true, false, false])
     #expect(cards.map { $0.outOfDate ?? "-" } == ["-", "A newer suggestion replaced this one. Nothing was applied.",
-      "Push outrun B changed after this suggestion. Nothing was applied.", "Push unsent changed after this suggestion. Nothing was applied.", "-", "-"])
+      "Push outrun changed after this suggestion. Nothing was applied.", "Push unsent changed after this suggestion. Nothing was applied.", "-", "-"])
     #expect(cards.map(\.stance) == [.open, .outOfDate(.replaced), .outOfDate(.routineChanged), .outOfDate(.routineChanged), .applied, .rejected])
     #expect(cards.map(\.decidable) == [true, false, false, false, false, false])
     #expect(Set(gym.routineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])

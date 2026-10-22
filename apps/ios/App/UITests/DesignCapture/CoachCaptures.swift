@@ -178,6 +178,17 @@ final class CoachCaptures: DesignCapture {
       return app
     }
   }
+  func testRoutineChanges() {
+    captureBoard("08.15-coach-proposal-rename") { look in askBoard("rename", "Can Push A have a better name?", look) }
+    captureBoard("08.16-coach-proposal-remove") { look in askBoard("remove", "Should I keep Arms?", look) }
+    for look in Look.both {
+      let app = askBoard("remove", "Should I keep Arms?", look)
+      reachDecision(app).tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Removed", timeout: 10))
+      capture("gym-coach-proposal-removal-applied", look, app)
+      app.terminate()
+    }
+  }
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]
@@ -201,7 +212,6 @@ final class CoachCaptures: DesignCapture {
       ask("Remove Push A.", app)
       let apply = app.buttons["coach-apply-proposal"]
       XCTAssertTrue(apply.waitForExistence(timeout: 10))
-      capture("08.16-coach-proposal-remove", look, app)
       for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
       apply.tap()
       XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
