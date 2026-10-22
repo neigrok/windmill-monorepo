@@ -20,6 +20,18 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  func testGreetingSignedIn() {
+    captureBoard("01.2-coach-greeting-signed-in") { look in
+      let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture"])
+      openGymFromJournal(app, opensOn: .coach)
+      let capabilities = app.descendants(matching: .any)["coach-capabilities"]
+      XCTAssertTrue(capabilities.waitForExistence(timeout: 15))
+      let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Changes"), object: capabilities)
+      XCTAssertEqual(XCTWaiter.wait(for: [signedIn], timeout: 15), .completed)
+      return app
+    }
+  }
+
   func testEmpty() {
     captureBoard("08.1-coach-empty") { look in launchSignedInCoach(look) }
   }

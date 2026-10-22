@@ -90,8 +90,9 @@ Tapping a routine opens a native summary sheet with Edit and Start. Movements ar
 routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
-precedence. Coach greets the user locally with a short introduction and compact Add screenshot and
-Build myself actions. The greeting persists through typing, photo selection/cancellation, navigation,
+precedence. Coach greets the user locally in two bubbles — who it is, then what it can do, each line led by its anchor
+word (signed in: Build, Goals, Notes, Changes; signed out: Build, Goals, Account) — with Add screenshot and Build my own
+under them. A signed-in gym that already holds routines opens on an empty conversation. The greeting persists through typing, photo selection/cancellation, navigation,
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.

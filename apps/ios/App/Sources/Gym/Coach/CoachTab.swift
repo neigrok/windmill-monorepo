@@ -147,7 +147,7 @@ struct CoachTab: View {
           if !greets { Color.clear.containerRelativeFrame(.vertical) }
           LazyVStack(alignment: .leading, spacing: 20) {
             if greets {
-              CoachSetupView { choice in
+              CoachSetupView(signedIn: !gym.isAnonymous) { choice in
                 guard coach.chooseSetup(choice) else { return }
                 if choice == .screenshot { choosePhoto = true }
                 else if choice.starter { composing = true }
