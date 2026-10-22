@@ -401,6 +401,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   needing a device or a fixture, named in their captions: 04.1, 04.3, 04.4, 05.8's pan, 08.6, 08.7.
   The Live Activity double tap (`177:29`, 04.5) draws what the app does not do: verify on a device
   and either rule it in or retire the board.
+  00.2 still labels the Daylight `gym/accent` and `gym/accent-soft` `#137A6C`, while Theme
+  `ios/gym/accent` resolves to `#106B5F` in Light, as the spec (§2) and the build do; and it gives
+  `gym/alarm` to destructive labels, which are the system red (spec §2). Relabel the board.
 - **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
   2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from
   `gym/feedback-2026-10-21.md`. Each target holds

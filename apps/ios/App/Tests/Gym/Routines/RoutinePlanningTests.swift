@@ -282,7 +282,7 @@ import UIKit
     let (_, gym) = fixture()
     var draft = draft(gym)
     #expect(gym.startWorkout(routineId: draft.id) == nil)
-    #expect(gym.error == "That routine is no longer in your program. Everything you logged against it is still in the log.")
+    #expect(gym.error == "That routine was deleted. Everything you logged is still in the log.")
     gym.readFailed = true
     #expect(gym.startWorkout() == nil)
     #expect(gym.openSession == nil)

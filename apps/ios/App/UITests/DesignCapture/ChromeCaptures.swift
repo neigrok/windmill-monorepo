@@ -1,6 +1,20 @@
 import XCTest
 
 final class ChromeCaptures: DesignCapture {
+  // 00.1: the bar on Routines and The log is the room menu and the account; on Coach the title, History and the account.
+  func testTopBars() {
+    for look in Look.both {
+      let app = launchSignedInCoach(look)
+      XCTAssertTrue(app.buttons["coach-history"].waitForExistence(timeout: 10))
+      capture("00.1-top-bar-coach", look, app, settle: 1.5)
+      open(.routines, app)
+      capture("00.1-top-bar-routines", look, app, settle: 1.5)
+      open(.log, app)
+      capture("00.1-top-bar-log", look, app, settle: 1.5)
+      app.terminate()
+    }
+  }
+
   func testSignedOutRoom() {
     for look in Look.both {
       let app = launch("shell-anonymous", look)
