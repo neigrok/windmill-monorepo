@@ -1508,13 +1508,16 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
          push during it
 ```
 
-**What holds work back.** The Swift engine publishes it as `SyncStatus`: `online`, `authPaused`,
-`upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope whose last push
-failed with anything but a `400`, `409` or `413`, until a push of that scope is answered `200` or one
-of those three (a `400` or `413` changes the next push, a `409` re-identifies). A product shows an
-unconfirmed record as unsent while any of the four holds it back. `unansweredPushes` names the scopes
-of `failedPushes` whose last push got no answer at all — no network, a refused connection, the request
-deadline — so a product can tell a server it never reached from one that answered with a failure.
+**What holds work back.** The Swift and Kotlin engines publish it as `SyncStatus`: `online`,
+`authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
+whose last push failed with anything but a `400`, `409` or `413`, until a push of that scope is
+answered `200` or one of those three (a `400` or `413` changes the next push, a `409` re-identifies or
+pauses). A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
+unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsBack(scope, key)`
+applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
+`failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
+the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
+its size cap) — so a product can tell a server it never reached from one that answered with a failure.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
@@ -1576,10 +1579,11 @@ client can read it, sets `authPaused` too; a browser, which cannot, learns it fr
 push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
 closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
 `k := 0`. The server's `426 upgrade-required` from any request stops sync until the app is upgraded
-(§9.6), on every tab (§7.8). The Swift engine reads that cause from the body (`HTTPFailure.requiresUpgrade`):
-a bare `426`, a proxy's or a captive portal's, is a failure like any other, and a `426` at the socket's
-upgrade, which carries no body, opens again after the backoff while the pull the failed open runs hears
-the server's verdict. The web and Kotlin engines stop on any `426`.
+(§9.6), on every tab (§7.8). The Swift and Kotlin engines read that cause from the body
+(`HTTPFailure.requiresUpgrade`, `SyncResponse.requiresUpgrade`): a bare `426`, a proxy's or a captive
+portal's, is a failure like any other, and a `426` at the socket's upgrade proves nothing on its own: it
+opens again after the backoff while the pull the failed open runs hears the server's verdict. The web
+engine stops on any `426`.
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
    epoch, with no epoch change: a replica holds no acked entry while its `serverEpoch` is null (§7.4),
@@ -1982,8 +1986,9 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   `anon` replica stays active, no replica changes and nothing is sent. Leaving an incomplete
   sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
   next engine start. Cancelling it (Swift `SyncEngine.cancelSignIn()`, store transaction
-  `signInCancel`) clears `pendingSignIn` and deletes A's credential: the `anon` replica stays active
-  and nothing resumes.
+  `signInCancel`; Kotlin `SyncRuntime.abandonSignIn`, for the attempt whose credential is still A's)
+  clears `pendingSignIn` and deletes A's credential: the `anon` replica stays active and nothing
+  resumes.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 

@@ -3,7 +3,6 @@ package works.windmill.sync.engine
 import kotlin.concurrent.withLock
 import works.windmill.sync.core.*
 
-data class SyncResponse(val status: Int, val body: Json? = null)
 data class RequestTiming(val send: ClockReading, val recv: ClockReading)
 internal fun Engine.offset(replica: ReplicaState, serverTime: Long, timing: RequestTiming) {
     val (send, recv) = timing
@@ -15,10 +14,6 @@ internal fun Engine.offset(replica: ReplicaState, serverTime: Long, timing: Requ
     val best = samples.asReversed().minBy { it.member("rtt").long() }
     replica.meta = replica.meta.with("offsetSamples" to Json.Arr(samples), "clockReading" to recv.json, "serverOffsetMs" to best.member("offset"))
 }
-internal fun ReplicaState.servedAsOther(principal: Json?) = account != null && principal != Json.of(account!!)
-internal fun ReplicaState.unauthenticated(response: SyncResponse) = response.status == 401 ||
-    response.status == 409 && response.body?.get("error") == Json.of("account-mismatch") ||
-    response.status in setOf(200, 409) && servedAsOther(response.body?.get("as"))
 internal fun Engine.heldBack(replica: ReplicaState): Set<Entry> {
     val sources = Dependents(registry)
     val touched = mutableSetOf<Pair<ScopeRef, RecordKey>>()
@@ -61,14 +56,14 @@ fun Engine.nextPush(limit: Int = Constants.PUSH_MAX_INTENTS): Json? = write(Engi
 }
 fun Engine.onHello(response: SyncResponse, timing: RequestTiming) { write(EngineOperation.hello) { replica ->
     response.body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
-    if (replica.unauthenticated(response)) replica.meta = replica.meta.with("authPaused" to Json.of(true))
+    if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("authPaused" to Json.of(true))
 } }
 fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: RequestTiming, dieAfter: Int = Int.MAX_VALUE): Json? {
     val body = response.body
     val requestedReplica = request.member("replica").str()
     val proceed = write(EngineOperation.push) { _ ->
         val replica = device.replicas.firstOrNull { it.id == requestedReplica } ?: return@write false
-        if (replica.unauthenticated(response)) {
+        if (response.unauthenticated(replica.account)) {
             body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
             replica.meta = replica.meta.with("authPaused" to Json.of(true)); return@write false
         }

@@ -104,7 +104,7 @@ class TransportTests {
         }
     }
 
-    @Test fun authenticatedRestoreConflictsValidateTheirEnvelopeBeforeDelivery() = runBlocking {
+    @Test fun aMalformedRestoreConflictReachesTheEngineAsTheServerAnsweredAndFilesAsMalformed() = runBlocking {
         val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
         val request = json("""{"account":"A"}""")
         val valid = json("""{"serverTime":100,"epoch":"ep-2","as":"A","error":"gap"}""")
@@ -114,7 +114,7 @@ class TransportTests {
                     valid.with("epoch" to Json.of(2)), valid.with("serverTime" to null), valid.with("serverTime" to Json.of(-1)),
                     valid.with("serverTime" to Json.Num(0.5)), valid.with("error" to Json.of("unknown"))).withIndex()) {
                     server.enqueue(MockResponse().setResponseCode(409).setBody(malformed.jcs))
-                    assertSame(Reply.Unreachable, transport.push(request, "token"))
+                    assertEquals(SyncResponse(409, malformed), answer(transport.push(request, "token")))
                     assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.failure, "malformed", repeated = index > 0), withTimeout(2_000) { events.receive() })
                 }
                 for (code in listOf("gap", "replica-forked", "replica-foreign")) {
@@ -490,6 +490,52 @@ class TransportTests {
             }
         }
         assertTrue(events.tryReceive().isFailure)
+    }
+
+    @Test fun aDroppedLiveSocketIsLostNetworkTheServersSessionEndIsARefusalAndOnlyACloseWithAFaultCodeFiles() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        fun close(code: Int?) = { socket: java.net.Socket ->
+            socket.getOutputStream().apply { write(if (code == null) byteArrayOf(0x88.toByte(), 0) else byteArrayOf(0x88.toByte(), 2, (code shr 8).toByte(), code.toByte())); flush() }
+            runCatching { while (socket.getInputStream().read() >= 0) Unit }; Unit
+        }
+        // A reset discards what the server has not sent yet, so it waits for the pong that proves the socket open at both ends.
+        val reset = { socket: java.net.Socket ->
+            socket.getOutputStream().apply { write(byteArrayOf(0x89.toByte(), 0)); flush() }
+            socket.getInputStream().readNBytes(6); socket.setSoLinger(true, 0)
+        }
+        val ended = { socket: java.net.Socket -> socket.shutdownOutput(); runCatching { while (socket.getInputStream().read() >= 0) Unit }; Unit }
+        val ends = listOf(close(1000), close(1001), reset, ended, close(1011), close(1013), close(1008), close(null))
+        ServerSocket(0).use { server ->
+            // Each socket's upgrade is answered by hand, so the server can end it as a peer or the network would.
+            Thread {
+                fun line(input: java.io.InputStream) =
+                    generateSequence { input.read().takeIf { it >= 0 } }.takeWhile { it != '\n'.code }.map { it.toChar() }.joinToString("").removeSuffix("\r")
+                for (end in ends) runCatching { server.accept().use { socket ->
+                    socket.soTimeout = 5_000
+                    val headers = generateSequence { line(socket.getInputStream()) }.takeWhile { it.isNotEmpty() }.toList()
+                    val key = headers.single { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }.substringAfter(':').trim()
+                    val accept = java.util.Base64.getEncoder().encodeToString(java.security.MessageDigest.getInstance("SHA-1")
+                        .digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()))
+                    socket.getOutputStream().apply {
+                        write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $accept\r\n\r\n".toByteArray()); flush()
+                    }
+                    end(socket)
+                } }
+            }.apply { isDaemon = true; start() }
+            HTTPTransport("http://127.0.0.1:${server.localPort}/", 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                val received = ends.map {
+                    connected(withTimeout(5_000) { transport.openLive("token") }).use { connection ->
+                        runCatching { withTimeout(5_000) { connection.receive() } }.fold({ it?.jcs ?: "closed" }, { it::class.simpleName })
+                    }
+                }
+                assertEquals(listOf("closed", "closed") + List(6) { "LiveEnded" }, received)
+                val lost = EngineEvent(EngineOperation.live, EngineOutcome.failure, "unreachable")
+                val fault = EngineEvent(EngineOperation.live, EngineOutcome.failure, "transport")
+                assertEquals(listOf(lost, lost, fault, fault.copy(repeated = true), EngineEvent(EngineOperation.live, EngineOutcome.refused), fault),
+                    List(6) { withTimeout(2_000) { events.receive() } })
+                assertTrue(events.tryReceive().isFailure)
+            }
+        }
     }
 
     @Test fun aFaultFilesOnceUntilItsOperationIsAnsweredAndLostNetworkOrARefusalEndsTheRun() = runBlocking {

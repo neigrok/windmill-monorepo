@@ -48,10 +48,28 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal val events = mutableListOf<Json>()
     internal val diagnostics = mutableListOf<Json>()
     internal val doubts = Doubts()
+    // What the status shows that the store does not hold: the network, an upgrade the server requires, and how each replica's scopes' last failed push ended.
     internal var networkOnline = true
     internal var networkUpgradeRequired = false
+    internal val pushFailures = mutableMapOf<String, Map<ScopeRef, PushFailure>>()
     internal fun networkStatus(online: Boolean = networkOnline, upgradeRequired: Boolean = networkUpgradeRequired) = lock.withLock {
         networkOnline = online; networkUpgradeRequired = upgradeRequired
+        publishStatus()
+    }
+    // A push's end for each scope it named, while its replica lives: a failure holds the scope back, and none clears it.
+    internal fun recordPushFailure(request: Json, failure: PushFailure?) = lock.withLock {
+        pushFailures.keys.retainAll(device.replicas.map { it.id }.toSet())
+        val replica = request.member("replica").str()
+        if (device.replicas.none { it.id == replica }) return@withLock
+        val scopes = request.member("intents").arr().map { ScopeRef(it.member("scope")) }.toSet()
+        val before = pushFailures[replica].orEmpty()
+        val after = if (failure == null) before - scopes else before + scopes.associateWith { failure }
+        if (after == before) return@withLock
+        if (after.isEmpty()) pushFailures.remove(replica) else pushFailures[replica] = after
+        publishStatus()
+    }
+    private fun publishStatus() {
+        if (closed) return
         version++; changes.tryEmit(Invalidation(version, emptySet(), operation = EngineOperation.sync,
             replica = device.current().id, account = device.current().account))
     }
