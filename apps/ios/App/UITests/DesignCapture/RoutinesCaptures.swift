@@ -20,6 +20,25 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
+  func testRoutineEditorSwipe() {
+    captureBoard("02.8-routine-editor-swipe") { look in
+      let app = launch("shell-last-room", look)
+      openGymFromJournal(app, opensOn: .coach)
+      open(.routines, app)
+      app.buttons["new-routine"].tap()
+      let name = app.textFields["routine-name"]
+      XCTAssertTrue(name.waitForExistence(timeout: 5)); name.typeText("Push A\n")
+      for id in ["bench-press", "overhead-press"] {
+        app.buttons["add-movement"].tap()
+        XCTAssertTrue(app.buttons["gym-movement-" + id].waitForExistence(timeout: 5)); app.buttons["gym-movement-" + id].tap()
+      }
+      let row = app.buttons["builder-movement-overhead-press"]
+      XCTAssertTrue(row.waitForExistence(timeout: 5)); row.swipeLeft()
+      XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+      return app
+    }
+  }
+
   func testPopulatedSignedOut() {
     for look in Look.both {
       let app = launch("shell-anonymous", look, arguments: ["-gym-log-fixture"])
@@ -71,14 +90,14 @@ final class RoutinesCaptures: DesignCapture {
       capture("02.6-targets", look, app)
       app.buttons["gym-target-set"].tap()
       XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
-      capture("02.5-routine-editor-sortable", look, app)
+      capture("gym-routine-editor-planned", look, app)
       app.buttons["save-routine"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
       capture("gym-routine-detail", look, app)
       app.buttons["edit-routine"].tap()
       XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["delete-routine"].waitForExistence(timeout: 5))
-      capture("gym-routine-edit", look, app)
+      capture("02.5-routine-editor-sortable", look, app)
       app.navigationBars["Edit routine"].buttons["Cancel"].tap()
       app.buttons["routine-close"].tap()
       let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch

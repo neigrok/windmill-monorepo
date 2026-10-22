@@ -143,19 +143,19 @@ struct RoutineBuilder: View {
           if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }
         Section {
+          // Out of edit mode a long press lifts a row by its drawn handle and a swipe shows the trash, which an editing list hides.
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
-            HStack {
-              Button {
-                if let exercise { editing.follow([.targets(exercise.id)]) }
-              } label: {
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets), trailing: .door)
-              }.buttonStyle(.borderless).accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              Button(role: .destructive) { editing.remove(index) } label: {
-                Image(systemName: "trash").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-              }.buttonStyle(.borderless)
-                .accessibilityLabel("Remove exercise").accessibilityIdentifier("builder-remove-\(entry.exerciseId)")
-            }
+            Button {
+              if let exercise { editing.follow([.targets(exercise.id)]) }
+            } label: {
+              HStack(spacing: RoomSpace.related) {
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")",
+                       meta: RoutineLines.movement(entry.sets, equipment: MovementEquipment(exercise)))
+                Image(systemName: "line.3.horizontal").foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
+              }
+            }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
+              .trashSwipe("Remove movement") { editing.remove(index) }
               .contextMenu {
                 if let exercise { Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise } }
                 Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
@@ -184,7 +184,7 @@ struct RoutineBuilder: View {
           }
         }
       }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, .constant(.active))
+    }.listStyle(.insetGrouped).modifier(GymPage())
   }
 
   @ViewBuilder func destination(_ step: RoutineEditingSession.Step) -> some View {

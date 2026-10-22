@@ -167,6 +167,18 @@ import UIKit
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 working sets · 2 movements")
   }
 
+  @Test func anEditorRowReadsItsTargetsInTheMovementsLoadBasis() {
+    let lines = [
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 4), equipment: MovementEquipment("barbell")),
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 10, weightKg: 22.5), count: 3), equipment: MovementEquipment("dumbbell")),
+      RoutineLines.movement([SetTarget(reps: 8, weightKg: 10), SetTarget(reps: 8)], equipment: MovementEquipment("bodyweight")),
+      RoutineLines.movement(Array(repeating: SetTarget(reps: 12), count: 3), equipment: MovementEquipment("cable")),
+      RoutineLines.movement(nil, equipment: MovementEquipment("cable")),
+      RoutineLines.movement([], equipment: MovementEquipment(nil)),
+    ]
+    #expect(lines == ["4 × 8 · 60 kg total", "3 × 10 · 22.5 kg each", "2 × 8 · 10–last kg added", "3 × 12", "Open", "Open"])
+  }
+
   @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {
     let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
     let dates = GymDate(moment, locale: Locale(identifier: "en_US"))

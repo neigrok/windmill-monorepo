@@ -779,10 +779,11 @@ with 7.11 and 7.12.
   to look like the system's search bar. Create movement is pushed inside the builder's sheet, and
   that field keeps its query visible across Create movement's Cancel (`15-the-routine.md`) while the
   pushed bar's ✓ takes its taps (`consistency.md` 10d).
-- The builder's bar is *Cancel* · title · ✓ (*Save*) and nothing else: *Reorder* (*Done* while
-  reordering) is the Movements section's header action; at accessibility sizes it stands under the
-  header's text, which never hyphenates. Edit numbers its movements as the detail does (*1. Bench
-  Press*). Its name field carries no header
+- The builder's bar is *Cancel* · title · ✓ (*Save*) and nothing else. The Movements list is always
+  sortable, with no *Reorder* button: each row draws `line.3.horizontal` trailing, a long press lifts
+  it into the list's drag, and a swipe shows the trash circle (*Remove movement*). Edit numbers its
+  movements as the detail does (*1. Bench Press*) over the targets in the movement's load basis
+  (*4 × 8 · 60 kg total*, *3 × 10 · 22.5 kg each*, *Open*). Its name field carries no header
   (`15-the-routine.md`, "Name is the first field"). *History* is drawn only when it has rows; a new
   routine has none and shows none. A refusal (*A routine is at least one movement.*) appears on a
   Save attempt, or when the lifter leaves a name they changed, never on a keystroke; the next edit

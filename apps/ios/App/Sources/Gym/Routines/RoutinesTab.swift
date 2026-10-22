@@ -205,6 +205,13 @@ enum RoutineLines {
     return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
+  // A movement's targets in its load basis: *4 × 8 · 60 kg total*, *3 × 10 · 22.5 kg each*, *3 × 12* with no load, *Open*.
+  static func movement(_ sets: [SetTarget]?, equipment: MovementEquipment) -> String {
+    guard let sets, !sets.isEmpty else { return "Open" }
+    let target = Readout.target(sets)
+    return sets.contains { $0.weightKg != nil } ? "\(target) \(equipment.unit)" : target
+  }
+
   static func session(_ readout: SessionReadout) -> String {
     "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
   }

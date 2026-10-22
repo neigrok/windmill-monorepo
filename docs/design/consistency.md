@@ -504,11 +504,11 @@ these are the places it disagrees with a drawing, a brief or the build.
   trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
   Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one
   shared modifier, `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, Targets'
-  per-set rows, The log, workout detail sets, Bodyweight entries, Notes and Coach History. Still
-  open, as build work for the editor and This workout (tasks 28 and 33): the routine editor (02.8
-  `1149:2275`) and This workout (03.4 `1135:1875`) are lists always in edit mode, where iOS shows no
-  swipe actions, so they remove a movement with a trash button inside the row; 02.8 draws the drag
-  handle and the swipe together, which needs the list out of edit mode with its own handles. A
+  per-set rows, The log, workout detail sets, Bodyweight entries, Notes, Coach History and the
+  routine editor's movements (02.8 `1149:2275`), a list out of edit mode that draws its own handles
+  and drags on a long press. Still open, as build work for This workout (task 33): This workout
+  (03.4 `1135:1875`) is a list always in edit mode, where iOS shows no swipe actions, so it removes
+  a movement with a trash button inside the row. A
   one-line row draws the system's capsule rather than a circle (05.4's set row).
 
   Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,

@@ -274,8 +274,8 @@ import UIKit
     }
   }
 
-  // The builder's bar is Cancel · title · Save at every size: Reorder stands with the movements, the title stays while
-  // reordering, Save never folds into an overflow, and a refusal answers a Save, never a keystroke.
+  // The builder's bar is Cancel · title · Save at every size: the movements sort without a Reorder button, Save never folds
+  // into an overflow, and a refusal answers a Save, never a keystroke.
   func testBuilderBarKeepsTitleAndSaveAtAccessibilityTextAndRefusesOnSave() {
     let app = launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     app.buttons["new-routine"].tap()
@@ -300,8 +300,8 @@ import UIKit
     }
     XCTAssertTrue(refusal.waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["reorder-movements"].exists)
-    XCTAssertTrue(app.buttons["Reorder 2. Deadlift"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
+    XCTAssertTrue(app.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar")
     XCTAssertTrue(save.exists && save.isHittable, "Save folded into the bar's overflow")
     XCTAssertLessThanOrEqual(save.frame.maxY, app.navigationBars.firstMatch.frame.maxY)
   }
@@ -479,6 +479,8 @@ import UIKit
     XCTAssertFalse(app.staticTexts["gym-record-empty"].exists)
   }
 
+  // The builder's movements are always sortable out of edit mode: a long press on the drawn handle drags a row, a swipe shows
+  // the trash circle, and the row's menu, which VoiceOver reads as its actions, moves it up and down.
   func testBuilderReorderRemoveAndAddMovementAgain() {
     let app = launch()
     app.buttons["new-routine"].tap()
@@ -488,30 +490,32 @@ import UIKit
       app.buttons["gym-movement-" + id].tap()
     }
     XCTAssertFalse(app.buttons["reorder-movements"].exists)
-    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
-    let deadliftHandle = app.buttons["Reorder 2. Deadlift"]
-    XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(app.buttons["Reorder 1. Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(deadliftHandle.exists)
-    let deadlift = app.buttons["builder-movement-deadlift"]
-    func settledFrame() -> CGRect {
-      let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        guard deadlift.exists, deadlift.isEnabled, deadlift.isHittable else { return false }
-        let frame = deadlift.frame
-        return !frame.isEmpty && self.viewport.contains(frame)
-      }, object: deadlift)
-      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-      return deadlift.frame
-    }
-    _ = settledFrame()
+    XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar")
+    let order = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-"))
+    func ids() -> [String] { order.allElementsBoundByIndex.map(\.identifier) }
+    let bench = app.buttons["builder-movement-bench-press"], deadlift = app.buttons["builder-movement-deadlift"]
+    XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(ids(), ["builder-movement-bench-press", "builder-movement-deadlift"])
+    XCTAssertEqual(deadlift.label, "2. Deadlift, Open")
+    let handle = deadlift.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+    handle.press(forDuration: 1.2, thenDragTo: bench.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0.6)
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5), "The drag left the order at \(ids())")
+    XCTAssertTrue(deadlift.wait(for: \.label, toEqual: "1. Deadlift, Open", timeout: 5))
+    deadlift.press(forDuration: 1)
+    let moveDown = app.buttons["Move down"]
+    XCTAssertTrue(moveDown.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveDown.tap()
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-bench-press", timeout: 5))
     deadlift.press(forDuration: 1)
     let moveUp = app.buttons["Move up"]
     XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveUp.tap()
-    let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
-    XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
-    let remove = app.buttons["builder-remove-deadlift"]
-    XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
+    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
+    deadlift.swipeLeft()
+    let trash = app.buttons["trash-swipe"]
+    XCTAssertTrue(trash.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(trash.label, "Remove movement")
+    trash.tap()
     XCTAssertTrue(deadlift.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(ids(), ["builder-movement-bench-press"])
     XCTAssertFalse(app.buttons["builder-undo"].exists)
     app.buttons["add-movement"].tap()
     XCTAssertFalse(app.buttons["gym-movement-bench-press"].isEnabled)
