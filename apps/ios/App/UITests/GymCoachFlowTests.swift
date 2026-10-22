@@ -191,7 +191,7 @@ import UIKit
     XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
     openDestination("Notes", app)
     XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Agents you connect can also read these."].exists)
+    XCTAssertTrue(app.staticTexts["Any agent you connect can read these too."].exists)
     XCTAssertFalse(app.staticTexts["what you write for Coach"].exists || app.staticTexts["Top note wins."].exists)
     capture("coach-notes-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)

@@ -129,7 +129,7 @@ struct NotesScreen: View {
           }
         }
       } header: {
-        Text("Agents you connect can also read these.").font(.footnote).foregroundStyle(GymPalette.inkDim).textCase(nil)
+        Text("Any agent you connect can read these too.").font(.footnote).foregroundStyle(GymPalette.inkDim).textCase(nil)
       }.listRowBackground(GymPalette.card)
       Section {
         if gym.coachNoteCount < 10 {

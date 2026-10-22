@@ -283,8 +283,7 @@ and Android disagree.
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android shows the subtitle *what you write for Coach* and *Top note wins.*
-  (`ui/NotesScreen.kt:89,116`, `domain/Notes.kt:37,40`). iOS reads *Agents you connect can also read
-  these.* (`Coach/CoachScreens.swift:132`), the earlier board's words: align it to the ruling.
+  (`ui/NotesScreen.kt:89,116`, `domain/Notes.kt:37,40`).
 - **9t · Connected log with a connection.** On Android (`ConnectedLogScreen.kt`) the level rows and the caption stay on screen in both states, **How this works** opens in place,
   and a *Manage connections* row joins once something is connected. On iOS (board 09.3) a connected screen leads with **Connected**, each row opening the shell's connection
   settings, puts the level rows, the caption and the five lines behind one **How this works** door
