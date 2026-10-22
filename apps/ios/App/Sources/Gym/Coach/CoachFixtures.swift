@@ -89,9 +89,13 @@ enum CoachFixture {
           entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 2, weightKg: 95)])], summary: "Doubles at 95."))
         await runtime.engine.flushOnLeave(); gym.refresh()
       }
-      // A removal Apply then waits on the log past the review's 15-second wait.
-      if ProcessInfo.processInfo.arguments.contains("-coach-removal-stall") {
+      // An Apply then waits on the log past the card's 15-second wait.
+      if ProcessInfo.processInfo.arguments.contains("-coach-decision-stall") {
         server.state.withLock { $0.server.refuse(next: 1_000, code: .clockSkew) }
+      }
+      // Every push then spends four seconds in flight and gets no answer.
+      if ProcessInfo.processInfo.arguments.contains("-coach-decision-unreachable") {
+        server.state.withLock { $0.pushesUnansweredAfter = 4 }
       }
     } catch {
       let reason = failureReason(error)

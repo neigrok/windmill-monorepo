@@ -1446,12 +1446,13 @@ import SyncTesting
     #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
     try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
     #expect(runtime.engine.status.online)
+    // Only a push that got no answer says *No connection*; the log's own failure states no cause.
+    #expect(ProposalCard(gym: gym, id: try #require(gym.proposals.first).id.description).failure == (outcome == "offline" ? "No connection. Not applied." : nil))
     let retries = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" && $0.properties["action"] == "retry" }.map(\.properties) } }
     gym.coachResendDecision(try #require(gym.proposals.first).id)
     try await settle { !retries().isEmpty }
     #expect(retries() == [["screen": "coach", "action": "retry", "outcome": outcome]])
   }
-  // A proposal that reordered its routine keeps its Order row once applied, since the store counted that change.
   // A move reads its places against the routine while the proposal waits; once applied the routine holds the new order, so
   // the applied card keeps the blocks the phone read while it waited.
   @Test func aMoveReadsItsPlacesWhileTheProposalWaits() throws {
@@ -1601,6 +1602,7 @@ import SyncTesting
     defer { window.isHidden = true; window.rootViewController = nil }
     let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
     try await settle { outcomes().contains(["screen": "coach", "action": "apply", "outcome": "stalled"]) }
+    #expect(card.failure == nil, "A wait the log answered with a failure, online, states no cause")
     transport.failure.withLock { $0 = nil }
     gym.coachResendDecision(proposal.id)
     try await settle { gym.refresh(); return !card.pending && outcomes().count == 3 }

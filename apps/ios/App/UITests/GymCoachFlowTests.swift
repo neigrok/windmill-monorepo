@@ -318,8 +318,8 @@ import UIKit
     capture("coach-proposal-out-of-date-light", app)
     app.terminate()
   }
-  func testRemovalWaitingOnTheLogOffersRetryAfterFifteenSeconds() {
-    let app = launch("Light", arguments: ["-coach-removal", "-coach-removal-stall"])
+  func testRemovalWaitingOnTheLogOffersTryAgainAfterFifteenSeconds() {
+    let app = launch("Light", arguments: ["-coach-removal", "-coach-decision-stall"])
     ask("Remove Push A.", app)
     let apply = app.buttons["coach-apply-proposal"]
     for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
@@ -329,8 +329,9 @@ import UIKit
     XCTAssertFalse(apply.isEnabled); XCTAssertEqual(apply.frame, place, "Apply keeps its place while it waits")
     XCTAssertFalse(app.buttons["coach-reject-proposal"].isEnabled)
     capture("coach-proposal-waiting-light", app)
-    XCTAssertTrue(apply.waitForLabel("Retry", timeout: 25))
-    XCTAssertTrue(apply.isEnabled); XCTAssertEqual(apply.frame, place)
+    XCTAssertTrue(apply.waitForLabel("Try again", timeout: 25))
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-failure"].exists, "A wait alone states no cause")
+    XCTAssertTrue(apply.isEnabled); XCTAssertFalse(app.buttons["coach-reject-proposal"].isEnabled)
     capture("coach-proposal-still-waiting-light", app)
     apply.tap()
     XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))

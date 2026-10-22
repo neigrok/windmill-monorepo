@@ -150,20 +150,25 @@ extension GymModel {
   func coachChangeCount(_ proposal: Proposal) -> Int {
     proposal.changeCount ?? coachRoutine(proposal).map(proposal.countChanges) ?? coachDiff(proposal).blocks.count
   }
-  // Retry pushes the queued decision once more, never writing it twice, and records whether the log took it.
-  func coachResendDecision(_ id: ID<Proposal>) {
+  // Whether the engine says a decision could not reach the log: no network, or a push that got no answer. A wait alone
+  // never says so.
+  var coachDecisionUnreached: Bool {
+    guard let status = runtime?.engine.status else { return false }
+    return !status.online || status.unansweredPushes.contains(Gym.scope)
+  }
+  // Try again pushes the queued decision once more, never writing it twice, and records whether the log took it.
+  @discardableResult func coachResendDecision(_ id: ID<Proposal>) -> Task<Void, Never>? {
     guard coachAccountAvailable, !authPaused, let runtime else {
-      telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "retry", "outcome": "failed"]); return
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "retry", "outcome": "failed"]); return nil
     }
     start()
-    Task {
+    return Task {
       await runtime.engine.flushOnLeave()
       let taken: Bool
       do { taken = try runner.read(Gym.scope) { try Self.queuedDecision(id, in: $0)?.isAdmitted ?? true } }
       catch { report("gym_read", error); taken = false }
       // Offline when nothing reached the log, no network or no answer; failed when the log answered with a failure.
-      let status = runtime.engine.status
-      let outcome = taken ? "ok" : !status.online || status.unansweredPushes.contains(Gym.scope) ? "offline" : "failed"
+      let outcome = taken ? "ok" : coachDecisionUnreached ? "offline" : "failed"
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "action": "retry", "outcome": outcome])
       runtime.engine.foreground(); refresh()
     }

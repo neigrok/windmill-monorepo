@@ -122,7 +122,7 @@ and retargeted movement is one changed block with its order first. A field is `{
 before is new, no after is gone, equal is same. While every set on both sides is the same a movement reads *Sets*,
 *Reps* (*Max* with none) and *Load* (only when a side has a weight; *Last time* with none); once sets differ it reads
 *Set N* per set, *5 × 80 kg* (*8 reps* unweighted); an open side reads one *Target* line, *None* against *3 × 10* or
-*3 × 5 at 80 kg*; a changed rest reads *Rest*, *90 s*, *2 min* or *Default*. Loads format through `Readout.weight` in the
+*3 × 5 at 80 kg*; a changed rest reads *Rest*, in seconds under two minutes (*60 s*, *90 s*), whole minutes from two (*2 min*), else seconds, or *Default*. Loads format through `Readout.weight` in the
 requested units, *each* for a movement in `each`. A removal proposal has no blocks.
 
 ## Reads

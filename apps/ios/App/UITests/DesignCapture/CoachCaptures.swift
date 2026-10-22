@@ -201,6 +201,25 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.23-coach-proposal-ramp") { look in askBoard("ramp", "Warm up to your top set.", look) }
     captureBoard("08.24-coach-proposal-rest") { look in askBoard("rest", "Dips have no target.", look) }
   }
+  func testLongFailureRetry() {
+    captureBoard("08.27-coach-proposal-long") { look in
+      let app = askBoard("long", "Rebuild Push A for strength", look)
+      expandCard(app)
+      return app
+    }
+    for look in Look.both {
+      let app = askBoard("bench", "Is Push A still doing anything?", look, arguments: ["-coach-decision-unreachable"])
+      let apply = reachDecision(app)
+      apply.tap()
+      XCTAssertTrue(apply.waitForLabel("Try again", timeout: 12))
+      XCTAssertEqual(app.descendants(matching: .any)["coach-proposal-failure"].label, "No connection. Not applied.")
+      capture("08.29-coach-proposal-apply-failed", look, app)
+      apply.tap()
+      XCTAssertTrue(apply.waitForLabel("Applying…", timeout: 5))
+      capture("08.30-coach-proposal-applying", look, app, settle: 0.3)
+      app.terminate()
+    }
+  }
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]
@@ -220,7 +239,7 @@ final class CoachCaptures: DesignCapture {
 
   func testRemovalWait() {
     for look in Look.both {
-      let app = launchSignedInCoach(look, arguments: ["-coach-removal", "-coach-removal-stall"])
+      let app = launchSignedInCoach(look, arguments: ["-coach-removal", "-coach-decision-stall"])
       ask("Remove Push A.", app)
       let apply = app.buttons["coach-apply-proposal"]
       XCTAssertTrue(apply.waitForExistence(timeout: 10))
@@ -228,7 +247,7 @@ final class CoachCaptures: DesignCapture {
       apply.tap()
       XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
       capture("gym-coach-removal-waiting", look, app)
-      XCTAssertTrue(apply.waitForLabel("Retry", timeout: 25))
+      XCTAssertTrue(apply.waitForLabel("Try again", timeout: 25))
       capture("gym-coach-removal-still-waiting", look, app)
     }
   }

@@ -108,7 +108,7 @@ export class ProposalDiff {
       lines.push(line('Rest', (targets) => {
         const rest = targets.restSeconds;
         if (rest === null) return 'Default';
-        return rest % 60 === 0 ? `${rest / 60} min` : `${rest} s`;
+        return rest >= 120 && rest % 60 === 0 ? `${rest / 60} min` : `${rest} s`;
       }));
     }
     return Object.freeze(lines);

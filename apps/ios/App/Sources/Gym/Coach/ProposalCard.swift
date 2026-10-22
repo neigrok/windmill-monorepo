@@ -20,6 +20,7 @@ struct ProposalCard: View {
   @State var stalled = false
   @State var resent = 0
   @State var applying = false
+  @State var retrying = false
   @State var landed = false
   @Environment(\.scenePhase) var phase
 
@@ -53,9 +54,18 @@ struct ProposalCard: View {
     case .routineChanged: return routineName + " changed after this suggestion. Nothing was applied."
     }
   }
-  // Apply keeps its place through the wait: the act in flight until the log answers, then Retry.
+  // Why the Apply did not land, said once over the buttons, only from what the engine or the log answered: no network or
+  // no answer to its push, or the log refused it. A long wait alone states no cause.
+  var failure: String? {
+    guard let proposal, stance == .open, !retrying else { return nil }
+    if pending { return gym.coachDecisionUnreached ? "No connection. Not applied." : nil }
+    return gym.coachRemovalReceipts.contains(where: { $0.proposal.id == proposal.id && $0.outcome == .refused }) ? "Not applied." : nil
+  }
+  // Try again once the Apply failed, or once it has waited past the card's wait with the cause unknown.
+  var retryable: Bool { failure != nil || (pending && stalled && !retrying) }
+  // Apply keeps its place through the wait: the act in flight until the log answers, then Try again.
   var primaryTitle: String {
-    if stalled { return "Retry" }
+    if retryable { return "Try again" }
     switch waiting {
     case nil, .reject: return removal ? "Remove routine" : "Apply"
     case .apply: return removal ? "Removing…" : "Applying…"
@@ -121,8 +131,10 @@ struct ProposalCard: View {
         Text(outOfDate).foregroundStyle(GymPalette.inkDim).padding(.top, 14).accessibilityIdentifier("coach-proposal-out-of-date")
       }
       if stance == .open {
-        if gym.coachRemovalReceipts.contains(where: { $0.proposal.id == proposal.id && $0.outcome == .refused }) {
-          Text("Nothing was applied.").font(.subheadline).foregroundStyle(GymPalette.inkDim).padding(.top, 14)
+        if let failure {
+          Label(failure, systemImage: "exclamationmark.triangle").labelStyle(ChangeBadgeStyle()).font(.subheadline)
+            .foregroundStyle(GymPalette.destructive).padding(.top, 14)
+            .accessibilityElement(children: .combine).accessibilityIdentifier("coach-proposal-failure")
         }
         buttons(proposal)
       }
@@ -161,15 +173,20 @@ struct ProposalCard: View {
 
   func buttons(_ proposal: Proposal) -> some View {
     VStack(spacing: 10) {
-      Button(role: removal && !stalled ? .destructive : nil) {
+      // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
+      Button(role: removal ? .destructive : nil) {
         applying = true
-        if stalled { resent += 1; gym.coachResendDecision(proposal.id) } else { _ = gym.coachDecideProposal(proposal, apply: true) }
+        guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
+        resent += 1
+        guard let resend = gym.coachResendDecision(proposal.id) else { return }
+        retrying = true
+        Task { await resend.value; retrying = false }
       } label: {
         HStack(spacing: RoomSpace.related) {
-          if pending && !stalled { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
+          if pending && !retryable { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
           Text(primaryTitle)
         }
-      }.buttonStyle(ChangeCardButtonStyle(prominent: !removal)).disabled(!stalled && !decidable)
+      }.buttonStyle(ChangeCardButtonStyle(prominent: !removal)).disabled(!retryable && !decidable)
         .accessibilityIdentifier("coach-apply-proposal")
       Button("Reject") { _ = gym.coachDecideProposal(proposal, apply: false) }
         .buttonStyle(ChangeCardButtonStyle()).disabled(!decidable).accessibilityIdentifier("coach-reject-proposal")

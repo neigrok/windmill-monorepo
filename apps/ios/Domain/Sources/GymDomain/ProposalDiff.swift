@@ -86,7 +86,7 @@ public struct ProposalDiff: Equatable, Sendable {
       }
     }
     if sides.count == 2, before?.restSeconds != after?.restSeconds {
-      lines.append(line("Rest") { targets in targets.restSeconds.map { $0 % 60 == 0 ? "\($0 / 60) min" : "\($0) s" } ?? "Default" })
+      lines.append(line("Rest") { targets in targets.restSeconds.map { $0 >= 120 && $0 % 60 == 0 ? "\($0 / 60) min" : "\($0) s" } ?? "Default" })
     }
     return lines
   }

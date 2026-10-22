@@ -189,7 +189,11 @@ and scripted routine setup. `-coach-removal` makes the proposal a removal and th
 asks for it from your totals,
 `-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
 `-coach-out-of-date` has a newer proposal replace it,
-`-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
+`-coach-decision-stall` leaves a card's Apply unanswered past its 15-second wait, `-coach-decision-unreachable` leaves every push
+four seconds in flight, then unanswered,
+`-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer, `-coach-thinking` holds it before its
+first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
+proposal board and answers its questions,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

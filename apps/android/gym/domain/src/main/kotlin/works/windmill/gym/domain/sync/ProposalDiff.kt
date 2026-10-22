@@ -78,7 +78,7 @@ class ProposalDiff(proposal: Proposal, routine: Routine?, units: GymUnits = GymU
                 }
             }
             if (before != null && after != null && before.restSeconds != after.restSeconds) {
-                lines += line("Rest") { targets -> targets.restSeconds?.let { if (it % 60 == 0) "${it / 60} min" else "$it s" } ?: "Default" }
+                lines += line("Rest") { targets -> targets.restSeconds?.let { if (it >= 120 && it % 60 == 0) "${it / 60} min" else "$it s" } ?: "Default" }
             }
             return lines
         }
