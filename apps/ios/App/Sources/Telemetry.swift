@@ -40,7 +40,7 @@ nonisolated enum TelemetryPrivacy {
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_workout_adjusted", "gym_exercise_updated", "gym_coach_routine_confirm", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
-    "gym_intent_opened"
+    "gym_intent_opened", "quick_action"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],
@@ -54,6 +54,7 @@ nonisolated enum TelemetryPrivacy {
     "cap": ["daily", "ceiling", "allowance"],
     "surface": ["activity", "control", "shortcut"],
     "intent": ["start_workout", "open_workout"],
+    "item": ["write", "start", "open_workout"],
     "state": ["shown", "opened"],
     "trigger": ["sync", "sign_in"],
     "door": ["accessory", "row"],

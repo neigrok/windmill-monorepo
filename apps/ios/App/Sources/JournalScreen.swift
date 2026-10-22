@@ -152,7 +152,7 @@ struct JournalScreen: View {
       model.choose(value ? "write" : "done_writing", screen: "journal")
       if value { model.liftInk() } else { model.done() }
     }
-    .onChange(of: model.editing) { _, value in if !value { focused = false } }
+    .onChange(of: model.editing) { _, value in if focused != value { focused = value } }
     .onChange(of: model.sheet) { _, _ in writeRequest += 1 }
     .onChange(of: model.editorReadOnly) { _, _ in writeRequest += 1 }
     .onDisappear { writeRequest += 1; model.echoes.suspend() }

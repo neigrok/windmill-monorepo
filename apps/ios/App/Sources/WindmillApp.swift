@@ -80,6 +80,7 @@ struct WindmillApp: App {
           }
           if workoutLink { created.openActivityWorkout() }
           WorkoutActivityIntentHandler.present(created)
+          QuickActionHandler.present(created)
           model = created
         } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
       }
@@ -179,6 +180,7 @@ struct RootScreen: View {
       else { GymRoom(gym: model.gym, app: model) }
     }
     .onChange(of: model.updateAlert, initial: true) { _, show in if show { UpdateRequiredAlert.present(for: model) } }
+    .onChange(of: model.quickActions, initial: true) { _, actions in UIApplication.shared.shortcutItems = actions.map(\.shortcut) }
     .overlay(alignment: .bottom) {
       VStack(spacing: 0) {
         if model.updateOpenFailed && model.sheet == nil {

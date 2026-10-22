@@ -178,6 +178,7 @@ jobs:
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/RoomTransientFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests
+              -only-testing:WindmillUITests/QuickActionFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
           - shard: coach-shell

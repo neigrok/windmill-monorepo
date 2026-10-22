@@ -67,6 +67,14 @@ final class OnboardingLaunchDelegate: NSObject, UIApplicationDelegate {
     deepLink = options?[.url] != nil || options?[.userActivityDictionary] != nil
     return true
   }
+  // A quick action that launches Windmill is a door the person chose, so it opens past the introduction.
+  func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
+                   options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    if let item = options.shortcutItem, let action = QuickAction(item) { deepLink = true; QuickActionHandler.perform(action) }
+    let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
+    configuration.delegateClass = QuickActionSceneDelegate.self
+    return configuration
+  }
 }
 
 struct OnboardingScreen: View {

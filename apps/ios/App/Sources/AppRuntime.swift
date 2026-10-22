@@ -39,7 +39,7 @@ struct AppSettings {
   let telemetryInfo: [String: Any]
   // TestFlight offers this build's successor.
   static let updateDestination = URL(string: "itms-beta://")!
-  init(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) {
+  init(arguments: [String] = RelaunchArguments.current, bundle: Bundle = .main) {
     func argument(_ name: String) -> String? {
       guard let index = arguments.firstIndex(of: "-" + name), index + 1 < arguments.count else { return nil }
       return arguments[index + 1]
@@ -74,6 +74,22 @@ struct AppSettings {
     if methods.contains(where: { $0.kind == "apple" }) { return "Either one opens this account." }
     return appleEnabled ? "Apple will open this same account." : nil
   }
+}
+
+// A UI test cannot pass arguments to a launch from the Home Screen: a launch with -keep-for-relaunch keeps its arguments
+// for every later launch that arrives with none, its board restored, and a launch with other arguments drops them.
+nonisolated enum RelaunchArguments {
+  static let key = "relaunchArguments"
+  static let current: [String] = {
+    let arguments = ProcessInfo.processInfo.arguments
+    #if DEBUG && targetEnvironment(simulator)
+    let defaults = UserDefaults.standard
+    if arguments.count == 1, let kept = defaults.stringArray(forKey: key) { return arguments + kept }
+    if arguments.contains("-keep-for-relaunch") { defaults.set(Array(arguments.dropFirst()) + ["-restore-board"], forKey: key) }
+    else { defaults.removeObject(forKey: key) }
+    #endif
+    return arguments
+  }()
 }
 
 final class AppRuntime {

@@ -41,6 +41,25 @@ final class ShellCaptures: DesignCapture {
     }
   }
 
+  // 22: the quick actions over Windmill's icon on the Home Screen, after a workout of Lower A.
+  func testQuickActions() {
+    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    for look in Look.both {
+      XCUIDevice.shared.appearance = look.appearance == .dark ? .dark : .light
+      let app = launch("workout-planned", look)
+      XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 10)); app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10)); app.buttons["Done"].tap()
+      XCUIDevice.shared.press(.home)
+      let icon = springboard.icons["Windmill"]
+      XCTAssertTrue(icon.waitForExistence(timeout: 10)); icon.press(forDuration: 1.5)
+      XCTAssertTrue(springboard.buttons["Start Lower A"].waitForExistence(timeout: 5))
+      capture("22-quick-actions", look, springboard)
+      XCUIDevice.shared.press(.home)
+      app.terminate()
+    }
+    XCUIDevice.shared.appearance = .light
+  }
+
   func testUpdateRequired() {
     for look in Look.both {
       let app = launch("update-required", look)

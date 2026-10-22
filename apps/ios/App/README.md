@@ -172,7 +172,11 @@ opens the workout. The App Shortcuts *Log set* and *Start workout* (`WorkoutActi
 in the app too: *Log set* without an offer logs the rack's and answers with it, and *Start workout* opens Routines at its
 root, or the logger while a workout is open. The workout control (Control Center, the Lock Screen, the Action button)
 draws only what `WorkoutActivityController` last wrote to the App Group `group.works.windmill.app`: *Log set* with
-the rack's numbers, *Open workout*, or *Start workout*. Parity with Android is tracked in `PARITY.md`.
+the rack's numbers, *Open workout*, or *Start workout*. The Home Screen's quick actions (`Sources/QuickActions.swift`)
+are *Write tonight*, which opens tonight's page with the keyboard up, and *Start ‹routine›* for the routine last trained
+(else the first in Routines; none without a routine), which starts its workout, or *Open workout* while one runs. The
+items follow the gym as it changes; one that launches Windmill waits for the first screen and opens past the
+introduction. Parity with Android is tracked in `PARITY.md`.
 
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
@@ -396,6 +400,9 @@ opens on Routines. `launchSignedInCoach` launches with `-coach-fixture`, which s
 workout and a waiting proposal once Coach opens; `-gym-log-fixture` seeds a routine, 35 workouts and
 weigh-ins once The log opens. The boards outside the app (04.x, `WorkoutCaptures`) set the simulator's appearance for each look, leave a
 workout running with its Live Activity, and add the workout control to Control Center when the simulator lacks it.
+A launch from the Home Screen carries no arguments, so a UI test that needs one launches first with `-keep-for-relaunch`:
+every later launch without arguments takes that launch's arguments with its board restored, until a launch with other
+arguments drops them (`RelaunchArguments`, simulator debug builds only).
 
 Run one capture test, or a whole area by its class, then export it. From this directory, with your own simulator
 and a fresh result path:
