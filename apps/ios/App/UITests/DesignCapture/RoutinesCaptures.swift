@@ -87,8 +87,11 @@ final class RoutinesCaptures: DesignCapture {
       let movement = app.buttons["builder-movement-bench-press"]
       XCTAssertTrue(movement.waitForExistence(timeout: 5)); movement.tap()
       XCTAssertTrue(app.buttons["gym-target-set"].waitForExistence(timeout: 5))
+      let more = app.buttons["gym-target-sets-stepper-Increment"]
+      for _ in 0..<4 { more.tap() }
+      XCTAssertEqual(app.textFields["gym-target-sets"].value as? String, "4")
       capture("02.6-targets", look, app)
-      app.buttons["gym-target-set"].tap()
+      app.navigationBars["Targets"].buttons["Cancel"].tap()
       XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
       capture("gym-routine-editor-planned", look, app)
       app.buttons["save-routine"].tap()

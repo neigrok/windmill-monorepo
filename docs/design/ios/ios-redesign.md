@@ -790,9 +790,10 @@ with 7.11 and 7.12.
   clears it.
 - Inside the builder, *Add movement*, Create movement and Targets are steps pushed in its own sheet,
   each with *Cancel* leading and its own ✓.
-- Targets is titled *Targets* with the movement as subtitle, ✓ (*Done*) in the bar; *You decide the
-  numbers at the rack.* is its section footer while the scheme is open; *last time* and *max* as
-  placeholders are the rest of the disclosure.
+- Targets is titled *Targets* with the movement as subtitle, ✓ (*Done*) in the bar. *Sets*, *Reps*
+  and *kg* each pair the typed value with the system stepper, the section footer says the movement's
+  load basis, and *Vary by set* stands in its own section; *last time* and *max* as placeholders are
+  the disclosure of an open target.
 - Create movement — a step of the builder, or a `.medium` sheet from Movements and the workout's
   picker — is *Name*, *Equipment* as a `Picker(.menu)` row, *Targets* ›, and ✓ (*Add*) in the bar,
   enabled once the name is non-blank; a refusal appears on the attempt, one at a time, name first.
