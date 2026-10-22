@@ -22,6 +22,16 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
   static func snapshot(session: Session, sets: [TrainingSet]) -> JSON {
     .object(["session": .object(omittingNil: session.fields), "sets": .array(sets.sorted { $0.id < $1.id }.map { .object(omittingNil: $0.fields) })])
   }
+  // A baseline stored while sets still had a kind names the same workout once the kind it no longer has is left out.
+  static func withoutSetKinds(_ baseline: JSON) -> JSON {
+    guard case .object(var snapshot) = baseline, case .array(let sets)? = snapshot["sets"] else { return baseline }
+    snapshot["sets"] = .array(sets.map { set in
+      guard case .object(var fields) = set else { return set }
+      fields["kind"] = nil
+      return .object(fields)
+    })
+    return .object(snapshot)
+  }
   init(sessionID: String, replica: String, anonymous: Bool) {
     self.sessionID = sessionID; self.replica = replica; self.anonymous = anonymous
     ownerID = replica + ":" + (anonymous ? "anon:" : "bound:") + sessionID
@@ -34,7 +44,7 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
         movementID: try value.member("movementID").asString(), weightKg: try value.member("weightKg").asDouble(),
         reps: Int(try value.member("reps").asInteger()), setID: try value.member("setID").asString())
     }
-    baseline = json["baseline"]
+    baseline = json["baseline"].map(Self.withoutSetKinds)
     dismissed = try json["dismissed"]?.asBool() ?? false
     activityID = try json["activityID"].flatMap { $0.isNull ? nil : try $0.asString() }
   }

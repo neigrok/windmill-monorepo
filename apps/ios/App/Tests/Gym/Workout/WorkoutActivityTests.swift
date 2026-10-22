@@ -222,6 +222,25 @@ import SyncTesting
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.isEmpty })
   }
 
+  @Test func anOfferStoredWhileSetsHadAKindStillLogs() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixtures.fixture(telemetry: recorder)
+    let workout = try fixtures.begin(gym), first = try #require(workout.activityOffer())
+    #expect(workout.logActivityOffer(first))
+    let offer = try #require(workout.activityOffer())
+    var record = try #require(try workout.activityRecord())
+    guard case .object(var snapshot)? = record.baseline, case .array(let sets)? = snapshot["sets"] else { Issue.record("The offer has no baseline"); return }
+    snapshot["sets"] = .array(sets.map { set in
+      guard case .object(var fields) = set else { return set }
+      fields["kind"] = .string("working")
+      return .object(fields)
+    })
+    record.baseline = .object(snapshot)
+    #expect(workout.keepActivity(record))
+    #expect(workout.logActivityOffer(offer))
+    #expect(workout.sets.map { $0.id.description } == [first.setID, offer.setID])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.isEmpty })
+  }
+
   @Test func staleIntentOpensTheWorkoutWithoutWriting() async throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixtures.fixture(telemetry: recorder)
     let workout = try fixtures.begin(gym), stale = try #require(workout.activityOffer())
