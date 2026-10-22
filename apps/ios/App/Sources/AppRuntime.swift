@@ -76,8 +76,7 @@ struct AppSettings {
   }
 }
 
-// A UI test cannot pass arguments to a launch from the Home Screen: a launch with -keep-for-relaunch keeps its arguments
-// for every later launch that arrives with none, its board restored, and a launch with other arguments drops them.
+// A launch with -keep-for-relaunch lends its arguments, board restored, to later Home Screen launches that carry none.
 nonisolated enum RelaunchArguments {
   static let key = "relaunchArguments"
   static let current: [String] = {

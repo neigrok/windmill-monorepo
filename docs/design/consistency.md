@@ -767,15 +767,12 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   last row: an explanation, *Type your email to confirm*, *Deleting…*, *Your account is deleted* /
   *Sign in before Nov 21 to bring it back.*, and *Couldn’t delete your account. Check your connection
   and try again.* (Shell iOS section 4c `47:3852`, boards 27a–27e; Shell Android `33:1568`, 27a
-  `54:1269`–27e `54:1606`). iOS builds it (`AccountDeletion.swift`); Android does not. iOS's 27f/27g
-  count is the engine's live unsent entries (ready and sent), which leaves out pending device work,
-  as the engine's live status does not carry it. Two iOS states have no board: a failure on the phone
-  itself (a room that cannot save, the discard owed after the close) says 27e's *Check your
-  connection* sentence, and a 401 after the confirm closes the page onto You signed out, as 27d needs
-  the day the server names; designer to rule. The
-  server keeps the copy's promise: `DELETE /v1/me`
-  closes with `closingOn` = now + 30 days, a sign-in before then brings the account back, and from
-  then on it is erased with all its data (`backend/AUTH.md`).
+  `54:1269`–27e `54:1606`). iOS builds it (`AccountDeletion.swift`); Android does not. Two iOS states
+  have no board: a failure on the phone itself (a room that cannot save, the discard owed after the
+  close) says 27e's *Check your connection* sentence, and a 401 after the confirm closes the page onto
+  You signed out, as 27d needs the day the server names; designer to rule. The server keeps the
+  copy's promise: `DELETE /v1/me` closes with `closingOn` = now + 30 days, a sign-in before then
+  brings the account back, and from then on it is erased with all its data (`backend/AUTH.md`).
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
   `1283:42292`). iOS builds it; Android does not, and shows a standing card on Routines
@@ -817,17 +814,22 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   confirmed by your account. They are deleted too.* (Shell iOS 27f `91:5187`, 27g `91:5256`; Shell
   Android 27f `96:2122`, 27g `96:2157`). The phone flushes for up to 5 s, then calls
   `DELETE /v1/me`, then discards its copy, as the web's closure does (`AuthProvider.jsx`
-  `closeAccount`); neither phone builds Delete account yet (iOS 50, Android 48). The fact's symbols
-  (`iOS / Symbol / icloud.slash`, `Android / Symbol` `cloud_off`) are in the Design System but not
-  published: until the owner publishes, those 8 boards draw local stand-ins named `⟳ DS publish · …`,
-  which `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
-- **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** Only the
-  kinds present, in this order: workouts, routines, weigh-ins, movements, notes, journal pages (iOS).
-  Sets go with their workout; settings, movement names and Coach drafts are not named. The account
-  line names what the account holds; *it* for one item, else *them*; the confirm title is *Discard
-  {phrase}?* for one or two kinds, *Discard all of it?* for three or more. On iOS one alert answers
-  both rooms. Boards: Shell iOS 23g–23j (`94:5426`, `94:5455`, `94:5482`, `94:5511`); Gym Android
-  07.9 `1336:17333`, 07.10 `1336:17426`. Build: iOS 48, Android 25.
+  `closeAccount`). iOS counts the engine's live unsent entries (ready and sent), which leaves out
+  pending device work, as the engine's live status does not carry it; Android builds no Delete
+  account (48). The fact's symbols (`iOS / Symbol / icloud.slash`, `Android / Symbol` `cloud_off`)
+  are in the Design System but not published: until the owner publishes, those 8 boards draw local
+  stand-ins named `⟳ DS publish · …`, which
+  `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
+- **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
+  7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
+  movements, notes, journal pages. Sets go with their workout; settings, movement names and Coach
+  drafts are not named. The account line names what the account holds; *it* for one item, else
+  *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
+  three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
+  `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
+  (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
+  iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
+  never reaches a room the question did not name; designer to rule.
 
 ### Coach on the client
 

@@ -71,7 +71,7 @@ import XCTest
       ("fixture-open-copy", "Pull A · Today · 3 sets", "Your account has an open workout — keep this one as finished."),
       ("fixture-overlap", "Push A · \(september(24)) · 12 sets", "Overlaps another workout — fix its times."),
       ("fixture-landed-push", "1 set from Push A · \(september(23))", "A set missed its workout — retry puts it back."),
-      ("fixture-late-set", "Legs · \(september(22)) · 4 sets", "Its times don't line up — fix the times."),
+      ("fixture-late-set", "Legs · \(september(22)) · 4 sets", "Its times don’t line up — fix the times."),
       ("fixture-missing-movement", "Push A · \(september(21)) · 3 sets", "A movement is missing — fix its sets, then retry."),
       ("fixture-id-taken", "Legs · \(september(20)) · 4 sets", "Already added once — discard this copy."),
       ("fixture-parent-dead", "Pull A · \(september(19)) · 3 sets", "Refused by the log — fix the workout, then retry."),
@@ -101,7 +101,7 @@ import XCTest
     XCTAssertEqual(app.buttons["recovery-primary"].label, "Fix workout")
     app.buttons["recovery-primary"].tap()
     XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.descendants(matching: .any)["recovery-fix-held"].staticTexts["Its times don't line up — fix the times."].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-fix-held"].staticTexts["Its times don’t line up — fix the times."].exists)
     XCTAssertEqual(app.buttons["recovery-fix-save"].label, "Save and retry")
     XCTAssertFalse(app.buttons["recovery-fix-save"].isEnabled)
     XCTAssertTrue(app.switches["Linked to Legs"].exists)
@@ -110,7 +110,7 @@ import XCTest
     reach(app.buttons["recovery-set-delete"], app).tap()
     XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["recovery-fix-set-fixture-late-set-set-3"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["recovery-fix-held"].staticTexts["Its times don't line up — fix the times."].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-fix-held"].staticTexts["Its times don’t line up — fix the times."].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["recovery-fix-save"].isEnabled)
     app.buttons["recovery-fix-save"].tap()
     XCTAssertTrue(app.navigationBars["Fix workout"].waitForNonExistence(timeout: 10))

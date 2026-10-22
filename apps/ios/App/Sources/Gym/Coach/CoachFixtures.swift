@@ -61,7 +61,7 @@ enum CoachFixture {
       guard let owner = gym.account, gym.coachAccountAvailable else { throw AppFailure(message: "Coach fixture account is unavailable.") }
       CoachFixtureProtocol.now.withLock { $0 = gym.dates.moment.now.ms }
       // An account the lifter signed into after a signed-out start keeps the conversation it adopted.
-      if !ProcessInfo.processInfo.arguments.contains("-restore-board"), runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
+      if !runtime.settings.restoreBoard, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
       if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }

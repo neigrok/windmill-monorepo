@@ -85,8 +85,7 @@ struct TrashSwipe: ViewModifier {
   }
 }
 
-// The one question every door that discards a workout asks (07.5): the receipt, The log's swipe and menu, workout detail
-// and Inspect's ⋯. It records the question shown and a cancel on `screen`, and closes when the account changes.
+// 07.5, asked by every door that discards a workout; it records shown and cancel on `screen`, closing on an account change.
 struct DiscardWorkoutAlert: ViewModifier {
   let gym: GymModel
   let screen: String

@@ -116,7 +116,7 @@ extension WorkoutRecovery.Reason {
     case .accountWorkoutOpen: "Your account has an open workout — keep this one as finished."
     case .overlap: "Overlaps another workout — fix its times."
     case .identityTaken: "Already added once — discard this copy."
-    case .badTime: "Its times don't line up — fix the times."
+    case .badTime: "Its times don’t line up — fix the times."
     case .tooManySets: "Over 200 sets — remove some, then retry."
     case .unknownMovement: "A movement is missing — fix its sets, then retry."
     case .strandedSets: stranded == 1 ? "A set missed its workout — retry puts it back."

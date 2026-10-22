@@ -6,7 +6,13 @@ import XCTest
   let app = XCUIApplication()
   let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
-  override func setUp() { continueAfterFailure = false }
+  // An open icon menu never stops animating, so SpringBoard skips XCTest's 60 s idle wait and each step waits on its element.
+  override func setUp() {
+    continueAfterFailure = false
+    if springboard.responds(to: NSSelectorFromString("setIdleAnimationWaitEnabled:")) {
+      springboard.setValue(false, forKey: "idleAnimationWaitEnabled")
+    }
+  }
 
   override func tearDown() async throws {
     await MainActor.run {
@@ -18,9 +24,9 @@ import XCTest
   func choose(_ item: String, cold: Bool) {
     if cold { app.terminate() } else { XCUIDevice.shared.press(.home) }
     let icon = springboard.icons["Windmill"]
-    XCTAssertTrue(icon.waitForExistence(timeout: 10)); icon.press(forDuration: 1.5)
+    XCTAssertTrue(icon.wait(for: \.isHittable, toEqual: true, timeout: 10)); icon.press(forDuration: 1.5)
     let action = springboard.buttons[item]
-    XCTAssertTrue(action.waitForExistence(timeout: 5)); action.tap()
+    XCTAssertTrue(action.wait(for: \.isHittable, toEqual: true, timeout: 5)); action.tap()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
   }
 

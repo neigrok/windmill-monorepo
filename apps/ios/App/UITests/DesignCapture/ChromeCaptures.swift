@@ -106,8 +106,12 @@ final class ChromeCaptures: DesignCapture {
     }
     XCTAssertTrue(routines.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
     capture("gym-layout-builder", look, routines)
-    XCTAssertTrue(routines.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder")).firstMatch.exists)
+    reach(routines.buttons["builder-movement-deadlift"], routines).press(forDuration: 1)
+    let moveUp = routines.buttons["Move up"]
+    XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5))
     capture("gym-layout-builder-reorder", look, routines)
+    moveUp.tap()
+    XCTAssertTrue(moveUp.waitForNonExistence(timeout: 5))
     reach(routines.buttons["builder-movement-bench-press"], routines).tap()
     XCTAssertTrue(routines.buttons["gym-target-set"].waitForExistence(timeout: 5))
     capture("gym-layout-targets", look, routines)

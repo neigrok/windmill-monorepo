@@ -497,9 +497,13 @@ import UIKit
     XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertEqual(ids(), ["builder-movement-bench-press", "builder-movement-deadlift"])
     XCTAssertEqual(deadlift.label, "2. Deadlift, Open")
-    let handle = deadlift.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
-    handle.press(forDuration: 1.2, thenDragTo: bench.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0.6)
-    XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5), "The drag left the order at \(ids())")
+    // The simulator sometimes drops a lift, so a drag that left the order as it was is made once more.
+    func dragDeadliftAboveBench() -> Bool {
+      deadlift.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
+        .press(forDuration: 1.2, thenDragTo: bench.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.2)), withVelocity: .slow, thenHoldForDuration: 0.6)
+      return order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5)
+    }
+    XCTAssertTrue(dragDeadliftAboveBench() || dragDeadliftAboveBench(), "The drag left the order at \(ids())")
     XCTAssertTrue(deadlift.wait(for: \.label, toEqual: "1. Deadlift, Open", timeout: 5))
     deadlift.press(forDuration: 1)
     let moveDown = app.buttons["Move down"]

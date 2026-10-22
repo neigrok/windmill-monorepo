@@ -4,8 +4,7 @@ import DomainKit
 import GymDomain
 import SyncCore
 
-// The Home Screen's quick actions (Figma Shell · iOS 22): Write tonight, then the gym's one door — Start the routine last
-// trained, or Open workout while one runs. With no routine there is no gym item, since a workout starts only from a routine.
+// The Home Screen's quick actions (Shell · iOS 22): Write tonight, then Start the last routine or Open workout, if any.
 enum QuickAction: Equatable {
   case write
   case start(ID<Routine>, name: String)

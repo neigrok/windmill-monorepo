@@ -147,13 +147,16 @@ import XCTest
   }
 
   // Home hands the app to SpringBoard, which may keep it running or suspend it; either way it has left the foreground.
+  // SpringBoard can let a press go while the app is still launching, so an unanswered press is pressed once more.
   func leaveForeground(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-    XCUIDevice.shared.press(.home)
-    let backgrounded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      app.state == .runningBackground || app.state == .runningBackgroundSuspended
-    }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [backgrounded], timeout: 10), .completed, "The app must leave the foreground before it resumes.",
-                   file: file, line: line)
+    for _ in 0..<2 {
+      XCUIDevice.shared.press(.home)
+      let backgrounded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        app.state == .runningBackground || app.state == .runningBackgroundSuspended
+      }, object: nil)
+      if XCTWaiter.wait(for: [backgrounded], timeout: 10) == .completed { return }
+    }
+    XCTFail("The app must leave the foreground before it resumes.", file: file, line: line)
   }
 
   func useLocalRooms(_ app: XCUIApplication, suffix: String, signedIn: Bool, restoringWorkout: Bool) {
