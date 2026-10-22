@@ -526,8 +526,8 @@ these are the places it disagrees with a drawing, a brief or the build.
 - **10x · The log's boards ahead of other canon (build, 2026-10-22).** The iOS build follows the
   🚧 targets (10o), and other canon still says otherwise in these places:
   - Workout detail's tiles share one card parted by hairlines (05.3), and the one session
-    constructor draws them so on Inspect and the receipt too, where 07.2 draws one card without
-    hairlines and 03.7 three cards. Settle one form and redraw the others.
+    constructor draws them so on Inspect too, where 07.2 draws one card without hairlines; the
+    receipt sets each tile on its own card, as 03.7 draws them. Settle one form for 05.3 and 07.2.
   - Record (05.6–05.8) and Bodyweight's chart draw dots only, no segment between them, where
     `briefs/11-bodyweight.md` and `briefs/18-progress.md` still join dots within the gap threshold.
     The Record draws no *Most reps* tile, no Recent sets and no estimates footer;

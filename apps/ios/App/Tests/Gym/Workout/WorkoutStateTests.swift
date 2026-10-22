@@ -629,7 +629,7 @@ import SyncTesting
     let sets = [value(gym, session: session, exercise: second, weight: 100, at: Instant(ms: start.ms + 10_000)),
                 value(gym, session: session, weight: 80, at: Instant(ms: start.ms + 30_000)),
                 value(gym, session: session, weight: 85, at: Instant(ms: start.ms + 40_000))]
-    let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
+    let receipt = WorkoutReceiptData(session: session, sets: sets.reversed())
     #expect(receipt.sets == sets && receipt.title == "Ended early.")
     #expect(receipt.subtitle(GymDate(gym.dates.moment, locale: Locale(identifier: "en_US"))) == "Free workout · Sat, Sep 26")
     #expect(FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
@@ -1262,8 +1262,7 @@ import SyncTesting
     workout.logSet()
     let old = try #require(workout.session)
     var closed = old; closed.finishedAt = Instant(ms: old.startedAt.ms + 1_000); closed.closedBy = "finish"
-    workout.receipt = WorkoutReceiptData(session: closed, sets: workout.sets, routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    workout.receipt?.routine.current.name = "Private previous account name"
+    workout.receipt = WorkoutReceiptData(session: closed, sets: workout.sets)
     workout.handoff = .coach; workout.message = "Private previous account message"
     workout.drafts[first] = Prefill(weightKg: 111, reps: 9)
     workout.weightKg = 111; workout.reps = 9; workout.paging = true
@@ -1293,8 +1292,7 @@ import SyncTesting
   @Test func receiptSaysEndedEarlyBelowFourWorkingSetsPlannedOrFree() throws {
     let (_, gym) = try fixture()
     let title = { (session: Session, working: Int) in
-      WorkoutReceiptData(session: session, sets: (0..<working).map { _ in value(gym, session: session) },
-                         routineId: gym.runner.mint(Routine.self), routinePosition: 0).title
+      WorkoutReceiptData(session: session, sets: (0..<working).map { _ in value(gym, session: session) }).title
     }
     let single = finished(gym, routine: try routine(gym, scheme: [SetTarget(reps: 12)]))
     let three = finished(gym, routine: try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 3)))
@@ -1303,103 +1301,15 @@ import SyncTesting
             == ["Ended early.", "Ended early.", "Well done.", "Ended early.", "Well done.", "Ended early.", "Well done."])
   }
 
-  @Test func receiptOffersRoutineOnlyForFourUnplannedWorkingSets() throws {
-    let (_, gym) = try fixture(), session = finished(gym)
-    let working = (0..<4).map { value(gym, session: session, at: Instant(ms: start.ms + Int64($0))) }
-    let three = WorkoutReceiptData(session: session, sets: Array(working.prefix(3)), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(three.slight && !three.offersRoutine && SessionReadout(session: three.session, sets: three.sets, catalogue: gym.catalogue).workingSetCount == 3)
-    let four = WorkoutReceiptData(session: session, sets: working, routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(!four.slight && four.offersRoutine && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).workingSetCount == 4 && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).volumeKg == 1_600)
-    let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)]), planned = finished(gym, routine: plan)
-    let plannedSets = (0..<4).map { _ in value(gym, session: planned) }
-    #expect(!WorkoutReceiptData(session: planned, sets: plannedSets, routineId: gym.runner.mint(Routine.self), routinePosition: 0).offersRoutine)
-  }
-
-  @Test func receiptRoutineHasExactChronologicalWorkingSchemesAndLoads() throws {
-    let (_, gym) = try fixture(), session = finished(gym), foreign = finished(gym)
-    let a = value(gym, session: session, weight: 40, reps: 8, at: Instant(ms: start.ms + 10))
-    let b = value(gym, session: session, exercise: second, weight: -20, reps: 6, at: Instant(ms: start.ms + 20))
-    let c = value(gym, session: session, weight: 50, reps: 5, at: Instant(ms: start.ms + 30))
-    let d = value(gym, session: session, exercise: second, weight: 0, reps: 10, at: Instant(ms: start.ms + 40))
-    let receipt = WorkoutReceiptData(session: session, sets: [d, c, value(gym, session: foreign), b, a],
-                                     routineId: gym.runner.mint(Routine.self), routinePosition: 7)
-    #expect(receipt.sets == [a, b, c, d])
-    #expect(receipt.routine.current.position == 7)
-    #expect(receipt.routine.current.entries == [
-      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 8, weightKg: 40), SetTarget(reps: 5, weightKg: 50)]),
-      RoutineEntry(exerciseId: second, sets: [SetTarget(reps: 6, weightKg: -20), SetTarget(reps: 10, weightKg: 0)]),
-    ])
-  }
-
-  @Test func receiptSavesPerformedZeroLoadTargetsWithoutConvertingThemToOpenTargets() throws {
-    let (_, gym) = try fixture(), session = finished(gym), id = gym.runner.mint(Routine.self)
-    let receipt = WorkoutReceiptData(session: session, sets: (0..<4).map { _ in value(gym, session: session, weight: 0, reps: 10) },
-                                     routineId: id, routinePosition: 0)
-    receipt.routine.current.name = "Bodyweight routine"
-    #expect(receipt.routine.current.entries == [RoutineEntry(exerciseId: first, sets: Array(repeating: SetTarget(reps: 10, weightKg: 0), count: 4))])
-    #expect(receipt.saveRoutine(gym) && !receipt.routine.isNew && receipt.routine.current.id == id)
-    #expect(receipt.keptName == "Bodyweight routine" && receipt.failure == nil && gym.routines.map(\.id) == [id])
-    #expect(gym.routines.first?.entries == receipt.routine.current.entries && gym.refusal == nil)
-  }
-
-  @Test func receiptSaveRetainsIdentityThroughFailureAndPreventsDuplicateSave() throws {
-    let (harness, gym) = try fixture(), session = finished(gym)
-    let sets = (0..<4).map { _ in value(gym, session: session) }, id = gym.runner.mint(Routine.self)
-    let receipt = WorkoutReceiptData(session: session, sets: sets, routineId: id, routinePosition: 0)
-    receipt.routine.current.name = "Private kept routine"
-    harness.failNextCommit()
-    #expect(!receipt.saveRoutine(gym) && receipt.routine.isNew && receipt.routine.current.id == id)
-    #expect(receipt.keptName == nil && receipt.failure == "Gym could not save this change. Try again." && !receipt.saving)
-    #expect(receipt.saveRoutine(gym) && receipt.keptName == "Private kept routine" && receipt.failure == nil)
-    #expect(gym.routines.map(\.id) == [id] && !receipt.routine.isNew)
-    #expect(!receipt.saveRoutine(gym) && gym.routines.map(\.id) == [id])
-  }
-
-  @Test func terminalReceiptRoutineRefusalRetainsIdentityAndAllowsOneRetry() async throws {
-    let transport = JournalModelTransport(), runtime = try GymModelTests().runtime(transport: transport)
-    let owner = transport.identity(email: "receipt-owner@example.com")
-    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
-    let gym = GymModel(runner: runtime.runner, runtime: runtime)
-    #expect(gym.run(CreateExercise(Exercise(id: first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
-    await runtime.engine.flushOnLeave(); gym.refresh()
-    #expect(gym.notices.isEmpty && gym.catalogue.find(first) != nil)
-    let session = finished(gym), id = gym.runner.mint(Routine.self)
-    let receipt = WorkoutReceiptData(session: session, sets: (0..<4).map { _ in value(gym, session: session) },
-                                     routineId: id, routinePosition: 3)
-    receipt.routine.current.name = "Private refused routine"
-    let proposed = receipt.routine.current
-    #expect(receipt.saveRoutine(gym) && receipt.keptName == proposed.name && !receipt.routine.isNew)
-    #expect(gym.routines == [proposed])
-    transport.state.withLock { $0.server.refuse(code: .cap, detail: ["type": .string(Routine.type), "cap": 10]) }
-    await runtime.engine.flushOnLeave(); gym.refresh()
-    let notice = try #require(gym.notices.last)
-    #expect(notice.subject == id.ref && notice.refusal == .full(type: Routine.type, cap: 10, .notice))
-    #expect(gym.routines.isEmpty)
-    receipt.reconcile(gym)
-    #expect(receipt.keptName == nil && receipt.routine.isNew && receipt.routine.current == proposed)
-    #expect(!receipt.saving && receipt.failure == "There is room for 10. Remove one before adding another.")
-    #expect(receipt.saveRoutine(gym) && receipt.keptName == proposed.name && receipt.failure == nil)
-    receipt.reconcile(gym)
-    #expect(receipt.keptName == proposed.name && !receipt.routine.isNew && receipt.failure == nil)
-    #expect(!receipt.saveRoutine(gym) && gym.routines.map(\.id) == [id])
-    await runtime.engine.flushOnLeave(); gym.refresh(); receipt.reconcile(gym)
-    #expect(gym.routines.map(\.id) == [id] && gym.notices.map(\.id) == [notice.id])
-    #expect(try #require(gym.routines.first).fields == proposed.fields)
-    #expect(receipt.keptName == proposed.name && !receipt.routine.isNew && receipt.failure == nil)
-    #expect(!receipt.saveRoutine(gym) && gym.routines.map(\.id) == [id])
-  }
-
-  @Test func receiptNamesUseNormalizedCharacterCapAndRejectBlank() throws {
-    let (_, gym) = try fixture(), session = finished(gym)
-    let receipt = WorkoutReceiptData(session: session, sets: (0..<4).map { _ in value(gym, session: session) }, routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    receipt.routine.current.name = " \n "
-    #expect(receipt.nameRefusal == "Name it to save it." && !receipt.saveRoutine(gym))
-    receipt.routine.current.name = String(repeating: "e\u{301}", count: 60)
-    #expect(receipt.nameRefusal == nil)
-    receipt.routine.current.name += "a"
-    #expect(receipt.nameRefusal == "Use 60 characters or fewer." && !receipt.saveRoutine(gym))
-    receipt.routine.current.name = String(repeating: "é", count: 60)
-    #expect(receipt.saveRoutine(gym) && receipt.keptName == String(repeating: "é", count: 60))
+  // Performed reads each begun movement in the order its first set was logged, then each planned movement never begun.
+  @Test func receiptReadsPerformedInLoggedOrderAndNamesAPlannedMovementNotStarted() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)])
+    let session = finished(gym, routine: plan), foreign = finished(gym)
+    let a = value(gym, session: session, weight: 40, reps: 5, at: Instant(ms: start.ms + 10))
+    let b = value(gym, session: session, weight: 40, reps: 5, at: Instant(ms: start.ms + 30))
+    let receipt = WorkoutReceiptData(session: session, sets: [b, value(gym, session: foreign), a])
+    #expect(receipt.sets == [a, b])
+    #expect(receipt.performed.map(\.exerciseId) == [first, second] && receipt.performed.map(\.reading) == ["2 × 5 · 40", "not started"])
   }
 
   @Test func reviewDecodesPlanLastTimePerformedAndMixedComparison() throws {
@@ -1489,11 +1399,11 @@ import SyncTesting
   @Test func malformedReviewFailsDecodingAndReviewFailureKeepsSavedSession() async throws {
     #expect(throws: (any Error).self) { try JSONDecoder().decode(WorkoutReview.self, from: Data(#"{"against":{"movements":[{"exerciseId":"one","now":{"sets":2}}]}}"#.utf8)) }
     let (_, gym) = try fixture(anonymous: false), session = finished(gym)
-    let receipt = WorkoutReceiptData(session: session, sets: [], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
+    let receipt = WorkoutReceiptData(session: session, sets: [])
     await receipt.loadReview(gym)
     #expect(receipt.reviewFailed && !receipt.readingReview && receipt.review == nil && receipt.session == session)
     let (_, anonymous) = try fixture()
-    let local = WorkoutReceiptData(session: session, sets: [], routineId: anonymous.runner.mint(Routine.self), routinePosition: 0)
+    let local = WorkoutReceiptData(session: session, sets: [])
     await local.loadReview(anonymous)
     #expect(!local.reviewFailed && !local.readingReview && local.review == nil)
   }

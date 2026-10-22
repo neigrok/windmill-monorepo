@@ -678,8 +678,7 @@ struct FinishWorkout: Action {
   func completeFinish(_ session: Session) {
     receiptOwed = false
     guard receipt == nil, handoff == nil else { return }
-    receipt = WorkoutReceiptData(session: session, sets: sets, routineId: gym.runner.mint(Routine.self),
-                                 routinePosition: (gym.routines.map(\.position).max() ?? -1) + 1)
+    receipt = WorkoutReceiptData(session: session, sets: sets)
     message = nil
     gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "ok"])
   }

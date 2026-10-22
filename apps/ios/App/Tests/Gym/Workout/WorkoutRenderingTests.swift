@@ -103,16 +103,10 @@ import SyncTesting
       let receipt = try XCTUnwrap(free.workout.receipt)
       receipt.reviewFailed = true
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-" + name, appearance: appearance)
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-routine-" + name, appearance: appearance, bottom: true)
       free.isAnonymous = false; free.workout.coachAvailable = true; receipt.reviewFailed = false
       receipt.review = try JSONDecoder().decode(WorkoutReview.self, from: Data(#"{"record":{"kind":"e1rm","exerciseId":"back-squat","value":116.7,"weightKg":100,"reps":5,"previous":110.8,"previousAt":1790000000000},"against":{"routine":"Lower A","movements":[{"exerciseId":"back-squat","now":{"sets":4,"reps":5,"weightKg":100},"before":{"sets":4,"reps":5,"weightKg":95}}]}}"#.utf8))
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-review-" + name, appearance: appearance)
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "receipt-coach-" + name, appearance: appearance, bottom: true)
-      receipt.failure = "There is room for 10. Remove one before adding another."
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "routine-refused-" + name, appearance: appearance, bottom: true)
-      receipt.failure = nil
-      XCTAssertTrue(receipt.saveRoutine(free))
-      try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "routine-kept-" + name, appearance: appearance, bottom: true)
       let (_, slight) = try fixture(planned: false, count: 1)
       await slight.workout.finish()
       try await capture(WorkoutReceipt(gym: slight, receipt: try XCTUnwrap(slight.workout.receipt)), name: "early-receipt-" + name, appearance: appearance)

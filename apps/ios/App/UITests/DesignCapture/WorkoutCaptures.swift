@@ -208,9 +208,30 @@ final class WorkoutCaptures: DesignCapture {
       heavier.buttons["Today only"].firstMatch.tap()
       XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
-      capture("03.7-finish-receipt", look, app)
+      capture("gym-workout-receipt-after-deviation", look, app)
       app.swipeUp()
       capture("gym-workout-finish-receipt-actions", look, app)
+    }
+  }
+
+  // 03.7: four squat sets and a deadlift set read Well done.; 03.8: finishing on two sets reads Ended early. with the
+  // deadlift not started.
+  func testReceipt() {
+    captureBoard("03.7-finish-receipt", settle: 1.5) { look in
+      let app = launch("workout-planned", look)
+      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+      app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("03.8-ended-early", settle: 1.5) { look in
+      let app = launch("workout-planned", look)
+      XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 10)); app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.staticTexts["not started"].waitForExistence(timeout: 10))
+      return app
     }
   }
 

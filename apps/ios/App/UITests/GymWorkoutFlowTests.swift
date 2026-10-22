@@ -287,7 +287,8 @@ import Vision
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 0)
   }
 
-  func testFinishRetainsReceiptAndSaveRoutineInBothAppearances() {
+  // The receipt stays over the room after Finish and draws no Save as routine (03.7).
+  func testFinishRetainsTheReceiptInBothAppearances() {
     for appearance in ["light", "dark"] {
       let app = launch("workout-free", appearance: appearance)
       app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
@@ -297,9 +298,7 @@ import Vision
       let attachment = XCTAttachment(screenshot: app.screenshot())
       attachment.name = "receipt-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
       app.swipeUp()
-      let save = app.buttons["workout-save-routine"]
-      XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()
-      XCTAssertTrue(app.staticTexts["workout-routine-kept"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.staticTexts["Save as routine"].exists || app.buttons["workout-save-routine"].exists)
       app.buttons["Done"].tap()
       XCTAssertFalse(app.buttons["workout-log"].exists)
       app.terminate()

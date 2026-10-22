@@ -183,12 +183,12 @@ struct FactTiles: View {
 
 extension FactTiles {
   // A session's tiles, read the same wherever a session is told: Duration · Working sets · Volume, the duration only once
-  // the session has finished.
-  init(_ readout: SessionReadout) {
+  // the session has finished. The finish receipt sets each on its own card (03.7).
+  init(_ readout: SessionReadout, ground: Ground = .shared) {
     self.init(facts: [
       readout.durationMs.map { Fact(value: Readout.duration($0), label: "Duration") },
       Fact(value: "\(readout.workingSetCount)", label: GymCount.noun(readout.workingSetCount, "Working set")),
       Fact(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
-    ].compactMap { $0 })
+    ].compactMap { $0 }, ground: ground)
   }
 }
