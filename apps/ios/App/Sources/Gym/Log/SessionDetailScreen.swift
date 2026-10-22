@@ -29,21 +29,26 @@ struct SessionDetailScreen: View {
         ForEach(SetRow.movements(sets), id: \.self) { id in
           let mine = sets.filter { $0.exerciseId == id }
           Section {
-            NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: {
-              GymRow(title: gym.catalogue.find(id)?.name ?? "Movement", meta: [
-                gym.catalogue.find(id).map { MovementEquipment($0).unit },
-                LogPresentation.planLine(id, plan: session.plan)
-              ].compactMap { $0 }.joined(separator: " · "))
-            }.accessibilityIdentifier("gym-session-movement")
             ForEach(Array(mine.enumerated()), id: \.element.id) { index, set in
               Button { fixing = set } label: {
                 SetRow(marker: SetRow.marker(set, in: mine), set: set,
-                       caption: LogPresentation.comparison(set, preceding: Array(mine.prefix(index)), plan: session.plan))
+                       caption: LogPresentation.comparison(set, preceding: Array(mine.prefix(index)), plan: session.plan), reading: .columns)
               }.accessibilityIdentifier("gym-finished-set-\(set.id)")
                 .trashSwipe("Delete set") { gym.run(DeleteSet(set.id)) }
                 .contextMenu { Button("Fix set", systemImage: "pencil") { fixing = set }; Button("Delete set", systemImage: "trash", role: .destructive) { gym.run(DeleteSet(set.id)) } }
                 .accessibilityAction(named: "Delete set") { gym.run(DeleteSet(set.id)) }
+                .listRowSeparator(.hidden)
             }
+          } header: {
+            NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: {
+              VStack(alignment: .leading, spacing: RoomSpace.small) {
+                Text(gym.catalogue.find(id)?.name ?? "Movement").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+                if let plan = LogPresentation.planLine(id, plan: session.plan) {
+                  Text(plan).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim)
+                }
+              }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain).textCase(nil)
+              .accessibilityHint("Opens its record").accessibilityIdentifier("gym-session-movement")
           }.listRowBackground(GymPalette.card)
         }
       } else if gym.readFailed {
@@ -52,7 +57,7 @@ struct SessionDetailScreen: View {
       } else {
         ContentUnavailableView("This workout is no longer here", systemImage: "clock").listRowBackground(GymPalette.canvas)
       }
-    }.listStyle(.insetGrouped).modifier(GymPage())
+    }.listStyle(.insetGrouped).contentMargins(.top, RoomSpace.small, for: .scrollContent).modifier(GymPage())
       .roomTitle(session?.name ?? Readout.noRoutine, subtitle: session.map { gym.dates.span($0.startedAt, $0.finishedAt) })
       .gymTabBar().accessibilityIdentifier("gym-session-detail")
       .toolbar {

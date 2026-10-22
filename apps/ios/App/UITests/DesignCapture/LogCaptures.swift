@@ -55,7 +55,6 @@ final class LogCaptures: DesignCapture {
     revealInLog(session, app)
     session.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
-    capture("05.3-workout-detail", look, app)
     choose("gym-session-discard", from: "gym-session-more", app, capturing: "gym-session-detail-menu", look)
     XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
     capture("gym-log-discard-confirmation", look, app)
@@ -83,6 +82,25 @@ final class LogCaptures: DesignCapture {
     capture("gym-session-share-sheet", look, app)
   }
   func testScreens() { for look in Look.both { screens(look) } }
+
+  func openLog(_ look: Look) -> XCUIApplication {
+    let app = launch("shell-anonymous", look, arguments: ["-gym-log-fixture"])
+    openGymFromWelcome(app, opensOn: .coach)
+    open(.log, app)
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch.waitForExistence(timeout: 20))
+    return app
+  }
+  func openWorkout(_ look: Look) -> XCUIApplication {
+    let app = openLog(look)
+    let session = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
+    revealInLog(session, app); session.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
+    return app
+  }
+
+  func testWorkoutDetail() {
+    captureBoard("05.3-workout-detail") { look in openWorkout(look) }
+  }
   func testScreensLargestText() { for look in Look.bothAtLargestText { screens(look) } }
 
   // Swipe deletes reveal the round red trash circle: a workout on The log, a set in the workout's detail.

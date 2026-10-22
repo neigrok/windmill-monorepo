@@ -218,7 +218,9 @@ ramp, by role:
 | Ink notes | Caveat 24 | |
 
 Monospaced digits on every numeral that changes while shown (clocks, weights). The monospaced
-*face* is reserved for the journal date line and the echo stamp. A fact is `.footnote` in the text
+*face* is reserved for the journal date line, the echo stamp and the logged numbers workout detail, the
+Record and Bodyweight read back: set rows, plan lines, Earlier records, window lines, readouts and axis
+labels. A fact is `.footnote` in the text
 face, left-aligned with the prose above it; nothing is centred under left-aligned text.
 
 **Counts and labels.** Every count passes through one formatter with real plurals — *1 workout*,
@@ -465,9 +467,9 @@ product-neutral), and every feature uses the one:
 | `SetEditor` | the load-and-reps wheel, effort, note, delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | Gym |
 | `RenameMovementSheet` | one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | Gym |
 | `GymRow` | a title over one meta line, with an optional leading symbol or dot and an optional trailing fact, `iphone`, check, progress or `DoorChevron`, and a fact followed by `DoorChevron` on a row that opens a sheet; every list row of a title over one line, The log's included. It takes the list's own row height: a title-only row is the system's one-line row, never padded to a two-line height, and the 44 pt target is the list row's | Gym |
-| `SetRow` | a set read back: its place, its numbers, a trailing caption (its comparison with the plan, only when off plan), then time, effort and note when present. Tapping it fixes the set, and it draws no chevron (§4). Its place is one rule everywhere — the ledger, session detail, Inspect and Fix workout: its count among the workout's sets so far (*1*, *2*). Sets have no type | Gym |
+| `SetRow` | a set read back: its place, its numbers, a trailing caption (its comparison with the plan, only when off plan), then time, effort and note when present. Inline it reads *1 · 80 × 5*; in columns, as workout detail draws it, the place stands in its own column and the numbers take the monospaced face (*1  100 × 5*). Tapping it fixes the set, and it draws no chevron (§4). Its place is one rule everywhere — the ledger, session detail, Inspect and Fix workout: its count among the workout's sets so far (*1*, *2*). Sets have no type | Gym |
 | `MoreMenu` | `ellipsis.circle` in the bar presenting the native Menu | Gym |
-| `FactTiles` | up to three value-over-label tiles, drawing only the facts that are known; a session's tiles come from one constructor over its readout, so Duration · Working sets · Volume read the same on session detail, the receipt and Inspect | Gym |
+| `FactTiles` | up to three value-over-label tiles, drawing only the facts that are known, on one card parted by hairlines or each on its own card (the Record); a session's tiles come from one constructor over its readout, so Duration · Working sets · Volume read the same on session detail, the receipt and Inspect | Gym |
 | `RoomDoor` | the Where to start? card, given a title, line, symbol, accent and ground | Shell |
 
 ### Lists
@@ -946,11 +948,12 @@ since-last-set clock trailing. Minimal: the room symbol.
   row.
 - The bar holds `square.and.arrow.up` (*Share this workout*) and `ellipsis.circle`, whose one item
   is *Discard workout* (`trash`, destructive). Discard pops to The log, after its confirmation, without an Undo band.
-- Set rows are `SetRow`s with tap-to-fix and swipe-to-delete: *1 · 100 × 5* with the comparison as
-  the trailing caption (*+2.5 over plan*), effort and note as a second line only when present; *W ·
-  80 × 3* carries no caption.
-- A movement's plan is its row's subtitle in `ink-dim` (*plan 1 × 5 · 60*), never an accent row of
-  its own; a movement the plan did not hold reads *not in plan* in the same place.
+- Set rows are `SetRow`s in columns, with tap-to-fix and swipe-to-delete and no separators: *1  100 ×
+  5* with the comparison as the trailing caption only when off plan (*+5 over plan*), effort and note
+  as a second line only when present (*RPE 8 · felt fast*).
+- A movement is its section's header, its name over its plan in `ink-dim` and the monospaced face
+  (*plan 4 × 5 · 100*), never an accent row of its own; a movement the plan did not hold reads *not
+  in plan* in the same place. The header opens the movement's Record.
 - **Share this workout** is a `.medium` sheet with *Close*, its sentences and one primary, *Get a
   link*. Signed out, or while backup is paused, the primary is a sign-in door, *Sign in to share*,
   in place of a primary that cannot succeed: it opens the sign-in door and, signed in, returns to

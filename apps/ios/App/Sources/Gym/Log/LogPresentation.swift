@@ -38,7 +38,7 @@ nonisolated enum LogPresentation {
     if entries.isEmpty { return "not in plan" }
     return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
   }
-  // A set against its slot in the plan.
+  // A set against its slot in the plan, said only when it is off plan.
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
     guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == set.exerciseId }
@@ -56,7 +56,7 @@ nonisolated enum LogPresentation {
       let words = [1: "one", 2: "two", 3: "three", 4: "four", 5: "five"]
       return "\(words[difference] ?? String(difference)) short"
     }
-    return "on plan"
+    return nil
   }
 }
 

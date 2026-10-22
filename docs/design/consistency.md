@@ -515,6 +515,13 @@ these are the places it disagrees with a drawing, a brief or the build.
   *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
   *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*,
   which is the receipt's band action, not a swipe.
+- **10x · The log's boards ahead of the written spec (build, 2026-10-22).** The iOS build follows the
+  🚧 targets (10o), and the spec still says otherwise in these places; update the spec to the boards:
+  - Workout detail (05.3): a movement is its section's header, its name over the plan in the monospaced
+    face (*plan 4 × 5 · 100*), and opens its Record; its set rows draw the place in its own column and
+    the numbers in the monospaced face (*1  100 × 5*), with no separators. §3 reserves the monospaced
+    face for the journal, and §5's `SetRow` and §7.8 still read *1 · 100 × 5* under a movement row. The
+    head's tiles share one card parted by hairlines. Inspect and Fix workout (07.2, 07.3) keep *1 · 80 × 5*.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

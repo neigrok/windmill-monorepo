@@ -92,30 +92,43 @@ extension View {
 }
 
 // One set read back: its place, its numbers and, when present, a trailing caption and a second line of the time, the
-// effort and the note.
+// effort and the note. Inline it reads *1 · 80 × 5*; in columns, as workout detail draws it, the place stands in its own
+// column and the numbers take the monospaced face.
 struct SetRow: View {
+  enum Reading { case inline, columns }
   let marker: String
   let set: TrainingSet
   var caption: String?
   var time: String?
+  var reading = Reading.inline
   @Environment(\.dynamicTypeSize) private var typeSize
+  @ScaledMetric(relativeTo: .body) private var markerColumn = 28.0
 
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
+    let effort = Readout.effort(weightKg: set.weightKg, reps: set.reps)
     let second = [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 }
-    VStack(alignment: .leading, spacing: RoomSpace.small) {
-      layout {
-        Text("\(marker) · \(Readout.effort(weightKg: set.weightKg, reps: set.reps))").monospacedDigit()
-          .foregroundStyle(GymPalette.ink)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        if let caption { Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
+    HStack(alignment: .firstTextBaseline, spacing: 0) {
+      if reading == .columns {
+        Text(marker).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(width: markerColumn, alignment: .leading)
       }
-      if !second.isEmpty {
-        Text(second.joined(separator: " · ")).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+      VStack(alignment: .leading, spacing: RoomSpace.small) {
+        layout {
+          Text(reading == .columns ? effort : "\(marker) · \(effort)")
+            .font(reading == .columns ? .body.monospaced() : .body).monospacedDigit()
+            .foregroundStyle(GymPalette.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          if let caption { Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
+        }
+        if !second.isEmpty {
+          Text(second.joined(separator: " · ")).font(reading == .columns ? .footnote : .subheadline).monospacedDigit()
+            .foregroundStyle(GymPalette.inkDim)
+        }
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel((["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", "))
   }
 
   // A set by its place among the sets so far.
@@ -131,7 +144,8 @@ struct SetRow: View {
   }
 }
 
-// Up to three value-over-label tiles, drawing only the facts that are known.
+// Up to three value-over-label tiles, drawing only the facts that are known: on one shared card, parted by hairlines, or
+// each on its own card. A caller drawing its own cards clears the list row's background and insets.
 struct FactTiles: View {
   struct Fact: Equatable {
     let value: String
@@ -139,19 +153,27 @@ struct FactTiles: View {
     var record = false
     var identifier: String?
   }
+  enum Ground { case shared, own }
   let facts: [Fact]
+  var ground = Ground.shared
   @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
-    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.inset))
-      : AnyLayout(HStackLayout(alignment: .top, spacing: RoomSpace.inset))
+    let stacked = typeSize.isAccessibilitySize
+    let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: ground == .own ? RoomSpace.related : RoomSpace.inset))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: ground == .own ? RoomSpace.related : RoomSpace.inset))
     layout {
-      ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { _, fact in
+      ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { index, fact in
+        if ground == .shared && index > 0 && !stacked {
+          Rectangle().fill(GymPalette.line).frame(width: 1, height: 44).accessibilityHidden(true)
+        }
         VStack(alignment: .leading, spacing: RoomSpace.small) {
           Text(fact.value).font(.title3.weight(.semibold)).monospacedDigit()
             .foregroundStyle(fact.record ? GymPalette.record : GymPalette.ink).lineLimit(1).minimumScaleFactor(0.5)
-          Text(fact.label).font(.footnote).foregroundStyle(GymPalette.inkDim)
+          Text(fact.label).font(.caption).foregroundStyle(GymPalette.inkDim)
         }.frame(maxWidth: .infinity, alignment: .leading)
+          .padding(ground == .own ? 14 : 0)
+          .background { if ground == .own { RoundedRectangle(cornerRadius: RoomSpace.cardRadius).fill(GymPalette.card) } }
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier(fact.identifier ?? "")
       }

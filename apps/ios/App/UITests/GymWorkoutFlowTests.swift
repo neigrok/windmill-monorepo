@@ -81,9 +81,9 @@ import Vision
     XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
     let history = app.buttons["gym-session-movement"].firstMatch
     XCTAssertTrue(history.waitForExistence(timeout: 5))
-    XCTAssertTrue(history.label.hasPrefix("Dumbbell squat, kg") && !history.label.contains("kg each"), history.label)
+    XCTAssertTrue(history.label.hasPrefix("Dumbbell squat"), history.label)
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
-    XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
+    XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["1 · 100 × 5", "2 · 100 × 5"])
     try capture(app, "seed-renamed-history-light")
     history.tap()
     XCTAssertTrue(app.navigationBars.staticTexts["Dumbbell squat"].waitForExistence(timeout: 5))
@@ -245,7 +245,7 @@ import Vision
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
     XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
-    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
+    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["1 · 100 × 5", "2 · 100 × 5"])
   }
 
   func testPagerAssemblyAndHeavierBoundary() {
