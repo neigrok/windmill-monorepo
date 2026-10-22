@@ -368,7 +368,8 @@ func testRoutines() {
 An empty gym opens on Coach (`openGymFromJournal(app, opensOn: .coach)`) and a gym holding routines or workouts
 opens on Routines. `launchSignedInCoach` launches with `-coach-fixture`, which signs in and seeds a routine, notes, a
 workout and a waiting proposal once Coach opens; `-gym-log-fixture` seeds a routine, 35 workouts and
-weigh-ins once The log opens.
+weigh-ins once The log opens. The boards outside the app (04.x, `WorkoutCaptures`) set the simulator's appearance for each look, leave a
+workout running with its Live Activity, and add the workout control to Control Center when the simulator lacks it.
 
 Run one capture test, or a whole area by its class, then export it. From this directory, with your own simulator
 and a fresh result path:

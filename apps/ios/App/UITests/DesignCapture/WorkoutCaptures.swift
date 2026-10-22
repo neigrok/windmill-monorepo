@@ -66,6 +66,46 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
+  // Outside the app the system draws in the phone's appearance, so each look sets it before the workout goes to the Home
+  // Screen with its Live Activity running.
+  func leaveForHomeScreen(_ look: Look) -> XCUIApplication {
+    XCUIDevice.shared.appearance = look.appearance == .dark ? .dark : .light
+    let app = launch("workout-live-activity-planned", look)
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 15))
+    let activity = app.otherElements["workout-activity-state"]
+    XCTAssertTrue(activity.waitForValue("active", timeout: 15))
+    XCUIDevice.shared.press(.home)
+    return XCUIApplication(bundleIdentifier: "com.apple.springboard")
+  }
+
+  // The control in Control Center at its 2 × 1 size, added from the controls gallery when the phone does not hold it yet.
+  func testControlCenterControl() {
+    for look in Look.both {
+      let springboard = leaveForHomeScreen(look)
+      springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.005)).press(forDuration: 0.05,
+        thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.6)))
+      let control = springboard.buttons["works.windmill.app.workout"]
+      if !control.waitForExistence(timeout: 3) {
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(forDuration: 1.5)
+        XCTAssertTrue(springboard.buttons["Add a Control"].waitForExistence(timeout: 5)); springboard.buttons["Add a Control"].tap()
+        let search = springboard.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Windmill")
+        let gallery = springboard.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Workout")).firstMatch
+        XCTAssertTrue(gallery.waitForExistence(timeout: 5)); gallery.tap()
+        let placed = springboard.icons["Workout"]
+        XCTAssertTrue(placed.waitForExistence(timeout: 5))
+        let corner = placed.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: placed.frame.width - 9, dy: placed.frame.height - 6))
+        corner.press(forDuration: 0.3, thenDragTo: corner.withOffset(CGVector(dx: placed.frame.width + 20, dy: 0)))
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).tap()
+      }
+      XCTAssertTrue(control.waitForLabel("Log set"))
+      capture("04.1-control-center", look, springboard)
+      XCUIDevice.shared.press(.home)
+      XCUIApplication().terminate()
+    }
+    XCUIDevice.shared.appearance = .light
+  }
+
   func testHiddenWorkout() {
     for look in Look.both {
       let app = launch("workout-planned", look)
