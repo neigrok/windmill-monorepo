@@ -75,7 +75,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Apple now opens sam@example.com."].exists)
     let adoption = app.alerts["Add to your account?"]
     XCTAssertTrue(adoption.waitForExistence(timeout: 10))
-    XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label == %@", "Journal · 1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")).firstMatch.exists)
+    XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label == %@", "This phone has 1 journal page from before you signed in. Your account already has journal pages. Add it, or discard it from this phone.")).firstMatch.exists)
     adoption.buttons["Add"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     assertPage(app, equals: accountPage + "\n\n" + localPage)
@@ -86,7 +86,7 @@ import XCTest
     let adoption = app.alerts["Add to your account?"]
     XCTAssertTrue(adoption.waitForExistence(timeout: 15))
     adoption.buttons["Discard"].tap()
-    let discard = app.alerts["Discard 1 page?"]
+    let discard = app.alerts["Discard 1 journal page?"]
     XCTAssertTrue(discard.waitForExistence(timeout: 5))
     discard.buttons["Cancel"].tap()
     XCTAssertTrue(adoption.waitForExistence(timeout: 5))

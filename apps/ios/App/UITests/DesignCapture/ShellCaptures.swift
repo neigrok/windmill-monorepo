@@ -98,7 +98,7 @@ final class ShellCaptures: DesignCapture {
       XCTAssertTrue(adoption.waitForExistence(timeout: 10))
       capture("shell-adoption-alert", look, app)
       adoption.buttons["Discard"].tap()
-      let discard = app.alerts["Discard 1 page?"]
+      let discard = app.alerts["Discard 1 journal page?"]
       XCTAssertTrue(discard.waitForExistence(timeout: 5))
       capture("shell-discard-adoption-alert", look, app)
       discard.buttons["Cancel"].tap()
@@ -112,6 +112,44 @@ final class ShellCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["Remove Apple"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.staticTexts["You'll sign in with sam@example.com instead. Apple won't open this account."].exists)
       capture("shell-remove-apple-confirmation", look, app)
+    }
+  }
+
+  // The sign-in question over Apple added, in each board's words, and its discard confirmation (23d–23j).
+  func testAdoptionQuestions() {
+    let boards = [
+      ("23d", "23f", 3, 0, "This phone has 3 workouts from before you signed in. Your account already has training. Add them, or discard them from this phone.", "Discard 3 workouts?"),
+      ("23g", "23h", 0, 3, "This phone has 3 journal pages from before you signed in. Your account already has journal pages. Add them, or discard them from this phone.", "Discard 3 journal pages?"),
+      ("23i", "23j", 2, 3, "This phone has 2 workouts and 3 journal pages from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.", "Discard 2 workouts and 3 journal pages?"),
+    ]
+    for (question, confirmation, workouts, pages, message, discardTitle) in boards {
+      for look in Look.both {
+        let app = launch("23d", look, arguments: ["-fake-apple", "-apple-fixture", "linking", "-adoption-workouts", "\(workouts)", "-adoption-pages", "\(pages)"])
+        let adoption = app.alerts["Add to your account?"]
+        XCTAssertTrue(adoption.waitForExistence(timeout: 30))
+        XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label == %@", message)).firstMatch.exists)
+        capture("\(question)-add-to-your-account", look, app)
+        adoption.buttons["Discard"].tap()
+        let discard = app.alerts[discardTitle]
+        XCTAssertTrue(discard.waitForExistence(timeout: 5))
+        XCTAssertTrue(discard.staticTexts["They are deleted from this phone. You can’t undo this."].exists)
+        capture("\(confirmation)-discard", look, app)
+        app.terminate()
+      }
+    }
+  }
+
+  func testSignOutQuestions() {
+    for (board, fixture, message) in [("16c-sign-out", "24b", "Your pages and log stay in your account and leave this phone."),
+      ("16e-sign-out-unconfirmed", "16e", "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.")] {
+      captureBoard(board) { look in
+        let app = launch(fixture, look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+        reach(app.buttons["sign-out"], app).tap()
+        let alert = app.alerts["Sign out?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 15))
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label == %@", message)).firstMatch.exists)
+        return app
+      }
     }
   }
 

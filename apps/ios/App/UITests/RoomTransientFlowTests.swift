@@ -28,7 +28,7 @@ import UIKit
     XCTAssertGreaterThan(Int(pixel[0]), Int(pixel[2]) + 30)
     trash.tap()
     XCTAssertTrue(trash.waitForNonExistence(timeout: 5))
-    let confirmation = app.buttons["Discard workout"]
+    let confirmation = app.alerts["Discard this workout?"].buttons["Discard"]
     XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
     app.cancelConfirmation()
     XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))

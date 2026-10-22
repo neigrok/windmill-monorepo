@@ -54,10 +54,10 @@ final class LogCaptures: DesignCapture {
     session.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     choose("gym-session-discard", from: "gym-session-more", app, capturing: "gym-session-detail-menu", look)
-    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
     capture("gym-log-discard-confirmation", look, app)
     app.cancelConfirmation()
-    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()

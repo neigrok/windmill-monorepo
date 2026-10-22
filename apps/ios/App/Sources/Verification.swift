@@ -54,10 +54,11 @@ enum BoardFixture {
     model.welcome = board.hasPrefix("01") || board.hasPrefix("02")
     guard !model.welcome else { return }
     model.preferences.set(true, forKey: "journalOpened")
-    if board.hasPrefix("23") || board.hasPrefix("24"), let runtime = model.runtime, let server = runtime.auth.fake {
+    if board.hasPrefix("23") || board.hasPrefix("24") || board == "16e", let runtime = model.runtime, let server = runtime.auth.fake {
       let identity = server.identity(email: "sam@example.com")
       try? await model.signIn(identity)
       model.journal.type("An earlier page in Sam's account."); model.journal.save(); model.journal.done()
+      if AdoptionFixture.workouts > 0 { AdoptionFixture.accountTraining(model) }
       await runtime.engine.start(); try? await AppScenario.backedUp(model)
       if board.hasPrefix("24") {
         model.sheet = .you; await model.loadSignInMethods()
@@ -74,8 +75,10 @@ enum BoardFixture {
         }
         return
       }
+      if board == "16e" { await AdoptionFixture.unconfirmed(model, runtime: runtime, server: server); return }
       await model.beginSignOut(); await model.finishSignOut(.discard)
       model.welcome = false; model.preferences.set(true, forKey: "journalOpened")
+      AdoptionFixture.phone(model)
     }
     if board.hasPrefix("05") { return }
     if board == "journal-read-only" { model.working = true; return }
@@ -100,10 +103,12 @@ enum BoardFixture {
       }
       return
     }
-    model.journal.type(board.hasPrefix("21") ? shortProse : prose)
-    model.journal.save(); model.journal.done()
-    if !board.hasPrefix("07-journal") && !board.hasPrefix("06") {
-      model.journal.setScale("mood", 7); model.journal.setScale("energy", 4)
+    if AdoptionFixture.pages > 0 {
+      model.journal.type(board.hasPrefix("21") ? shortProse : prose)
+      model.journal.save(); model.journal.done()
+      if !board.hasPrefix("07-journal") && !board.hasPrefix("06") {
+        model.journal.setScale("mood", 7); model.journal.setScale("energy", 4)
+      }
     }
     if board.hasPrefix("21") {
       model.keepDismissed = true; model.journal.document.mood = nil; model.journal.document.energy = nil
@@ -146,6 +151,59 @@ enum BoardFixture {
       model.email = "you@example.com"; model.codeSentAt = Date(); model.sheet = .code
     }
     if board.hasPrefix("06") { model.journal.editing = true }
+    #endif
+  }
+}
+
+// The sign-in question's boards (23d–23j) and sign-out's (16e): `-adoption-workouts N` finished workouts and
+// `-adoption-pages N` written days left on the phone before sign-in, the account holding training when workouts are due.
+enum AdoptionFixture {
+  static func count(_ name: String) -> Int? {
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let index = arguments.firstIndex(of: "-adoption-" + name), index + 1 < arguments.count else { return nil }
+    return Int(arguments[index + 1])
+  }
+  static var workouts: Int { count("workouts") ?? 0 }
+  static var pages: Int { count("pages") ?? 1 }
+
+  static func accountTraining(_ model: AppModel) {
+    #if DEBUG && targetEnvironment(simulator)
+    var routine = Draft(new: Routine(id: model.runner.mint(Routine.self), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    _ = model.gym.save(&routine)
+    #endif
+  }
+
+  // Finished workouts of one set each on the days before today, and every page but today's on the days before that.
+  static func phone(_ model: AppModel) {
+    #if DEBUG && targetEnvironment(simulator)
+    let now = BoardClock().nowMs(), day: Int64 = 86_400_000
+    for offset in 0..<Int64(workouts) {
+      let id = model.runner.mint(Session.self), start = now - (offset + 1) * day
+      let set = TrainingSet(id: model.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("bench-press"),
+                            weightKg: 60, reps: 8, completedAt: Instant(ms: start + 60_000))
+      _ = try? model.runner.run(StartSession(id: id, startedAt: Instant(ms: start)))
+      _ = try? model.runner.run(AppendSet(set))
+      _ = try? model.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 120_000)))
+    }
+    guard let engine = model.runtime?.engine, pages > 1 else { return }
+    for offset in 1..<pages {
+      let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: now)) - offset * 86_400)
+      let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
+      let document = PageDocument(body: BoardFixture.shortProse)
+      _ = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"]))
+    }
+    #endif
+  }
+
+  // 16e: an account with Apple beside its email whose next three changes the server never confirms, on You.
+  static func unconfirmed(_ model: AppModel, runtime: AppRuntime, server: JournalModelTransport) async {
+    #if DEBUG && targetEnvironment(simulator)
+    await model.authenticateApple { token in try runtime.auth.authorizeFakeApple(token: token) }
+    server.state.withLock { $0.pushesUnansweredAfter = 3_600 }
+    for line in ["A first line.", "A second line.", "A third line."] {
+      model.journal.type(line); model.journal.save(); model.journal.done()
+    }
+    model.sheet = .you; await model.loadSignInMethods()
     #endif
   }
 }

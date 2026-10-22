@@ -86,7 +86,7 @@ import XCTest
     XCTAssertFalse(app.buttons["sign-out"].exists)
   }
 
-  func testSignInWithBothRoomsAsksEachCountBeforeBinding() {
+  func testSignInWithBothRoomsAsksOneQuestionBeforeBinding() {
     let app = launch("shell-adoption-two-rooms")
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
     app.buttons["email-sign-in"].tap()
@@ -100,15 +100,14 @@ import XCTest
     code.tap(); code.typeText("482913")
     let adoption = app.alerts["Add to your account?"]
     XCTAssertTrue(adoption.waitForExistence(timeout: 15))
-    XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Journal · 1 page")).firstMatch.exists)
-    adoption.buttons["Add"].tap()
-    let gymQuestion = adoption.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Gym · 1 routine")).firstMatch
-    XCTAssertTrue(gymQuestion.waitForExistence(timeout: 10))
+    let question = adoption.staticTexts.matching(NSPredicate(format: "label == %@", "This phone has 1 routine and 1 journal page from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.")).firstMatch
+    XCTAssertTrue(question.exists)
     adoption.buttons["Discard"].tap()
-    let discard = app.alerts["Discard 1 routine?"]
+    let discard = app.alerts["Discard 1 routine and 1 journal page?"]
     XCTAssertTrue(discard.waitForExistence(timeout: 5))
+    XCTAssertTrue(discard.staticTexts["They are deleted from this phone. You can’t undo this."].exists)
     discard.buttons["Cancel"].tap()
-    XCTAssertTrue(gymQuestion.waitForExistence(timeout: 5))
+    XCTAssertTrue(question.waitForExistence(timeout: 5))
     adoption.buttons["Discard"].tap()
     XCTAssertTrue(discard.waitForExistence(timeout: 5))
     discard.buttons["Discard"].tap()

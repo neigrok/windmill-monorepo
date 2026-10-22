@@ -381,12 +381,13 @@ import XCTest
     let row = visibleSessionRow(app), id = row.identifier
     openFirstSession(app)
     choose("gym-session-discard", from: "gym-session-more", app)
-    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    let confirmation = app.alerts["Discard this workout?"].buttons["Discard"]
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
     app.cancelConfirmation()
-    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].exists)
     choose("gym-session-discard", from: "gym-session-more", app)
-    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5)); app.buttons["Discard workout"].tap()
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
@@ -521,8 +522,8 @@ import XCTest
     snapshot("log-actions-\(appearance)", app: app)
     discard.tap()
     XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
-    app.buttons["Discard workout"].tap()
+    XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
+    app.alerts["Discard this workout?"].buttons["Discard"].tap()
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }

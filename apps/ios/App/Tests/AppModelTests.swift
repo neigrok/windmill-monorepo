@@ -14,15 +14,14 @@ import SyncTesting
 @testable import Windmill
 
 @Suite @MainActor struct AppModelTests {
-  @Test func ordinaryBackupPreservesAnUnfinishedAdoptionAndItsAnswers() async throws {
+  @Test func ordinaryBackupPreservesAnUnfinishedAdoption() async throws {
     let (_, owner, model, localRoutine) = try await twoRooms()
-    await model.adopt(.add)
     let session = try #require(model.signInSession)
-    let decision = try #require(model.currentAdoption)
+    let pending = model.pendingAdoptions
     #expect(!model.syncStarted && !model.restoringSignIn && model.pendingSignIn == nil)
     await model.resumeBackup()
-    #expect(model.signInSession === session && model.currentAdoption == decision)
-    #expect(model.adoptionAnswers == ["journal": .add] && model.account == nil && model.sheet == .adoption)
+    #expect(model.signInSession === session && model.pendingAdoptions == pending && pending.map(\.product) == ["journal", "gym"])
+    #expect(model.adoptionAnswers.isEmpty && model.account == nil && model.sheet == .adoption)
     await model.adopt(.add)
     #expect(model.account == owner.account && model.sheet == nil && !model.editorReadOnly)
     #expect(model.journal.document.body == "Local page" && model.gym.routines.contains { $0.id == localRoutine })
@@ -83,14 +82,14 @@ import SyncTesting
     return id
   }
 
-  func twoRooms() async throws -> (JournalModelTransport, AuthIdentity, AppModel, ID<Routine>) {
+  func twoRooms(telemetry: any Telemetry = NoopTelemetry()) async throws -> (JournalModelTransport, AuthIdentity, AppModel, ID<Routine>) {
     let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
     let owner = server.identity(email: "two-rooms@example.com")
     try await existing.signIn(owner)
     existing.journal.type("Account page"); existing.journal.done()
     _ = try routine(existing, name: "Account routine")
     await existing.beginSignOut(); await existing.finishSignOut(.keep)
-    let local = try LineageFlowTests().fixture(server)
+    let local = try LineageFlowTests().fixture(server, telemetry: telemetry)
     local.journal.type("Local page"); local.journal.done()
     let localRoutine = try routine(local, name: "Local routine")
     try await local.signIn(server.identity(email: "two-rooms@example.com"))
@@ -132,7 +131,7 @@ import SyncTesting
       if id == finished { _ = try local.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 3_000))) }
     }
     try await local.signIn(server.identity(email: identity.email))
-    #expect(local.currentAdoption?.product == "gym")
+    #expect(local.pendingAdoptions.map(\.product) == ["gym"])
     await local.adopt(.add)
     await local.runtime?.engine.start()
     try await workoutSettled(local, finished)
@@ -176,24 +175,27 @@ import SyncTesting
     remote.gym.stop(); reopened.gym.stop()
   }
 
-  @Test func sequentialDecisionsCountBothRoomsAndBindOnlyAfterLastAnswer() async throws {
-    let (_, owner, model, localRoutine) = try await twoRooms()
+  @Test func oneQuestionNamesBothRoomsAndOneAnswerBindsThem() async throws {
+    let recorder = TelemetryRecorder()
+    let (_, owner, model, localRoutine) = try await twoRooms(telemetry: recorder)
     #expect(model.account == nil && model.editorReadOnly && model.sheet == .adoption)
-    #expect(model.currentAdoption?.product == "journal" && model.currentAdoption?.counts["page"] == 1)
-    await model.adopt(.add)
-    #expect(model.account == nil && model.editorReadOnly && model.sheet == .adoption)
-    #expect(model.adoptionAnswers == ["journal": .add])
-    #expect(model.currentAdoption?.product == "gym" && model.currentAdoption?.counts == ["routine": 1])
+    #expect(model.pendingAdoptions.map(\.product) == ["journal", "gym"] && model.adoptionCounts[Page.type] == 1)
+    #expect(model.adoptionAlertTitle == "Add to your account?")
+    #expect(model.adoptionAlertMessage == "This phone has 1 routine and 1 journal page from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.")
+    model.sheet = .discardAdoption
+    #expect(model.adoptionAlertTitle == "Discard 1 routine and 1 journal page?")
+    #expect(model.adoptionAlertMessage == "They are deleted from this phone. You can’t undo this.")
     await model.adopt(.discard)
     #expect(model.account == owner.account && !model.editorReadOnly && model.sheet == nil)
     #expect(model.adoptionAnswers.isEmpty && model.preferences.data(forKey: "roomAdoption") == nil)
     #expect(!model.gym.routines.contains { $0.id == localRoutine })
-    #expect(try model.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:").members.count } == 1)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_adoption_answered" }.map(\.properties) } ==
+            [["room": "journal", "action": "discard"], ["room": "gym", "action": "discard"]])
   }
 
   @Test func partialAnswerSurvivesModelRelaunchWithoutAskingJournalAgain() async throws {
     let (_, owner, model, localRoutine) = try await twoRooms()
-    await model.adopt(.add)
+    try model.saveAdoptionAnswers(["journal": .add], session: try #require(model.signInSession))
     let restored = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
     await restored.start()
     defer {
@@ -201,27 +203,26 @@ import SyncTesting
     }
     #expect(restored.account == nil && restored.sheet == .adoption && restored.editorReadOnly)
     #expect(restored.adoptionAnswers == ["journal": .add])
-    #expect(restored.currentAdoption?.product == "gym" && restored.currentAdoption?.counts == ["routine": 1])
+    #expect(restored.pendingAdoptions.map(\.product) == ["gym"] && restored.adoptionCounts == ["routine": 1])
     await restored.adopt(.add)
-    #expect(restored.account == owner.account && restored.sheet == nil && restored.currentAdoption == nil)
+    #expect(restored.account == owner.account && restored.sheet == nil && restored.pendingAdoptions.isEmpty)
     #expect(restored.gym.routines.contains { $0.id == localRoutine })
   }
 
-  @Test func changedGymWorkRevokesItsAnswerAndPreservesJournalApproval() async throws {
+  @Test func changedGymWorkAsksAgainAboutTheGymAloneAndKeepsTheJournalAnswer() async throws {
     let (_, _, model, _) = try await twoRooms()
-    await model.adopt(.add)
     _ = try routine(model, name: "Another local routine")
     await model.adopt(.discard)
     #expect(model.account == nil && model.sheet == .adoption && model.error != nil)
-    #expect(model.adoptionAnswers == ["journal": .add])
-    #expect(model.currentAdoption?.product == "gym" && model.currentAdoption?.counts == ["routine": 2])
+    #expect(model.adoptionAnswers == ["journal": .discard])
+    #expect(model.pendingAdoptions.map(\.product) == ["gym"] && model.adoptionCounts == [Routine.type: 2])
     #expect(model.gym.routines.count == 2)
     await model.adopt(.discard)
     #expect(model.account != nil && model.sheet == nil)
     #expect(!model.gym.routines.contains { $0.name == "Local routine" || $0.name == "Another local routine" })
   }
 
-  @Test func gymAdoptionNamesWeighInsAndPreferencesInTheDiscardConfirmation() async throws {
+  @Test func gymAdoptionNamesWeighInsButNeverPreferencesOrMovementNames() async throws {
     let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
     try await existing.signIn(server.identity(email: "gym-counts@example.com"))
     _ = try routine(existing, name: "Account routine")
@@ -238,12 +239,12 @@ import SyncTesting
     _ = try #require(preferencesReceipt)
     _ = try #require(try model.runner.run(RenameExercise(ID("back-squat"), name: "Renamed squat")).receipt)
     try await model.signIn(server.identity(email: "gym-counts@example.com"))
-    #expect(model.account == nil && model.currentAdoption?.product == "gym")
-    #expect(model.currentAdoption?.counts == [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1])
-    #expect(model.adoptionSummary == "1 weigh-in · 1 movement name · 1 training preference")
+    #expect(model.account == nil && model.pendingAdoptions.map(\.product) == ["gym"])
+    #expect(model.adoptionCounts == [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1])
+    #expect(model.adoptionAlertMessage == "This phone has 1 weigh-in from before you signed in. Your account already has training. Add it, or discard it from this phone.")
     model.sheet = .discardAdoption
-    #expect(model.adoptionAlertTitle == "Discard 1 weigh-in · 1 movement name · 1 training preference?")
-    #expect(AppModel.summary([Page.type: 1, JournalState.type: 1]) == "1 page")
+    #expect(model.adoptionAlertTitle == "Discard 1 weigh-in?")
+    #expect(model.adoptionAlertMessage == "It is deleted from this phone. You can’t undo this.")
   }
 
   @Test func existingGymAloneSuppressesIntroductionAndWelcome() throws {
@@ -376,8 +377,8 @@ import SyncTesting
             [["screen": "you", "action": "sign_out"], ["screen": "you", "action": "cancel"]])
     #expect([0, 1, 3].map(AppModel.signOutMessage(unsent:)) == [
       "Your pages and log stay in your account and leave this phone.",
-      "1 change hasn't been confirmed by your account yet. Keep it on this phone until you sign back in, or discard it from this phone. Everything else is in your account and leaves this phone.",
-      "3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back in, or discard them from this phone. Everything else is in your account and leaves this phone."])
+      "1 change hasn’t been confirmed by your account yet. Keep it on this phone until you sign in again, or discard it from this phone.",
+      "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."])
   }
 
   // An answer the sign-out cannot carry out closes the question, keeps the account and says why under Sign out until it is tapped again.

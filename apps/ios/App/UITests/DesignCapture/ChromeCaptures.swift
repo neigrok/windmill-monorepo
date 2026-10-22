@@ -143,10 +143,10 @@ final class ChromeCaptures: DesignCapture {
     let discard = log.buttons["trash-swipe"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
     XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(log.buttons["Discard workout"].waitForExistence(timeout: 5))
+    XCTAssertTrue(log.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
     capture("gym-layout-log-discard-confirmation", look, log)
     log.cancelConfirmation()
-    XCTAssertTrue(log.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(log.alerts["Discard this workout?"].waitForNonExistence(timeout: 5))
 
     let coach = launchSignedInCoach(look)
     let question = coach.descendants(matching: .any)["coach-question"]

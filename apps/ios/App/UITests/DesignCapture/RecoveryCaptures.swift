@@ -39,9 +39,9 @@ final class RecoveryCaptures: DesignCapture {
         }
         capture("gym-recovery-more-menu", look, app, settle: 0.6)
         app.buttons["recovery-discard"].tap()
-        XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
         capture("gym-recovery-discard-confirmation", look, app)
-        app.buttons["Discard workout"].tap()
+        app.alerts["Discard this workout?"].buttons["Discard"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.buttons["gym-log-undo"].exists)
         continue
@@ -73,6 +73,19 @@ final class RecoveryCaptures: DesignCapture {
   }
   func testInspect() {
     captureBoard("07.2-inspect") { look in openOverlap(look) }
+  }
+  func testDiscardThisWorkout() {
+    captureBoard("07.5-discard-this-workout") { look in
+      let app = openOverlap(look)
+      for _ in 0..<3 where !app.buttons["recovery-discard"].exists {
+        app.buttons["recovery-more"].tap(); _ = app.buttons["recovery-discard"].waitForExistence(timeout: 5)
+      }
+      app.buttons["recovery-discard"].tap()
+      let alert = app.alerts["Discard this workout?"]
+      XCTAssertTrue(alert.buttons["Discard"].waitForExistence(timeout: 5))
+      XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "This deletes the workout and its [0-9]+ sets?\\. You can’t undo this\\.")).firstMatch.exists)
+      return app
+    }
   }
   func testFixWorkout() {
     captureBoard("07.3-fix-workout") { look in

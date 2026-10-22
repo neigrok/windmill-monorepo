@@ -56,7 +56,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     account and leaves this phone.*; iOS names pages and log) and ask Keep / Discard with *3 changes
     haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or
     discard them from this phone.* Android signs out at once and always keeps (`plat/you/YouSheet.kt`,
-    `store/GymEngineSession.kt:122`); iOS asks with longer words (`AccountSheet.swift:80-90`).
+    `store/GymEngineSession.kt:122`); iOS asks in these words (`AppModel.signOutMessage`).
   - The web asks for journal and gym with the count, Keep and Discard (`SyncDecisions.jsx`), but on
     sign-out or any change of account it wipes the account's roadmap trees from the browser,
     unsynced edits included, with no warning: `accountChange.js` calls each product's
@@ -83,10 +83,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     training. Add them, or discard them from this phone.* / *Cancel sign-in* · *Discard* · *Add*, and
     its confirm *Discard 3 workouts?* / *They are deleted from this phone. You can’t undo this.* (Shell
     iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.4 `1254:33533`, 07.5 `1254:33632`); the nouns follow
-    what the phone holds (12n). Both codes word
-    it differently (`AppModel.swift:848-856`, `AccountSheet.swift:547` *Not now*;
-    `app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says signed-out work
-    *moves to the account on sign-in* with no question.
+    what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
+    differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
+    signed-out work *moves to the account on sign-in* with no question.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in; `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: any`, so a signed-out Coach turn could write one. Rule which
@@ -143,12 +142,14 @@ Apple sign-in is off in every build, so no surface draws it yet.
 - **8g · Web Google forks the same way.** On the web, a Google address that differs from the
   account's creates a second account with no question. Decide whether Continue with Google asks
   *Already on Windmill?* too.
-- **8h · The room in the sign-in question.** The sign-in question asks one room at a time: *Add to
-  your account?* · *2 workouts · 1 routine from before you signed in are only on this phone, and your
-  account already has training. Add them, or discard them for good.* iOS asks Journal, then Gym,
-  and prefixes the room to the message: *Gym · 2 workouts · 1 routine from before you signed in …*
-  (`AppModel.swift`, `adoptionAlertMessage`). Board 23d shows a journal question only. Rule whether
-  a question names its room when one sign-in asks two, then align the boards and the app.
+- **8h · The room in the sign-in question.** Canon (Shell iOS 23g–23j): one question names every room
+  due by kind, *This phone has 2 workouts and 3 journal pages from before you signed in. Your account
+  already has training and journal pages. Add them, or discard them from this phone.*, and one answer
+  covers them all; iOS follows it (`AdoptionQuestion.swift`). The web asks one room at a time in the
+  older words, *… are only on this device, and your account already has … Add them, or discard them
+  for good.* (`web/src/shell/auth/SyncDecisions.jsx`). Two iOS states are not drawn: one item confirms *It is
+  deleted from this phone.*, and a phone holding only unnamed kinds (settings, movement names) counts
+  its records as changes, *This phone has 1 change from before you signed in.*
 
 ## iOS
 
@@ -784,10 +785,11 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
-  The sign-in question: 7d. iOS says *This permanently removes the workout and its sets.*
-  (`Workout/WorkoutReceipt.swift:186-193`), *This permanently removes the copy saved on this phone.*
-  (`Recovery/WorkoutInspectScreen.swift:52-58`) and *This permanently removes the conversation.* /
-  *Delete conversation* (`Coach/CoachHistory.swift:124-131`); Android asks nothing (11b).
+  The sign-in question: 7d. iOS asks these words through one alert for every workout door
+  (`Gym/Components/GymRows.swift`, `DiscardWorkoutAlert`), except Inspect's stranded sets, which are
+  not drawn: *Discard 2 sets* still asks *This permanently removes the copy saved on this phone.*
+  (`Recovery/WorkoutInspectScreen.swift`). A workout with no sets is not drawn either; iOS says *This
+  deletes the workout. You can’t undo this.* Android asks nothing (11b).
 - **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight
   is · Total → Each dumbbell*; the day's cap reads *You can ask again in about 2 hours.* with *Use your
   own AI agent*; *This Windmill does not have Coach. You can still read your log.* with no doors;

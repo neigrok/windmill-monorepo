@@ -141,7 +141,6 @@ struct WorkoutReceipt: View {
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
   @State var discard = false
-  @State var discardConfirmed = false
   // The receipt opens over the workout's detail at full height only, with no grabber, so the detail's tiles never show
   // beside its own; its title and subtitle head the page above the tiles (03.7).
   var body: some View {
@@ -183,23 +182,10 @@ struct WorkoutReceipt: View {
       }.modifier(GymPage()).toolbar(.hidden, for: .navigationBar)
         .reachBand(onSurface: true) { band }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.hidden)
-      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
-        Button("Discard workout", role: .destructive) {
-          discardConfirmed = true
-          guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
-          gym.workout.handoff = .detail(nil); dismiss()
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: { Text("This permanently removes the workout and its sets.") }
-      .onChange(of: discard) { _, shown in
-        if shown {
-          discardConfirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "discard", "state": "shown"])
-        } else if !discardConfirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "cancel", "outcome": "cancelled"])
-        }
+      .discardWorkoutAlert(gym, screen: "workout", isPresented: $discard, sets: receipt.sets.count) {
+        guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
+        gym.workout.handoff = .detail(nil); dismiss()
       }
-      .onChange(of: gym.account) { _, _ in discard = false }
       .task { await receipt.loadReview(gym) }
   }
 

@@ -180,7 +180,7 @@ import Vision
     app.buttons["workout-finish"].tap()
     let discard = app.buttons["workout-discard-receipt"]
     XCTAssertTrue(discard.waitForExistence(timeout: 10)); discard.tap()
-    let confirmation = app.buttons["Discard workout"]
+    let confirmation = app.alerts["Discard this workout?"].buttons["Discard"]
     XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
     app.cancelConfirmation()
     XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))

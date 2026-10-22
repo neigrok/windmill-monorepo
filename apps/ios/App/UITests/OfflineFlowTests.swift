@@ -26,7 +26,7 @@ import XCTest
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     ready(code); code.tap(); code.typeText("482913")
-    let later = app.alerts["Add to your account?"].buttons["Not now"]
+    let later = app.alerts["Add to your account?"].buttons["Cancel sign-in"]
     XCTAssertTrue(later.waitForExistence(timeout: 10)); later.tap()
     ready(app.buttons["room-menu"])
     app.terminate()

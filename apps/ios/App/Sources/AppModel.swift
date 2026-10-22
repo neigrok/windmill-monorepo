@@ -208,9 +208,6 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var adoptionCount: Int { adoptionCounts["page"] ?? 0 }
-  var adoptionIsSingle: Bool { adoptionCounts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
-
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
 
@@ -373,7 +370,7 @@ final class AppModel {
       let resumed = restoring ? try await runtime.engine.resumeSignIn() : nil
       try Task.checkCancellation()
       setSignInSession(resumed)
-      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed) }
+      if let resumed, !resumed.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(resumed) }
       if resumed?.isComplete != false, let active = try runtime.account(), active == preferences.string(forKey: "coachAdoptionAccount") {
         try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard"))
       }
@@ -685,7 +682,7 @@ final class AppModel {
     do {
       try? await runtime.installation.bind(account: identity.account, token: identity.token)
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
-      if let session = signInSession, !session.isComplete, currentAdoption == nil { try await completeAdoption(session) }
+      if let session = signInSession, !session.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(session) }
       if signInSession?.isComplete == true { try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard")) }
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
@@ -803,12 +800,12 @@ final class AppModel {
   // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
   static let signOutFailed = "Couldn't sign out. Try again."
 
-  // Sign out asks one question, and when the account has not confirmed some changes it says how many.
+  // Sign out asks one question, and when the account has not confirmed some changes it says how many (16c, 16e).
   static func signOutMessage(unsent count: Int) -> String {
     if count == 0 { return "Your pages and log stay in your account and leave this phone." }
-    let changes = count == 1 ? "1 change hasn't" : "\(count) changes haven't"
+    let changes = count == 1 ? "1 change hasn’t" : "\(count) changes haven’t"
     let them = count == 1 ? "it" : "them"
-    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign back in, or discard \(them) from this phone. Everything else is in your account and leaves this phone."
+    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign in again, or discard \(them) from this phone."
   }
 
   struct SavedAdoption: Codable {
@@ -818,42 +815,32 @@ final class AppModel {
     let answers: [String: String]
   }
 
-  var currentAdoption: SignedOutDecision? {
+  // Every room's decision still unanswered; one answer settles them all.
+  var pendingAdoptions: [SignedOutDecision] {
     let decisions = signInSession?.decisions ?? []
-    return Room.allCases.compactMap { room in decisions.first { $0.product == room.rawValue && adoptionAnswers[$0.product] == nil } }.first
+    return Room.allCases.compactMap { room in decisions.first { $0.product == room.rawValue && adoptionAnswers[$0.product] == nil } }
   }
 
-  var adoptionSummary: String {
-    Self.summary(adoptionCounts)
-  }
-
+  // What the pending rooms hold on this phone, by type; the journal's pages are its written days.
   var adoptionCounts: [String: Int] {
-    guard let decision = currentAdoption else { return [:] }
-    var counts = decision.counts
-    if decision.product == "journal", let journalAdoptionPages { counts["page"] = journalAdoptionPages }
-    return counts
+    pendingAdoptions.reduce(into: [:]) { counts, decision in
+      counts.merge(decision.counts, uniquingKeysWith: +)
+      if decision.product == "journal", let journalAdoptionPages { counts[Page.type] = journalAdoptionPages }
+    }
   }
 
-  static func summary(_ counts: [String: Int]) -> String {
-    let kinds = [(Page.type, "page", "pages"), (Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
-      (TrainingSet.type, "set", "sets"), (WeighIn.type, "weigh-in", "weigh-ins"), (Note.type, "note", "notes"),
-      (Exercise.type, "movement", "movements"), (ExerciseName.type, "movement name", "movement names"),
-      (GymPreferences.type, "training preference", "training preferences"), (Proposal.type, "proposal", "proposals")]
-    return kinds.compactMap { kind in
-      guard let count = counts[kind.0], count > 0 else { return nil }
-      return "\(count) \(count == 1 ? kind.1 : kind.2)"
-    }.joined(separator: " · ")
+  var adoptionQuestion: AdoptionQuestion {
+    AdoptionQuestion(counts: adoptionCounts, rooms: Set(pendingAdoptions.compactMap { Room(rawValue: $0.product) }))
   }
 
-  var adoptionAlertTitle: String { identityTaken ? "Apple ID already in use" : sheet == .discardAdoption ? "Discard \(adoptionSummary)?" : "Add to your account?" }
+  var adoptionAlertTitle: String {
+    if identityTaken { return "Apple ID already in use" }
+    return sheet == .discardAdoption ? adoptionQuestion.discardTitle : adoptionQuestion.title
+  }
   var adoptionAlertMessage: String {
     if identityTaken { return AuthRefusal.identityTaken.message }
-    if sheet == .discardAdoption { return "They never reached an account, and deleting them from this phone can't be undone." }
-    guard let decision = currentAdoption else { return "Your choices are kept. Try Add again to finish signing in." }
-    let room = decision.product == "journal" ? "Journal" : "Gym"
-    let accountData = decision.product == "journal" ? "pages" : "training"
-    let one = adoptionIsSingle
-    return "\(room) · \(adoptionSummary) from before you signed in \(one ? "is" : "are") only on this phone, and your account already has \(accountData). Add \(one ? "it" : "them"), or discard \(one ? "it" : "them") for good."
+    if pendingAdoptions.isEmpty { return "Your choices are kept. Try Add again to finish signing in." }
+    return sheet == .discardAdoption ? adoptionQuestion.discardMessage : adoptionQuestion.message
   }
 
   func setSignInSession(_ session: SignInSession?) {
@@ -921,7 +908,7 @@ final class AppModel {
   func adopt(_ answer: LineageAnswer) async {
     guard !accountTransition, var session = signInSession else { return }
     let generation = authGeneration
-    if currentAdoption == nil {
+    if pendingAdoptions.isEmpty {
       accountTransition = true
       defer { if authGeneration == generation { accountTransition = false } }
       guard flushRooms() else { return }
@@ -930,7 +917,7 @@ final class AppModel {
       catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Try again." } }
       return
     }
-    guard let decision = currentAdoption else { return }
+    let pending = pendingAdoptions
     accountTransition = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false } }
     do {
@@ -940,16 +927,16 @@ final class AppModel {
           try Task.checkCancellation()
           session = recounted; setSignInSession(recounted)
         }
-        if !session.isComplete, currentAdoption == nil { try await completeAdoption(session); return }
+        if !session.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(session); return }
         if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
       }
-      guard currentAdoption == decision else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
-      var answers = adoptionAnswers; answers[decision.product] = answer
+      guard pendingAdoptions == pending else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
+      var answers = adoptionAnswers
+      for decision in pending { answers[decision.product] = answer }
       try saveAdoptionAnswers(answers, session: session)
-      telemetry.event("room_adoption_answered", properties: ["room": decision.product, "action": answer.rawValue])
+      for decision in pending { telemetry.event("room_adoption_answered", properties: ["room": decision.product, "action": answer.rawValue]) }
       choose(answer == .add ? "add" : "discard", screen: "adoption")
       error = nil
-      if currentAdoption != nil { sheet = .adoption; return }
       try await completeAdoption(session)
     } catch EngineError.signInChanged {
       await recountAdoption()
@@ -961,7 +948,7 @@ final class AppModel {
       let resumed = try await runtime?.engine.resumeSignIn()
       try Task.checkCancellation()
       if let resumed { setSignInSession(resumed) }
-      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed); return }
+      if let resumed, !resumed.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(resumed); return }
       sheet = .adoption; error = "The work changed. Choose again for the current counts."
     } catch {
       guard !Task.isCancelled else { return }

@@ -98,9 +98,9 @@ final class CoachCaptures: DesignCapture {
       let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
       XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
       XCTAssertTrue(app.buttons["trash-swipe"].waitForExistence(timeout: 5)); app.buttons["trash-swipe"].tap()
-      XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.alerts["Delete this conversation?"].buttons["Delete"].waitForExistence(timeout: 5))
       capture("gym-coach-history-delete-confirmation", look, app)
-      app.buttons["Delete conversation"].tap()
+      app.alerts["Delete this conversation?"].buttons["Delete"].tap()
       XCTAssertTrue(conversation.waitForNonExistence(timeout: 5))
       XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
       capture("gym-coach-history-deleted", look, app)

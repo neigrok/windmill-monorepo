@@ -85,9 +85,45 @@ struct TrashSwipe: ViewModifier {
   }
 }
 
+// The one question every door that discards a workout asks (07.5): the receipt, The log's swipe and menu, workout detail
+// and Inspect's ⋯. It records the question shown and a cancel on `screen`, and closes when the account changes.
+struct DiscardWorkoutAlert: ViewModifier {
+  let gym: GymModel
+  let screen: String
+  @Binding var isPresented: Bool
+  let sets: Int
+  let discard: () -> Void
+  @State var confirmed = false
+
+  static func message(sets: Int) -> String {
+    (sets == 0 ? "This deletes the workout." : "This deletes the workout and its \(GymCount.of(sets, "set")).") + " You can’t undo this."
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .alert("Discard this workout?", isPresented: $isPresented) {
+        Button("Discard", role: .destructive) { confirmed = true; discard() }
+        Button("Cancel", role: .cancel) {}
+      } message: { Text(Self.message(sets: sets)) }
+      .onChange(of: isPresented) { _, shown in
+        if shown {
+          confirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "discard", "state": "shown"])
+        } else if !confirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in isPresented = false }
+  }
+}
+
 extension View {
   func trashSwipe(_ act: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
     modifier(TrashSwipe(act: act, enabled: enabled, action: action))
+  }
+
+  func discardWorkoutAlert(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {
+    modifier(DiscardWorkoutAlert(gym: gym, screen: screen, isPresented: isPresented, sets: sets, discard: discard))
   }
 }
 

@@ -535,7 +535,7 @@ import SyncTesting
     #expect(workout.logSet())
     let original = workout.sets, stale = try #require(workout.activityOffer())
     try await local.signIn(server.identity(email: identity.email))
-    #expect(local.currentAdoption?.product == "gym")
+    #expect(local.pendingAdoptions.map(\.product) == ["gym"])
     if deferred { local.cancelAuthentication(); local.sheet = nil }
     connectivity.set(online: false)
     workout.reconcile()
@@ -558,8 +558,8 @@ import SyncTesting
     connectivity.set(online: true)
     await local.retryAuthenticatedSignIn()
     await local.adopt(.add)
-    #expect(local.account == nil && local.currentAdoption?.counts["set"] == 2)
-    for _ in 0..<3 where local.currentAdoption != nil { await local.adopt(.add) }
+    #expect(local.account == nil && local.adoptionCounts["set"] == 2)
+    for _ in 0..<3 where !local.pendingAdoptions.isEmpty { await local.adopt(.add) }
     #expect(local.account == identity.account)
     await local.runtime?.engine.start()
     #expect(await WorkoutStateTests.until {
@@ -590,12 +590,12 @@ import SyncTesting
     #expect(workout.logSet()); #expect(workout.logSet())
     let deleted = try #require(workout.sets.first)
     try await local.signIn(server.identity(email: identity.email))
-    #expect(local.currentAdoption?.product == "gym")
+    #expect(local.pendingAdoptions.map(\.product) == ["gym"])
     #expect(local.gym.run(DeleteSet(deleted.id))?.receipt != nil)
     workout.reconcile()
     let retained = workout.sets
     #expect(retained.count == 1 && !retained.contains { $0.id == deleted.id })
-    for _ in 0..<4 where local.currentAdoption != nil { await local.adopt(.add) }
+    for _ in 0..<4 where !local.pendingAdoptions.isEmpty { await local.adopt(.add) }
     #expect(local.account == identity.account)
     #expect(!local.gym.sets.contains { $0.id == deleted.id })
     await local.runtime?.engine.start()
@@ -641,7 +641,7 @@ import SyncTesting
     await remote.runtime?.engine.start()
     try await AppModelTests().workoutSettled(remote, accountWorkout)
     await delayed.gate.release(); try await signIn.value
-    #expect(local.account == identity.account && local.currentAdoption == nil)
+    #expect(local.account == identity.account && local.pendingAdoptions.isEmpty)
     await local.runtime?.engine.start()
     #expect(await WorkoutStateTests.until {
       local.refresh()

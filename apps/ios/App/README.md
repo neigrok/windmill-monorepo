@@ -22,7 +22,10 @@ An unbound fake Apple identity returns a memory-only ticket before any account o
 `expired` advances that ticket past its 15-minute lifetime; `taken` binds Apple to an account with
 data; `empty` binds it to an empty account whose door can move. Boards `23-start`, `23a`–`23d` and
 `24a`–`24d` seed the existing email account through the real engine. `23-start` opens Keep for full
-interaction; `23c` holds the linked receipt for screenshot inspection. A new address plus a valid
+interaction; `23c` holds the linked receipt for screenshot inspection. `-adoption-workouts N` and
+`-adoption-pages N` set what the phone holds before `23d`'s sign-in (one page by default; workouts give
+the account training too), so it asks the sign-in question of 23d–23j. Board `16e` leaves three
+changes the server never confirms, with You open on Sign out. A new address plus a valid
 code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
 the first authenticated engine hello after an Apple ticket and freezes the authentication backoff
 clock, so Try again exercises manual recovery without racing automatic recovery or reusing the
@@ -47,8 +50,9 @@ for local replay verification; the final report contains no credential.
 
 `AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
 subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay
-local until adoption. Occupied accounts ask Journal then Gym with counts by kind; Add/Discard
-answers persist against the exact counted work and complete together. Changed work asks again.
+local until adoption. Occupied accounts ask one question naming both rooms' work by kind
+(`AdoptionQuestion`); one Add/Discard answers every room, persists against the exact counted work and
+completes together. Changed work asks again about the room that changed.
 Sign-out flushes both rooms, releases held deletes, and keeps dormant work only for its account.
 
 Routine-removal reviews commit their proposal snapshot beside the Apply command in the replica's
@@ -269,7 +273,7 @@ Offline boundary observations:
 | Boundary | UI behavior and limit |
 |---|---|
 | Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
-| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
+| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Cancel sign-in. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
 | Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
 | Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity; a reply that is not a stream and not finished is asked again after 1, 2, 4, 8 and then every 16 seconds. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |

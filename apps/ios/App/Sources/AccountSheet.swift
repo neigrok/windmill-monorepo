@@ -544,9 +544,9 @@ struct AccountConfirmation: UIViewControllerRepresentable {
         button("Cancel", style: .cancel) { model.choose("cancel", screen: "discard_adoption"); model.sheet = .adoption }
         button("Discard", style: .destructive) { await model.adopt(.discard) }
       } else {
-        button("Not now", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
         button("Add") { await model.adopt(.add) }
-        button("Discard") { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
+        button("Discard", style: .destructive) { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
+        button("Cancel sign-in", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
       }
       host.present(alert, animated: true)
     }

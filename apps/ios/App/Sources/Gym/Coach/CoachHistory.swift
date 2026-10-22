@@ -109,14 +109,14 @@ struct CoachHistoryScreen: View {
         }
       }
       .onChange(of: gym.account) { _, _ in deletion = nil }
-      .confirmationDialog("Delete this conversation?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), titleVisibility: .visible, presenting: deletion) { row in
-        Button("Delete conversation", role: .destructive) {
+      .alert("Delete this conversation?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), presenting: deletion) { row in
+        Button("Delete", role: .destructive) {
           deletionConfirmed = true
           Task { await history.remove(row) }
           deletion = nil
         }
         Button("Cancel", role: .cancel) {}
-      } message: { _ in Text("This permanently removes the conversation.") }
+      } message: { _ in Text("You can’t undo this.") }
       .task(id: gym.account) { await history.load() }
       .reachBand {
         GymTransient(gym: gym, message: coach.error ?? history.error,

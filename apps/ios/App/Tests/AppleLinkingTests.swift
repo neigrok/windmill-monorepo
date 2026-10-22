@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import UIKit
+import JournalDomain
 import SyncReplica
 import Synchronization
 @testable import Windmill
@@ -103,11 +104,11 @@ import Synchronization
     #expect(model.sheet == .appleAdded && model.account == nil && model.signInSession == nil)
     #expect(model.appleReceiptEmail == "sam@example.com" && model.appleTicket == nil && model.editorReadOnly)
     await verification.value
-    #expect(model.sheet == .adoption && model.adoptionCount == 1)
-    #expect(model.adoptionAlertMessage == "Journal · 1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")
+    #expect(model.sheet == .adoption && model.adoptionCounts[Page.type] == 1)
+    #expect(model.adoptionAlertMessage == "This phone has 1 journal page from before you signed in. Your account already has journal pages. Add it, or discard it from this phone.")
     if !add {
       model.sheet = .discardAdoption
-      #expect(model.adoptionAlertTitle == "Discard 1 page?")
+      #expect(model.adoptionAlertTitle == "Discard 1 journal page?")
     }
     await model.adopt(add ? .add : .discard)
     #expect(model.account == "model-sam@example.com" && model.sheet == nil)
@@ -269,7 +270,7 @@ import Synchronization
     await model.retryAuthenticatedSignIn()
     #expect(model.pendingSignIn == nil && server.state.withLock { $0.sessions == sessions })
     if link {
-      #expect(model.sheet == .adoption && model.adoptionCount == 1)
+      #expect(model.sheet == .adoption && model.adoptionCounts[Page.type] == 1)
       await model.adopt(.add)
     }
     #expect(model.account == (link ? "model-sam@example.com" : "model-apple@example.com") && model.sheet == nil)

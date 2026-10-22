@@ -19,4 +19,12 @@ import SyncCore
       .init(value: "2", label: "Working sets"), .init(value: "812.5 kg", label: "Volume"),
     ])
   }
+
+  @Test func everyDoorThatDiscardsAWorkoutAsksInTheBoardsWords() {
+    #expect([0, 1, 5].map(DiscardWorkoutAlert.message(sets:)) == [
+      "This deletes the workout. You can’t undo this.",
+      "This deletes the workout and its 1 set. You can’t undo this.",
+      "This deletes the workout and its 5 sets. You can’t undo this.",
+    ])
+  }
 }
