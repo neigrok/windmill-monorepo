@@ -58,19 +58,34 @@ enum CoachFixture {
       if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-note"), title: "How I want to be talked to", body: "Don’t cheerlead. Say the number and stop.")))
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
-      var routine = Draft(new: Routine(id: ID("coach-fixture-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 5, weightKg: 80)])]))
-      _ = gym.save(&routine)
+      let board = CoachBoard.current
+      if board != nil { _ = gym.run(CreateExercise(Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: "barbell", stepKg: 2.5))) }
+      let routines = board?.routines ?? [(id: "coach-fixture-routine", name: "Push A", entries: [CoachBoard.entry("back-squat", 1, 5, 80)])]
+      for planned in routines {
+        var routine = Draft(new: Routine(id: ID(RecordID(planned.id)), name: planned.name, entries: planned.entries))
+        _ = gym.save(&routine)
+      }
       await runtime.engine.flushOnLeave(); gym.refresh()
       _ = gym.run(ImportSession(id: ID("coach-fixture-session"), startedAt: Instant(ms: 1_790_423_000_000), finishedAt: Instant(ms: 1_790_424_000_000),
-        sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))], routineId: routine.id))
+        sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))],
+        routineId: ID(RecordID(routines[0].id))))
       let removing = ProcessInfo.processInfo.arguments.contains("-coach-removal")
-      _ = gym.run(ProposeRoutine(id: ID("coach-fixture-proposal"), routineId: routine.id, name: "Push A2",
-        entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("bench-press"))],
-        summary: removing ? "Push A has stopped moving your squat." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: removing))
+      let proposals = board?.proposals ?? [CoachBoard.Proposed(id: "coach-fixture-proposal", routine: "coach-fixture-routine", name: "Push A2",
+        entries: [CoachBoard.entry("back-squat", 1, 3, 90), RoutineEntry(exerciseId: ID("bench-press"))], removing: removing)]
+      for proposed in proposals {
+        _ = gym.run(ProposeRoutine(id: ID(RecordID(proposed.id)), routineId: ID(RecordID(proposed.routine)), name: proposed.name, entries: proposed.entries,
+          summary: removing ? "Push A has stopped moving your squat." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: proposed.removing))
+      }
       await runtime.engine.flushOnLeave(); gym.refresh()
+      // The board's routine changes after Coach proposed, so its card is out of date.
+      if let edit = board?.editedAfter, var routine = try gym.runner.open(ID<Routine>(RecordID(edit.id))) {
+        routine.current.entries = edit.entries
+        _ = gym.save(&routine)
+        await runtime.engine.flushOnLeave(); gym.refresh()
+      }
       // A newer proposal for Push A replaces this one, so its card and Review are out of date.
       if ProcessInfo.processInfo.arguments.contains("-coach-out-of-date") {
-        _ = gym.run(ProposeRoutine(id: ID("coach-fixture-newer"), routineId: routine.id, name: "Push A3",
+        _ = gym.run(ProposeRoutine(id: ID("coach-fixture-newer"), routineId: ID("coach-fixture-routine"), name: "Push A3",
           entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 2, weightKg: 95)])], summary: "Doubles at 95."))
         await runtime.engine.flushOnLeave(); gym.refresh()
       }
@@ -149,7 +164,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
     let thread = body["thread"] as? String ?? "coach-fixture-thread"
     let requestId = body["requestId"] as? String ?? "coach-fixture-request"
-    let said = CoachFixtureConversation()
+    let said = CoachFixtureConversation(asked: body["question"] as? String)
     var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
       "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 }, "revision": 2, "attachments": said.attachments,
       "steps": said.steps, "results": said.results, "receipt": said.receipt]
@@ -255,7 +270,7 @@ nonisolated struct CoachFixtureConversation {
   let receipt: [String: Any]
   let outcome: [String: Any]
 
-  init(arguments: [String] = ProcessInfo.processInfo.arguments) {
+  init(arguments: [String] = ProcessInfo.processInfo.arguments, asked: String? = nil) {
     let workout: [String: Any] = ["workingSetCount": 1, "tonnageKg": 400, "durationMs": 1_000_000]
     let read: [String: Any] = ["sets": 1, "sessions": 1, "weeks": 1]
     let observations: [[String: Any]] = [
@@ -264,7 +279,13 @@ nonisolated struct CoachFixtureConversation {
       ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "get_session",
        "coverage": "session", "setsRead": 1, "routine": "Push A", "workout": workout]]
     steps = [["tool": "list_notes"], ["tool": "list_sessions"], ["tool": "get_session"]]
-    if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
+    if let board = CoachBoard.current {
+      let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
+      question = turn.question; partial = turn.answer; answer = turn.answer
+      steps.append(["tool": board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"])
+      receipt = ["version": 1, "read": read, "steps": steps, "proposals": turn.proposals, "observations": observations]
+      outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines[0].id, "routine": board.routines[0].name]
+    } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
       held = !arguments.contains("-coach-markdown"); screenshot = arguments.contains("-coach-thinking")
       question = screenshot ? "My program, 3 days a week" : "What should Thursday look like?"
       partial = screenshot ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
@@ -330,4 +351,80 @@ nonisolated struct CoachFixtureConversation {
     }.jpegData(compressionQuality: 0.9)!
   }
 }
+
+// A Figma board's conversation (`-coach-board 08.17`): the routines it starts from, what Coach proposes for them, and
+// what it says to each question; a board may then change a routine under its proposal.
+nonisolated struct CoachBoard {
+  struct Proposed { let id: String; let routine: String; let name: String; let entries: [RoutineEntry]; var removing = false }
+  struct Turn { let question: String; let answer: String; let proposals: [String] }
+  var routines: [(id: String, name: String, entries: [RoutineEntry])]
+  var proposals: [Proposed]
+  var turns: [Turn]
+  var editedAfter: (id: String, entries: [RoutineEntry])?
+
+  static var current: CoachBoard? {
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let at = arguments.firstIndex(of: "-coach-board"), at + 1 < arguments.count else { return nil }
+    return all[arguments[at + 1]]
+  }
+  static func entry(_ exercise: String, _ sets: Int, _ reps: Int?, _ kg: Double? = nil, rest: Int? = nil) -> RoutineEntry {
+    RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: sets), restSeconds: rest)
+  }
+  static func ladder(_ exercise: String, _ sets: [(Int?, Double?)]) -> RoutineEntry {
+    RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: sets.map { SetTarget(reps: $0.0, weightKg: $0.1) })
+  }
+  static func one(_ question: String, _ answer: String, routine: (String, [RoutineEntry]), proposed: (String, [RoutineEntry]), removing: Bool = false) -> CoachBoard {
+    CoachBoard(routines: [(id: "board-routine", name: routine.0, entries: routine.1)],
+               proposals: [Proposed(id: "board-proposal", routine: "board-routine", name: proposed.0, entries: proposed.1, removing: removing)],
+               turns: [Turn(question: question, answer: answer, proposals: ["board-proposal"])])
+  }
+
+  static let bench = entry("bench-press", 5, 5, 82.5), heavier = entry("bench-press", 3, 3, 90)
+  static let pushA = [bench, entry("cable-fly", 3, 12, 15), entry("triceps-pushdown", 3, 12, 30), entry("overhead-press", 3, 8, 40)]
+  static let pushB = [bench, entry("incline-bench-press", 3, 10, 50), entry("overhead-press", 3, 8, 40), entry("triceps-pushdown", 3, 12, 30), entry("lateral-raise", 3, 15, 8)]
+  static let pullA = [entry("chin-up", 3, nil), entry("barbell-row", 3, 8, 60), entry("face-pull", 3, 15, 12.5), entry("lateral-raise", 3, 15, 8), entry("rear-delt-fly", 3, 15, 8)]
+  static let change = one("Is Push A still doing anything?", "Your Bench Press has not gone up in 3 weeks.\n\nYou did 5 × 5 at 82.5 kg nine times and finished every rep. Try 3 sets of 3 at 90 kg for a heavier top set.",
+    routine: ("Push A", pushA), proposed: ("Push A", [heavier, pushA[3], entry("incline-dumbbell-press", 3, 10, 24), entry("triceps-pushdown", 3, 10, 30)]))
+  static let all: [String: CoachBoard] = [
+    "change": change,
+    "routine-changed": { var board = change; board.editedAfter = (id: "board-routine", entries: [entry("bench-press", 5, 5, 85)] + pushA.dropFirst()); return board }(),
+    "bench": one("Is Push A still doing anything?", "Try 3 sets of 3 at 90 kg for a heavier top set.",
+      routine: ("Push A", pushB), proposed: ("Push A", [heavier] + pushB.dropFirst())),
+    "two": CoachBoard(
+      routines: [(id: "board-routine", name: "Push A", entries: pushA), (id: "board-pull", name: "Pull A", entries: pullA)],
+      proposals: [Proposed(id: "board-proposal", routine: "board-routine", name: "Push A", entries: [heavier, pushA[3], entry("incline-dumbbell-press", 3, 10, 24), entry("triceps-pushdown", 3, 10, 30)]),
+                  Proposed(id: "board-pull-proposal", routine: "board-pull", name: "Pull A", entries: [pullA[1], pullA[0]] + pullA.dropFirst(2))],
+      turns: [Turn(question: "Is Push A still doing anything?", answer: "You did 5 × 5 at 82.5 kg nine times and finished every rep. Try 3 sets of 3 at 90 kg for a heavier top set.", proposals: ["board-proposal"]),
+              Turn(question: "And Pull A?", answer: "Do Barbell Row first, when you are fresh.", proposals: ["board-pull-proposal"])]),
+    "rename": one("Can Push A have a better name?", "Here is a better name for Push A.",
+      routine: ("Push A", pushB + [entry("dip", 3, 10)]), proposed: ("Push Day", pushB + [entry("dip", 3, 10)])),
+    "remove": one("Should I keep Arms?", "You have not done Arms in 8 weeks. You can remove it.",
+      routine: ("Arms", [entry("triceps-pushdown", 3, 12, 30), entry("lateral-raise", 3, 15, 8), entry("cable-fly", 3, 12, 15), entry("overhead-triceps-extension", 3, 12, 14)]),
+      proposed: ("Arms", []), removing: true),
+    "add": one("My shoulders feel tight.", "Add Face Pull to Pull A for your shoulders.",
+      routine: ("Pull A", [pullA[0], pullA[1], pullA[3], pullA[4]]), proposed: ("Pull A", [pullA[0], pullA[1], pullA[3], pullA[4], entry("face-pull", 3, 15, 12.5)])),
+    "drop": one("Upright Row hurts my shoulder.", "Remove Upright Row. It hurts your shoulder.",
+      routine: ("Push A", [bench, entry("upright-row", 3, 12, 30)] + pushB.dropFirst(2)), proposed: ("Push A", [bench] + pushB.dropFirst(2))),
+    "swap": one("I can’t do chin-ups yet.", "Use Lat Pulldown instead of Chin-up until you can do 5 chin-ups.",
+      routine: ("Pull A", Array(pullA.prefix(4))), proposed: ("Pull A", [entry("lat-pulldown", 3, 10, 45)] + pullA[1..<4])),
+    "move": one("What should I do first?", "Do Overhead Press first, when you are fresh.",
+      routine: ("Push A", [bench, pushB[1], pushB[2], pushB[3], pushB[4]]), proposed: ("Push A", [pushB[2], bench, pushB[1], pushB[3], pushB[4]])),
+    "targets": one("Give me more work.", "Here is more work for Push A.",
+      routine: ("Push A", [entry("bench-press", 3, 8, 80), entry("push-up", 3, 15), entry("dip", 3, 10, 10), pushB[2], pushB[3]]),
+      proposed: ("Push A", [entry("bench-press", 4, 6, 85), entry("push-up", 3, nil), entry("dip", 3, 10), pushB[2], pushB[3]])),
+    "vary": one("Make the last set heavier.", "Make the last set heavier.",
+      routine: ("Push A", [entry("bench-press", 3, 5, 80)] + pushB.dropFirst()), proposed: ("Push A", [ladder("bench-press", [(5, 80), (5, 80), (3, 90)])] + pushB.dropFirst())),
+    "ramp": one("Warm up to your top set.", "Warm up to your top set, then add one heavy set.",
+      routine: ("Legs", [entry("back-squat", 3, 5, 100), entry("leg-press", 3, 10, 140), entry("lying-leg-curl", 3, 12, 40), entry("standing-calf-raise", 3, 15, 60)]),
+      proposed: ("Legs", [ladder("back-squat", [(5, 80), (5, 90), (5, 100), (3, 105)]), entry("leg-press", 3, 10, 140), entry("lying-leg-curl", 3, 12, 40), entry("standing-calf-raise", 3, 15, 60)])),
+    "rest": one("Dips have no target.", "Here is a target for Dips and more rest.",
+      routine: ("Push A", [RoutineEntry(exerciseId: ID("dip"), restSeconds: 90)] + pushB.dropFirst()),
+      proposed: ("Push A", [entry("dip", 3, 10, rest: 120)] + pushB.dropFirst())),
+    "long": one("Rebuild Push A for strength", "Here is a new plan for Push A. It has 9 changes.",
+      routine: ("Push A", [bench, entry("incline-bench-press", 3, 10, 24), entry("overhead-press", 3, 8, 40), entry("lateral-raise", 3, 12), entry("triceps-pushdown", 3, 12, 30, rest: 60), entry("cable-fly", 3, 12, 15)]),
+      proposed: ("Push Day", [entry("overhead-press", 3, 8, 40), heavier, ladder("incline-bench-press", [(10, 24), (10, 24), (8, 26)]), entry("lateral-raise", 3, 15),
+                              entry("triceps-pushdown", 3, 12, 30, rest: 90), entry("dip", 3, nil), entry("face-pull", 3, 15, 12.5)])),
+  ]
+}
 #endif
+

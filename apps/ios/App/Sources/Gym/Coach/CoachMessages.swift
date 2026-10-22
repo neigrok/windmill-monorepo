@@ -103,14 +103,13 @@ struct CoachAnswerText: View {
   }
 }
 
-// Coach's answer keeps creation doors above its read receipt; proposals keep their review cards.
+// Coach's answer: its words, its read receipt, the cards of what it proposed, and the doors to what it wrote.
 struct CoachAnswerView: View {
   let gym: GymModel
   let text: String
   let receipt: CoachReceipt?
   let steps: [CoachStep]
   let results: [CoachResult]
-  let review: (String) -> Void
   let read: (CoachReading) -> Void
   let notes: () -> Void
   @Environment(\.coachOpenRoutine) var openRoutine
@@ -121,7 +120,7 @@ struct CoachAnswerView: View {
         if !text.isEmpty { CoachAnswerText(text: text) }
         if let receipt, created.isEmpty { receiptRow(receipt) }
       }
-      ForEach(receipt?.proposals ?? [], id: \.self) { id in CoachProposalCard(gym: gym, id: id) { review(id) } }
+      ForEach(receipt?.proposals ?? [], id: \.self) { id in ProposalCard(gym: gym, id: id) }
       if !created.isEmpty {
         VStack(spacing: 0) {
           ForEach(Array(created.enumerated()), id: \.element.id) { index, result in

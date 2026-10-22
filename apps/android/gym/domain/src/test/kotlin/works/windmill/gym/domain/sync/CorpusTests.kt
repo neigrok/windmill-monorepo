@@ -164,6 +164,15 @@ class CorpusTests {
             "DismissProposal" -> corpus.decision(DismissProposal(f.ref("id", Proposal)), vector, { Json.Null }, ::refusalForm)
             "Diff" -> Json.objectOf("changes" to Json.Arr(ProposalRules.changesBetween(f.list("base", RoutineEntry), f.list("proposed", RoutineEntry)).map { it.json }))
             "ChangeCount" -> Json.objectOf("changeCount" to Json.of(Proposal.fromForm(input.member("proposal")).changeCount(Routine.fromForm(input.member("base")))))
+            "ChangeBlocks" -> {
+                val each = input["each"]?.arr()?.map { Id(it.str(), Exercise) }?.toSet() ?: emptySet()
+                val diff = ProposalDiff(Proposal.fromForm(input.member("proposal")), input["routine"]?.let { Routine.fromForm(it) }, GymUnits.reading(input["units"]?.str()), each)
+                Json.objectOf("unchanged" to Json.of(diff.unchanged), "blocks" to Json.Arr(diff.blocks.map { block ->
+                    Json.objectOf("kind" to Json.of(block.kind.name), "exerciseId" to nullable(block.exerciseId?.record?.string), "fields" to Json.Arr(block.fields.map { field ->
+                        Json.objectOf("label" to Json.of(field.label), "before" to nullable(field.before), "after" to nullable(field.after), "state" to Json.of(field.state.name))
+                    }))
+                }))
+            }
             "Metadata" -> {
                 val p = Proposal.fromForm(input)
                 val provenance = when (p.door) {

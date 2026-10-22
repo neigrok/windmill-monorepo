@@ -488,14 +488,18 @@ these are the places it disagrees with a drawing, a brief or the build.
   English. The spec (§6 table), `09-coach.md`, `feedback-contract.md` and boards 01.1–01.15 and
   08.1–08.31 now say so. Build work, none of it in code today:
   - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in every surface
-    (iOS card and History table, Android `Proposal.kt` and its review actions, web `proposals.js`
+    (iOS History table, Android `Proposal.kt` and its review actions, web `proposals.js`
     `receiptLine`).
   - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
     are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
     routines* line.
+  - Block order: `09-coach.md` and 08.27 list a rename, moves, changes, removals, then additions; 08.2 and 08.3 draw
+    Changed, Added, Removed, Changed, Moved. iOS follows the written order, so 08.2's first two blocks read Moved and
+    Changed; 08.2/08.3 want redrawing in that order.
   - The card's field diff (per field old → new, per-set lines once sets differ, *Max*, *Last time*,
     *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
-    added are not built on any phone; iOS still opens a review sheet.
+    added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
+    domains also pass; no Android or web screen draws them yet.
   - A failed apply's red line and **Try again**, Reject disabled while Applying, and the signed-out
     *Sign in* answer for a change request (08.29–08.31).
   - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets

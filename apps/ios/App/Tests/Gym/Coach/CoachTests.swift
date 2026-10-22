@@ -97,7 +97,8 @@ import SyncTesting
       host.view.setNeedsLayout(); host.view.layoutIfNeeded()
       let waitingInput = try #require(descendants(host.view).first { $0 is UITextField || $0 is UITextView })
       #expect(coach.asking)
-      #expect(((waitingInput as? UITextField)?.text ?? (waitingInput as? UITextView)?.text) == "Remove Push A.")
+      #expect(((waitingInput as? UITextField)?.text ?? (waitingInput as? UITextView)?.text) == "")
+      #expect(coach.saved.text == "Remove Push A.")
       #expect(!waitingInput.isFirstResponder)
       #expect(!input.isFirstResponder)
     }
@@ -1032,8 +1033,8 @@ import SyncTesting
     h.sync(); gym.refresh()
     #expect(gym.openSession == nil)
     #expect(gym.coachDecideProposal(proposal, apply: true))
-    let waiting = ProposalReviewSheet(gym: gym, proposalId: proposal.id.record.string!)
-    #expect(waiting.primaryTitle == "Applying…" && waiting.caption == "")
+    let waiting = ProposalCard(gym: gym, id: proposal.id.record.string!)
+    #expect(waiting.primaryTitle == "Applying…")
     h.sync(); gym.refresh()
     #expect(gym.proposals.first?.state == "applied" && gym.routines.first?.name == "After")
     #expect(gym.proposals.first.map(gym.coachProposalOutOfDate) == false)
@@ -1089,36 +1090,36 @@ import SyncTesting
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
     try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
     let proposal = try #require(gym.proposals.first), logged = gym.sets
-    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
-    #expect(review.primaryTitle == "Remove routine" && proposal.state == "pending" && proposal.settledAt == nil)
+    let card = ProposalCard(gym: gym, id: proposal.id.description)
+    #expect(card.primaryTitle == "Remove routine" && proposal.state == "pending" && proposal.settledAt == nil)
     await transport.delivery.hold()
     defer { Task { await transport.delivery.release() } }
     if refused { transport.model.state.withLock { $0.server.refuse(code: .invalid) } }
     #expect(gym.coachDecideProposal(proposal, apply: true))
     #expect(gym.routines.isEmpty && gym.sets == logged)
-    try expectProposal(review.proposal, equals: proposal)
-    #expect(gym.proposals.count == 1 && review.pending && !review.decidable && review.primaryTitle == "Removing…")
+    try expectProposal(card.proposal, equals: proposal)
+    #expect(gym.proposals.count == 1 && card.pending && !card.decidable && card.primaryTitle == "Removing…")
     #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id).map { try Proposal(Fields($0)).state } } == "pending")
     fault.point.withLock { $0 = .beforeCommit(.results) }
     await transport.delivery.release()
     try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
     gym.refresh()
-    #expect(gym.coachRemovalReceipts.first?.outcome == .pending && review.pending)
+    #expect(gym.coachRemovalReceipts.first?.outcome == .pending && card.pending)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().count } == 1)
     fault.point.withLock { $0 = nil }
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    try await settle { gym.refresh(); return !review.pending && (refused ? !gym.notices.isEmpty : review.proposal?.state == "applied") }
-    let answer = try #require(review.proposal)
+    try await settle { gym.refresh(); return !card.pending && (refused ? !gym.notices.isEmpty : card.proposal?.state == "applied") }
+    let answer = try #require(card.proposal)
     #expect(gym.sets == logged && gym.sessions.map(\.id) == [ID<Session>("removal-session")])
     #expect(gym.sessions.first?.plan == SessionPlan(routine))
     if refused {
       try expectProposal(answer, equals: proposal)
-      #expect(gym.routines == [routine] && review.decidable)
+      #expect(gym.routines == [routine] && card.decidable)
       #expect(answer.settledAt == nil && !gym.notices.isEmpty)
     } else {
       #expect(answer.state == "applied" && answer.intent == "remove" && answer.settledAt == nil)
       #expect(answer.summary == proposal.summary && answer.changes == proposal.changes && answer.baseName == routine.name)
-      #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && !review.decidable)
+      #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && !card.decidable)
       #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id) } == nil)
       gym.refresh()
       try expectProposal(gym.proposals.first, equals: answer)
@@ -1128,20 +1129,20 @@ import SyncTesting
       #expect(cold.coachRemovalReceipts.count == 1)
     }
     let window = UIWindow(frame: UIScreen.main.bounds)
-    let host = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .background))
+    let host = RemovalReceiptHost(rootView: card.environment(\.scenePhase, .background))
     window.rootViewController = host; window.makeKeyAndVisible()
     defer { window.isHidden = true }
     try await settle { host.appeared }
     #expect(try runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
     fault.point.withLock { $0 = .beforeCommit(.commit) }
-    host.rootView = review.environment(\.scenePhase, .active)
+    host.rootView = card.environment(\.scenePhase, .active)
     try await settle { telemetry.entries.withLock { $0.contains { $0.name == "client_error" && $0.properties["operation"] == "gym_action" } } }
     #expect(try runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
     fault.point.withLock { $0 = nil }
     window.rootViewController = nil
-    window.rootViewController = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .active))
+    window.rootViewController = RemovalReceiptHost(rootView: card.environment(\.scenePhase, .active))
     try await settle { (try? runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).isEmpty }) == true }
-    #expect(review.proposal?.state == (refused ? "pending" : "applied"))
+    #expect(card.proposal?.state == (refused ? "pending" : "applied"))
     let shownCold = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(shownCold.proposals.count == (refused ? 1 : 0) && shownCold.coachRemovalReceipts.isEmpty)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map { $0.properties["outcome"] } } == [refused ? "failed" : "decided"])
@@ -1192,9 +1193,9 @@ import SyncTesting
         gym == nil && runtime == nil && engine == nil && store == nil
       }
       defer { gym.stop(); try? reopened.tokens.delete(for: owner.account) }
-      let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+      let card = ProposalCard(gym: gym, id: proposal.id.description)
       if !resolvedBeforeRelaunch {
-        #expect(review.proposal?.state == "pending" && review.pending)
+        #expect(card.proposal?.state == "pending" && card.pending)
         #expect(gym.coachDecideProposal(proposal, apply: true))
         #expect(try reopened.runner.read(Gym.scope) { try $0.commands().count } == 1)
         transport.failure.withLock { $0 = nil }
@@ -1206,9 +1207,9 @@ import SyncTesting
           (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true
       }
       #expect(gym.routines.count == (refused ? 1 : 0))
-      #expect(review.proposal?.state == (refused ? "pending" : "applied") && !review.pending)
+      #expect(card.proposal?.state == (refused ? "pending" : "applied") && !card.pending)
       #expect(gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied))
-      #expect(review.proposal?.summary == proposal.summary && review.proposal?.baseName == proposal.baseName)
+      #expect(card.proposal?.summary == proposal.summary && card.proposal?.baseName == proposal.baseName)
     }
     try await settle { closedReopened() }
     try #require(closedReopened())
@@ -1229,26 +1230,26 @@ import SyncTesting
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
     try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
     let pending = try #require(gym.proposals.first)
-    let review = ProposalReviewSheet(gym: gym, proposalId: pending.id.description)
+    let card = ProposalCard(gym: gym, id: pending.id.description)
     transport.failure.withLock { $0 = 503 }
     #expect(gym.coachDecideProposal(pending, apply: true))
     try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
     gym.refresh()
-    try expectProposal(review.proposal, equals: pending)
-    #expect(gym.proposals.count == 1 && review.pending && !review.decidable)
-    #expect(review.proposal?.settledAt == nil && gym.routines.isEmpty)
+    try expectProposal(card.proposal, equals: pending)
+    #expect(gym.proposals.count == 1 && card.pending && !card.decidable)
+    #expect(card.proposal?.settledAt == nil && gym.routines.isEmpty)
 
     transport.failure.withLock { $0 = nil }
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    try await settle { gym.refresh(); return gym.proposals.first?.state == "applied" && !review.pending }
-    #expect(gym.proposals.first?.state == "applied" && gym.proposals.first?.settledAt == nil && !review.decidable)
+    try await settle { gym.refresh(); return gym.proposals.first?.state == "applied" && !card.pending }
+    #expect(gym.proposals.first?.state == "applied" && gym.proposals.first?.settledAt == nil && !card.decidable)
     _ = try await runtime.engine.signOut().finish(.keep)
     gym.refresh()
     #expect(gym.proposals.isEmpty && gym.account == nil)
     let other = transport.model.identity(email: "removal-other@example.com")
     #expect(try await runtime.engine.signIn(account: other.account, token: other.token).isComplete)
     gym.refresh()
-    #expect(gym.proposals.isEmpty && gym.account == other.account && review.proposal == nil)
+    #expect(gym.proposals.isEmpty && gym.account == other.account && card.proposal == nil)
     _ = try await runtime.engine.signOut().finish(.keep)
     #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
     gym.refresh()
@@ -1269,7 +1270,7 @@ import SyncTesting
       #expect(gym.coachDecideProposal(pending, apply: false))
       try expectProposal(gym.proposals.first, equals: pending)
       #expect(gym.proposals.count == 1 && gym.coachProposalAwaitingReceipt(pending.id))
-      #expect(ProposalReviewSheet(gym: gym, proposalId: pending.id.description).primaryTitle == "Turning down…")
+      #expect(ProposalCard(gym: gym, id: pending.id.description).primaryTitle == "Rejecting…")
       h.sync(); gym.refresh()
       #expect(gym.proposals.first?.state == "dismissed")
     }
@@ -1310,7 +1311,7 @@ import SyncTesting
       "Push A · a removal | Removed", "Push A · 1 change | Applied", "Push A · 2 changes | Turned down", "Push A · 2 changes | Out of date",
       "4 changes | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -"])
   }
-  // An out-of-date proposal has no Apply and no Turn this down: the band says once why nothing was applied — a newer one
+  // An out-of-date proposal has no Apply and no Reject: the card says once why nothing was applied — a newer one
   // took its place, the log set it aside when its routine changed there, or its routine moved here and the log has not
   // confirmed it yet. Each routine is its own case, in one store.
   @Test func anOutOfDateProposalSaysWhyWhereApplyStood() throws {
@@ -1338,12 +1339,12 @@ import SyncTesting
     gym.refresh()
     let ids = ["current", "replaced", "outrun", "unsent", "applied", "dismissed"]
     let proposals = try ids.map { id in try #require(gym.proposals.first { $0.id == ID(RecordID("proposal-" + id)) }) }
-    let reviews = ids.map { ProposalReviewSheet(gym: gym, proposalId: "proposal-" + $0) }
+    let cards = ids.map { ProposalCard(gym: gym, id: "proposal-" + $0) }
     #expect(proposals.map(\.state) == ["pending", "superseded", "superseded", "pending", "applied", "dismissed"])
     #expect(proposals.map(gym.coachProposalOutOfDate) == [false, true, true, true, false, false])
-    #expect(reviews.map { $0.outOfDate ?? "-" } == ["-", "A newer proposal replaced this one. Nothing was applied.",
+    #expect(cards.map { $0.outOfDate ?? "-" } == ["-", "A newer proposal replaced this one. Nothing was applied.",
       "This proposal is out of date. Nothing was applied.", "The routine changed after this was written. Nothing was applied.", "-", "-"])
-    #expect(reviews.map(\.decidable) == [true, false, false, false, false, false])
+    #expect(cards.map(\.decidable) == [true, false, false, false, false, false])
     #expect(Set(gym.routineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
   }
   @Test func aProposalBecomesUnavailableWhenItsRoutineDeletionIsConfirmed() throws {
@@ -1357,21 +1358,21 @@ import SyncTesting
     #expect(try h.runner.run(ProposeRoutine(id: ID("deleted-proposal"), routineId: routine.id, name: "Push B", entries: [RoutineEntry(exerciseId: ID("deleted-squat"))], summary: "Change")).receipt != nil)
     h.sync(); gym.refresh()
     let proposal = try #require(gym.proposals.first)
-    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
-    #expect(gym.routineProposals.map(\.id) == [proposal.id] && review.decidable)
+    let card = ProposalCard(gym: gym, id: proposal.id.description)
+    #expect(gym.routineProposals.map(\.id) == [proposal.id] && card.decidable)
     let deleted = try #require(gym.run(DeleteRoutine(routine.id))?.receipt)
     gym.refresh()
     #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
-    #expect(!review.decidable)
-    #expect(review.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(!card.decidable)
+    #expect(card.outOfDate == "The routine changed after this was written. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.proposals.first?.state == "pending")
     #expect(deleted.releaseAt == nil)
     h.sync(); gym.refresh()
     #expect(gym.routineProposals.isEmpty)
     #expect(gym.proposals.isEmpty)
-    #expect(review.proposal == nil)
-    #expect(review.outOfDate == nil)
-    #expect(!review.decidable)
+    #expect(card.proposal == nil)
+    #expect(card.outOfDate == nil)
+    #expect(!card.decidable)
   }
   // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
   // offered, and the lifter's edit stands after the log answers.
@@ -1389,16 +1390,16 @@ import SyncTesting
     var edit = try #require(try h.runner.open(routine.id)); edit.current.entries.append(RoutineEntry(exerciseId: ID("edited-deadlift")))
     #expect(saved(gym.save(&edit)))
     gym.refresh()
-    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+    let card = ProposalCard(gym: gym, id: proposal.id.description)
     #expect(gym.routines.first?.revision == proposal.baseRevision && gym.coachProposalOutOfDate(proposal))
-    #expect(gym.routineProposals.isEmpty && !review.decidable)
-    #expect(review.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(gym.routineProposals.isEmpty && !card.decidable)
+    #expect(card.outOfDate == "The routine changed after this was written. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true))
     h.sync(); gym.refresh()
     #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID("edited-bench"), ID("edited-deadlift")] && gym.notices.isEmpty)
     #expect(gym.proposals.first?.state == "superseded" && gym.coachProposalOutOfDate(proposal))
   }
-  // A removal's answer is recorded once: a launch after it lands, before the lifter opens its Review, records nothing more.
+  // A removal's answer is recorded once: a launch after it lands, before the lifter sees its card, records nothing more.
   @Test(arguments: [false, true])
   func aSettledRemovalIsRecordedOnceAcrossLaunches(refused: Bool) throws {
     let (h, _) = fixture(), first = TelemetryRecorder()
@@ -1447,10 +1448,12 @@ import SyncTesting
     let retries = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" && $0.properties["action"] == "retry" }.map(\.properties) } }
     gym.coachResendDecision(try #require(gym.proposals.first).id)
     try await settle { !retries().isEmpty }
-    #expect(retries() == [["screen": "review", "action": "retry", "outcome": outcome]])
+    #expect(retries() == [["screen": "coach", "action": "retry", "outcome": outcome]])
   }
   // A proposal that reordered its routine keeps its Order row once applied, since the store counted that change.
-  @Test func anAppliedReorderKeepsItsOrderRow() throws {
+  // A move reads its places against the routine while the proposal waits; once applied, the routine holds the new order and
+  // only the store's count still says it moved.
+  @Test func aMoveReadsItsPlacesWhileTheProposalWaits() throws {
     let (h, gym) = fixture()
     for (id, name) in [("order-squat", "Squat"), ("order-row", "Row")] {
       gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "squat", equipment: "barbell", stepKg: 2.5)))
@@ -1461,14 +1464,16 @@ import SyncTesting
     gym.run(ProposeRoutine(id: ID("order-proposal"), routineId: routine.id, name: "Push A",
                            entries: [RoutineEntry(exerciseId: ID("order-row")), RoutineEntry(exerciseId: ID("order-squat"))], summary: "Row first"))
     h.sync(); gym.refresh()
-    let lines = { (proposal: Proposal) in gym.coachChanges(proposal).filter { !$0.kept }.map { $0.title + " | " + ($0.change ?? "-") } }
+    let lines = { (proposal: Proposal) in
+      gym.coachDiff(proposal).blocks.map { block in ([block.kind.rawValue] + block.fields.map { "\($0.label) \($0.before ?? "-") → \($0.after ?? "-")" }).joined(separator: " | ") }
+    }
     let pending = try #require(gym.proposals.first)
-    #expect(lines(pending) == ["Order | Row · Squat"] && pending.changeCount == 1)
+    #expect(lines(pending) == ["moved | Order 2nd → 1st"] && pending.changeCount == 1)
     #expect(gym.coachDecideProposal(pending, apply: true))
     h.sync(); gym.refresh()
     let applied = try #require(gym.proposals.first)
     #expect(applied.state == "applied" && gym.routines.first?.entries.map(\.exerciseId) == [ID<Exercise>("order-row"), ID<Exercise>("order-squat")])
-    #expect(lines(applied) == ["Order | Row · Squat"] && gym.coachChangeCount(applied) == 1)
+    #expect(lines(applied).isEmpty && gym.coachChangeCount(applied) == 1)
   }
   // What Coach wrote besides answering is never silent: a saved note, or a save that could not be confirmed.
   @Test func aNoteSaveUnderAnAnswerIsNeverSilent() {
@@ -1508,9 +1513,9 @@ import SyncTesting
     coach.newChat(seed: "Private question")
     #expect(coach.blockedReason == nil && coach.canCompose)
   }
-  // The card and the Review draw one set of lines: each movement as the proposal orders it, kept runs folded, then the name;
-  // a rest reads as the workout's clock does, and a removed movement names the scheme it leaves with.
-  @Test func aProposalsCardAndReviewDrawOneSetOfLines() throws {
+  // The card reads the domain's blocks, named from the catalogue: the new name, the changed movements, removals, then
+  // additions, with the movements it keeps folded into one count.
+  @Test func aProposalsCardReadsItsChangesAsBlocks() throws {
     let (h, gym) = fixture()
     for (id, name) in [("card-squat", "Squat"), ("card-row", "Row"), ("card-curl", "Curl"), ("card-dips", "Dips"), ("card-bench", "Bench")] {
       gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "squat", equipment: "barbell", stepKg: 2.5)))
@@ -1528,45 +1533,24 @@ import SyncTesting
     _ = try h.runner.run(ProposeRoutine(id: ID("card-removal"), routineId: routine.id, name: "", entries: [], summary: "Remove", removing: true))
     h.sync(); gym.refresh()
     let revision = try #require(gym.proposals.first { $0.id == ID("card-proposal") })
-    #expect(gym.coachChanges(revision).map { [$0.symbol ?? "kept", $0.title, $0.change ?? "-"].joined(separator: " | ") } == [
-      "arrow.right | Squat | 1 × 5 · 80 → 1 × 3 · 90 kg · rest 1:30 → 2:00", "arrow.right | Row | 60 × 8 · 60 × 8 → 60 × 8 · 65 × 6 kg · rest default → 1:30",
-      "kept | Curl | 2 × 10 · 20 kg", "plus | Bench | Added · open · after Curl", "minus | Dips | Removed · 3 × 8 · 40 kg", "pencil | Name | Push A → Push A2"])
+    let card = ProposalCard(gym: gym, id: revision.id.record.string!)
+    #expect(gym.coachDiff(revision).blocks.map { block in
+      ([block.kind.rawValue, card.title(block) ?? "-"] + block.fields.map { "\($0.label) \($0.before ?? "-") → \($0.after ?? "-")" }).joined(separator: " | ")
+    } == ["renamed | - | Name Push A → Push A2",
+          "changed | Squat | Sets 1 → 1 | Reps 5 → 3 | Load 80 kg → 90 kg | Rest 90 s → 2 min",
+          "changed | Row | Set 1 8 × 60 kg → 8 × 60 kg | Set 2 8 × 60 kg → 6 × 65 kg | Rest Default → 90 s",
+          "removed | Dips | Sets 3 → - | Reps 8 → - | Load 40 kg → -", "added | Bench | Target - → None"])
+    #expect(gym.coachDiff(revision).unchanged == 1)
     #expect(gym.coachChangeCount(revision) == 5 && revision.changeCount == 5)
     let counted = Proposal(id: ID("counted"), routineId: routine.id, intent: "revise", proposedName: "Push A", summary: "", changes: [], changeCount: 7)
     let uncounted = Proposal(id: ID("uncounted"), routineId: routine.id, intent: "revise", proposedName: "Push A2", summary: "", changes: [])
     #expect(gym.coachChangeCount(counted) == 7 && gym.coachChangeCount(uncounted) == 1)
-    let review = ProposalReviewSheet(gym: gym, proposalId: revision.id.record.string!)
-    #expect(review.runs.map { $0.map(\.title) } == [["Squat"], ["Row"], ["Curl"], ["Bench"], ["Dips"], ["Name"]])
-    #expect(review.primaryTitle == "Apply" && review.promise == "All or none. Nothing changes until you tap.")
+    #expect(card.primaryTitle == "Apply")
     let removal = try #require(gym.proposals.first { $0.id == ID("card-removal") })
-    #expect(gym.coachChanges(removal).map { [$0.symbol ?? "-", $0.title, $0.change ?? "-", "\($0.removal)"].joined(separator: " | ") } == ["minus | Routine | Removed | true"])
-    let removing = ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!)
-    #expect(removing.primaryTitle == "Remove routine" && removing.promise == "Your logged sets stay. Nothing is removed until you tap.")
+    #expect(gym.coachDiff(removal).blocks.isEmpty)
+    #expect(ProposalCard(gym: gym, id: removal.id.record.string!).primaryTitle == "Remove routine")
   }
-  // Review's subtitle says who proposed it and when the log took it: the record's creation, a day and a time, none before.
-  @Test func aReviewSaysWhoProposedItAndWhenTheLogTookIt() throws {
-    let h = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_448_120_000), account: "coach-owner",
-                    rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
-    let gym = GymModel(runner: h.runner, locale: Locale(identifier: "en_US")); gym.account = "coach-owner"
-    gym.run(CreateExercise(Exercise(id: ID("source-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
-    var routine = Draft(new: Routine(id: ID("source-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("source-squat"))]))
-    #expect(saved(gym.save(&routine)))
-    h.sync(); gym.refresh()
-    gym.run(ProposeRoutine(id: ID("source-proposal"), routineId: routine.id, name: "Push A2", entries: [RoutineEntry(exerciseId: ID("source-squat"))], summary: "Rename"))
-    let unsent = try #require(gym.proposals.first)
-    let sources = [gym.coachProposalSource(unsent)]
-    h.sync(); gym.refresh()
-    let taken = try #require(gym.proposals.first)
-    h.advance(ms: 2 * 86_400_000); gym.refresh()
-    #expect(sources + [gym.coachProposalSource(taken)] == ["proposed by Coach", "proposed by Coach · Sep 26 · 6:42\u{202F}PM"])
-    let unnamed = { (connection: String, agent: String) in
-      Proposal(id: taken.id, routineId: taken.routineId, intent: taken.intent, proposedName: taken.proposedName, summary: taken.summary,
-               changes: taken.changes, door: "mcp", connection: connection, agent: agent)
-    }
-    #expect([unnamed("", ""), unnamed("Desk", ""), unnamed("Desk", "Claude")].map(gym.coachProposalSource) ==
-      ["proposed by a connected tool · Sep 26 · 6:42\u{202F}PM", "proposed by Desk · Sep 26 · 6:42\u{202F}PM", "proposed by Claude · Sep 26 · 6:42\u{202F}PM"])
-  }
-  // A decision's stall is recorded once, however many waits run out on it — a Retry's own, or the Review opened again; a
+  // A decision's stall is recorded once, however many waits run out on it — a Retry's own, or its card drawn again; a
   // decision made again after the log refused the first stalls afresh.
   @Test func aDecisionRecordsItsStallOnceHoweverManyWaitsRunOut() throws {
     let (h, _) = fixture(), telemetry = TelemetryRecorder()
@@ -1588,7 +1572,7 @@ import SyncTesting
     h.sync(); gym.refresh()
     #expect(gym.proposals.first?.state == "applied")
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
-            == ["stalled", "failed", "stalled", "decided"].map { ["screen": "review", "action": "apply", "outcome": $0] })
+            == ["stalled", "failed", "stalled", "decided"].map { ["screen": "coach", "action": "apply", "outcome": $0] })
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
@@ -1608,20 +1592,20 @@ import SyncTesting
     transport.failure.withLock { $0 = 503 }
     #expect(gym.coachDecideProposal(proposal, apply: true))
     try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
-    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description, stallAfter: .milliseconds(200))
-    #expect(review.pending && gym.coachQueuedDecision(proposal.id) == .apply)
+    let card = ProposalCard(gym: gym, id: proposal.id.description, stallAfter: .milliseconds(200))
+    #expect(card.pending && gym.coachQueuedDecision(proposal.id) == .apply)
     let window = UIWindow(frame: UIScreen.main.bounds)
-    window.rootViewController = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .active)); window.makeKeyAndVisible()
+    window.rootViewController = RemovalReceiptHost(rootView: card.environment(\.scenePhase, .active)); window.makeKeyAndVisible()
     defer { window.isHidden = true; window.rootViewController = nil }
     let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
-    try await settle { outcomes().contains(["screen": "review", "action": "apply", "outcome": "stalled"]) }
+    try await settle { outcomes().contains(["screen": "coach", "action": "apply", "outcome": "stalled"]) }
     transport.failure.withLock { $0 = nil }
     gym.coachResendDecision(proposal.id)
-    try await settle { gym.refresh(); return !review.pending && outcomes().count == 3 }
+    try await settle { gym.refresh(); return !card.pending && outcomes().count == 3 }
     #expect(gym.proposals.first?.state == "applied" && gym.routines.isEmpty)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
-    #expect(outcomes().first == ["screen": "review", "action": "apply", "outcome": "stalled"])
-    #expect(Set(outcomes().dropFirst()) == [["screen": "review", "action": "retry", "outcome": "ok"], ["screen": "review", "action": "apply", "outcome": "decided"]])
+    #expect(outcomes().first == ["screen": "coach", "action": "apply", "outcome": "stalled"])
+    #expect(Set(outcomes().dropFirst()) == [["screen": "coach", "action": "retry", "outcome": "ok"], ["screen": "coach", "action": "apply", "outcome": "decided"]])
   }
   @Test(arguments: [true, false])
   func aDecisionIsRecordedWhenTheLogsAnswerArrivesNotWhenItsPushEnds(apply: Bool) async throws {
@@ -1645,7 +1629,7 @@ import SyncTesting
     #expect(gym.coachDecideProposal(proposal, apply: apply))
     try await settle { gym.refresh(); return gym.proposals.first?.state == (apply ? "applied" : "dismissed") && !outcomes().isEmpty }
     try await Task.sleep(for: .milliseconds(300)); gym.refresh()
-    #expect(outcomes() == [["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": "decided"]])
+    #expect(outcomes() == [["screen": "coach", "action": apply ? "apply" : "reject", "outcome": "decided"]])
   }
   @Test(arguments: [false, true])
   func retryRecordsWhetherTheLogTookTheDecision(offline: Bool) async throws {
@@ -1677,7 +1661,7 @@ import SyncTesting
     gym.coachResendDecision(proposal.id)
     try await settle { !retries().isEmpty }
     try await Task.sleep(for: .milliseconds(200))
-    #expect(retries() == [["screen": "review", "action": "retry", "outcome": offline ? "offline" : "failed"]])
+    #expect(retries() == [["screen": "coach", "action": "retry", "outcome": offline ? "offline" : "failed"]])
     #expect(gym.coachProposalAwaitingReceipt(proposal.id))
   }
   @Test func anUnreadableQueueReportsOnceAndCountsAsWaiting() throws {
@@ -1687,10 +1671,10 @@ import SyncTesting
     #expect(gym.coachProposalAwaitingReceipt(ID("unreadable-proposal")) && gym.coachProposalAwaitingReceipt(ID("unreadable-proposal")))
     #expect(gym.coachQueuedDecision(ID("unreadable-proposal")) == .unreadable && gym.coachDecisionStalled(ID("unreadable-proposal")))
     #expect(telemetry.entries.withLock { $0.filter { ["client_error", "gym_proposal_outcome"].contains($0.name) }.map { [$0.name: $0.properties] } } == [
-      ["client_error": ["operation": "gym_read", "failure_kind": "unexpected"]], ["gym_proposal_outcome": ["screen": "review", "outcome": "stalled"]]
+      ["client_error": ["operation": "gym_read", "failure_kind": "unexpected"]], ["gym_proposal_outcome": ["screen": "coach", "outcome": "stalled"]]
     ])
     gym.proposals = [Proposal(id: ID("unreadable-proposal"), routineId: ID("unreadable-routine"), intent: "revise", proposedName: "Push A", summary: "", changes: [])]
-    #expect(ProposalReviewSheet(gym: gym, proposalId: "unreadable-proposal").primaryTitle == "Sending…")
+    #expect(ProposalCard(gym: gym, id: "unreadable-proposal").primaryTitle == "Sending…")
   }
 }
 

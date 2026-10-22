@@ -20,7 +20,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
-| `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, provenance and optional R118 metadata reads |
+| `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
@@ -110,6 +110,20 @@ true when absent). Applying a pending proposal is refused `proposalSuperseded` w
 routine's revision moved or its name or movements differ from the confirmed copy, an edit the log will count before it
 reads the decision; a reorder alone does not refuse. It is refused `gone` when the routine is absent or out of sight.
 Turning down ignores both. A proposal is out of date when it is superseded, replaced, or pending with its Apply refused.
+
+## Change blocks
+
+`ChangeBlocks` (`{proposal, routine?, units?, each?}` → `{blocks, unchanged}`) reads a proposal as its card draws it.
+Blocks list a new name, then movements that only moved, changed movements, removals and additions, each kind in the
+proposal's order; `unchanged` counts the movements it keeps in place. A move is read against the routine only while the
+proposal is pending: a movement keeps its place when it stands in the longest run that keeps the routine's order — of
+equal runs, the one whose routine places come first — and every other kept movement moved, *Order 3rd → 1st*. A moved
+and retargeted movement is one changed block with its order first. A field is `{label, before, after, state}`: no
+before is new, no after is gone, equal is same. While every set on both sides is the same a movement reads *Sets*,
+*Reps* (*Max* with none) and *Load* (only when a side has a weight; *Last time* with none); once sets differ it reads
+*Set N* per set, *5 × 80 kg* (*8 reps* unweighted); an open side reads one *Target* line, *None* against *3 × 10* or
+*3 × 5 at 80 kg*; a changed rest reads *Rest*, *90 s*, *2 min* or *Default*. Loads format through `Readout.weight` in the
+requested units, *each* for a movement in `each`. A removal proposal has no blocks.
 
 ## Reads
 

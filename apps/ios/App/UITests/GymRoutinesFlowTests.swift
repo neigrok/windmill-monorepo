@@ -630,43 +630,15 @@ import UIKit
       XCTAssertFalse(routine.label.contains("proposal"), routine.label)
       capture(app, "list-" + appearance)
       app.buttons["routine-proposal"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["A heavier bench target"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["Bench Press"].exists)
-      XCTAssertTrue(app.buttons["coach-apply-proposal"].exists)
-      XCTAssertFalse(app.staticTexts["The account changed. Open this proposal again."].exists)
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["coach-apply-proposal"].exists && app.buttons["coach-reject-proposal"].exists)
       capture(app, "proposal-" + appearance)
       app.buttons["Close"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 5))
-      app.buttons["routine-proposal"].tap()
-      let ask = app.descendants(matching: .any)["gym-proposal-review"].buttons["Ask Coach"]
-      XCTAssertTrue(ask.waitForExistence(timeout: 5))
-      XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Ask Coach must answer a 44 pt target, not its label")
-      ask.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForNonExistence(timeout: 5))
-      let question = app.descendants(matching: .any)["coach-question"]
-      XCTAssertTrue(question.waitForExistence(timeout: 5))
-      let seeded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        question.value as? String == "Tell me about the proposal for Push A."
-      }, object: question)
-      XCTAssertEqual(XCTWaiter.wait(for: [seeded], timeout: 5), .completed)
-      let done = app.buttons["coach-keyboard-done"]
-      let keyboardReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        app.keyboards.firstMatch.exists && done.exists && done.isHittable
-      }, object: done)
-      XCTAssertEqual(XCTWaiter.wait(for: [keyboardReady], timeout: 5), .completed)
-      let send = app.buttons["coach-send"]
-      XCTAssertTrue(send.waitForExistence(timeout: 5))
-      capture(app, "coach-proposal-question-" + appearance)
-      XCTAssertFalse(done.frame.intersects(send.frame), "Coach Done \(done.frame) must not cover Send \(send.frame) in \(appearance).")
-      XCTAssertGreaterThanOrEqual(done.frame.height, 44)
-      XCTAssertTrue(done.isEnabled && done.isHittable)
-      XCTAssertTrue(send.isEnabled && send.isHittable)
-      done.tap()
-      XCTAssertTrue(done.waitForNonExistence(timeout: 5))
-      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      XCTAssertEqual(question.value as? String, "Tell me about the proposal for Push A.")
+      app.tabBars.buttons["Coach"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 5))
       let routines = app.tabBars.buttons["Routines"]
       let tabBar = app.tabBars.firstMatch
       let routinesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -684,8 +656,8 @@ import UIKit
     }
   }
 
-  // A connected tool's proposal that an edit here put out of date keeps its row, Out of date, and its Review says why
-  // where Apply stood, with no Turn this down.
+  // A connected tool's proposal that an edit here put out of date keeps its row, Out of date, and its card says why
+  // where Apply and Reject stood.
   func testAConnectedToolsOutOfDateProposalKeepsItsRowInBothAppearances() {
     for appearance in ["light", "dark"] {
       let app = launch(appearance, proposal: true, arguments: ["-routines-tool-proposal"])
@@ -695,13 +667,11 @@ import UIKit
       XCTAssertFalse(app.buttons["routine-proposal"].exists)
       capture(app, "tool-out-of-date-" + appearance)
       row.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForExistence(timeout: 5))
-      let line = app.staticTexts["coach-review-out-of-date"]
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForExistence(timeout: 5))
+      let line = app.staticTexts["coach-proposal-out-of-date"]
       XCTAssertTrue(line.waitForExistence(timeout: 5))
       XCTAssertTrue(["The routine changed after this was written. Nothing was applied.", "This proposal is out of date. Nothing was applied."].contains(line.label), line.label)
-      XCTAssertTrue(app.staticTexts["A heavier bench target"].exists)
-      XCTAssertFalse(app.buttons["coach-apply-proposal"].exists)
-      XCTAssertFalse(app.buttons["Turn this down"].exists)
+      XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["coach-reject-proposal"].exists)
       capture(app, "tool-out-of-date-review-" + appearance)
       app.terminate()
     }

@@ -40,7 +40,6 @@ struct CoachTab: View {
   @State var history: CoachHistory
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
-  @State var review: ProposalReviewID?
   @State var routineReview: CoachRoutineReview?
   @State var showWindmillOne = false
   @State var sources: CoachReading?
@@ -85,9 +84,6 @@ struct CoachTab: View {
           }
           if coach.allowed, coach.refusal != .absent { composer }
         }.background { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
-      }
-      .sheet(item: $review) { id in
-        ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }
       }
       .sheet(item: $routineReview) { review in CoachRoutineReviewSheet(coach: coach, review: review) }
       .sheet(isPresented: $showWindmillOne) {
@@ -309,8 +305,7 @@ struct CoachTab: View {
         }
       }
       if !record.results.isEmpty {
-        CoachAnswerView(gym: gym, text: "", receipt: nil, steps: [], results: record.results,
-          review: { _ in }, read: { _ in }, notes: {})
+        CoachAnswerView(gym: gym, text: "", receipt: nil, steps: [], results: record.results, read: { _ in }, notes: {})
         if gym.isAnonymous {
           Button { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "keep_routines"]); keepRoutines?() } label: {
             Label("Only on this phone · Keep it", systemImage: "iphone").font(.footnote).frame(minHeight: RoomSpace.minimumTarget)
@@ -361,8 +356,7 @@ struct CoachTab: View {
   }
 
   func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult]) -> some View {
-    CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results,
-                    review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 }, notes: { destination = .notes })
+    CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results, read: { sources = $0 }, notes: { destination = .notes })
   }
 
   @ViewBuilder func routineDrafts(_ drafts: [CoachRoutineDraft], requestId: String?) -> some View {
@@ -411,52 +405,6 @@ struct CoachTab: View {
       routineDrafts(generation.routineDrafts, requestId: generation.requestId)
       if let allowance = generation.allowanceRefusal { allowanceMessage(allowance, current: generation.id == coach.activeGeneration?.id) }
     }
-  }
-}
-
-// A proposal in the conversation: its routine, up to three of its Review's lines, and the Review row with how it settled.
-struct CoachProposalCard: View {
-  let gym: GymModel
-  let id: String
-  let review: () -> Void
-  @Environment(\.dynamicTypeSize) var typeSize
-  var body: some View {
-    let proposal = gym.proposals.first { $0.id.record.string == id }
-    let removal = proposal?.intent == "remove"
-    let changes = proposal.map(gym.coachChanges)?.filter { !$0.kept } ?? []
-    let settled = proposal.flatMap { gym.coachProposalOutOfDate($0) ? CoachCopy.outOfDate : CoachCopy.settled($0.state, removal: removal) }
-    let label = removal ? "Review removal" : "Review changes"
-    // At accessibility sizes the settled state sits under the Review row's label.
-    let door = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
-      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
-    VStack(alignment: .leading, spacing: RoomSpace.related) {
-      Text("Proposal" + (proposal.map { " · " + ($0.baseName ?? $0.proposedName) } ?? ""))
-        .font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
-      if !changes.isEmpty {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(changes.prefix(3).enumerated()), id: \.offset) { _, change in change.row }
-          if changes.count > 3 { Text("+ \(changes.count - 3) more").font(.footnote).foregroundStyle(GymPalette.inkFaint) }
-        }
-      }
-      Button(action: review) {
-        HStack(spacing: RoomSpace.related) {
-          door {
-            Text(label).foregroundStyle(GymPalette.ink)
-            if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-            if let settled {
-              HStack(spacing: RoomSpace.small) {
-                if proposal?.state == "applied" { Image(systemName: "checkmark").foregroundStyle(GymPalette.done).accessibilityHidden(true) }
-                Text(settled).foregroundStyle(GymPalette.inkDim)
-              }.font(.footnote)
-            }
-          }
-          if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-          DoorChevron(room: .gym)
-        }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-      }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(settled ?? "").accessibilityIdentifier("coach-review")
-    }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
-      .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
-      .overlay(RoundedRectangle(cornerRadius: RoomSpace.cardRadius).stroke(GymPalette.accent, lineWidth: 1))
   }
 }
 

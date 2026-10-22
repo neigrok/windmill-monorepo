@@ -18,7 +18,7 @@ struct GymRoom: View {
   @State var routinesPath = NavigationPath()
   @State var logPath = NavigationPath()
   @State var coachPath = NavigationPath()
-  @State var proposal: ProposalReviewID?
+  @State var proposal: CoachProposalID?
   @State var coachHandoff: CoachHandoff?
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
@@ -41,7 +41,7 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }, onSetup: openSetup))
+          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = CoachProposalID(id: $0.description) }, onSetup: openSetup))
         }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
@@ -81,12 +81,7 @@ struct GymRoom: View {
       if let routine { RoutineSummarySheet(gym: gym, id: routine, awaitSync: routineAwaitingSync) { startRoutine = routine; self.routine = nil } }
     }
     .sheet(item: $setupBuilder) { editing in RoutineBuilder(gym: gym, editing: editing) { routine = $0 } }
-    .sheet(item: $proposal) { proposal in
-      ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
-        self.proposal = nil
-        ask("Tell me about the proposal for \(name).")
-      }
-    }
+    .sheet(item: $proposal) { proposal in ProposalSheet(gym: gym, id: proposal.id) }
     // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
     // shared (docs/design/guidelines/superapp-flow.md §5).
     .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in

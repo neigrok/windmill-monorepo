@@ -340,7 +340,7 @@ import XCTest
     for _ in 0..<4 where !share.isHittable { signed.swipeUp() }
     XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
     XCTAssertTrue(signed.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
-    let review = signed.buttons["coach-review"]
+    let review = signed.descendants(matching: .any)["coach-proposal-header"]
     for _ in 0..<4 {
       if review.waitForExistence(timeout: 3), review.isHittable { break }
       signed.swipeUp()
@@ -375,7 +375,7 @@ import XCTest
     anonymous.buttons["Send code"].tap(); replace(anonymous.textFields["email-code"], "482913")
     if anonymous.alerts.buttons["Add"].waitForExistence(timeout: 5) { anonymous.alerts.buttons["Add"].tap() }
     XCTAssertTrue(anonymous.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
-    XCTAssertTrue(anonymous.buttons["coach-review"].waitForExistence(timeout: 15))
+    XCTAssertTrue(anonymous.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 15))
     XCTAssertTrue(anonymous.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     let deferredQuestion = anonymous.staticTexts["Check my last workout."]
     for _ in 0..<4 where !deferredQuestion.isHittable { anonymous.swipeDown() }
@@ -414,7 +414,7 @@ import XCTest
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 15))
     XCTAssertFalse(app.staticTexts["Check my last workout."].exists)
-    XCTAssertFalse(app.buttons["coach-review"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal"].exists)
     XCTAssertFalse(app.buttons["coach-stop"].exists)
   }
 

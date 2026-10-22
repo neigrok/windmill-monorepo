@@ -39,10 +39,9 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Is Push A still doing anything?")
       capture("gym-coach-composing", look, app)
       app.buttons["coach-send"].tap()
-      XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      capture("08.2-coach-proposal-pending", look, app)
       let photo = app.buttons["Enlarge photo"].firstMatch
       for _ in 0..<4 where !photo.isHittable { app.scrollViews.firstMatch.swipeDown() }
       capture("gym-coach-conversation-top", look, app)
@@ -58,25 +57,6 @@ final class CoachCaptures: DesignCapture {
       capture("08.5-coach-what-coach-read", look, app)
       app.buttons["Close"].tap()
       XCTAssertTrue(app.navigationBars["What Coach read"].waitForNonExistence(timeout: 5))
-      app.scrollViews.firstMatch.swipeUp()
-      app.buttons["coach-review"].tap()
-      XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
-      capture("gym-coach-review-sheet", look, app)
-      app.swipeUp()
-      capture("gym-coach-review-actions", look, app)
-      app.buttons["Turn this down"].tap()
-      let turnDown = app.alerts["Turn this down?"]
-      XCTAssertTrue(turnDown.waitForExistence(timeout: 5))
-      capture("gym-coach-turn-down-confirmation", look, app)
-      turnDown.buttons["Keep it"].tap()
-      XCTAssertTrue(turnDown.waitForNonExistence(timeout: 5))
-      let apply = app.buttons["coach-apply-proposal"]
-      XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5)); apply.tap()
-      XCTAssertTrue(app.descendants(matching: .any)["coach-review-receipt"].waitForExistence(timeout: 10))
-      capture("gym-coach-review-applied", look, app)
-      app.buttons["Close"].tap()
-      XCTAssertTrue(app.buttons["coach-review"].waitForValue("Applied", timeout: 5))
-      capture("08.12-coach-proposal-applied", look, app)
       let history = app.buttons["coach-history"]
       XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 5)); history.tap()
       XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
@@ -90,6 +70,39 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(conversation.waitForNonExistence(timeout: 5))
       XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
       capture("gym-coach-history-deleted", look, app)
+    }
+  }
+
+  // Ask a board's question and wait for its card to settle at the conversation's end.
+  func askBoard(_ board: String, _ question: String, _ look: Look, arguments: [String] = []) -> XCUIApplication {
+    let app = launchSignedInCoach(look, arguments: ["-coach-board", board] + arguments)
+    ask(question, app)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    return app
+  }
+  // Show all, then drag until the card's decision stands over the composer.
+  func expandCard(_ app: XCUIApplication) {
+    let expand = app.buttons["coach-proposal-expand"]
+    XCTAssertTrue(expand.waitForExistence(timeout: 5)); expand.tap()
+    XCTAssertTrue(expand.waitForLabel("Show less", timeout: 5))
+    for _ in 0..<6 where !app.buttons["coach-reject-proposal"].isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+  }
+
+  func testProposalPending() {
+    captureBoard("08.2-coach-proposal-pending") { look in askBoard("change", "Is Push A still doing anything?", look) }
+    captureBoard("08.3-coach-proposal-expanded") { look in
+      let app = askBoard("change", "Is Push A still doing anything?", look)
+      expandCard(app)
+      return app
+    }
+    for look in Look.bothAtLargestText {
+      let app = askBoard("change", "Is Push A still doing anything?", look)
+      expandCard(app)
+      XCTAssertTrue(app.buttons["coach-apply-proposal"].isHittable && app.buttons["coach-reject-proposal"].isHittable)
+      capture("08.3-coach-proposal-expanded", look, app)
+      app.terminate()
     }
   }
 
@@ -139,30 +152,9 @@ final class CoachCaptures: DesignCapture {
     for look in Look.both {
       let app = launchSignedInCoach(look, arguments: ["-coach-out-of-date"])
       ask("Is Push A still doing anything?", app)
-      let review = app.buttons["coach-review"]
-      XCTAssertTrue(review.waitForValue("Out of date", timeout: 10))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Out of date", timeout: 10))
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       capture("08.14-coach-proposal-out-of-date", look, app)
-      for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
-      review.tap()
-      XCTAssertTrue(app.staticTexts["coach-review-out-of-date"].waitForExistence(timeout: 5))
-      capture("gym-coach-review-out-of-date", look, app)
-    }
-  }
-
-  // Review at AX3 scrolled to its middle: the caption and *Turn this down* stand on the hard scroll edge, no row through them.
-  func testReviewLargestText() {
-    for look in Look.bothAtLargestText {
-      let app = launchSignedInCoach(look)
-      ask("Is Push A still doing anything?", app)
-      let review = app.buttons["coach-review"]
-      XCTAssertTrue(review.waitForExistence(timeout: 10))
-      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
-      review.tap()
-      XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
-      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
-      capture("gym-coach-review-mid", look, app)
     }
   }
 
@@ -180,18 +172,10 @@ final class CoachCaptures: DesignCapture {
     for look in Look.both {
       let app = launchSignedInCoach(look, arguments: ["-coach-removal", "-coach-removal-stall"])
       ask("Remove Push A.", app)
-      XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 10))
-      capture("08.16-coach-proposal-remove", look, app)
-      app.scrollViews.firstMatch.swipeUp(); app.buttons["coach-review"].tap()
       let apply = app.buttons["coach-apply-proposal"]
-      XCTAssertTrue(apply.waitForExistence(timeout: 5))
-      capture("gym-coach-removal-review", look, app)
-      // The conversation behind the sheet is the first scroll view, so the drag starts in the sheet itself.
-      for _ in 0..<6 where !apply.isEnabled {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
-      }
-      XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
-      capture("gym-coach-removal-review-promise", look, app)
+      XCTAssertTrue(apply.waitForExistence(timeout: 10))
+      capture("08.16-coach-proposal-remove", look, app)
+      for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp() }
       apply.tap()
       XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
       capture("gym-coach-removal-waiting", look, app)

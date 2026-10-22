@@ -13,6 +13,7 @@ import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, def
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.js';
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
@@ -305,6 +306,15 @@ const handlers = {
         const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
         const base = Routine.decode(Fields.values('routine', input.base.id, input.base.fields));
         return { changeCount: proposal.countChanges(base) };
+      }
+      case 'ChangeBlocks': {
+        const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
+        const routine = input.routine ? Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields)) : null;
+        const each = (input.each ?? []).map((/** @type {string} */ id) => new Id(id, Exercise));
+        const diff = new ProposalDiff(proposal, routine, GymUnits.reading(input.units), each);
+        return { unchanged: diff.unchanged, blocks: diff.blocks.map((block) => ({
+          kind: block.kind, exerciseId: block.exerciseId === null ? null : block.exerciseId.record,
+          fields: block.fields.map((field) => ({ label: field.label, before: field.before, after: field.after, state: field.state })) })) };
       }
       case 'Metadata': {
         const value = Proposal.decode(Fields.values('proposal', input.id, input.fields));

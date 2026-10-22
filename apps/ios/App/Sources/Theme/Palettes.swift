@@ -6,6 +6,9 @@ import UIKit
 nonisolated enum GymPalette {
   static let control = Color(uiColor: .tertiarySystemFill)
   static let uiInkFaint = UIColor(named: "gym/ink-faint")!
+  // System red where no button role can paint it: a removal's badge on Coach's card, a failed Apply's line, and the label of
+  // the card's quiet Remove routine, whose own button style draws it.
+  static let destructive = Color(uiColor: .systemRed)
   static let canvas = Color("gym/canvas")
   static let card = Color("gym/card")
   static let line = Color("gym/line")

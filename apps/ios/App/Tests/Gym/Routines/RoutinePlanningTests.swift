@@ -323,8 +323,8 @@ import UIKit
     #expect(gym.routineProposals.map(\.id) == [waiting.id])
   }
 
-  // A connected tool's proposal gone out of date keeps its row, Out of date, the door to a Review without Apply or Turn this
-  // down; a Coach proposal leaves for its card, and a newer proposal or a routine out of sight takes the row away.
+  // A connected tool's proposal gone out of date keeps its row, Out of date, the door to its card without Apply or Reject; a
+  // Coach proposal leaves for its card in the conversation, and a newer proposal or a routine out of sight takes the row away.
   @Test func aConnectedToolsOutOfDateProposalKeepsItsRowAsTheDoorToItsReview() {
     let (_, gym) = fixture()
     gym.isAnonymous = false; gym.account = "routines-owner"
@@ -341,8 +341,8 @@ import UIKit
     #expect(gym.routineProposals.map { [$0.id.description, gym.proposalTitle($0), gym.proposalLine($0)] } == [
       ["a-tool-edited", "Push · 1 change", "Out of date"], ["b-tool-set-aside", "Legs · 1 change", "Out of date"],
       ["d-coach-newer", "Arms · 1 change", "From Coach"], ["g-tool-waiting", "Core · 1 change", "From Claude"]])
-    let reviews = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalReviewSheet(gym: gym, proposalId: $0) }
-    #expect(reviews.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
+    let cards = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalCard(gym: gym, id: $0) }
+    #expect(cards.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
       ["The routine changed after this was written. Nothing was applied.", "false", "false"],
       ["This proposal is out of date. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
   }
