@@ -469,6 +469,9 @@ these are the places it disagrees with a drawing, a brief or the build.
     dims when empty, *never a different size, shape or colour*. The targets put a round + outside the
     field and show the send arrow only when there is something to send.
   - The typing bubble, centred service notes and timestamps are not in canon.
+  - iOS builds the targets (bubbles, tails, timestamps, the typing bubble, Markdown in a full-width
+    bubble, the round + and the send arrow that appears with text), so the §6 lines above disagree
+    with the iOS app as well as the boards; Android and web still draw the §6 chat.
 - **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local

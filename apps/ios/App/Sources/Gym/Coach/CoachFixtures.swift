@@ -51,6 +51,7 @@ enum CoachFixture {
         gym.refresh()
       }
       guard let owner = gym.account, gym.coachAccountAvailable else { throw AppFailure(message: "Coach fixture account is unavailable.") }
+      CoachFixtureProtocol.now.withLock { $0 = gym.dates.moment.now.ms }
       if !ProcessInfo.processInfo.arguments.contains("-restore-board") {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
@@ -127,6 +128,8 @@ enum CoachFixture {
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let deletedThreads = Mutex<Set<String>>([])
   static let setupGenerations = Mutex<[String: Data]>([:])
+  // The log's now, so an answer is stamped on the day the room reads as today.
+  static let now = Mutex<Int64>(0)
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
@@ -148,7 +151,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let requestId = body["requestId"] as? String ?? "coach-fixture-request"
     let said = CoachFixtureConversation()
     var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
-      "status": "completed", "answer": said.answer, "at": 1_790_424_000_000, "revision": 2, "attachments": said.attachments,
+      "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 }, "revision": 2, "attachments": said.attachments,
       "steps": said.steps, "results": said.results, "receipt": said.receipt]
     if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture"), body["purpose"] as? String == "routine_setup" {
       generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []
@@ -210,6 +213,12 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"
+      // A held answer streams its first snapshot and keeps the stream open, so Coach stays mid-answer.
+      if said.held {
+        let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": type])!
+        client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("event: snapshot\ndata: \(first)\n\n".utf8)); return
+      }
     } else if path == "/v1/gym/threads" {
       response = ["threads": Self.deletedThreads.withLock { $0.contains("coach-fixture-thread") } ? [] : [row], "nextCursor": NSNull()]
     } else if path.hasPrefix("/v1/gym/threads/"), request.httpMethod == "DELETE" {
@@ -220,7 +229,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     else if path == "/v1/oauth/grants" { response = ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]] }
     else if path == "/v1/mcp-keys" { response = ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]] }
     else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = 3; response = ["thread": thread, "generation": stopped] }
-    else if path.contains("/attachments/"), request.httpMethod == "GET" { data = CoachFixtureConversation.photo(); type = "image/jpeg" }
+    else if path.contains("/attachments/"), request.httpMethod == "GET" { data = said.photo(); type = "image/jpeg" }
     else if path.contains("/attachments/") { response = ["attachment": ["id": path.components(separatedBy: "/").last!, "mediaType": "image/jpeg", "width": 10, "height": 10, "bytes": request.httpBody?.count ?? 10]] }
     else { response = row }
     if data.isEmpty { data = try! JSONSerialization.data(withJSONObject: response) }
@@ -231,11 +240,15 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   override func stopLoading() {}
 }
 
-// One conversation per fixture state: a change to Push A, its removal read from totals (`-coach-removal`), a routine and a note (`-coach-created`).
+// One conversation per fixture state: a change to Push A, its removal read from totals (`-coach-removal`), a routine and a note
+// (`-coach-created`), a Markdown answer (`-coach-markdown`), and Coach held mid-answer (`-coach-streaming`) or before its
+// first word under a program screenshot (`-coach-thinking`).
 nonisolated struct CoachFixtureConversation {
   let question: String
   let partial: String
   let answer: String
+  var held = false
+  var screenshot = false
   var attachments: [[String: Any]] = []
   var steps: [[String: Any]]
   var results: [[String: Any]] = []
@@ -251,7 +264,17 @@ nonisolated struct CoachFixtureConversation {
       ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "get_session",
        "coverage": "session", "setsRead": 1, "routine": "Push A", "workout": workout]]
     steps = [["tool": "list_notes"], ["tool": "list_sessions"], ["tool": "get_session"]]
-    if arguments.contains("-coach-created") {
+    if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
+      held = !arguments.contains("-coach-markdown"); screenshot = arguments.contains("-coach-thinking")
+      question = screenshot ? "My program, 3 days a week" : "What should Thursday look like?"
+      partial = screenshot ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
+      answer = "## Thursday · Push A\n\nKeep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.\n\n"
+        + "- Bench Press — 3 × 3 at 90\n- Incline Press — 3 × 10 at 24\n- Triceps Pushdown — 3 × 12\n\n"
+        + "| Movement | Last | Next |\n|---|---|---|\n| Bench Press | 5 × 5 · 82.5 | 3 × 3 · 90 |\n| Incline Press | 3 × 10 · 22 | 3 × 10 · 24 |\n| Pushdown | 3 × 12 · 30 | 3 × 12 · 30 |"
+      if screenshot { attachments = [["id": "coach-fixture-photo", "mediaType": "image/jpeg", "width": 360, "height": 480, "bytes": 500]] }
+      receipt = ["version": 1, "read": read, "steps": steps, "proposals": [], "observations": observations]
+      outcome = ["kind": "answered", "changes": 0, "routineId": NSNull(), "routine": NSNull()]
+    } else if arguments.contains("-coach-created") {
       question = "Build me a routine."; partial = "Push A is in your routines."
       answer = "Push A is in your routines: back squat, one set of five at 80."
       steps = [["tool": "list_notes"], ["tool": "list_exercises"], ["tool": "create_routine"], ["tool": "save_note"]]
@@ -272,6 +295,25 @@ nonisolated struct CoachFixtureConversation {
       receipt = ["version": 1, "read": read, "steps": steps, "proposals": ["coach-fixture-proposal"], "observations": observations]
       outcome = ["kind": "proposed", "changes": 3, "routineId": "coach-fixture-routine", "routine": "Push A"]
     }
+  }
+
+  func photo() -> Data { screenshot ? Self.program() : Self.photo() }
+
+  // A phone screenshot of a three-day program, as a lifter shares one to build from.
+  static func program() -> Data {
+    let format = UIGraphicsImageRendererFormat(); format.scale = 1
+    let size = CGSize(width: 360, height: 480)
+    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+      UIColor.white.setFill(); UIRectFill(CGRect(origin: .zero, size: size))
+      var y: CGFloat = 24
+      let lines: [(String, CGFloat, UIFont.Weight)] = [("Full body, 3× a week", 30, .bold), ("", 12, .regular), ("A", 24, .semibold), ("Squat 3×5", 22, .regular),
+        ("Bench 3×5", 22, .regular), ("Row 3×5", 22, .regular), ("", 12, .regular), ("B", 24, .semibold), ("Deadlift 1×5", 22, .regular),
+        ("Overhead press 3×5", 22, .regular), ("Chin-ups 3×8", 22, .regular), ("", 12, .regular), ("C", 24, .semibold), ("Front squat 3×5", 22, .regular)]
+      for (text, size, weight) in lines {
+        (text as NSString).draw(at: CGPoint(x: 24, y: y), withAttributes: [.font: UIFont.systemFont(ofSize: size, weight: weight), .foregroundColor: UIColor.black])
+        y += size * 1.3
+      }
+    }.jpegData(compressionQuality: 0.9)!
   }
 
   // The lifter's photo: a lit frame with the training symbol on it, so a capture shows how a picture sits, not a swatch.

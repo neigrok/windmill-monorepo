@@ -79,7 +79,7 @@ import UIKit
   func ask(_ question: String, _ app: XCUIApplication) {
     let field = app.descendants(matching: .any)["coach-question"]
     XCTAssertTrue(field.waitForExistence(timeout: 15))
-    XCTAssertFalse(app.buttons["coach-send"].isEnabled, "An empty question cannot be sent.")
+    XCTAssertFalse(app.buttons["coach-send"].exists, "An empty question has no Send.")
     field.tap(); field.typeText(question)
     let done = app.buttons["coach-keyboard-done"], send = app.buttons["coach-send"]
     let keyboard = app.keyboards.firstMatch, tab = app.tabBars.buttons["Coach"]
@@ -390,7 +390,7 @@ import UIKit
       XCTAssertTrue(band.waitForExistence(timeout: 10))
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 5))
-      XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+      XCTAssertFalse(app.buttons["coach-send"].exists)
       capture("coach-offline-\(suffix)", app)
       app.buttons["Dismiss message"].tap()
       XCTAssertTrue(band.waitForNonExistence(timeout: 5))

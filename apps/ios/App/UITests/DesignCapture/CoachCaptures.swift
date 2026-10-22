@@ -20,10 +20,13 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  func testEmpty() {
+    captureBoard("08.1-coach-empty") { look in launchSignedInCoach(look) }
+  }
+
   func testConversation() {
     for look in Look.both {
       let app = launchSignedInCoach(look)
-      capture("08.1-coach-empty", look, app)
       app.buttons["you"].tap()
       reach(app.buttons["settings-connected-log"], app).tap()
       XCTAssertTrue(app.staticTexts["Claude Desktop"].waitForExistence(timeout: 5))
@@ -87,6 +90,38 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(conversation.waitForNonExistence(timeout: 5))
       XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
       capture("gym-coach-history-deleted", look, app)
+    }
+  }
+
+  func testMarkdownAnswer() {
+    captureBoard("08.10-coach-markdown") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-markdown"])
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-read-receipt"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  func testStreaming() {
+    captureBoard("08.11-coach-streaming") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-streaming"])
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-answer"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["coach-stop"].exists)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  func testThinking() {
+    captureBoard("01.6-coach-thinking") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-thinking"])
+      ask("My program, 3 days a week", app)
+      XCTAssertTrue(app.buttons["Enlarge photo"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-typing"].exists)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
     }
   }
 
