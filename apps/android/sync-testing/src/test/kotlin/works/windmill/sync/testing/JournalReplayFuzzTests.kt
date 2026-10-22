@@ -82,6 +82,8 @@ class JournalReplayFuzzTests {
         val handle = ModelServerHandle(model, clock)
         var transport = InMemoryTransport(handle, clock)
         fun document(args: Json) = Document(args.member("body").str(), args.member("mood"), args.member("energy"), args.member("source"), args.member("stamp"))
+        // A day with no writing keeps no ratings: the empty-day rule, stated independently of the server.
+        fun canonical(document: Document) = if (document.body.trim().isEmpty()) Document("", Json.Null, Json.Null, Json.of("typed"), document.stamp) else document
         fun intent(name: String, args: Json) = Intent(scope, command = Command(name, args)).json
         fun serverCommand(name: String, args: Json): Json = checkNotNull(model.call(ServerCall("A", null, name, args, listOf(intent(name, args))), clock.now()))
         fun dataPlane(state: ServerState) = state.json.with("replicas" to null, "results" to null, "requests" to null)
@@ -215,7 +217,7 @@ class JournalReplayFuzzTests {
                     assertEquals(Json.of("ok"), result["s"])
                     if (name == "journal.savePage") {
                         count("save")
-                        if (old == null || newer(args.member("stamp"), old.stamp)) oracle[day] = document(args)
+                        if (old == null || newer(args.member("stamp"), old.stamp)) oracle[day] = canonical(document(args))
                         else { assertEquals(before, dataPlane(model.state)); count("stale") }
                     } else if (receipt != null) {
                         assertEquals(before, dataPlane(model.state)); count("replay")
@@ -229,8 +231,8 @@ class JournalReplayFuzzTests {
                         assertTrue(stamp.member("ms").long() >= now)
                         assertTrue(stamp.member("counter").long() in 0 until Stamp.COUNTER_LIMIT)
                         if (old != null) assertTrue(newer(stamp, old.stamp))
-                        oracle[day] = Document(body, args.member("mood").orNull() ?: old?.mood ?: Json.Null,
-                            args.member("energy").orNull() ?: old?.energy ?: Json.Null, args.member("source"), stamp)
+                        oracle[day] = canonical(if (here.trim().isEmpty()) Document(body, old?.mood ?: Json.Null, old?.energy ?: Json.Null, old?.source ?: Json.of("typed"), stamp)
+                            else Document(body, args.member("mood").orNull() ?: old?.mood ?: Json.Null, args.member("energy").orNull() ?: old?.energy ?: Json.Null, args.member("source"), stamp))
                     }
                 }
                 pull(); checkState()
