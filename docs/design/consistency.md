@@ -82,7 +82,8 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     account?* / *This phone has 3 workouts from before you signed in. Your account already has
     training. Add them, or discard them from this phone.* / *Cancel sign-in* · *Discard* · *Add*, and
     its confirm *Discard 3 workouts?* / *They are deleted from this phone. You can’t undo this.* (Shell
-    iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.4 `1254:33533`, 07.5 `1254:33632`). Both codes word
+    iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.4 `1254:33533`, 07.5 `1254:33632`); the nouns follow
+    what the phone holds (12n). Both codes word
     it differently (`AppModel.swift:848-856`, `AccountSheet.swift:547` *Not now*;
     `app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says signed-out work
     *moves to the account on sign-in* with no question.
@@ -233,11 +234,9 @@ and Android disagree.
   (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
   banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
   removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-56`); see 12g.
-- **9l · Live Activity labels.** Board 04.4 draws the workout clock and the since-last-set clock
-  unlabelled, and target 04.2 puts since-last-set top right. The widget still names them —
-  *Since last set* on its clock and *… since last set* in its compact text
-  (`WorkoutActivityWidget.swift`). Check on a device which names are drawn, and align the widget or
-  the boards.
+- **9l · Live Activity clocks carry no words (owner ruling, 2026-10-22; iOS build).** Boards 04.2
+  and 04.4 draw the clocks with no names; VoiceOver names them. The widget's position line still
+  adds *… since last set* (`WorkoutActivityWidget.swift`, `position`): build work in iOS task 59.
 - **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the app on
   2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
   predate the native chrome; redraw them from the app.
@@ -282,7 +281,9 @@ and Android disagree.
   and a *Manage connections* row joins once something is connected. On iOS (board 09.3) a connected screen leads with **Connected**, each row opening the shell's connection
   settings, puts the level rows, the caption and the five lines behind one **How this works** door
   row, and draws no *Manage connections*; with nothing connected the level rows and caption are on
-  screen and **How this works** is the same door. Decide whether Android follows.
+  screen and **How this works** is the same door. Owner ruling (2026-10-22): Android follows iOS
+  (boards 09.3–09.5); build work in Android task 51. Neither library has Material's `open_in_new`,
+  so 09.3's browser rows draw `arrow_forward`; the build uses `open_in_new`.
 - **9u · Dates in the person's locale.** iOS formats every Gym and shell date in the person's locale
   through one formatter (*Sep 23*, *Wed, Sep 23*; `GymFormat.swift`); the domain kit's
   `Readout.briefDay` orders *26 Sep* by hand. Rule whether shared readouts follow the locale on
@@ -344,8 +345,6 @@ and Android disagree.
   colour roles, 00.4 native anatomy (Discard is system red; no Theme token yet), 04.1 Control
   Center control, 04.3 Dynamic Island, 04.4 Live Activity states (clock labels removed). Still
   needing a device or a fixture, named in their captions: 04.1, 04.3, 04.4, 05.8's pan, 08.6, 08.7.
-  The Live Activity double tap (`177:29`, 04.5) draws what the app does not do: verify on a device
-  and either rule it in or retire the board.
 - **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
   2026-10-21 feedback as targets (Dark, with a Daylight twin beneath). Each target holds
   the slot and number of the board it replaced; the replaced boards are deleted. Targets:
@@ -613,7 +612,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   lands. Sign-in,
   email code and You live in the Shell file's Android page (section `33:1568`). Boards drawn from
   code because no capture reaches them say so in their captions (16b). The parity rulings of
-  2026-10-22 (12a–12l) apply to both pages.
+  2026-10-22 (12a–12n) apply to both pages.
 - **11b · Swipe delete is immediate (owner ruling, 2026-10-22).** One Material swipe-to-dismiss row
   everywhere: the error-red ground with a trash icon, gone on release past the threshold, no
   Snackbar Undo and no hold (`guidelines/system-architecture.md` §3; component `Android / Swipe row`
@@ -698,8 +697,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   only, and its channel is `IMPORTANCE_LOW`, hidden on the lock screen. No Quick Settings tile
   exists; with no workout open the tile opens Routines and never starts one (12b). Boards 04.1
   `1254:46694` (tile), 04.2 `1254:46754`, 04.3 `1254:46826`, 04.4 `1254:46875`.
-  Board 04.4 shows the routine name on the lock screen; rule whether the notification is public or
-  private there.
+  Owner ruling (2026-10-22): on the lock screen the notification shows only the routine and the
+  clock, never set content — a private notification with a public version (board 04.4; build in
+  task 15).
 - **11m · Sign-in fields.** In Dark the email and code fields draw no outline until focused
   (`platform/auth/SignInDoor.kt`); Shell · Android 15a `33:1946`, 15b `33:4237`, 15c `33:4317` draw
   M3 outlined fields.
@@ -786,6 +786,22 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   your routines.*, because Coach proposes only inside a conversation the lifter starts
   (`Proposal.h` `ProposalDoor`). The iOS build still says *as you train*
   (`Gym/Coach/CoachSetup.swift:24` on branch `ios-gym-backlog`); Android has no greeting yet (11h).
+- **12m · Delete account with unsent changes (owner ruling, 2026-10-22).** They are deleted with the
+  account, said plainly and with no extra choice: a fifth fact *3 changes on this phone haven’t been
+  confirmed by your account. They are deleted too.* (Shell iOS 27f `91:5187`, 27g `91:5256`; Shell
+  Android 27f `96:2122`, 27g `96:2157`). The phone flushes for up to 5 s, then calls
+  `DELETE /v1/me`, then discards its copy, as the web's closure does (`AuthProvider.jsx`
+  `closeAccount`); neither phone builds Delete account yet (iOS 50, Android 48). The fact's symbols
+  (`iOS / Symbol / icloud.slash`, `Android / Symbol` `cloud_off`) are in the Design System but not
+  published: until the owner publishes, those 8 boards draw local stand-ins named `⟳ DS publish · …`,
+  which `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
+- **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** Only the
+  kinds present, in this order: workouts, routines, weigh-ins, movements, notes, journal pages (iOS).
+  Sets go with their workout; settings, movement names and Coach drafts are not named. The account
+  line names what the account holds; *it* for one item, else *them*; the confirm title is *Discard
+  {phrase}?* for one or two kinds, *Discard all of it?* for three or more. On iOS one alert answers
+  both rooms. Boards: Shell iOS 23g–23j (`94:5426`, `94:5455`, `94:5482`, `94:5511`); Gym Android
+  07.9 `1336:17333`, 07.10 `1336:17426`. Build: iOS 48, Android 25.
 
 ### Coach on the client
 

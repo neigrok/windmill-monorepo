@@ -3,7 +3,7 @@
 **Figma:**
 - Shell · Android 16a You, signed out: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-1569) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-719)
 - Shell · Android 16b You, signed in: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4408) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-877)
-- Gym board 09.5 Gym settings is deleted; no board draws a Gym settings page, a Units control or lb anywhere.
+- No Gym board draws a Gym settings page, a Units control or lb anywhere.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` = `apps/android/platform/src/main/kotlin/works/windmill/platform/` or `app/`)
 - Gym settings (`ui/SettingsScreen.kt:81-129`): *Units* with kg / lb (`UnitsRow`, :131-162; under lb the caption `Bodyweight.kilogramsOnly`), *Workout hidden* / *Show workout* (:113-119, 45), *Notes* / *what you write for Coach* and *Connected log* rows (:122-123), *Account* / the email or *Not signed in* (:125), and the saved-workout cards (`DeviceTrainingRow`, :126, 25).
