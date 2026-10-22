@@ -313,7 +313,7 @@ import UIKit
     XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Out of date", timeout: 10))
     let why = app.staticTexts["coach-proposal-out-of-date"]
     for _ in 0..<4 where !why.isHittable { app.scrollViews.firstMatch.swipeUp() }
-    XCTAssertEqual(why.label, "A newer proposal replaced this one. Nothing was applied.")
+    XCTAssertEqual(why.label, "A newer suggestion replaced this one. Nothing was applied.")
     XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["coach-reject-proposal"].exists)
     capture("coach-proposal-out-of-date-light", app)
     app.terminate()

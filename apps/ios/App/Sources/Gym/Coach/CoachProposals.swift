@@ -6,13 +6,15 @@ import SyncSchema
 
 // The decision a proposal waits on the log for; an unreadable queue may hold one, and cannot say which.
 nonisolated enum CoachQueuedDecision: String { case apply, reject, unreadable }
+// Why a proposal can no longer be applied: a newer proposal took its place, or its routine changed under it.
+nonisolated enum CoachOutOfDate: Equatable { case replaced, routineChanged }
 // The proposals, their removal receipts, the decisions still queued and the proposals out of date, as one read saw them.
 nonisolated struct CoachProposalsRead {
   let replica: String
   let receipts: [RoutineRemovalReceipt]
   let proposals: [Proposal]
   let queued: Set<ID<Proposal>>
-  let outOfDate: Set<ID<Proposal>>
+  let outOfDate: [ID<Proposal>: CoachOutOfDate]
 }
 
 extension Proposal {
@@ -40,11 +42,21 @@ extension GymModel {
       guard queued.contains(proposal.id), let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
       return try Proposal(Fields(confirmed))
     }
-    let outOfDate = try Set(proposals.map(\.id).filter { try ProposalState(read, id: $0).outOfDate })
+    var outOfDate: [ID<Proposal>: CoachOutOfDate] = [:]
+    for proposal in proposals {
+      let state = try ProposalState(read, id: proposal.id)
+      guard state.outOfDate else { continue }
+      // The domain's refusal names the reason, *routine-changed* or a replacement; a routine gone counts as changed.
+      switch state.refusal(for: proposal.id, applying: true) {
+      case .proposalSuperseded(let refused): outOfDate[proposal.id] = (try? refused.detail?.member("reason").asString()) == "routine-changed" ? .routineChanged : .replaced
+      case .gone: outOfDate[proposal.id] = .routineChanged
+      default: outOfDate[proposal.id] = .replaced
+      }
+    }
     return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate)
   }
   func updateCoachProposals(_ read: CoachProposalsRead) {
-    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = [] }
+    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:] }
     proposalReadReplica = read.replica
     publish(\.coachRemovalReceipts, read.receipts)
     var visible = read.proposals
@@ -122,11 +134,16 @@ extension GymModel {
   }
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
   // Out of date, it can no longer be applied: the domain's own Apply rule says so (readCoachProposals).
-  func coachProposalOutOfDate(_ proposal: Proposal) -> Bool { outOfDateProposals.contains(proposal.id) }
-  // A proposal as its card reads it: against its routine while it waits, a dumbbell pair's load said per hand.
+  func coachProposalOutOfDate(_ proposal: Proposal) -> Bool { outOfDateProposals[proposal.id] != nil }
+  // A proposal as its card reads it: against its routine while it waits, a dumbbell pair's load said per hand. Once a
+  // decision is on its way the routine no longer holds the order it replaced, so the card keeps the blocks this phone last
+  // read while the proposal waited on the lifter, its moves among them.
   func coachDiff(_ proposal: Proposal) -> ProposalDiff {
+    if let kept = waitingCoachDiffs[proposal.id], proposal.state != "pending" || coachQueuedDecision(proposal.id) != nil { return kept }
     let each = proposal.changes.map(\.exerciseId).filter { id in catalogue.find(id).map { $0.equipment == "dumbbell" && $0.loadCount == 2 } ?? false }
-    return ProposalDiff(proposal, routine: coachRoutine(proposal), each: Set(each))
+    let diff = ProposalDiff(proposal, routine: coachRoutine(proposal), each: Set(each))
+    if proposal.state == "pending", !coachProposalOutOfDate(proposal) { waitingCoachDiffs[proposal.id] = diff }
+    return diff
   }
   // The store's count wherever a proposal's changes are counted; the domain's count over its routine until the store has
   // counted it.

@@ -319,7 +319,7 @@ import UIKit
     let waiting = Proposal(id: ID("pending"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
     let settled = Proposal(id: ID("settled"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Done", changes: [], state: "applied")
     let replaced = Proposal(id: ID("old"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Old", changes: [], supersededBy: waiting.id)
-    gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id]
+    gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id: .replaced]
     #expect(gym.routineProposals.map(\.id) == [waiting.id])
   }
 
@@ -337,14 +337,15 @@ import UIKit
                      proposal("c-coach-set-aside", "pull", "ask", "superseded"), proposal("d-coach-newer", "arms", "ask", "pending"),
                      proposal("e-tool-older", "arms", "mcp", "superseded"), proposal("f-tool-gone", "gone", "mcp", "pending"),
                      proposal("g-tool-waiting", "core", "mcp", "pending"), proposal("h-tool-applied", "core", "mcp", "applied")]
-    gym.outOfDateProposals = [ID("a-tool-edited"), ID("b-tool-set-aside"), ID("c-coach-set-aside"), ID("e-tool-older"), ID("f-tool-gone")]
+    gym.outOfDateProposals = [ID("a-tool-edited"): .routineChanged, ID("b-tool-set-aside"): .replaced, ID("c-coach-set-aside"): .replaced,
+                              ID("e-tool-older"): .replaced, ID("f-tool-gone"): .routineChanged]
     #expect(gym.routineProposals.map { [$0.id.description, gym.proposalTitle($0), gym.proposalLine($0)] } == [
       ["a-tool-edited", "Push · 1 change", "Out of date"], ["b-tool-set-aside", "Legs · 1 change", "Out of date"],
       ["d-coach-newer", "Arms · 1 change", "From Coach"], ["g-tool-waiting", "Core · 1 change", "From Claude"]])
     let cards = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalCard(gym: gym, id: $0) }
     #expect(cards.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
-      ["The routine changed after this was written. Nothing was applied.", "false", "false"],
-      ["This proposal is out of date. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
+      ["Push changed after this suggestion. Nothing was applied.", "false", "false"],
+      ["A newer suggestion replaced this one. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
   }
 
   // One visit to the editor is one screen event, however often its steps push over it and pop; each step records its own.

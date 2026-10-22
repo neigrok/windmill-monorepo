@@ -143,7 +143,7 @@ enum CoachFixture {
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let deletedThreads = Mutex<Set<String>>([])
   static let setupGenerations = Mutex<[String: Data]>([:])
-  // The log's now, so an answer is stamped on the day the room reads as today.
+  // The log's now, so an answer is stamped on the day the room reads as today; each answer a minute after the one before.
   static let now = Mutex<Int64>(0)
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -166,7 +166,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let requestId = body["requestId"] as? String ?? "coach-fixture-request"
     let said = CoachFixtureConversation(asked: body["question"] as? String)
     var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
-      "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 }, "revision": 2, "attachments": said.attachments,
+      "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 += 60_000; return $0 }, "revision": 2, "attachments": said.attachments,
       "steps": said.steps, "results": said.results, "receipt": said.receipt]
     if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture"), body["purpose"] as? String == "routine_setup" {
       generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []

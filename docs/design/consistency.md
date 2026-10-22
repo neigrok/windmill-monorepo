@@ -487,9 +487,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
   English. The spec (§6 table), `09-coach.md`, `feedback-contract.md` and boards 01.1–01.15 and
   08.1–08.31 now say so. Build work, none of it in code today:
-  - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in every surface
-    (iOS History table, Android `Proposal.kt` and its review actions, web `proposals.js`
-    `receiptLine`).
+  - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in Android
+    `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
+    *Reject* and *Rejected* and asks nothing.
   - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
     are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
     routines* line.

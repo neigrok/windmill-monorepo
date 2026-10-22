@@ -31,20 +31,22 @@ extension ProposalDiff.Kind {
   }
 }
 
-// *CHANGED* over *Bench Press* over its field lines; a removed block strikes its title and dims it.
+// *CHANGED* over *Bench Press* over its field lines; a removed block strikes its title and dims it, and a dimmed block —
+// one that can no longer happen — draws every word in ink-dim.
 struct ChangeBlock: View {
   let kind: ProposalDiff.Kind
   let title: String?
   let fields: [ProposalDiff.Field]
+  var dimmed = false
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Label(kind.word, systemImage: kind.symbol).labelStyle(ChangeBadgeStyle())
         .font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(kind.tint)
       if let title {
         Text(title).font(.headline).strikethrough(kind == .removed)
-          .foregroundStyle(kind == .removed ? GymPalette.inkDim : GymPalette.ink)
+          .foregroundStyle(kind == .removed || dimmed ? GymPalette.inkDim : GymPalette.ink)
       }
-      ForEach(Array(fields.enumerated()), id: \.offset) { _, field in DiffField(field: field) }
+      ForEach(Array(fields.enumerated()), id: \.offset) { _, field in DiffField(field: field, dimmed: dimmed) }
     }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
   }
 }
@@ -59,6 +61,7 @@ struct ChangeBadgeStyle: LabelStyle {
 // a new one semibold, a gone one struck. At accessibility sizes the value stands under its label.
 struct DiffField: View {
   let field: ProposalDiff.Field
+  var dimmed = false
   @ScaledMetric(relativeTo: .body) var labelWidth = 100.0
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
@@ -73,7 +76,7 @@ struct DiffField: View {
   }
   var value: Text {
     let old = Text(field.before ?? "").strikethrough().foregroundStyle(GymPalette.inkDim)
-    let new = Text(field.after ?? "").fontWeight(.semibold).foregroundStyle(GymPalette.ink)
+    let new = Text(field.after ?? "").fontWeight(.semibold).foregroundStyle(dimmed ? GymPalette.inkDim : GymPalette.ink)
     switch field.state {
     case .changed: return old + Text("  ") + Text(Image(systemName: "arrow.right")).font(.footnote).foregroundStyle(GymPalette.inkFaint) + Text("  ") + new
     case .same: return Text(field.after ?? "").foregroundStyle(GymPalette.inkDim)
@@ -92,13 +95,13 @@ struct DiffField: View {
 }
 
 // A card in Coach's conversation, the reading width on the card colour; a card that waits on the lifter carries the
-// accent stroke.
+// accent stroke, one that can no longer happen the line's.
 struct ChangeCard: ViewModifier {
-  var stroked = false
+  var stroke: Color?
   func body(content: Content) -> some View {
     content.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
       .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-      .overlay { if stroked { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(GymPalette.accent, lineWidth: 1) } }
+      .overlay { if let stroke { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(stroke, lineWidth: 1) } }
   }
 }
 

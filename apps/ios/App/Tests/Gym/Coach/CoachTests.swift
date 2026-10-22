@@ -1270,7 +1270,7 @@ import SyncTesting
       #expect(gym.coachDecideProposal(pending, apply: false))
       try expectProposal(gym.proposals.first, equals: pending)
       #expect(gym.proposals.count == 1 && gym.coachProposalAwaitingReceipt(pending.id))
-      #expect(ProposalCard(gym: gym, id: pending.id.description).primaryTitle == "Rejecting…")
+      #expect(ProposalCard(gym: gym, id: pending.id.description).stance == .rejected, "A rejection settles its card at once")
       h.sync(); gym.refresh()
       #expect(gym.proposals.first?.state == "dismissed")
     }
@@ -1308,7 +1308,7 @@ import SyncTesting
       (thread(""), false, false)]
     #expect(rows.map { [$0.0.headline(removal: $0.1), $0.0.settled(removal: $0.1, outOfDate: $0.2) ?? "-"].joined(separator: " | ") } == [
       "Push A · 3 changes | -", "Push A · a removal | -", "Push A · 2 changes | Out of date", "Push A · 1 change | Applied",
-      "Push A · a removal | Removed", "Push A · 1 change | Applied", "Push A · 2 changes | Turned down", "Push A · 2 changes | Out of date",
+      "Push A · a removal | Removed", "Push A · 1 change | Applied", "Push A · 2 changes | Rejected", "Push A · 2 changes | Out of date",
       "4 changes | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -"])
   }
   // An out-of-date proposal has no Apply and no Reject: the card says once why nothing was applied — a newer one
@@ -1342,8 +1342,9 @@ import SyncTesting
     let cards = ids.map { ProposalCard(gym: gym, id: "proposal-" + $0) }
     #expect(proposals.map(\.state) == ["pending", "superseded", "superseded", "pending", "applied", "dismissed"])
     #expect(proposals.map(gym.coachProposalOutOfDate) == [false, true, true, true, false, false])
-    #expect(cards.map { $0.outOfDate ?? "-" } == ["-", "A newer proposal replaced this one. Nothing was applied.",
-      "This proposal is out of date. Nothing was applied.", "The routine changed after this was written. Nothing was applied.", "-", "-"])
+    #expect(cards.map { $0.outOfDate ?? "-" } == ["-", "A newer suggestion replaced this one. Nothing was applied.",
+      "Push outrun B changed after this suggestion. Nothing was applied.", "Push unsent changed after this suggestion. Nothing was applied.", "-", "-"])
+    #expect(cards.map(\.stance) == [.open, .outOfDate(.replaced), .outOfDate(.routineChanged), .outOfDate(.routineChanged), .applied, .rejected])
     #expect(cards.map(\.decidable) == [true, false, false, false, false, false])
     #expect(Set(gym.routineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
   }
@@ -1364,7 +1365,7 @@ import SyncTesting
     gym.refresh()
     #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
     #expect(!card.decidable)
-    #expect(card.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(card.outOfDate == "Push A changed after this suggestion. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.proposals.first?.state == "pending")
     #expect(deleted.releaseAt == nil)
     h.sync(); gym.refresh()
@@ -1393,7 +1394,7 @@ import SyncTesting
     let card = ProposalCard(gym: gym, id: proposal.id.description)
     #expect(gym.routines.first?.revision == proposal.baseRevision && gym.coachProposalOutOfDate(proposal))
     #expect(gym.routineProposals.isEmpty && !card.decidable)
-    #expect(card.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(card.outOfDate == "Push A changed after this suggestion. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true))
     h.sync(); gym.refresh()
     #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID("edited-bench"), ID("edited-deadlift")] && gym.notices.isEmpty)
@@ -1451,8 +1452,8 @@ import SyncTesting
     #expect(retries() == [["screen": "coach", "action": "retry", "outcome": outcome]])
   }
   // A proposal that reordered its routine keeps its Order row once applied, since the store counted that change.
-  // A move reads its places against the routine while the proposal waits; once applied, the routine holds the new order and
-  // only the store's count still says it moved.
+  // A move reads its places against the routine while the proposal waits; once applied the routine holds the new order, so
+  // the applied card keeps the blocks the phone read while it waited.
   @Test func aMoveReadsItsPlacesWhileTheProposalWaits() throws {
     let (h, gym) = fixture()
     for (id, name) in [("order-squat", "Squat"), ("order-row", "Row")] {
@@ -1473,7 +1474,8 @@ import SyncTesting
     h.sync(); gym.refresh()
     let applied = try #require(gym.proposals.first)
     #expect(applied.state == "applied" && gym.routines.first?.entries.map(\.exerciseId) == [ID<Exercise>("order-row"), ID<Exercise>("order-squat")])
-    #expect(lines(applied).isEmpty && gym.coachChangeCount(applied) == 1)
+    #expect(lines(applied) == ["moved | Order 2nd → 1st"] && gym.coachChangeCount(applied) == 1)
+    #expect(ProposalDiff(applied, routine: gym.coachRoutine(applied)).blocks.isEmpty, "The routine no longer holds the order it replaced")
   }
   // What Coach wrote besides answering is never silent: a saved note, or a save that could not be confirmed.
   @Test func aNoteSaveUnderAnAnswerIsNeverSilent() {

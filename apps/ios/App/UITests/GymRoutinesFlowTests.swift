@@ -670,7 +670,7 @@ import UIKit
       XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-sheet"].waitForExistence(timeout: 5))
       let line = app.staticTexts["coach-proposal-out-of-date"]
       XCTAssertTrue(line.waitForExistence(timeout: 5))
-      XCTAssertTrue(["The routine changed after this was written. Nothing was applied.", "This proposal is out of date. Nothing was applied."].contains(line.label), line.label)
+      XCTAssertEqual(line.label, "Push A changed after this suggestion. Nothing was applied.")
       XCTAssertFalse(app.buttons["coach-apply-proposal"].exists || app.buttons["coach-reject-proposal"].exists)
       capture(app, "tool-out-of-date-review-" + appearance)
       app.terminate()

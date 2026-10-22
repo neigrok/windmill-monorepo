@@ -148,14 +148,41 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
-  func testOutOfDate() {
-    for look in Look.both {
-      let app = launchSignedInCoach(look, arguments: ["-coach-out-of-date"])
-      ask("Is Push A still doing anything?", app)
-      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Out of date", timeout: 10))
-      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      capture("08.14-coach-proposal-out-of-date", look, app)
+  func testDecided() {
+    captureBoard("08.12-coach-proposal-applied") { look in
+      let app = askBoard("change", "Is Push A still doing anything?", look)
+      reachDecision(app).tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Applied", timeout: 10))
+      return app
     }
+    captureBoard("08.13-coach-proposal-rejected") { look in
+      let app = askBoard("change", "Is Push A still doing anything?", look)
+      _ = reachDecision(app); app.buttons["coach-reject-proposal"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Rejected", timeout: 5))
+      return app
+    }
+    captureBoard("08.14-coach-proposal-out-of-date") { look in
+      let app = askBoard("routine-changed", "Is Push A still doing anything?", look)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Out of date", timeout: 10))
+      return app
+    }
+    captureBoard("08.28-coach-two-proposals") { look in
+      let app = askBoard("two", "Is Push A still doing anything?", look)
+      reachDecision(app).tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForValue("Applied", timeout: 10))
+      ask("And Pull A?", app)
+      XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      for _ in 0..<4 where !app.buttons["coach-reject-proposal"].isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+      return app
+    }
+  }
+  // The card's Apply, dragged into reach.
+  func reachDecision(_ app: XCUIApplication) -> XCUIElement {
+    let apply = app.buttons["coach-apply-proposal"]
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+    return apply
   }
 
   func testOffline() {

@@ -283,11 +283,12 @@ nonisolated enum CoachCopy {
     [routine, removal ? "a removal" : GymCount.of(changes, "change")].compactMap { $0 }.joined(separator: " · ")
   }
   static let outOfDate = "Out of date"
-  // How a proposal settled, one word on its card, its History row and its Review's band; a waiting one says nothing.
+  // How a proposal settled, one word on its card and its History row; a waiting one says nothing. The wire keeps
+  // *dismissed* for a rejected proposal.
   static func settled(_ state: String, removal: Bool) -> String? {
     switch state {
     case "applied": removal ? "Removed" : "Applied"
-    case "dismissed": "Turned down"
+    case "dismissed": "Rejected"
     case "superseded": outOfDate
     default: nil
     }
