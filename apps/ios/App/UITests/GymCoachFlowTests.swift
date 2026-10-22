@@ -470,16 +470,16 @@ import UIKit
     field.tap(); field.typeText("Build a three day full body routine.")
     XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
-    let review = app.buttons["coach-review-routine-setup-operation-B"]
-    XCTAssertTrue(review.waitForExistence(timeout: 10))
+    let apply = app.buttons["coach-save-routines"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
-    for _ in 0..<4 where !review.isHittable { app.swipeUp() }
-    review.tap()
-    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Barbell"].firstMatch.exists)
-    app.buttons["Close"].tap()
-    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists)
-    review.tap(); app.buttons["coach-save-routines"].tap()
+    let second = app.buttons["coach-draft-1"]
+    for _ in 0..<4 where !second.isHittable { app.swipeUp() }
+    second.tap()
+    XCTAssertTrue(second.waitForValue("expanded", timeout: 5))
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-B"].exists, "Nothing exists before Apply")
+    for _ in 0..<6 where !apply.isHittable { app.swipeUp() }
+    apply.tap()
     let receipt = app.buttons["coach-created-setup-operation-B"]
     XCTAssertTrue(receipt.waitForExistence(timeout: 10)); receipt.tap()
     XCTAssertTrue(app.navigationBars["Full body B"].waitForExistence(timeout: 10))

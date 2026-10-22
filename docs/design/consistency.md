@@ -491,9 +491,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in Android
     `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
     *Reject* and *Rejected* and asks nothing.
-  - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
-    are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
-    routines* line.
+  - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
+    routines*); Android and the web still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
+    proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
   - Block order: `09-coach.md` and 08.27 list a rename, moves, changes, removals, then additions; 08.2 and 08.3 draw
     Changed, Added, Removed, Changed, Moved. iOS follows the written order, so 08.2's first two blocks read Moved and
     Changed; 08.2/08.3 want redrawing in that order.

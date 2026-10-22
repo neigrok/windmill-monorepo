@@ -64,29 +64,13 @@ import XCTest
     XCTAssertEqual(question.value as? String, "Build a short full body routine for three days each week")
     XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
-    let review = app.buttons["coach-review-routines"]
-    XCTAssertTrue(review.waitForExistence(timeout: 30))
-    reveal(review, in: app); review.tap()
-    XCTAssertTrue(app.buttons["coach-save-routines"].waitForExistence(timeout: 5))
-    try capture(app, "anonymous-review-" + suffix)
-    if largeText {
-      let lastTarget = app.staticTexts["coach-review-final-set"]
-      let save = app.buttons["coach-save-routines"]
-      for _ in 0..<16 {
-        if lastTarget.exists, lastTarget.isHittable, lastTarget.frame.maxY <= save.frame.minY - 28 { break }
-        let top = app.navigationBars.firstMatch.frame.maxY + 24
-        let bottom = save.frame.minY - 40
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: bottom))
-        let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: top))
-        start.press(forDuration: 0.05, thenDragTo: end)
-      }
-      XCTAssertTrue(lastTarget.isHittable)
-      XCTAssertLessThanOrEqual(lastTarget.frame.maxY, save.frame.minY - 28)
-      XCTAssertTrue(save.isHittable)
-      try capture(app, "anonymous-review-bottom-" + suffix)
-    }
-    app.buttons["coach-save-routines"].tap()
+    let apply = app.buttons["coach-save-routines"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 30))
+    XCTAssertTrue(app.buttons["coach-reject-routines"].exists)
+    reveal(apply, in: app)
+    XCTAssertTrue(apply.isHittable, "Apply is reachable under the drafts at every size")
+    try capture(app, "anonymous-drafts-" + suffix)
+    apply.tap()
     let receipt = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch
     XCTAssertTrue(receipt.waitForExistence(timeout: 30))
     XCTAssertTrue(app.buttons["coach-keep-routines"].exists)

@@ -33,6 +33,7 @@ nonisolated struct CoachSaved: Codable {
     var groups: [String: [String]]
   }
   var adoptedSources: [String]?
+  var rejectedDrafts: [String]?
   var phoneDrafts: [CoachPhoneDraft]?
   var onboarding: [CoachOnboardingRecord]?
   var acceptedFirstMessage: Bool?

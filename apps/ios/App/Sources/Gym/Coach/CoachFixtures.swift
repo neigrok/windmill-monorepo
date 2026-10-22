@@ -20,6 +20,14 @@ enum CoachFixture {
     false
     #endif
   }
+  // The setup fixture's drafts: three full-body days, or one with `-coach-one-draft`.
+  nonisolated static var draftNames: [String] {
+    #if DEBUG && targetEnvironment(simulator)
+    ProcessInfo.processInfo.arguments.contains("-coach-one-draft") ? [""] : ["A", "B", "C"]
+    #else
+    []
+    #endif
+  }
   nonisolated static var offline: Bool {
     #if DEBUG && targetEnvironment(simulator)
     ProcessInfo.processInfo.arguments.contains("-coach-offline")
@@ -200,9 +208,10 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []
       if (body["attachmentIds"] as? [String])?.isEmpty != false { generation["attachments"] = [] }
       generation["receipt"] = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": [], "proposals": [], "observations": []]
-      generation["answer"] = "Here are three drafts. Review each routine and save the ones you want."
-      generation["routineDrafts"] = ["A", "B", "C"].enumerated().map { index, suffix in
-        ["operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix, "name": "Full body " + suffix,
+      generation["answer"] = CoachFixture.draftNames.count == 1 ? "Here is 1 new routine. Check it, then apply."
+        : "Your screenshot has 3 full-body days. Here are 3 new routines. Check them, then apply."
+      generation["routineDrafts"] = CoachFixture.draftNames.enumerated().map { index, suffix in
+        ["operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix, "name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces),
          "position": index, "state": "pending", "entries": ["back-squat", "bench-press", "barbell-row"].enumerated().map { position, exercise in
            ["position": position, "exerciseId": exercise, "sets": [["reps": 5, "weightKg": NSNull()]], "restSeconds": 120] as [String: Any]
          }] as [String: Any]
@@ -232,8 +241,8 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       } else if path == "/v1/gym/coach/onboarding" {
         response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
           "errorCode": NSNull(), "allowance": allowance, "message": "Here are your routine drafts. Review them before saving.",
-          "routines": ["A", "B", "C"].map { suffix in
-            ["name": "Full body " + suffix, "entries": ["back-squat", "bench-press", "barbell-row"].map { exercise in
+          "routines": CoachFixture.draftNames.map { suffix in
+            ["name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces), "entries": ["back-squat", "bench-press", "barbell-row"].map { exercise in
               ["exerciseId": exercise, "sets": Array(repeating: ["reps": 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
             }] as [String: Any]
           }]

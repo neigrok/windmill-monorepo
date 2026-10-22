@@ -351,6 +351,30 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
+  // A signed-in gym with no routines asks for a program and gets Coach's drafts on one card.
+  func askDrafts(_ look: Look, arguments: [String] = []) -> XCUIApplication {
+    let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture"] + arguments)
+    openGymFromJournal(app, opensOn: .coach)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-capabilities"].waitForExistence(timeout: 15))
+    ask("My program, 3 days a week", app)
+    let apply = app.buttons["coach-save-routines"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 15))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+    return app
+  }
+
+  func testDrafts() {
+    captureBoard("01.7-coach-drafts") { look in askDrafts(look) }
+    captureBoard("01.14-coach-one-draft") { look in askDrafts(look, arguments: ["-coach-one-draft"]) }
+    captureBoard("01.15-coach-drafts-rejected") { look in
+      let app = askDrafts(look)
+      app.buttons["coach-reject-routines"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-drafts-rejected"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]

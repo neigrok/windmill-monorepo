@@ -98,16 +98,18 @@ way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
-account- or replica-scoped local Coach archive. Every new routine is a draft: Review shows its
-movements, equipment and targets, and Save is the only creation path. A movement the phone does not
-know yet reads *New movement*, with no equipment or load basis. Every signed-in ask sends
-`routineReview: true`. Signed-in confirmation replays the exact server-held document using its request
-and operation identity; a draft that arrived without its request offers no Save. A draft the server no
-longer holds, or cannot write, says so and retires Save; a signed-out, busy or unanswered confirmation
-keeps Save for another try, and an account change during the save says so without claiming a failure.
-Anonymous results commit all routines and the replay receipt in one domain action only after Save; a
-retained result can also be explicitly saved after account adoption. Creation links appear after that
-save succeeds. Existing routine changes continue through Review and Apply.
+account- or replica-scoped local Coach archive. Every new routine is a draft, and an answer's drafts
+stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
+movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
+on this phone with no server call and leaves *Rejected · 3 routines*. A movement the phone does not know
+yet reads *New movement*. Every signed-in ask sends `routineReview: true`. Signed-in Apply replays each
+exact server-held document using its request and operation identity; a draft that arrived without its
+request cannot be applied. A draft the server no longer holds, or cannot write, says so and retires
+Apply; a signed-out, busy or unanswered confirmation keeps Apply for another try, and an account change
+during the save says so without claiming a failure. Anonymous results commit all routines and the
+replay receipt in one domain action only after Apply; a retained result can also be applied after
+account adoption. Creation links appear after that save succeeds. Existing routine changes are decided
+on their proposal card.
 
 Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
 question stays in the field, and the refusal and its reset time are drawn once, centred in the
@@ -197,7 +199,8 @@ four seconds in flight, then unanswered,
 first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
 with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
-with a spent allowance, `-coach-history` lists four conversations in History,
+with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
+one routine,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

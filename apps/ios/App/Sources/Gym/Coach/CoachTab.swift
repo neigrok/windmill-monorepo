@@ -40,7 +40,6 @@ struct CoachTab: View {
   @State var history: CoachHistory
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
-  @State var routineReview: CoachRoutineReview?
   @State var sources: CoachReading?
   @State var photo: PhotosPickerItem?
   @State var preparing = false
@@ -85,7 +84,6 @@ struct CoachTab: View {
           if coach.allowed, coach.refusal != .absent { composer }
         }.background { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
       }
-      .sheet(item: $routineReview) { review in CoachRoutineReviewSheet(coach: coach, review: review) }
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
@@ -299,17 +297,8 @@ struct CoachTab: View {
             .accessibilityIdentifier("coach-sign-in")
         }
         if record.results.isEmpty, !response.routines.isEmpty {
-          Button {
-            routineReview = CoachRoutineReview(id: record.id, requestId: record.id, drafts: response.routines.map(\.domain), operationId: nil)
-          } label: {
-            VStack(alignment: .leading, spacing: RoomSpace.small) {
-              ForEach(Array(response.routines.enumerated()), id: \.offset) { _, routine in
-                Text(routine.name).font(.headline)
-                Text(GymCount.of(routine.entries.count, "movement")).font(.subheadline).foregroundStyle(GymPalette.inkDim)
-              }
-              Label("Review", systemImage: "chevron.right").frame(minHeight: RoomSpace.minimumTarget)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(RoomSpace.inset).contentShape(Rectangle())
-          }.buttonStyle(.bordered).accessibilityIdentifier("coach-review-routines")
+          CoachDraftsCard(coach: coach, id: record.id, routines: response.routines.map(\.domain),
+                          saves: [CoachRoutineReview(id: record.id, requestId: record.id, drafts: response.routines.map(\.domain), operationId: nil)])
         }
       }
       if !record.results.isEmpty {
@@ -368,16 +357,12 @@ struct CoachTab: View {
                     read: { sources = $0 }, notes: { destination = .notes })
   }
 
+  // The drafts an answer still holds, on one card; Apply saves each by its operation.
   @ViewBuilder func routineDrafts(_ drafts: [CoachRoutineDraft], requestId: String?) -> some View {
-    ForEach(drafts.filter { $0.state == "pending" }) { draft in
-      Button {
-        routineReview = CoachRoutineReview(id: draft.id, requestId: requestId, drafts: [draft.routine], operationId: draft.operationId)
-      } label: {
-        HStack {
-          GymRow(title: draft.name, meta: GymCount.of(draft.entries.count, "movement"))
-          Label("Review", systemImage: "chevron.right").font(.subheadline)
-        }.padding(RoomSpace.inset).contentShape(Rectangle())
-      }.buttonStyle(.bordered).accessibilityIdentifier("coach-review-routine-" + draft.operationId)
+    let pending = drafts.filter { $0.state == "pending" }
+    if let first = pending.first {
+      CoachDraftsCard(coach: coach, id: requestId ?? first.operationId, routines: pending.map(\.routine),
+                      saves: pending.map { CoachRoutineReview(id: $0.id, requestId: requestId, drafts: [$0.routine], operationId: $0.operationId) })
     }
   }
 
