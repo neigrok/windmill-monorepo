@@ -118,7 +118,9 @@ struct RoutineDetail: View {
           Group {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-                GymRow(title: "\(index + 1). \(gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable")",
+                let exercise = gym.catalogue.find(entry.exerciseId)
+                let yours = exercise != nil && !SeedExercises.contains(entry.exerciseId)
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(yours ? " · yours" : "")",
                        meta: Readout.target(entry.sets))
                   .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }

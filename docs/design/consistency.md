@@ -822,8 +822,6 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
   movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
   device check; Android builds none (01.17 `1283:40111`, 01.18 `1283:40674`, 02.13 `1283:39087`).
-  iOS's routine summary no longer draws *· yours* (`Routines/RoutinesTab.swift`), from an earlier
-  02.2 without it: restore it to match the ruling.
 - **12j · A refused sign-in code.** Android says *That code has expired. Codes work once and last 15
   minutes — send a fresh one.* for every refusal, a typo included (`plat/auth/Auth.kt:261-266`); both
   phones draw the server's *That code didn’t work.* / *Check the digits, or send a fresh one.* (Shell

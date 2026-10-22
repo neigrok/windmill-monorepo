@@ -12,9 +12,9 @@ final class RoutinesCaptures: DesignCapture {
 
   func testRoutineSummary() {
     captureBoard("02.2-routine-summary") { look in
-      let app = launchSignedInCoach(look)
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "summary"])
       open(.routines, app)
-      app.buttons["routine-coach-fixture-routine"].tap()
+      app.buttons["routine-board-lower"].tap()
       XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10))
       return app
     }

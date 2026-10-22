@@ -614,9 +614,9 @@ import UIKit
     XCTAssertEqual(app.textFields["routine-name"].value as? String, "Custom day")
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.navigationBars["Custom day"].waitForExistence(timeout: 5))
-    let title = app.staticTexts["1. Custom press kept"]
+    let title = app.staticTexts["1. Custom press kept · yours"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
-    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept", "1 × max"])
+    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept · yours", "1 × max"])
   }
 
   func testProposalScreensInBothAppearances() {

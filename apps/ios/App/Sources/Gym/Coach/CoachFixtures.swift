@@ -68,7 +68,7 @@ enum CoachFixture {
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-note"), title: "How I want to be talked to", body: "Don’t cheerlead. Say the number and stop.")))
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
       let board = CoachBoard.current
-      if board != nil { _ = gym.run(CreateExercise(Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: "barbell", stepKg: 2.5))) }
+      for exercise in board == nil ? [] : CoachBoard.yours { _ = gym.run(CreateExercise(exercise)) }
       for case .exercise(let exercise, _, _, _) in board?.writes ?? [] { _ = gym.run(CreateExercise(exercise)) }
       let routines = board?.routines ?? [(id: "coach-fixture-routine", name: "Push A", entries: [CoachBoard.entry("back-squat", 1, 5, 80)])]
       for planned in routines {
@@ -468,6 +468,9 @@ nonisolated struct CoachBoard {
                turns: [Turn(question: question, answer: answer, proposals: ["board-proposal"])])
   }
 
+  // The movements every board's lifter made: their routines carry them beside the seeded ones.
+  static let yours = [Exercise(id: ID("upright-row"), name: "Upright Row", pattern: "pull", equipment: "barbell", stepKg: 2.5),
+                      Exercise(id: ID("landmine-squat"), name: "Landmine Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)]
   static let bench = entry("bench-press", 5, 5, 82.5), heavier = entry("bench-press", 3, 3, 90)
   static let pushA = [bench, entry("cable-fly", 3, 12, 15), entry("triceps-pushdown", 3, 12, 30), entry("overhead-press", 3, 8, 40)]
   static let pushB = [bench, entry("incline-bench-press", 3, 10, 50), entry("overhead-press", 3, 8, 40), entry("triceps-pushdown", 3, 12, 30), entry("lateral-raise", 3, 15, 8)]
@@ -500,6 +503,10 @@ nonisolated struct CoachBoard {
     "movement-details": wrote("Incline DB is really dumbbells, one in each hand.", "Done. Enter the weight of one dumbbell from now on.", tool: "update_exercise",
       .exercise(Exercise(id: ID("board-incline-db"), name: "Incline DB", pattern: "press", equipment: "barbell", stepKg: 2.5), name: "Incline Press", equipment: "dumbbell", loadCount: 2)),
     "change": change,
+    "summary": CoachBoard(
+      routines: change.routines + [(id: "board-lower", name: "Lower A", entries: [entry("back-squat", 1, 5, 80), entry("romanian-deadlift", 3, 8, 82.5),
+                                                                                   entry("landmine-squat", 3, 10, 140), entry("standing-calf-raise", 3, 12, 45)])],
+      proposals: change.proposals, turns: change.turns),
     "routine-changed": { var board = change; board.editedAfter = (id: "board-routine", entries: [entry("bench-press", 5, 5, 85)] + pushA.dropFirst()); return board }(),
     "bench": one("Is Push A still doing anything?", "Try 3 sets of 3 at 90 kg for a heavier top set.",
       routine: ("Push A", pushB), proposed: ("Push A", [heavier] + pushB.dropFirst())),
