@@ -85,6 +85,27 @@ final class ShellCaptures: DesignCapture {
     }
   }
 
+  // 24a, 24c, 24d: How you sign in, Remove Apple? and Apple ID already in use on the You list that ends Sign out · Delete account.
+  func testHowYouSignIn() {
+    captureBoard("24a-how-you-sign-in-email-only") { look in
+      let app = launch("24a", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 30))
+      XCTAssertTrue(app.buttons["delete-account"].exists)
+      return app
+    }
+    captureBoard("24c-remove-apple") { look in
+      let app = launch("24c", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      XCTAssertTrue(app.buttons["Remove Apple"].waitForExistence(timeout: 30))
+      return app
+    }
+    captureBoard("24d-apple-id-already-in-use") { look in
+      let app = launch("24a", look, arguments: ["-fake-apple", "-apple-fixture", "taken"])
+      XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 30)); app.buttons["apple-sign-in"].tap()
+      XCTAssertTrue(app.alerts["Apple ID already in use"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
   func testGymKeepAndSignIn() {
     for look in Look.both {
       let app = launch("keep-gym", look)
