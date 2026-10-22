@@ -189,6 +189,12 @@ final class CoachCaptures: DesignCapture {
       app.terminate()
     }
   }
+  func testMovementChanges() {
+    captureBoard("08.17-coach-proposal-add") { look in askBoard("add", "My shoulders feel tight.", look) }
+    captureBoard("08.18-coach-proposal-remove-movement") { look in askBoard("drop", "Upright Row hurts my shoulder.", look) }
+    captureBoard("08.19-coach-proposal-swap") { look in askBoard("swap", "I can’t do chin-ups yet.", look) }
+    captureBoard("08.20-coach-proposal-move") { look in askBoard("move", "What should I do first?", look) }
+  }
   // The card's Apply, dragged into reach.
   func reachDecision(_ app: XCUIApplication) -> XCUIElement {
     let apply = app.buttons["coach-apply-proposal"]
