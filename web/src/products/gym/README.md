@@ -17,7 +17,7 @@ Every local gym read and write uses the domain kit through `gymRuntime.js`. Trai
 `domain/training.js`; `trainingActions.js` owns imports, corrections, set deletion and the four phone-only
 actions. The web remains a live mirror and does not call StartSession, AppendSet, FinishSession or DiscardSession.
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
-`trainingReads.js` owns prefill, last time, records and chart windows, and
+`trainingReads.js` owns prefill, last time, records, the log's new bests (`ProgressRecords`, read by no web screen yet) and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
 Proposal values and decisions live in `domain/proposals.js`; their shared domain reads supply
 the proposal screen and routine history. Removal receipts survive sync and restart until shown.
@@ -87,10 +87,13 @@ Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run 
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
 and a replica change recomputes each read once. These render checks have no timing budget.
-The gym domain claims 13 of the 14 corpus files and 594 vectors, compared by JCS and with reversed record
-order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 112 vectors (including 36 promoted REST samples and 22 regression cases),
-proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions claim 133;
-nothing remains pending. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
+The gym domain claims 13 of the 14 corpus files and 610 vectors, compared by JCS and with reversed record
+order; `recovery-actions.json` does not apply, since the web holds no signed-out workout. Training reads claim 116 vectors (including 36 promoted REST samples, 22 regression cases
+and the `ProgressRecords` new bests), proposals claim 56 (the proposal state over the log-confirmed routine and its `OutOfDate` read
+included), units claim 57 and the weight ladder claims 36. Training actions claim 133; nothing remains pending.
+The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the
+proposal's state alone: a pending proposal whose routine moved on the log, in an edit the log has not confirmed, or out
+of sight has no Apply and no Turn this down, and says so where they stood. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
 failed commits, command refusals, raw receipt replay and additive correction recovery.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training

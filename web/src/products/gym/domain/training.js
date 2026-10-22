@@ -3,7 +3,7 @@
 import { DecodeError, EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
 import { ChoiceSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
-import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
+import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
 import { PlanSnapshot, Routine } from './routines.js';
 
@@ -77,6 +77,9 @@ export const GymEstimate = Object.freeze({
     if (GymEstimate.value(weightKg, reps, kind, rpe) === null) return null;
     return roundHalfAway(weightKg * 100) * (reps === 1 ? 30 : 30 + reps);
   },
+  // An estimate as the log states it, to a tenth of a kilogram.
+  /** @param {number} e1rm */
+  stated(e1rm) { return roundToQuantum(e1rm, 0.1); },
 });
 
 export class TrainingSetValue {

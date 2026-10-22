@@ -254,32 +254,73 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
   });
 }
 
+// A proposal with its routine three ways: as this device stores it, whether it is in sight, and as the log last confirmed it.
 export class ProposalState {
-  /** @param {Reader} read @param {Id<ProposalValue>} id */
-  constructor(read, id) {
-    this.proposal = read.repository(Proposal).find(id, 'stored');
-    this.routine = this.proposal === null ? null : read.repository(Routine).find(this.proposal.routineId, 'stored');
-    this.routineVisible = this.proposal !== null && read.repository(Routine).find(this.proposal.routineId, 'drawn') !== null;
-    this.moment = read.moment;
+  /**
+   * @param {{ proposal: ProposalValue | null, routine: RoutineValue | null, moment: Moment,
+   *   routineVisible?: boolean, confirmedRoutine?: RoutineValue | null }} parts
+   */
+  constructor({ proposal, routine, moment, routineVisible = true, confirmedRoutine = null }) {
+    this.proposal = proposal;
+    this.routine = routine;
+    this.routineVisible = routineVisible;
+    this.confirmedRoutine = confirmedRoutine;
+    this.moment = moment;
     Object.freeze(this);
   }
 
+  /** @param {Reader} read @param {Id<ProposalValue>} id */
+  static of(read, id) {
+    const proposal = read.repository(Proposal).find(id, 'stored');
+    const routines = read.repository(Routine);
+    const confirmed = proposal === null ? null : read.confirmed(Routine, proposal.routineId);
+    return new ProposalState({ proposal, moment: read.moment,
+      routine: proposal === null ? null : routines.find(proposal.routineId, 'stored'),
+      routineVisible: proposal !== null && routines.find(proposal.routineId, 'drawn') !== null,
+      confirmedRoutine: confirmed === null ? null : Routine.decode(Fields.record(confirmed)) });
+  }
+
+  // What the log would answer the decision, said before it is sent; applying also needs the routine as the proposal found it, in sight.
   /** @param {Id<ProposalValue>} id @param {boolean} applying */
   refusal(id, applying) {
-    const value = this.proposal;
-    if (value === null) return GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted'));
-    const revision = this.routine?.revision ?? null;
-    const reason = value.supersededBy !== null ? 'replaced'
-      : revision !== null && value.baseRevision !== null && revision !== value.baseRevision ? 'routine-changed'
-        : value.state === 'superseded' && revision !== null && value.baseRevision !== null ? 'superseded' : null;
-    if (value.state === 'superseded' || (applying && value.state === 'pending' && reason === 'routine-changed')) {
-      return reason === null ? null : GymRefusals.ofRefused(new Refused('proposal-superseded', id.ref, { reason }, 'predicted'));
+    const proposal = this.proposal;
+    if (proposal === null) return GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted'));
+    if (proposal.state === 'superseded') {
+      if (proposal.supersededBy !== null) return this.superseded(id, 'replaced');
+      const revision = this.routine?.revision ?? null;
+      if (revision === null || proposal.baseRevision === null) return null;
+      return this.superseded(id, revision === proposal.baseRevision ? 'superseded' : 'routine-changed');
     }
-    if (value.state !== 'pending' && value.state !== (applying ? 'applied' : 'dismissed')) {
-      return GymRefusals.ofRefused(new Refused('proposal-settled', id.ref, { state: value.state }, 'predicted'));
+    if (proposal.state === 'pending') {
+      if (!applying) return null;
+      if (this.routineMoved(proposal)) return this.superseded(id, 'routine-changed');
+      if (this.routine === null || !this.routineVisible) return GymRefusals.ofRefused(new Refused('unknown-record', proposal.routineId.ref, null, 'predicted'));
+      return null;
     }
-    return null;
+    if (proposal.state === (applying ? 'applied' : 'dismissed')) return null;
+    return GymRefusals.ofRefused(new Refused('proposal-settled', id.ref, { state: proposal.state }, 'predicted'));
   }
+
+  // Out of date, a proposal can no longer be applied: replaced, set aside by the log, or its routine moved while it waited.
+  get outOfDate() {
+    const proposal = this.proposal;
+    if (proposal === null) return false;
+    if (proposal.state === 'superseded' || proposal.supersededBy !== null) return true;
+    return proposal.state === 'pending' && this.refusal(proposal.id, true) !== null;
+  }
+
+  // The log counted a new revision, or this device holds a name or movements the log will count before it reads the decision.
+  /** @param {ProposalValue} proposal */
+  routineMoved(proposal) {
+    const revision = this.routine?.revision ?? null;
+    if (revision !== null && proposal.baseRevision !== null && revision !== proposal.baseRevision) return true;
+    if (this.routine === null || this.confirmedRoutine === null) return false;
+    return this.routine.name !== this.confirmedRoutine.name
+      || !sameJson(this.routine.entries.map((entry) => entry.json), this.confirmedRoutine.entries.map((entry) => entry.json));
+  }
+
+  /** @param {Id<ProposalValue>} id @param {string} reason */
+  superseded(id, reason) { return GymRefusals.ofRefused(new Refused('proposal-superseded', id.ref, { reason }, 'predicted')); }
 }
 
 /** @param {Id<ProposalValue>} id */
@@ -288,7 +329,7 @@ export function ApplyProposal(id) {
     scope: Proposal.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
-    load(read) { return new ProposalState(read, id); },
+    load(read) { return ProposalState.of(read, id); },
     /** @param {ProposalState} loaded */
     decide(loaded) {
       const refused = loaded.refusal(id, true);
@@ -298,10 +339,8 @@ export function ApplyProposal(id) {
       if (proposal.state === 'applied') return Decision.unchanged(null);
       const command = { name: 'gym.applyProposal', args: { proposalId: id.json }, specs: [] };
       if (proposal.state === 'superseded') return Decision.write(Plan.running(command), null);
-      const routine = loaded.routine;
-      if (routine === null || !loaded.routineVisible) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', proposal.routineId.ref, null, 'predicted')));
-      const change = proposal.intent === 'remove' ? Prediction.remove(routine.id)
-        : Prediction.update(routine.id, { name: proposal.proposedName, entries: proposal.document.map((entry) => entry.json) });
+      const change = proposal.intent === 'remove' ? Prediction.remove(proposal.routineId)
+        : Prediction.update(proposal.routineId, { name: proposal.proposedName, entries: proposal.document.map((entry) => entry.json) });
       const settled = Prediction.update(id, { state: 'applied', settledAt: loaded.moment.now.ms });
       return Decision.write(Plan.running(command, [settled, change]), null);
     },
@@ -314,7 +353,7 @@ export function DismissProposal(id) {
     scope: Proposal.scope,
     refusals: GymRefusals,
     /** @param {Reader} read */
-    load(read) { return new ProposalState(read, id); },
+    load(read) { return ProposalState.of(read, id); },
     /** @param {ProposalState} loaded */
     decide(loaded) {
       const refused = loaded.refusal(id, false);
