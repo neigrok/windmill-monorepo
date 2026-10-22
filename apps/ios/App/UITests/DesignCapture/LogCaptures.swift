@@ -71,7 +71,6 @@ final class LogCaptures: DesignCapture {
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     choose("gym-record-rename", from: "gym-record-more", app, capturing: "gym-movement-record-menu", look)
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
-    capture("05.9-edit-exercise", look, app)
     app.buttons["Cancel"].tap()
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForNonExistence(timeout: 5)); back(app)
     app.buttons["gym-session-share"].tap()
@@ -119,6 +118,35 @@ final class LogCaptures: DesignCapture {
       return app
     }
   }
+  func openEditExercise(_ look: Look) -> XCUIApplication {
+    let app = openRecord(look)
+    for _ in 0..<3 where !app.buttons["gym-record-rename"].exists {
+      app.buttons["gym-record-more"].tap(); _ = app.buttons["gym-record-rename"].waitForExistence(timeout: 3)
+    }
+    app.buttons["gym-record-rename"].tap()
+    XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
+    return app
+  }
+  // Switched to Dumbbells, the sheet asks how many are lifted and says what the weight means.
+  func testEditExercise() {
+    captureBoard("05.9-edit-exercise") { look in
+      let app = openEditExercise(look)
+      app.buttons["gym-rename-movement-equipment"].tap()
+      let dumbbells = app.buttons["Dumbbells"]
+      XCTAssertTrue(dumbbells.waitForExistence(timeout: 5)); dumbbells.tap()
+      XCTAssertTrue(app.segmentedControls["gym-rename-movement-equipment-count"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+  func testEditExerciseEquipment() {
+    captureBoard("05.10-edit-exercise-equipment", settle: 0.6) { look in
+      let app = openEditExercise(look)
+      app.buttons["gym-rename-movement-equipment"].tap()
+      XCTAssertTrue(app.buttons["Kettlebell"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
   // The whole series, panned back to its earliest workouts.
   func testRecordPanned() {
     captureBoard("05.8-record-panned", settle: 1.0) { look in

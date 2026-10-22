@@ -1011,7 +1011,10 @@ Detents, dismissals and commits per §5; `presentationCornerRadius` never set.
   an existing one; ✓ in the bar. A weigh-in's day is its identity: a new one picks
   its *Date* with the system picker, and an existing one shows *Date* as a fact in the subtitle form
   (*Sat, Sep 26*).
-- **Rename movement**: the name field, the help line, *Rename* in the bar.
+- **Edit exercise**: *Cancel* · title · ✓; the name field with *The new name shows in your routines
+  and history. Search still finds the old name.*; *Equipment* as a menu showing its choice alone; for
+  Dumbbells, *Dumbbells lifted* *One | Two*; the basis help, then *Changing equipment updates past
+  volume. Your logged weights do not change.* It opens at its large detent with nothing focused.
 
 ### 7.11 You, Keep and sign-in (§2 shell)
 

@@ -127,9 +127,9 @@ import UIKit
     XCTAssertGreaterThanOrEqual(contrast, 4.5,
       "\(appearance) \(button.label): rendered glyph/fill contrast \(contrast), glyph pixels \(glyph.count)", file: file, line: line)
   }
-  // The rename sheet focuses its name as it rises with the keyboard, so a tap could land outside it and dismiss it.
+  // The rename sheet opens at its large detent with nothing focused, so its name takes a tap first.
   func retype(_ field: XCUIElement, with text: String) {
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap()
     XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForExistence(timeout: 5))
     let value = field.value as? String ?? ""
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + text)

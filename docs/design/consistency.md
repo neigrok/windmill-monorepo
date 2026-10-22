@@ -526,6 +526,10 @@ these are the places it disagrees with a drawing, a brief or the build.
     `briefs/11-bodyweight.md` and `briefs/18-progress.md` still join dots within the gap threshold.
     The Record draws no *Most reps* tile, no Recent sets and no estimates footer;
     `android-delivery.md`'s Movement record still keeps recent sets.
+  - Edit exercise (05.10) draws Bodyweight third in the Equipment menu; the build lists it last, as
+    Create movement does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
+    `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so the rack's
+    keypad, Targets and Create movement read the same words.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
