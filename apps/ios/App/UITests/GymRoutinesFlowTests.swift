@@ -151,7 +151,7 @@ import UIKit
   func openRename(_ app: XCUIApplication) {
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     app.navigationBars.buttons["More"].tap()
-    let item = app.buttons["Edit exercise"]
+    let item = app.buttons["Edit movement"]
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 5)); item.tap()
   }
   func createRoutine(_ app: XCUIApplication) {
@@ -503,7 +503,9 @@ import UIKit
     XCTAssertTrue(deadlift.wait(for: \.label, toEqual: "1. Deadlift, Open", timeout: 5))
     deadlift.press(forDuration: 1)
     let moveDown = app.buttons["Move down"]
-    XCTAssertTrue(moveDown.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveDown.tap()
+    XCTAssertTrue(moveDown.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(app.buttons["Edit movement"].exists && !app.buttons["Edit exercise"].exists)
+    moveDown.tap()
     XCTAssertTrue(order.element(boundBy: 0).wait(for: \.identifier, toEqual: "builder-movement-bench-press", timeout: 5))
     deadlift.press(forDuration: 1)
     let moveUp = app.buttons["Move up"]

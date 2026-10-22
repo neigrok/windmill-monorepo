@@ -129,7 +129,7 @@ extension View {
 
 // A movement in a list the lifter orders, as the routine editor and This workout draw it: the list stays out of edit mode, so
 // a long press lifts the row by its drawn handle and a swipe shows the trash. Its menu and VoiceOver's actions hold the same
-// acts: Edit exercise, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
+// acts: Edit movement, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
 struct OrderedMovementRow<Label: View>: View {
   let exercise: Exercise?
   let index: Int
@@ -151,7 +151,7 @@ struct OrderedMovementRow<Label: View>: View {
     }.accessibilityIdentifier(identifier)
       .trashSwipe("Remove movement", enabled: removable, action: remove)
       .contextMenu {
-        if let exercise { Button("Edit exercise", systemImage: "pencil") { edit(exercise) } }
+        if let exercise { Button("Edit movement", systemImage: "pencil") { edit(exercise) } }
         Button("Move up") { move(-1) }.disabled(index == 0)
         Button("Move down") { move(1) }.disabled(index == count - 1)
         if removable { Button("Remove movement", systemImage: "trash", role: .destructive, action: remove) }

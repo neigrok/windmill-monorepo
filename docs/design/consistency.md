@@ -920,8 +920,7 @@ these places.
 - **9z · One noun per thing (owner rulings, 2026-10-16 and 2026-10-22).** Every phone screen says
   *workout* (never *session*), *movement* (never *exercise*) and *The log* (tab and title); *session*
   stays in code and on the wire. Both pages draw this (iOS 05.9 *Edit movement*; Android pager
-  *Movement 3 of 5*, tab *The log*). Code still differs: iOS *Edit exercise* (`Components/GymRows.swift:118`,
-  `Log/MovementRecordScreen.swift:66`, `Components/RenameMovementSheet.swift`); Android *Log* (tab and
+  *Movement 3 of 5*, tab *The log*). Code still differs: Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,

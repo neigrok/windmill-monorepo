@@ -96,7 +96,7 @@ struct RenameMovementSheet: View {
         } footer: { Text(MovementEquipment(equipment, loadCount: loadCount).help + " Changing equipment updates past volume. Your logged weights do not change.") }
           .listRowBackground(GymPalette.card)
       }
-      .modifier(GymPage()).navigationTitle("Edit exercise")
+      .modifier(GymPage()).navigationTitle("Edit movement")
       .sheetCommit("Save", identifier: "gym-rename-movement-commit",
                    disabled: gym.accountTransition || MovementName.problem(name) != nil || MovementEdit(exercise, name: name, equipment: equipment, loadCount: loadCount).isEmpty, busy: saving,
                    dismiss: { dismiss() }, commit: rename)

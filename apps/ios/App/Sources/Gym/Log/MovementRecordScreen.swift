@@ -63,7 +63,7 @@ struct MovementRecordScreen: View {
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           MoreMenu(identifier: "gym-record-more") {
-            Button("Edit exercise", systemImage: "pencil") { renaming = true }.accessibilityIdentifier("gym-record-rename")
+            Button("Edit movement", systemImage: "pencil") { renaming = true }.accessibilityIdentifier("gym-record-rename")
           }.disabled(gym.readFailed || gym.accountTransition || movement == nil)
         }
       }

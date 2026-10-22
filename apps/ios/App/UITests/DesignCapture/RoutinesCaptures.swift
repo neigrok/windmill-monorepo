@@ -115,7 +115,7 @@ final class RoutinesCaptures: DesignCapture {
       XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
       XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
       app.navigationBars.buttons["More"].tap()
-      app.buttons["Edit exercise"].tap()
+      app.buttons["Edit movement"].tap()
       XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
       capture("gym-routine-rename-movement-sheet", look, app)
     }

@@ -53,7 +53,9 @@ import Vision
     app.buttons["workout-assembly"].tap()
     let movement = app.buttons["Back Squat, 2 of 4 sets"]
     XCTAssertTrue(movement.waitForExistence(timeout: 5)); movement.press(forDuration: 1)
-    app.buttons["Edit exercise"].tap()
+    XCTAssertFalse(app.buttons["Edit exercise"].exists)
+    app.buttons["Edit movement"].tap()
+    XCTAssertTrue(app.navigationBars["Edit movement"].waitForExistence(timeout: 5))
     let name = app.textFields["gym-rename-movement-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Back Squat".count) + "Dumbbell squat")
@@ -88,7 +90,9 @@ import Vision
     try capture(app, "seed-renamed-history-light")
     history.tap()
     XCTAssertTrue(app.navigationBars.staticTexts["Dumbbell squat"].waitForExistence(timeout: 5))
-    app.navigationBars.buttons["More"].tap(); app.buttons["Edit exercise"].tap()
+    app.navigationBars.buttons["More"].tap()
+    XCTAssertFalse(app.buttons["Edit exercise"].exists)
+    app.buttons["Edit movement"].tap()
     XCTAssertTrue(app.segmentedControls["gym-rename-movement-equipment-count"].buttons["One"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.segmentedControls["gym-rename-movement-equipment-count"].buttons["One"].isSelected)
   }
