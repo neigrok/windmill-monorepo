@@ -1355,18 +1355,16 @@ import SyncTesting
     #expect(rows.map { $0.meta(dates) } == ["read · delete · since Sep 26", "whole account · since today", "API key · whole account · since Sep 26, 2025"])
     #expect(throws: DecodingError.self) { try CoachConnection.decode(grants: grants, keys: Data("{}".utf8)) }
   }
+  // A History row trails the day it was last asked, and no day before the server stamps one.
+  @Test func historyRowsTrailTheDayEachWasLastAsked() throws {
+    let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
+    let rows = try [1_792_148_400_000, 1_792_112_400_000, 1_792_065_600_000, 1_791_892_800_000, 0].map { at in
+      try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"t","title":"Q","askedAt":\#(at)}"#.utf8))
+    }
+    #expect(rows.map { $0.askedDay(dates) } == ["Today", "Today", "Yesterday", "Oct 13", nil])
+  }
   // A History row is the first question over what the conversation came to: the routine and what was proposed for it with
   // the card's settled word, or the routines it created; the phone says Out of date for a waiting proposal it sees outrun.
-  @Test func historyGroupsConversationsUnderTheDayEachWasLastAsked() throws {
-    let (_, gym) = fixture(), history = CoachHistory(gym: gym)
-    let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
-    history.rows = try [("late", 1_792_148_400_000), ("early", 1_792_112_400_000), ("yesterday", 1_792_065_600_000),
-                        ("older", 1_791_892_800_000), ("undated", 0)].map { id, at in
-      try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"\#(id)","title":"Q","askedAt":\#(at)}"#.utf8))
-    }
-    #expect(history.days(dates).map { [$0.day.map { dates.day($0) } ?? "-"] + $0.rows.map(\.id) } == [
-      ["Today", "late", "early"], ["Yesterday", "yesterday"], ["Oct 13", "older"], ["-", "undated"]])
-  }
   @Test func historyRowsNameTheRoutineWhatWasProposedAndHowItSettled() throws {
     func thread(_ outcome: String) throws -> CoachThread {
       try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"t","title":"Is Push A still doing anything?","askedAt":1000\#(outcome)}"#.utf8))

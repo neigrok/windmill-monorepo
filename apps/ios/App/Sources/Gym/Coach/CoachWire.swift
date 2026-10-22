@@ -237,6 +237,8 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
   }
   // History's row title: the conversation's first question.
   var headline: String { title.isEmpty ? "Conversation" : title }
+  // History's trailing day, the day the conversation was last asked; none before the server stamps it.
+  func askedDay(_ dates: GymDate) -> String? { askedAt > 0 ? dates.day(Instant(ms: askedAt)) : nil }
   // History's second line, what the conversation came to: the routine and what was proposed for it, with the card's word
   // once it settled — Out of date while the phone sees every waiting proposal outrun — or the routines it created.
   func outcomeLine(removal: Bool, outOfDate: Bool) -> String? {

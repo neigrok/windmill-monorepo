@@ -15,18 +15,6 @@ import DomainKit
   var owner: String?
   var revision = 0
   init(gym: GymModel, rest: GymRESTClient? = nil) { self.gym = gym; self.rest = rest ?? gym.rest }
-  // A day's conversations, under the day they were last asked; the rows with no time close the list without a day.
-  struct Day: Identifiable {
-    let day: LocalDay?
-    var rows: [CoachThread]
-    var id: String { rows[0].id }
-  }
-  func days(_ dates: GymDate) -> [Day] {
-    rows.reduce(into: [Day]()) { days, row in
-      let day = row.askedAt > 0 ? LocalDay(Instant(ms: row.askedAt), in: dates.moment.zone) : nil
-      if days.last?.day == day { days[days.count - 1].rows.append(row) } else { days.append(Day(day: day, rows: [row])) }
-    }
-  }
   func resetOwner() {
     let account = gym.coachAccountAvailable ? gym.account : nil
     if owner != account { rows = []; nextCursor = nil; loaded = false; reading = false; error = nil; owner = account; revision += 1 }
@@ -140,36 +128,31 @@ struct CoachHistoryScreen: View {
   }
   var conversations: some View {
     List {
-      ForEach(history.days(gym.dates)) { day in
-        Section {
-          ForEach(day.rows) { row in conversation(row) }
-        } header: { if let date = day.day { Text(gym.dates.day(date)) } }
-          .listRowBackground(GymPalette.canvas)
-      }
-      if history.nextCursor != nil {
-        ProgressView().frame(maxWidth: .infinity).listRowBackground(GymPalette.canvas).task { await history.load(earlier: true) }
-      }
+      Section {
+        ForEach(history.rows) { row in
+          Button {
+            opening = row.id
+            Task {
+              await coach.open(row.id); opening = nil
+              if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
+            }
+          } label: {
+            let proposals = gym.proposals.filter { $0.threadId == row.id }
+            let removal = proposals.contains { $0.intent == "remove" }
+            let waiting = proposals.filter { $0.state == "pending" }
+            GymRow(title: row.headline,
+                   meta: row.outcomeLine(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
+                   trailing: opening == row.id ? .progress : row.askedDay(gym.dates).map { .fact($0, door: true) } ?? .door,
+                   lineLimit: 1).contentShape(Rectangle())
+          }.disabled(opening != nil || coach.asking)
+            .trashSwipe("Delete conversation") { deletion = row }
+            .contextMenu { Button("Delete conversation", role: .destructive) { deletion = row } }
+        }
+        if history.nextCursor != nil {
+          ProgressView().frame(maxWidth: .infinity).task { await history.load(earlier: true) }
+        }
+      }.listRowBackground(GymPalette.canvas).listSectionSeparator(.hidden)
     }.listStyle(.plain).scrollContentBackground(.hidden)
       .refreshable { await history.load() }
-  }
-  // The conversation's first question over what it came to, and the time it was last asked.
-  func conversation(_ row: CoachThread) -> some View {
-    Button {
-      opening = row.id
-      Task {
-        await coach.open(row.id); opening = nil
-        if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
-      }
-    } label: {
-      let proposals = gym.proposals.filter { $0.threadId == row.id }
-      let removal = proposals.contains { $0.intent == "remove" }
-      let waiting = proposals.filter { $0.state == "pending" }
-      GymRow(title: row.headline,
-             meta: row.outcomeLine(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
-             trailing: opening == row.id ? .progress : row.askedAt > 0 ? .fact(gym.dates.time(Instant(ms: row.askedAt)), door: true) : .door,
-             lineLimit: 1).contentShape(Rectangle())
-    }.disabled(opening != nil || coach.asking)
-      .trashSwipe("Delete conversation") { deletion = row }
-      .contextMenu { Button("Delete conversation", role: .destructive) { deletion = row } }
   }
 }

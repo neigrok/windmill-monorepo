@@ -469,8 +469,6 @@ and Android disagree.
       on each step before the cards can show what changed.
     - 08.8: the day's cap reads *You can ask again later.*, where the board draws *You can ask again in about 2 hours.*
       The server refills the day's questions steadily and returns no retry time, so no duration can be promised.
-    - 08.4: History groups its conversations under day headers (*Today*, *Yesterday*, *Sep 27*), and
-      each row trails the time it was last asked; the board draws no headers and the day on every row.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
   the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,

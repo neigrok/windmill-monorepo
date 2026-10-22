@@ -354,6 +354,8 @@ final class CoachCaptures: DesignCapture {
       let history = app.buttons["coach-history"]
       XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 10)); history.tap()
       XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "My program")).firstMatch.waitForExistence(timeout: 10))
+      app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Pull-ups")).firstMatch.swipeLeft()
+      XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
       return app
     }
   }
