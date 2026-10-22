@@ -20,11 +20,10 @@ export function coachWorkout(session, sets = [], catalog = []) {
   const active = latest ?? groups.find((group) => group.rows.some((row) => row.kind === 'target'))?.id;
   const total = groups.length && groups.every((group) => group.targets !== null)
     ? groups.reduce((count, group) => count + group.targets, 0) : null;
-  const working = sets.filter((set) => set.kind === 'working').length;
   const remaining = groups.reduce((count, group) => count + group.rows.filter((row) => row.kind === 'target').length, 0);
   return { name: routineNameOf(session) ?? 'Free session', started: timeLabel(session.startedAt),
     count: `${sets.length} ${sets.length === 1 ? 'set' : 'sets'} logged`,
-    progress: total && remaining ? `set ${total - remaining + 1} of ${total}` : `${working} working ${working === 1 ? 'set' : 'sets'} logged`,
+    progress: total && remaining ? `set ${total - remaining + 1} of ${total}` : `${sets.length} working ${sets.length === 1 ? 'set' : 'sets'} logged`,
     groups, active };
 }
 

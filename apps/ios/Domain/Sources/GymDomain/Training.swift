@@ -3,11 +3,6 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public enum SetKind: String, CaseIterable, Sendable {
-  case warmup, working, drop, failure
-  public static let work = SetKind.working
-}
-
 public struct Session: Entity, Removable, Equatable {
   public static let type = Gym.Types.session
   public static let scope = Gym.scope
@@ -58,41 +53,38 @@ public struct TrainingSet: Writable, Removable, Equatable {
   public let exerciseId: ID<Exercise>
   public var weightKg: Double
   public var reps: Int
-  public var kind: String
   public var rpe: Double?
   public var note: String
   public let completedAt: Instant
   public let setNumber: Int?
 
   public init(id: ID<TrainingSet>, sessionId: ID<Session>, exerciseId: ID<Exercise>, weightKg: Double,
-              reps: Int, kind: String = "working", rpe: Double? = nil, note: String = "",
+              reps: Int, rpe: Double? = nil, note: String = "",
               completedAt: Instant, setNumber: Int? = nil) {
     self.id = id; self.sessionId = sessionId; self.exerciseId = exerciseId; self.weightKg = weightKg
-    self.reps = reps; self.kind = kind; self.rpe = rpe; self.note = note
+    self.reps = reps; self.rpe = rpe; self.note = note
     self.completedAt = completedAt; self.setNumber = setNumber
   }
 
   public init(_ r: Fields) throws(DecodeError) {
     self.init(id: ID(r.id), sessionId: try r.ref("sessionId", Session.self), exerciseId: try r.ref("exerciseId", Exercise.self),
-              weightKg: try r.double("weightKg"), reps: try r.int("reps"), kind: try r.string("kind", default: "working"),
+              weightKg: try r.double("weightKg"), reps: try r.int("reps"),
               rpe: try r.optionalDouble("rpe"), note: try r.string("note", default: ""), completedAt: try r.instant("completedAt"),
               setNumber: r.serial("setNumber"))
   }
 
   public var fields: [String: JSON] {
     ["sessionId": sessionId.json, "exerciseId": exerciseId.json, "weightKg": .of(weightKg), "reps": JSON(reps),
-     "kind": .string(kind), "rpe": .of(rpe), "note": .string(note), "completedAt": .of(completedAt)]
+     "rpe": .of(rpe), "note": .string(note), "completedAt": .of(completedAt)]
   }
   public func volumeKg(on exercise: Exercise?) -> Double {
-    guard kind == "working" else { return 0 }
-    return max(0, weightKg) * Double(reps) * Double(exercise?.loadCount ?? 1)
+    max(0, weightKg) * Double(reps) * Double(exercise?.loadCount ?? 1)
   }
-  public var e1rm: Double? { GymEstimate.value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) }
+  public var e1rm: Double? { GymEstimate.value(weightKg: weightKg, reps: reps, rpe: rpe) }
 
   public static let checks: [Check<TrainingSet>] = [
     Check("weightKg") { s, _ in s.weightKg = try SetRules.weightKg.apply(s.weightKg, at: "weightKg") },
     Check("reps") { s, _ in s.reps = try SetRules.reps.apply(s.reps, at: "reps") },
-    Check("kind") { s, _ in s.kind = try SetRules.kind.apply(s.kind, at: "kind") },
     Check("rpe") { s, _ in s.rpe = try SetRules.rpe.apply(s.rpe, at: "rpe") },
     Check("note") { s, _ in s.note = try SetRules.note.apply(s.note, at: "note") },
     Check("completedAt") { s, _ in try SessionRules.instant(s.completedAt, rule: "set.completedAt", at: "completedAt") },
@@ -102,11 +94,10 @@ public struct TrainingSet: Writable, Removable, Equatable {
 public enum SetRules {
   public static let weightKg = NumberSpec("set.weightKg", min: -500, max: 500, quantum: 0.01)
   public static let reps = NumberSpec("set.reps", min: 1, max: 500, integer: true)
-  public static let kind = ChoiceSpec("set.kind", values: ["warmup", "working", "drop", "failure"])
   public static let rpe = NumberSpec("set.rpe", min: 1, max: 10, quantum: 0.1)
   public static let note = TextSpec("set.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false)
   public static let maxNumber = 2_147_483_647
-  static let rules: [Rule] = [.local(weightKg), .local(reps), .local(kind), .local(rpe), .local(note),
+  static let rules: [Rule] = [.local(weightKg), .local(reps), .local(rpe), .local(note),
                               .local("set.completedAt", subject: TrainingSet.type),
                               .local("set.identity", subject: TrainingSet.type), .local("set.setNumber", subject: TrainingSet.type)]
 

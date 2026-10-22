@@ -384,22 +384,13 @@ export function entryLabel(entry, format = fmt) {
   return `${sets.length} × ${repsColumn} · ${loadColumn}`;
 }
 
-// Only a `working` set counts toward a target, a record or a count; the kinds are warmup · working ·
-// drop · failure.
-export function workingSetsOf(sets, exerciseId = null) {
-  return sets.filter((set) => (
-    set.kind === 'working' && (exerciseId == null || set.exerciseId === exerciseId)
-  ));
-}
-
-// The heaviest working set, ties going to more reps at the same load. A listed session carries the
+// The heaviest set, ties going to more reps at the same load. A listed session carries the
 // store's `topSet` and no sets; one read whole is picked here. Both answer {weightKg, reps} or null.
 export function topSetOf(session, sets = null) {
   if (session?.topSet) return session.topSet;
   if (sets == null) return null;
-  const working = workingSetsOf(sets);
-  if (working.length === 0) return null;
-  return working.reduce((best, set) => {
+  if (sets.length === 0) return null;
+  return sets.reduce((best, set) => {
     if (set.weightKg > best.weightKg) return set;
     if (set.weightKg === best.weightKg && set.reps > best.reps) return set;
     return best;
@@ -513,20 +504,16 @@ export function numberWord(count) {
 }
 
 // The slot strip as rows, for one movement: what was lifted, in order, then the slots still to
-// come. Every set that is not working stands before slot 1 wearing its kind; a working set logged
-// past the plan appends as lifted. A planned row is spoken as `set 4, target 100 × 1`.
+// come. A set logged past the plan appends as lifted. A planned row is spoken as `set 4, target 100 × 1`.
 export function slotRows(sets, entry) {
-  const others = sets.filter((set) => set.kind !== 'working').map((set) => ({
-    key: set.id, kind: 'warmup', label: `${fmt(set.weightKg)} × ${set.reps} (${set.kind})`,
-  }));
-  const lifted = sets.filter((set) => set.kind === 'working').map((set) => ({
+  const lifted = sets.map((set) => ({
     key: set.id, kind: 'lifted', label: `${fmt(set.weightKg)} × ${set.reps}`,
   }));
   const coming = (entry?.sets ?? []).slice(lifted.length).map((slot, index) => {
     const n = lifted.length + index + 1;
     return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: `set ${n}, target ${setReading(slot)}` };
   });
-  return [...others, ...lifted, ...coming];
+  return [...lifted, ...coming];
 }
 
 // What an entered load counts for its movement: each of a pair of dumbbells, weight added to the body (assistance

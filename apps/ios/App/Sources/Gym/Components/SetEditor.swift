@@ -182,7 +182,6 @@ struct GymInstrumentButtonStyle: ButtonStyle {
   var exerciseId: ID<Exercise>
   var weightKg: Double
   var reps: Int
-  var kind: String
   var rpe: Double?
   var note: String
   var completedAt: Instant
@@ -191,7 +190,7 @@ struct GymInstrumentButtonStyle: ButtonStyle {
 
   init(_ set: TrainingSet, account: String?) {
     original = set; self.account = account
-    exerciseId = set.exerciseId; weightKg = set.weightKg; reps = set.reps; kind = set.kind; rpe = set.rpe; note = set.note
+    exerciseId = set.exerciseId; weightKg = set.weightKg; reps = set.reps; rpe = set.rpe; note = set.note
     completedAt = set.completedAt
   }
 
@@ -205,7 +204,7 @@ struct GymInstrumentButtonStyle: ButtonStyle {
     return nil
   }
   var value: TrainingSet {
-    TrainingSet(id: original.id, sessionId: original.sessionId, exerciseId: exerciseId, weightKg: weightKg, reps: reps, kind: kind,
+    TrainingSet(id: original.id, sessionId: original.sessionId, exerciseId: exerciseId, weightKg: weightKg, reps: reps,
                 rpe: rpe, note: note, completedAt: completedAt, setNumber: original.setNumber)
   }
 
@@ -283,9 +282,6 @@ struct SetEditor: View {
                 Text("RPE \(Readout.weight(value))").tag(Optional(value))
               }
             }.accessibilityIdentifier("\(identifier)-effort")
-            Picker("Kind", selection: $draft.kind) {
-              ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0.rawValue) }
-            }.pickerStyle(.segmented).accessibilityIdentifier("\(identifier)-kind")
             TextField("Note", text: $draft.note, axis: .vertical).lineLimit(1...6).accessibilityLabel("Set note")
               .accessibilityIdentifier("\(identifier)-note")
             if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }

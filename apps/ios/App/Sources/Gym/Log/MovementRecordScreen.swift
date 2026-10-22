@@ -67,7 +67,7 @@ struct MovementRecordScreen: View {
               let sets = log.sets(session: session.id).filter { $0.exerciseId == exerciseID }
               VStack(alignment: .leading, spacing: RoomSpace.small) {
                 Text(dates.day(session.startedAt)).font(.footnote).foregroundStyle(GymPalette.inkDim)
-                Text(sets.map { Readout.effort(weightKg: $0.weightKg, reps: $0.reps) + ($0.kind == "working" ? "" : " \($0.kind)") }.joined(separator: " · "))
+                Text(sets.map { Readout.effort(weightKg: $0.weightKg, reps: $0.reps) }.joined(separator: " · "))
                   .monospacedDigit().foregroundStyle(GymPalette.ink).fixedSize(horizontal: false, vertical: true)
               }
             }

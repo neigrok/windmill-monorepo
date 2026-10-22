@@ -13,7 +13,7 @@ test('history scope and selection survive routes and clearing one filter preserv
 });
 
 test('a saved scheme collapses only equal facts and never hides a note or a different rating', () => {
-  const sets = [{ weightKg: 60, reps: 8, kind: 'working' }, { weightKg: 60, reps: 8, kind: 'working' }, { weightKg: 60, reps: 8, kind: 'working' }];
+  const sets = [{ weightKg: 60, reps: 8 }, { weightKg: 60, reps: 8 }, { weightKg: 60, reps: 8 }];
   assert.equal(collapsedScheme(sets), '3 × 8 · 60');
   assert.equal(collapsedScheme(sets.map((set) => ({ ...set, weightKg: 0 }))), '3 × 8 · bodyweight');
   assert.equal(collapsedScheme([sets[0], { ...sets[1], reps: 7 }]), null);
@@ -21,13 +21,13 @@ test('a saved scheme collapses only equal facts and never hides a note or a diff
   assert.equal(collapsedScheme([sets[0], { ...sets[1], note: 'heavy' }]), null);
 });
 
-test('workout totals count each dumbbell a movement holds and never an assisted or warmup load', () => {
+test('workout totals count every set and each dumbbell a movement holds, and never an assisted load', () => {
   const catalog = [{ id: 'bench-press', equipment: 'barbell' }, { id: 'dumbbell-bench-press', equipment: 'dumbbell', loadCount: 2 },
     { id: 'dumbbell-row', equipment: 'dumbbell', loadCount: 1 }, { id: 'pull-up', equipment: 'bodyweight' }];
-  const sets = [{ exerciseId: 'bench-press', weightKg: 60, reps: 8, kind: 'working' }, { exerciseId: 'bench-press', weightKg: 100, reps: 8, kind: 'warmup' },
-    { exerciseId: 'dumbbell-bench-press', weightKg: 20, reps: 10, kind: 'working' }, { exerciseId: 'dumbbell-row', weightKg: 30, reps: 10, kind: 'working' },
-    { exerciseId: 'pull-up', weightKg: -20, reps: 8, kind: 'working' }, { exerciseId: 'pull-up', weightKg: 10, reps: 5, kind: 'working' }];
-  assert.deepEqual(workoutTotals(sets, catalog), { sets: 5, reps: 41, tonnageKg: 480 + 400 + 300 + 50 });
+  const sets = [{ exerciseId: 'bench-press', weightKg: 60, reps: 8 }, { exerciseId: 'bench-press', weightKg: 40, reps: 8 },
+    { exerciseId: 'dumbbell-bench-press', weightKg: 20, reps: 10 }, { exerciseId: 'dumbbell-row', weightKg: 30, reps: 10 },
+    { exerciseId: 'pull-up', weightKg: -20, reps: 8 }, { exerciseId: 'pull-up', weightKg: 10, reps: 5 }];
+  assert.deepEqual(workoutTotals(sets, catalog), { sets: 6, reps: 49, tonnageKg: 480 + 320 + 400 + 300 + 50 });
 });
 
 test('a month is a complete local calendar range and an invalid month cannot escape its year', () => {

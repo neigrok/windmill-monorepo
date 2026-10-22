@@ -48,9 +48,8 @@ struct TrainingReadsTests {
       TrainingSet(id: ID("weighted"), sessionId: session.id, exerciseId: ID("body"), weightKg: 10, reps: 5, completedAt: Instant(ms: 5)),
       TrainingSet(id: ID("assisted"), sessionId: session.id, exerciseId: ID("body"), weightKg: -10, reps: 5, completedAt: Instant(ms: 6)),
       TrainingSet(id: ID("unweighted"), sessionId: session.id, exerciseId: ID("body"), weightKg: 0, reps: 5, completedAt: Instant(ms: 7)),
-      TrainingSet(id: ID("warmup"), sessionId: session.id, exerciseId: ID("pair"), weightKg: 16, reps: 10, kind: "warmup", completedAt: Instant(ms: 8)),
     ]
-    #expect(sets.map { $0.volumeKg(on: catalogue.find($0.exerciseId)) } == [320, 160, 320, 50, 0, 0, 0])
+    #expect(sets.map { $0.volumeKg(on: catalogue.find($0.exerciseId)) } == [320, 160, 320, 50, 0, 0])
     let readout = SessionReadout(session: session, sets: sets, catalogue: catalogue)
     #expect(readout.volumeKg == 850)
     #expect(readout.workingSetCount == 6 && readout.movementCount == 4)
@@ -92,7 +91,7 @@ struct TrainingReadsTests {
         default: throw ContractError("unknown training history \(vector)")
         }
       case "GymEstimate": return .of(GymEstimate.value(weightKg: try fields.double("weightKg"), reps: try fields.int("reps"),
-                                                         kind: try fields.string("kind", default: "working"), rpe: try fields.optionalDouble("rpe")))
+                                                         rpe: try fields.optionalDouble("rpe")))
       case "TrainingLog":
         let id = try fields.ref("sessionId", Session.self)
         return ["drawnSessions": .array(log.drawnSessions.map { $0.id.json }), "open": log.open?.id.json ?? .null,

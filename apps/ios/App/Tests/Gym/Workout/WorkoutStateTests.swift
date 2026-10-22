@@ -48,9 +48,9 @@ import SyncTesting
   }
 
   func value(_ gym: GymModel, session: Session, exercise: ID<Exercise>? = nil, weight: Double = 80, reps: Int = 5,
-             kind: String = "working", at: Instant? = nil) -> TrainingSet {
+             at: Instant? = nil) -> TrainingSet {
     TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: session.id, exerciseId: exercise ?? first,
-                weightKg: weight, reps: reps, kind: kind, completedAt: at ?? start)
+                weightKg: weight, reps: reps, completedAt: at ?? start)
   }
 
   func finished(_ gym: GymModel, routine: Routine? = nil) -> Session {
@@ -603,7 +603,7 @@ import SyncTesting
   @Test func clocksUseLatestRetainedSetAcrossSessionAndFreeze() throws {
     let (_, gym) = try fixture(), session = finished(gym)
     let earlier = value(gym, session: session, at: Instant(ms: start.ms + 10_000))
-    let latest = value(gym, session: session, exercise: second, kind: "warmup", at: Instant(ms: start.ms + 30_000))
+    let latest = value(gym, session: session, exercise: second, at: Instant(ms: start.ms + 30_000))
     let foreign = value(gym, session: finished(gym), at: Instant(ms: start.ms + 59_000))
     let clocks = WorkoutClocks(session: session, sets: [latest, earlier, foreign], now: Instant(ms: start.ms + 9_000_000))
     #expect(clocks.workoutMs == 60_000 && clocks.sinceSetMs == 30_000)
@@ -627,7 +627,6 @@ import SyncTesting
   @Test func receiptNamesTheWorkoutWithNounTilesAndItsMovementsInLoggedOrder() throws {
     let (_, gym) = try fixture(), session = finished(gym)
     let sets = [value(gym, session: session, exercise: second, weight: 100, at: Instant(ms: start.ms + 10_000)),
-                value(gym, session: session, weight: 60, reps: 8, kind: "warmup", at: Instant(ms: start.ms + 20_000)),
                 value(gym, session: session, weight: 80, at: Instant(ms: start.ms + 30_000)),
                 value(gym, session: session, weight: 85, at: Instant(ms: start.ms + 40_000))]
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
@@ -651,14 +650,9 @@ import SyncTesting
     let set = try #require(workout.sets.first), logged = workout.ledger(first)
     #expect(logged.rows.map(\.id) == [0, 1, 2] && logged.rows.map(\.place) == [.logged(set), .current, .planned])
     #expect(logged.tally == "1 of 3 sets")
-    let session = try #require(workout.session)
-    #expect(gym.run(AppendSet(value(gym, session: session, weight: 20, kind: "warmup", at: Instant(ms: set.completedAt.ms + 1))))?.refusal == nil)
-    workout.reconcile()
-    let warmed = workout.ledger(first)
-    #expect(warmed.rows.map(\.marker) == ["1", "W", "2", "3"] && warmed.rows.map(\.id) == [0, 1, 2, 3] && warmed.tally == "1 of 3 sets")
     #expect(workout.logSet() && workout.logSet())
     let done = workout.ledger(first)
-    #expect(done.rows.map(\.marker) == ["1", "W", "2", "3", "4"] && done.current.reading == Readout.openTarget)
+    #expect(done.rows.map(\.marker) == ["1", "2", "3", "4"] && done.rows.map(\.id) == [0, 1, 2, 3] && done.current.reading == Readout.openTarget)
     #expect(done.tally == "3 of 3 sets" && done.complete)
     let open = workout.ledger(second)
     #expect(open.planLine == "plan open" && open.tally == "0 sets" && !open.complete && open.rows.map(\.place) == [.current])
@@ -765,20 +759,14 @@ import SyncTesting
     #expect(reopenedGym.workout.walk == held)
   }
 
-  @Test func variedPrefillSkipsWarmupsAndKeepsMovementUntilExplicitSwitch() throws {
+  @Test func variedPrefillFollowsTheNextSlotAndKeepsMovementUntilExplicitSwitch() throws {
     let (harness, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 8, weightKg: 40), SetTarget(reps: 5, weightKg: 60)])
     let workout = try begin(gym, routine: plan)
     #expect(workout.weightKg == 40 && workout.reps == 8)
     workout.weightKg = 20; workout.reps = 10; workout.logSet()
-    let logged = try #require(workout.sets.first)
-    var warmup = logged; warmup.kind = "warmup"
-    #expect(gym.run(CorrectSet(warmup, original: logged))?.refusal == nil)
-    workout.reconcile()
-    #expect(workout.weightKg == 40 && workout.reps == 8 && workout.selected == first)
-    harness.advance(ms: 1_000); workout.logSet()
     #expect(workout.weightKg == 60 && workout.reps == 5 && workout.selected == first)
     harness.advance(ms: 1_000); workout.logSet()
-    #expect(workout.weightKg == 60 && workout.reps == 5 && workout.selected == first && workout.sets.count == 3)
+    #expect(workout.weightKg == 60 && workout.reps == 5 && workout.selected == first && workout.sets.count == 2)
   }
 
   @Test func straightPrefillKeepsLastWorkingLoadAndPerMovementDraft() throws {
@@ -1163,8 +1151,7 @@ import SyncTesting
   @Test func variedDeviationSavesExactWorkingSchemeAndRetainsQuestionOnFailure() throws {
     let (harness, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 8, weightKg: 40), SetTarget(reps: 5, weightKg: 60)])
     let workout = try begin(gym, routine: plan)
-    #expect(gym.run(AppendSet(value(gym, session: try #require(workout.session), kind: "warmup")))?.refusal == nil)
-    workout.reconcile(); workout.weightKg = 45; workout.reps = 9; workout.logSet()
+    workout.weightKg = 45; workout.reps = 9; workout.logSet()
     harness.advance(ms: 1_000); workout.weightKg = 65; workout.reps = 4; workout.logSet(); workout.select(second)
     let offer = try #require(workout.deviation)
     #expect(offer.varied && offer.proposed == [SetTarget(reps: 9, weightKg: 45), SetTarget(reps: 4, weightKg: 65)])
@@ -1176,11 +1163,10 @@ import SyncTesting
     #expect(workout.session?.plan == SessionPlan(plan))
   }
 
-  @Test func deviationIgnoresWarmupsAndEqualOrLowerWorkingLoad() throws {
+  @Test func deviationIgnoresEqualOrLowerLoad() throws {
     let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
     let workout = try begin(gym, routine: plan)
-    #expect(gym.run(AppendSet(value(gym, session: try #require(workout.session), kind: "warmup")))?.refusal == nil)
-    workout.reconcile(); workout.weightKg = 40; workout.logSet(); workout.select(second)
+    workout.weightKg = 40; workout.logSet(); workout.select(second)
     #expect(workout.deviation == nil && workout.walk.asked.isEmpty)
   }
 
@@ -1307,7 +1293,7 @@ import SyncTesting
   @Test func receiptSaysEndedEarlyBelowFourWorkingSetsPlannedOrFree() throws {
     let (_, gym) = try fixture()
     let title = { (session: Session, working: Int) in
-      WorkoutReceiptData(session: session, sets: (0..<working).map { _ in value(gym, session: session) } + [value(gym, session: session, kind: "warmup")],
+      WorkoutReceiptData(session: session, sets: (0..<working).map { _ in value(gym, session: session) },
                          routineId: gym.runner.mint(Routine.self), routinePosition: 0).title
     }
     let single = finished(gym, routine: try routine(gym, scheme: [SetTarget(reps: 12)]))
@@ -1320,10 +1306,9 @@ import SyncTesting
   @Test func receiptOffersRoutineOnlyForFourUnplannedWorkingSets() throws {
     let (_, gym) = try fixture(), session = finished(gym)
     let working = (0..<4).map { value(gym, session: session, at: Instant(ms: start.ms + Int64($0))) }
-    let warmup = value(gym, session: session, kind: "warmup")
-    let three = WorkoutReceiptData(session: session, sets: Array(working.prefix(3)) + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
+    let three = WorkoutReceiptData(session: session, sets: Array(working.prefix(3)), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
     #expect(three.slight && !three.offersRoutine && SessionReadout(session: three.session, sets: three.sets, catalogue: gym.catalogue).workingSetCount == 3)
-    let four = WorkoutReceiptData(session: session, sets: working + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
+    let four = WorkoutReceiptData(session: session, sets: working, routineId: gym.runner.mint(Routine.self), routinePosition: 0)
     #expect(!four.slight && four.offersRoutine && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).workingSetCount == 4 && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).volumeKg == 1_600)
     let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)]), planned = finished(gym, routine: plan)
     let plannedSets = (0..<4).map { _ in value(gym, session: planned) }
@@ -1336,10 +1321,9 @@ import SyncTesting
     let b = value(gym, session: session, exercise: second, weight: -20, reps: 6, at: Instant(ms: start.ms + 20))
     let c = value(gym, session: session, weight: 50, reps: 5, at: Instant(ms: start.ms + 30))
     let d = value(gym, session: session, exercise: second, weight: 0, reps: 10, at: Instant(ms: start.ms + 40))
-    let warmup = value(gym, session: session, weight: 20, kind: "warmup")
-    let receipt = WorkoutReceiptData(session: session, sets: [d, c, value(gym, session: foreign), b, warmup, a],
+    let receipt = WorkoutReceiptData(session: session, sets: [d, c, value(gym, session: foreign), b, a],
                                      routineId: gym.runner.mint(Routine.self), routinePosition: 7)
-    #expect(receipt.sets == [warmup, a, b, c, d])
+    #expect(receipt.sets == [a, b, c, d])
     #expect(receipt.routine.current.position == 7)
     #expect(receipt.routine.current.entries == [
       RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 8, weightKg: 40), SetTarget(reps: 5, weightKg: 50)]),

@@ -391,9 +391,9 @@ class TrainingStoreTests {
 
             room.store.start()
             room.store.choose("bench-press")
-            assertEquals("the working set carries, the warmup does not",
-                listOf(82.5), room.store.lastTime?.sets?.map { it.weightKg })
-            assertEquals(Prefill(82.5, 5), room.store.prefill)
+            assertEquals("every set carries: a kind the app holds never reaches the log",
+                listOf(60.0, 82.5), room.store.lastTime?.sets?.map { it.weightKg })
+            assertEquals("the last set's weight, the first set's reps", Prefill(82.5, 10), room.store.prefill)
             runCurrent()
         }
     }
@@ -415,12 +415,12 @@ class TrainingStoreTests {
             val record = (room.store.record(movement.id) as GymResult.Ok).value
             assertEquals("Bench Press", record.exercise.name)
             assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
-            assertEquals("a warmup counts toward nothing, here as everywhere",
-                listOf(82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
+            assertEquals("every set counts, whatever kind the app held",
+                listOf(60.0, 82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
 
             val review = room.store.review(ended.id)
             assertEquals(Review(stats = ReviewStats(durationMs = ended.finishedAtMs!! - ended.startedAtMs,
-                workingSets = 4, topE1rm = 96.3), slight = false), review)
+                workingSets = 5, topE1rm = 96.3), slight = false), review)
 
             val detail = (room.store.sessionDetail(ended.id) as GymResult.Ok).value
             assertEquals(5, detail.sets.size)
@@ -527,39 +527,6 @@ class TrainingStoreTests {
 
             assertEquals(GymResult.Failed(WriteFailure.Refused("that movement is no longer on the log")),
                 room.store.record("ex_gone"))
-            runCurrent()
-        }
-    }
-
-    @Test
-    fun testAWarmupIsWrittenAsAWarmupAndCarriesNothingForward() = runTest {
-        val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select("alice"); room.pull(server)
-            val legs = (room.store.saveRoutine(RoutineDraft(name = "Legs").adding("back-squat")
-                .targeting("back-squat", List(5) { SetTarget(5, 100.0) })) as GymResult.Ok).value
-            val opened = (room.store.start(legs.id) as GymResult.Ok).value
-            room.store.choose("back-squat")
-            assertEquals(Prefill(weightKg = 100.0, reps = 5), room.store.prefill)
-
-            room.store.logSet(weightKg = 60.0, reps = 10, kind = SetKind.Warmup)
-
-            assertEquals(listOf(SetKind.Warmup), room.training.session(opened.id)!!.sets.map { it.kind })
-            assertEquals(listOf(SetKind.Warmup), room.store.sets.map { it.kind })
-            assertEquals("a ramp-up is not the weight the next set starts from — the dial stays on the plan",
-                Prefill(weightKg = 100.0, reps = 5), room.store.prefill)
-
-            room.store.logSet(weightKg = 100.0, reps = 5)
-            assertEquals(listOf(SetKind.Warmup, SetKind.Working), room.store.sets.map { it.kind })
-            assertEquals(Prefill(weightKg = 100.0, reps = 5), room.store.prefill)
-
-            room.store.logSet(weightKg = 105.0, reps = 3)
-            assertEquals("and a working set does carry, past the warmup that came before it",
-                Prefill(weightKg = 105.0, reps = 3), room.store.prefill)
-
-            room.sync(server)
-            assertEquals("the kind travels to the log", listOf(SetKind.Warmup, SetKind.Working, SetKind.Working),
-                anotherPhone(server, room.now) { phone -> phone.training.session(opened.id)!!.sets.map { it.kind } })
             runCurrent()
         }
     }
@@ -879,14 +846,13 @@ class TrainingStoreTests {
             room.sync(server); room.store.refreshEngine()
             val logged = room.training.session(opened.id)!!.sets.single()
 
-            val fixed = room.store.fixSet(opened.id, logged.id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+            val fixed = room.store.fixSet(opened.id, logged.id, SetFix(weightKg = 90.0, reps = 3))
 
-            val corrected = logged.copy(weightKg = 90.0, reps = 3, kind = SetKind.Drop)
+            val corrected = logged.copy(weightKg = 90.0, reps = 3)
             assertEquals(corrected, (fixed as FixOutcome.Corrected).set)
-            assertEquals("the head re-read, and it followed the correction all the way to the KIND — a " +
-                "drop set counts toward no tonnage, so the row that read 412.5 now reads nothing",
-                listOf(0.0), room.store.logged.map { it.tonnageKg })
-            assertEquals(listOf(0), room.store.logged.map { it.workingSetCount })
+            assertEquals("the head re-read, and it followed the correction: the row that read 412.5 now reads 270",
+                listOf(270.0), room.store.logged.map { it.tonnageKg })
+            assertEquals(listOf(1), room.store.logged.map { it.workingSetCount })
 
             room.sync(server)
             anotherPhone(server, room.now) { phone ->
@@ -951,7 +917,7 @@ class TrainingStoreTests {
             val logged = room.store.sets.single()
             assertTrue(room.store.stalled.isEmpty())
 
-            val fixed = room.store.fixSet(opened.id, logged.id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Drop))
+            val fixed = room.store.fixSet(opened.id, logged.id, SetFix(weightKg = 90.0, reps = 3))
 
             val corrected = (fixed as FixOutcome.Corrected).set
             assertEquals("the strip draws the correction the moment it is filed", listOf(corrected), room.store.sets)
@@ -961,8 +927,8 @@ class TrainingStoreTests {
             room.sync(server); room.store.refreshEngine()
             assertEquals("the log holds the whole row the device read", listOf(corrected),
                 anotherPhone(server, room.now) { phone -> phone.training.session(opened.id)!!.sets })
-            assertEquals("the strip follows the log's answer", listOf(Triple(90.0, 3, SetKind.Drop)),
-                room.store.sets.map { Triple(it.weightKg, it.reps, it.kind) })
+            assertEquals("the strip follows the log's answer", listOf(90.0 to 3),
+                room.store.sets.map { it.weightKg to it.reps })
             assertTrue("a fix the log took owes nothing", room.store.stalled.isEmpty())
             assertTrue(room.outbox().isEmpty())
             runCurrent()
@@ -1058,11 +1024,11 @@ class TrainingStoreTests {
             assertEquals("the deepest row is a page and a half down", "session000", room.store.logged.last().id)
             assertEquals(listOf(500.0, 1), listOf(room.store.logged.last().tonnageKg, room.store.logged.last().workingSetCount))
 
-            room.store.fixSet("session000", "set00000", SetFix(weightKg = 60.0, reps = 3, kind = SetKind.Warmup))
+            room.store.fixSet("session000", "set00000", SetFix(weightKg = 60.0, reps = 3))
 
             assertEquals("the walk is not undone by a fix at the bottom of it", 60, room.store.logged.size)
-            assertEquals("and the row followed the correction — a warmup counts toward nothing",
-                listOf(0.0, 0), listOf(room.store.logged.last().tonnageKg, room.store.logged.last().workingSetCount))
+            assertEquals("and the row followed the correction",
+                listOf(180.0, 1), listOf(room.store.logged.last().tonnageKg, room.store.logged.last().workingSetCount))
             runCurrent()
         }
     }

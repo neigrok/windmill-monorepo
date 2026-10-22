@@ -128,8 +128,8 @@ export function CorrectSet(value, original = null) {
       if (old === undefined || !loaded.drawnSets.some((drawn) => drawn.id.equals(value.id))) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', value.id.ref, null, 'predicted')));
       }
-      /** @type {Array<'weightKg' | 'reps' | 'kind' | 'rpe' | 'note'>} */
-      const fields = ['weightKg', 'reps', 'kind', 'rpe', 'note'];
+      /** @type {Array<'weightKg' | 'reps' | 'rpe' | 'note'>} */
+      const fields = ['weightKg', 'reps', 'rpe', 'note'];
       let correction = value;
       if (original !== null) {
         if (!original.id.equals(value.id) || !original.sessionId.equals(value.sessionId) || !original.exerciseId.equals(value.exerciseId)
@@ -141,7 +141,7 @@ export function CorrectSet(value, original = null) {
           return Decision.refuse(GymRefusals.ofRefused(new Refused('stale', value.id.ref, null, 'predicted')));
         }
         correction = new TrainingSetValue(old.id, old.sessionId, old.exerciseId, value.weightKg, value.reps,
-          old.completedAt, value.kind, value.rpe, value.note, old.setNumber);
+          old.completedAt, value.rpe, value.note, old.setNumber);
       }
       if (!old.sessionId.equals(correction.sessionId) || !old.exerciseId.equals(correction.exerciseId)
         || old.completedAt.ms !== correction.completedAt.ms || old.setNumber !== correction.setNumber) {
@@ -184,15 +184,14 @@ export function DiscardSession(id) {
 export class ImportedSet {
   /**
    * @param {{ id: Id<TrainingSetValue>, exerciseId: Id<ExerciseValue>, weightKg: number, reps: number,
-   *   completedAt: Instant, kind?: string | null, rpe?: number | null, note?: string | null, rpeNamed?: boolean }} input
+   *   completedAt: Instant, rpe?: number | null, note?: string | null, rpeNamed?: boolean }} input
    */
-  constructor({ id, exerciseId, weightKg, reps, completedAt, kind = null, rpe = null, note = null, rpeNamed = rpe !== null }) {
+  constructor({ id, exerciseId, weightKg, reps, completedAt, rpe = null, note = null, rpeNamed = rpe !== null }) {
     this.id = id;
     this.exerciseId = exerciseId;
     this.weightKg = weightKg;
     this.reps = reps;
     this.completedAt = completedAt;
-    this.kind = kind;
     this.rpe = rpe;
     this.note = note;
     this.rpeNamed = rpeNamed;
@@ -202,14 +201,13 @@ export class ImportedSet {
   /** @param {Id<SessionValue>} sessionId */
   value(sessionId) {
     return new TrainingSetValue(this.id, sessionId, this.exerciseId, this.weightKg, this.reps,
-      this.completedAt, this.kind ?? 'working', this.rpe, this.note ?? '');
+      this.completedAt, this.rpe, this.note ?? '');
   }
 
   /** @returns {Record<string, Json>} */
   get json() {
     return { id: this.id.json, exerciseId: this.exerciseId.json, weightKg: this.weightKg, reps: this.reps, completedAt: this.completedAt.ms,
-      ...(this.kind === null ? {} : { kind: this.kind }), ...(this.note === null ? {} : { note: this.note }),
-      ...(this.rpeNamed ? { rpe: this.rpe } : {}) };
+      ...(this.note === null ? {} : { note: this.note }), ...(this.rpeNamed ? { rpe: this.rpe } : {}) };
   }
 }
 
@@ -251,9 +249,9 @@ export function ImportSession({ id, startedAt, finishedAt, sets, routineId = nul
 export class CorrectedSet {
   /**
    * @param {{ id: Id<TrainingSetValue>, exerciseId: Id<ExerciseValue>, setNumber: number, weightKg: number, reps: number,
-   *   completedAt: Instant, rpe?: number | null, note?: string | null, rpeNamed?: boolean, kind?: string | null }} input
+   *   completedAt: Instant, rpe?: number | null, note?: string | null, rpeNamed?: boolean }} input
    */
-  constructor({ id, exerciseId, setNumber, weightKg, reps, completedAt, rpe = null, note = null, rpeNamed = rpe !== null, kind = null }) {
+  constructor({ id, exerciseId, setNumber, weightKg, reps, completedAt, rpe = null, note = null, rpeNamed = rpe !== null }) {
     this.id = id;
     this.exerciseId = exerciseId;
     this.setNumber = setNumber;
@@ -263,15 +261,14 @@ export class CorrectedSet {
     this.rpe = rpe;
     this.note = note;
     this.rpeNamed = rpeNamed;
-    this.kind = kind;
     Object.freeze(this);
   }
 
   /** @returns {Record<string, Json>} */
   get json() {
     return { id: this.id.json, exerciseId: this.exerciseId.json, setNumber: this.setNumber, weightKg: this.weightKg,
-      reps: this.reps, completedAt: this.completedAt.ms, ...(this.kind === null ? {} : { kind: this.kind }),
-      ...(this.note === null ? {} : { note: this.note }), ...(this.rpeNamed ? { rpe: this.rpe } : {}) };
+      reps: this.reps, completedAt: this.completedAt.ms, ...(this.note === null ? {} : { note: this.note }),
+      ...(this.rpeNamed ? { rpe: this.rpe } : {}) };
   }
 }
 
@@ -312,7 +309,7 @@ export function CorrectSession({ id, requestId, startedAt, finishedAt, routineNa
       const checked = corrected.map((set) => {
         const previous = loaded.sets.find((prior) => prior.id.equals(set.id));
         const value = new TrainingSetValue(set.id, id, set.exerciseId, set.weightKg, set.reps, set.completedAt,
-          previous?.kind ?? set.kind ?? 'working', set.rpeNamed ? set.rpe : previous?.rpe ?? null, set.note ?? previous?.note ?? '', set.setNumber);
+          set.rpeNamed ? set.rpe : previous?.rpe ?? null, set.note ?? previous?.note ?? '', set.setNumber);
         return new Valid(value, loaded.moment).value;
       });
       const session = loaded.session(id);

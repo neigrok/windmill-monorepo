@@ -42,26 +42,27 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 `GymPreferences` and `Proposal` use `{id,fields}`. The writable form excludes server metadata,
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
+Sets have no type: every set is a working set. A stored row's `kind` is read and ignored, and no
+writable form, command argument or read document carries one.
 
 `ExerciseName` is a metadata override keyed by a movement: a seed's carries `name`, `equipment` and
 `loadCount`, a custom movement's only `equipment` and `loadCount` (its name lives on `exercise.name`). Its
 writable form omits every null field, `name` included.
 
-**Load count.** Volume and tonnage count each working set as `max(0, weightKg) × reps × count`: a load is
+**Load count.** Volume and tonnage count each set as `max(0, weightKg) × reps × count`: a load is
 entered per dumbbell, so `count` is the resolved `loadCount` for a movement whose resolved equipment is
 `dumbbell` (the override's `loadCount`, else the seed's, else two; `goblet-squat`, `dumbbell-row`,
 `suitcase-carry` and `overhead-triceps-extension` hold one), and one for every other equipment, a
 `loadCount` left on a non-dumbbell override included. A bodyweight set counts only positive added load;
-an assisted set counts nothing. Warmups never count. Every volume read takes the resolved catalogue.
+an assisted set counts nothing. Every volume read takes the resolved catalogue.
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
 frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
 
-`ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `kind,rpe,note`.
-`CorrectedSet` adds required `setNumber`: kept sets keep their kind; new ones take optional `kind`,
-default working. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
+`ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `rpe,note`.
+`CorrectedSet` adds required `setNumber`. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
 Command arguments retain their raw loads and omitted versus explicit null `rpe` for
 receipt identity. Predictions use checked, rounded values and never invent serials.
 
@@ -123,11 +124,11 @@ parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-s
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's working-set override. `SessionReadout` provides duration, working-set
-and movement counts, working volume and the session estimate. `StatsProgress` groups
-finished working facts in total order, with full-precision estimate values. `MovementProgress`
+last-time rows and today's sets. `SessionReadout` provides duration, working-set (every set)
+and movement counts, volume and the session estimate. `StatsProgress` groups
+finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
-and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
+and gaps. All estimates use `GymEstimate`: positive load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
 Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
 by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;

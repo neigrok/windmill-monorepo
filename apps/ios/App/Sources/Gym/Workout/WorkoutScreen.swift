@@ -205,9 +205,9 @@ struct WorkoutLedger: View {
         HStack(spacing: RoomSpace.related) {
           Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)).unit)
             .font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
-            Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
-              .font(.system(size: 20)).foregroundStyle(index < ledger.working ? GymPalette.done : index == ledger.working ? GymPalette.accent : GymPalette.inkFaint)
+          ForEach(0..<max(ledger.targets.count, ledger.performed + 1), id: \.self) { index in
+            Image(systemName: index < ledger.performed ? "checkmark.circle.fill" : index == ledger.performed ? "record.circle" : "circle.fill")
+              .font(.system(size: 20)).foregroundStyle(index < ledger.performed ? GymPalette.done : index == ledger.performed ? GymPalette.accent : GymPalette.inkFaint)
               .frame(width: 28, height: 28)
           }
         }.padding(.horizontal, RoomSpace.inset)
@@ -282,8 +282,7 @@ struct WorkoutLedgerRow: View {
   var spoken: String {
     switch row.place {
     case .logged(let set):
-      let name = set.kind == SetKind.working.rawValue ? "Set \(row.marker)" : set.kind.capitalized
-      return "\(name), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
+      return "Set \(row.marker), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
     case .current: return "Set \(row.marker), current, \(asked.map { "target " + $0 } ?? "open target")"
     case .planned: return "Set \(row.marker), planned, \(asked ?? "open target")"
     }

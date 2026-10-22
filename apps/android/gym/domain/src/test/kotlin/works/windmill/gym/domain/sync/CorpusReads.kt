@@ -33,7 +33,7 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
                 else -> error("unclaimed training history")
             }
         }
-        "GymEstimate" -> nullable(GymEstimate.value(f.double("weightKg"), f.int("reps"), f.string("kind", "working"), f.optionalDouble("rpe")))
+        "GymEstimate" -> nullable(GymEstimate.value(f.double("weightKg"), f.int("reps"), f.optionalDouble("rpe")))
         "TrainingLog" -> {
             val id = f.ref("sessionId", Session)
             Json.objectOf("drawnSessions" to Json.Arr(log.drawnSessions.map { it.id.json }), "open" to (log.open?.id?.json ?: Json.Null),

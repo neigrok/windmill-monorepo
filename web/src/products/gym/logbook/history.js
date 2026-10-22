@@ -62,14 +62,13 @@ export function yearsOf(sessions, byMonth = false) {
 }
 
 export function collapsedScheme(sets) {
-  if (sets.length < 2 || sets.some((set) => set.kind !== 'working')) return null;
+  if (sets.length < 2) return null;
   const first = sets[0];
-  if (!sets.every((set) => set.weightKg === first.weightKg && set.reps === first.reps && set.rpe === first.rpe && !set.note && set.kind === first.kind)) return null;
+  if (!sets.every((set) => set.weightKg === first.weightKg && set.reps === first.reps && set.rpe === first.rpe && !set.note)) return null;
   return `${sets.length} × ${first.reps} · ${first.weightKg === 0 ? 'bodyweight' : fmt(first.weightKg)}`;
 }
 
 export function workoutTotals(sets, catalog) {
   const counts = new Map(catalog.map((exercise) => [exercise.id, exercise.loadCount ?? 1]));
-  const working = sets.filter((set) => set.kind === 'working');
-  return { sets: working.length, reps: working.reduce((sum, set) => sum + set.reps, 0), tonnageKg: working.reduce((sum, set) => sum + Math.max(0, set.weightKg) * set.reps * (counts.get(set.exerciseId) ?? 1), 0) };
+  return { sets: sets.length, reps: sets.reduce((sum, set) => sum + set.reps, 0), tonnageKg: sets.reduce((sum, set) => sum + Math.max(0, set.weightKg) * set.reps * (counts.get(set.exerciseId) ?? 1), 0) };
 }

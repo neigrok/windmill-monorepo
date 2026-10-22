@@ -185,9 +185,6 @@ import SyncTesting
     #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == "three short")
     set.weightKg = 80
     #expect(LogPresentation.comparison(set, preceding: [set], plan: plan) == "on plan")
-    set.kind = "warmup"
-    #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == nil)
-    set.kind = "working"
     #expect(LogPresentation.comparison(set, preceding: [], plan: SessionPlan(routine: "Frozen", entries: [])) == nil)
   }
 

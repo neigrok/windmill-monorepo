@@ -83,7 +83,7 @@ import Vision
     XCTAssertTrue(history.waitForExistence(timeout: 5))
     XCTAssertTrue(history.label.hasPrefix("Dumbbell squat, kg") && !history.label.contains("kg each"), history.label)
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
-    XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["W · 80 × 3", "1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
+    XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
     try capture(app, "seed-renamed-history-light")
     history.tap()
     XCTAssertTrue(app.navigationBars.staticTexts["Dumbbell squat"].waitForExistence(timeout: 5))
@@ -223,7 +223,7 @@ import Vision
     let rows = app.workoutLedgerRows()
     let kind = { (row: XCUIElementSnapshot) in row.elementType == .button ? "button" : row.elementType == .staticText ? "text" : "type \(row.elementType.rawValue)" }
     XCTAssertEqual(rows.map { "\(kind($0))\($0.isSelected ? " selected" : ""): \($0.label)" }, [
-      "button: Warmup, logged, 80 kilograms, 3 reps", "button: Set 1, logged, 100 kilograms, 5 reps", "button: Set 2, logged, 100 kilograms, 5 reps",
+      "button: Set 1, logged, 100 kilograms, 5 reps", "button: Set 2, logged, 100 kilograms, 5 reps",
       "text: Set 3, current, target 100 kilograms, 5 reps", "text: Set 4, planned, 100 kilograms, 5 reps",
     ])
     for row in rows.filter({ $0.elementType == .button }) { XCTAssertGreaterThanOrEqual(row.frame.height, 44) }
@@ -231,12 +231,12 @@ import Vision
   }
 
   // The receipt opens over session detail at full height only. Done shows the detail, which numbers a set the way the
-  // ledger did: a warmup by its letter and with no caption, work sets from one against the plan.
+  // ledger did: from one, each against the plan.
   func testSessionDetailNumbersSetsAsTheLedgerDid() {
     let app = launch(appearance: "light")
     XCTAssertTrue(app.descendants(matching: .any)["workout-set-progress"].waitForValue("2 of 4 sets"))
     let ledger = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
-    XCTAssertEqual(ledger.map { $0.label.components(separatedBy: ",").first }, ["Warmup", "Set 1", "Set 2"])
+    XCTAssertEqual(ledger.map { $0.label.components(separatedBy: ",").first }, ["Set 1", "Set 2"])
     app.buttons["workout-finish"].tap()
     let done = app.buttons["workout-done"]
     XCTAssertTrue(done.waitForExistence(timeout: 10))
@@ -245,7 +245,7 @@ import Vision
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
     XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
-    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["W · 80 × 3", "1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
+    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
   }
 
   func testPagerAssemblyAndHeavierBoundary() {

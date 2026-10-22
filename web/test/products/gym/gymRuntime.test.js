@@ -266,7 +266,7 @@ test('training writes keep kilograms and preserve omitted versus explicitly clea
   const { api, engine, events, failures } = await open(t);
   spellWeightsIn('lb');
   t.after(() => spellWeightsIn('kg'));
-  const set = { ...trainingInput.sets[0], kind: 'drop', rpe: 8.5, note: 'Original' };
+  const set = { ...trainingInput.sets[0], rpe: 8.5, note: 'Original' };
   await api.importSession({ ...trainingInput, sets: [set] });
   const correction = { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: null,
     sets: [{ ...trainingInput.sets[0], setNumber: 1, weightKg: 62.345 }] };
@@ -277,7 +277,7 @@ test('training writes keep kilograms and preserve omitted versus explicitly clea
   assert.deepEqual((await api.session(trainingInput.id)).sets, [{ ...set, weightKg: 62.35 }]);
   await api.fixSet(trainingInput.id, set.id, { weightKg: 65, rpe: null, note: '' });
   await api.fixSet(trainingInput.id, set.id, { weightKg: 65 });
-  assert.deepEqual((await api.session(trainingInput.id)).sets, [{ ...trainingInput.sets[0], weightKg: 65, kind: 'drop', note: '' }]);
+  assert.deepEqual((await api.session(trainingInput.id)).sets, [{ ...trainingInput.sets[0], weightKg: 65, note: '' }]);
   assert.deepEqual(events, [
     { operation: 'session-import', outcome: 'saved-local' }, { operation: 'session-correct', outcome: 'saved-local' },
     { operation: 'set-correct', outcome: 'saved-local' }, { operation: 'set-correct', outcome: 'unchanged' },
@@ -304,31 +304,30 @@ test('offline corrections retain named sets and keep confirmed serials until adm
   const resumed = await reopen();
   assert.deepEqual(await resumed.session('session00001'), {
     session: { id: 'session00001', startedAt: 100, finishedAt: 900, routineName: 'Corrected' },
-    sets: [{ id: 'set00000003', exerciseId: 'bench-press', setNumber: 2, weightKg: 65, reps: 6, kind: 'working', note: '', completedAt: 800 }],
+    sets: [{ id: 'set00000003', exerciseId: 'bench-press', setNumber: 2, weightKg: 65, reps: 6, note: '', completedAt: 800 }],
   });
   assert.equal((await resumed.session('session00001')).sets.length, 1);
 });
 
-test('additive corrections retain unnamed sets and exact kinds through offline restart', async (t) => {
+test('additive corrections retain unnamed sets through offline restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  const existing = { id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600, kind: 'drop' };
-  const unnamed = { id: 'set00000002', exerciseId: 'bench-press', weightKg: 80, reps: 3, completedAt: 700, kind: 'failure', note: 'Kept', rpe: 9 };
+  const existing = { id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600 };
+  const unnamed = { id: 'set00000002', exerciseId: 'bench-press', weightKg: 80, reps: 3, completedAt: 700, note: 'Kept', rpe: 9 };
   await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [existing, unnamed] });
   await confirm(engine, [existing, unnamed].map(({ id, ...set }, index) => confirmed('set', id, {
     ...set, sessionId: 'session00001', setNumber: index + 1,
   })));
   const before = engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id);
-  const added = { id: 'set00000003', exerciseId: 'bench-press', setNumber: 3, weightKg: 40, reps: 8, completedAt: 800, kind: 'warmup', note: 'Recovered', rpe: 6 };
+  const added = { id: 'set00000003', exerciseId: 'bench-press', setNumber: 3, weightKg: 40, reps: 8, completedAt: 800, note: 'Recovered', rpe: 6 };
   await api.correctSession('session00001', { requestId: 'request00001', startedAt: 100, finishedAt: 900,
-    routineName: 'Kept', sets: [{ ...existing, setNumber: 1, kind: 'failure' }, added], preserveOtherSets: true });
+    routineName: 'Kept', sets: [{ ...existing, setNumber: 1, reps: 6 }, added], preserveOtherSets: true });
   const resumed = await reopen();
   const { sets } = await resumed.session('session00001');
-  assert.deepEqual(sets.map(({ id, kind }) => ({ id, kind })), [
-    { id: existing.id, kind: 'drop' }, { id: unnamed.id, kind: 'failure' }, { id: added.id, kind: 'warmup' },
-  ]);
   const { setNumber, ...pending } = added;
-  assert.deepEqual(sets.find((set) => set.id === added.id), pending);
+  assert.deepEqual(sets, [
+    { ...existing, setNumber: 1, reps: 6, note: '' }, { ...unnamed, setNumber: 2 }, pending,
+  ]);
   assert.equal(opened.engine.device.activeReplica.entries().at(-1).intent.cmd.args.sets[1].setNumber, setNumber);
   assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id), before);
 });

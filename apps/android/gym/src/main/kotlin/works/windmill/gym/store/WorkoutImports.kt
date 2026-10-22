@@ -299,7 +299,7 @@ class WorkoutImports(private val engine: Engine) {
             val set = sets.single { it.id == RecordID(original.id) }
             val f = set.values
             set.born != null && f["exerciseId"] == Json.of(original.exerciseId) && f["weightKg"] == Json.of(original.weightKg) &&
-                f["reps"] == Json.of(original.reps) && (f["kind"] ?: Json.of("working")) == Json.of(original.kind.wire) &&
+                f["reps"] == Json.of(original.reps) &&
                 (f["rpe"] ?: Json.Null) == (original.rpe?.let(Json::of) ?: Json.Null) && (f["note"] ?: Json.of("")) == Json.of(original.note) &&
                 f["completedAt"] == Json.of(original.completedAtMs) && (original.setNumber == null || (set.serials["setNumber"] ?: f["setNumber"]) == Json.of(original.setNumber))
         }
@@ -415,13 +415,13 @@ class WorkoutImports(private val engine: Engine) {
                 val requestId = context.opaqueID()
                 val action = CorrectSession(session.id, requestId, session.startedAt, finishedAt,
                     session.displayName, listOf(CorrectedSet(Id(set.id, SyncSet), Id(set.exerciseId, SyncExercise),
-                        number.toLong(), set.weightKg, set.reps, Instant(set.completedAtMs), set.rpe, set.note, true, kind = set.kind.wire)),
+                        number.toLong(), set.weightKg, set.reps, Instant(set.completedAtMs), set.rpe, set.note, true)),
                     preserveOtherSets = true)
                 val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
                 val decision = action.decision(action.load(reader), IDSource(context))
                 if (decision !is Decision.Write) throw RefusedImport("bad-instant")
                 decision.plan.guardRead(session.id, listOf("startedAt", "finishedAt", "displayName", "closedBy"))
-                decision.plan.guardRead(Id(set.id, SyncSet), listOf("sessionId", "exerciseId", "weightKg", "reps", "kind", "rpe", "note", "completedAt"))
+                decision.plan.guardRead(Id(set.id, SyncSet), listOf("sessionId", "exerciseId", "weightKg", "reps", "rpe", "note", "completedAt"))
                 decision.plan.gesture(scope, engine.registry).also { repair ->
                     repair.gestureId = context.opaqueID()
                     items[operation.token] = item.changed("state" to Json.of("recovering"), "code" to null,
@@ -457,7 +457,7 @@ class WorkoutImports(private val engine: Engine) {
                 "start" -> null
                 "set" -> {
                     val action = AppendSet(SyncSet(Id(setId, SyncSet), Id(sessionId, SyncSession), Id(source.exerciseId, SyncExercise),
-                        source.weightKg, source.reps, source.kind.wire, source.rpe, source.note, Instant(source.completedAtMs)))
+                        source.weightKg, source.reps, source.rpe, source.note, Instant(source.completedAtMs)))
                     when (val decision = action.decision(action.load(reader), IDSource(context))) {
                         is Decision.Write -> decision.plan
                         is Decision.Refuse -> throw RefusedImport(if (decision.refusal is GymRefusal.SessionFinished) "session-finished" else "recovery-retry")
@@ -786,7 +786,7 @@ class WorkoutImports(private val engine: Engine) {
             val saved = SyncSession(id, Instant(session.startedAtMs), finishedAtMs?.let(::Instant), if (finishedAtMs == null) null else "finish",
                 session.routineId?.let { Id(it, SyncRoutine) }, plan = SyncPlan.decode(session.plan?.let(::planFields)))
             return SignedOutWorkout(saved, sets.map { SyncSet(Id(it.id, SyncSet), id, Id(it.exerciseId, SyncExercise), it.weightKg, it.reps,
-                it.kind.wire, it.rpe, it.note, Instant(it.completedAtMs), it.setNumber) })
+                it.rpe, it.note, Instant(it.completedAtMs), it.setNumber) })
         }
         // A refusal this phone predicts, under the journal's code: the bounded label recovery reports everywhere.
         private fun code(refusal: GymRefusal): String = WorkoutRecovery.Reason.of(refusal).label
@@ -840,7 +840,6 @@ class WorkoutImports(private val engine: Engine) {
                     fields["sessionId"] == (item["targetSessionId"] ?: Json.of(entry.sessionId)) &&
                     fields["exerciseId"] == Json.of(set.exerciseId) && fields["completedAt"] == Json.of(set.completedAtMs) &&
                     fields["weightKg"] == Json.of(set.weightKg) && fields["reps"] == Json.of(set.reps) &&
-                    (fields["kind"] ?: Json.of("working")) == Json.of(set.kind.wire) &&
                     (rpe == (set.rpe?.let(Json::of) ?: Json.Null) && note == Json.of(set.note) ||
                         rpe == Json.Null && note == Json.of(""))
             }

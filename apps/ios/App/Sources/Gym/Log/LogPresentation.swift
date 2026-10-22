@@ -38,12 +38,12 @@ nonisolated enum LogPresentation {
     if entries.isEmpty { return "not in plan" }
     return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
   }
-  // A working set against its slot in the plan; any other kind carries none, since its letter is its kind.
+  // A set against its slot in the plan.
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
-    guard set.kind == "working", let plan else { return nil }
+    guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == set.exerciseId }
     guard entries.count == 1, let targets = entries[0].sets else { return nil }
-    let slot = preceding.filter { $0.kind == "working" }.count
+    let slot = preceding.count
     guard targets.indices.contains(slot) else { return nil }
     let target = targets[slot]
     if let kg = target.weightKg, kg != 0 {

@@ -14,8 +14,7 @@ import XCTest
     let progress = app.descendants(matching: .any)["workout-set-progress"]
     XCTAssertTrue(progress.waitForValue("2 of 4 sets"))
     let before = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
-    XCTAssertEqual(before.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
-      "Set 2, logged, 100 kilograms, 5 reps"])
+    XCTAssertEqual(before.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps"])
     let activity = app.otherElements["workout-activity-state"]
     let published = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
       activity.exists && activity.value as? String == "active"
@@ -71,7 +70,7 @@ import XCTest
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(after.map(\.label), before.map(\.label) + ["Set 3, logged, 100 kilograms, 5 reps"])
     XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))
-    XCTAssertEqual(Set(after.map(\.identifier)).count, 4)
+    XCTAssertEqual(Set(after.map(\.identifier)).count, 3)
     XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, "Set 4, current, target 100 kilograms, 5 reps")
     app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts["Ended early."].waitForExistence(timeout: 5))

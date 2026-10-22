@@ -19,24 +19,23 @@ import SyncCore
     self.session = session
     self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
     var ids: [ID<Exercise>] = []
-    for set in self.sets where set.kind == "working" && !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
+    for set in self.sets where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
     let retained = self.sets
     let entries = ids.map { id in
-      RoutineEntry(exerciseId: id, sets: retained.filter { $0.exerciseId == id && $0.kind == "working" }.map {
+      RoutineEntry(exerciseId: id, sets: retained.filter { $0.exerciseId == id }.map {
         SetTarget(reps: $0.reps, weightKg: $0.weightKg)
       })
     }
     let name = session.startedAt.date.formatted(.dateTime.weekday(.wide))
     routine = Draft(new: Routine(id: routineId, name: name, position: routinePosition, entries: entries))
   }
-  var slight: Bool { sets.filter { $0.kind == "working" }.count < 4 }
+  var slight: Bool { sets.count < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
   func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
-  // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
+  // Each movement once, in the order its first set was logged, with its sets.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
     SetRow.movements(sets).map { id in
-      let all = sets.filter { $0.exerciseId == id }, working = all.filter { $0.kind == "working" }
-      return (id, Readout.target((working.isEmpty ? all : working).map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
+      (id, Readout.target(sets.filter { $0.exerciseId == id }.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
     }
   }
   var offersRoutine: Bool { session.routineId == nil && !slight }

@@ -29,7 +29,7 @@ class SessionCommandsTests {
 
     @Test fun importKeepsRawReceiptArgumentsAndPredictsNormalizedSetsWithFrozenDrawnPlan() {
         val drawn = routine.copy(name = "Today", entries = listOf(entry.copy(sets = listOf(SetTarget(null, null)))))
-        val explicit = imported.copy(id = Id("set00002", TrainingSet), kind = "warmup", rpe = null, rpeNamed = true, note = "  note  ")
+        val explicit = imported.copy(id = Id("set00002", TrainingSet), rpe = null, rpeNamed = true, note = "  note  ")
         val result = writing(decide(ImportSession(sessionId, start, finish, listOf(imported, explicit), routineId), reader(listOf(row(routine)), listOf(row(drawn)))))
         val session = Session(sessionId, start, finish, "finish", routineId, plan = PlanSnapshot(drawn))
         assertEquals(sessionId, result.result)
@@ -40,7 +40,7 @@ class SessionCommandsTests {
             "sets" to Json.array(
                 Json.objectOf("id" to setId.json, "exerciseId" to squat.json, "weightKg" to Json.of(80.125), "reps" to Json.of(5), "completedAt" to Json.of(imported.completedAt.ms)),
                 Json.objectOf("id" to explicit.id.json, "exerciseId" to squat.json, "weightKg" to Json.of(80.125), "reps" to Json.of(5), "completedAt" to Json.of(explicit.completedAt.ms),
-                    "kind" to Json.of("warmup"), "rpe" to Json.Null, "note" to Json.of("  note  ")))), result.plan.command!!.args)
+                    "rpe" to Json.Null, "note" to Json.of("  note  ")))), result.plan.command!!.args)
         assertEquals(Gym.Commands.importSession, result.plan.command!!.name)
         assertTrue(result.plan.predictions.all { "setNumber" !in it.values })
     }
@@ -75,9 +75,9 @@ class SessionCommandsTests {
         assertEquals(Gym.Commands.importSession, writing(decision).plan.command!!.name)
     }
 
-    @Test fun correctRetainsKindAndUnnamedValuesAndPredictsRemovalOfMissingSets() {
+    @Test fun correctRetainsUnnamedValuesAndPredictsRemovalOfMissingSets() {
         val workout = Session(sessionId, start, finish, "stale", routineId, plan = PlanSnapshot(routine))
-        val old = imported.value(sessionId).copy(kind = "drop", rpe = 8.0, note = "keep", setNumber = 3)
+        val old = imported.value(sessionId).copy(rpe = 8.0, note = "keep", setNumber = 3)
         val removed = old.copy(id = Id("set00002", TrainingSet), setNumber = 7)
         val added = corrected.copy(id = Id("set00003", TrainingSet), setNumber = 9, completedAt = start, weightKg = -20.125)
         val kept = corrected.copy(completedAt = finish)
@@ -93,7 +93,7 @@ class SessionCommandsTests {
         val args = result.plan.command!!.args.member("sets").arr()
         assertEquals(listOf(3, 9), args.map { it.member("setNumber").long().toInt() })
         assertEquals(listOf(80.125, -20.125), args.map { it.member("weightKg").num() })
-        assertTrue(args.all { it["rpe"] == null && it["note"] == null && it["kind"] == null })
+        assertTrue(args.all { it["rpe"] == null && it["note"] == null })
         assertEquals(Change.delete(TrainingSet.type, removed.id.record), result.plan.gesture(Session.scope, SyncSchema.registry).predict.last())
         assertFalse(result.plan.gesture(Session.scope, SyncSchema.registry).hold)
     }

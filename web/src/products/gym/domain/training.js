@@ -2,7 +2,7 @@
 
 import { DecodeError, EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
-import { ChoiceSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
+import { NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
 import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
 import { PlanSnapshot, Routine } from './routines.js';
@@ -66,15 +66,15 @@ export const Session = new EntityType({
 });
 
 export const GymEstimate = Object.freeze({
-  /** @param {number} weightKg @param {number} reps @param {string} kind @param {number | null} rpe */
-  value(weightKg, reps, kind = 'working', rpe = null) {
-    if (kind !== 'working' || !Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1 || reps > 10
+  /** @param {number} weightKg @param {number} reps @param {number | null} rpe */
+  value(weightKg, reps, rpe = null) {
+    if (!Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1 || reps > 10
       || (rpe !== null && (!Number.isFinite(rpe) || rpe < 7))) return null;
     return reps === 1 ? weightKg : weightKg * (1 + reps / 30);
   },
-  /** @param {number} weightKg @param {number} reps @param {string} kind @param {number | null} rpe */
-  score(weightKg, reps, kind = 'working', rpe = null) {
-    if (GymEstimate.value(weightKg, reps, kind, rpe) === null) return null;
+  /** @param {number} weightKg @param {number} reps @param {number | null} rpe */
+  score(weightKg, reps, rpe = null) {
+    if (GymEstimate.value(weightKg, reps, rpe) === null) return null;
     return roundHalfAway(weightKg * 100) * (reps === 1 ? 30 : 30 + reps);
   },
   // An estimate as the log states it, to a tenth of a kilogram.
@@ -90,19 +90,17 @@ export class TrainingSetValue {
    * @param {number} weightKg
    * @param {number} reps
    * @param {Instant} completedAt
-   * @param {string} kind
    * @param {number | null} rpe
    * @param {string} note
    * @param {number | null} setNumber
    */
-  constructor(id, sessionId, exerciseId, weightKg, reps, completedAt, kind = 'working', rpe = null, note = '', setNumber = null) {
+  constructor(id, sessionId, exerciseId, weightKg, reps, completedAt, rpe = null, note = '', setNumber = null) {
     this.id = id;
     this.sessionId = sessionId;
     this.exerciseId = exerciseId;
     this.weightKg = weightKg;
     this.reps = reps;
     this.completedAt = completedAt;
-    this.kind = kind;
     this.rpe = rpe;
     this.note = note;
     this.setNumber = setNumber;
@@ -111,32 +109,30 @@ export class TrainingSetValue {
 
   fields() {
     return { sessionId: this.sessionId.json, exerciseId: this.exerciseId.json, weightKg: this.weightKg, reps: this.reps,
-      kind: this.kind, rpe: this.rpe, note: this.note, completedAt: this.completedAt.ms };
+      rpe: this.rpe, note: this.note, completedAt: this.completedAt.ms };
   }
 
-  get volumeKg() { return this.kind === 'working' ? Math.max(0, this.weightKg) * this.reps : 0; }
+  get volumeKg() { return Math.max(0, this.weightKg) * this.reps; }
   /** @param {ExerciseValue | null} exercise */
   volumeFor(exercise) { return this.volumeKg * (exercise?.loadCount ?? 1); }
-  get e1rm() { return GymEstimate.value(this.weightKg, this.reps, this.kind, this.rpe); }
+  get e1rm() { return GymEstimate.value(this.weightKg, this.reps, this.rpe); }
 }
 
 /** @type {EntityType<TrainingSetValue>} */
 export const TrainingSet = new EntityType({
   type: 'set', scope: 'self/gym', heldRemoval: true,
   decode: (f) => new TrainingSetValue(new Id(f.id, TrainingSet), f.ref('sessionId', Session), f.ref('exerciseId', Exercise),
-    f.double('weightKg'), f.int('reps'), f.instant('completedAt'), f.string('kind', 'working'), f.optionalDouble('rpe'),
+    f.double('weightKg'), f.int('reps'), f.instant('completedAt'), f.optionalDouble('rpe'),
     f.string('note', ''), f.serial('setNumber') ?? f.optionalInt('setNumber')),
   checks: [
     new Check('weightKg', (s) => new TrainingSetValue(s.id, s.sessionId, s.exerciseId,
-      SetRules.weightKg.apply(s.weightKg, new Path('weightKg')), s.reps, s.completedAt, s.kind, s.rpe, s.note, s.setNumber)),
+      SetRules.weightKg.apply(s.weightKg, new Path('weightKg')), s.reps, s.completedAt, s.rpe, s.note, s.setNumber)),
     new Check('reps', (s) => new TrainingSetValue(s.id, s.sessionId, s.exerciseId, s.weightKg,
-      SetRules.reps.apply(s.reps, new Path('reps')), s.completedAt, s.kind, s.rpe, s.note, s.setNumber)),
-    new Check('kind', (s) => new TrainingSetValue(s.id, s.sessionId, s.exerciseId, s.weightKg, s.reps, s.completedAt,
-      SetRules.kind.apply(s.kind, new Path('kind')), s.rpe, s.note, s.setNumber)),
+      SetRules.reps.apply(s.reps, new Path('reps')), s.completedAt, s.rpe, s.note, s.setNumber)),
     new Check('rpe', (s) => new TrainingSetValue(s.id, s.sessionId, s.exerciseId, s.weightKg, s.reps, s.completedAt,
-      s.kind, SetRules.rpe.applyOptional(s.rpe, new Path('rpe')), s.note, s.setNumber)),
+      SetRules.rpe.applyOptional(s.rpe, new Path('rpe')), s.note, s.setNumber)),
     new Check('note', (s) => new TrainingSetValue(s.id, s.sessionId, s.exerciseId, s.weightKg, s.reps, s.completedAt,
-      s.kind, s.rpe, SetRules.note.apply(s.note, new Path('note')), s.setNumber)),
+      s.rpe, SetRules.note.apply(s.note, new Path('note')), s.setNumber)),
     new Check('completedAt', (s) => { SessionRules.instant(s.completedAt, 'set.completedAt', new Path('completedAt')); return s; }),
   ],
 });
@@ -144,7 +140,6 @@ export const TrainingSet = new EntityType({
 export const SetRules = Object.freeze({
   weightKg: new NumberSpec('set.weightKg', { min: -500, max: 500, quantum: 0.01 }),
   reps: new NumberSpec('set.reps', { min: 1, max: 500, integer: true }),
-  kind: new ChoiceSpec('set.kind', ['warmup', 'working', 'drop', 'failure']),
   rpe: new NumberSpec('set.rpe', { min: 1, max: 10, quantum: 0.1 }),
   note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
   maxNumber: 2_147_483_647,

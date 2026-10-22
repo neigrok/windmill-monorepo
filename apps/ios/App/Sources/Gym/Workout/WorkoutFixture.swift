@@ -39,10 +39,9 @@ enum WorkoutFixture {
           gym.restoreWorkout() else { return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
-      for (index, agoMs) in [1_630_000, 1_210_000, 97_000].enumerated() {
+      for agoMs in [1_210_000, 97_000] {
         let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
-                              weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
-                              kind: index == 0 ? "warmup" : "working", completedAt: Instant(ms: now.ms - Int64(agoMs)))
+                              weightKg: 100, reps: 5, completedAt: Instant(ms: now.ms - Int64(agoMs)))
         _ = gym.run(AppendSet(set))
       }
     }

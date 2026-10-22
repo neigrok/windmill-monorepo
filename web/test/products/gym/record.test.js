@@ -34,17 +34,17 @@ const BACK_SQUAT = {
       sessionId: 'ses_today',
       startedAt: TODAY,
       sets: [
-        { id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 105, reps: 5, kind: 'working', note: '', completedAt: TODAY + 600_000 },
-        { id: 'set_2', exerciseId: 'back-squat', setNumber: 2, weightKg: 105, reps: 5, kind: 'working', note: '', completedAt: TODAY + 900_000 },
-        { id: 'set_3', exerciseId: 'back-squat', setNumber: 3, weightKg: 105, reps: 4, kind: 'working', note: '', completedAt: TODAY + 1_200_000 },
+        { id: 'set_1', exerciseId: 'back-squat', setNumber: 1, weightKg: 105, reps: 5, note: '', completedAt: TODAY + 600_000 },
+        { id: 'set_2', exerciseId: 'back-squat', setNumber: 2, weightKg: 105, reps: 5, note: '', completedAt: TODAY + 900_000 },
+        { id: 'set_3', exerciseId: 'back-squat', setNumber: 3, weightKg: 105, reps: 4, note: '', completedAt: TODAY + 1_200_000 },
       ],
     },
     {
       sessionId: 'ses_jul27',
       startedAt: JUL_27,
       sets: [
-        { id: 'set_4', exerciseId: 'back-squat', setNumber: 1, weightKg: 102.5, reps: 5, kind: 'working', note: '', completedAt: JUL_27 + 600_000 },
-        { id: 'set_5', exerciseId: 'back-squat', setNumber: 2, weightKg: 80, reps: 8, kind: 'drop', note: '', completedAt: JUL_27 + 900_000 },
+        { id: 'set_4', exerciseId: 'back-squat', setNumber: 1, weightKg: 102.5, reps: 5, note: '', completedAt: JUL_27 + 600_000 },
+        { id: 'set_5', exerciseId: 'back-squat', setNumber: 2, weightKg: 80, reps: 8, note: '', completedAt: JUL_27 + 900_000 },
       ],
     },
   ],
@@ -59,7 +59,7 @@ const CHIN_UP = {
   recentDays: [{
     sessionId: 'ses_jul27',
     startedAt: JUL_27,
-    sets: [{ id: 'set_6', exerciseId: 'chin-up', setNumber: 1, weightKg: 0, reps: 12, kind: 'working', note: '', completedAt: JUL_27 + 1_500_000 }],
+    sets: [{ id: 'set_6', exerciseId: 'chin-up', setNumber: 1, weightKg: 0, reps: 12, note: '', completedAt: JUL_27 + 1_500_000 }],
   }],
 };
 
@@ -67,17 +67,6 @@ const NEVER = {
   exercise: { id: 'zercher-squat', name: 'Zercher Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
   routineCount: 0,
   sessionCount: 0,
-};
-
-const DROPPED = {
-  exercise: { id: 'lat-pulldown', name: 'Lat Pulldown', pattern: 'pull', equipment: 'cable', stepKg: 5, custom: false },
-  routineCount: 0,
-  sessionCount: 0,
-  recentDays: [{
-    sessionId: 'ses_jul27',
-    startedAt: JUL_27,
-    sets: [{ id: 'set_7', exerciseId: 'lat-pulldown', setNumber: 1, weightKg: 60, reps: 12, kind: 'drop', note: '', completedAt: JUL_27 + 1_800_000 }],
-  }],
 };
 
 test('whenOf — today and yesterday by name, every other day by its date', () => {
@@ -92,7 +81,6 @@ test('subheadOf — how it is loaded, how much of the program names it, how much
   assert.equal(subheadOf(CHIN_UP), 'bodyweight · in 1 routine · 9 sessions');
   assert.equal(subheadOf({ ...BACK_SQUAT, sessionCount: 1 }), 'barbell · in 2 routines · 1 session');
   assert.equal(subheadOf(NEVER), 'barbell · in no routine · never logged');
-  assert.equal(subheadOf(DROPPED), 'cable · in no routine · no working sets');
 });
 
 test('tilesOf — the standing best, the set that made it, and the heaviest beside it', () => {
@@ -124,10 +112,10 @@ test('recordsOf — the ladder, newest first, and only the newest one still stan
   assert.deepEqual(recordsOf(NEVER, NOW), []);
 });
 
-test('daysOf — the last days as they were performed, and a set the plan never asked for says so', () => {
+test('daysOf — the last days as they were performed, every set bare', () => {
   assert.deepEqual(daysOf(BACK_SQUAT, NOW), [
     { sessionId: 'ses_today', when: 'today', sets: '105 × 5 · 105 × 5 · 105 × 4' },
-    { sessionId: 'ses_jul27', when: '27 Jul', sets: '102.5 × 5 · 80 × 8 drop' },
+    { sessionId: 'ses_jul27', when: '27 Jul', sets: '102.5 × 5 · 80 × 8' },
   ]);
   assert.deepEqual(daysOf(CHIN_UP, NOW), [
     { sessionId: 'ses_jul27', when: '27 Jul', sets: 'bodyweight × 12' },
@@ -153,15 +141,6 @@ test('recordView — a movement nobody has worked draws nothing but its name and
   assert.deepEqual(view.tiles, []);
   assert.deepEqual(view.records, []);
   assert.deepEqual(view.days, []);
-});
-
-test('recordView — a movement only ever dropped is in the log, and says so above its sets', () => {
-  const view = recordView(DROPPED, { now: NOW });
-  assert.equal(view.subhead, 'cable · in no routine · no working sets');
-  assert.equal(view.logged, true);
-  assert.deepEqual(view.tiles, []);
-  assert.deepEqual(view.records, []);
-  assert.deepEqual(view.days, [{ sessionId: 'ses_jul27', when: '27 Jul', sets: '60 × 12 drop' }]);
 });
 
 test('renameProofOf — the four lines, every one of them off the read behind the sheet', () => {

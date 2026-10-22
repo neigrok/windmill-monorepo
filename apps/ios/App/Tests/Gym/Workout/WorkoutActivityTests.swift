@@ -53,7 +53,7 @@ import SyncTesting
     #expect(try workout.activityRecord()?.offer == offer)
     #expect(workout.logActivityOffer(offer))
     let expected = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-                               weightKg: -25.5, reps: 8, kind: "working", completedAt: fixtures.start)
+                               weightKg: -25.5, reps: 8, completedAt: fixtures.start)
     #expect(workout.sets == [expected])
     let pending = try #require(gym.runner.read(Gym.scope) { try $0.repository(TrainingSet.self).record(expected.id, in: .stored) })
     #expect(pending.isPending && pending.isVisible)
@@ -61,7 +61,7 @@ import SyncTesting
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [["surface": "activity"]])
     harness.sync(); gym.refresh(); workout.reconcile()
     let confirmed = TrainingSet(id: expected.id, sessionId: expected.sessionId, exerciseId: expected.exerciseId,
-                                weightKg: expected.weightKg, reps: expected.reps, kind: expected.kind, completedAt: expected.completedAt, setNumber: 1)
+                                weightKg: expected.weightKg, reps: expected.reps, completedAt: expected.completedAt, setNumber: 1)
     #expect(workout.sets == [confirmed] && gym.unconfirmedSets(workout.sets).isEmpty)
     #expect(try harness.notices(GymRefusal.self).isEmpty)
   }
@@ -185,7 +185,7 @@ import SyncTesting
     let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
     let offer = try #require(workout.activityOffer()), session = try #require(workout.session)
     let value = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-                            weightKg: offer.weightKg, reps: offer.reps, kind: "working", completedAt: fixtures.start)
+                            weightKg: offer.weightKg, reps: offer.reps, completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: value, session: session, previousSets: workout.sets, offer: offer))
     let receipt = try #require(result.receipt)
     #expect(committed(result) == value.id)
@@ -265,7 +265,7 @@ import SyncTesting
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.isEmpty })
   }
 
-  @Test(arguments: ["movement", "load", "reps", "session", "set", "kind"])
+  @Test(arguments: ["movement", "load", "reps", "session", "set"])
   func domainCommandCannotBypassTheExactDurableOffer(field: String) throws {
     let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
     let offer = try #require(workout.activityOffer()), session = try #require(workout.session)
@@ -273,8 +273,7 @@ import SyncTesting
       sessionId: field == "session" ? gym.runner.mint(Session.self) : session.id,
       exerciseId: field == "movement" ? fixtures.second : fixtures.first,
       weightKg: field == "load" ? offer.weightKg + 1 : offer.weightKg,
-      reps: field == "reps" ? offer.reps + 1 : offer.reps,
-      kind: field == "kind" ? "warmup" : "working", completedAt: fixtures.start)
+      reps: field == "reps" ? offer.reps + 1 : offer.reps, completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: attempted, session: session, previousSets: workout.sets, offer: offer))
     #expect(result.refusal == .stale(session.id.ref, .predicted) && result.receipt == nil)
     #expect(try harness.stored(TrainingSet.self).isEmpty)
@@ -517,7 +516,7 @@ import SyncTesting
     #expect(workout.logSet())
     let retained = workout.sets
     #expect(retained.count == 2 && retained.first == original.first)
-    #expect(retained.last?.weightKg == 62.5 && retained.last?.reps == 9 && retained.last?.kind == "working")
+    #expect(retained.last?.weightKg == 62.5 && retained.last?.reps == 9)
     #expect(local.gym.hideWorkout() && local.gym.workoutHidden)
     #expect(local.gym.restoreWorkout() && !local.gym.workoutHidden && workout.isPresented)
     #expect(workout.sets == retained && !workout.logActivityOffer(stale))
@@ -850,7 +849,7 @@ import SyncTesting
     let concurrent = fixtures.value(gym, session: session, weight: 90)
     #expect(gym.run(AppendSet(concurrent))?.receipt != nil)
     let attempted = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-      weightKg: offer.weightKg, reps: offer.reps, kind: "working", completedAt: fixtures.start)
+      weightKg: offer.weightKg, reps: offer.reps, completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: attempted, session: session, previousSets: workout.sets, offer: offer))
     #expect(result.refusal == .stale(session.id.ref, .predicted) && result.receipt == nil)
     #expect(try harness.drawn(TrainingSet.self) == [concurrent])
@@ -918,11 +917,11 @@ import SyncTesting
     #expect(next.movementID == fixtures.second.description && next.setID != heavier.setID)
     #expect(reopened.logActivityOffer(next))
     let logged = TrainingSet(id: ID(RecordID(next.setID)), sessionId: session.id, exerciseId: fixtures.second,
-      weightKg: next.weightKg, reps: next.reps, kind: "working", completedAt: Instant(ms: retained.completedAt.ms + 1))
+      weightKg: next.weightKg, reps: next.reps, completedAt: Instant(ms: retained.completedAt.ms + 1))
     #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, logged].sorted { $0.id < $1.id })
     harness.sync(); reopenedGym.refresh(); reopened.reconcile()
     let confirmed = TrainingSet(id: logged.id, sessionId: logged.sessionId, exerciseId: logged.exerciseId,
-      weightKg: logged.weightKg, reps: logged.reps, kind: logged.kind, completedAt: logged.completedAt, setNumber: 1)
+      weightKg: logged.weightKg, reps: logged.reps, completedAt: logged.completedAt, setNumber: 1)
     #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, confirmed].sorted { $0.id < $1.id })
     #expect(reopened.deviation == nil && reopened.walk.asked == [fixtures.first])
     #expect(reopenedGym.routines.first { $0.id == plan.id } == current)

@@ -10,7 +10,7 @@ extension XCUIApplication {
     let top = origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + frame.height * 0.2))
     let bottom = origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + frame.height * 0.8))
     let query = descendants(matching: .any).matching(NSPredicate(format: "label MATCHES %@",
-      "(Warmup|Set [0-9]+), (logged|current|planned), .*"))
+      "Set [0-9]+, (logged|current|planned), .*"))
     func visible() -> [XCUIElementSnapshot] {
       query.allElementsBoundByIndex.compactMap { try? $0.snapshot() }
         .filter { frame.intersects($0.frame) }.sorted { $0.frame.minY < $1.frame.minY }

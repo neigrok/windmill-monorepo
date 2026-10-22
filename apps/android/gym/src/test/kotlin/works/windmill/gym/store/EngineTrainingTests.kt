@@ -425,7 +425,7 @@ class EngineTrainingTests {
             assertEquals(before, engine.snapshot())
         }
     }
-    @Test fun cursorUsesBothHalvesAndWarmupsDoNotBecomeLastTimeOrProgress() = runBlocking {
+    @Test fun cursorUsesBothHalvesAndEverySetCountsTowardProgress() = runBlocking {
         engine().use { engine ->
             val gym = EngineTraining(engine)
             for (id in listOf("session1", "session2")) {
@@ -435,8 +435,7 @@ class EngineTrainingTests {
             }
             assertEquals(listOf("session2"), gym.sessions(1, null, null).map { it.id })
             assertEquals(listOf("session1"), gym.sessions(50, now - 10_000, "session2").map { it.id })
-            assertEquals("session2", gym.lastTime("back-squat").session!!.id)
-            assertEquals(listOf("session2"), gym.progress().sessions.map { it.sessionId })
+            assertEquals(listOf("session1", "session2"), gym.progress().sessions.map { it.sessionId })
         }
     }
     @Test fun aNoteMoveWritesOnlyItsPositionAndWeighinsSaveAtTheCommitMoment() = runBlocking {

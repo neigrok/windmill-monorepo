@@ -68,7 +68,7 @@ struct GymRow: View {
 }
 
 // One set read back: its place, its numbers and, when present, a trailing caption and a second line of the time, the
-// effort and the note. A warmup reads dimmer than the work.
+// effort and the note.
 struct SetRow: View {
   let marker: String
   let set: TrainingSet
@@ -83,7 +83,7 @@ struct SetRow: View {
     VStack(alignment: .leading, spacing: RoomSpace.small) {
       layout {
         Text("\(marker) · \(Readout.effort(weightKg: set.weightKg, reps: set.reps))").monospacedDigit()
-          .foregroundStyle(set.kind == SetKind.warmup.rawValue ? GymPalette.inkDim : GymPalette.ink)
+          .foregroundStyle(GymPalette.ink)
           .frame(maxWidth: .infinity, alignment: .leading)
         if let caption { Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
       }
@@ -94,11 +94,9 @@ struct SetRow: View {
       .accessibilityElement(children: .combine)
   }
 
-  // A working set by its place among the working sets so far, any other kind by its letter.
+  // A set by its place among the sets so far.
   nonisolated static func marker(_ set: TrainingSet, in sets: [TrainingSet]) -> String {
-    guard set.kind == SetKind.working.rawValue else { return String(set.kind.prefix(1)).uppercased() }
-    let through = sets.prefix { $0.id != set.id } + [set]
-    return "\(through.filter { $0.kind == SetKind.working.rawValue }.count)"
+    "\(sets.prefix { $0.id != set.id }.count + 1)"
   }
 
   // Each movement once, in the order its first set was logged.

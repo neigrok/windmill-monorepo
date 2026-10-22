@@ -88,7 +88,6 @@
     {"codes": ["unknown-exercise"], "kind": "server", "name": "set.exercise", "subject": "set"},
     {"codes": ["unknown-record", "record-dead"], "kind": "server", "name": "set.gone", "subject": "set"},
     {"kind": "local", "name": "set.identity", "subject": "set"},
-    {"kind": "local", "name": "set.kind", "spec": {"kind": "choice", "path": "set.kind", "values": ["warmup", "working", "drop", "failure"]}, "subject": "set"},
     {"kind": "local", "name": "set.note", "spec": {"kind": "text", "max": 4000, "min": 0, "nfc": false, "path": "set.note", "trim": false, "unit": "bytes"}, "subject": "set"},
     {"kind": "local", "name": "set.reps", "spec": {"integer": true, "kind": "number", "max": 500, "min": 1, "path": "set.reps"}, "subject": "set"},
     {"kind": "local", "name": "set.rpe", "spec": {"integer": false, "kind": "number", "max": 10, "min": 1, "path": "set.rpe", "quantum": 0.1}, "subject": "set"},

@@ -116,17 +116,6 @@ import SyncTesting
     #expect(workout.sets.first?.rpe == nil && workout.sets.first?.note == "")
   }
 
-  @Test func kindCorrectionKeepsTheSetIdentity() throws {
-    let workouts = WorkoutStateTests(), (_, gym) = try workouts.fixture(), workout = try workouts.begin(gym)
-    workout.logSet()
-    let old = try #require(workout.sets.first), draft = SetFixDraft(old, account: gym.account)
-    #expect(old.kind == "working")
-    draft.kind = SetKind.warmup.rawValue
-    #expect(draft.save(gym))
-    var expected = old; expected.kind = "warmup"
-    #expect(workout.sets == [expected] && draft.original == expected)
-  }
-
   @Test func failedFixRetainsDraftAndOriginalWhileRetryLeavesTargetsAlone() throws {
     let workouts = WorkoutStateTests(), (harness, gym) = try workouts.fixture()
     let plan = try workouts.routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)]), workout = try workouts.begin(gym, routine: plan)

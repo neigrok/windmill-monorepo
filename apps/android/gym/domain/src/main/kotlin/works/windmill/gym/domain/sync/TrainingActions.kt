@@ -119,7 +119,7 @@ class CorrectSet(val value: TrainingSet) : Action<TrainingState, Unit, GymRefusa
         val old = loaded.sets.firstOrNull { it.id == value.id && loaded.drawnSets.any { drawn -> drawn.id == value.id } } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, value.id.ref, path = Refused.Path.predicted)))
         if (old.sessionId != value.sessionId || old.exerciseId != value.exerciseId || old.completedAt != value.completedAt || old.setNumber != value.setNumber)
             throw Violation("set.identity", Path("id"), Violation.Reason.Custom("immutable"))
-        val fields = listOf("weightKg", "reps", "kind", "rpe", "note")
+        val fields = listOf("weightKg", "reps", "rpe", "note")
         val valid = Valid(value, TrainingSet, fields, loaded.moment)
         val changed = fields.filter { valid.value.fields()[it] != old.fields()[it] }
         if (changed.isEmpty()) return Decision.Unchanged(Unit)
@@ -144,9 +144,8 @@ class DiscardSession(val id: Id<Session>) : Action<TrainingState, Unit, GymRefus
 }
 
 data class ImportedSet(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val weightKg: Double, val reps: Int,
-    val completedAt: Instant, val kind: String? = null, val rpe: Double? = null, val note: String? = null,
-    val rpeNamed: Boolean = rpe != null) {
-    fun value(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, kind ?: "working", rpe, note ?: "", completedAt)
+    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null) {
+    fun value(session: Id<Session>) = TrainingSet(id, session, exerciseId, weightKg, reps, rpe, note ?: "", completedAt)
 }
 
 class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt: Instant, val sets: List<ImportedSet>, val routineId: Id<Routine>? = null) : Action<ImportSession.Loaded, Id<Session>, GymRefusal> {
@@ -174,7 +173,7 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
             put("sets", Json.Arr(sets.map { set -> Json.Obj(buildList {
                 add("id" to set.id.json); add("exerciseId" to set.exerciseId.json)
                 add("weightKg" to Json.of(set.weightKg)); add("reps" to Json.of(set.reps)); add("completedAt" to Json.of(set.completedAt.ms))
-                set.kind?.let { add("kind" to Json.of(it)) }; set.note?.let { add("note" to Json.of(it)) }
+                set.note?.let { add("note" to Json.of(it)) }
                 if (set.rpeNamed) add("rpe" to (set.rpe?.let(Json::of) ?: Json.Null))
             }) }))
         }
@@ -184,7 +183,7 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
 }
 
 data class CorrectedSet(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val setNumber: Long, val weightKg: Double, val reps: Int,
-    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null, val kind: String? = null)
+    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null)
 
 class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: Instant, val finishedAt: Instant,
     val routineName: String?, val sets: List<CorrectedSet>, val preserveOtherSets: Boolean = false) : Action<TrainingState, Unit, GymRefusal> {
@@ -209,7 +208,7 @@ class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: 
             throw Violation("session.sets", Path("sets"), Violation.Reason.Custom("invalid"))
         val checked = sets.map { set ->
             val previous = loaded.sets.firstOrNull { it.id == set.id }
-            val current = TrainingSet(set.id, id, set.exerciseId, set.weightKg, set.reps, previous?.kind ?: set.kind ?: "working",
+            val current = TrainingSet(set.id, id, set.exerciseId, set.weightKg, set.reps,
                 if (set.rpeNamed) set.rpe else previous?.rpe, set.note ?: previous?.note ?: "", set.completedAt, set.setNumber.toInt())
             Valid(current, TrainingSet, at = loaded.moment).value
         }
@@ -219,7 +218,6 @@ class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: 
             "routineName" to (name?.let(Json::of) ?: Json.Null), "sets" to Json.Arr(sets.zip(checked).map { (input, value) -> Json.Obj(buildList {
                 add("id" to value.id.json); add("exerciseId" to value.exerciseId.json); add("setNumber" to Json.of(input.setNumber))
                 add("weightKg" to Json.of(input.weightKg)); add("reps" to Json.of(input.reps)); add("completedAt" to Json.of(input.completedAt.ms))
-                input.kind?.let { add("kind" to Json.of(it)) }
                 if (input.rpeNamed) add("rpe" to (input.rpe?.let(Json::of) ?: Json.Null)); input.note?.let { add("note" to Json.of(it)) }
             }) })) + if (preserveOtherSets) mapOf("preserveOtherSets" to Json.of(true)) else emptyMap()
         val predictions = (predicted?.let { listOf(Prediction.update(Session, id, it.fields())) } ?: emptyList()) + checked.map { set ->

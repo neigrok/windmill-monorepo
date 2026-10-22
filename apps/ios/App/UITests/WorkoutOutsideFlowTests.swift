@@ -28,8 +28,7 @@ import XCTest
     let progress = app.descendants(matching: .any)["workout-set-progress"]
     XCTAssertTrue(progress.waitForValue("2 of 4 sets"))
     let before = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
-    XCTAssertEqual(before.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
-      "Set 2, logged, 100 kilograms, 5 reps"])
+    XCTAssertEqual(before.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps"])
     XCUIDevice.shared.press(.home)
 
     let control = controlCenterControl(springboard)
@@ -42,10 +41,10 @@ import XCTest
     app.activate()
     XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
-    XCTAssertEqual(after.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
-      "Set 2, logged, 100 kilograms, 5 reps", "Set 3, logged, 100 kilograms, 5 reps"])
+    XCTAssertEqual(after.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps",
+      "Set 3, logged, 100 kilograms, 5 reps"])
     XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))
-    XCTAssertEqual(Set(after.map(\.identifier)).count, 4)
+    XCTAssertEqual(Set(after.map(\.identifier)).count, 3)
 
     app.buttons["workout-assembly"].tap()
     let hide = app.buttons["Hide workout"]

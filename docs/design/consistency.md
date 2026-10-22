@@ -249,9 +249,16 @@ these are the places it disagrees with a drawing, a brief or the build.
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
   strip. The brief now says so.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. iOS code still carries
-  `SetKind`: `GymRows.swift` dims warm-ups and prints the *W* prefix, and `SetEditor` offers Kind;
-  Android's `FixSheet.kt` carries a set's kind through. Build work: remove it on every surface.
+  the Gym boards state none. The shared gym vectors and the iOS, Android and web domains count every
+  set as a working set and read a stored `kind` only to ignore it. Still carrying a kind:
+  Android's app layer (`SetKind`, the `FixSheet.kt` and Settings kind pickers, the warm-up rows and
+  counts in `LiveSession.kt` and `Training.kt`), whose kind no longer reaches the log; the web, which
+  writes `kind: 'working'` on new sets (`WorkoutEditor.jsx`, `backfill/draft.js`), draws the share
+  page's kinds and a warm-up set on the gym landing (`GymLanding.jsx`); and the backend, whose reads
+  count working sets only (`PgLogRepository.cpp`, `PgLogHistory.cpp`, `Review.cpp`: REST, MCP
+  `gym_get_stats` and last time, the Coach's context) and whose MCP `gym_log_set` and Coach prompt
+  still offer warm-up, drop and failure. An old row of another kind so counts on every client and
+  not on the server. Build work: remove it on Android, the web and the backend.
 - **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 10–13b and 21a/21b from

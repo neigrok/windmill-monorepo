@@ -220,7 +220,7 @@ class CorpusTests {
                 val sets = input.member("sets").arr().map { raw ->
                     val s = Fields(raw)
                     ImportedSet(s.ref("id", TrainingSet), s.ref("exerciseId", Exercise), s.double("weightKg"), s.int("reps"), s.instant("completedAt"),
-                        s.optionalString("kind"), s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
+                        s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
                 }
                 corpus.decision(ImportSession(f.ref("id", Session), f.instant("startedAt"), f.instant("finishedAt"), sets, f.optionalRef("routineId", Routine)), vector, { it.json }, ::refusalForm)
             }
@@ -228,7 +228,7 @@ class CorpusTests {
                 val sets = input.member("sets").arr().map { raw ->
                     val s = Fields(raw)
                     CorrectedSet(s.ref("id", TrainingSet), s.ref("exerciseId", Exercise), raw.member("setNumber").long(), s.double("weightKg"), s.int("reps"), s.instant("completedAt"),
-                        s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null, s.optionalString("kind"))
+                        s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
                 }
                 corpus.decision(CorrectSession(f.ref("sessionId", Session), f.string("requestId"), f.instant("startedAt"), f.instant("finishedAt"), f.optionalString("routineName"), sets,
                     input["preserveOtherSets"] == Json.of(true)), vector, { Json.Null }, ::refusalForm)

@@ -1082,7 +1082,7 @@ import SyncTesting
     try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
     let routine = try #require(gym.routines.first)
     let start = Instant(ms: 1_790_423_000_000), end = Instant(ms: 1_790_424_000_000)
-    let sets = [ImportedSet(id: ID("removal-warmup"), exerciseId: exercise, weightKg: 20, reps: 8, completedAt: start, kind: "warmup"),
+    let sets = [ImportedSet(id: ID("removal-first"), exerciseId: exercise, weightKg: 20, reps: 8, completedAt: start),
                 ImportedSet(id: ID("removal-working"), exerciseId: exercise, weightKg: 60, reps: 5, completedAt: end)]
     #expect(gym.run(ImportSession(id: ID("removal-session"), startedAt: start, finishedAt: end, sets: sets, routineId: routine.id))?.receipt != nil)
     #expect(gym.run(ProposeRoutine(id: ID("removal-proposal"), routineId: routine.id, name: "", entries: [], summary: "Remove this routine.", removing: true))?.receipt != nil)

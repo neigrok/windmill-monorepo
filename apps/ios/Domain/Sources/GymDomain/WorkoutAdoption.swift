@@ -38,7 +38,7 @@ public struct SignedOutWorkout: Equatable, Sendable {
     ImportSession(id: session.id, startedAt: session.startedAt,
       finishedAt: session.finishedAt ?? SessionRules.lastActivity(session, sets: sets),
       sets: sets.map { ImportedSet(id: $0.id, exerciseId: $0.exerciseId, weightKg: $0.weightKg, reps: $0.reps,
-        completedAt: $0.completedAt, kind: $0.kind, rpe: $0.rpe, note: $0.note, rpeNamed: true) }, routineId: session.routineId)
+        completedAt: $0.completedAt, rpe: $0.rpe, note: $0.note, rpeNamed: true) }, routineId: session.routineId)
   }
   // What this phone refuses before asking the account: the import's own checks, a window reaching past now, a movement
   // the catalogue lacks, then a crossing with a finished workout on the log.

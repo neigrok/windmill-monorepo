@@ -13,7 +13,7 @@ struct WorkoutAdoptionTests {
     _ = try h.runner.run(StartSession(id: session, startedAt: start))
     let exercise = SeedExercises.all.first!
     let set = TrainingSet(id: h.runner.mint(TrainingSet.self), sessionId: session, exerciseId: exercise.id,
-      weightKg: 60, reps: 8, kind: "drop", rpe: 7.5, note: "Durable full set", completedAt: Instant(ms: start.ms + 1_000))
+      weightKg: 60, reps: 8, rpe: 7.5, note: "Durable full set", completedAt: Instant(ms: start.ms + 1_000))
     _ = try h.runner.run(AppendSet(set))
     var corrected = set; corrected.weightKg = 62.5
     #expect(try h.runner.run(CorrectSet(corrected)).receipt != nil)

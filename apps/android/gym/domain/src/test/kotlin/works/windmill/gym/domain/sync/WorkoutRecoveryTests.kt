@@ -198,7 +198,7 @@ class WorkoutRecoveryTests {
         committed(runner.run(StartSession(id, startedAt = start)))
         step.sync()
         val inside = TrainingSet(Id("inside-set", TrainingSet), id, squat, 60.0, 5, completedAt = Instant(now - 90_000))
-        val late = TrainingSet(Id("late-set", TrainingSet), id, squat, 65.0, 3, "drop", 8.0, "Private late note", Instant(now - 50_000))
+        val late = TrainingSet(Id("late-set", TrainingSet), id, squat, 65.0, 3, 8.0, "Private late note", Instant(now - 50_000))
         committed(runner.run(AppendSet(inside)))
         committed(runner.run(AppendSet(late)))
         committed(runner.run(FinishSession(id, Instant(now - 70_000))))
@@ -220,7 +220,7 @@ class WorkoutRecoveryTests {
         assertEquals(Json.of(start.ms), correction.args["startedAt"])
         assertEquals(Json.of(now - 70_000), correction.args["finishedAt"])
         assertEquals(Json.array(Json.objectOf("id" to inside.id.json, "exerciseId" to squat.json, "setNumber" to Json.of(1), "weightKg" to Json.of(60.0), "reps" to Json.of(5),
-            "completedAt" to Json.of(inside.completedAt.ms), "kind" to Json.of("working"), "rpe" to Json.Null, "note" to Json.of(""))), correction.args["sets"])
+            "completedAt" to Json.of(inside.completedAt.ms), "rpe" to Json.Null, "note" to Json.of(""))), correction.args["sets"])
         assertEquals(listOf(inside.id), step.drawn(Session.scope, TrainingSet.type).map { TrainingSet.decode(Fields(it)).id })
         assertEquals(listOf("landed-open session-finished restoreSets notices=2 stranded=[late-set] fix=true"), review(step, runner).map(::describe))
         unchanged(runner.run(RecoverStrandedSets(id, RecoverStrandedSets.Placement.intoWorkout)))
@@ -231,7 +231,7 @@ class WorkoutRecoveryTests {
         assertEquals(Json.of(late.completedAt.ms), separate.args["startedAt"])
         assertEquals(Json.of(late.completedAt.ms), separate.args["finishedAt"])
         assertEquals(Json.array(Json.objectOf("id" to late.id.json, "exerciseId" to squat.json, "weightKg" to Json.of(65.0), "reps" to Json.of(3),
-            "completedAt" to Json.of(late.completedAt.ms), "kind" to Json.of("drop"), "note" to Json.of("Private late note"), "rpe" to Json.of(8.0))), separate.args["sets"])
+            "completedAt" to Json.of(late.completedAt.ms), "note" to Json.of("Private late note"), "rpe" to Json.of(8.0))), separate.args["sets"])
         val separateId = Id(RecordID(separate.args.member("id")), Session)
         val copies = saved(runner)
         assertEquals(listOf(inside.id), copies.first { it.session.id == id }.sets.map { it.id })

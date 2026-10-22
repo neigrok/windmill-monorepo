@@ -6,14 +6,14 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.Quantum
 
 object GymEstimate {
-    fun value(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = null): Double? {
-        if (kind != "working" || !weightKg.isFinite() || weightKg <= 0 || reps !in 1..10 ||
+    fun value(weightKg: Double, reps: Int, rpe: Double? = null): Double? {
+        if (!weightKg.isFinite() || weightKg <= 0 || reps !in 1..10 ||
             (rpe != null && (!rpe.isFinite() || rpe < 7))) return null
         return if (reps == 1) weightKg else weightKg * (1 + reps / 30.0)
     }
 
-    fun score(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = null): Double? {
-        if (value(weightKg, reps, kind, rpe) == null) return null
+    fun score(weightKg: Double, reps: Int, rpe: Double? = null): Double? {
+        if (value(weightKg, reps, rpe) == null) return null
         return Quantum.halfAway(weightKg * 100) * (if (reps == 1) 30 else 30 + reps)
     }
 
@@ -24,7 +24,7 @@ class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catal
     val sessionId = session.id
     val name = session.name
     val durationMs = session.finishedAt?.let { maxOf(0, it.ms - session.startedAt.ms) }
-    val workingSetCount = sets.count { it.sessionId == session.id && it.kind == "working" }
+    val workingSetCount = sets.count { it.sessionId == session.id }
     val movementCount = sets.filter { it.sessionId == session.id }.map { it.exerciseId }.toSet().size
     val volumeKg = sets.filter { it.sessionId == session.id }.sumOf { it.volumeFor(catalogue.find(it.exerciseId)) }
     val topE1rm = sets.filter { it.sessionId == session.id }.mapNotNull { it.e1rm }.maxOrNull()
@@ -38,7 +38,7 @@ data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
     companion object {
         fun of(exerciseId: Id<Exercise>, log: TrainingLog): LastTime {
             for (session in log.drawnSessions.filter { !it.isOpen }) {
-                val sets = log.sets(session.id).filter { it.exerciseId == exerciseId && it.kind != "warmup" }
+                val sets = log.sets(session.id).filter { it.exerciseId == exerciseId }
                 if (sets.isNotEmpty()) return LastTime(exerciseId, session, sets, log.firstPullComplete)
             }
             return LastTime(exerciseId, isComplete = log.firstPullComplete)
@@ -52,13 +52,12 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
         const val emptyBarReps = 5
         fun of(todaySets: List<TrainingSet>, planEntry: RoutineEntry?, lastTime: LastTime?): Prefill {
             val scheme = planEntry?.sets.orEmpty()
-            val working = todaySets.filter { it.kind == "working" }
-            val sticky = working.lastOrNull()
+            val sticky = todaySets.lastOrNull()
             val history = lastTime?.sets.orEmpty()
             val straight = scheme.firstOrNull()?.let { first -> scheme.all { it == first } } ?: true
             if (scheme.isNotEmpty() && !straight) {
-                val slot = scheme.getOrNull(working.size)
-                val lastNth = history.filter { it.kind == "working" }.getOrNull(working.size)
+                val slot = scheme.getOrNull(todaySets.size)
+                val lastNth = history.getOrNull(todaySets.size)
                 return Prefill(slot?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: emptyBarKg,
                     maxOf(1, slot?.reps ?: lastNth?.reps ?: sticky?.reps ?: emptyBarReps))
             }
@@ -84,7 +83,7 @@ data class EstimatedFact(val performed: PerformedFact, val e1rm: Double) {
     val weightKg get() = performed.weightKg
     val reps get() = performed.reps
     val rpe get() = performed.rpe
-    val score get() = GymEstimate.score(weightKg, reps, rpe = rpe) ?: 0.0
+    val score get() = GymEstimate.score(weightKg, reps, rpe) ?: 0.0
     val json: Json get() = Json.Obj(performed.json.obj().toList() + ("e1rm" to Json.of(e1rm)))
 }
 
@@ -105,7 +104,7 @@ data class ProgressSession(val sessionId: Id<Session>, val startedAt: Instant, v
 data class StatsProgress(val asOf: Instant, val sessions: List<ProgressSession>, val isComplete: Boolean = true) {
     constructor(log: TrainingLog, asOf: Instant = log.moment.now) : this(asOf,
         log.drawnSessions.filter { !it.isOpen }.mapNotNull { session ->
-            val movements = log.sets(session.id).filter { it.kind == "working" }.groupBy { it.exerciseId }
+            val movements = log.sets(session.id).groupBy { it.exerciseId }
                 .toSortedMap().map { (exerciseId, sets) ->
                     val heaviest = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).first()
                     val mostReps = sets.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenByDescending { it.weightKg }.thenBy { it.id }).first()

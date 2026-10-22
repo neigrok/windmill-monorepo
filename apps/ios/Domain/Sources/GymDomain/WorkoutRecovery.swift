@@ -107,17 +107,16 @@ public struct WorkoutFix: Equatable, Sendable {
     public var exerciseId: ID<Exercise>
     public var weightKg: Double
     public var reps: Int
-    public var kind: String
     public var rpe: Double?
     public var note: String
     public var completedAt: Instant
 
     public init(_ set: TrainingSet) {
-      id = set.id; exerciseId = set.exerciseId; weightKg = set.weightKg; reps = set.reps; kind = set.kind
+      id = set.id; exerciseId = set.exerciseId; weightKg = set.weightKg; reps = set.reps
       rpe = set.rpe; note = set.note; completedAt = set.completedAt
     }
     public func set(in session: ID<Session>) -> TrainingSet {
-      TrainingSet(id: id, sessionId: session, exerciseId: exerciseId, weightKg: weightKg, reps: reps, kind: kind, rpe: rpe,
+      TrainingSet(id: id, sessionId: session, exerciseId: exerciseId, weightKg: weightKg, reps: reps, rpe: rpe,
                   note: note, completedAt: completedAt)
     }
   }
@@ -245,7 +244,7 @@ public struct RecoverStrandedSets: Action {
       guard let first = outside.first, let last = outside.last else { return .unchanged(()) }
       let separate = Session(id: ids.mint(Session.self), startedAt: first.completedAt, finishedAt: last.completedAt, closedBy: "finish")
       let copy = SignedOutWorkout(session: separate, sets: outside.map { set in
-        TrainingSet(id: set.id, sessionId: separate.id, exerciseId: set.exerciseId, weightKg: set.weightKg, reps: set.reps, kind: set.kind,
+        TrainingSet(id: set.id, sessionId: separate.id, exerciseId: set.exerciseId, weightKg: set.weightKg, reps: set.reps,
                     rpe: set.rpe, note: set.note, completedAt: set.completedAt)
       })
       if let refusal = copy.importRefusal(at: loaded.state.moment, among: loaded.state.stored, catalogue: loaded.state.catalogue) { return .refuse(refusal) }
@@ -278,7 +277,7 @@ public struct RecoverStrandedSets: Action {
       guard let next, next <= SetRules.maxNumber else { throw Violation(rule: "set.setNumber", path: "setNumber", reason: .above(max: Double(SetRules.maxNumber))) }
       numbers[set.exerciseId] = next + 1
       corrected.append(CorrectedSet(id: set.id, exerciseId: set.exerciseId, setNumber: next, weightKg: set.weightKg, reps: set.reps,
-                                    completedAt: set.completedAt, rpe: set.rpe, note: set.note, rpeNamed: true, kind: set.kind))
+                                    completedAt: set.completedAt, rpe: set.rpe, note: set.note, rpeNamed: true))
     }
     let correction = CorrectSession(id: id, requestId: ids.opaqueID(), startedAt: session.startedAt, finishedAt: finish,
                                     routineName: session.displayName, sets: corrected, preserveOtherSets: true)

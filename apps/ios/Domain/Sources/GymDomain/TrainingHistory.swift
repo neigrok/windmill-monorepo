@@ -53,7 +53,7 @@ public struct TrainingHistory {
 
   func setDocument(_ value: TrainingSet) -> JSON {
     .object(omittingNil: ["id": value.id.json, "exerciseId": value.exerciseId.json, "setNumber": value.setNumber.map(JSON.init),
-      "weightKg": .of(value.weightKg), "reps": JSON(value.reps), "kind": .string(value.kind), "note": .string(value.note),
+      "weightKg": .of(value.weightKg), "reps": JSON(value.reps), "note": .string(value.note),
       "completedAt": .of(value.completedAt), "rpe": value.rpe.map(JSON.of)])
   }
 
@@ -76,19 +76,19 @@ public struct TrainingHistory {
   }
 
   func tonnage(_ sets: [TrainingSet]) -> Double {
-    sets.filter { $0.kind == "working" }.reduce(0) { total, set in
+    sets.reduce(0) { total, set in
       total + max(0, Quantum(1)!.rounded(set.weightKg * 100)) * Double(set.reps) * Double(catalogue.find(set.exerciseId)?.loadCount ?? 1)
     } / 100
   }
 
   func summary(_ value: Session) -> JSON {
-    let sets = log.sets(session: value.id), worked = log.sets(session: value.id).filter { $0.kind == "working" }
+    let sets = log.sets(session: value.id)
     var result = sessionDocument(value).historyFields
-    result["setCount"] = JSON(sets.count); result["workingSetCount"] = JSON(worked.count)
+    result["setCount"] = JSON(sets.count); result["workingSetCount"] = JSON(sets.count)
     result["tonnageKg"] = .of(tonnage(sets))
     result["exercises"] = .array(Set(sets.compactMap { catalogue.find($0.exerciseId)?.name }).sorted(by: Self.before).map(JSON.string))
-    result["record"] = .bool(worked.count >= 4 && recordFor(value) != nil); result["closedItself"] = .bool(value.closedBy.map { $0 == "stale" } ?? (value.finishedAt == SessionRules.lastActivity(value, sets: sets)))
-    if let top = top(worked) { result["topSet"] = ["weightKg": .of(top.weightKg), "reps": JSON(top.reps)] }
+    result["record"] = .bool(sets.count >= 4 && recordFor(value) != nil); result["closedItself"] = .bool(value.closedBy.map { $0 == "stale" } ?? (value.finishedAt == SessionRules.lastActivity(value, sets: sets)))
+    if let top = top(sets) { result["topSet"] = ["weightKg": .of(top.weightKg), "reps": JSON(top.reps)] }
     if let estimate = log.topE1rm(session: value.id) { result["topE1rm"] = .of(estimate) }
     return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) }))
   }
@@ -109,7 +109,7 @@ public struct TrainingHistory {
   }
 
   public func lastSets() -> JSON {
-    .array(Set(finished.flatMap { log.sets(session: $0.id) }.filter { $0.kind != "warmup" }.map(\.exerciseId)).sorted().compactMap { id in
+    .array(Set(finished.flatMap { log.sets(session: $0.id) }.map(\.exerciseId)).sorted().compactMap { id in
       let last = log.lastTime(for: id)
       return last.sets.sorted(by: Self.serialOrder).last.map { ["exerciseId": id.json, "weightKg": .of($0.weightKg), "reps": JSON($0.reps), "at": .of(last.session!.startedAt)] }
     })
@@ -134,29 +134,29 @@ public struct TrainingHistory {
     let window = series.window(now: read.moment.now, zone: read.moment.zone).estimates
     if !window.isEmpty { result["e1rmSeries"] = .array(window.map { point($0, estimate: true) }) }
     if !series.records.isEmpty { result["records"] = .array(series.records.reversed().map { point($0, estimate: true) }) }
-    let recent = finished.filter { log.sets(session: $0.id).contains { $0.exerciseId == id && $0.kind != "warmup" } }.prefix(10)
+    let recent = finished.filter { log.sets(session: $0.id).contains { $0.exerciseId == id } }.prefix(10)
     if !recent.isEmpty {
       result["recentDays"] = .array(recent.map { session in
         ["sessionId": session.id.json, "startedAt": .of(session.startedAt),
-         "sets": .array(log.sets(session: session.id).filter { $0.exerciseId == id && $0.kind != "warmup" }.sorted(by: Self.serialOrder).map(setDocument))]
+         "sets": .array(log.sets(session: session.id).filter { $0.exerciseId == id }.sorted(by: Self.serialOrder).map(setDocument))]
       })
     }
     return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) }))
   }
 
   func historyWorkout(_ value: Session) -> JSON {
-    let sets = log.sets(session: value.id), worked = log.sets(session: value.id).filter { $0.kind == "working" }
+    let sets = log.sets(session: value.id)
     var result: [String: JSON] = ["id": value.id.json, "startedAt": .of(value.startedAt), "routineName": .string(value.name ?? ""),
-      "setCount": JSON(sets.count), "workingSetCount": JSON(worked.count), "reps": JSON(worked.reduce(0) { $0 + $1.reps }),
-      "tonnageKg": .of(tonnage(worked))]
+      "setCount": JSON(sets.count), "workingSetCount": JSON(sets.count), "reps": JSON(sets.reduce(0) { $0 + $1.reps }),
+      "tonnageKg": .of(tonnage(sets))]
     if let finish = value.finishedAt { result["finishedAt"] = .of(finish) }
     if let routine = value.historyRoutineId { result["routineId"] = routine.json }
     result["sets"] = .array(sets.map { set in
-      var doc = setDocument(set).historyFields; doc.removeValue(forKey: "kind"); doc.removeValue(forKey: "note")
+      var doc = setDocument(set).historyFields; doc.removeValue(forKey: "note")
       doc["exercise"] = .string(catalogue.find(set.exerciseId)?.name ?? ""); return .object(JSON.Object(uniqueKeysWithValues: doc.map { ($0.key, $0.value) }))
     })
     result["movements"] = .array(Set(sets.map(\.exerciseId)).sorted().map { id in
-      let held = worked.filter { $0.exerciseId == id }
+      let held = sets.filter { $0.exerciseId == id }
       return ["exerciseId": id.json, "sets": JSON(held.count), "reps": JSON(held.reduce(0) { $0 + $1.reps }), "tonnageKg": .of(tonnage(held))]
     })
     result["exerciseNames"] = .array(Set(sets.map { catalogue.find($0.exerciseId)?.name ?? "" }).sorted(by: Self.before).map(JSON.string))
@@ -176,7 +176,6 @@ public struct TrainingHistory {
     }
     let after = scoped.filter { $0.startedAt.ms < before || ($0.startedAt.ms == before && Self.before(beforeId, $0.id.record.string ?? "")) }
     let page = Array(after.prefix(limit)), allSets = scoped.flatMap { log.sets(session: $0.id) }
-    let worked = allSets.filter { $0.kind == "working" }
     let months = Dictionary(grouping: scoped) { String(LocalDay($0.startedAt, in: read.moment.zone).text.prefix(7)) }
     let exercises: [JSON] = Set(allSets.map(\.exerciseId)).map { id in
       let known = catalogue.find(id)
@@ -192,7 +191,7 @@ public struct TrainingHistory {
       return left == right ? Self.before(a.historyFields["id"]!.historyString, b.historyFields["id"]!.historyString) : Self.before(left, right)
     }
     var result: [String: JSON] = ["sessions": .array(page.map(historyWorkout)),
-      "summary": ["sessions": JSON(scoped.count), "sets": JSON(worked.count), "reps": JSON(worked.reduce(0) { $0 + $1.reps }), "tonnageKg": .of(tonnage(worked))],
+      "summary": ["sessions": JSON(scoped.count), "sets": JSON(allSets.count), "reps": JSON(allSets.reduce(0) { $0 + $1.reps }), "tonnageKg": .of(tonnage(allSets))],
       "months": .array(months.keys.sorted(by: >).map { ["month": .string($0), "sessions": JSON(months[$0]!.count)] }),
       "exercises": .array(exercises.sorted(by: facetOrder)), "routines": .array(routines.sorted(by: facetOrder)), "next": .null]
     if after.count > limit, let last = page.last { result["next"] = ["before": .of(last.startedAt), "beforeId": last.id.json] }
@@ -210,7 +209,7 @@ public struct TrainingHistory {
       var start = week(oldest.startedAt)
       while start <= week(newest.startedAt) {
         let held = finished.filter { week($0.startedAt) == start }
-        weeks.append(["startedAt": JSON(start), "sessions": JSON(held.count), "workingSets": JSON(held.reduce(0) { sum, session in sum + log.sets(session: session.id).filter { $0.kind == "working" }.count })])
+        weeks.append(["startedAt": JSON(start), "sessions": JSON(held.count), "workingSets": JSON(held.reduce(0) { sum, session in sum + log.sets(session: session.id).count })])
         start += 604_800_000
       }
     }
@@ -314,8 +313,8 @@ public struct TrainingHistory {
       if let now = fact.estimate, let before = prior.movement(fact.exerciseId).best, now.score > before.fact.estimate!.score {
         candidates.append(Candidate(rank: 0, kind: "e1rm", exercise: fact.exerciseId, fact: now.performed, amount: now.e1rm, before: before.fact.estimate!.e1rm, beforeAt: before.startedAt))
       }
-      let today = log.sets(session: value.id).filter { $0.exerciseId == fact.exerciseId && $0.kind == "working" }
-      let priors = previous.flatMap { session in log.sets(session: session.id).filter { $0.exerciseId == fact.exerciseId && $0.kind == "working" }.map { (set: $0, session: session) } }
+      let today = log.sets(session: value.id).filter { $0.exerciseId == fact.exerciseId }
+      let priors = previous.flatMap { session in log.sets(session: session.id).filter { $0.exerciseId == fact.exerciseId }.map { (set: $0, session: session) } }
       let heavy = priors.sorted { a, b in
         if a.set.weightKg != b.set.weightKg { return a.set.weightKg > b.set.weightKg }
         if a.set.reps != b.set.reps { return a.set.reps > b.set.reps }
@@ -358,13 +357,13 @@ public struct TrainingHistory {
     let best = { (sets: [TrainingSet]) -> JSON? in
       top(sets).map { top in ["weightKg": .of(top.weightKg), "reps": JSON(top.reps), "sets": JSON(sets.filter { $0.weightKg == top.weightKg }.count)] }
     }
-    let worked = log.sets(session: id).filter { $0.kind == "working" }
+    let sets = log.sets(session: id)
     var ids: [ID<Exercise>] = []
-    for set in worked where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
+    for set in sets where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
     let movements: [JSON] = ids.map { exercise in
       let plan = value.plan?.entries.first { $0.exerciseId == exercise }
-      return .object(omittingNil: ["exerciseId": exercise.json, "now": best(worked.filter { $0.exerciseId == exercise }) ?? .null,
-        "before": best(log.sets(session: previous.id).filter { $0.exerciseId == exercise && $0.kind == "working" }),
+      return .object(omittingNil: ["exerciseId": exercise.json, "now": best(sets.filter { $0.exerciseId == exercise }) ?? .null,
+        "before": best(log.sets(session: previous.id).filter { $0.exerciseId == exercise }),
         "planned": plan.map { .object(omittingNil: ["sets": $0.sets.map { .array($0.map(\.json)) }]) }])
     }
     result["against"] = .object(omittingNil: ["sessionId": previous.id.json, "startedAt": .of(previous.startedAt),

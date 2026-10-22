@@ -24,9 +24,9 @@ import SyncModelServer
             finishedAt: open ? nil : Instant(ms: now.ms - Int64(daysAgo) * 86_400_000))
   }
 
-  func set(_ id: String, session: Session, exercise: ID<Exercise>, weight: Double = 60, reps: Int = 8, kind: String = "working", offset: Int64 = 0) -> TrainingSet {
+  func set(_ id: String, session: Session, exercise: ID<Exercise>, weight: Double = 60, reps: Int = 8, offset: Int64 = 0) -> TrainingSet {
     TrainingSet(id: ID(RecordID(id)), sessionId: session.id, exerciseId: exercise, weightKg: weight, reps: reps,
-                kind: kind, completedAt: Instant(ms: session.startedAt.ms + offset))
+                completedAt: Instant(ms: session.startedAt.ms + offset))
   }
 
   func fixture() -> (Harness, GymModel) {
@@ -61,13 +61,12 @@ import SyncModelServer
     #expect(result.matches == [MovementPickerOptions.Row(exercise: movement, meta: nil, alias: nil, selected: true)])
   }
 
-  @Test func lastEffortUsesLastNonWarmupSetAndSessionDate() {
+  @Test func lastEffortUsesLastSetAndSessionDate() {
     let movement = exercise("movement1", name: "Custom")
     let yesterday = session("session1", daysAgo: 1)
     let history = log(sessions: [yesterday], sets: [
       set("set-one1", session: yesterday, exercise: movement.id, weight: 40, reps: 10),
-      set("set-two2", session: yesterday, exercise: movement.id, weight: -5, reps: 6, offset: 10),
-      set("set-three3", session: yesterday, exercise: movement.id, weight: 20, reps: 12, kind: "warmup", offset: 20)
+      set("set-two2", session: yesterday, exercise: movement.id, weight: -5, reps: 6, offset: 10)
     ])
     let result = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: history)
     #expect(result.matches.first?.meta == "−5 × 6 · yesterday")

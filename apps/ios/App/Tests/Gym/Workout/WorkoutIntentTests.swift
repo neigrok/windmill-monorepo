@@ -42,8 +42,8 @@ import SyncStore
     #expect(answer == .logged(shown: shown, spoken: spoken))
     #expect(await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: offer, surface: .activity) } == .logged(
       shown: shown, spoken: spoken))
-    #expect(workout.sets.map { "\($0.id.description) \($0.exerciseId.description) \($0.weightKg) × \($0.reps) \($0.kind)" }
-      == ["\(offer.setID) workout-squat \(weightKg) × \(reps) working"])
+    #expect(workout.sets.map { "\($0.id.description) \($0.exerciseId.description) \($0.weightKg) × \($0.reps)" }
+      == ["\(offer.setID) workout-squat \(weightKg) × \(reps)"])
     #expect(outsideEvents(recorder) == ["gym_activity_set_logged surface=shortcut"])
     #expect(app.selectedRoom == room)
   }

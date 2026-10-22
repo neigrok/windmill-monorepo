@@ -153,7 +153,7 @@ extension WorkoutState {
     guard !gym.accountTransition, activityIdentityResolved, let record = try? activityRecord(), record.ownerID == offer.ownerID,
           let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer(surface, outcome: "refused") }
     if let existing = sets.first(where: { $0.id.description == offer.setID }) {
-      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer(surface, outcome: "refused") }
+      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps else { return refuseActivityOffer(surface, outcome: "refused") }
       return true
     }
     guard activityOffer() == offer else { return refuseActivityOffer(surface, outcome: "refused") }
@@ -262,7 +262,7 @@ extension WorkoutState {
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
       load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) }).unit, reps: workout.reps,
-      workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
+      workingSetOrdinal: workout.currentSets.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
       staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)

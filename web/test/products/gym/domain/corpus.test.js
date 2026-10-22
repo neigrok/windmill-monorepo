@@ -73,7 +73,7 @@ function trainingReadsForm(vector, read) {
   const f = Fields.object(vector.input.input);
   const log = new TrainingLog(read);
   switch (vector.input.read) {
-    case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.string('kind', 'working'), f.optionalDouble('rpe'));
+    case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.optionalDouble('rpe'));
     case 'TrainingLog': {
       const id = f.ref('sessionId', Session);
       return { drawnSessions: log.drawnSessions.map((session) => session.id.json), open: log.open?.id.json ?? null,
@@ -208,7 +208,7 @@ const handlers = {
         const sets = input.sets.map((/** @type {any} */ raw) => {
           const s = Fields.object(raw);
           return new ImportedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), weightKg: s.double('weightKg'),
-            reps: s.int('reps'), completedAt: s.instant('completedAt'), kind: s.optionalString('kind'), rpe: s.optionalDouble('rpe'),
+            reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
             note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
         return corpus.decision(ImportSession({ id: f.ref('id', Session), startedAt: f.instant('startedAt'), finishedAt: f.instant('finishedAt'),
@@ -219,7 +219,7 @@ const handlers = {
           const s = Fields.object(raw);
           return new CorrectedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), setNumber: s.int('setNumber'),
             weightKg: s.double('weightKg'), reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
-            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe'), kind: s.optionalString('kind') });
+            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
         });
         return corpus.decision(CorrectSession({ id: f.ref('sessionId', Session), requestId: f.string('requestId'), startedAt: f.instant('startedAt'),
           finishedAt: f.instant('finishedAt'), routineName: f.optionalString('routineName'), sets, preserveOtherSets: input.preserveOtherSets === true }),

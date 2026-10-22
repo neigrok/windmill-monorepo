@@ -41,25 +41,25 @@ nonisolated struct MovementLedger: Equatable {
   let plan: RoutineEntry?
 
   var targets: [SetTarget] { plan?.sets ?? [] }
-  var working: Int { sets.filter { $0.kind == SetKind.working.rawValue }.count }
+  var performed: Int { sets.count }
   var current: Row {
-    let target = working < targets.count ? targets[working] : nil
-    return Row(id: sets.count, marker: "\(working + 1)", reading: target.map(Readout.setTarget) ?? Readout.openTarget, target: target, place: .current)
+    let target = performed < targets.count ? targets[performed] : nil
+    return Row(id: sets.count, marker: "\(performed + 1)", reading: target.map(Readout.setTarget) ?? Readout.openTarget, target: target, place: .current)
   }
   var rows: [Row] {
     let logged = sets.enumerated().map { index, set in
       Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), target: nil, place: .logged(set))
     }
-    let ahead = targets.indices.dropFirst(working + 1).map { index in
-      Row(id: sets.count + index - working, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), target: targets[index], place: .planned)
+    let ahead = targets.indices.dropFirst(performed + 1).map { index in
+      Row(id: sets.count + index - performed, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), target: targets[index], place: .planned)
     }
     return logged + [current] + ahead
   }
   // Planned rows state the plan, so the line under the name speaks only for a planned movement that holds no targets.
   var planLine: String? { plan != nil && targets.isEmpty ? "plan \(Readout.openTarget)" : nil }
-  // This workout's count: the working sets against the plan's, or alone where the movement has no targets.
-  var tally: String { targets.isEmpty ? GymCount.of(working, "set") : "\(working) of \(GymCount.of(targets.count, "set"))" }
-  var complete: Bool { !targets.isEmpty && working >= targets.count }
+  // This workout's count: the sets against the plan's, or alone where the movement has no targets.
+  var tally: String { targets.isEmpty ? GymCount.of(performed, "set") : "\(performed) of \(GymCount.of(targets.count, "set"))" }
+  var complete: Bool { !targets.isEmpty && performed >= targets.count }
 }
 
 nonisolated struct WorkoutDeviation: Equatable, Identifiable, Sendable {
@@ -89,7 +89,7 @@ nonisolated struct WorkoutDeviation: Equatable, Identifiable, Sendable {
       return (index, scheme, top)
     }
     guard let target = candidates.max(by: { $0.2 < $1.2 }) else { return nil }
-    let working = sets.filter { $0.sessionId == session.id && $0.exerciseId == id && $0.kind == "working" }
+    let working = sets.filter { $0.sessionId == session.id && $0.exerciseId == id }
       .sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
     guard let liftedKg = working.map(\.weightKg).max(), liftedKg > target.2 else { return nil }
     if target.1.contains(where: { $0 != target.1.first }) && working.count > 20 { return nil }
@@ -251,7 +251,7 @@ struct LogWorkoutSet: Action {
             record.baseline == WorkoutActivityRecord.snapshot(session: session, sets: current),
             record.offer == offer, value.id.description == offer.setID,
             value.sessionId.description == offer.sessionID, value.exerciseId.description == offer.movementID,
-            value.weightKg == offer.weightKg, value.reps == offer.reps, value.kind == SetKind.working.rawValue,
+            value.weightKg == offer.weightKg, value.reps == offer.reps,
             SessionRules.autoCloseAt(session, sets: loaded.sets, now: loaded.moment.now) == nil else { return .refuse(.stale(session.id.ref, .predicted)) }
     }
     guard loaded.drawn.first(where: { $0.id == session.id }) == session,

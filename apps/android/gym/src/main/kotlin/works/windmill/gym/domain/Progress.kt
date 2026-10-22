@@ -55,7 +55,7 @@ data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>, @T
                 DomainSession(Id(detail.session.id, DomainSession), DomainInstant(detail.session.startedAtMs), DomainInstant(detail.session.finishedAtMs!!))
             }, finished.flatMap { detail -> detail.sets.map { set ->
                 DomainTrainingSet(Id(set.id, DomainTrainingSet), Id(detail.session.id, DomainSession), Id(set.exerciseId, DomainExercise),
-                    set.weightKg, set.reps, set.kind.wire, set.rpe, set.note, DomainInstant(set.completedAtMs), set.setNumber)
+                    set.weightKg, set.reps, set.rpe, set.note, DomainInstant(set.completedAtMs), set.setNumber)
             } }, DomainCatalogue(emptyList()), Moment(DomainInstant(asOf), FixedZone(0)), complete)
             val source = DomainStatsProgress(log)
             return StatsProgress(asOf, source.sessions.map { session ->
