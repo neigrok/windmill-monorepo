@@ -286,4 +286,20 @@ extension CoachTests {
     var adopted = account.saved; adopted.onboarding = [earlier, needs]; #expect(account.keep(adopted, failure: "x"))
     #expect([account.offersSignIn(earlier), account.offersSignIn(needs)] == [false, false])
   }
+
+  @Test func aSpentSignedOutAllowanceIsSaidOnlyWhileSignedOut() async throws {
+    let spent = #"{"code":"subject_exhausted","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.05","used":"0.05","reserved":"0","remaining":"0","resetsAtMs":null,"budgetResetsAtMs":null}"#
+    let refused = try onboardingRecord("onb-2", response: #"{"requestId":"onb-2","resultId":"r2","status":"failed","expiresAtMs":1900000000000,"routines":[],"errorCode":"subject_exhausted","allowance":"#+spent+"}")
+    let answered = try onboardingRecord("onb-1", response: #"{"requestId":"onb-1","resultId":"r1","status":"completed","expiresAtMs":1900000000000,"routines":[],"errorCode":null,"message":"Squat first.","allowance":"#+spent+"}")
+    let allowance = try JSONDecoder().decode(AiAllowance.self, from: Data(spent.utf8))
+    let (anonymous, anonymousCache) = try await anonymousCoach()
+    defer { try? FileManager.default.removeItem(at: anonymousCache.directory) }
+    var next = anonymous.saved; next.onboarding = [answered, refused]; #expect(anonymous.keep(next, failure: "x"))
+    #expect(anonymous.spentAllowance(answered) == nil && anonymous.spentAllowance(refused) == allowance && anonymous.transcriptAllowance == allowance)
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let account = CoachConversation(gym: gym, rest: rest, store: cache); await account.activate()
+    var adopted = account.saved; adopted.onboarding = [answered, refused]; #expect(account.keep(adopted, failure: "x"))
+    #expect(account.spentAllowance(answered) == nil && account.spentAllowance(refused) == nil && account.transcriptAllowance == nil)
+  }
 }

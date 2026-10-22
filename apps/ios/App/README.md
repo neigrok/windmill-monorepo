@@ -109,7 +109,8 @@ request cannot be applied. A draft the server no longer holds, or cannot write, 
 Apply; a signed-out, busy or unanswered confirmation keeps Apply for another try, and an account change
 during the save says so without claiming a failure. Anonymous results commit all routines and the
 replay receipt in one domain action only after Apply; a retained result can also be applied after
-account adoption. After sign-in and *Add* the adopted conversation stays on screen and the next question
+account adoption. After sign-in and *Add* the adopted conversation stays on screen, without the Sign in
+under an answer that needed an account or the signed-out allowance's refusal, and the next question
 goes to signed-in Coach, which can answer it with a change to a routine the conversation created. Creation links appear after that save succeeds. Existing routine changes are decided
 on their proposal card.
 

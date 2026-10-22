@@ -160,8 +160,7 @@ struct CoachDraftStore {
   // The refusal the conversation's last turn draws with its reason and recovery; the composer band then repeats neither.
   var transcriptAllowance: AiAllowance? {
     guard anonymous else { return activeGeneration?.allowanceRefusal }
-    guard let response = anonymousRequest?.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") else { return nil }
-    return response.allowance
+    return anonymousRequest.flatMap(spentAllowance)
   }
   var hasConversation: Bool {
     !saved.text.isEmpty || saved.photo != nil || saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty || !(saved.onboarding ?? []).isEmpty

@@ -72,6 +72,11 @@ extension CoachConversation {
   func offersSignIn(_ record: CoachOnboardingRecord) -> Bool {
     anonymous && record.response?.needsAccount == true && record.id == anonymousRequest?.id
   }
+  // The signed-out allowance a question was refused on, said only while signed out: an account has its own allowance.
+  func spentAllowance(_ record: CoachOnboardingRecord) -> AiAllowance? {
+    guard anonymous, let response = record.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") else { return nil }
+    return response.allowance
+  }
   var textLimit: Int { anonymous ? 4000 : 8000 }
 
 

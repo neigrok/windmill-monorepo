@@ -328,8 +328,8 @@ struct CoachTab: View {
       } else if !record.finished, record.stopped || record.response?.status != "failed" {
         Button("Check response") { coach.resumeOnboarding() }.accessibilityIdentifier("coach-check-response")
       }
-      if let response = record.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") {
-        allowanceMessage(response.allowance, current: record.id == coach.anonymousRequest?.id)
+      if refused {
+        if let allowance = coach.spentAllowance(record) { allowanceMessage(allowance, current: record.id == coach.anonymousRequest?.id) }
       } else if record.finished, record.results.isEmpty, let code = record.refusalCode ?? record.response?.errorCode {
         Text(CoachConversation.onboardingRefusalMessage(code)).font(.footnote).foregroundStyle(GymPalette.inkDim)
       }
