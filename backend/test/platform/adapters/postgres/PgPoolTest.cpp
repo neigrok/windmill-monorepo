@@ -282,6 +282,8 @@ void seedRetentionFixture() {
   w.exec("DELETE FROM events WHERE session_key LIKE 'w2-platform-%'");
   w.exec("DELETE FROM feedback WHERE message LIKE 'w2-platform-%'");
   w.exec("DELETE FROM server_errors WHERE path LIKE '/w2-platform-%'");
+  w.exec("DELETE FROM magic_links WHERE token_hash LIKE 'w2-platform-%'");
+  w.exec("DELETE FROM apple_tickets WHERE token_hash LIKE 'w2-platform-%'");
   w.commit();
 }
 
@@ -357,6 +359,16 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
     w.exec_params("INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms, scope) "
                   "VALUES ($1::uuid, 'w2-platform-attached', 1, 1, '')",
                   kRetentionUser);
+    // A spent link is dead at its expiry like an unspent one; only the expiry decides.
+    w.exec_params("INSERT INTO magic_links (token_hash, email, created_ms, expires_ms, consumed_ms) VALUES "
+                  "('w2-platform-link-dead', $1, $2, $3, NULL), ('w2-platform-link-spent', $1, $2, $3, $2), "
+                  "('w2-platform-link-live', $1, $2, $4, NULL)",
+                  kRetentionEmail, static_cast<long long>(now - 900'000), static_cast<long long>(now - 1000),
+                  static_cast<long long>(now + 600'000));
+    w.exec_params("INSERT INTO apple_tickets (token_hash, subject, email, relay, expires_ms) VALUES "
+                  "('w2-platform-ticket-dead', 'w2-platform-subject', $1, false, $2), "
+                  "('w2-platform-ticket-live', 'w2-platform-subject', $1, false, $3)",
+                  kRetentionEmail, static_cast<long long>(now - 1000), static_cast<long long>(now + 600'000));
     w.commit();
   }
   const int usersBefore = countWhere("users");
@@ -376,6 +388,8 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   CHECK(report.oauthCodes >= 1);
   CHECK(report.oauthTokens >= 1);
   CHECK(report.oauthClients >= 1);
+  CHECK(report.signInLinks >= 2);
+  CHECK(report.appleTickets >= 1);
   CHECK_EQ(countWhere("events WHERE session_key = 'w2-platform-new'"), 1);
   CHECK_EQ(countWhere("events WHERE session_key = 'w2-platform-old'"), 0);
   CHECK_EQ(countWhere("feedback WHERE message = 'w2-platform-new note'"), 1);
@@ -385,6 +399,10 @@ TEST(pg_retention_takes_what_is_past_its_window_and_leaves_everything_else) {
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-attached'"), 1);
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-young'"), 1);
   CHECK_EQ(countWhere("oauth_clients WHERE client_id = 'w2-platform-orphan'"), 0);
+  CHECK_EQ(countWhere("magic_links WHERE token_hash LIKE 'w2-platform-link-%'"), 1);
+  CHECK_EQ(countWhere("magic_links WHERE token_hash = 'w2-platform-link-live'"), 1);
+  CHECK_EQ(countWhere("apple_tickets WHERE token_hash LIKE 'w2-platform-ticket-%'"), 1);
+  CHECK_EQ(countWhere("apple_tickets WHERE token_hash = 'w2-platform-ticket-live'"), 1);
   CHECK_EQ(countWhere("users"), usersBefore);
 
   // A rotation tombstone is swept on its OWN short window, not the thirty-day refresh lifetime it still carries.

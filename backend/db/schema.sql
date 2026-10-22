@@ -30,6 +30,7 @@ create table if not exists org_members (
   role    text not null,
   primary key (org_id, user_id)
 );
+create index if not exists org_members_user on org_members (user_id);
 
 -- ── Roadmap (products/roadmap) ───────────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ alter table trees alter column visibility set default 'private';
 create index if not exists trees_owner on trees (owner_id) where deleted_at is null;
 create index if not exists trees_forked_from on trees (forked_from) where deleted_at is null;
 create index if not exists trees_public on trees (visibility) where visibility = 'public' and deleted_at is null;
+-- Retired trees included: an account's erasure takes every tree it ever owned.
+create index if not exists trees_owner_any on trees (owner_id);
 
 -- Grow-only: a delete is a tombstone stamp, so saves are pure upserts and rows are never deleted.
 -- Stamps are HLC text ("physicalMs:counter:actor", '' = unset), never compared in SQL; `present` is
@@ -174,6 +177,7 @@ create table if not exists node_progress (
 alter table node_progress add column if not exists stamp_ms bigint not null default 0;
 alter table node_progress add column if not exists stamp_counter bigint not null default 0;
 alter table node_progress add column if not exists out_of_order boolean not null default false;
+create index if not exists node_progress_user on node_progress (user_id);
 
 -- Roadmap completion has two values. Keep register stamps and receipt times so a migration
 -- cannot outrank later user work or make an old node appear newly touched.
@@ -192,7 +196,8 @@ where jsonb_typeof(document->'nodes') = 'array'
 -- ── Platform (platform/), continued ──────────────────────────────────────────────────────────
 
 -- Passwordless sign-in. A link is addressed by the digest of its secret; the raw token is never at
--- rest. *_ms are epoch milliseconds. consumed_ms is null until spent.
+-- rest. *_ms are epoch milliseconds. consumed_ms is null until spent. Retention collects a row at its
+-- expiry, as it does an Apple ticket.
 create table if not exists magic_links (
   token_hash  text primary key,
   email       citext not null,
@@ -267,9 +272,18 @@ create unique index if not exists mcp_keys_id on mcp_keys (id);
 -- What the key's bearer may reach: space-delimited `<product>:<level>`. '' is account-wide.
 alter table mcp_keys add column if not exists scope text not null default '';
 
--- Soft close with a 30-day grace. A within-grace magic-link sign-in clears it, and authenticate
--- refuses any session whose user carries it.
+-- deleted_at is the close stamp, and authenticate refuses any session whose user carries it.
+-- closes_at is the instant the close turns final: a sign-in before it clears both, and from it on
+-- the account is erased. Every close writes both. A close made before closes_at existed promised an
+-- unlimited undo, so it is given 30 days from the deploy that first sees it, and never less than
+-- its own 30; only a null is filled, so no later deploy moves a date. Until a deploy fills it, a
+-- null closes_at is never final.
 alter table users add column if not exists deleted_at timestamptz;
+alter table users add column if not exists closes_at timestamptz;
+update users set closes_at = greatest(deleted_at, now()) + interval '30 days'
+  where deleted_at is not null and closes_at is null;
+drop index if exists users_closed;
+create index if not exists users_closes_at on users (closes_at) where closes_at is not null;
 
 -- granted_ms is set once and kept as the earliest; last_used_ms advances as the client's tokens
 -- act.
@@ -319,6 +333,7 @@ create table if not exists oauth_tokens (
   created_at         timestamptz not null default now()
 );
 create index if not exists oauth_tokens_user on oauth_tokens (user_id);
+create index if not exists oauth_codes_user on oauth_codes (user_id);
 create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);
 -- When this row's refresh token was spent. A rotated row stays as a tombstone with its access token
 -- expired to 0 until the retention sweep collects it, so replaying a spent refresh token is
@@ -339,6 +354,8 @@ create table if not exists events (
 create index if not exists events_name_ts on events (name, ts);
 -- The per-session ingest bound must stay a range scan over one session, never a scan of the stream.
 create index if not exists events_session_ts on events (session_key, ts);
+-- An account's erasure finds its events by owner.
+create index if not exists events_user on events (user_id) where user_id is not null;
 
 -- session_key is a client-minted correlation id, never identity; user_id is resolved server-side,
 -- never trusted from the body, null for a ghost.
@@ -352,6 +369,7 @@ create table if not exists feedback (
   context     text
 );
 create index if not exists feedback_ts on feedback (ts);
+create index if not exists feedback_user on feedback (user_id) where user_id is not null;
 
 -- Exceptions that escaped a handler. method/path/message are best-effort; actor is null when the
 -- caller could not be resolved.
@@ -365,6 +383,7 @@ create table if not exists server_errors (
   actor   uuid
 );
 create index if not exists server_errors_ts on server_errors (ts);
+create index if not exists server_errors_actor on server_errors (actor) where actor is not null;
 
 -- One append-only row per vendor call: counts and costs only, never content. user_id null = the
 -- anonymous birth canvas. cost_nanos null = the model was absent from the price table, and the
@@ -1255,6 +1274,7 @@ create table if not exists gym_proposal_changes (
   after_rest_seconds  int,
   primary key (proposal_id, position)
 );
+create index if not exists gym_proposal_changes_user on gym_proposal_changes (user_id);
 
 -- id is client-minted ('ses_<hex>') and is the idempotency key: a double-tapped start, an offline
 -- replay and a retried call all conflict on the PK and no-op. One open session per user, enforced by
@@ -1394,6 +1414,7 @@ create table if not exists gym_set_revisions (
 -- No CHECKs: a constraint tightened on gym_sets later must never make the history of a set
 -- unwritable.
 create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
+create index if not exists gym_set_revisions_user on gym_set_revisions (user_id);
 
 -- The coach share. session_id is the primary key, so a repeated mint is idempotent and hands back
 -- the same link. The token is minted by the server, never accepted from a client, and stored in the
@@ -1487,6 +1508,7 @@ alter table gym_ask_turns add column if not exists generation_id text;
 alter table gym_ask_turns add column if not exists results jsonb;
 alter table gym_ask_turns add column if not exists request_id text;
 alter table gym_ask_turns add column if not exists status text not null default 'completed';
+create index if not exists gym_ask_turns_user on gym_ask_turns (user_id);
 create index if not exists gym_ask_threads_page on gym_ask_threads (user_id, asked_at desc, id desc);
 create table if not exists gym_ask_generations (
   id text primary key,
@@ -1499,6 +1521,7 @@ create table if not exists gym_ask_generations (
   unique (thread_id, request_id)
 );
 create index if not exists gym_ask_generations_thread on gym_ask_generations(thread_id, created_at desc, id desc);
+create index if not exists gym_ask_generations_user on gym_ask_generations (user_id);
 
 alter table gym_ask_turns add column if not exists attachments jsonb;
 alter table gym_ask_generations add column if not exists stop_requested boolean not null default false;

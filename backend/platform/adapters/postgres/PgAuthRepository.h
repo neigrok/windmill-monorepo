@@ -4,25 +4,41 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/ports/AuthRepository.h"
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace wm {
+
+// One product's share of erasing an account. `statements` are the DELETEs for its rows that no foreign key to users
+// cascades from, each taking the account's id as text in $1, run in order inside the erasing transaction.
+// `committed` is told, once that transaction commits, the first column of every row the statements' RETURNING clauses
+// answered, so the product can drop what it holds of them in memory.
+struct AccountErasure {
+  std::vector<std::string> statements;
+  std::function<void(const std::vector<std::string>& erased)> committed;
+};
 
 // Postgres-backed accounts, magic links, and sessions. Times the domain owns (expiry, the
 // rate window) are stored as epoch-millisecond bigints, so the adapter passes UnixMs
 // through untouched; created_at timestamptz columns stay only for human inspection.
 class PgAuthRepository : public AuthRepository {
 public:
-  explicit PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint = nullptr);
+  // `productErasures` name every product's rows the users row's own cascade does not reach; the platform's own are
+  // erased here.
+  explicit PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint = nullptr,
+                            std::vector<AccountErasure> productErasures = {});
 
   std::optional<User> findUserByEmail(const Email& email) override;
   std::optional<User> findUserById(const UserId& id) override;
   User createUser(const Email& email, const std::string& name) override;
   void updateName(const UserId& userId, const std::string& name) override;
-  void markUserDeleted(const UserId& userId, UnixMs now) override;
-  void reviveUser(const UserId& userId) override;
+  void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override;
+  bool reviveUser(const UserId& userId, UnixMs now) override;
   std::vector<std::string> deleteUser(const UserId& userId) override;
+  std::vector<UserId> finalClosedAccounts(UnixMs now, int limit) override;
+  bool eraseAccount(const UserId& userId, UnixMs now) override;
 
   std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override;
   void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
@@ -67,6 +83,7 @@ public:
 private:
   std::shared_ptr<PgPool> pool_;
   std::shared_ptr<PgAccountFootprint> footprint_;
+  std::vector<AccountErasure> productErasures_;
 };
 
 }

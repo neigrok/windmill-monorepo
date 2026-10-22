@@ -12,7 +12,8 @@
 
 namespace wm {
 
-// The one pass that deletes. It takes the fleet lock to avoid duplicated work, not for correctness.
+// The pass that deletes rows nobody owns once their window is over. It takes the fleet lock to
+// avoid duplicated work, not for correctness.
 class RetentionSweep {
 public:
   RetentionSweep(RetentionStore& store, SweepMutex& mutex, Clock& clock, RetentionWindows windows)
@@ -23,7 +24,7 @@ public:
   void start() {
     LOG_INFO << "retention: events " << window(windows_.eventDays) << ", feedback "
              << window(windows_.feedbackDays) << ", server errors " << window(windows_.serverErrorDays)
-             << ", expired oauth codes/tokens collected, up to " << windows_.batch
+             << ", expired oauth codes/tokens and sign-in credentials collected, up to " << windows_.batch
              << " rows per table per pass";
     heartbeat_.start(kFirstTickSeconds, kPeriodSeconds, [this] { run(); });
   }
@@ -41,7 +42,8 @@ public:
       LOG_INFO << "retention: removed " << report.events << " events, " << report.feedback
                << " feedback, " << report.serverErrors << " server errors, " << report.oauthCodes
                << " oauth codes, " << report.oauthTokens << " oauth tokens, " << report.oauthClients
-               << " unattached oauth clients";
+               << " unattached oauth clients, " << report.signInLinks << " sign-in links, "
+               << report.appleTickets << " apple tickets";
       observation.finish();
       return report;
     } catch (const std::exception& error) {

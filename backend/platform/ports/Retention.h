@@ -6,8 +6,8 @@ namespace wm {
 
 // How long the database keeps rows nobody owns. A window of zero or less means keep forever.
 // The three windows come from WINDMILL_EVENTS_RETENTION_DAYS, WINDMILL_FEEDBACK_RETENTION_DAYS and
-// WINDMILL_SERVER_ERROR_RETENTION_DAYS. OAuth rows carry their own window in the row. User content
-// is never swept from here.
+// WINDMILL_SERVER_ERROR_RETENTION_DAYS. OAuth rows and sign-in credentials carry their own window in
+// the row. User content is never swept from here.
 struct RetentionWindows {
   int eventDays = 180;
   int feedbackDays = 365;
@@ -25,9 +25,12 @@ struct RetentionReport {
   int oauthCodes = 0;
   int oauthTokens = 0;
   int oauthClients = 0;
+  int signInLinks = 0;
+  int appleTickets = 0;
 
   int rows() const {
-    return events + feedback + serverErrors + oauthCodes + oauthTokens + oauthClients;
+    return events + feedback + serverErrors + oauthCodes + oauthTokens + oauthClients + signInLinks +
+           appleTickets;
   }
 };
 

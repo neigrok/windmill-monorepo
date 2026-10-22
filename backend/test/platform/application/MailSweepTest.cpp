@@ -376,7 +376,7 @@ TEST(retention_sweep_runs_one_pass_under_the_fleet_lock_and_reports_what_it_remo
   RetentionWindows windows;
   windows.eventDays = 30;
   windows.feedbackDays = 0;  // an operator saying "keep it all"
-  store.answer = RetentionReport{true, 7, 0, 3, 2, 5, 1};
+  store.answer = RetentionReport{true, 7, 0, 3, 2, 5, 1, 4, 2};
   RetentionSweep sweep{store, mutex, clock, windows};
 
   const RetentionReport report = sweep.run();
@@ -394,7 +394,9 @@ TEST(retention_sweep_runs_one_pass_under_the_fleet_lock_and_reports_what_it_remo
   CHECK_EQ(report.oauthCodes, 2);
   CHECK_EQ(report.oauthTokens, 5);
   CHECK_EQ(report.oauthClients, 1);
-  CHECK_EQ(report.rows(), 18);
+  CHECK_EQ(report.signInLinks, 4);
+  CHECK_EQ(report.appleTickets, 2);
+  CHECK_EQ(report.rows(), 24);
 }
 
 TEST(retention_sweep_deletes_nothing_when_another_process_holds_the_lock) {

@@ -37,11 +37,11 @@ struct RecordingTreeRepository : FakeTreeRepository {
   std::vector<std::string>& journal;
   bool failSave = false;
   explicit RecordingTreeRepository(std::vector<std::string>& j) : journal(j) {}
-  void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+  bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override {
     journal.push_back("save@" + std::to_string(head));
     if (failSave) throw std::runtime_error("connection reset before the lattice landed");
-    FakeTreeRepository::save(tree, state, legend, title, head);
+    return FakeTreeRepository::save(tree, state, legend, title, head);
   }
 };
 

@@ -15,6 +15,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace wm {
 
@@ -40,6 +42,9 @@ public:
   // Drops a retired tree's room and announces the change; deliberately does NOT persist on the way
   // out. Caller holds the strand.
   void retire(const TreeId& id);
+  // Retires, each under its own strand, the rooms of trees whose rows were deleted outside this
+  // registry — the trees of an erased account.
+  void retireErased(const std::vector<std::string>& trees);
   // Save a live room's dirty slice without evicting, then land its queued op rows. Returns
   // normally when the rows fail to land: the save is what a caller's reply attests, and the rows
   // retry on the next persist. Throws only when the save itself failed.

@@ -87,7 +87,7 @@ AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmai
 
   // Either credential burns the one row.
   if (appleTicket) {
-    const auto target = repo_.findUserByEmail(*email);
+    const auto target = unlessFinal(repo_.findUserByEmail(*email), now);
     const auto session = tokens_.mint();
     const auto result = repo_.redeemAppleTicket(ticketDigest, now, target ? std::optional<UserId>{target->id} : std::nullopt,
                                                "", session.digest, sessionExpiry(now), ctx.userAgent, ctx.ip, stored->linkDigest);
@@ -112,10 +112,10 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
 
   // The subject is the identity, not the address: a bound door opens the account it was bound to.
   if (const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject)) {
-    if (const std::optional<User> user = repo_.findUserById(*bound)) {
+    if (const std::optional<User> user = standing(repo_.findUserById(*bound), now)) {
       LOG_INFO << "auth: provider sign-in by bound door provider=" << toString(identity.provider)
                << " user=" << user->id.str();
-      return ProviderSignIn{mintSession(revived(*user), ctx, now), false,
+      return ProviderSignIn{mintSession(*user, ctx, now), false,
                             subjectOnlyApple ? isPrivateRelay(user->email) : privateEmail};
     }
   }
@@ -144,8 +144,8 @@ AuthService::AppleStart AuthService::beginApple(const ProviderIdentity& identity
   if (trust == AddressTrust::unusable && !subjectOnly) return {};
   const UnixMs now = clock_.nowMs();
   auto account = repo_.findIdentity(Provider::apple, identity.subject);
-  auto user = account ? repo_.findUserById(*account) : std::nullopt;
-  if (!user && trust != AddressTrust::unusable) user = repo_.findUserByEmail(identity.email);
+  auto user = account ? unlessFinal(repo_.findUserById(*account), now) : std::nullopt;
+  if (!user && trust != AddressTrust::unusable) user = unlessFinal(repo_.findUserByEmail(identity.email), now);
   if (user) {
     const auto session = tokens_.mint();
     const auto signedIn = repo_.signInApple(identity, user->id, session.digest, sessionExpiry(now), ctx.userAgent, ctx.ip, now);
@@ -168,6 +168,7 @@ AuthService::AppleCreation AuthService::createApple(const std::string& ticket, c
   const std::string digest = tokens_.digestOf(ticket);
   const auto stored = repo_.findAppleTicket(digest, now);
   if (!stored) return {AppleTicketOutcome::expired, std::nullopt};
+  unlessFinal(repo_.findUserByEmail(stored->identity.email), now);  // frees the address for the account made here
   const auto session = tokens_.mint();
   const auto result = repo_.redeemAppleTicket(digest, now, std::nullopt,
       stored->identity.name.empty() ? nameFromEmail(stored->identity.email) : stored->identity.name,
@@ -227,7 +228,8 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
   if (!repo_.consumeLink(digest, now)) return {LinkOutcome::badLink, std::nullopt};
   if (linkingToSelf) return {LinkOutcome::sameAccount, std::nullopt};
 
-  const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
+  const std::optional<User> standingTarget = standing(target, now);
+  const User surviving = standingTarget ? *standingTarget : repo_.createUser(link->email, nameFromEmail(link->email));
   repo_.moveIdentities(caller, surviving.id);
   revocations_.revoked(repo_.revokeAllSessions(caller));  // the caller's own current one too, told before anything can throw
   revocations_.revoked(repo_.deleteUser(caller));          // empty by proof; a session minted since goes with the row
@@ -238,17 +240,48 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
 
 AuthService::SignedIn AuthService::mintSessionFor(const Email& email, const std::string& name,
                                                   const SessionContext& ctx, UnixMs now) {
-  const std::optional<User> existing = repo_.findUserByEmail(email);
-  if (existing) return mintSession(revived(*existing), ctx, now);
+  if (const std::optional<User> existing = standing(repo_.findUserByEmail(email), now))
+    return mintSession(*existing, ctx, now);
   return mintSession(repo_.createUser(email, name), ctx, now);
 }
 
-User AuthService::revived(User user) {
-  // A within-grace closed account revives before the session is minted.
-  if (!user.deletedAt) return user;
-  repo_.reviveUser(user.id);
-  user.deletedAt = std::nullopt;
-  return user;
+std::optional<User> AuthService::standing(std::optional<User> found, UnixMs now) {
+  found = unlessFinal(std::move(found), now);
+  if (!found || !found->deletedAt) return found;
+  // Refused only when the sweep erased it between the read and here.
+  if (!repo_.reviveUser(found->id, now)) return std::nullopt;
+  found->deletedAt = std::nullopt;
+  found->closesAt = std::nullopt;
+  return found;
+}
+
+std::optional<User> AuthService::unlessFinal(std::optional<User> found, UnixMs now) {
+  if (!found || !closeIsFinal(*found, now)) return found;
+  erase(found->id, now, "server-origin");
+  return std::nullopt;
+}
+
+bool AuthService::erase(const UserId& userId, UnixMs now, const std::string& door) {
+  WriteObservation observation{"auth.account.erase", "platform", door};
+  WriteContext context{observation};
+  try {
+    if (!repo_.eraseAccount(userId, now)) {
+      observation.skip();
+      return false;
+    }
+    observation.wrote();
+    // INFO for every erased account; nested in a sign-in or pass, the completion is DEBUG and request_id joins them.
+    LOG_INFO << "auth: closed account erased, its grace over door=" << door << " user=" << userId.str()
+             << " request_id=" << observation.requestId();
+    observation.finish();
+    return true;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
+  }
 }
 
 AuthService::SignedIn AuthService::mintSession(const User& user, const SessionContext& ctx, UnixMs now) {
@@ -337,8 +370,21 @@ UnixMs AuthService::closeAccount(const UserId& userId) {
   // guard, so stamping first leaves a window where a token resolves for a closed account.
   revocations_.revoked(repo_.revokeAllSessions(userId));  // every device signed out
   oauth_.disconnectAll(userId);                           // every connected tool disconnected (drops its tokens)
-  repo_.markUserDeleted(userId, now);                     // the grace starts now; the trees are left untouched
+  repo_.markUserDeleted(userId, now, closesAt(now));      // the grace starts now; nothing the account holds is touched yet
   return closesAt(now);
+}
+
+int AuthService::eraseFinalCloses(int limit) {
+  const UnixMs now = clock_.nowMs();
+  int erased = 0;
+  for (const UserId& userId : repo_.finalClosedAccounts(now, limit)) {
+    try {
+      if (erase(userId, now, "background")) ++erased;
+    } catch (...) {
+      // erase reported it; one account that will not go must not hold the others back.
+    }
+  }
+  return erased;
 }
 
 }

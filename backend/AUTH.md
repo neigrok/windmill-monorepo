@@ -77,9 +77,9 @@ The lookup is the NEWEST live row for the address — unspent, unexpired, fewer 
 resend supersedes the code before it. A wrong guess spends one attempt on that row (one atomic
 `UPDATE … SET attempts = attempts + 1 RETURNING attempts`); at 5 the row is dead and a fresh request
 is the remedy. A right guess burns the row through the same atomic `consumed_ms` flip the link uses,
-then runs the identical `mintSessionFor` tail (find-or-create, revival-in-grace, 90-day rolling
-session). Every failure collapses to the one 410 body, so the endpoint cannot be probed for which
-addresses hold pending codes or accounts.
+then runs the identical `mintSessionFor` tail (find-or-create, revival in grace or erasure past it,
+90-day rolling session). Every failure collapses to the one 410 body, so the endpoint cannot be
+probed for which addresses hold pending codes or accounts.
 
 Only the exact string `"bearer"` opts in. Web and Android requests without it retain their exact
 serialized response body and cookie lines, covered by `AuthApiTest`. The secret in the native body
@@ -110,8 +110,35 @@ account answers `409 { "error": …, "code": "account-mismatch" }`; a missing, e
 id answers `400` with code `malformed`. Both refusals retain every account, session and cookie.
 Signed out answers `401`.
 
-A match soft-closes that account with a 30-day grace, revokes all its sessions and grants, clears
-the session cookie, and answers `200 { "closingOn": "<ISO UTC>", "closesMs": <epoch ms> }`.
+A match closes that account with a 30-day grace, revokes all its sessions and grants, clears the
+session cookie, and answers `200 { "closingOn": "<ISO UTC>", "closesMs": <epoch ms> }`. A write
+whose request authenticated before the close, such as a sync push in flight, may still commit after
+it; it lands in the closed account, comes back with it or goes with its erasure.
+
+Any sign-in before `closesMs` brings the account back whole. From `closesMs` on, the close is final:
+the account is erased in one transaction with every database row any product keys to it, by the
+first sign-in that meets it or by `ClosedAccountSweep` (hourly, 100 accounts a pass), whichever
+comes first. A sign-in after that starts a new, empty account on the same address or door.
+`closesMs` is `users.closes_at`, written with the close. An account closed before that column
+existed was promised an unlimited undo; the deploy that adds the column dates it 30 days from that
+deploy, never sooner than its own 30, and until a deploy dates it no close without a `closes_at`
+is final.
+
+Rows that a foreign key to `users` does not cascade from are named in
+`PgAuthRepository::eraseAccount` (the sync engine, telemetry, billing, org membership, and feedback:
+the account's own, plus feedback left signed out with its address; an open account's feedback
+stays whatever address it typed) and, per product, in the `AccountErasure` list `main.cpp` passes
+it. Roadmap's takes the account's trees and everything keyed to them, other people's progress on
+those trees included, since the trees are gone; its hook then retires their live rooms, so no
+reader is served one, no fork copies one, and no save writes one back. Two kinds of row stay: the
+AI accounting relations keep the account's id, with no address or content
+([AI_ALLOWANCES.md](AI_ALLOWANCES.md)), and pending sign-in credentials belong to the address and go
+at their expiry with the retention sweep. `PgAuthRepositoryTest` plants a row in every table with
+an account-shaped column and fails on any that survives.
+
+Erasure reaches this database only. Events already forwarded to Amplitude, Sentry's issues and
+logs, Resend's delivery records and database backups keep what they hold until their own retention
+ends.
 
 ### `POST /v1/auth/apple` — the authorization-code door
 

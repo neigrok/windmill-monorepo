@@ -124,10 +124,10 @@ retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two 
 standalone transport duplicates leaves 86 production HTTP operations. MCP has 37 write declarations
 (roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
 (ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have nine production commands
-(gym 7, journal 2), plus four probe commands. Background coverage includes 21 scheduled/stage
-operations plus sync publication, Amplitude forwarding and the AI usage ledger (24 background
-operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh
-and signup fork. The roadmap socket has two write frame kinds plus rate refusal.
+(gym 7, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
+operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
+operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh,
+signup fork and the erasure of an account a sign-in finds past its grace. The roadmap socket has two write frame kinds plus rate refusal.
 
 The HTTP coverage test enumerates every source registration, rejects alternate registration APIs,
 and requires the shared registrar, including handlers in headers and computed method lists; a second
@@ -339,6 +339,8 @@ listed separately because their only server writes are authentication refresh or
 | `platform/adapters/ws/SyncSocket.cpp via platform/application/Heartbeat.h` (background) | `background.sync-live` | completion only for actual writes or failure | unexpected |
 | `products/journal/application/EchoExplain.cpp via platform/application/Heartbeat.h` (background) | `background.journal-echo-explain` | completion; bounded stage outcome | unexpected |
 | `platform/application/RetentionSweep.h` (background) | `platform.retention` | completion; bounded stage outcome | unexpected |
+| `platform/application/ClosedAccountSweep.h via platform/application/Heartbeat.h` (background) | `background.closed-accounts` | completion only for an erased account or failure | unexpected |
+| `AuthService::eraseFinalCloses` via `ClosedAccountSweep` (background) | `auth.account.erase` | DEBUG completion per erased account, door `background`, nested in `background.closed-accounts`; one INFO `auth: closed account erased` line per account with the door, the erased account's id and the shared `request_id`; a failed account is an ERROR completion and the pass goes on to the next | unexpected |
 | `platform/application/MailSweep.h + ReminderSweep.cpp` (background) | `roadmap.reminder.sweep` | completion; bounded stage outcome | unexpected |
 | `platform/application/MailSweep.h + ReminderSweep.cpp` (background) | `roadmap.reminder.sweep.slot` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/application/RoomRegistry.cpp land` (background) | `roadmap.oplog.flush` | completion; bounded stage outcome | unexpected |
@@ -353,6 +355,7 @@ listed separately because their only server writes are authentication refresh or
 | `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.buffered` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.stream` | completion; bounded stage outcome | unexpected |
 | `AuthService::revalidate` (REST/MCP/WS reads and writes) | `auth.session.refresh` | DEBUG completion only for actual session UPDATE; ERROR on failure | unexpected |
+| Sign-in (link, code, Google, Apple, account link) meeting a close past its grace | `auth.account.erase` | DEBUG completion, door `server-origin`, nested in the sign-in route's INFO completion, before the new account is made; one INFO `auth: closed account erased` line with the door, the erased account's id and the route's `request_id` | unexpected |
 | `ForkSignup::plant` | `roadmap.signup.fork` | completion; `ok`, `source-missing-or-id-taken`, `failed` | unexpected |
 | `AmplitudeClient::forward` | `amplitude.forward` | completion after all retries; `ok`, `http_NNN`, `rate_limited`, `failed` | unexpected transport/5xx |
 | `Collab::onMessage` subgraph/progress | `roadmap.ws.subgraph`, `roadmap.ws.progress` | completion; exact reject/skew outcome | unexpected |

@@ -14,7 +14,7 @@
 **Today** (paths start with `platform/` = `apps/android/platform/src/main/kotlin/works/windmill/platform/`)
 - No surface can delete an account. You has no such row (`platform/you/YouSheet.kt:83-121`).
 - The server closes one: `DELETE /v1/me` with body `{"account": "<the signed-in user id>"}` (`backend/platform/adapters/http/AuthApi.cpp:572-597`). It answers 401 *sign in to close your account*, 400 `malformed`, 409 `account-mismatch` when the id is not the caller's, or 200 with `closesMs` and `closingOn`, now + 30 days (`backend/platform/domain/Auth.h:52`). Every session and every connected tool is revoked at once (`AuthService::closeAccount`, `backend/platform/application/AuthService.cpp:333`).
-- The promise *After that, it is deleted for good.* is not yet true: signing in again revives a closed account at any time (`AuthService::revived`, `AuthService.cpp:246`) and nothing deletes a closed account's data. The backend work is dogfood `account-delete-grace-enforced`; this task ships only after it.
+- The promise *After that, it is deleted for good.* holds: a sign-in before `closesMs` brings the account back, and from `closesMs` on the account is erased with all its data, by the first sign-in that meets it or an hourly sweep; a sign-in after that starts a new, empty account (`backend/AUTH.md`, `DELETE /v1/me`).
 
 **Change**
 - 16b's last row **Delete account** (error role) pushes a page in You (new `platform/you/DeleteAccount.kt`), signed in only. Signed out there is no such row.
