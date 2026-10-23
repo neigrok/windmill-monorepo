@@ -99,8 +99,6 @@ public struct ExerciseName: Writable, Equatable {
   ]
 }
 
-public typealias ExerciseRename = ExerciseName
-
 public enum ExerciseRules {
   public static let name = TextSpec("exercise.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
   public static let seedName = TextSpec("exerciseName.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)

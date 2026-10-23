@@ -52,5 +52,3 @@ public enum WeightLadder {
     return reps == Int.max ? reps : max(1, reps + 1)
   }
 }
-
-public typealias Ladder = WeightLadder

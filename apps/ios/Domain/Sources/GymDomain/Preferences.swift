@@ -36,7 +36,6 @@ public struct GymPreferences: Draftable, Equatable {
   ]
 }
 
-public typealias Preferences = GymPreferences
 public typealias SavePreferences = SaveDraft<GymPreferences, GymRefusal>
 
 public struct RestSettings: Equatable, Sendable {
