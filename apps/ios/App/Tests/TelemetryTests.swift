@@ -141,6 +141,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func receiptMenuAndRetryExcludeWorkoutContent() {
+    for action in ["menu", "retry"] {
+      #expect(TelemetryPrivacy.properties(["screen": "receipt", "action": action, "name": "private-marker",
+                                           "sessionId": "private-id", "sets": "7", "volume": "3980", "review": "private-marker"]) ==
+              ["screen": .label("receipt"), "action": .label(action)])
+    }
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",

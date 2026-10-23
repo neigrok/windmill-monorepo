@@ -48,6 +48,14 @@ import XCTest
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
+    let options = app.buttons["workout-receipt-options"]
+    XCTAssertTrue(options.waitForExistence(timeout: 5)); options.tap()
+    let discard = app.buttons["Discard workout"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-share-coach"].exists)
+    XCTAssertTrue(app.buttons["workout-done"].exists)
     if keep { XCTAssertEqual(app.buttons["workout-keep"].label, "Only on this phone · Keep it") }
     if !close { return }
     app.buttons["workout-done"].tap()

@@ -458,8 +458,8 @@ and Android disagree.
 
   Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,
   *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
-  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*,
-  which is the receipt's band action, not a swipe.
+  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; and the receipt's top-corner
+  options menu with *Discard workout* and its confirmation.
 - **10x · The log's boards ahead of other canon (build, 2026-10-22).** The iOS build follows the
   🚧 targets (10o), and other canon still says otherwise in these places:
   - Workout detail's tiles share one card parted by hairlines (05.3), and the one session

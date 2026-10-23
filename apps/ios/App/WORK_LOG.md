@@ -24,7 +24,8 @@ The routine sheet, workout, receipt and Log deletion are drawn in light and dark
 
 Destructive actions use the system roles and presentation described in Apple's
 [action sheet guidance](https://developer.apple.com/design/human-interface-guidelines/action-sheets).
-The app keeps Done primary and sharing secondary on the receipt, with Discard separated in red.
+The app keeps Done primary and sharing secondary on the receipt, with Discard in the native
+top-trailing options menu.
 
 The web Gym test browser declares its localhost hostname. Without that complete location fixture,
 telemetry can open real network requests while tests control timers, contaminating later tests.
@@ -225,3 +226,7 @@ accepting a date does not persist the weight. Correction keeps the original day 
 The workout ledger limits default-height rows while allowing accessibility expansion. One sheet
 destination sequences assembly dismissal and picker presentation, preserving the rack through
 selection and cancellation. The duplicate statistics strip is removed.
+
+The receipt uses two full-width actions with the Coach crown, plus a native top-corner Discard menu.
+Confirmation uses the actual set count; cancellation retains the originating receipt. Coach handoff
+keeps its existing send and sign-in continuation, with account transitions disabling all actions.

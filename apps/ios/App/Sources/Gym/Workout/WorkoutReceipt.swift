@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Observation
 import DomainKit
 import GymDomain
@@ -141,18 +142,21 @@ struct WorkoutReceipt: View {
   let gym: GymModel
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
+  @Environment(\.dynamicTypeSize) var typeSize
+  @ScaledMetric(relativeTo: .headline) private var crownSpace = 22
   @State var discard = false
-  // The receipt opens over the workout's detail at full height only, with no grabber, so the detail's tiles never show
-  // beside its own; its title and subtitle head the page above the tiles (03.7).
-  var body: some View {
-    NavigationStack {
+  // The large receipt has no grabber; its native toolbar holds the outcome and workout options.
+  var content: some View {
       List {
         Group {
           Section {
-            VStack(spacing: RoomSpace.small) {
-              Text(receipt.title).font(.title.weight(.bold)).foregroundStyle(GymPalette.ink).accessibilityAddTraits(.isHeader)
-              Text(receipt.subtitle(gym.dates)).font(.subheadline).foregroundStyle(GymPalette.inkDim)
-            }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            if typeSize.isAccessibilitySize {
+              Text(receipt.title).font(.title.weight(.bold)).foregroundStyle(GymPalette.ink)
+                .frame(maxWidth: .infinity).multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+                .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+            }
+            Text(receipt.subtitle(gym.dates)).font(.subheadline).foregroundStyle(GymPalette.inkDim)
+              .frame(maxWidth: .infinity).multilineTextAlignment(.center)
               .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue), ground: .own)
               .listRowInsets(EdgeInsets(top: RoomSpace.inset, leading: 0, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
@@ -191,44 +195,127 @@ struct WorkoutReceipt: View {
             }
           }
           if receipt.readingReview { Section { ProgressView().frame(maxWidth: .infinity) } }
+          if receipt.reviewFailed {
+            Section {
+              RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
+                            actionIdentifier: "workout-review-retry") {
+                gym.telemetry.event("gym_action", properties: ["screen": "receipt", "action": "retry"])
+                Task { await receipt.loadReview(gym) }
+              }
+            }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
+          }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).toolbar(.hidden, for: .navigationBar)
+      }.modifier(GymPage()).contentMargins(.top, 0, for: .scrollContent)
+        .disabled(gym.accountTransition)
+  }
+
+  var body: some View {
+    NavigationStack {
+      content
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .principal) {
+            if !typeSize.isAccessibilitySize {
+              Text(receipt.title).font(.title.weight(.bold)).foregroundStyle(GymPalette.ink)
+                .accessibilityAddTraits(.isHeader)
+            }
+          }
+          if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarTrailing) { options }.sharedBackgroundVisibility(.hidden)
+          } else {
+            ToolbarItem(placement: .topBarTrailing) { options }
+          }
+        }.roomBar(.gym)
         .reachBand(onSurface: true) { band }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.hidden)
       .discardWorkoutQuestion(gym, screen: "workout", isPresented: $discard, sets: receipt.sets.count) {
         guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
         gym.workout.handoff = .detail(nil); dismiss()
       }
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "receipt"]) }
       .task { await receipt.loadReview(gym) }
   }
 
+  var options: some View {
+    WorkoutReceiptMenu(enabled: !gym.accountTransition) {
+      gym.telemetry.event("gym_action", properties: ["screen": "receipt", "action": "menu"])
+    } requestDiscard: {
+      guard !gym.accountTransition else { return }
+      discard = true
+    }.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
+  }
+
   var band: some View {
-    VStack(spacing: 10) {
-      GymTransient(gym: gym)
-      if receipt.reviewFailed {
-        RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
-                      actionIdentifier: "workout-review-retry") { Task { await receipt.loadReview(gym) } }
-      }
-      Button(role: .destructive) { discard = true } label: {
-        Text("Discard").frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
-      }.buttonStyle(.borderless)
-        .accessibilityIdentifier("workout-discard-receipt")
+    VStack(spacing: 12) {
+      if GymTransient(gym: gym).shown != nil { GymTransient(gym: gym) }
       Button {
         gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "share"])
         gym.workout.handoff = .coach
         dismiss()
-      } label: { Text("👑 Share with Coach").frame(maxWidth: .infinity, minHeight: 32) }
+      } label: {
+        HStack(spacing: 8) {
+          Image("gym/coach-crown").renderingMode(.original).resizable().scaledToFit()
+            .frame(width: crownSpace, height: crownSpace * 24 / 22)
+            .frame(width: crownSpace, height: crownSpace).accessibilityHidden(true)
+          Text("Share with Coach")
+        }.frame(maxWidth: .infinity, minHeight: 22)
+      }
         .modifier(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule)
+        .accessibilityLabel("👑 Share with Coach")
         .accessibilityIdentifier("workout-share-coach")
         .accessibilityHint(gym.sharingNeedsSignIn ? "Sign in to continue" : gym.coachUnavailable ? "Coach is unavailable" : "Opens Coach to review this workout")
         .disabled(gym.coachUnavailable)
       Button {
         gym.telemetry.event("first_run_choice", properties: ["screen": "workout", "action": "close"])
         dismiss()
-      } label: { Text("Done").frame(maxWidth: .infinity, minHeight: 32) }
+      } label: { Text("Done").frame(maxWidth: .infinity, minHeight: 22) }
         .modifier(RoomPrimaryStyle(room: .gym)).accessibilityIdentifier("workout-done")
-    }.font(.headline).padding(RoomSpace.inset).disabled(gym.accountTransition)
-      .roomMotion(receipt.reviewFailed)
+    }.font(.headline).padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.inset)
+      .disabled(gym.accountTransition)
+  }
+}
+
+struct WorkoutReceiptMenu: UIViewRepresentable {
+  let enabled: Bool
+  let opened: () -> Void
+  let requestDiscard: () -> Void
+
+  func makeCoordinator() -> Coordinator { Coordinator(opened: opened, requestDiscard: requestDiscard) }
+  func makeUIView(context: Context) -> UIButton {
+    let button = UIButton(type: .system)
+    var configuration = UIButton.Configuration.plain()
+    if #available(iOS 26.0, *) { configuration = .glass() }
+    configuration.cornerStyle = .capsule
+    configuration.image = UIImage(systemName: "ellipsis")
+    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(textStyle: .body)
+    configuration.contentInsets = .zero
+    button.configuration = configuration
+    button.showsMenuAsPrimaryAction = true
+    button.accessibilityLabel = "Workout options"
+    button.accessibilityIdentifier = "workout-receipt-options"
+    button.menu = UIMenu(children: [
+      UIAction(title: "Discard workout", image: UIImage(systemName: "trash"), identifier: UIAction.Identifier("workout-discard-receipt"), attributes: .destructive) { [weak coordinator = context.coordinator] _ in
+        coordinator?.requestDiscard()
+      },
+    ])
+    button.addAction(UIAction { [weak coordinator = context.coordinator] _ in coordinator?.opened() }, for: .menuActionTriggered)
+    return button
+  }
+  func updateUIView(_ button: UIButton, context: Context) {
+    context.coordinator.opened = opened
+    context.coordinator.requestDiscard = requestDiscard
+    button.isEnabled = enabled
+    button.tintColor = UIColor(GymPalette.ink)
+  }
+  func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+    CGSize(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
+  }
+  @MainActor final class Coordinator {
+    var opened: () -> Void
+    var requestDiscard: () -> Void
+    init(opened: @escaping () -> Void, requestDiscard: @escaping () -> Void) {
+      self.opened = opened; self.requestDiscard = requestDiscard
+    }
   }
 }
 

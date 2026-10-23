@@ -176,7 +176,12 @@ accessibility sizes expand it. Movement paging dots and clocks remain, without t
 statistics strip. Assembly and Add movement share one sheet destination. Selecting a movement returns
 to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
 
-The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action. Signed
+The finished-workout receipt places 👑 Share with Coach and the primary Done action in two full-width rows.
+A native top-trailing options menu offers Discard workout and its actual-set-count confirmation.
+The bottom actions use 52-point minimum heights and 12-point separation, growing with text; the menu
+and actions are disabled during account transitions. The menu uses UIKit `UIButton` / `UIMenu`, with
+open events from `.menuActionTriggered`. The approved gold crown is the original-color
+`gym/coach-crown` image asset. Keep and review retry remain in the scrollable receipt content. Signed
 out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
 tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
 suggests it and no later receipt does, signed out or in.
