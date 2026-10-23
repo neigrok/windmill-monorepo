@@ -9,9 +9,10 @@ indexed here.
 Figma: separate [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=130-2) and
 [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-2) pages.
 Code: `web/src/products/roadmap/`. [Evidence and limits](design/roadmap-web-reconciliation.md).
-🚀 identifies the List and dark-room compositions compared with local runtime captures; 🚧 marks
-source-reviewed specimens and states still needing runtime verification. These statuses do not grant
-human design approval. Native graph geometry approximates WebGL lighting.
+🚀 In production identifies current flows reconciled against source and available runtime evidence.
+The [25-family coverage map](design/roadmap-web-reconciliation.md#exhaustive-current-family-map)
+records every current Roadmap screen/state family and validation limits. This does not grant new
+human approval or claim every branch was exercised. Native graph lighting is a static approximation.
 
 | Flow | Web | Web Mobile | Entry → exit |
 |---|---|---|---|
@@ -21,9 +22,11 @@ human design approval. Native graph geometry approximates WebGL lighting.
 | 03 · Navigate the tree | [131:4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-4) | [170:8](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-8) | Focus / All steps, switcher, kinds; visitor chrome; loading/error/desktop empty |
 | 04 · Edit and complete steps | [160:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-10) | [170:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-10) | Select → owner sheet or desktop inspector → completion, workspace or multi-select |
 | 05 · Progress and feedback | [162:323](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-323) | [170:12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-12) | Next up → step; blocked/fully grown; toast and activity feedback |
-| 06 · Publish, browse and fork | [131:14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-14) | — | Publish and copy → public gallery or visitor → fork; Make private |
+| 06 · Publish, browse and fork | [131:14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-14) | [183:210](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-210) | Publish and copy → public gallery or visitor → fork; Make private |
 | 07 · Roadmap settings | [162:282](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-282) | — | Shared product specimens: export, gated reminders and AI assistance |
-| 08 · AI assistance | — | [166:230](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=166-230) | Eligible owner → mobile request input; view/share doors have independent eligibility |
+| 08 · AI assistance | [185:151](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-151) | [166:230](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=166-230) | Eligible owner → mobile request input; view/share doors have independent eligibility |
+| 09 · Settings branches | [184:1307](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1307) | [185:1359](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1359) | Reminder schedule/suppression and AI allowance/history; conditional gates |
+| 10 · Keyboard shortcuts | [185:2501](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2501) | [188:662](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-662) | Mac/Windows; owner/reader; current responsive layout |
 
 The reusable [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)
 and [List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) live on
@@ -31,6 +34,15 @@ Components. [AI review proposals](https://www.figma.com/design/HM4d8YWzJZg5clVRJ
 remain on Proposals. Account, sign-in, appearance and shared settings belong to
 [Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
 [Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
+
+### Board view · 💡 Proposal / awaiting human review
+
+Separate [Web Mobile proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
+and [Web proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) pages.
+Main frames: [mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433),
+[desktop](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
+[Proposal notes](design/roadmap-board-proposal.md). This additional view is separate from the
+reconciled implementation and is not Ready for dev.
 
 ## Gym · iOS
 

@@ -18,7 +18,7 @@ within its owner, not a separate product file. Proposals remain separate from de
 
 | Owner | Pages |
 |---|---|
-| Roadmap | Cover, Model, Components, Web, Web Mobile, Proposals |
+| Roadmap | Cover, Model, Components, Web, Web Mobile, Proposals, 💡 Board · Web Mobile, 💡 Board · Web |
 | Journal | Cover, Model, Components, Web, iOS, Proposals |
 | Gym | Cover, Model, Components, Web, iOS, Android, Proposals |
 | Marketing | Landings, Static pages, Emails, Store listings |
@@ -26,6 +26,9 @@ within its owner, not a separate product file. Proposals remain separate from de
 Journal's Model page and Marketing's Store listings page are empty.
 Roadmap separates desktop Web and Web Mobile journeys. Flow numbers correspond across the two
 pages; phone screens move to Web Mobile without duplication, and shared definitions stay on Components.
+Roadmap’s additional Board view has separate [mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900)
+and [web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) proposal pages.
+They await human review; [proposal notes](design/roadmap-board-proposal.md) describe their scope.
 Gym's iOS page is organized as one section per user flow (see [the flow index](index.md)).
 The organization check does not establish visual acceptance of the screens.
 Superseded boards are deleted, not archived.

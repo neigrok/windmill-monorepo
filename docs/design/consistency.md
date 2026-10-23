@@ -523,16 +523,28 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
-- **Web reconciliation evidence.** The [Web flow index](../index.md#roadmap--web) distinguishes local
-  runtime matches from source-reviewed specimens. The [evidence log](roadmap-web-reconciliation.md)
-  records the current coverage and unverified states. WebGL lighting, animation timing and real-GPU
-  performance are not established by native Figma shapes or SwiftShader captures.
+- **Web reconciliation evidence.** All 25 current Roadmap screen/state families are mapped in the
+  [evidence log](roadmap-web-reconciliation.md) and linked from the [flow index](../index.md#roadmap--web).
+  🚀 marks source/runtime reconciliation; runtime limits are separate. Native graphs and SwiftShader
+  captures do not establish WebGL lighting, animation timing or real-GPU performance.
+- **Web AI failure copy.** `tending/receipts.js` says the submitted sentence remains available, but
+  `TendBar.jsx` clears it on submit and `SkillTreeView.jsx` closes the desktop overlay on terminal
+  outcomes. Preserve the prompt or correct the copy; current drawings retain the implemented face.
+- **Web shortcuts layout.** `skilltree.css` keeps two columns and nonshrinking keycap groups.
+  At 390px, Pan/Zoom overlap View; Windows desktop Zoom also extends slightly into Edit. Local
+  owner/reader and Mac/Windows captures confirm this. Adapt columns/key wrapping in the implementation;
+  current Figma deliberately shows the defect. Phone owners receive Navigate/View only because
+  `SkillTreeView.jsx` passes its canvas read-only flag, despite mobile ownership editing support.
+- **Published web input sizing.** The imported Design System Input field imposes 100px minimum height,
+  while ForkDoor uses 46px. The product drawing uses an explicitly named local source adapter. The
+  library owner should correct the primitive sizing before replacing that adapter with an instance.
 - **Web sharing copy.** `ShareDialog.jsx` publishes private or unlisted trees directly to public
   before copying a link, and discloses gallery eligibility. `BrowsePage.jsx` empty copy instead says
   sharing keeps a tree unlisted and listing is a separate choice. Reconcile the gallery copy with the
   implemented publication action; the Figma share flow reflects the action, while the gallery
-  empty-state specimen remains flagged. Gallery search/filter thresholds in `galleryIndex.js` are
-  not rendered by `BrowsePage.jsx` and are not current controls.
+  empty-state specimen retains the current contradictory copy with a ledger annotation. Gallery
+  search/filter thresholds in `galleryIndex.js` are not rendered by `BrowsePage.jsx` and are not
+  current controls.
 - **Web mobile empty tree.** `SkillTreeView.jsx` mounts the “Add your first step” empty card only
   when `!readOnly`, which excludes phone and tablet canvas. Mobile owners can edit populated trees;
   an existing zero-node mobile tree needs an explicit recovery affordance. The Figma empty-card
