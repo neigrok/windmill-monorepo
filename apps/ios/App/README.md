@@ -37,7 +37,7 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
-`-scenario <name>` isolates a launch's storage under that name. Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
+`-scenario <name>` isolates a launch's storage under that name. Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI.
 Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
 A separate client seeds the model server through real Gym actions; atomic snapshots
 preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
@@ -192,12 +192,13 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `update-required` board signs in against a model server that answers 426 (and keeps answering it across
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
-`GymAnonymousCoachFlowTests` runs light, dark and accessible large text in the standard Coach UI
-shard through the deterministic installation/Coach transport fixture and real local engine. Set
-`TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for the same UI flow against an isolated backend and
-`TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
+`GymAnonymousCoachFlowTests` runs one flow in the standard Coach UI through the deterministic installation/Coach
+transport fixture and real local engine: signed out, Coach drafts routines and the lifter applies them, Keep your
+routines signs in, and the same conversation goes on. Set `TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for its signed-out
+half against an isolated backend and `TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
 `TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
-to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP. Without those variables, the
+to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP, in a fresh keychain
+service each run unless `TEST_RUNNER_WM_ANONYMOUS_COACH_KEYCHAIN` names one. Without those variables, the
 photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
