@@ -303,7 +303,7 @@ class Registry(input: Json) {
     init {
         require(name.matches(Regex("[a-z][a-z0-9-]*")))
         require(types.map { it.name }.distinct().size == types.size)
-        require(types.filter { it.headline }.let { headlines -> headlines.distinctBy { it.scope }.size == headlines.size })
+        require(types.filter { it.headline }.map { it.scope }.let { scopes -> scopes.distinct().size == scopes.size })
         require(commands.map { it.member("name").str() }.distinct().size == commands.size)
         val codes = mutableSetOf<String>()
         for ((name, product) in products) {
