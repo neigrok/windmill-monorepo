@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import SyncCore
 import SyncEngine
 import SyncSchema
@@ -79,12 +80,15 @@ extension OfflineFixture.Mode {
   }
 }
 
-// Each mode's loader answers every request to offline.invalid with its failure, or never.
+// Each mode's loader answers every request to offline.invalid with its failure, or never, and keeps the path of every
+// request it met, so a launch can be seen asking.
 nonisolated class OfflineLoader: URLProtocol, @unchecked Sendable {
+  static let asked = Mutex<[String]>([])
   class var failure: URLError.Code? { nil }
   override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "offline.invalid" }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
+    OfflineLoader.asked.withLock { $0.append(request.url?.path ?? "") }
     if let failure = Self.failure { client?.urlProtocol(self, didFailWithError: URLError(failure)) }
   }
   override func stopLoading() {}

@@ -107,10 +107,13 @@ import Synchronization
     #expect(model.sheet == .adoption && model.adoptionCounts[.journal]?[Page.type] == 1)
     #expect(model.adoptionAlertMessage == "This phone has 1 journal page from before you signed in. Your account already has journal pages. Add it, or discard it from this phone.")
     if !add {
-      model.sheet = .discardAdoption
-      #expect(model.adoptionAlertTitle == "Discard 1 journal page?")
+      await model.press(.discard, asked: model.pendingAdoptions)
+      #expect(model.sheet == .discardAdoption && model.adoptionAlertTitle == "Discard 1 journal page?")
+      await model.press(.cancelDiscard, asked: model.pendingAdoptions)
+      #expect(model.sheet == .adoption && model.account == nil && model.journal.document.body == "Local page")
+      await model.press(.discard, asked: model.pendingAdoptions)
     }
-    await model.adopt(add ? .add : .discard, asked: model.pendingAdoptions)
+    await model.press(add ? .add : .confirmDiscard, asked: model.pendingAdoptions)
     #expect(model.account == "model-sam@example.com" && model.sheet == nil)
     #expect(server.state.withLock { $0.appleDoors["fake-apple"] == "model-sam@example.com" })
   }

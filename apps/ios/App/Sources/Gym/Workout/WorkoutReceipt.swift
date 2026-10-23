@@ -195,7 +195,7 @@ struct WorkoutReceipt: View {
       }.modifier(GymPage()).toolbar(.hidden, for: .navigationBar)
         .reachBand(onSurface: true) { band }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.hidden)
-      .discardWorkoutAlert(gym, screen: "workout", isPresented: $discard, sets: receipt.sets.count) {
+      .discardWorkoutQuestion(gym, screen: "workout", isPresented: $discard, sets: receipt.sets.count) {
         guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
         gym.workout.handoff = .detail(nil); dismiss()
       }

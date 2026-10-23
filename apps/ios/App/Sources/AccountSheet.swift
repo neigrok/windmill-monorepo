@@ -540,29 +540,20 @@ struct AccountConfirmation: UIViewControllerRepresentable {
       let alert = UIAlertController(title: model.adoptionAlertTitle, message: model.adoptionAlertMessage, preferredStyle: .alert)
       let asked = model.pendingAdoptions
       dialog = alert
-      func button(_ title: String, style: UIAlertAction.Style = .default, action: @escaping @MainActor () async -> Void) {
-        alert.addAction(UIAlertAction(title: title, style: style) { [weak self, weak alert] _ in
+      for button in model.adoptionButtons {
+        let style: UIAlertAction.Style = button.cancels ? .cancel : button.destructive ? .destructive : .default
+        alert.addAction(UIAlertAction(title: button.title, style: style) { [weak self, weak alert] _ in
           guard let self, let alert else { return }
           self.settling = true
           let finish: () -> Void = { [weak self] in
             model.performAuthentication {
-              await action()
+              await model.press(button, asked: asked)
               self?.settling = false
               self?.showConfirmation()
             }
           }
           self.afterDismissal(of: alert, perform: finish)
         })
-      }
-      if model.identityTaken {
-        button("OK") { model.identityTaken = false }
-      } else if model.sheet == .discardAdoption {
-        button("Cancel", style: .cancel) { model.choose("cancel", screen: "discard_adoption"); model.sheet = .adoption }
-        button("Discard", style: .destructive) { await model.adopt(.discard, asked: asked) }
-      } else {
-        button("Add") { await model.adopt(.add, asked: asked) }
-        button("Discard", style: .destructive) { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
-        button("Cancel sign-in", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
       }
       host.present(alert, animated: true)
     }

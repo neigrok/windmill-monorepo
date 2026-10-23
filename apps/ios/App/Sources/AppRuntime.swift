@@ -37,6 +37,7 @@ struct AppSettings {
   let appleFixture: String?
   let appleEnabled: Bool
   let scenario: String?
+  let report: String?
   let codeFile: String?
   let automated: Bool
   let telemetryInfo: [String: Any]
@@ -55,9 +56,10 @@ struct AppSettings {
     modelServer = arguments.contains("-model-server") || board != nil
     appleFixture = argument("apple-fixture")
     scenario = argument("scenario")
+    report = argument("report")
     codeFile = argument("code-file")
     #else
-    board = nil; restoreBoard = false; modelServer = false; appleFixture = nil; scenario = nil; codeFile = nil
+    board = nil; restoreBoard = false; modelServer = false; appleFixture = nil; scenario = nil; report = nil; codeFile = nil
     #endif
     automated = modelServer || scenario != nil
     var info = bundle.infoDictionary ?? [:]

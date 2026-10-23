@@ -85,25 +85,26 @@ struct TrashSwipe: ViewModifier {
   }
 }
 
-// 07.5, asked by every door that discards a workout; it records shown and cancel on `screen`, closing on an account change.
-struct DiscardWorkoutAlert: ViewModifier {
+// Every door that destroys something asks first: its act runs only from the question's destructive button; Cancel, or the
+// question closing any other way, leaves everything as it was. It records shown and cancel on `screen`, and closes on an
+// account change. A workout's door asks 07.5 in its words; a question that needs its title over the buttons is a dialog.
+struct DestructiveQuestion: ViewModifier {
   let gym: GymModel
   let screen: String
+  let title: String
+  let message: String
+  let act: String
+  var dialog = false
   @Binding var isPresented: Bool
-  let sets: Int
-  let discard: () -> Void
+  let confirm: () -> Void
   @State var confirmed = false
 
-  static func message(sets: Int) -> String {
+  static func workoutMessage(sets: Int) -> String {
     (sets == 0 ? "This deletes the workout." : "This deletes the workout and its \(GymCount.of(sets, "set")).") + " You can’t undo this."
   }
 
   func body(content: Content) -> some View {
-    content
-      .alert("Discard this workout?", isPresented: $isPresented) {
-        Button("Discard", role: .destructive) { confirmed = true; discard() }
-        Button("Cancel", role: .cancel) {}
-      } message: { Text(Self.message(sets: sets)) }
+    asked(content)
       .onChange(of: isPresented) { _, shown in
         if shown {
           confirmed = false
@@ -114,6 +115,19 @@ struct DiscardWorkoutAlert: ViewModifier {
       }
       .onChange(of: gym.account) { _, _ in isPresented = false }
   }
+
+  @ViewBuilder func asked(_ content: Content) -> some View {
+    if dialog {
+      content.confirmationDialog(title, isPresented: $isPresented, titleVisibility: .visible) { buttons } message: { Text(message) }
+    } else {
+      content.alert(title, isPresented: $isPresented) { buttons } message: { Text(message) }
+    }
+  }
+
+  @ViewBuilder var buttons: some View {
+    Button(act, role: .destructive) { confirmed = true; confirm() }
+    Button("Cancel", role: .cancel) {}
+  }
 }
 
 extension View {
@@ -121,8 +135,15 @@ extension View {
     modifier(TrashSwipe(act: act, enabled: enabled, action: action))
   }
 
-  func discardWorkoutAlert(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {
-    modifier(DiscardWorkoutAlert(gym: gym, screen: screen, isPresented: isPresented, sets: sets, discard: discard))
+  func destructiveQuestion(_ gym: GymModel, screen: String, title: String, message: String, act: String, dialog: Bool = false,
+                           isPresented: Binding<Bool>, confirm: @escaping () -> Void) -> some View {
+    modifier(DestructiveQuestion(gym: gym, screen: screen, title: title, message: message, act: act, dialog: dialog,
+                                 isPresented: isPresented, confirm: confirm))
+  }
+
+  func discardWorkoutQuestion(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {
+    destructiveQuestion(gym, screen: screen, title: "Discard this workout?", message: DestructiveQuestion.workoutMessage(sets: sets),
+                        act: "Discard", isPresented: isPresented, confirm: discard)
   }
 }
 

@@ -235,10 +235,21 @@ enum ReturningFixture {
 #endif
 
 enum AppScenario {
-  // The gym end-to-end scenarios open the gym and sign in as the verify skill's account; other scenarios only isolate storage.
+  // The gym end-to-end scenarios open the gym and sign in as the verify skill's account; a scenario with `-report` walks the
+  // journal and sign-in journey and writes what it reached there; other scenarios only isolate storage.
   static func run(model: AppModel) async {
     #if DEBUG && targetEnvironment(simulator)
-    guard let runtime = model.runtime, runtime.settings.scenario?.hasPrefix("gym-e2e") == true else { return }
+    guard let runtime = model.runtime else { return }
+    if runtime.settings.scenario?.hasPrefix("gym-e2e") == true {
+      await gym(model, runtime: runtime)
+    } else if let report = runtime.settings.report {
+      await journey(model, runtime: runtime, report: report)
+    }
+    #endif
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+  static func gym(_ model: AppModel, runtime: AppRuntime) async {
     model.openRoom(.gym)
     if runtime.settings.restoreBoard {
       if ProcessInfo.processInfo.arguments.contains("-sign-in-link-fixture") { model.sheet = .code }
@@ -262,8 +273,81 @@ enum AppScenario {
       else { throw AppFailure(message: "The Gym verification session is unavailable.") }
       try await model.signIn(identity)
     } catch { model.error = error.localizedDescription }
-    #endif
   }
+
+  // Anonymous writing, Keep, email sign-in, backup, a revoked session, same-account reauthentication, sign-out Keep and a
+  // second sign-in, each step named in the report as it lands. Against a local server, `-code-file` holds the development
+  // code and the report pauses at `revoke-session` and `signed-out` for the verifier's server step.
+  static func journey(_ model: AppModel, runtime: AppRuntime, report: String) async {
+    var steps: [String] = []
+    func code() throws -> String {
+      try runtime.settings.codeFile.map { try String(contentsOfFile: $0, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) } ?? "482913"
+    }
+    do {
+      model.openJournal(); model.journal.type("A page written before signing in."); guard model.journal.save() else { throw AppFailure(message: "anonymous save failed") }
+      model.journal.done(); model.journal.dismissScales(); guard model.journal.keepDue else { throw AppFailure(message: "Keep not due") }; steps.append("anonymous-writing")
+      model.keep(); steps.append("keep"); model.email = "journal-e2e@example.com"
+      if runtime.settings.codeFile == nil { await model.sendCode() } else { model.sheet = .code }
+      model.code = try code()
+      await model.verifyCode(); if model.sheet == .adoption { await model.adopt(.add, asked: model.pendingAdoptions) }
+      try await backedUp(model); let expectedPage = model.journal.document.body; steps.append("email-sign-in-backed-up")
+      let account = try runtime.account() ?? ""
+      let replica = try runtime.store.read { try $0.device().activeReplica.meta.replica }
+      if runtime.settings.codeFile != nil {
+        try await checkpoint(report, pending: "revoke-session", values: ["account": account], steps: steps)
+      } else if let token = runtime.tokens.token(for: account) {
+        try await runtime.auth.logout(token: token)
+      }
+      await runtime.engine.start()
+      for _ in 0..<200 {
+        if model.authPaused { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      guard model.authPaused else { throw AppFailure(message: "revoked session did not pause backup") }
+      steps.append("session-revoked-backup-paused")
+      model.sheet = .you
+      if runtime.settings.codeFile == nil { model.codeSentAt = nil; await model.sendCode() }
+      else { model.sheet = .code }
+      model.code = try code()
+      await model.verifyCode(); try await backedUp(model)
+      guard !model.authPaused, try runtime.store.read({ try $0.device().activeReplica.meta.replica }) == replica else {
+        throw AppFailure(message: "reauthentication changed replica lineage")
+      }
+      steps.append("same-account-reauthenticated-backed-up")
+      let signingOutToken = runtime.tokens.token(for: account)?.value ?? ""
+      await model.beginSignOut(); await model.finishSignOut(.keep)
+      guard model.account == nil else { throw AppFailure(message: "sign-out failed") }; steps.append("sign-out-keep")
+      model.email = "journal-e2e@example.com"
+      if runtime.settings.codeFile != nil {
+        try await checkpoint(report, pending: "signed-out", values: ["account": account, "revokedToken": signingOutToken], steps: steps)
+        model.sheet = .code
+      } else { model.codeSentAt = nil; await model.sendCode() }
+      model.code = try code()
+      await model.verifyCode(); try await backedUp(model); steps.append("sign-in-again-backed-up")
+      guard !expectedPage.isEmpty && model.journal.document.body == expectedPage else { throw AppFailure(message: "restored page differs from the backed-up page") }
+      if runtime.settings.scenario == "telemetry-first-run" {
+        model.codeSentAt = nil
+        await model.sendCode()
+        if model.error != nil { steps.append("forced-handled-auth-failure") }
+      }
+      try JSONSerialization.data(withJSONObject: ["ok": true, "steps": steps]).write(to: URL(fileURLWithPath: report))
+    } catch {
+      try? JSONSerialization.data(withJSONObject: ["ok": false, "steps": steps, "error": error.localizedDescription]).write(to: URL(fileURLWithPath: report))
+    }
+  }
+
+  // Writes the pending step beside `values`, then waits up to a minute for the verifier to write that name to `<report>.ready`.
+  static func checkpoint(_ report: String, pending: String, values: [String: String], steps: [String]) async throws {
+    var payload: [String: Any] = values
+    payload["ok"] = false; payload["pending"] = pending; payload["steps"] = steps
+    try JSONSerialization.data(withJSONObject: payload).write(to: URL(fileURLWithPath: report), options: .atomic)
+    for _ in 0..<600 {
+      if (try? String(contentsOfFile: report + ".ready", encoding: .utf8)) == pending { return }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    throw AppFailure(message: "local server checkpoint timed out: \(pending)")
+  }
+  #endif
 
   static func backedUp(_ model: AppModel) async throws {
     for _ in 0..<200 {

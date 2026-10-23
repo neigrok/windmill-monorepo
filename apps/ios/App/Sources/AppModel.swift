@@ -901,6 +901,40 @@ final class AppModel {
     return sheet == .discardAdoption ? adoptionQuestion.discardMessage : adoptionQuestion.message
   }
 
+  // The sign-in question's buttons in the alert's order. Its Discard only asks again; the second question's Cancel returns
+  // to the first, and only its Discard deletes the phone's work.
+  enum AdoptionButton: Equatable {
+    case ok, add, discard, cancelSignIn, cancelDiscard, confirmDiscard
+    var title: String {
+      switch self {
+      case .ok: "OK"
+      case .add: "Add"
+      case .discard, .confirmDiscard: "Discard"
+      case .cancelSignIn: "Cancel sign-in"
+      case .cancelDiscard: "Cancel"
+      }
+    }
+    var destructive: Bool { self == .discard || self == .confirmDiscard }
+    var cancels: Bool { self == .cancelSignIn || self == .cancelDiscard }
+  }
+
+  var adoptionButtons: [AdoptionButton] {
+    if identityTaken { return [.ok] }
+    return sheet == .discardAdoption ? [.cancelDiscard, .confirmDiscard] : [.add, .discard, .cancelSignIn]
+  }
+
+  // `asked` is the work the question counted when it rose, so an answer never covers work it did not name.
+  func press(_ button: AdoptionButton, asked: [SignedOutDecision]) async {
+    switch button {
+    case .ok: identityTaken = false
+    case .add: await adopt(.add, asked: asked)
+    case .discard: choose("discard", screen: "adoption"); sheet = .discardAdoption
+    case .cancelSignIn: cancelAuthentication(); choose("cancel", screen: "adoption"); sheet = nil
+    case .cancelDiscard: choose("cancel", screen: "discard_adoption"); sheet = .adoption
+    case .confirmDiscard: await adopt(.discard, asked: asked)
+    }
+  }
+
   func setSignInSession(_ session: SignInSession?) {
     signInSession = session
     adoptionAnswers = [:]; journalAdoptionPages = nil

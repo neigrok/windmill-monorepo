@@ -13,7 +13,6 @@ struct WorkoutInspectScreen: View {
   @State var message: String?
   @State var discard = false
   @State var discardSets = false
-  @State var discardConfirmed = false
   @Environment(\.dismiss) var dismiss
 
   var saved: SignedOutWorkout? { gym.adoptionWorkouts.first { $0.session.id == id } }
@@ -43,26 +42,15 @@ struct WorkoutInspectScreen: View {
           }
         }
       }
-      .discardWorkoutAlert(gym, screen: "on_this_phone", isPresented: $discard, sets: workout?.sets.count ?? 0) {
+      .discardWorkoutQuestion(gym, screen: "on_this_phone", isPresented: $discard, sets: workout?.sets.count ?? 0) {
         if gym.discardWorkout(id) { dismiss() }
       }
       // A landed workout's stranded sets are not drawn yet: they keep their own question.
-      .onChange(of: discardSets) { _, shown in
-        if shown {
-          discardConfirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "discard", "state": "shown"])
-        } else if !discardConfirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "cancel", "outcome": "cancelled"])
-        }
+      .destructiveQuestion(gym, screen: "on_this_phone", title: "Discard this workout?",
+                           message: "This permanently removes the copy saved on this phone.",
+                           act: recovery?.discardTitle ?? "Discard workout", dialog: true, isPresented: $discardSets) {
+        if gym.discardWorkout(id) { dismiss() }
       }
-      .onChange(of: gym.account) { _, _ in discardSets = false }
-      .confirmationDialog("Discard this workout?", isPresented: $discardSets, titleVisibility: .visible) {
-        Button(recovery?.discardTitle ?? "Discard workout", role: .destructive) {
-          discardConfirmed = true
-          if gym.discardWorkout(id) { dismiss() }
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: { Text("This permanently removes the copy saved on this phone.") }
       .reachBand { band(recovery) }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
         if let fixing, let recovery { WorkoutFixSheet(gym: gym, fix: fixing, reason: recovery.reason) { message = nil } }

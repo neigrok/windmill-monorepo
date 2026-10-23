@@ -372,9 +372,12 @@ import Synchronization
     let restoredRuntime = AppRuntime(settings: runtime.settings, store: store, engine: engine, auth: runtime.auth, runner: runner, tokens: tokens, revocations: runtime.revocations)
     let restored = try AppModel(runner: runner, preferences: model.preferences, runtime: restoredRuntime)
     #expect(restored.account == identity.account && restored.authPaused && restored.journal.backup == "backup paused")
+    #expect(AccountSheet(model: restored).youDoors && !AccountSheet(model: restored).offline)
+    #expect(AccountSheet(model: restored).youFooter == "Sign in to the same account. Your writing stays on this phone.")
     restored.email = "restore@example.com"; restored.code = "482913"; await restored.verifyCode()
     for _ in 0..<100 where restored.authPaused { try await Task.sleep(for: .milliseconds(5)) }
     #expect(!restored.authPaused && restored.account == identity.account)
+    #expect(!AccountSheet(model: restored).youDoors && AccountSheet(model: restored).youFooter == nil)
     #expect(try store.read { try $0.device().activeReplica.meta.replica } == replica)
     let other = server.identity(email: "different@example.com")
     do { try await restored.signIn(other); Issue.record("Different account reauthenticated") } catch {}

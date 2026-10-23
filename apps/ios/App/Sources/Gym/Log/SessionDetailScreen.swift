@@ -73,7 +73,7 @@ struct SessionDetailScreen: View {
           }
         }
       }.roomBar(.gym)
-      .discardWorkoutAlert(gym, screen: "session", isPresented: $discard, sets: sets.count) {
+      .discardWorkoutQuestion(gym, screen: "session", isPresented: $discard, sets: sets.count) {
         if let outcome = gym.run(DiscardSession(sessionID)), outcome.refusal == nil { dismiss() }
       }
       .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error") }

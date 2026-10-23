@@ -251,9 +251,11 @@ import Synchronization
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "failed"], ["outcome": "signed_in"]])
   }
 
-  // A phone seeded on the model server, then launched on every network the offline fixture plays: writing, a routine, its
-  // workout and sets commit on the phone, rooms switch, a resume changes nothing, You keeps or lacks the account and says
-  // why its doors wait, and a cold launch on the same network finds all of it.
+  // A phone seeded on the model server, then launched on every network the offline fixture plays. Startup runs first and
+  // meets the network: with no path it asks nothing and settles offline, a refused connection fails its hello, and a
+  // stalled one holds the hello in flight through everything after. Then writing, a routine, its workout and sets commit on
+  // the phone, rooms switch, a resume changes nothing, You keeps or lacks the account and says why its doors wait, and a
+  // cold launch on the same network finds all of it.
   @Test(.timeLimit(.minutes(1)), arguments: OfflineFixture.Mode.allCases, [false, true])
   func everyOfflineLaunchKeepsTheRoomsAndTheAccountOnThePhone(mode: OfflineFixture.Mode, signedIn: Bool) async throws {
     let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.offline-tests.\(UUID())"
@@ -280,10 +282,18 @@ import Synchronization
     let routine: ID<Routine>, session: ID<Session>
     do {
       let model = try launch()
+      let before = OfflineLoader.asked.withLock { $0.count }
       let start = Task { await model.start() }
+      let hellos = { OfflineLoader.asked.withLock { $0.dropFirst(before).filter { $0 == "/v1/sync/hello" }.count } }
+      // Startup has met the network: offline settled, or, stalled, its one hello asked and still unanswered.
+      let met = { mode == .stalled ? hellos() == 1 && model.resumingBackup && !model.syncStarted
+                                   : hellos() == (mode == .noNetwork ? 0 : 1) && model.syncStarted }
+      for _ in 0..<300 where !met() { try await Task.sleep(for: .milliseconds(10)) }
+      #expect(met() && model.observationTask != nil && model.timerTask != nil)
       #expect(model.account == account && model.runtime?.engine.status.online == (mode != .noNetwork))
+      // Signed out, You draws its doors, and `offline` is the flag each door is disabled by.
       let you = AccountSheet(model: model)
-      #expect(you.offline == (mode == .noNetwork))
+      #expect(you.youDoors == !signedIn && you.offline == (mode == .noNetwork))
       #expect(you.youFooter == (!signedIn && mode == .noNetwork ? "Sign-in needs a connection." : nil))
       model.openJournal()
       model.journal.type(model.journal.document.body + " Cold."); model.journal.done()
@@ -301,6 +311,7 @@ import Synchronization
       model.switchRoom(.journal)
       model.journal.type(model.journal.document.body + " Resume."); model.journal.done()
       #expect(model.selectedRoom == .journal && model.account == account && !model.editorReadOnly)
+      #expect(met())
       start.cancel(); await start.value
       model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
     }

@@ -67,7 +67,7 @@ struct LogTab: View {
             .disabled(gym.accountTransition)
         }
       }
-      .discardWorkoutAlert(gym, screen: "log", isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }),
+      .discardWorkoutQuestion(gym, screen: "log", isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }),
                            sets: discard.flatMap { gym.log?.sets(session: $0).count } ?? 0) {
         if let discard { gym.run(DiscardSession(discard)) }
       }
