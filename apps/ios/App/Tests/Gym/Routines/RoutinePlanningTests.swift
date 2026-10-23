@@ -167,6 +167,14 @@ import UIKit
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 working sets · 2 movements")
   }
 
+  // A routine's summary names each movement by its place and marks the lifter's own; one gone from the catalogue says so.
+  @Test func aSummaryRowMarksTheLiftersOwnMovement() {
+    let custom = Exercise(id: ID("custom-press"), name: "Custom press kept", pattern: "press", equipment: "barbell", stepKg: 2.5)
+    let catalogue = Catalogue(custom: [custom], names: [])
+    #expect([ID<Exercise>("custom-press"), ID("bench-press"), ID("gone")].enumerated().map { RoutineLines.movement($0, $1, in: catalogue) }
+            == ["1. Custom press kept · yours", "2. Bench Press", "3. Movement unavailable"])
+  }
+
   @Test func anEditorRowReadsItsTargetsInTheMovementsLoadBasis() {
     let lines = [
       RoutineLines.movement(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 4), equipment: MovementEquipment("barbell")),

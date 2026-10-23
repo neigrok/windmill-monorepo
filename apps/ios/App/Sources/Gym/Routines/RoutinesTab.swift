@@ -118,10 +118,7 @@ struct RoutineDetail: View {
           Group {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-                let exercise = gym.catalogue.find(entry.exerciseId)
-                let yours = exercise != nil && !SeedExercises.contains(entry.exerciseId)
-                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(yours ? " · yours" : "")",
-                       meta: Readout.target(entry.sets))
+                GymRow(title: RoutineLines.movement(index, entry.exerciseId, in: gym.catalogue), meta: Readout.target(entry.sets))
                   .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
             }
@@ -192,6 +189,11 @@ struct RoutineSummarySheet: View {
 
 // What a routine, a waiting proposal and a past workout say on their rows.
 enum RoutineLines {
+  // A summary row's movement by its place, marked when it is the lifter's own rather than the catalogue's.
+  static func movement(_ index: Int, _ id: ID<Exercise>, in catalogue: Catalogue) -> String {
+    guard let exercise = catalogue.find(id) else { return "\(index + 1). Movement unavailable" }
+    return "\(index + 1). \(exercise.name)\(SeedExercises.contains(id) ? "" : " · yours")"
+  }
   static func routine(_ routine: Routine, lastTrained: Instant?, historyKnown: Bool, moment: Moment?) -> String {
     let movements = GymCount.of(routine.entries.count, "movement")
     if let lastTrained, let moment { return "\(movements) · trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))" }

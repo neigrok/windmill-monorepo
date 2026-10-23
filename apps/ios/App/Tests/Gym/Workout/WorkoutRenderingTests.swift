@@ -207,6 +207,14 @@ import SyncTesting
     XCTAssertEqual(open.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken }, ["Set 1, current, open target"])
   }
 
+  // The rack speaks its numeral in the movement's load basis and Log set with the whole set it logs.
+  func testTheRackSpeaksItsLoadInItsBasis() {
+    XCTAssertEqual([MovementEquipment("barbell"), MovementEquipment("dumbbell"), MovementEquipment("dumbbell", loadCount: 1), MovementEquipment("bodyweight")]
+      .map { WorkoutRack.spokenWeight(100, basis: $0) }, ["Weight, 100 kg total", "Weight, 100 kg each", "Weight, 100 kg", "Weight, 100 kg added"])
+    XCTAssertEqual([WorkoutRack.spokenLog(100, reps: 5), WorkoutRack.spokenLog(67.5, reps: 1)],
+                   ["Log set, 100 kilograms, 5 reps", "Log set, 67.5 kilograms, 1 rep"])
+  }
+
   func testLargeNumeralsAtLargeAndLargestText() async throws {
     try skipUnlessCapturing()
     for (name, type) in [("large", DynamicTypeSize.xxxLarge), ("AX", .accessibility5)] {

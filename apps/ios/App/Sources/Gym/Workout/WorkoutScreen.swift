@@ -325,6 +325,9 @@ struct WorkoutRack: View {
   let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.dynamicTypeSize) var typeSize
+  // VoiceOver hears the numeral in its load basis, *Weight, 100 kg total*, and Log set with the set it logs.
+  static func spokenWeight(_ weightKg: Double, basis: MovementEquipment) -> String { "Weight, \(Readout.weight(weightKg)) \(basis.unit)" }
+  static func spokenLog(_ weightKg: Double, reps: Int) -> String { "Log set, \(Readout.weight(weightKg)) kilograms, \(GymCount.of(reps, "rep"))" }
   var body: some View {
     let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
     let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
@@ -334,7 +337,7 @@ struct WorkoutRack: View {
         Button(action: edit) {
           Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
-        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(workout.weightKg)) \(basis.unit)")
+        }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
           .accessibilityIdentifier("workout-weight")
         Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
       }.roomMotion(workout.weightKg)
@@ -362,7 +365,7 @@ struct WorkoutRack: View {
       Button { workout.logSet() } label: {
         Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)
       }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
-        .accessibilityLabel("Log set, \(Readout.weight(workout.weightKg)) kilograms, \(GymCount.of(workout.reps, "rep"))")
+        .accessibilityLabel(Self.spokenLog(workout.weightKg, reps: workout.reps))
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
