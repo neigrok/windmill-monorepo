@@ -30,6 +30,8 @@ struct AccountSheet: View {
   var faint: Color { ShellPalette.inkFaint }
   var brand: Color { ShellPalette.brand }
   var offline: Bool { model.runtime?.engine.status.online == false }
+  // Only the email door says it also creates an account; the address Apple asks for opens one that exists.
+  var addressNote: String? { model.sheet == .appleAddress ? nil : "New here? This also creates your account." }
   var body: some View {
     NavigationStack(path: $settingsPath) {
       Group {
@@ -336,7 +338,7 @@ struct AccountSheet: View {
       Button { model.performAuthentication { await model.sendCode() } } label: {
         Text("Send code").frame(maxWidth: .infinity)
       }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
-      if model.sheet != .appleAddress { Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim) }
+      if let addressNote { Text(addressNote).font(ShellType.meta).foregroundStyle(dim) }
       }
     }
   }
@@ -370,15 +372,23 @@ struct AccountSheet: View {
     }
   }
 
+  // You's sign-in doors: signed out, or a paused account signing in again, with no sign-in already finishing.
+  var youDoors: Bool { model.canSignIn && !model.signInPending && (model.account == nil || model.authPaused) }
+  // What the doors' section says under them: why they wait offline, or that a paused account signs in to itself.
+  var youFooter: String? {
+    guard youDoors else { return nil }
+    if offline { return "Sign-in needs a connection." }
+    return model.account != nil ? "Sign in to the same account. Your writing stays on this phone." : nil
+  }
+
   var you: some View {
     let signedIn = model.account != nil
-    let doors = model.canSignIn && !model.signInPending && (!signedIn || model.authPaused)
     let apple = model.signInMethods.first { $0.kind == "apple" }
     return List {
       if model.signInPending { signInPending }
       Section {
         identityRow
-        if doors {
+        if youDoors {
           appleDoor.listRowSeparator(.hidden)
           emailDoor.frame(maxWidth: .infinity, minHeight: 44).listRowSeparator(.hidden)
         }
@@ -389,8 +399,7 @@ struct AccountSheet: View {
           }.buttonStyle(.plain).accessibilityIdentifier("get-update")
         }
       } footer: {
-        if doors && offline { Text("Sign-in needs a connection.") }
-        else if doors && signedIn { Text("Sign in to the same account. Your writing stays on this phone.") }
+        if let youFooter { Text(youFooter) }
       }.listRowBackground(card)
       if !signedIn {
         let holdings = model.phoneHoldings

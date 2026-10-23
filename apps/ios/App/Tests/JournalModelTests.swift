@@ -361,6 +361,21 @@ import Synchronization
     #expect(result.refusal != nil && model.journal.room?.days.isEmpty == true)
   }
 
+  // The Write seat stands over a page the person can write now, and steps aside for a read-only page, a sheet such as the
+  // compact Keep, and the echo reader.
+  @Test func theWriteSeatStandsOnlyOverAWritablePageWithNothingInFront() throws {
+    let (_, model) = try fixture()
+    #expect(model.journal.writeSeatShown)
+    model.working = true
+    #expect(model.editorReadOnly && !model.journal.writeSeatShown)
+    model.working = false; model.keep()
+    #expect(model.sheet == .keep && model.compactAccountSheet && !model.journal.writeSeatShown)
+    model.sheet = nil; model.journal.echoes.readerDay = "2026-09-01"
+    #expect(!model.journal.writeSeatShown)
+    model.journal.echoes.readerDay = nil
+    #expect(model.journal.writeSeatShown)
+  }
+
   @Test func accountWithPagesHasNoReonboarding() throws {
     let (harness, model) = try fixture(account: "returning")
     harness.sync()

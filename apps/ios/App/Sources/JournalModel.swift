@@ -49,6 +49,8 @@ final class JournalModel {
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
   var compactAccountSheet: Bool { app?.compactAccountSheet == true }
   var editorReadOnly: Bool { app?.editorReadOnly == true }
+  // The Write seat stands only over a page the person can write now: no account step, sheet or echo reader in front.
+  var writeSeatShown: Bool { !editorReadOnly && sheet == nil && echoes.readerDay == nil }
   var keepDismissed: Bool { app?.keepDismissed ?? preferences.bool(forKey: "keepDismissed") }
   var welcome: Bool { app?.welcome ?? !preferences.bool(forKey: "journalOpened") }
   var today: LocalDay { (try? runner.moment().today) ?? editorDay }

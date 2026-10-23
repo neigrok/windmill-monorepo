@@ -63,6 +63,21 @@ import SyncModelServer
     #expect(recorder.entries.withLock { $0 }.filter { $0.name == "quick_action" }.map(\.properties) == [["item": "write"]])
   }
 
+  // A quick action chosen while Windmill runs reaches the scene's delegate, which hands it to the model; another shortcut is not ours.
+  @Test func theSceneDelegateHandsItsQuickActionToTheModel() throws {
+    let recorder = TelemetryRecorder(), (_, app) = try model(recorder)
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    QuickActionHandler.present(app)
+    defer { QuickActionHandler.model = nil }
+    var handled: [Bool] = []
+    let delegate = QuickActionSceneDelegate()
+    delegate.windowScene(scene, performActionFor: UIApplicationShortcutItem(type: "elsewhere", localizedTitle: "Write tonight")) { handled.append($0) }
+    #expect(handled == [false] && !app.journal.editing)
+    delegate.windowScene(scene, performActionFor: QuickAction.write.shortcut) { handled.append($0) }
+    #expect(handled == [false, true] && app.selectedRoom == .journal && app.journal.editing)
+    #expect(recorder.entries.withLock { $0 }.filter { $0.name == "quick_action" }.map(\.properties) == [["item": "write"]])
+  }
+
   @Test func startBeginsTheRoutinesWorkoutOnceAndOpenWorkoutBringsAHiddenOneBack() throws {
     let recorder = TelemetryRecorder(), (_, app) = try model(recorder)
     let lower = try routine(app, "Lower A")

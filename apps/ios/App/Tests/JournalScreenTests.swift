@@ -70,6 +70,12 @@ nonisolated final class ClockCountingReplica: Replica {
     #expect(few > 0 && many == few, "A render reads the clock \(few) times with 2 earlier pages and \(many) with 12")
   }
 
+  @Test func anEarlierPageDrawsOnlyTheScalesItsDaySet() {
+    #expect([PageDocument(body: "Walked.", mood: 7, energy: 4), PageDocument(body: "Walked.", mood: 7),
+              PageDocument(body: "Walked.", energy: 0), PageDocument(body: "Walked.")].map(\.scaleLine)
+            == ["Mood 7 · Energy 4", "Mood 7", "Energy 0", nil])
+  }
+
   @Test func journalEditorInkAnswersEachAppearanceWithItsColumn() throws {
     let light = UITraitCollection(userInterfaceStyle: .light)
     let dark = UITraitCollection(userInterfaceStyle: .dark)

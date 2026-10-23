@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 import DomainKit
 import GymDomain
 import JournalDomain
@@ -341,6 +342,7 @@ import SyncTesting
     model.sheet = .code; model.email = "update@example.com"; model.code = "482913"
     await model.verifyCode()
     #expect(model.signInPending && model.updateRequired && model.sheet == .you)
+    #expect(model.identityTitle == "Not signed in" && model.identityStatus == "Syncing paused · update Windmill")
     let pending = try #require(model.pendingSignIn)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == pending.identity.account)
     #expect(runtime.tokens.token(for: pending.identity.account) == pending.identity.token)
@@ -348,6 +350,7 @@ import SyncTesting
     #expect(model.sheet == .you)
     model.cancelSignIn()
     #expect(!model.signInPending && model.sheet == .you && model.error == nil && !model.editorReadOnly)
+    #expect(model.identityStatus == nil, "Signed out with nothing finishing, the identity has no status")
     // The engine heard the server's 426 at the sign-in hello and keeps it; only the sign-in's own flag is cleared.
     #expect(!model.updateRequiredAtSignIn && model.updateTrigger == "sync")
     #expect(model.preferences.string(forKey: "pendingAuthMethod") == nil)
@@ -512,7 +515,7 @@ import SyncTesting
     await model.runtime?.engine.start()
     for _ in 0..<100 where model.runtime?.engine.status.upgradeRequired != true { try await Task.sleep(for: .milliseconds(20)) }
     model.noticeUpdateRequired()
-    #expect(model.updateAlert && model.updateTrigger == "sync")
+    #expect(model.updateAlert && model.updateTrigger == "sync" && model.identityStatus == "Syncing paused · update Windmill")
     #expect(model.updateMessage == "Update Windmill to keep syncing. Your work is saved on this phone.")
     model.updateAlertPresented()
     model.getUpdate(); model.updateOpened(true); model.noticeUpdateRequired()
@@ -525,12 +528,14 @@ import SyncTesting
             [["state": "shown", "status": "426", "trigger": "sync"], ["action": "update", "trigger": "sync"], ["state": "shown", "status": "426", "trigger": "sync"]])
   }
 
+  // The choice is the window's interface style, so every room, sheet and keyboard answers it; System leaves it to the phone.
   @Test func appearanceIsChosenOnceAndRemembered() throws {
     let recorder = TelemetryRecorder()
     let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
     #expect(model.appearance == .system)
     model.chooseAppearance(.dark); model.chooseAppearance(.dark)
     #expect(try AppModel(runner: model.runner, preferences: model.preferences).appearance == .dark)
+    #expect(AppModel.Appearance.allCases.map(\.style) == [.light, .dark, .unspecified])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
   }
 

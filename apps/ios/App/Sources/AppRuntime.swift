@@ -145,7 +145,7 @@ final class AppRuntime {
       throw error
     }
     let transport: any SyncTransport
-    let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.mode != nil
+    let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.argument != nil
     #if DEBUG
     if settings.modelServer {
       let persistsModel = settings.scenario == "gym-e2e-conflict" || ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
