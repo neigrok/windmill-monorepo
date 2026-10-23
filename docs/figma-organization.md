@@ -18,12 +18,14 @@ within its owner, not a separate product file. Proposals remain separate from de
 
 | Owner | Pages |
 |---|---|
-| Roadmap | Cover, Model, Components, Web, Proposals |
+| Roadmap | Cover, Model, Components, Web, Web Mobile, Proposals |
 | Journal | Cover, Model, Components, Web, iOS, Proposals |
 | Gym | Cover, Model, Components, Web, iOS, Android, Proposals |
 | Marketing | Landings, Static pages, Emails, Store listings |
 
 Journal's Model page and Marketing's Store listings page are empty.
+Roadmap separates desktop Web and Web Mobile journeys. Flow numbers correspond across the two
+pages; phone screens move to Web Mobile without duplication, and shared definitions stay on Components.
 Gym's iOS page is organized as one section per user flow (see [the flow index](index.md)).
 The organization check does not establish visual acceptance of the screens.
 Superseded boards are deleted, not archived.

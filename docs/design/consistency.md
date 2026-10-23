@@ -523,6 +523,24 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Web reconciliation evidence.** The [Web flow index](../index.md#roadmap--web) distinguishes local
+  runtime matches from source-reviewed specimens. The [evidence log](roadmap-web-reconciliation.md)
+  records the current coverage and unverified states. WebGL lighting, animation timing and real-GPU
+  performance are not established by native Figma shapes or SwiftShader captures.
+- **Web sharing copy.** `ShareDialog.jsx` publishes private or unlisted trees directly to public
+  before copying a link, and discloses gallery eligibility. `BrowsePage.jsx` empty copy instead says
+  sharing keeps a tree unlisted and listing is a separate choice. Reconcile the gallery copy with the
+  implemented publication action; the Figma share flow reflects the action, while the gallery
+  empty-state specimen remains flagged. Gallery search/filter thresholds in `galleryIndex.js` are
+  not rendered by `BrowsePage.jsx` and are not current controls.
+- **Web mobile empty tree.** `SkillTreeView.jsx` mounts the “Add your first step” empty card only
+  when `!readOnly`, which excludes phone and tablet canvas. Mobile owners can edit populated trees;
+  an existing zero-node mobile tree needs an explicit recovery affordance. The Figma empty-card
+  specimen is scoped to desktop.
+- **Marketing capability copy.** `RoadmapLanding.jsx` says starter quests and paste-list creation
+  are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
+  that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
+  Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a
   halo. Choose one treatment and align shader and specimen.

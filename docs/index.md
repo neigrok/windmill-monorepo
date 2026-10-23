@@ -1,7 +1,36 @@
 # Flow index
 
 Where each user flow is drawn. Each section reads left to right; every board's caption names the code
-that ships it. Status lives in the Figma layer names. Gym on iOS and Android is indexed here so far.
+that ships it. Status lives in the Figma layer names. Roadmap on web and Gym on iOS and Android are
+indexed here.
+
+## Roadmap · Web
+
+Figma: separate [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=130-2) and
+[Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-2) pages.
+Code: `web/src/products/roadmap/`. [Evidence and limits](design/roadmap-web-reconciliation.md).
+🚀 identifies the List and dark-room compositions compared with local runtime captures; 🚧 marks
+source-reviewed specimens and states still needing runtime verification. These statuses do not grant
+human design approval. Native graph geometry approximates WebGL lighting.
+
+| Flow | Web | Web Mobile | Entry → exit |
+|---|---|---|---|
+| 00 · Evidence and shared references | [166:229](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=166-229) | [170:3](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-3) | Evidence key; shared Shell and Home references |
+| 01 · Start a roadmap | [131:5](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-5) | [170:5](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-5) | Quest shelf → blank birth or paste → tree |
+| 02 · Find and edit in List | — | [131:3](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-3) | Phone List → search, expand, add a need or switch tree |
+| 03 · Navigate the tree | [131:4](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-4) | [170:8](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-8) | Focus / All steps, switcher, kinds; visitor chrome; loading/error/desktop empty |
+| 04 · Edit and complete steps | [160:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=160-10) | [170:10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-10) | Select → owner sheet or desktop inspector → completion, workspace or multi-select |
+| 05 · Progress and feedback | [162:323](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-323) | [170:12](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=170-12) | Next up → step; blocked/fully grown; toast and activity feedback |
+| 06 · Publish, browse and fork | [131:14](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-14) | — | Publish and copy → public gallery or visitor → fork; Make private |
+| 07 · Roadmap settings | [162:282](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=162-282) | — | Shared product specimens: export, gated reminders and AI assistance |
+| 08 · AI assistance | — | [166:230](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=166-230) | Eligible owner → mobile request input; view/share doors have independent eligibility |
+
+The reusable [mobile owner editor](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=158-121)
+and [List vocabulary](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=16-3) live on
+Components. [AI review proposals](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=131-45)
+remain on Proposals. Account, sign-in, appearance and shared settings belong to
+[Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf); landing pages belong to
+[Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81).
 
 ## Gym · iOS
 
