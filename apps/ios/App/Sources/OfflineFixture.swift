@@ -28,7 +28,7 @@ enum OfflineFixture {
     configuration.httpCookieStorage = nil
     let transport = HTTPTransport(baseURL: baseURL, schema: SyncSchema.version, configuration: configuration, telemetry: telemetry)
     return try AppRuntime(settings: settings, telemetry: telemetry, syncTransport: transport,
-                          connectivity: OfflineFixtureConnectivity(isOnline: mode != "no-network"),
+                          connectivity: FixedConnectivity(isOnline: mode != "no-network"),
                           authSession: URLSession(configuration: configuration))
     #else
     return nil
@@ -52,11 +52,6 @@ enum OfflineFixture {
 }
 
 #if DEBUG && targetEnvironment(simulator)
-nonisolated struct OfflineFixtureConnectivity: Connectivity {
-  let isOnline: Bool
-  func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {}
-}
-
 nonisolated final class OfflineFixtureProtocol: URLProtocol, @unchecked Sendable {
   override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "offline.invalid" }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }

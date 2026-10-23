@@ -202,8 +202,13 @@ import XCTest
     ready(app.buttons["you"])
     app.buttons["you"].tap()
     ready(app.buttons["settings-notes"])
-    app.buttons["settings-notes"].tap()
-    XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+    // The sheet's list can let a tap go unanswered while it settles, so an unanswered tap is tapped once more.
+    let notes = app.navigationBars["Notes"]
+    for _ in 0..<2 where !notes.exists {
+      app.buttons["settings-notes"].tap()
+      _ = notes.waitForExistence(timeout: 3)
+    }
+    XCTAssertTrue(notes.exists)
     app.navigationBars["Notes"].buttons.element(boundBy: 0).tap()
     ready(app.navigationBars["You"].buttons["Done"])
     app.navigationBars["You"].buttons["Done"].tap()

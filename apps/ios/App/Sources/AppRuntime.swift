@@ -18,6 +18,11 @@ nonisolated struct BoardClock: WallClock {
   }
 }
 
+nonisolated struct FixedConnectivity: Connectivity {
+  let isOnline: Bool
+  func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {}
+}
+
 nonisolated struct DeviceZone: Zone {
   func offsetSeconds(at instant: Instant) -> Int {
     TimeZone.autoupdatingCurrent.secondsFromGMT(for: Date(timeIntervalSince1970: Double(instant.ms) / 1000))
@@ -111,10 +116,9 @@ final class AppRuntime {
 
   init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
        service: String? = nil, syncTransport: (any SyncTransport)? = nil,
-       connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
+       connectivity: (any Connectivity)? = nil, authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
     gymBinding = GymBinding()
-    self.connectivity = connectivity
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
     let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
     if directory == nil && ((settings.board != nil || settings.scenario != nil) && !settings.restoreBoard) { try? FileManager.default.removeItem(at: storageDirectory) }
@@ -169,13 +173,17 @@ final class AppRuntime {
       transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
       auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     }
+    // The model server answers inside the app, so the device's network path never stands between them.
+    let reach: any Connectivity = connectivity ?? ((syncTransport ?? transport) is JournalModelTransport ? FixedConnectivity(isOnline: true) : PathConnectivity())
     #else
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
+    let reach: any Connectivity = connectivity ?? PathConnectivity()
     #endif
+    self.connectivity = reach
     engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: connectivity, telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     updateTelemetryIdentity()

@@ -216,31 +216,31 @@ enum AdoptionFixture {
 
 // 02b–02c: 142 journal pages and 38 workouts, the gym last written to; `held` lands four small pulls a second apart, then holds.
 enum ReturningFixture {
+  // Every write reads a phone's whole outbox, which keeps each sent entry until the phone pulls, so the account is written
+  // by one short-lived phone per `perPhone` actions rather than by one phone for all 218.
+  static let perPhone = 24
+
   static func prepare(_ model: AppModel, held: Bool) async {
-    guard let server = model.runtime?.auth.fake else { return }
-    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: directory) }
+    guard let server = model.runtime?.auth.fake, let board = model.runtime?.settings.board else { return }
+    let identity = server.identity(email: "apple@example.com")
+    let now = BoardClock().nowMs()
+    // Each page is today to the runner that saves it, so the journal's past-day guard stays intact.
+    let pages: [(AppRuntime) throws -> Void] = (0..<142).map { offset in { remote in
+      let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: now)) - offset * 86_400)
+      let runner = ActionRunner(replica: remote.engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
+      let day = try runner.read(Journal.scope) { $0.moment.today }
+      _ = try runner.run(SavePage(day: day, document: PageDocument(body: BoardFixture.shortProse), retiring: ["placeholder", "scales"]))
+    } }
+    let workouts: [(AppRuntime) throws -> Void] = (1...38).map { offset in { remote in
+      let id = remote.runner.mint(Session.self), start = now - Int64(offset) * 86_400_000
+      _ = try remote.runner.run(StartSession(id: id, startedAt: Instant(ms: start)))
+      _ = try remote.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 3_600_000)))
+    } }
+    let writes = pages + workouts
     do {
-      let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server"]),
-        directory: directory, service: UUID().uuidString, syncTransport: server)
-      let identity = server.identity(email: "apple@example.com")
-      defer { try? remote.tokens.delete(for: identity.account) }
-      _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
-      // Each page is today to the runner that saves it, so the journal's past-day guard stays intact.
-      let now = BoardClock().nowMs(), wall = SystemClock().nowMs()
-      for offset in 0..<142 {
-        let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: wall)) - offset * 86_400)
-        let runner = ActionRunner(replica: remote.engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
-        let day = try runner.read(Journal.scope) { $0.moment.today }
-        _ = try runner.run(SavePage(day: day, document: PageDocument(body: BoardFixture.shortProse), retiring: ["placeholder", "scales"]))
+      for first in stride(from: 0, to: writes.count, by: perPhone) {
+        try await send(writes[first..<min(first + perPhone, writes.count)], as: identity, to: server, board: board)
       }
-      for offset in 1...38 {
-        let id = remote.runner.mint(Session.self), start = now - Int64(offset) * 86_400_000
-        _ = try remote.runner.run(StartSession(id: id, startedAt: Instant(ms: start)))
-        _ = try remote.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 3_600_000)))
-      }
-      try remote.engine.leave()
-      for _ in 0..<40 where try remote.store.read({ try !$0.device().activeReplica.outbox.isEmpty }) { await remote.engine.flushOnLeave() }
       server.state.withLock { state in
         var landed = state.server.state
         let gym = ScopeKey(.product(account: identity.account, name: "gym"))
@@ -251,6 +251,22 @@ enum ReturningFixture {
                                    state: landed, limits: limits)
       }
     } catch { model.error = "Couldn't prepare the returning account." }
+  }
+
+  // A phone on the board's clock, as the model server is, signs in, writes, and sends until the server holds every write.
+  static func send(_ writes: ArraySlice<(AppRuntime) throws -> Void>, as identity: AuthIdentity, to server: JournalModelTransport,
+                   board: String) async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
+      directory: directory, service: UUID().uuidString, syncTransport: server)
+    defer { try? remote.tokens.delete(for: identity.account) }
+    _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+    for write in writes { try write(remote) }
+    try remote.engine.leave()
+    for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+      await remote.engine.flushOnLeave()
+    }
   }
 }
 #endif

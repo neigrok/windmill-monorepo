@@ -15,8 +15,8 @@ release workflow reads it from the repository variable `IOS_APPLE_SIGN_IN_ENABLE
 Release builds use automatic development signing with your team; App Store export signs for distribution. Enable Sign in with Apple for this bundle ID.
 An actual Apple ID on a device is required for the production Apple flow.
 
-Debug simulator launches support `-model-server` for the full engine model transport. It supplies
-email code `482913` and a fake Apple identity; these authentication shortcuts are absent in Release.
+Debug simulator launches support `-model-server` for the full engine model transport. It answers inside the app,
+so the engine counts it online whatever the simulator's network path reports. It supplies email code `482913` and a fake Apple identity; these authentication shortcuts are absent in Release.
 An unbound fake Apple identity returns a memory-only ticket before any account or session exists.
 `-apple-fixture linking` uses a relay address; `offline` loses connectivity after Apple authorization;
 `expired` advances that ticket past its 15-minute lifetime; `taken` binds Apple to an account with
