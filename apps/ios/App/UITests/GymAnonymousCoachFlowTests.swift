@@ -36,7 +36,7 @@ import XCTest
     else { app.launchArguments += ["-model-server", "-coach-fixture", "-coach-board", "after-sign-in"] }
     app.launch()
     XCTAssertTrue(app.staticTexts["coach-greeting"].waitForExistence(timeout: 25))
-    XCTAssertFalse(app.buttons["coach-history"].exists)
+    XCTAssertTrue(app.buttons["coach-history"].exists)
     try capture(app, "anonymous-greeting")
     let question = app.descendants(matching: .any)["coach-question"]
     question.tap(); question.typeText("Build a short full body routine for three days each week")
@@ -77,5 +77,27 @@ import XCTest
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     try capture(app, "anonymous-after-sign-in")
+  }
+  func testSignedOutFreshChatKeepsDraftInLocalHistory() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-model-server", "-server", "https://gym.invalid",
+                           "-onboarding-appearance", "light", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"]
+    app.launch()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 25))
+    question.tap(); question.typeText("A program for my next trip")
+    app.buttons["coach-keyboard-done"].tap()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+    app.tabBars.buttons["Routines"].tap()
+    app.tabBars.buttons["Coach"].tap()
+    XCTAssertTrue(app.buttons["coach-send"].waitForNonExistence(timeout: 5))
+    XCTAssertNotEqual(question.value as? String, "A program for my next trip")
+    app.buttons["coach-history"].tap()
+    let draft = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "A program for my next trip")).firstMatch
+    XCTAssertTrue(draft.waitForExistence(timeout: 5))
+    XCTAssertTrue(draft.label.contains("Draft"))
+    draft.tap()
+    XCTAssertEqual(question.value as? String, "A program for my next trip")
+    XCTAssertTrue(app.buttons["coach-send"].isEnabled)
   }
 }

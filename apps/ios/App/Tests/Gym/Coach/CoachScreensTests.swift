@@ -26,7 +26,8 @@ import SyncTesting
   }
 
   // Each typed text, the title and body it stores, and the text it reads back as: what was typed, composed and trimmed.
-  @Test(arguments: [
+  @Test func aNotesOneTextStoresATitleTheDomainTakesAndReadsBackAsTyped() throws {
+    let cases: [(typed: String, title: String, body: String, reads: String)] = [
     ("Prefer dumbbells at home on weekends.",
      "Prefer dumbbells at home on weekends.", "", "Prefer dumbbells at home on weekends."),
     ("Training focus\nA stronger squat.\nNo running.",
@@ -45,14 +46,15 @@ import SyncTesting
      String(repeating: "Café ", count: 10) + "ok", "Second line", String(repeating: "Café ", count: 10) + "ok\nSecond line"),
     ("\n  \nRows are fine.\n",
      "Rows are fine.", "", "Rows are fine."),
-  ])
-  func aNotesOneTextStoresATitleTheDomainTakesAndReadsBackAsTyped(typed: String, title: String, body: String, reads: String) throws {
-    var note = Note(id: ID("note"))
-    note.text = typed
-    #expect([note.title, note.body, note.text] == [title, body, reads])
-    var stored = note
-    stored.title = try NoteRules.title.apply(note.title, at: "title")
-    stored.body = try NoteRules.body.apply(note.body, at: "body")
-    #expect([stored.title, stored.body, stored.text] == [title, body, reads])
+    ]
+    for (typed, title, body, reads) in cases {
+      var note = Note(id: ID("note"))
+      note.text = typed
+      #expect([note.title, note.body, note.text] == [title, body, reads])
+      var stored = note
+      stored.title = try NoteRules.title.apply(note.title, at: "title")
+      stored.body = try NoteRules.body.apply(note.body, at: "body")
+      #expect([stored.title, stored.body, stored.text] == [title, body, reads])
+    }
   }
 }

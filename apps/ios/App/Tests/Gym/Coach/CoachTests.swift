@@ -522,12 +522,12 @@ import SyncTesting
     saved.photo = CoachAttachment(id: "draft-photo", mediaType: "image/png", width: 1, height: 1, bytes: 1); saved.photoData = Data([1])
     #expect(coach.keep(saved, failure: "failure"))
     let history = CoachHistory(gym: gym, rest: rest)
-    _ = CoachHistoryScreen(gym: gym, coach: coach, history: history)
+    history.coach = coach
     let row = try #require(saved.thread)
     history.rows = [row]; await history.remove(row)
     #expect(history.deletes.isEmpty && rest.tasks.isEmpty)
     #expect(history.rows.isEmpty && history.error == nil)
-    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "outcome": "ok"]])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "action": "delete_conversation", "outcome": "ok"]])
     #expect(coach.saved.threadId != row.id && coach.saved.thread == nil && coach.saved.request == nil && coach.saved.generation == nil && coach.saved.exchanges.isEmpty)
     #expect(coach.saved.text == saved.text && coach.saved.photo == saved.photo && coach.saved.photoData == saved.photoData)
     let relaunched = CoachConversation(gym: gym, rest: rest, store: cache); await relaunched.activate()
@@ -550,7 +550,7 @@ import SyncTesting
     original.photo = CoachAttachment(id: "old-photo", mediaType: "image/png", width: 1, height: 1, bytes: 1); original.photoData = Data([1])
     #expect(coach.keep(original, failure: "failure"))
     let history = CoachHistory(gym: gym, rest: rest)
-    _ = CoachHistoryScreen(gym: gym, coach: coach, history: history)
+    history.coach = coach
     history.rows = [row]
     let deleting = Task { await history.remove(row) }
     let path = "/v1/gym/threads/thread-123"
@@ -684,7 +684,7 @@ import SyncTesting
     #expect(history.rows.isEmpty && history.error == nil && history.deletes.isEmpty)
     #expect(CoachTestProtocol.state.withLock { $0.requests.map { "\($0.method) \($0.path)" } } == ["GET /v1/gym/threads", "DELETE /v1/gym/threads/thread-123"])
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map { [$0.name: $0.properties] } } ==
-            [["gym_action": ["screen": "history", "outcome": "ok"]]])
+            [["gym_action": ["screen": "history", "action": "delete_conversation", "outcome": "ok"]]])
   }
   @Test(arguments: [false, true]) func historyReadCannotRestoreAConversationAfterDeletion(loadDuringDelete: Bool) async throws {
     let (gym, rest, _) = try await authed(.stalled)
@@ -720,7 +720,7 @@ import SyncTesting
     history.rows = [row]; await history.remove(row)
     #expect(history.error == "Another generation is still running" && history.rows.map(\.id) == [row.id])
     #expect(history.deletes.isEmpty)
-    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "outcome": "refused"]])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "action": "delete_conversation", "outcome": "refused"]])
   }
   @Test func capsAndAbsentDeploymentSurviveNewChatButFreshRefusalDoesNot() async throws {
     let (_, gym) = fixture(), coach = CoachConversation(gym: gym, store: store())
@@ -904,7 +904,7 @@ import SyncTesting
     #expect(coach.error == "That conversation couldn’t be opened. Try again.")
   }
 
-  @Test func openingAConversationKeepsTheDraftAndWhatThePhoneDecided() async throws {
+  @Test func openingAConversationKeepsItsPredecessorInTheArchiveAndSharesOnlySetupMarks() async throws {
     let (gym, rest, _) = try await authed(.http(200, #"{"id":"historic-thread","turns":[{"position":1,"from":"lifter","text":"Old"}]}"#)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
@@ -919,11 +919,14 @@ import SyncTesting
     await coach.open("historic-thread")
     for kept in [coach.saved, try cache.read(gym.account!)] {
       #expect(kept.threadId == "historic-thread" && kept.thread?.turns.map(\.text) == ["Old"] && kept.request == nil && kept.generation == nil)
-      #expect(kept.text == "A question I was typing" && kept.photo == photo && kept.photoData == photoData && kept.editedRequestId == nil)
-      #expect(kept.phoneDrafts == [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)])
-      #expect(kept.onboarding?.map(\.id) == ["onb-1"] && kept.acceptedFirstMessage == true)
+      #expect(kept.text == "" && kept.photo == nil && kept.photoData == nil && kept.editedRequestId == nil)
+      #expect(kept.phoneDrafts == nil && kept.onboarding == nil && kept.acceptedFirstMessage == true)
       #expect(kept.adoptedSources == ["anonymous:replica"] && kept.setupChoice == .describe && kept.rejectedDrafts == ["request-rejected"])
     }
+    let archived = try cache.archive(gym.account!).conversation(next.threadId)
+    #expect(archived.text == "A question I was typing" && archived.photo == photo && archived.photoData == photoData)
+    #expect(archived.phoneDrafts == [CoachPhoneDraft(text: "Kept from signed out", photo: nil, photoData: nil)])
+    #expect(archived.onboarding?.map(\.id) == ["onb-1"])
   }
 
   @Test func rejectedDraftsStayRejectedThroughNewChatDeleteAndAdoption() async throws {
@@ -941,7 +944,7 @@ import SyncTesting
     let deleted = coach.saved.threadId
     #expect(coach.deletedConversation(deleted, account: account))
     for kept in [coach.saved, try cache.read(account)] {
-      #expect(kept.threadId != deleted && kept.rejectedDrafts == ["request-rejected"] && kept.onboarding?.map(\.id) == ["onb-1"] && kept.text == "Unsent")
+      #expect(kept.threadId != deleted && kept.rejectedDrafts == ["request-rejected"] && kept.onboarding == nil && kept.text == "Unsent")
     }
     var local = CoachSaved()
     local.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "onb-2", mode: "conversation", text: "Make me more"))]
@@ -949,7 +952,9 @@ import SyncTesting
     try cache.write(local, account: "anonymous:replica")
     try cache.adopt(from: "anonymous:replica", account: account, discard: false)
     let adopted = try cache.read(account)
-    #expect(adopted.onboarding?.map(\.id) == ["onb-1", "onb-2"] && adopted.rejectedDrafts == ["request-rejected", "onb-2"])
+    #expect(adopted.onboarding == nil && adopted.rejectedDrafts == ["onb-2", "request-rejected"])
+    #expect(try cache.archive(account).conversation(local.threadId).onboarding?.map(\.id) == ["onb-2"])
+    #expect(try cache.archive(account).entries.contains { $0.id == deleted } == false)
     #expect(adopted.adoptedSources == ["anonymous:replica"])
   }
 

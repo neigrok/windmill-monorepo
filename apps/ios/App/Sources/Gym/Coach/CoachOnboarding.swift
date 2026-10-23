@@ -81,7 +81,7 @@ extension CoachConversation {
 
 
   func sendOnboarding() {
-    guard allowed, !asking, draftReadable, let owner else { return }
+    guard allowed, mayRequest, !asking, draftReadable, let owner else { return }
     if offline { error = CoachCopy.offline; gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "offline"]); return }
     if anonymousRetryable { resumeOnboarding(); return }
     let text = saved.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,7 +103,7 @@ extension CoachConversation {
   }
 
   func resumeOnboarding() {
-    guard allowed, !asking, let owner, var record = anonymousRequest, !record.finished else { return }
+    guard allowed, mayRequest, !asking, let owner, var record = anonymousRequest, !record.finished else { return }
     record.stopped = false
     var next = saved; if let index = next.onboarding?.indices.last { next.onboarding?[index] = record }
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
@@ -111,7 +111,7 @@ extension CoachConversation {
   }
 
   func launchOnboarding(owner: String) {
-    guard let record = anonymousRequest, !record.finished, let installation = gym.runtime?.installation else { return }
+    guard mayRequest, let record = anonymousRequest, !record.finished, let installation = gym.runtime?.installation else { return }
     workGeneration += 1; let generation = workGeneration
     asking = true; refusal = nil; error = nil
     let started = ProcessInfo.processInfo.systemUptime

@@ -190,6 +190,7 @@ enum CoachFixture {
 #if DEBUG && targetEnvironment(simulator)
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let deletedThreads = Mutex<Set<String>>([])
+  static let threads = Mutex<[String: Data]>([:])
   static let setupGenerations = Mutex<[String: Data]>([:])
   static let asked = Mutex(0)
   // The log's now, so an answer is stamped on the day the room reads as today; each answer a minute after the one before.
@@ -211,8 +212,10 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       }
       body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
-    let thread = body["thread"] as? String ?? "coach-fixture-thread"
-    let requestId = body["requestId"] as? String ?? "coach-fixture-request"
+    let parts = path.split(separator: "/").map(String.init)
+    let thread = body["thread"] as? String ?? (parts.count > 3 && parts[2] == "threads" ? parts[3] : "coach-fixture-thread")
+    let requestId = body["requestId"] as? String ?? (parts.count > 5 && parts[4] == "generations" ? parts[5] : "coach-fixture-request")
+    let stored = Self.threads.withLock { $0[thread] }.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
     let said = CoachFixtureConversation(asked: body["question"] as? String)
     var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
       "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 += 60_000; return $0 }, "revision": 2, "attachments": said.attachments,
@@ -238,7 +241,8 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       }
     }
 
-    let row: [String: Any] = ["id": "coach-fixture-thread", "title": said.question, "askedAt": 1_790_424_000_000,
+    if path != "/v1/gym/ask", let saved = stored?["generation"] as? [String: Any] { generation = saved }
+    var row: [String: Any] = stored ?? ["id": thread, "title": body["question"] as? String ?? said.question, "askedAt": 1_790_424_000_000,
       "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
     var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
     if path.hasPrefix("/v1/ai/installations") || path == "/v1/gym/coach/onboarding" {
@@ -299,7 +303,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
-      _ = Self.deletedThreads.withLock { $0.remove("coach-fixture-thread") }
+      _ = Self.deletedThreads.withLock { $0.remove(thread) }
       var partial = generation; partial["status"] = "running"; partial["answer"] = ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") ? "" : said.partial; partial["revision"] = 1
       if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") {
         Self.setupGenerations.withLock { $0[requestId] = try? JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]) }
@@ -307,6 +311,9 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       }
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
+      row["generation"] = said.held ? partial : generation
+      row["askedAt"] = generation["at"]
+      Self.threads.withLock { $0[thread] = try? JSONSerialization.data(withJSONObject: row) }
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"
       // A held answer streams its first snapshot and keeps the stream open, so Coach stays mid-answer.
       if said.held {
@@ -326,18 +333,24 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         thread("history-squats", "How heavy should I start squats?", 3, ["kind": "read-only", "changes": 0]),
         thread("history-program", "My program, 3 days a week", 4, ["kind": "created", "changes": 3])], "nextCursor": NSNull()]
     } else if path == "/v1/gym/threads" {
-      response = ["threads": Self.deletedThreads.withLock { $0.contains("coach-fixture-thread") } ? [] : [row], "nextCursor": NSNull()]
+      let rows = Self.threads.withLock { Array($0.values) }.compactMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+      response = ["threads": rows, "nextCursor": NSNull()]
     } else if path.hasPrefix("/v1/gym/threads/"), request.httpMethod == "DELETE" {
       _ = Self.deletedThreads.withLock { $0.insert(request.url!.lastPathComponent) }
-    } else if path.hasPrefix("/v1/gym/threads/"), Self.deletedThreads.withLock({ $0.contains(request.url!.lastPathComponent) }) {
+      _ = Self.threads.withLock { $0.removeValue(forKey: request.url!.lastPathComponent) }
+    } else if path.hasPrefix("/v1/gym/threads/"), Self.deletedThreads.withLock({ $0.contains(thread) }) {
       status = 404; response = ["code": "not-found"]
     }
     else if path == "/v1/oauth/grants" { response = ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]] }
     else if path == "/v1/mcp-keys" { response = ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]] }
-    else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = 3; response = ["thread": thread, "generation": stopped] }
+    else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = (generation["revision"] as? Int ?? 2) + 1; response = ["thread": thread, "generation": stopped] }
     else if path.contains("/attachments/"), request.httpMethod == "GET" { data = said.photo(); type = "image/jpeg" }
     else if path.contains("/attachments/") { response = ["attachment": ["id": path.components(separatedBy: "/").last!, "mediaType": "image/jpeg", "width": 10, "height": 10, "bytes": request.httpBody?.count ?? 10]] }
     else { response = row }
+    if let snapshot = response["generation"] as? [String: Any], response["thread"] as? String == thread {
+      row["generation"] = snapshot
+      Self.threads.withLock { $0[thread] = try? JSONSerialization.data(withJSONObject: row) }
+    }
     if data.isEmpty { data = try! JSONSerialization.data(withJSONObject: response) }
     let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": type])!
     client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)

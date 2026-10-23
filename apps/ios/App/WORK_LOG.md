@@ -92,8 +92,8 @@ build `20`. Export reported the
 nonblocking warning *Upload Symbols Failed. The archive did not include a dSYM for the
 Sentry.framework*. Production Sentry symbolication is not verified.
 
-Anonymous Coach uses one installation boundary, one durable request record and one domain import
-Action. The import validates every routine before one engine Plan commits routines and replay metadata.
+Anonymous Coach uses one installation boundary, durable request records retained per conversation
+and one domain import Action. The import validates every routine before one engine Plan commits routines and replay metadata.
 Installation issuance is coalesced across account transitions; its Keychain record is separate from
 account credentials. Local draft adoption writes the target archive and source marker atomically before
 removing the source, so retry preserves pending responses, photos and unsent drafts.
@@ -188,13 +188,12 @@ The complete app unit target passes CI run 39597020292, job 119211740948, alongs
 build gate. Local focused execution succeeds after preparing the dedicated simulator. The final
 rapid-button UI check also exercises the weak-owner persistence fix.
 
-The Coach composer uses a direct safe-area inset with a bar-material surface. Its native field and
+The Coach composer uses a direct safe-area inset without a backing panel. Its native field and
 the parent focus state share the same host, so Done and tab-bar visibility follow keyboard focus;
 the greeting retains its scrollable layout at accessible text sizes. The signed-in UI helper requires
 Done to dismiss the keyboard without losing the draft, then refocuses and sends. Anonymous checks
-require the same keyboard, Done and tab-bar behavior. CI and local verification both use Xcode 26.3
-with iOS 26.5; CI uses iPhone 17 and the dedicated local simulator is iPhone 17 Pro. All five focused
-UI flows pass: signed-in Coach in light and dark, anonymous Coach at the largest text size, and Log
+require the same keyboard, Done and tab-bar behavior. The retained Xcode 26.3 / iOS 26.5 result
+contains five passing focused UI flows: signed-in Coach in light and dark, anonymous Coach at the largest text size, and Log
 in light and dark. The Log correction retains an exact assertion for the barbell label,
 `Weight, 90 kg total`. The native flows use local model-server fixtures; they verify keyboard focus, draft
 retention, navigation, review clearance and weight editing without making a claim about live model
@@ -207,3 +206,9 @@ is on its way and returns after a failed or refused one. Confirming a draft repo
 `gym_coach_routine_confirm` and words each answer by what the draft can still do; access recovery is
 drawn once, only where signing in can help. Movement edits write only the fields
 that changed, and the load basis reads *kg each* for two dumbbells and *kg* for one.
+
+Coach separates the visible conversation from the request owner. A versioned owner archive retains
+nonempty chats, drafts and interrupted results for local History, including signed-out use. Fresh
+entry does not clear prior work or create empty rows. Remote History refresh is read-only and keeps
+an unsent draft; owner guards prevent late reads from reaching another account. No-op navigation
+keeps History timestamps stable.

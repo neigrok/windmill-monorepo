@@ -62,7 +62,7 @@ replaced ([consistency.md](design/consistency.md) 10o, 10p, 10q, 10r, 12a–12n)
 | 05 · The log, past workouts & progress | [`1116:1605`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1605) | The log tab → workout detail, share, movement record |
 | 06 · Bodyweight | [`1116:1683`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1683) | The log’s Weigh in → weigh-in sheet (decimal pad); Bodyweight → correct or swipe-delete |
 | 07 · On this phone | [`1116:1705`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1705) | The log → inspect → fix or discard |
-| 08 · Coach | [`1117:1703`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703) | Coach tab → conversation → proposal applied or rejected on its card; every change type and situation (08.15–08.31) |
+| 08 · Coach | [`1117:1703`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703) | Coach entry → fresh canvas; History → retained conversation; proposal applied or rejected on its card |
 | 09 · Notes & Connected log | [`1117:1768`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1768) | You → Notes / Connected log |
 
 First run, sign-in, You, sign out and Delete account (section 4c `47:3852`): Shell file, page [iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).

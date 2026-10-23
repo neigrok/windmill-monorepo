@@ -117,8 +117,11 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 5)); history.tap()
       XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
       capture("gym-coach-history-one", look, app)
-      let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
-      XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
+      let conversations = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?"))
+      let conversation = conversations.firstMatch
+      XCTAssertTrue(conversation.waitForExistence(timeout: 5))
+      XCTAssertEqual(conversations.count, 1, "Local and server history describe one conversation identity")
+      conversation.swipeLeft()
       XCTAssertTrue(app.buttons["trash-swipe"].waitForExistence(timeout: 5)); app.buttons["trash-swipe"].tap()
       XCTAssertTrue(app.alerts["Delete this conversation?"].buttons["Delete"].waitForExistence(timeout: 5))
       capture("gym-coach-history-delete-confirmation", look, app)
@@ -180,6 +183,26 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["coach-stop"].exists)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       return app
+    }
+  }
+
+  func testFreshEntryWhileAnswering() {
+    for look in Look.both {
+      let app = launchSignedInCoach(look, arguments: ["-coach-streaming"])
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.buttons["coach-stop"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      open(.routines, app); open(.coach, app)
+      XCTAssertTrue(app.buttons["coach-view-answer"].waitForExistence(timeout: 5))
+      let field = app.descendants(matching: .any)["coach-question"]
+      field.tap(); field.typeText("How was my week?")
+      XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+      app.buttons["coach-keyboard-done"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      capture("08.33-coach-fresh-pending", look, app)
+      app.buttons["coach-history"].tap()
+      XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
+      capture("08.34-coach-local-history", look, app)
     }
   }
 

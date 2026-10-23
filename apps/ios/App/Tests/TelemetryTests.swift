@@ -105,6 +105,17 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
   }
 
+  @Test func coachConversationActionsExcludeContentAndIdentifiers() {
+    for action in ["new_chat", "view_answer", "open_conversation", "delete_conversation"] {
+      for door in ["tab", "history", "handoff", "new_chat"] {
+        #expect(TelemetryPrivacy.properties(["screen": "coach", "action": action, "door": door, "outcome": "ok",
+                                             "draft": "private-marker", "question": "private-marker", "photo": "private-marker",
+                                             "threadId": "private-id", "requestId": "private-id", "ownerId": "private-id"]) ==
+                ["screen": .label("coach"), "action": .label(action), "door": .label(door), "outcome": .label("ok")])
+      }
+    }
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",

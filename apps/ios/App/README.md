@@ -94,7 +94,8 @@ sign-in, hello and adoption questions leave training available. `rest` is the au
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and Coach, account-only proposal review, Notes and Connected log.
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
-routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
+routine or its editor. Coach has a direct History button for local conversations and signed-in server history;
+Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
 precedence. Coach greets the user locally in two bubbles — who it is, then what it can do, each line led by its anchor
@@ -105,7 +106,15 @@ way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
-account- or replica-scoped local Coach archive. Every new routine is a draft, and an answer's drafts
+account- or replica-scoped versioned Coach archive. Deliberately entering the Coach tab opens a fresh
+canvas; History restores each nonempty chat, draft or interrupted request. An answer stays with its
+original conversation while a fresh draft waits for that request to settle. Empty visits create no
+archive row or network request, and foreground or photo-picker returns retain the selected chat.
+A fresh draft shows Answer in progress and View chat while the prior request owns Send. Signed-in
+History refreshes cached server turns without resending and keeps the local draft usable offline.
+The archive migrates the legacy file and applies adoption or deletion to all conversations for the
+captured owner. Coach keeps the full tab bar while scrolling; the composer has no backing panel.
+Every new routine is a draft, and an answer's drafts
 stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
 movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
 on this phone with no server call and leaves *Rejected · 3 routines*, which stays through a new chat, an

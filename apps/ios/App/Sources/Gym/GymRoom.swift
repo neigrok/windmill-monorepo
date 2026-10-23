@@ -9,7 +9,8 @@ struct GymRoom: View {
   enum Destination: Hashable { case session(String) }
   @Bindable var gym: GymModel
   @Bindable var app: AppModel
-  @State var coach: CoachConversation
+  @State var coachWorkspace: CoachWorkspace
+  var coach: CoachConversation { coachWorkspace.current }
   @State var setupNavigationChosen = false
   @State var routineAwaitingSync = false
   @State var setupChecked: String?
@@ -34,11 +35,21 @@ struct GymRoom: View {
 
   init(gym: GymModel, app: AppModel) {
     self.gym = gym; self.app = app
-    _coach = State(initialValue: CoachConversation(gym: gym, rest: CoachFixture.rest(gym)))
+    _coachWorkspace = State(initialValue: CoachWorkspace(coach: CoachConversation(gym: gym, rest: CoachFixture.rest(gym))))
   }
 
   var tabs: some View {
-    TabView(selection: $tab) {
+    TabView(selection: Binding(get: { tab }, set: { selected in
+      guard selected != tab else { return }
+      guard selected == .coach else { tab = selected; return }
+      let previous = tab
+      Task {
+        await coachWorkspace.activate(resume: false)
+        guard tab == previous, coachHandoff == nil else { return }
+        _ = coachWorkspace.fresh(door: "tab")
+        coachPath = NavigationPath(); tab = .coach
+      }
+    })) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
           root(RoutinesTab(gym: gym, onReviewProposal: reviewProposal))
@@ -48,7 +59,7 @@ struct GymRoom: View {
         NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, revealedProposal: $revealedProposal, coach: coach, escapeSetup: escapeSetup)) }.roomBar(.gym)
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff, revealedProposal: $revealedProposal, workspace: coachWorkspace, escapeSetup: escapeSetup)) }.roomBar(.gym)
           .onPreferenceChange(TabBarHidden.self) { tabBar(.coach, hidden: $0) }
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
@@ -63,10 +74,10 @@ struct GymRoom: View {
   var body: some View {
     Group {
       if #available(iOS 26.1, *) {
-        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: accessoryStands) { accessory }
+        tabs.tabBarMinimizeBehavior(tab == .coach ? .never : .onScrollDown).tabViewBottomAccessory(isEnabled: accessoryStands) { accessory }
       } else if #available(iOS 26, *) {
-        if accessoryStands { tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory } }
-        else { tabs.tabBarMinimizeBehavior(.onScrollDown) }
+        if accessoryStands { tabs.tabBarMinimizeBehavior(tab == .coach ? .never : .onScrollDown).tabViewBottomAccessory { accessory } }
+        else { tabs.tabBarMinimizeBehavior(tab == .coach ? .never : .onScrollDown) }
       } else { tabs }
     }
     .environment(\.coachOpenAccount, app.openYou)
@@ -110,7 +121,7 @@ struct GymRoom: View {
       gym.workout.coachAvailable = gym.account != nil && !gym.isAnonymous && !gym.authPaused && !gym.accountTransition && !gym.coachUnavailable
     }
     .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") {
-      await coach.activate()
+      await coachWorkspace.activate()
     }
     .onChange(of: gym.account) { _, account in setupBuilder = nil; if coachHandoff?.account != account { coachHandoff = nil } }
     .onChange(of: gym.accountTransition) { _, active in if active { setupBuilder = nil } }

@@ -112,6 +112,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Workout rack adjustment | `gym_workout_adjusted` | screen: workout; field: weight, reps; outcome: ok, failed, refused — once per save of a burst of taps, with what the save came to (refused when the log refuses it or an account change is under way). No numeric value is sent. |
 | Exercise editor | `gym_exercise_updated` | screen: movement; action: rename (only the name changed), equipment (the equipment or the dumbbell count changed); outcome: ok, refused, failed. No exercise name, weight, quantity or identifier is sent. |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: started when a signed-in Apply sends its confirmation; saved when the server saved the draft, even when the lifter has moved to another conversation; refused when the server answers 4xx; failed for a 5xx or no answer. A confirmation the phone cancels for an account change records nothing more. Only failed reports to Sentry, under `gym_rest`. No routine name, draft or identifier is sent. |
+| Coach navigation | `gym_action` | screen: coach or history; action: new_chat, view_answer, open_conversation, delete_conversation; door on new_chat: tab, history, handoff, new_chat; outcome: ok, failed or refused. Archive failures use static gym_read/gym_action reports. No conversation text, photo, owner, thread or request identifier is sent. |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling, allowance; duration_ms |
 | Proposals | `gym_proposal_outcome` | screen: coach (the card, in the conversation or on the Routines row's sheet); action: apply, reject (Android records the same turn-down as dismiss), retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled once a launch when unanswered after 15 seconds, however many Try agains then wait, with no action when the queue cannot be read; action retry is a Try again on a decision still queued, ok when the log took it, offline when its push got no answer — no network, a refused connection, a deadline — and failed when the log answered with a failure; a Try again after the log refused an Apply decides afresh and records apply). Failures report under `gym_action`; offline is this event, never a Sentry Issue |
 | Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, a connected credential's row); outcome: ok, failed (whether the browser opened) |
@@ -142,6 +143,11 @@ row is on screen in the ink or the reader; the count draws no passage and record
 opened signal is best effort. *Useful* records one `journal_echo_useful` per tap and marks every passage the ink shows,
 one REST signal each; *Not useful* records one `journal_echo_dismissed` and retires the page's echo. Both are optimistic
 and roll back if a request fails. Closing the reader dismisses no echo and records nothing.
+
+Coach archive migration and read failures report under `gym_read`; save, selection and removal
+failures use `gym_action`. History merges server rows only for the active owner, and late reads retain
+their captured owner. A cached conversation refresh never dispatches an ask. Conversation content,
+draft text, photo data, archive paths and owner/thread/request identifiers stay out of these reports.
 
 The finished-workout receipt’s Done emits `first_run_choice` with screen `workout` and action `close`.
 Its Share tap and destructive confirmation steps emit bounded `gym_action` labels. Confirmed Discard

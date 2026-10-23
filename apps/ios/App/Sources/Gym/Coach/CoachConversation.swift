@@ -1,8 +1,7 @@
 import Foundation
 import Observation
-import CryptoKit
 
-nonisolated struct CoachSaved: Codable {
+nonisolated struct CoachSaved: Codable, Equatable {
   struct Request: Codable, Equatable {
     let thread: String
     let question: String
@@ -50,13 +49,11 @@ nonisolated struct CoachSaved: Codable {
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
-  // What outlives a conversation on this phone: the first-run marks, the signed-out work adopted into the account, the
-  // drafts rejected here and the setup chosen. A new conversation, one opened from History and the one a delete leaves
-  // start from it.
+  // Owner-wide setup and decision marks; each conversation keeps its own messages and drafts.
   var carried: CoachSaved {
     var next = CoachSaved()
-    next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources; next.onboarding = onboarding
-    next.phoneDrafts = phoneDrafts; next.rejectedDrafts = rejectedDrafts; next.setupChoice = setupChoice
+    next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources
+    next.rejectedDrafts = rejectedDrafts; next.setupChoice = setupChoice
     return next
   }
 }
@@ -77,56 +74,6 @@ nonisolated struct CoachHandoff: Identifiable, Equatable {
   var send = false
 }
 
-struct CoachDraftStore {
-  let directory: URL
-  init(directory: URL = URL.applicationSupportDirectory.appending(path: "GymCoach", directoryHint: .isDirectory)) { self.directory = directory }
-  func file(_ account: String) -> URL {
-    let key = SHA256.hash(data: Data(account.utf8)).map { String(format: "%02x", $0) }.joined()
-    return directory.appending(path: key + ".json")
-  }
-  func read(_ account: String) throws -> CoachSaved {
-    let url = file(account)
-    if !FileManager.default.fileExists(atPath: url.path) { return CoachSaved() }
-    return try JSONDecoder().decode(CoachSaved.self, from: Data(contentsOf: url))
-  }
-  func adopt(from source: String, account: String, discard: Bool) throws {
-    let sourceURL = file(source)
-    guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
-    if !discard {
-      let local = try read(source)
-      var target = try read(account)
-      if target.adoptedSources?.contains(source) == true { try FileManager.default.removeItem(at: sourceURL); return }
-      if local.acceptedFirstMessage == true { target.acceptedFirstMessage = true }
-      let existing = Set((target.onboarding ?? []).map(\.id))
-      target.onboarding = (target.onboarding ?? []) + (local.onboarding ?? []).filter { !existing.contains($0.id) }
-      if let rejected = local.rejectedDrafts { target.rejectedDrafts = (target.rejectedDrafts ?? []) + rejected.filter { !(target.rejectedDrafts ?? []).contains($0) } }
-      if !local.text.isEmpty || local.photo != nil {
-        if target.text.isEmpty, target.photo == nil {
-          target.text = local.text; target.photo = local.photo; target.photoData = local.photoData; target.purpose = .routineSetup; target.setupChoice = local.setupChoice; target.choices = local.choices
-        } else {
-          target.phoneDrafts = (target.phoneDrafts ?? []) + [CoachPhoneDraft(text: local.text, photo: local.photo, photoData: local.photoData, setupChoice: local.setupChoice, choices: local.choices)]
-        }
-      }
-      target.adoptedSources = (target.adoptedSources ?? []) + [source]
-      try write(target, account: account)
-    }
-    try FileManager.default.removeItem(at: sourceURL)
-  }
-  // A deleted account's drafts leave the phone with it.
-  func delete(_ account: String) throws {
-    let url = file(account)
-    if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-  }
-  // Drafts hold photos and signed-out questions, which live only on this phone: the folder stays out of every backup.
-  func write(_ saved: CoachSaved, account: String) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    var folder = directory, written = file(account), excluded = URLResourceValues(); excluded.isExcludedFromBackup = true
-    try folder.setResourceValues(excluded)
-    try JSONEncoder().encode(saved).write(to: written, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-    try written.setResourceValues(excluded)
-  }
-}
-
 @Observable @MainActor final class CoachConversation {
   let gym: GymModel
   let rest: GymRESTClient
@@ -140,6 +87,9 @@ struct CoachDraftStore {
   var stopping = false
   var reading = false
   var draftReadable = true
+  var visible = true
+  @ObservationIgnored var requestPermission: (() -> Bool)?
+  var mayRequest: Bool { requestPermission?() ?? true }
   @ObservationIgnored var work: Task<Void, Never>?
   @ObservationIgnored var workGeneration = 0
   @ObservationIgnored var stopWork: Task<Void, Never>?
@@ -238,7 +188,7 @@ struct CoachDraftStore {
 
   @discardableResult func keep(_ next: CoachSaved, failure: String) -> Bool {
     guard let owner, allowed else { return false }
-    do { try store.write(next, account: owner); saved = next; return true }
+    do { try store.write(next, account: owner, select: visible); saved = next; return true }
     catch { self.error = failure; gym.report("gym_action", error); return false }
   }
   func invalidateRead() { readGeneration += 1; reading = false }
@@ -260,9 +210,10 @@ struct CoachDraftStore {
     if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
   }
   @discardableResult func newChat(seed: String = "") -> Bool {
-    guard !asking, !anonymous else { return false }
+    guard allowed, draftReadable, !asking else { return false }
+    if saved.hasContent, !keep(saved, failure: "Your conversation couldn’t be kept. Try again.") { return false }
     invalidateRead()
-    var next = saved.carried; next.text = seed; next.purpose = .conversation
+    var next = saved.carried; next.text = seed; next.purpose = anonymous ? .routineSetup : .conversation
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
@@ -309,7 +260,7 @@ struct CoachDraftStore {
   }
   func send() {
     if anonymous { sendOnboarding(); return }
-    guard allowed, !asking, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
+    guard allowed, mayRequest, !asking, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
     if let reason = blockedReason {
       error = reason
       if offline { gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "offline"]) }
@@ -344,10 +295,11 @@ struct CoachDraftStore {
   }
   func retry() {
     if anonymous { resumeOnboarding(); return }
-    guard allowed, !asking, saved.allowance == nil, let owner, let request = saved.request else { return }
+    guard allowed, mayRequest, !asking, saved.allowance == nil, let owner, let request = saved.request else { return }
     launch(request, owner: owner)
   }
   func launch(_ request: CoachSaved.Request, owner: String) {
+    guard mayRequest else { error = CoachCopy.interrupted; return }
     invalidateRead()
     stopGeneration += 1; stopWork?.cancel(); stopWork = nil; stopping = false
     workGeneration += 1; let generation = workGeneration
@@ -500,9 +452,9 @@ struct CoachDraftStore {
   @discardableResult func deletedConversation(_ id: String, account: String) -> Bool {
     do {
       let previous = owner == account ? saved : try store.read(account)
-      guard previous.threadId == id else { return true }
+      guard previous.threadId == id else { try store.remove(id, account: account); return true }
       var next = previous.carried; next.text = previous.text; next.photo = previous.photo; next.photoData = previous.photoData
-      try store.write(next, account: account)
+      try store.remove(id, account: account, replacement: next)
       guard owner == account, saved.threadId == id else { return true }
       saved = next
       invalidateRead(); workGeneration += 1; stopGeneration += 1
@@ -515,8 +467,9 @@ struct CoachDraftStore {
       gym.report("gym_action", error); return false
     }
   }
-  func open(_ id: String, earlier: Bool = false) async {
+  func open(_ id: String, earlier: Bool = false, resume: Bool = true) async {
     guard allowed, !anonymous, !asking, let owner else { return }
+    if !earlier, saved.threadId != id, saved.hasContent, !keep(saved, failure: "Your conversation couldn’t be kept. Try again.") { return }
     invalidateRead(); let generation = readGeneration
     reading = true; error = nil
     defer { if self.owner == owner, self.readGeneration == generation { reading = false } }
@@ -526,12 +479,12 @@ struct CoachDraftStore {
       guard self.owner == owner, allowed, self.readGeneration == generation else { return }
       let page = try JSONDecoder().decode(CoachThread.self, from: data)
       guard page.id == id else { throw URLError(.badServerResponse) }
-      var next = earlier ? saved : saved.carried; next.threadId = id
+      var next = earlier || saved.threadId == id ? saved : saved.carried; next.threadId = id
       if earlier { next.thread?.prepend(page) } else {
         next.thread = page; next.generation = page.generation
-        // The composer's draft comes along, never mistaken for the opened conversation's own question.
-        next.text = saved.text; next.photo = saved.photo; next.photoData = saved.photoData
-        next.editedRequestId = saved.request?.requestId == page.generation?.requestId ? saved.editedRequestId : page.generation?.requestId
+        next.exchanges.removeAll { exchange in page.turns.contains { $0.generationId == exchange.id || $0.requestId == exchange.requestId } }
+        if page.generation == nil { next.request = nil }
+        next.editedRequestId = next.request?.requestId == page.generation?.requestId ? next.editedRequestId : page.generation?.requestId
       }
       if next.generation == nil { next.purpose = page.turns.last?.purpose ?? .conversation }
       if let generation = next.generation {
@@ -546,7 +499,7 @@ struct CoachDraftStore {
       guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
       if let allowance = next.allowance { refusal = .allowance(allowance); error = allowance.message }
       else if case .allowance = refusal { refusal = nil; error = nil }
-      if let request = next.request, next.allowance == nil, next.generation?.terminal == false { launch(request, owner: owner) }
+      if resume, let request = next.request, next.allowance == nil, next.generation?.terminal == false { launch(request, owner: owner) }
     } catch {
       guard self.owner == owner, allowed, self.readGeneration == generation, !(error is CancellationError) else { return }
       self.error = GymRESTClient.needsConnection(error) ? "Coach history needs a connection."

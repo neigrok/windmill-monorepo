@@ -75,8 +75,14 @@ import XCTest
     openTab("Routines", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     openTab("Coach", app)
-    let switched = settledFrame(review)
-    XCTAssertEqual(switched.minY, atEnd.minY, accuracy: 1, "Back from another tab the last card \(switched) stands where it stood \(atEnd)")
+    XCTAssertFalse(review.exists, "A deliberate Coach tab entry starts fresh")
+    app.buttons["coach-history"].tap()
+    let previous = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
+    XCTAssertTrue(previous.waitForExistence(timeout: 5)); previous.tap()
+    for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
+    let reopened = settledFrame(review)
+    XCTAssertLessThanOrEqual(reopened.maxY, composer.frame.minY + 1, "The reopened conversation clears the composer")
+    for name in ["Routines", "The log", "Coach"] { XCTAssertTrue(app.tabBars.buttons[name].isHittable) }
   }
 
   func launchLog() -> XCUIApplication {
