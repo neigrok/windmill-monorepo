@@ -33,14 +33,13 @@ final class LogCaptures: DesignCapture {
     for _ in 0..<30 where !onScreen(end, app) { app.swipeUp(velocity: .fast) }
     revealInLog(end, app)
     capture("gym-log-end", look, app)
-    for _ in 0..<30 where !onScreen(app.buttons["gym-bodyweight-door"], app) { app.swipeDown(velocity: .fast) }
+    for _ in 0..<30 where !onScreen(app.buttons["gym-weight-moment"].firstMatch, app) { app.swipeDown(velocity: .fast) }
     RunLoop.current.run(until: Date().addingTimeInterval(0.6))
     app.buttons["gym-weigh-in"].tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
     app.buttons["gym-weigh-in-cancel"].tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
-    revealInLog(app.buttons["gym-bodyweight-door"], app)
-    app.buttons["gym-bodyweight-door"].tap()
+    openBodyweightFromLog(app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     let weighIn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
     revealInLog(weighIn, app)
@@ -84,6 +83,49 @@ final class LogCaptures: DesignCapture {
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch.waitForExistence(timeout: 20))
     return app
   }
+  func openBodyweightFromLog(_ app: XCUIApplication) {
+    let weight = app.buttons["gym-weight-moment"].firstMatch
+    revealInLog(weight, app)
+    weight.press(forDuration: 1)
+    let door = app.buttons["gym-bodyweight-door"]
+    XCTAssertTrue(door.wait(for: \.isHittable, toEqual: true, timeout: 5)); door.tap()
+  }
+
+  func testLogEntryActions() {
+    for look in Look.both {
+      let app = openLog(look)
+      let weight = app.buttons["gym-weight-moment"].firstMatch
+      revealInLog(weight, app)
+      XCTAssertTrue(weight.label.contains("Weigh-in"))
+      weight.tap()
+      XCTAssertTrue(app.staticTexts["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
+      app.buttons["gym-weigh-in-cancel"].tap()
+      XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
+      weight.swipeLeft()
+      XCTAssertTrue(app.buttons["trash-swipe"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+      capture("05.2-log-weigh-in-swipe", look, app)
+      weight.swipeRight()
+      let best = app.buttons["gym-best-moment"].firstMatch
+      revealInLog(best, app)
+      XCTAssertTrue(app.navigationBars["The log"].exists)
+      capture("05.1-log-separated-entries", look, app)
+      let row = best.frame
+      XCTAssertTrue(app.frame.contains(row))
+      XCTAssertGreaterThan(row.minY, app.navigationBars["The log"].frame.maxY)
+      XCTAssertLessThan(row.maxY + 8, app.tabBars.firstMatch.frame.minY)
+      let origin = app.coordinate(withNormalizedOffset: .zero)
+      let start = origin.withOffset(CGVector(dx: row.minX + row.width * 0.85, dy: row.midY))
+      // End outside the plain button so touch-up-inside cannot turn the swipe into a tap.
+      let end = origin.withOffset(CGVector(dx: row.minX + row.width * 0.08, dy: row.maxY + 8))
+      start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+      XCTAssertFalse(app.buttons["trash-swipe"].exists)
+      XCTAssertTrue(app.navigationBars["The log"].exists)
+      best.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
+      app.terminate()
+    }
+  }
+
   func openWorkout(_ look: Look) -> XCUIApplication {
     let app = openLog(look)
     let session = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
@@ -113,8 +155,7 @@ final class LogCaptures: DesignCapture {
   func testBodyweight() {
     captureBoard("06.2-bodyweight", settle: 1.5) { look in
       let app = openLog(look)
-      let door = app.buttons["gym-bodyweight-door"]
-      revealInLog(door, app); door.tap()
+      openBodyweightFromLog(app)
       XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight-chart"].waitForExistence(timeout: 5))
       return app
     }

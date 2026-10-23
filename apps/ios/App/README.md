@@ -105,6 +105,13 @@ relaunch and failed sends until the first accepted message, and steps aside whil
 way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
 
+The Log groups workouts, every weigh-in and optional records by local date. Timed entries share a
+chronological sequence; a backdated or legacy weight with day-only precision follows timed entries
+on that day. Workouts use filled cards, weights use separated rows and records use inset markers.
+Weights remain factual rows regardless of highlight limits. Workout and weight rows open their
+respective detail/correction; derived records open progress and have no independent Delete. A weight’s
+context menu opens the Bodyweight chart. Weigh in floats directly above the canvas.
+
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
 account- or replica-scoped versioned Coach archive. Deliberately entering the Coach tab opens a fresh
 canvas; History restores each nonempty chat, draft or interrupted request. An answer stays with its

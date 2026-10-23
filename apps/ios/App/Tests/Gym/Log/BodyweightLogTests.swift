@@ -57,13 +57,13 @@ import SyncStore
     draft.current.kg = 82.4
     #expect(gym.logSaveWeighIn(&draft) == nil && !draft.isNew)
     let firstStamp = try #require(draft.current.recordedAt)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.4)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.4, recordedAt: firstStamp)])
     harness.advance(ms: 1_000)
     var correction = try gym.logWeighInDraft(day: day)
     #expect(!correction.isNew && correction.current.kg == 82.4)
     correction.current.kg = 81.95
     #expect(gym.logSaveWeighIn(&correction) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81.95)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81.95, recordedAt: correction.current.recordedAt)])
     #expect(correction.current.recordedAt?.ms == firstStamp.ms + 1_000)
     #expect(try harness.stored(WeighIn.self).count == 1)
     harness.sync()
@@ -79,9 +79,9 @@ import SyncStore
     harness.failNextCommit()
     #expect(gym.logSaveWeighIn(&draft) == "That weigh-in could not be saved. Try again.")
     #expect(draft.current.kg == 81 && draft.base.kg == 80)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80, recordedAt: draft.base.recordedAt)])
     #expect(gym.logSaveWeighIn(&draft) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81, recordedAt: draft.current.recordedAt)])
   }
 
   @Test func futureAndInvalidWeightNeverWrite() throws {
@@ -103,7 +103,7 @@ import SyncStore
     #expect(gym.logSaveWeighIn(&draft) == nil)
     harness.failNextCommit()
     #expect(!gym.logDeleteWeighIn(day: day))
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80, recordedAt: draft.current.recordedAt)])
     #expect(gym.logDeleteWeighIn(day: day))
     #expect(gym.bodyweight?.entries.isEmpty == true && gym.bodyweight?.stance == .empty)
     #expect(try harness.stored(WeighIn.self).isEmpty)
@@ -123,7 +123,8 @@ import SyncStore
     fault.point.withLock { $0 = nil }; gym.refresh()
     #expect(gym.bodyweight?.entries.isEmpty == true)
     #expect(gym.logSaveWeighIn(&reweigh) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45)])
+    let recordedAt = try #require(reweigh.current.recordedAt)
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45, recordedAt: recordedAt)])
   }
 
   // A weigh-in row reads its weight first and its day after: today and yesterday by name, any other day by its date.

@@ -14,12 +14,6 @@ nonisolated enum LogPresentation {
   static func day(_ date: Date) -> LocalDay {
     LocalDay(Instant(date), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
-  // A new best's line under its name: the estimate, and what it gained since the day of the best it beat.
-  static func newBest(_ record: ProgressRecords.Record, dates: GymDate) -> String {
-    "\(Readout.estimatedWeight(record.estimate)) kg est · up \(Readout.estimatedWeight(record.gain)) kg since \(dates.day(record.previous.startedAt, inSentence: true))"
-  }
-  // The head's footer, the weeks trained of the last four: *Trained 3 of the last 4 weeks*.
-  static func trained(_ weeks: Int, of last: Int) -> String { "Trained \(weeks) of the last \(last) weeks" }
   // A month moment's line, its own month: *Trained every week of February*.
   static func trainedEvery(_ month: LocalDay, dates: GymDate) -> String { "Trained every week of \(dates.month(month))" }
   static func sessionFacts(_ readout: SessionReadout) -> String {
@@ -65,7 +59,7 @@ struct LogTimelineEntry: Identifiable {
   }
 }
 
-struct LogMonth: Identifiable {
+struct LogDay: Identifiable {
   let id: String
   let title: String
   var entries: [LogTimelineEntry]
@@ -74,19 +68,13 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
-  // The head's footer, the weeks trained of the last four, read only from a whole log.
-  var logConsistency: String? {
-    guard let log, !readFailed, let weeks = logRecords?.progress.consistency(now: log.moment.now, zone: log.moment.zone) else { return nil }
-    return LogPresentation.trained(weeks, of: 4)
-  }
-
   // The log's records, worked out once per change of the log rather than per row per render.
   var logRecords: ProgressRecords? {
     if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }
     return logRecordsRead
   }
 
-  func logTimeline(limit: Int) -> [LogMonth] {
+  func logTimeline(limit: Int) -> [LogDay] {
     guard let log, let records = logRecords else { return [] }
     let now = log.moment.now, today = log.moment.today, zone = log.moment.zone
     let progress = records.progress
@@ -112,30 +100,35 @@ extension GymModel {
         }
       }
     }
-    // The newest weigh-in is the head's Bodyweight row, so a weigh-in is woven only once a newer one exists.
-    for entry in (bodyweight?.entries ?? []).dropLast() where entry.day <= today {
-      moments.append(LogTimelineEntry(id: "weight:\(entry.day)", at: LogPresentation.instant(entry.day, in: zone), kind: .weight(entry)))
-    }
     let weeks = Dictionary(grouping: moments) { entry in
       let day = LocalDay(entry.at, in: zone); return day.adding(days: 1 - day.weekday)
     }
     let visible = Array(finishedLogSessions.prefix(limit))
     let oldest = limit < finishedLogSessions.count ? visible.last.map { LocalDay($0.startedAt, in: zone) } : nil
+    let visibleIDs = Set(visible.map(\.id))
     let chosen = weeks.values.compactMap { week in
       week.sorted { a, b in a.priority == b.priority ? (a.at == b.at ? a.id < b.id : a.at > b.at) : a.priority < b.priority }.first
-    }.filter { entry in oldest.map { LocalDay(entry.at, in: zone) >= $0 } ?? true }
+    }.filter { entry in
+      if case .best(_, let record) = entry.kind { return visibleIDs.contains(record.point.id) }
+      return oldest.map { LocalDay(entry.at, in: zone) >= $0 } ?? true
+    }
     let stated = Set(chosen.compactMap { entry -> ID<Session>? in if case .best(_, let record) = entry.kind { record.point.id } else { nil } })
     let sessionRows = visible.map { session in
       LogTimelineEntry(id: "session:\(session.id)", at: session.startedAt,
                        kind: .session(session, recordDot: records.sessions.contains(session.id) && !stated.contains(session.id)))
     }
-    let rows = (sessionRows + chosen)
+    let weights = (bodyweight?.entries ?? []).filter { entry in
+      entry.day <= today && (oldest.map { entry.day >= $0 } ?? true)
+    }.map { entry in
+      LogTimelineEntry(id: "weight:\(entry.day)", at: entry.time(in: zone) ?? LogPresentation.instant(entry.day, in: zone), kind: .weight(entry))
+    }
+    let rows = (sessionRows + chosen + weights)
       .sorted { a, b in a.at == b.at ? (a.priority == b.priority ? a.id < b.id : a.priority < b.priority) : a.at > b.at }
-    var result: [LogMonth] = []
+    var result: [LogDay] = []
     for row in rows {
-      let day = LocalDay(row.at, in: zone), key = String(day.text.prefix(7))
+      let day = LocalDay(row.at, in: zone), key = day.text
       if result.last?.id == key { result[result.count - 1].entries.append(row); continue }
-      result.append(LogMonth(id: key, title: dates.month(day), entries: [row]))
+      result.append(LogDay(id: key, title: dates.subtitle(day), entries: [row]))
     }
     return result
   }

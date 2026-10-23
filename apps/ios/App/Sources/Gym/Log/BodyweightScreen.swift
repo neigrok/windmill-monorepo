@@ -71,8 +71,13 @@ extension GymModel {
 
   @discardableResult
   func logDeleteWeighIn(day: LocalDay) -> Bool {
-    guard let outcome = run(DeleteWeighIn(ID(day))) else { return false }
-    return outcome.refusal == nil
+    guard let outcome = run(DeleteWeighIn(ID(day))) else {
+      telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "discard", "outcome": "failed"])
+      return false
+    }
+    let accepted = outcome.refusal == nil
+    telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "discard", "outcome": accepted ? "saved" : "refused"])
+    return accepted
   }
 }
 

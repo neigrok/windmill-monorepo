@@ -105,6 +105,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
   }
 
+  @Test func logWeightActionsExcludeMeasurementContent() {
+    for item in ["weigh_in", "bodyweight"] {
+      #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",
+                                           "day": "2026-10-24", "recordedAt": "1792857600000", "id": "private-id"]) ==
+              ["screen": .label("log"), "action": .label("open"), "item": .label(item)])
+    }
+  }
+
   @Test func coachConversationActionsExcludeContentAndIdentifiers() {
     for action in ["new_chat", "view_answer", "open_conversation", "delete_conversation"] {
       for door in ["tab", "history", "handoff", "new_chat"] {

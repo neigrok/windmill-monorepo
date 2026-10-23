@@ -164,7 +164,7 @@ import Testing
     let sheet = try a.runner.read(WeighIn.scope, Bodyweight.init)
     #expect(WeighInRules.latestDay(at: try a.runner.moment()) == today)
     #expect(sheet.entry(on: today) == nil)
-    #expect(sheet.entry(on: threeDaysAgo) == Bodyweight.Entry(day: threeDaysAgo, kg: 81.0))
+    #expect(sheet.entry(on: threeDaysAgo) == Bodyweight.Entry(day: threeDaysAgo, kg: 81.0, recordedAt: Instant(ms: 1_800_000_000_000)))
     #expect(sheet.entry(on: twoDaysAgo) == nil)
     #expect(try a.runner.open(ID(threeDaysAgo), orNew: WeighIn(day: threeDaysAgo)).current.kg == 81.0)
     _ = try BodyweightTests.weighed(a, 82.2, on: twoDaysAgo)
@@ -361,8 +361,8 @@ import Testing
 
     let read = try a.runner.read(WeighIn.scope, Bodyweight.init)
     #expect(read.stance == .holding)
-    #expect(read.entries == [Bodyweight.Entry(day: today, kg: 82.4)])
-    #expect(read.reading == Bodyweight.Reading(entry: Bodyweight.Entry(day: today, kg: 82.4), daysAgo: 0))
+    #expect(read.entries == [Bodyweight.Entry(day: today, kg: 82.4, recordedAt: Instant(ms: 1_800_000_000_000))])
+    #expect(read.reading == Bodyweight.Reading(entry: Bodyweight.Entry(day: today, kg: 82.4, recordedAt: Instant(ms: 1_800_000_000_000)), daysAgo: 0))
     #expect(try a.runner.run(DeleteWeighIn(ID(RecordID("2027-02-30")))).receipt != nil)
   }
 
@@ -461,10 +461,28 @@ import Testing
     let none = Bodyweight(stored: [], drawn: [], firstPullComplete: true, at: moment)
 
     #expect(read.today == LocalDay("2027-01-16"))
-    #expect(read.reading == Bodyweight.Reading(entry: Bodyweight.Entry(day: newest.id.day!, kg: 82.4), daysAgo: 3))
-    #expect(read.entries == [Bodyweight.Entry(day: older.id.day!, kg: 83.0), Bodyweight.Entry(day: newest.id.day!, kg: 82.4)])
+    #expect(read.reading == Bodyweight.Reading(entry: Bodyweight.Entry(day: newest.id.day!, kg: 82.4, recordedAt: moment.now), daysAgo: 3))
+    #expect(read.entries == [Bodyweight.Entry(day: older.id.day!, kg: 83.0, recordedAt: moment.now), Bodyweight.Entry(day: newest.id.day!, kg: 82.4, recordedAt: moment.now)])
     #expect(read.entry(on: LocalDay("2027-01-17")!) == nil)
     #expect(none.reading == nil && none.stance == .empty)
+  }
+
+  @Test func entryTimeUsesTheSelectedLocalDayAndKeepsLegacyAndBackdatedWeightsUntimed() throws {
+    let stamp = Instant(ms: 1_800_055_800_000)
+    let east = FixedZone(offsetSeconds: 3_600), west = FixedZone(offsetSeconds: -3_600)
+    let selected = try #require(LocalDay("2027-01-16"))
+    let records = [WeighIn(day: selected, kg: 82.4, recordedAt: stamp),
+                   WeighIn(day: selected.adding(days: -1), kg: 82.7, recordedAt: stamp),
+                   WeighIn(day: selected.adding(days: -2), kg: 83)]
+    let read = Bodyweight(stored: records, drawn: Array(records.reversed()), firstPullComplete: true,
+                          at: Moment(now: stamp, zone: east))
+    #expect(read.entries == [
+      Bodyweight.Entry(day: selected.adding(days: -2), kg: 83),
+      Bodyweight.Entry(day: selected.adding(days: -1), kg: 82.7, recordedAt: stamp),
+      Bodyweight.Entry(day: selected, kg: 82.4, recordedAt: stamp),
+    ])
+    #expect(read.entries.map { $0.time(in: east) } == [nil, nil, stamp])
+    #expect(read.entries.map { $0.time(in: west) } == [nil, stamp, nil])
   }
 
   @Test func theChartShowsTheLastNinetyDaysOrAllAndNamesEveryGapLongerThanAWeek() throws {
@@ -472,7 +490,7 @@ import Testing
     let days = ["2026-10-17", "2026-10-18", "2026-11-01", "2026-11-08", "2026-11-15", "2027-01-15"]
     let weighIns = days.map { WeighIn(day: LocalDay($0)!, kg: 80, recordedAt: moment.now) }
     let read = Bodyweight(stored: weighIns, drawn: weighIns, firstPullComplete: true, at: moment)
-    let entry = { (text: String) in Bodyweight.Entry(day: LocalDay(text)!, kg: 80) }
+    let entry = { (text: String) in Bodyweight.Entry(day: LocalDay(text)!, kg: 80, recordedAt: moment.now) }
     let gap = { (after: String, before: String) in Bodyweight.Gap(after: LocalDay(after)!, before: LocalDay(before)!) }
 
     #expect(read.chart(.recent) == Bodyweight.Chart(

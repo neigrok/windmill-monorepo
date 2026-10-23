@@ -212,3 +212,8 @@ nonempty chats, drafts and interrupted results for local History, including sign
 entry does not clear prior work or create empty rows. Remote History refresh is read-only and keeps
 an unsent draft; owner guards prevent late reads from reaching another account. No-op navigation
 keeps History timestamps stable.
+
+The Log carries `WeighIn.recordedAt` through the read model without a schema change. Factual weights
+are independent of optional highlights, so highlight limits cannot hide them. Local day groups,
+workout cards, separated weigh-ins and subordinate record markers distinguish their destinations and
+deletion behavior. Day-only records follow timed records without an invented clock time.
