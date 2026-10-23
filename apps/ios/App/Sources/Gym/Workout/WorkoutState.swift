@@ -394,13 +394,15 @@ struct FinishWorkout: Action {
     prefill()
     if let draft = drafts[id] { restoreRack(weightKg: draft.weightKg, reps: draft.reps) }
   }
-  func add(_ id: ID<Exercise>) {
-    guard !walk.order.contains(id), gym.catalogue.find(id) != nil, !finishing, flushRack() else { return }
+  @discardableResult func add(_ id: ID<Exercise>) -> Bool {
+    guard session?.isOpen == true, !walk.order.contains(id), gym.catalogue.find(id) != nil,
+          !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed, flushRack() else { return false }
     var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
-    guard keep(next) else { return }
+    guard keep(next) else { return false }
     if let prior { drafts[prior] = draft }
     prefill()
+    return true
   }
   func move(from: IndexSet, to: Int) {
     var next = walk; next.order.move(fromOffsets: from, toOffset: to); _ = keep(next)

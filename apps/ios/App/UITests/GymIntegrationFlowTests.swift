@@ -64,6 +64,17 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
     app.buttons["routine-start"].tap()
     hideAndReturn(app)
+    let rackWeight = app.buttons["workout-weight"].label
+    let rackSet = app.descendants(matching: .any)["workout-current-set"].label
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+    app.navigationBars.buttons["Cancel"].tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["workout-weight"].label, rackWeight)
+    XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, rackSet)
+    XCTAssertFalse(app.buttons["workout-assembly-add"].exists)
     logAndFinish(app)
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
@@ -195,11 +206,14 @@ import XCTest
     let start = app.buttons["routine-start"]
     XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    let currentSet = app.descendants(matching: .any)["workout-current-set"]
+    let loggedSets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
     app.buttons["workout-log"].tap()
-    XCTAssertTrue(progress.waitForValue("1 set"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 2, current, open target"))
+    XCTAssertEqual(loggedSets.count, 1)
     app.buttons["workout-log"].tap()
-    XCTAssertTrue(progress.waitForValue("2 sets"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, open target"))
+    XCTAssertEqual(loggedSets.count, 2)
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()

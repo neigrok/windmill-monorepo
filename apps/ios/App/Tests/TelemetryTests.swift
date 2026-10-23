@@ -105,6 +105,15 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
   }
 
+  @Test func workoutPickerStepsExcludeMovementAndRackContent() {
+    #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
+    for action in ["open", "select", "cancel"] {
+      #expect(TelemetryPrivacy.properties(["action": action, "outcome": "refused", "query": "private-marker",
+                                           "exerciseId": "private-id", "name": "private-marker", "weightKg": "105", "reps": "5"]) ==
+              ["action": .label(action), "outcome": .label("refused")])
+    }
+  }
+
   @Test func logWeightActionsExcludeMeasurementContent() {
     for item in ["weigh_in", "bodyweight"] {
       #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",

@@ -11,8 +11,8 @@ the system may dismiss that confirmation outside its popover on iOS 26. Tests co
 as well as committed deletion. The app has no Undo band or delayed removal task.
 
 Routine summaries are sheets with Close, Edit and Start. Starting waits for dismissal before
-opening the workout. Workout pages use the native pager and page control, and accessible spoken
-counts accompany visual set markers. The compact ledger preserves access to earlier sets.
+opening the workout. Workout pages use the native pager and page control. The compact ledger
+contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
 
 Coach history invalidates reads at both the start and completion of deletion, so a concurrent
 response cannot restore a deleted conversation. Receipt sharing retains its intent through sign-in
@@ -221,3 +221,7 @@ deletion behavior. Day-only records follow timed records without an invented clo
 The weigh-in sheet measures its content and stages a native graphical calendar in the same sheet
 after dismissing the keyboard. Cancelling the calendar keeps both the prior day and typed kg;
 accepting a date does not persist the weight. Correction keeps the original day fixed.
+
+The workout ledger limits default-height rows while allowing accessibility expansion. One sheet
+destination sequences assembly dismissal and picker presentation, preserving the rack through
+selection and cancellation. The duplicate statistics strip is removed.

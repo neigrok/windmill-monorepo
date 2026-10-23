@@ -171,6 +171,11 @@ adoption and are removed on explicit Discard. An authenticated bind returning in
 permits account Coach; other authentication, transport and accounting failures block dispatch until
 recovered. Work from a previous account/replica cannot publish into the active seat.
 
+The live workout uses a compact ledger with up to three 44-point rows at default text size;
+accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
+statistics strip. Assembly and Add movement share one sheet destination. Selecting a movement returns
+to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+
 The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action. Signed
 out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
 tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
