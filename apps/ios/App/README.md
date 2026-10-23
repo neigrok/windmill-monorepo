@@ -377,8 +377,10 @@ disappears after logging from the Island.
 `NightlyFlowTests` holds the slow end-to-end checks a daily run is enough for: the workout control in Control
 Center, the Home Screen's quick actions from the background and from a cold start, the journal's Write seat
 geometry (Reduce Motion and the largest text included), echoes at accessible text, and the introduction at the
-accessibility sizes. XCTest skips every one unless the test runner sees `WM_NIGHTLY_UI=1`
-(`TEST_RUNNER_WM_NIGHTLY_UI=1` when invoking xcodebuild).
+accessibility sizes. `GymNightlyFlowTests` holds the gym's layout checks at the screen's edges: the log's end clear
+of the tab bar and the accessory, and the conversation's end clear of the composer, after a pushed screen pops or a bounce brings the bar back. XCTest
+skips both classes unless the test runner sees `WM_NIGHTLY_UI=1` (`TEST_RUNNER_WM_NIGHTLY_UI=1` when invoking
+xcodebuild); [iOS nightly](../../../.github/workflows/ios-nightly.yml) runs them once a day.
 
 ## Design captures
 

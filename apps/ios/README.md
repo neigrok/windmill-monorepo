@@ -130,17 +130,21 @@ checks the App tools, and builds SyncProbe and the App in Release for the simula
 32 seeds of the replay fuzz, a push to main 128. The App's Release build compiles every Sync library for iOS, and the
 unit tests compile `SyncTesting`. The probe build, the layering test and the Release build share one package checkout
 per app, under `WM_SOURCE_PACKAGES`. App unit tests run the `WindmillUnitTests` scheme on iPhone 17, which builds the
-app and `WindmillTests` without the UI tests. Three UI shards select each standard `WindmillUITests` class once:
+app and `WindmillTests` without the UI tests. Three UI shards, balanced on measured test times, select each standard
+`WindmillUITests` class once:
 
 | Shard | Classes |
 |---|---|
-| `log-workout-account` | `GymLogFlowTests`, `GymWorkoutFlowTests`, `AppleLinkingFlowTests`, `GymRecoveryFlowTests`, `GymIntegrationFlowTests` |
-| `routines-journal` | `GymRoutinesFlowTests`, `JournalFlowTests`, `JournalEchoFlowTests`, `WorkoutActivityFlowTests`, `RoomTransientFlowTests`, `WorkoutOutsideFlowTests`, `OnboardingFlowTests`, `ShellFlowTests` |
-| `coach-shell` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `OfflineFlowTests` |
+| `gym-integration` | `GymIntegrationFlowTests` |
+| `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalEchoFlowTests` |
+| `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
 
-Each test job builds its own App, and the packages job checks that the UI class partition stays complete.
-The opt-in design capture suite in `App/UITests/DesignCapture/` is excluded; how to run and export it is
-in [the App README](App/README.md#design-captures). Each UI shard
+Each test job builds its own App, and the packages job checks that the UI class partition stays complete. The opt-in
+classes stay out of it and keep their guards: the design capture suite in `App/UITests/DesignCapture/` (how to run and
+export it is in [the App README](App/README.md#design-captures)), and `NightlyFlowTests` and `GymNightlyFlowTests`,
+which [iOS nightly](../../.github/workflows/ios-nightly.yml) runs once a day with `WM_NIGHTLY_UI=1`, beside a replay
+fuzz of 128 seeds that starts each day where the day before ended. Every shard, the nightly one included, runs
+[one definition](../../.github/workflows/ios-ui-tests.yml). Each UI shard
 creates its own iPhone 17 on iOS 26.5 and prepares it with `App/Tools/prepare_simulator.py <udid>`, which prepares a
 new local simulator the same way: it seeds English/US preferences, Live Activity consent and completed Apple
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility
