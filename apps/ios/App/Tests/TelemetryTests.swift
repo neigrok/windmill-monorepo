@@ -149,6 +149,20 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func routineEditorStagesAndSavesExcludeIdentityAndTargets() {
+    for item in ["movement", "targets"] {
+      #expect(TelemetryPrivacy.properties(["screen": "routine_movement_editor", "action": "stage", "item": item, "outcome": "ok",
+                                           "name": "private-marker", "exerciseId": "private-id", "equipment": "barbell",
+                                           "sets": "4", "reps": "8", "weightKg": "82.5"]) ==
+              ["screen": .label("routine_movement_editor"), "action": .label("stage"), "item": .label(item), "outcome": .label("ok")])
+    }
+    for outcome in ["saved", "refused", "failed"] {
+      #expect(TelemetryPrivacy.properties(["screen": "routine_editor", "action": "update", "item": "routine", "outcome": outcome,
+                                           "name": "private-marker", "routineId": "private-id", "entries": "private-marker"]) ==
+              ["screen": .label("routine_editor"), "action": .label("update"), "item": .label("routine"), "outcome": .label(outcome)])
+    }
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",

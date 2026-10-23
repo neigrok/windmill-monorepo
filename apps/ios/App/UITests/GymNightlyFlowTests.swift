@@ -108,6 +108,13 @@ import XCTest
     XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Log coverage\n")
     app.buttons["add-movement"].tap()
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
+    let add = app.buttons["gym-movement-editor-commit"]
+    XCTAssertTrue(add.waitForExistence(timeout: 5)); XCTAssertEqual(add.label, "Add")
+    XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Bench Press")
+    XCTAssertTrue(app.textFields["gym-target-sets"].exists)
+    add.tap()
+    XCTAssertTrue(app.buttons["builder-movement-bench-press"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()

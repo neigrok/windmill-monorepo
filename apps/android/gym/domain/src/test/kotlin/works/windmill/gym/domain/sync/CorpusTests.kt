@@ -103,6 +103,24 @@ class CorpusTests {
                 corpus.save(Routine, GymRefusal, vector, Routine(value.id), { value }, { it.form }, ::refusalForm)
             }
             "CreateRoutine" -> corpus.decision(saveRoutine(Routine.fromForm(input.member("routine"))), vector, { it.form }, ::refusalForm)
+            "SaveRoutinePlan" -> {
+                val movements = input.member("movements").arr().map { change ->
+                    fun exercise(form: Json): Exercise {
+                        val value = Exercise.fromForm(form)
+                        val count = if (value.equipment == "dumbbell") form["loadCount"]?.long()?.toInt() ?: 2 else 1
+                        return value.copy(loadCount = count)
+                    }
+                    RoutineMovementChange(change["base"]?.orNull()?.let(::exercise), exercise(change.member("current")))
+                }
+                val result = corpus.decision(SaveRoutinePlan(Routine.fromForm(input.member("base")),
+                    Routine.fromForm(input.member("current")), input.member("isNew").bool(), movements), vector, { it.json }, ::refusalForm)
+                val write = result["decision"]?.get("write")
+                if (write == null) result
+                else {
+                    val gesture = Json.Obj((write.member("gesture").obj() + ("local" to Json.Arr(emptyList()))).toList())
+                    Json.objectOf("decision" to Json.objectOf("write" to Json.Obj((write.obj() + ("gesture" to gesture)).toList())))
+                }
+            }
             "ReorderRoutines" -> corpus.decision(ReorderRoutines(input.member("order").arr().map { Id(RecordID(it), Routine) }), vector, { Json.Null }, ::refusalForm)
             "DeleteRoutine" -> corpus.decision(deleteRoutine(Id(RecordID(input.member("id")), Routine)), vector, { Json.Null }, ::refusalForm)
             null -> decoded {

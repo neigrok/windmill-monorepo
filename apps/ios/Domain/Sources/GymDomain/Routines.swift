@@ -144,6 +144,135 @@ public enum RoutineRules {
 public typealias SaveRoutine = SaveDraft<Routine, GymRefusal>
 public typealias DeleteRoutine = Remove<Routine, GymRefusal>
 
+public struct RoutineMovementChange: Equatable, Sendable {
+  public let base: Exercise?
+  public var current: Exercise
+
+  public init(base: Exercise?, current: Exercise) {
+    precondition(base == nil || base?.id == current.id)
+    self.base = base
+    self.current = current
+  }
+
+  public var isDirty: Bool {
+    guard let base else { return true }
+    return base.name != current.name || base.equipment != current.equipment || base.loadCount != current.loadCount
+  }
+}
+
+public struct SaveRoutinePlan: Action {
+  public struct Loaded: Sendable {
+    let routine: Routine?
+    let visible: Bool
+    let catalogue: Catalogue
+    let visibleExercises: Set<ID<Exercise>>
+    let formerNames: JSON.Object
+    let moment: Moment
+  }
+
+  public let base: Routine
+  public let current: Routine
+  public let isNew: Bool
+  public let movements: [RoutineMovementChange]
+
+  public init(base: Routine, current: Routine, isNew: Bool, movements: [RoutineMovementChange]) {
+    precondition(base.id == current.id)
+    self.base = base
+    self.current = current
+    self.isNew = isNew
+    self.movements = movements
+  }
+
+  public var scope: ScopeRef { Routine.scope }
+
+  public func load(_ read: Reader) throws -> Loaded {
+    let repository = read.repository(Routine.self)
+    return Loaded(routine: try repository.find(current.id, in: .stored),
+                  visible: try repository.find(current.id, in: .drawn) != nil,
+                  catalogue: try Catalogue(read, in: .stored),
+                  visibleExercises: Set(try Catalogue(read).exercises.map(\.id)),
+                  formerNames: try read.device(Catalogue.formerNamesKey)?.asObject() ?? JSON.Object(), moment: read.moment)
+  }
+
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Routine>, GymRefusal> {
+    if isNew && loaded.routine != nil {
+      return .refuse(GymRefusal(Refused(.idTaken, subject: current.id.ref, path: .predicted)))
+    }
+    if !isNew && (!loaded.visible || loaded.routine == nil) {
+      return .refuse(GymRefusal(Refused(.unknownRecord, subject: current.id.ref, path: .predicted)))
+    }
+    let touched = current.fields.keys.filter { isNew || current.fields[$0] != base.fields[$0] }.sorted()
+    let valid = try Valid(current, fields: isNew ? Array(current.fields.keys) : touched, at: loaded.moment)
+    let changed = touched.filter { loaded.routine?.fields[$0] != valid.value.fields[$0] }
+    if !isNew && changed.contains(where: { loaded.routine?.fields[$0] != base.fields[$0] }) {
+      return .refuse(GymRefusal(Refused(.stale, subject: current.id.ref, path: .predicted)))
+    }
+    var plan = Plan()
+    if isNew { plan.create(valid) }
+    else if !changed.isEmpty { plan.update(valid, fields: changed, from: base, guarded: true) }
+    var wrote = isNew || !changed.isEmpty
+    var former = loaded.formerNames
+    let included = Set(current.entries.map(\.exerciseId))
+    let edits = movements.filter { included.contains($0.current.id) }.sorted { $0.current.id < $1.current.id }
+    precondition(Set(edits.map { $0.current.id }).count == edits.count)
+    for edit in edits {
+      let next = try Valid(edit.current, at: loaded.moment).value
+      guard let before = edit.base else {
+        if loaded.catalogue.find(next.id) != nil {
+          return .refuse(GymRefusal(Refused(.idTaken, subject: next.id.ref, path: .predicted)))
+        }
+        plan.create(try Valid(next, at: loaded.moment))
+        if next.equipment == "dumbbell", next.loadCount != 2 {
+          plan.create(try Valid(ExerciseName(id: ID(next.id.record), name: nil, loadCount: next.loadCount), at: loaded.moment), fields: ["loadCount"])
+        }
+        wrote = true
+        continue
+      }
+      guard let stored = loaded.catalogue.find(next.id), loaded.visibleExercises.contains(next.id) else {
+        return .refuse(GymRefusal(Refused(.unknownRecord, subject: next.id.ref, path: .predicted)))
+      }
+      let targetsChanged = current.entries.first { $0.exerciseId == next.id }?.sets != base.entries.first { $0.exerciseId == next.id }?.sets
+      let unitsChanged = next.equipment != before.equipment || next.loadCount != before.loadCount
+      let unitsSettled = next.equipment == stored.equipment && next.loadCount == stored.loadCount
+      if (targetsChanged || unitsChanged) && !unitsSettled && (stored.equipment != before.equipment || stored.loadCount != before.loadCount) {
+        return .refuse(GymRefusal(Refused(.stale, subject: next.id.ref, path: .predicted)))
+      }
+      if targetsChanged || unitsChanged {
+        plan.guardRead(ID<ExerciseName>(next.id.record), fields: ["equipment", "loadCount"])
+        if !SeedExercises.contains(next.id) { plan.guardRead(next.id, fields: ["equipment"]) }
+      }
+      let renamed = next.name != before.name && next.name != stored.name
+      let equipped = next.equipment != before.equipment && next.equipment != stored.equipment
+      let counted = next.loadCount != before.loadCount && next.loadCount != stored.loadCount
+      if (renamed && stored.name != before.name) || (equipped && stored.equipment != before.equipment)
+        || (counted && stored.loadCount != before.loadCount) {
+        return .refuse(GymRefusal(Refused(.stale, subject: next.id.ref, path: .predicted)))
+      }
+      let seed = SeedExercises.contains(next.id)
+      let metadata = ExerciseName(id: ID(next.id.record), name: seed && renamed ? next.name : nil,
+                                  equipment: equipped ? next.equipment : nil,
+                                  loadCount: next.equipment == "dumbbell" && (equipped || counted) ? next.loadCount : nil)
+      if renamed {
+        former[next.id.record.description] = ["name": .string(next.name), "aliases": .array(ExerciseRules.renamedAliases(previous: stored.name, next: next.name, aliases: stored.aliases).map(JSON.string))]
+        if !seed {
+          var custom = stored
+          custom.name = next.name
+          plan.update(try Valid(custom, fields: ["name"], at: loaded.moment), from: stored, guarded: true)
+        }
+        wrote = true
+      }
+      let fields = Array(metadata.fields.keys).sorted()
+      if !fields.isEmpty {
+        plan.guardRead(metadata.id, fields: fields)
+        plan.create(try Valid(metadata, fields: fields, at: loaded.moment), fields: fields)
+        wrote = true
+      }
+    }
+    if former != loaded.formerNames { plan.device(Catalogue.formerNamesKey, .object(former)) }
+    return wrote ? .write(plan, current.id) : .unchanged(current.id)
+  }
+}
+
 public struct ReorderRoutines: Action {
   public typealias Loaded = (routines: [Routine], moment: Moment)
   public let order: [ID<Routine>]

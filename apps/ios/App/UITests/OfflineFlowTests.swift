@@ -74,7 +74,13 @@ import XCTest
       ready(name); name.tap(); name.typeText("Offline routine\n")
       app.buttons["add-movement"].tap()
       ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
-      app.buttons["save-routine"].tap()
+      let movementName = app.textFields["gym-movement-name"]
+      ready(movementName); XCTAssertEqual(movementName.value as? String, "Bench Press")
+      XCTAssertTrue(app.textFields["gym-target-sets"].exists)
+      let add = app.buttons["gym-movement-editor-commit"]
+      ready(add); XCTAssertEqual(add.label, "Add"); add.tap()
+      ready(app.buttons["builder-movement-bench-press"])
+      ready(app.buttons["save-routine"]); app.buttons["save-routine"].tap()
       ready(app.buttons["routine-start"]); app.buttons["routine-start"].tap()
     }
     ready(app.buttons["workout-log"])

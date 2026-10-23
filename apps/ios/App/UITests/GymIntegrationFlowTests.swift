@@ -37,6 +37,10 @@ import XCTest
     let search = routineEditor ? app.textFields["gym-movement-search"] : app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
+    if routineEditor {
+      XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5))
+      app.buttons["gym-movement-editor-commit"].tap()
+    }
   }
   func back(_ app: XCUIApplication) { app.navigationBars.buttons.element(boundBy: 0).tap() }
   func logAndFinish(_ app: XCUIApplication, close: Bool = true, count: Int = 4, keep: Bool = false) {
@@ -67,8 +71,31 @@ import XCTest
     app.buttons["add-movement"].tap()
     pickBench(app, routineEditor: true)
     app.buttons["builder-movement-bench-press"].tap()
-    replace(app.textFields["gym-target-sets"], "4"); replace(app.textFields["gym-target-reps"], "8"); replace(app.textFields["gym-target-weight"], "60")
-    app.buttons["gym-target-set"].tap(); app.buttons["save-routine"].tap()
+    for (identifier, value) in [("gym-target-sets", "4"), ("gym-target-reps", "8"), ("gym-target-weight", "60")] {
+      let field = app.textFields[identifier], commit = app.buttons["gym-movement-editor-commit"]
+      let navigation = app.navigationBars["Edit movement"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5))
+      for _ in 0..<8 {
+        let top = navigation.frame.maxY + 8, bottom = commit.frame.minY - 8
+        if field.frame.minY >= top && field.frame.maxY <= bottom { break }
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
+          .withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
+        let distance: CGFloat = field.frame.maxY > bottom ? -80 : 80
+        start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.1)
+      }
+      XCTAssertGreaterThanOrEqual(field.frame.minY, navigation.frame.maxY)
+      XCTAssertLessThanOrEqual(field.frame.maxY, commit.frame.minY)
+      field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      if let previous = field.value as? String, !["open", "max", "last time"].contains(previous) {
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+      }
+      field.typeText(value)
+      XCTAssertTrue(field.waitForValue(value))
+      app.buttons["gym-target-keyboard-done"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    }
+    app.buttons["gym-movement-editor-commit"].tap(); app.buttons["save-routine"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
     app.buttons["routine-start"].tap()
     hideAndReturn(app)

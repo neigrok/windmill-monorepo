@@ -15,7 +15,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `values.json` | Every LOCAL spec and writable entity check; action-only LOCAL rules also have violation cases in the action files |
 | `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
-| `routines-actions.json` | Guarded editor saves, reorder, delete, ordered targets, frozen-plan decoding |
+| `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
@@ -78,6 +78,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | Action | Input | Result |
 |---|---|---|
 | `SaveRoutine`, `SavePreferences` | Editor fields; vectors open the drawn entity or a new blank draft | `{values,exists}` from the draft save |
+| `SaveRoutinePlan` | `{base,current,isNew,movements:[{base,current}]}`; routine values use `{id,fields}`, movement values use `{id,fields,loadCount?}`, and a new movement has `base:null`. Omitted count means two for dumbbells; other equipment always uses one. | Routine id; one atomic gesture for touched routine fields and staged catalogue identity. Checks captured bases, guards changed fields and target load units, omits removed movements. Device-only former names are excluded from the shared gesture. |
 | `SaveWeighIn` | `{day,kg}`; vectors open the drawn day or a new blank draft | `{id,fields}`; every save writes the whole fact with the save's moment |
 | `DeleteRoutine`, `DeleteSet`, `DeleteWeighIn` | `{id}` or `{day}` | `null`; held, with Undo on a real engine |
 | `ReorderRoutines` | `{order:[routineId]}` | `null`; a complete permutation, changed positions only |

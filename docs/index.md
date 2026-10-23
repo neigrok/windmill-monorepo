@@ -48,15 +48,15 @@ reconciled implementation and is not Ready for dev.
 
 Figma: Gym file, page [iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2).
 Code: `apps/ios/App/Sources/Gym/`. Colour roles: [ios-redesign.md](design/ios/ios-redesign.md).
-The page is the target: 🚀 boards match the app, ✅ boards are final and have a build task, 🚧 boards
-are still open and their captions name what. Each target holds the slot and number of the board it
+The page is the target: 🚀 marks completed delivery, 🔨 implementation, ✅ human-approved designs
+ready for development, and 🚧 open design work named in the caption. Each target holds the slot and number of the board it
 replaced ([consistency.md](design/consistency.md) 10o, 10p, 10q, 10r, 12a–12n).
 
 | Flow | Section | Entry → exit |
 |---|---|---|
 | 00 · The room — read me, map, anatomy | [`1118:1768`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1118-1768) | Three tabs; links to Shell for first run, sign-in, You and Delete account |
 | 01 · First open — Coach-led setup | [`1081:565`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-565) | Empty Gym → Coach greeting → screenshot or talk → drafts applied or rejected on their card → Start (03); Build my own → 02 |
-| 02 · Routines | [`1113:1474`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1113-1474) | Routines tab → Start (03) |
+| 02 · Routines | [`1113:1474`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1113-1474) | Routines → builder → picker → movement name, equipment and inline targets → Done → routine Save; Start → workout (03) |
 | 03 · Workout | [`1114:1513`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513) | Start or reopen → compact ledger and rack → wheel, Fix set or Add movement → finish → Done or Share with Coach; top-corner menu → Discard |
 | 04 · Outside the app | [`1115:1576`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576) | Control Center control (opens Routines when no workout runs), Live Activity, Dynamic Island → workout (03) |
 | 05 · The log, past workouts & progress | [`1116:1605`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1605) | Date-grouped chronological workout cards, separated weigh-ins and subordinate new bests → workout detail, weight correction or movement record; weight context menu → Bodyweight |
@@ -66,6 +66,10 @@ replaced ([consistency.md](design/consistency.md) 10o, 10p, 10q, 10r, 12a–12n)
 | 09 · Notes & Connected log | [`1117:1768`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1768) | You → Notes / Connected log |
 
 First run, sign-in, You, sign out and Delete account (section 4c `47:3852`): Shell file, page [iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).
+
+The six [iOS Gym flow contracts](engineering/ios-gym-ui-flows.md) record human approval, implementation
+boundaries, scoped native/backend results and the existing load-wheel responsiveness follow-up.
+Current delivery status is on each linked Figma flow.
 
 ## Gym · Android
 

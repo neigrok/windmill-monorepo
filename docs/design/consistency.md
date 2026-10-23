@@ -186,11 +186,11 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
   the phone keeps the only copy.
 - **6n · Backend: the conversation on sign-in.** A signed-out conversation must move to the account
   on sign-in with the same identity, receipts included, so the chat continues where it stopped.
-- **6w · Keyboard bars on iOS 26.** On iOS 26 a SwiftUI `.keyboard` toolbar, once shown, leaves
-  later sheets' keyboard avoidance 82 pt short: after the routine targets' bar, the weigh-in sheet
-  drew *Save weight* under the decimal pad. The iOS boards draw no keyboard toolbar: Coach's *Done*
-  is a glass circle above the composer, the note editor has none, and Targets commits from its bar. The app draws *Next* and *Done* as `KeyboardBar` in the bottom inset
-  while a routine target's field is focused; align that sheet.
+- **6w · Keyboard bars on iOS 26.** The app avoids SwiftUI `.keyboard` toolbars because their
+  retained layout can reduce later sheets' keyboard avoidance. Coach's *Done* is above its composer;
+  the note editor has none. The combined routine movement editor uses `KeyboardBar` with *Next* and
+  *Done* in its bottom inset while a field is focused, above the form's Done/Add action. Its keyboard
+  and commit clearance are part of the compact-phone and large-text verification in 10y.
 
 ### iOS against the drawings and the other phone
 
@@ -334,21 +334,14 @@ and Android disagree.
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
   with no number; web and Android print the server's weeks (`coach.js` `readLine`,
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
-- **10o · The page is the target (owner decision, 2026-10-22).** The owner treats the Gym iOS page
-  as the target: no board is 👀 Review. Boards that matched the app on the 2026-10-21/22 simulator
-  pass (iPhone 17, iOS 26.5) stay 🚀; everything else is a target (✅ or 🚧). Where a drawing lagged behind the app's
-  iteration 2 and 3, it was redrawn to the app first so no target asks for a regression: 00.1 top
-  bar (no bar creation action), 00.3 transient band (no Undo; deletes are immediate), 01.10 summary
-  sheet with Start, 02.1 Routines, 02.2 summary, 02.3 editor with ✓, 02.4 picker, 02.6 stepper
-  Targets, 03.7 receipt, 03.8 Ended early as the same sheet, 05.2
-  round red Delete, 05.3 workout detail, 05.4 immediate delete, 05.6–05.8 Record, 06.2 Bodyweight,
-  08.3 Review, 08.6 no title, 08.7, 09.1 Notes, 09.2 note sheet. Relabelled without a redraw: 00.2
-  colour roles, 00.4 native anatomy (Discard is system red; no Theme token yet), 04.1 Control
-  Center control, 04.3 Dynamic Island, 04.4 Live Activity states (clock labels removed). Still
-  needing a device or a fixture, named in their captions: 04.1, 04.3, 04.4, 05.8's pan, 08.6, 08.7.
-- **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
-  2026-10-21 feedback as targets (Dark, with a Daylight twin beneath). Each target holds
-  the slot and number of the board it replaced; the replaced boards are deleted. Targets:
+- **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
+  drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
+  ready for development; 🚧 means design or approval remains open and its caption names that work. The six flow
+  corrections in 10y are approved, with their implementation status on each flow. Device or fixture evidence is also pending where captions name it:
+  04.1, 04.3, 04.4, 05.8's pan, 08.6 and 08.7.
+- **10p · Gym iOS target boards.** The Gym file's iOS page holds Dark and Daylight targets.
+  Each flow carries its delivery status; the six-flow contract in 10y covers the revised interactions.
+  Target inventory:
   - 01 and 08: listed under 10q.
   - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
     remove by the trash circle 02.8 `1149:2275`.
@@ -450,7 +443,7 @@ and Android disagree.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
   the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,
-  `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, Targets' per-set rows, The log,
+  `TrashSwipe` (`Gym/Components/GymRows.swift`), on the Routines list, the movement editor's per-set target rows, The log,
   workout detail sets, Bodyweight entries, Notes, Coach History and the routine editor's movements
   (02.8 `1149:2275`) and This workout's movements (03.4 `1135:1875`), both lists out of edit mode
   that draw their own handles and drag on a long press. A one-line row draws the system's capsule
@@ -460,20 +453,33 @@ and Android disagree.
   *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
   *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; and the receipt's top-corner
   options menu with *Discard workout* and its confirmation.
-- **10x · The log's boards ahead of other canon (build, 2026-10-22).** The iOS build follows the
-  🚧 targets (10o), and other canon still says otherwise in these places:
+- **10x · Log and editing differences between the build and canon.** These differences remain
+  alongside the six flow contracts in 10y:
   - Workout detail's tiles share one card parted by hairlines (05.3), and the one session
     constructor draws them so on Inspect too, where 07.2 draws one card without hairlines; the
     receipt sets each tile on its own card, as 03.7 draws them. Settle one form for 05.3 and 07.2.
   - The Equipment menu (05.10) draws Bodyweight third; the build lists it last, as Create movement
     does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
     `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so Edit
-    exercise, Targets and Create movement read the same words.
+    exercise and the combined routine movement form read the same words.
   - Notes (09.1, 09.2): on iOS a row and the editor are the note's one text, while the domain still
     stores a title and a body: the editor takes a first line of up to 60 characters as the title and
     the rest as the body, and a longer first line keeps the whole text in the body under a title cut
     at a word boundary with *…*, which is how it reaches the other surfaces. Coach's `save_note` and
     the rules are unchanged.
+- **10y · Approved iOS Gym flow corrections.** The [six-flow handoff](../engineering/ios-gym-ui-flows.md)
+  covers fresh Coach entry with retained history, stable tabs and composer; chronological and
+  distinct Log entries with date headings and weigh-in separators; the compact weigh-in and native
+  graphical calendar; the compact workout ledger and movement picker; two full-width receipt actions
+  with the Coach crown and a top-corner Discard menu; and one movement form with inline targets. The affected
+  Dark and Daylight boards have human approval. Designer runtime review accepts the captured states
+  of all six flows; Coach and receipt large-text pixels are outside that review. Current delivery status
+  lives on the Figma flows; scoped native and local-stack evidence is in the engineering handoff and PR. Dogfood
+  nodes use the prefix `ios-gym-ui-oct23-`.
+
+  The combined editor's Daylight board is `1367:10387`; references to removed `1181:4611` must use
+  it. The original checkout's untracked `iosgym_tasks/done-30-targets.md` still points to the removed
+  board and describes the separate Targets destination; its owner must reconcile that local task.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

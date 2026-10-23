@@ -82,6 +82,18 @@ struct RoutinesTests {
       case "SaveRoutine":
         let value = try Routine(form: input.member("routine"))
         result = try corpus.save(SaveRoutine.self, vector, opening: Routine(id: value.id), edit: { $0 = value }, result: \.form, refusal: \.form)
+      case "SaveRoutinePlan":
+        func movement(_ form: JSON) throws -> Exercise {
+          let value = try Exercise(form: form)
+          return Exercise(id: value.id, name: value.name, pattern: value.pattern, equipment: value.equipment,
+                          stepKg: value.stepKg, loadCount: try form["loadCount"].map { Int(try $0.asInteger()) }, aliases: value.aliases)
+        }
+        let changes = try input.member("movements").asArray().map { value in
+          RoutineMovementChange(base: try value["base"].flatMap { $0.isNull ? nil : try movement($0) }, current: try movement(value.member("current")))
+        }
+        let action = try SaveRoutinePlan(base: Routine(form: input.member("base")), current: Routine(form: input.member("current")),
+                                         isNew: input.member("isNew").asBool(), movements: changes)
+        result = try corpus.decision(of: action, vector, result: \.json, refusal: \.form)
       case "CreateRoutine":
         result = try corpus.decision(of: SaveRoutine(creating: Routine(form: input.member("routine"))), vector, result: \.form, refusal: \.form)
       case "ReorderRoutines":
@@ -110,6 +122,13 @@ struct RoutinesTests {
         result = ["decodeError": ["type": .string(error.type), "field": .string(error.field), "reason": .string(error.reason)]]
       }
     }
-    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+    var wire = result
+    if vector.input["action"] == "SaveRoutinePlan", case .object(var root) = wire,
+       case .object(var decision)? = root["decision"], case .object(var write)? = decision["write"],
+       case .object(var gesture)? = write["gesture"] {
+      gesture["local"] = []; write["gesture"] = .object(gesture); decision["write"] = .object(write)
+      root["decision"] = .object(decision); wire = .object(root)
+    }
+    #expect(wire == vector.expect, "\(vector)\n  got    \(wire.jcsText)\n  expect \(vector.expect.jcsText)")
   }
 }

@@ -226,7 +226,8 @@ function predictionsOf(plan, registry) {
 export function translate(plan, scope, registry) {
   const operations = plan.operations;
   const changes = operations.map((operation) => changeOf(operation, scope, registry)).filter((change) => change !== null);
-  const keys = operations.map((operation) => recordKey(operation.entity.type, recordIdOf(operation, registry)));
+  const keys = operations.filter((operation) => operation.writes)
+    .map((operation) => recordKey(operation.entity.type, recordIdOf(operation, registry)));
   if (new Set(keys).size !== keys.length) throw new PlanError(2, 'two operations name one record');
   const onlyHeldRemovals = operations.every((operation) => operation.kind.op === 'remove' && operation.entity.heldRemoval === true);
   if (plan.isHeld && (!onlyHeldRemovals || plan.command !== null || plan.predictions.length)) {

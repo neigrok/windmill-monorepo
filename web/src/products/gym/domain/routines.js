@@ -2,16 +2,19 @@
 
 import { Decision } from '../../../platform/domain-kit/actions.js';
 import { SaveDraft } from '../../../platform/domain-kit/drafts.js';
-import { EntityType, Fields, Id } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Fields, Id, sameJson, uniqueInByteOrder } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
+import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Remove } from '../../../platform/domain-kit/standardActions.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
-import { Exercise } from './catalogue.js';
+import { setOwn } from '../../../../../packages/api-contract/sync/reference/core/maps.js';
+import { Catalogue, Exercise, ExerciseName, ExerciseNameValue, ExerciseValue, renamedAliases } from './catalogue.js';
 import { GymRefusals, RoutineRules } from './gymRules.js';
+import { SeedExercises } from './seedExercises.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
-/** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
+/** @typedef {{ base: ExerciseValue | null, current: ExerciseValue }} RoutineMovementChange */
 /** @typedef {{ exerciseId: string, reps: number | null, weightKg: number | null, completedAt: number, setNumber?: number | null }} PerformedSet */
 
 export class SetTarget {
@@ -167,6 +170,126 @@ export function SaveRoutine(draft) { return SaveDraft.ofDraft(draft, GymRefusals
 
 /** @param {Id<RoutineValue>} id */
 export function DeleteRoutine(id) { return new Remove(id, GymRefusals); }
+
+export class SaveRoutinePlan {
+  /** @param {RoutineValue} base @param {RoutineValue} current @param {boolean} isNew @param {readonly RoutineMovementChange[]} movements */
+  constructor(base, current, isNew, movements) {
+    precondition(base.id.equals(current.id), 'a routine plan edits its own record');
+    for (const movement of movements) {
+      precondition(movement.base === null || movement.base.id.equals(movement.current.id), 'a movement edit keeps its identity');
+    }
+    this.base = base;
+    this.current = current;
+    this.isNew = isNew;
+    this.movements = Object.freeze(movements.map((movement) => Object.freeze({ ...movement })));
+    this.scope = Routine.scope;
+    this.refusals = GymRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
+  load(read) {
+    const repository = read.repository(Routine);
+    return {
+      routine: repository.find(this.current.id, 'stored'),
+      visible: repository.find(this.current.id, 'drawn') !== null,
+      catalogue: new Catalogue(read, 'stored'),
+      visibleExercises: new Catalogue(read).exercises.map((exercise) => exercise.id),
+      formerNames: Fields.object(read.device(Catalogue.formerNamesKey) ?? {}).values,
+      moment: read.moment,
+    };
+  }
+
+  /** @param {ReturnType<SaveRoutinePlan['load']>} loaded */
+  decide(loaded) {
+    const { base, current, isNew } = this;
+    if (isNew && loaded.routine !== null) {
+      return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', current.id.ref, null, 'predicted')));
+    }
+    if (!isNew && (!loaded.visible || loaded.routine === null)) {
+      return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', current.id.ref, null, 'predicted')));
+    }
+    /** @type {Record<string, Json>} */
+    const baseFields = base.fields();
+    /** @type {Record<string, Json>} */
+    const currentFields = current.fields();
+    const touched = uniqueInByteOrder(Object.keys(currentFields)).filter((field) => isNew || !sameJson(currentFields[field], baseFields[field]));
+    const valid = new Valid(current, loaded.moment, touched);
+    /** @type {Record<string, Json> | undefined} */
+    const storedFields = loaded.routine?.fields();
+    const changed = touched.filter((field) => !sameJson(storedFields?.[field], valid.written[field]));
+    if (!isNew && changed.some((field) => !sameJson(storedFields?.[field], baseFields[field]))) {
+      return Decision.refuse(GymRefusals.ofRefused(new Refused('stale', current.id.ref, null, 'predicted')));
+    }
+    const plan = new Plan();
+    if (isNew) plan.create(valid);
+    else if (changed.length) plan.update(valid, { fields: changed, from: base, guarded: true });
+    let wrote = isNew || changed.length > 0;
+    const former = { ...loaded.formerNames };
+    const edits = this.movements.filter((edit) => current.entries.some((entry) => entry.exerciseId.equals(edit.current.id)))
+      .sort((a, b) => Id.compare(a.current.id, b.current.id));
+    precondition(edits.every((edit, index) => !edits.slice(0, index).some((previous) => edit.current.id.equals(previous.current.id))),
+      'a routine plan edits each included movement once');
+    for (const edit of edits) {
+      const next = new Valid(edit.current, loaded.moment).value;
+      const before = edit.base;
+      if (before === null) {
+        if (loaded.catalogue.find(next.id) !== null) {
+          return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', next.id.ref, null, 'predicted')));
+        }
+        plan.create(new Valid(next, loaded.moment));
+        if (next.equipment === 'dumbbell' && next.loadCount !== ExerciseValue.pairedLoadCount) {
+          const metadata = new ExerciseNameValue(new Id(next.id.record, ExerciseName), null, [], null, next.loadCount);
+          plan.create(new Valid(metadata, loaded.moment), { fields: ['loadCount'] });
+        }
+        wrote = true;
+        continue;
+      }
+      const stored = loaded.catalogue.find(next.id);
+      if (stored === null || !loaded.visibleExercises.some((id) => id.equals(next.id))) {
+        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', next.id.ref, null, 'predicted')));
+      }
+      const currentTargets = current.entries.find((entry) => entry.exerciseId.equals(next.id))?.sets?.map((set) => set.json);
+      const baseTargets = base.entries.find((entry) => entry.exerciseId.equals(next.id))?.sets?.map((set) => set.json);
+      const targetsChanged = !sameJson(currentTargets, baseTargets);
+      const unitsChanged = next.equipment !== before.equipment || next.loadCount !== before.loadCount;
+      const unitsSettled = next.equipment === stored.equipment && next.loadCount === stored.loadCount;
+      if ((targetsChanged || unitsChanged) && !unitsSettled && (stored.equipment !== before.equipment || stored.loadCount !== before.loadCount)) {
+        return Decision.refuse(GymRefusals.ofRefused(new Refused('stale', next.id.ref, null, 'predicted')));
+      }
+      const seed = SeedExercises.has(next.id);
+      if (targetsChanged || unitsChanged) {
+        plan.guardRead(new Id(next.id.record, ExerciseName), ['equipment', 'loadCount']);
+        if (!seed) plan.guardRead(next.id, ['equipment']);
+      }
+      const renamed = next.name !== before.name && next.name !== stored.name;
+      const equipped = next.equipment !== before.equipment && next.equipment !== stored.equipment;
+      const counted = next.loadCount !== before.loadCount && next.loadCount !== stored.loadCount;
+      if ((renamed && stored.name !== before.name) || (equipped && stored.equipment !== before.equipment)
+        || (counted && stored.loadCount !== before.loadCount)) {
+        return Decision.refuse(GymRefusals.ofRefused(new Refused('stale', next.id.ref, null, 'predicted')));
+      }
+      const metadata = new ExerciseNameValue(new Id(next.id.record, ExerciseName), seed && renamed ? next.name : null, [],
+        equipped ? next.equipment : null, next.equipment === 'dumbbell' && (equipped || counted) ? next.loadCount : null);
+      if (renamed) {
+        setOwn(former, String(next.id.record), { name: next.name, aliases: [...renamedAliases(stored.name, next.name, stored.aliases)] });
+        if (!seed) {
+          const custom = new ExerciseValue(stored.id, next.name, stored.pattern, stored.equipment, stored.stepKg, stored.aliases, stored.loadCount);
+          plan.update(new Valid(custom, loaded.moment, ['name']), { from: stored, guarded: true });
+        }
+        wrote = true;
+      }
+      const fields = uniqueInByteOrder(Object.keys(metadata.fields()));
+      if (fields.length) {
+        plan.guardRead(metadata.id, fields);
+        plan.create(new Valid(metadata, loaded.moment, fields), { fields });
+        wrote = true;
+      }
+    }
+    if (!sameJson(former, loaded.formerNames)) plan.device(Catalogue.formerNamesKey, former);
+    return wrote ? Decision.write(plan, current.id) : Decision.unchanged(current.id);
+  }
+}
 
 /** @param {readonly Id<RoutineValue>[]} order */
 export function ReorderRoutines(order) {

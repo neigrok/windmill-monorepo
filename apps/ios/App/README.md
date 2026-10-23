@@ -104,6 +104,12 @@ under them. A signed-in gym that already holds routines opens on an empty conver
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
+The builder stages exercise name, equipment and targets in one movement form. Done/Add changes the
+routine draft; outer Save commits the routine and changed exercise metadata atomically through
+`SaveRoutinePlan`. Outer Cancel discards those staged edits; editor Cancel restores the entry draft.
+Exercise metadata applies across the account, while targets belong to that routine entry. The form
+keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
+destination. Stale metadata or a changed owner refuses the whole save.
 
 The Log groups workouts, every weigh-in and optional records by local date. Timed entries share a
 chronological sequence; a backdated or legacy weight with day-only precision follows timed entries
@@ -380,6 +386,8 @@ asset catalogue, one palette enum per room), the named type roles, the spacing s
 [the iOS colour roles](../../../docs/design/ios/ios-redesign.md), which `Tools/tests/test_theme_assets.py`
 checks against the asset catalogue. The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
+The [six-flow Gym handoff](../../../docs/engineering/ios-gym-ui-flows.md) records approved designs,
+accepted runtime captures, scoped verification results and remaining performance/coverage limits.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
 colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,

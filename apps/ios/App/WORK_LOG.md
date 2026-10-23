@@ -208,6 +208,10 @@ is on its way and returns after a failed or refused one. Confirming a draft repo
 drawn once, only where signing in can help. Movement edits write only the fields
 that changed, and the load basis reads *kg each* for two dumbbells and *kg* for one.
 
+The six iOS Gym flow corrections use human-approved designs in
+[the flow contract](../../../docs/engineering/ios-gym-ui-flows.md); their delivery status lives on the
+linked Figma flows. Dogfood nodes use `ios-gym-ui-oct23-*`.
+
 Coach separates the visible conversation from the request owner. A versioned owner archive retains
 nonempty chats, drafts and interrupted results for local History, including signed-out use. Fresh
 entry does not clear prior work or create empty rows. Remote History refresh is read-only and keeps
@@ -230,3 +234,64 @@ selection and cancellation. The duplicate statistics strip is removed.
 The receipt uses two full-width actions with the Coach crown, plus a native top-corner Discard menu.
 Confirmation uses the actual set count; cancellation retains the originating receipt. Coach handoff
 keeps its existing send and sign-in continuation, with account transitions disabling all actions.
+
+The combined routine movement form stages metadata and targets together. `SaveRoutinePlan` validates
+captured routine and exercise baselines and persists one atomic batch; failed or stale saves cannot
+leave metadata partially committed. Outer Cancel drops the complete draft. Swift, Kotlin and
+JavaScript share the transaction contract, including optional counts, guarded target load units and
+local former-name storage. Android and web presentation is unchanged. JavaScript engine-backed tests
+cover atomic retry after storage failure, concurrent refusal, cache persistence and held-delete Undo.
+
+Recorded checks for these flows include 29 Swift Bodyweight tests, 14 focused routine-domain tests,
+142 Gym domain tests, five optional-count test functions including 36 routine corpus cases, Android
+domain parity (680 corpus cases) and 721 JavaScript Gym tests, including all 680 applicable shared
+product vectors and 36 routine cases. Full `npm run build` passes 3,170 ordinary tests and four
+performance tests with no failures or skips, strict domain types, sync bundling, Vite and landing
+shells; layering scans 13 kit and 19 domain files with no findings. Evidence is in
+`web-gym-parity.log`, `web-routine-plan-tests.log` and `web-routine-parity-build.log` under
+`/tmp/ios-gym-ui-verify`. The signed Xcode 27.1 app/test build succeeds. The full signed app-unit run
+records 712 of 714 passing tests; the focused Bodyweight rerun passes all 15 tests, including the two corrected
+expectations. There is no second complete 714-test result. The Xcode 27 architecture-probe failure
+reproduces on clean `a352e56b`; pinned Xcode 26.3 CI is the full compatibility gate.
+
+Focused native results cover Coach conversation and pending-answer captures, pending draft/history
+recovery, both anonymous Coach journeys, signed-in ask/apply/history, and live-workout picker
+cancel/reopen/custom creation. Log screens and entry actions pass in both appearances. Compact-phone
+checks pass routine cancellation, keyboard/validation/large text, weigh-in keyboard/validation,
+calendar date staging, largest-text end clearance and workout captures. Final Finish verification
+passes five tests across `compact-finish-approved` and `compact-native-target`, including all four
+edges of the 44-point menu target and the approved gold crown/52-point action captures. Designer
+review accepts the captured states of all six flows (`runtime-design-review.md`); Coach and receipt
+large-text pixels remain outside that review. Other evidence is in `coach-weight-review`,
+`coach-live-ui`, `log-review`, `log-actions-final`, `compact-ui-review` and `compact-ui-final` logs/result
+bundles under `/tmp/ios-gym-ui-verify`. These are scoped results, not complete accessibility coverage.
+
+Both offline journeys pass with the combined movement editor: Add stages the selected entry before
+outer routine Save. Signed-in black-hole and signed-out stalled-network checks retain their
+cold-launch, resume, relaunch, account, hidden-workout and Journal assertions (`offline-route.log`
+and `.xcresult`). Three further tests pass in `routine-route-audit.log` / `.xcresult`: the floating-layer
+capture in both appearances and both nightly hidden-workout accessory checks. The nightly tests
+create their routine through the combined editor and preserve exact Log clearance assertions after
+returning from detail and as the tab bar compacts/expands.
+
+The isolated backend account/Journal journey completes eight steps and delivers 41 first-party iOS
+events plus one decoded handled Sentry envelope (`auth_request_code`, HTTP 502). The privacy scan
+finds no fixture page text, email or auth code. Evidence is in `telemetry-journey.log` and
+`telemetry-evidence.json` under `/tmp/ios-gym-ui-verify`. All three real-backend Gym journeys pass
+across `gym-backend-final` and the focused `gym-backend-signed-final` rerun. The signed journey
+records 99 first-party events, including the new editor, picker, calendar, fresh-Coach and receipt-menu
+steps; the isolated run records 352 structured writes. The Gym privacy scan excludes fixture content,
+email, session tokens and links (`gym-telemetry-evidence.json`). External vendor delivery is not established.
+
+The isolated signed Gym journey also passes with 99 events and a clear privacy scan
+(`gym-serial-evidence.json`). One non-fully-blocked hang follows edited-set Save as the load-wheel
+sheet closes. The original baseline journey passes with 84 events and reproduces the same hang
+category at the same boundary (`baseline-native/evidence.json`); original/copied debug-library hash
+and UUID match. Together with the three parallel-run reports, this establishes a pre-existing
+simulator responsiveness issue, not harmlessness or equivalent severity/rate. The scoped assessment
+is `gym-hang-audit.md`.
+
+Dogfood follow-up `ios-workout-load-wheel-responsiveness`: profile edited-set Save / load-wheel
+dismissal in a signed Release build on a physical device, repeating open/save/close cycles. Compare main-thread duration and traces with the baseline
+before selecting a fix. Current sampled stacks show framework rendering/teardown and no changed flow
+function; release-device performance remains unmeasured.

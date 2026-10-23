@@ -1,7 +1,7 @@
 // @ts-check
 
 import { Decision } from '../../../platform/domain-kit/actions.js';
-import { EntityType, Id, compareText } from '../../../platform/domain-kit/entities.js';
+import { EntityType, Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Plan } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
@@ -117,6 +117,8 @@ export function renamedAliases(previous, next, aliases) {
 }
 
 export class Catalogue {
+  static formerNamesKey = 'rack:catalogue';
+
   /** @type {Map<string, ExerciseValue>} */
   #byId;
 
@@ -125,6 +127,7 @@ export class Catalogue {
    * @param {import('../../../platform/domain-kit/reading.js').ViewMode} view
    */
   constructor(read, view = 'drawn') {
+    const former = Fields.object(read.device(Catalogue.formerNamesKey) ?? {}).values;
     const overrides = new Map(read.repository(ExerciseName).all(view).map((value) => [jcs(value.id.json), value]));
     /** @param {ExerciseValue} exercise @param {boolean} seed */
     const resolved = (exercise, seed) => {
@@ -135,7 +138,15 @@ export class Catalogue {
         override.loadCount ?? (exercise.equipment === 'dumbbell' ? exercise.loadCount : ExerciseValue.pairedLoadCount));
     };
     this.exercises = Object.freeze([...SeedExercises.all.map((seed) => resolved(seed, true)),
-      ...read.repository(Exercise).all(view).map((custom) => resolved(custom, false))]
+      ...read.repository(Exercise).all(view).map((custom) => resolved(custom, false))].map((exercise) => {
+      if (!Object.hasOwn(former, String(exercise.id.record))) return exercise;
+      const value = former[String(exercise.id.record)];
+      if (value === undefined) return exercise;
+      const fields = Fields.object(value);
+      if (fields.string('name') !== exercise.name) return exercise;
+      const aliases = renamedAliases(exercise.name, exercise.name, [...aliasesOf(fields), ...exercise.aliases]);
+      return new ExerciseValue(exercise.id, exercise.name, exercise.pattern, exercise.equipment, exercise.stepKg, aliases, exercise.loadCount);
+    })
       .sort((a, b) => compareText(a.name, b.name) || Id.compare(a.id, b.id)));
     this.#byId = new Map(this.exercises.map((exercise) => [jcs(exercise.id.json), exercise]));
     Object.freeze(this);

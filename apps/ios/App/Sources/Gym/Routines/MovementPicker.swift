@@ -289,13 +289,7 @@ struct CreateMovementSheet: View {
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           MovementEquipmentPicker(equipment: $draft.equipment, loadCount: $draft.loadCount, identifier: "gym-movement-equipment").disabled(busy)
         } footer: { Text(MovementEquipment(draft.equipment, loadCount: draft.loadCount).help) }
-        if purpose == .routine {
-          Section {
-            NavigationLink(value: RoutineEditingSession.Step.targets(draft.id)) {
-              LabeledContent { Text(Readout.target(draft.sets)).monospacedDigit() } label: { Text("Targets").foregroundStyle(GymPalette.ink) }
-            }.disabled(busy).accessibilityIdentifier("gym-movement-targets")
-          }
-        }
+
       }.listRowBackground(GymPalette.card)
     }
     .modifier(GymPage()).accessibilityIdentifier("gym-movement-creation")
