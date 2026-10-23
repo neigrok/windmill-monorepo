@@ -115,8 +115,8 @@ struct ConnectedLogScreen: View {
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
-  // The screen's one primary; signed in, its symbol names the browser it leaves for.
   var connectTitle: String { gym.coachAccountAvailable ? "Connect a tool" : "Sign in first" }
+  // The screen's one primary; signed in, its symbol names the browser it leaves for.
   var connect: some View {
     ActionBand(title: connectTitle, room: .gym, actionIdentifier: "coach-connect-tool",
                symbol: gym.coachAccountAvailable ? "arrow.up.forward" : nil) {

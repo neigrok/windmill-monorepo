@@ -2,8 +2,6 @@ import Foundation
 import SwiftUI
 import DomainKit
 import GymDomain
-import SyncAPI
-import SyncSchema
 
 nonisolated enum LogPresentation {
   static func date(_ day: LocalDay) -> Date { Calendar(identifier: .gregorian).date(from: DateComponents(year: day.year, month: day.month, day: day.day))! }

@@ -720,12 +720,10 @@ import SyncTesting
     #expect(workout.walk.order == [first, second, third] && workout.selected == third)
     workout.move(from: IndexSet(integer: 2), to: 0); workout.select(second)
     #expect(workout.walk.order == [third, first, second] && workout.selected == second)
-    let position = try #require(workout.walk.position(of: second))
-    #expect(position.index == 2 && position.count == 3 && workout.walk.position(of: nil) == nil)
     workout.remove(second)
     #expect(workout.walk.order == [third, first] && workout.selected == third)
     workout.remove(third)
-    #expect(workout.walk.order == [first] && workout.selected == first && workout.walk.position(of: first) == nil)
+    #expect(workout.walk.order == [first] && workout.selected == first)
     let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
     #expect(reopened.walk == workout.walk)
     let json = try harness.runner.read(Gym.scope) { try $0.device(WorkoutWalk.key(try #require(workout.sessionId))) }

@@ -1,7 +1,6 @@
 import SwiftUI
 import DomainKit
 import GymDomain
-import SyncAPI
 
 struct MovementRecordScreen: View {
   let gym: GymModel

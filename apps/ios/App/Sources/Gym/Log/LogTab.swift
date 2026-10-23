@@ -1,7 +1,6 @@
 import SwiftUI
 import DomainKit
 import GymDomain
-import SyncAPI
 
 struct LogTab: View {
   let gym: GymModel

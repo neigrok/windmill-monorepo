@@ -23,7 +23,7 @@ struct WorkoutScreen: View {
     return NavigationStack {
       Group {
         if let session = workout.session {
-          if session.isOpen { live(session) }
+          if session.isOpen { live }
           else { SessionDetailScreen(gym: gym, sessionID: session.id) }
         } else {
           ContentUnavailableView("This workout is no longer open", systemImage: "dumbbell")
@@ -98,7 +98,7 @@ struct WorkoutScreen: View {
     .onDisappear { workout.flushRack(); workout.rackEditing = false; finishTask?.cancel(); releaseAwake() }
   }
 
-  func live(_ session: Session) -> some View {
+  var live: some View {
     VStack(spacing: 0) {
       if workout.walk.order.isEmpty {
         VStack(spacing: RoomSpace.panel) {

@@ -1,6 +1,5 @@
 import SwiftUI
 import Observation
-import DomainKit
 
 @Observable @MainActor final class CoachHistory {
   let gym: GymModel

@@ -4,7 +4,6 @@ import UIKit
 import DomainKit
 import GymDomain
 import SyncCore
-import SyncSchema
 import SyncEngine
 @testable import Windmill
 

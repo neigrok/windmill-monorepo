@@ -26,7 +26,6 @@ nonisolated struct CoachStep: Codable, Equatable, Sendable {
 nonisolated struct CoachRead: Codable, Equatable, Sendable {
   var sets = 0, sessions = 0, weeks = 0
   enum CodingKeys: String, CodingKey { case sets, sessions, weeks }
-  init(sets: Int = 0, sessions: Int = 0, weeks: Int = 0) { self.sets = sets; self.sessions = sessions; self.weeks = weeks }
   init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     sets = try c.decodeIfPresent(Int.self, forKey: .sets) ?? 0

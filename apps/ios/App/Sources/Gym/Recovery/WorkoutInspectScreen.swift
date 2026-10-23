@@ -109,8 +109,8 @@ struct WorkoutInspectScreen: View {
       GymTransient(gym: gym, message: message ?? gym.addingLine(id) ?? (waiting ? gym.recoveryWait : nil),
                    dismiss: message == nil ? nil : { message = nil },
                    errorIdentifier: "recovery-error")
-      if let recovery, let primary {
-        ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary, recovery) }
+      if let primary {
+        ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary) }
       }
     }
   }
@@ -124,7 +124,7 @@ struct WorkoutInspectScreen: View {
 
   // A queued Keep or Retry clears what the band last said: the workout on its way is the model's line until the log
   // confirms it, and a refusal that comes back says its reason.
-  func act(_ primary: WorkoutRecovery.Primary, _ recovery: WorkoutRecovery) {
+  func act(_ primary: WorkoutRecovery.Primary) {
     switch primary {
     case .fix: fix()
     case .keep: if gym.keepAdoptedWorkout(id) { message = nil }

@@ -78,11 +78,6 @@ nonisolated struct WorkoutWalk: Equatable, Sendable {
   var json: JSON {
     .object(["order": .array(order.map(\.json)), "selected": selected?.json ?? .null, "hidden": .bool(hidden)])
   }
-  // Where a movement stands in the walk, while the walk holds more than one.
-  func position(of id: ID<Exercise>?) -> (index: Int, count: Int)? {
-    guard order.count > 1, let id, let index = order.firstIndex(of: id) else { return nil }
-    return (index, order.count)
-  }
   mutating func merge(session: Session, sets: [TrainingSet]) {
     for id in (session.plan?.entries.map(\.exerciseId) ?? []) + sets.map(\.exerciseId) where !order.contains(id) { order.append(id) }
     if selected == nil || !order.contains(selected!) { selected = sets.last?.exerciseId ?? order.first }
