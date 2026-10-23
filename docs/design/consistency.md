@@ -781,9 +781,9 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
-  The sign-in question: 7d. iOS asks these words through one alert for every workout door
-  (`Gym/Components/GymRows.swift`, `DiscardWorkoutAlert`), except Inspect's stranded sets, which are
-  not drawn: *Discard 2 sets* still asks *This permanently removes the copy saved on this phone.*
+  The sign-in question: 7d. iOS asks every one of these through one question, `DestructiveQuestion`
+  (`Gym/Components/GymRows.swift`), except that Inspect's stranded sets are not drawn: *Discard 2 sets*
+  still asks *This permanently removes the copy saved on this phone.* as a dialog
   (`Recovery/WorkoutInspectScreen.swift`). A workout with no sets is not drawn either; iOS says *This
   deletes the workout. You can’t undo this.* Android asks nothing (11b).
 - **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight

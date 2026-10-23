@@ -183,15 +183,26 @@ import SyncTesting
     #expect(model.pendingAdoptions.map(\.product) == ["journal", "gym"] && model.adoptionCounts[.journal]?[Page.type] == 1)
     #expect(model.adoptionAlertTitle == "Add to your account?")
     #expect(model.adoptionAlertMessage == "This phone has 1 routine and 1 journal page from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.")
-    model.sheet = .discardAdoption
-    #expect(model.adoptionAlertTitle == "Discard 1 routine and 1 journal page?")
+    #expect(model.adoptionButtons == [.add, .discard, .cancelSignIn] && model.adoptionButtons.map(\.title) == ["Add", "Discard", "Cancel sign-in"])
+    await model.press(.discard, asked: model.pendingAdoptions)
+    #expect(model.sheet == .discardAdoption && model.adoptionAlertTitle == "Discard 1 routine and 1 journal page?")
     #expect(model.adoptionAlertMessage == "They are deleted from this phone. You can’t undo this.")
-    await model.adopt(.discard, asked: model.pendingAdoptions)
+    #expect(model.adoptionButtons == [.cancelDiscard, .confirmDiscard] && model.adoptionButtons.map(\.title) == ["Cancel", "Discard"])
+    await model.press(.cancelDiscard, asked: model.pendingAdoptions)
+    #expect(model.sheet == .adoption && model.adoptionAlertTitle == "Add to your account?" && model.adoptionButtons == [.add, .discard, .cancelSignIn])
+    #expect(model.account == nil && model.pendingAdoptions.map(\.product) == ["journal", "gym"])
+    #expect(model.journal.document.body == "Local page" && model.gym.routines.contains { $0.id == localRoutine })
+    await model.press(.discard, asked: model.pendingAdoptions)
+    await model.press(.confirmDiscard, asked: model.pendingAdoptions)
     #expect(model.account == owner.account && !model.editorReadOnly && model.sheet == nil)
     #expect(model.adoptionAnswers.isEmpty && model.preferences.data(forKey: "roomAdoption") == nil)
     #expect(!model.gym.routines.contains { $0.id == localRoutine })
     #expect(recorder.entries.withLock { $0.filter { $0.name == "room_adoption_answered" }.map(\.properties) } ==
             [["room": "journal", "action": "discard"], ["room": "gym", "action": "discard"]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "first_run_choice" && $0.properties["screen"] != "journal" }.map(\.properties) } == [
+      ["screen": "adoption", "action": "discard"], ["screen": "discard_adoption", "action": "cancel"], ["screen": "adoption", "action": "discard"],
+      ["screen": "adoption", "action": "discard"],
+    ])
   }
 
   @Test func partialAnswerSurvivesModelRelaunchWithoutAskingJournalAgain() async throws {

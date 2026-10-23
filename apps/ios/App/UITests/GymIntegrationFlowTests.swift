@@ -101,6 +101,25 @@ import XCTest
       XCTAssertFalse(question.exists)
       verifyServer("signed", edited: true)
     }
+    discardAskingFirst(app)
+  }
+  // A past workout's discard asks first: Cancel leaves it in the log, and only the question's Discard takes it out.
+  func discardAskingFirst(_ app: XCUIApplication) {
+    app.tabBars.buttons["The log"].tap()
+    let session = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
+    XCTAssertTrue(session.waitForExistence(timeout: 10)); session.tap()
+    let detail = app.descendants(matching: .any)["gym-session-detail"], question = app.alerts["Discard this workout?"]
+    for answer in ["Cancel", "Discard"] {
+      XCTAssertTrue(app.buttons["gym-session-more"].waitForExistence(timeout: 5)); app.buttons["gym-session-more"].tap()
+      XCTAssertTrue(app.buttons["gym-session-discard"].waitForExistence(timeout: 5)); app.buttons["gym-session-discard"].tap()
+      XCTAssertTrue(question.waitForExistence(timeout: 5))
+      XCTAssertTrue(question.staticTexts["This deletes the workout and its 4 sets. You can’t undo this."].exists)
+      question.buttons[answer].tap()
+      XCTAssertTrue(question.waitForNonExistence(timeout: 5))
+      if answer == "Cancel" { XCTAssertTrue(detail.exists) }
+    }
+    XCTAssertTrue(detail.waitForNonExistence(timeout: 10))
+    XCTAssertTrue(session.waitForNonExistence(timeout: 10))
   }
   // iOS 26 keeps a hidden workout in the tab bar's accessory, which goes where the tab bar goes: a routine's summary over
   // the room draws neither, and back at the root one tap brings the logger back.

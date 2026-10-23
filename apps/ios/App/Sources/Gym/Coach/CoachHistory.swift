@@ -76,7 +76,6 @@ struct CoachHistoryScreen: View {
   @State var history: CoachHistory
   @State var opening: String?
   @State var deletion: CoachThread?
-  @State var deletionConfirmed = false
   @Environment(\.dismiss) var dismiss
   @Environment(\.coachOpenAccount) var openAccount
   init(gym: GymModel, coach: CoachConversation, history: CoachHistory) {
@@ -99,23 +98,10 @@ struct CoachHistoryScreen: View {
           }
         }
       }
-      .onChange(of: deletion) { _, shown in
-        if shown != nil {
-          deletionConfirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "discard", "state": "shown"])
-        } else if !deletionConfirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": "history", "action": "cancel", "outcome": "cancelled"])
-        }
+      .destructiveQuestion(gym, screen: "history", title: "Delete this conversation?", message: "You can’t undo this.", act: "Delete",
+                           isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } })) {
+        if let row = deletion { Task { await history.remove(row) } }
       }
-      .onChange(of: gym.account) { _, _ in deletion = nil }
-      .alert("Delete this conversation?", isPresented: Binding(get: { deletion != nil }, set: { if !$0 { deletion = nil } }), presenting: deletion) { row in
-        Button("Delete", role: .destructive) {
-          deletionConfirmed = true
-          Task { await history.remove(row) }
-          deletion = nil
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: { _ in Text("You can’t undo this.") }
       .task(id: gym.account) { await history.load() }
       .reachBand {
         GymTransient(gym: gym, message: coach.error ?? history.error,
