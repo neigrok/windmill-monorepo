@@ -62,7 +62,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 Keep the full monorepo: the corpus runner finds `packages/api-contract/sync/corpus/` by walking up from
 its own file. `WINDMILL_SYNC_CORPUS=<path>` points it elsewhere.
 
-**Simulation.** The replay fuzz runs 128 seeds from 1 in every `swift test`, each 300 actions before quiescence.
+**Simulation.** The replay fuzz runs 128 seeds from 1 in every `swift test` by default, each 300 actions before quiescence.
 `SYNC_SIM_SEEDS=<n>` runs more, `SYNC_SEED=<s>` starts elsewhere, and `SYNC_SIM_ACTIONS=<n>` lengthens each run. A
 failure names its seed and the last actions; `SYNC_SEED=<s> SYNC_SIM_SEEDS=1` runs that seed alone:
 
@@ -126,8 +126,11 @@ through the SQLite store, in `SyncStoreTests`.
 
 [CI](../../.github/workflows/ios.yml) pins Xcode 26.3 and runs five parallel jobs. The packages/builds job checks the
 generated registry, tests `WindmillSync`, `WindmillDomain` and `SyncTestingSurface` with the explicit import check,
-builds Sync and SyncProbe for the simulator, checks the App tools, and builds the App in Debug and Release. App unit
-tests select `WindmillTests` on iPhone 17. Three UI shards select each standard `WindmillUITests` class once:
+checks the App tools, and builds SyncProbe and the App in Release for the simulator's arm64 slice. A pull request runs
+32 seeds of the replay fuzz, a push to main 128. The App's Release build compiles every Sync library for iOS, and the
+unit tests compile `SyncTesting`. The probe build, the layering test and the Release build share one package checkout
+per app, under `WM_SOURCE_PACKAGES`. App unit tests run the `WindmillUnitTests` scheme on iPhone 17, which builds the
+app and `WindmillTests` without the UI tests. Three UI shards select each standard `WindmillUITests` class once:
 
 | Shard | Classes |
 |---|---|

@@ -13,7 +13,7 @@ jobs:
       - name: Test on macOS
         run: swift test --explicit-target-dependency-import-check error
       - name: Build for the iOS simulator
-        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
+        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator' ARCHS=arm64
       # An invocation on continued lines passes no setting; a comment naming -xcconfig passes nothing.
       - name: Build the SyncProbe app for the iOS simulator
         working-directory: apps/ios/SyncProbe

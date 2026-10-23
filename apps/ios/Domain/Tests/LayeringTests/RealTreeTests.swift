@@ -43,7 +43,8 @@ import Testing
 
   @Test(.enabled(if: Shell.isInstalled("xcodegen"), "XcodeGen is installed"), arguments: apps)
   func appResolvesThePinnedSettings(_ app: AppProject.App) throws {
-    let findings = try AppProject.findings(root: Checkout.iosRoot, app: app).sorted().map(\.description)
+    let sourcePackages = Checkout.sourcePackages.map(app.directory(in:))
+    let findings = try AppProject.findings(root: Checkout.iosRoot, app: app, sourcePackages: sourcePackages).sorted().map(\.description)
     #expect(findings == [], "App settings: \(findings)")
   }
 }

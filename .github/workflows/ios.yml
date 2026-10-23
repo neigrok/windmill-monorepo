@@ -1,7 +1,7 @@
 name: iOS CI
 
-# Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
-# and the engine's public-surface test (SyncTestingSurface) — and builds the product and dev-only SyncProbe apps for
+# Tests the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain) and the engine's
+# public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app and the product app in Release for
 # the simulator. App unit tests and three class-based UI shards run in parallel; ships nothing. The corpus runners read
 # packages/api-contract/{sync,domain-kit,gym,journal} by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
@@ -51,6 +51,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # One package checkout per app, laid out as apps/ios lays out the apps: the probe build, the domain kit's layering
+      # test and the Release build resolve each app's packages once.
+      - name: Share the apps' package checkouts
+        run: echo "WM_SOURCE_PACKAGES=$RUNNER_TEMP/source-packages" >> "$GITHUB_ENV"
+
       # The repository pins one toolchain: the domain kit's layering tests read sources with swift-syntax
       # 602, which must match the compiler's major (Swift 6.2), and its compile attacks assert what that
       # compiler refuses. Moving to a newer Xcode means bumping swift-syntax and re-checking the attacks.
@@ -92,18 +97,21 @@ jobs:
       - name: Check the generated registry
         run: swift run --explicit-target-dependency-import-check error SyncSchemaGen --check
 
-      # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it.
+      # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it. A pull request
+      # runs 32 seeds of the replay fuzz; main runs 128, the size that also holds its coverage floor.
       - name: Test on macOS
+        env:
+          SYNC_SIM_SEEDS: ${{ github.event_name == 'pull_request' && '32' || '128' }}
         run: swift test --explicit-target-dependency-import-check error
 
-      - name: Build for the iOS simulator
-        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
-
+      # The runners are Apple silicon, so a simulator build compiles the arm64 slice alone. The App build below compiles
+      # every Sync library for the simulator; the unit tests compile SyncTesting.
       - name: Build the SyncProbe app for the iOS simulator
         working-directory: apps/ios/SyncProbe
         run: |
           xcodegen generate
-          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator'
+          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/SyncProbe" ARCHS=arm64
 
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit
@@ -114,16 +122,16 @@ jobs:
         working-directory: apps/ios/SyncTestingSurface
         run: swift test --explicit-target-dependency-import-check error
 
-      - name: Check the App tools and build Debug and Release
+      # The unit and UI jobs build Debug; this is the one Release compile before a TestFlight archive.
+      - name: Check the App tools and build Release
         working-directory: apps/ios/App
         env:
           IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
         run: |
           python3 -m unittest discover -s Tools/tests -v
           python3 Tools/generate_project.py
-          xcodebuild build -project Windmill.xcodeproj -scheme Windmill -destination 'generic/platform=iOS Simulator'
           xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
-            -destination 'generic/platform=iOS Simulator'
+            -destination 'generic/platform=iOS Simulator' -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/App" ARCHS=arm64
 
   app-unit-tests:
     runs-on: macos-26
@@ -146,12 +154,12 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
+      # The unit-test scheme leaves out the UI-test bundle and its runner.
       - name: Build and run App unit tests
         run: |
           python3 Tools/generate_project.py
-          xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -only-testing:WindmillTests
+          xcodebuild test -project Windmill.xcodeproj -scheme WindmillUnitTests \
+            -destination 'platform=iOS Simulator,name=iPhone 17'
 
   app-ui-tests:
     name: App UI tests (${{ matrix.shard }})

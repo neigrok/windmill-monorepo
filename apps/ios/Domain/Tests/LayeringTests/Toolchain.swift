@@ -13,6 +13,8 @@ enum Checkout {
   }()
   static let repositoryRoot = iosRoot.deletingLastPathComponent().deletingLastPathComponent()
   static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Fixtures")
+  // WM_SOURCE_PACKAGES lays each app's package checkouts out as apps/ios lays out the apps, so a CI job resolves them once.
+  static let sourcePackages = ProcessInfo.processInfo.environment["WM_SOURCE_PACKAGES"].map { URL(fileURLWithPath: $0) }
 }
 
 extension URL {
