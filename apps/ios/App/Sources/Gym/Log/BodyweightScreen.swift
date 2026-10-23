@@ -84,6 +84,10 @@ struct BodyweightScreen: View {
   let gym: GymModel
   @State private var window = ChartWindow.recent
   @State private var correcting: Selection?
+  // A weigh-in row reads its weight first, then its day: *82.5 kilograms, Sep 23*.
+  static func spoken(_ entry: Bodyweight.Entry, dates: GymDate) -> String {
+    "\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))"
+  }
 
   var body: some View {
     let dates = gym.dates
@@ -127,7 +131,7 @@ struct BodyweightScreen: View {
               } label: {
                 GymRow(title: "\(BodyweightLogInput.kilograms(entry.kg)) kg", trailing: .fact(dates.day(entry.day), door: true))
               }
-              .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
+              .accessibilityLabel(Self.spoken(entry, dates: dates))
               .accessibilityHint("Correct this weigh-in")
               .accessibilityIdentifier("gym-weigh-in-\(entry.day.text)")
               .trashSwipe("Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }

@@ -1,9 +1,30 @@
 import Testing
 import DomainKit
+import DomainKitTesting
 import GymDomain
+import SyncCore
+import SyncModelServer
+import SyncSchema
+import SyncTesting
 @testable import Windmill
 
-struct CoachScreensTests {
+@MainActor struct CoachScreensTests {
+  // Notes and the Connected log are the account's: signed out, or while an account changes, Notes asks for a sign-in and
+  // the Connected log's one primary is Sign in first.
+  @Test func notesAndTheConnectedLogNeedTheAccount() {
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let gym = GymModel(runner: harness.runner)
+    let doors = { "\(gym.coachAccountAvailable ? "notes" : "sign in") | \(ConnectedLogScreen(gym: gym).connectTitle)" }
+    #expect(doors() == "sign in | Sign in first")
+    gym.account = "account"
+    #expect(doors() == "sign in | Sign in first")
+    gym.isAnonymous = false
+    #expect(doors() == "notes | Connect a tool")
+    gym.accountChanging = true
+    #expect(doors() == "sign in | Sign in first")
+  }
+
   // Each typed text, the title and body it stores, and the text it reads back as: what was typed, composed and trimmed.
   @Test(arguments: [
     ("Prefer dumbbells at home on weekends.",

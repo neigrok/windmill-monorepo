@@ -44,13 +44,16 @@ struct CoachSetupView: View {
       }.padding(.top, RoomSpace.related)
     }
   }
+  // What the greeting offers under its bubbles, in order; a goal or just logging is never one of them.
+  static let choices: [(choice: CoachSetupChoice, title: String, symbol: String)] = [
+    (.screenshot, "Add screenshot", "photo.badge.plus"), (.buildManually, "Build my own", "plus"),
+  ]
   @ViewBuilder var actions: some View {
-    ForEach([CoachSetupChoice.screenshot, .buildManually], id: \.self) { choice in
-      Button { choose(choice) } label: {
-        Label(choice == .screenshot ? "Add screenshot" : "Build my own", systemImage: choice == .screenshot ? "photo.badge.plus" : "plus")
-          .font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+    ForEach(Self.choices, id: \.choice) { action in
+      Button { choose(action.choice) } label: {
+        Label(action.title, systemImage: action.symbol).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
       }.buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent).frame(minHeight: RoomSpace.minimumTarget)
-        .accessibilityIdentifier("coach-setup-" + choice.rawValue)
+        .accessibilityIdentifier("coach-setup-" + action.choice.rawValue)
     }
   }
 }

@@ -176,11 +176,17 @@ struct SetRow: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .body) private var markerColumn = 28.0
 
+  var effort: String { Readout.effort(weightKg: set.weightKg, reps: set.reps) }
+  var second: [String] { [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 } }
+  // VoiceOver reads the row in one line whatever its reading: *1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.*
+  var spoken: String {
+    (["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", ")
+  }
+
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
-    let effort = Readout.effort(weightKg: set.weightKg, reps: set.reps)
-    let second = [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 }
+    let effort = effort, second = second
     HStack(alignment: .firstTextBaseline, spacing: 0) {
       if reading == .columns {
         Text(marker).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(width: markerColumn, alignment: .leading)
@@ -200,7 +206,7 @@ struct SetRow: View {
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel((["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", "))
+      .accessibilityLabel(spoken)
   }
 
   // A set by its place among the sets so far.

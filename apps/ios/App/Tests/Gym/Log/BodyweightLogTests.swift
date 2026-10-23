@@ -126,6 +126,14 @@ import SyncStore
     #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45)])
   }
 
+  // A weigh-in row reads its weight first and its day after: today and yesterday by name, any other day by its date.
+  @Test func aWeighInRowReadsItsWeightThenItsDay() {
+    let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
+    let dates = GymDate(moment, locale: Locale(identifier: "en_US"))
+    let rows = [(0, 82.4), (-1, 82), (-3, 82.5)].map { days, kg in BodyweightScreen.spoken(Bodyweight.Entry(day: moment.today.adding(days: days), kg: kg), dates: dates) }
+    #expect(rows == ["82.4 kilograms, Today", "82 kilograms, Yesterday", "82.5 kilograms, Sep 23"])
+  }
+
   @Test func unknownEmptyRecentAllAndGapsFollowLocalCalendar() throws {
     let (_, gym) = fixture(), moment = try gym.runner.moment(), today = moment.today
     let empty = Bodyweight(stored: [], drawn: [], firstPullComplete: true, at: moment)

@@ -238,7 +238,7 @@ import UIKit
     #expect(gym.proposals.first { $0.id == ID("word-refused-removal") }?.state == "pending")
     #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"]])
     let cards = ["word-removed", "word-refused-removal", "word-refused-change"].map { ProposalCard(gym: gym, id: $0) }
-    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.retryable ? $0.primaryTitle : "-"] } == [
+    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.decision(stalled: false).retries ? $0.decision(stalled: false).title : "-"] } == [
       ["applied", "-", "-"], ["open", "Not applied.", "Try again"], ["open", "Not applied.", "Try again"]])
   }
 

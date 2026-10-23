@@ -20,6 +20,15 @@ import SyncCore
     ])
   }
 
+  // A finished set reads its place and numbers, then what it says against the plan, then its effort and note, as one line.
+  @Test func aSetRowReadsAsOneLine() {
+    var set = TrainingSet(id: ID("set"), sessionId: ID("push"), exerciseId: ID("bench-press"), weightKg: 100, reps: 5, completedAt: Instant(ms: 0))
+    #expect(SetRow(marker: "1", set: set).spoken == "1 · 100 × 5")
+    set.weightKg = 90; set.rpe = 8; set.note = "Smooth last set."
+    #expect(SetRow(marker: "1", set: set, caption: "+30 over plan").spoken == "1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.")
+    #expect(SetRow(marker: "2", set: set, time: "9:41", reading: .columns).spoken == "2 · 90 × 5, 9:41 · RPE 8 · Smooth last set.")
+  }
+
   @Test func everyDoorThatDiscardsAWorkoutAsksInTheBoardsWords() {
     #expect([0, 1, 5].map(DiscardWorkoutAlert.message(sets:)) == [
       "This deletes the workout. You can’t undo this.",

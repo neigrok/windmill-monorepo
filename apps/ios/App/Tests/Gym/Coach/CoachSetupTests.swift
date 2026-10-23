@@ -113,6 +113,8 @@ extension CoachTests {
       "Goals — tell me your goals, and I will plan for them.",
       "Account — sign in, and I can also save notes and suggest changes to your routines.",
     ])
+    #expect(CoachSetupView.choices.map { "coach-setup-\($0.choice.rawValue) \($0.title)" }
+            == ["coach-setup-screenshot Add screenshot", "coach-setup-build_manually Build my own"])
   }
 
   @Test func setupNeedsResolvedHydratedEmptyAccountAndAnUnoccupiedRoom() {

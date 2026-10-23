@@ -32,6 +32,20 @@ import SyncTesting
     #expect(MovementName.capped(String(repeating: "e\u{301}", count: 31)).unicodeScalars.count == 60)
   }
 
+  // A load reads by its equipment: a barbell's total, a dumbbell pair's weight per hand, one dumbbell's own weight, the
+  // weight added to the body, and the external weight of anything else. Dumbbells default to two; nothing else counts.
+  @Test func eachEquipmentSaysWhatItsLoadMeans() {
+    let basis = [MovementEquipment("barbell"), MovementEquipment("dumbbell"), MovementEquipment("dumbbell", loadCount: 1),
+                 MovementEquipment("bodyweight"), MovementEquipment("machine"), MovementEquipment("cable", loadCount: 2),
+                 MovementEquipment("kettlebell"), MovementEquipment(nil)]
+    #expect(basis.map { "\($0.title) | \($0.choice) | \($0.unit) | \($0.loadCount) | \($0.each ? "each" : "whole")" } == [
+      "Barbell | Barbell | kg total | 1 | whole", "Dumbbells | Dumbbells | kg each | 2 | each",
+      "One dumbbell | Dumbbells | kg | 1 | whole", "Bodyweight | Bodyweight | kg added | 1 | whole",
+      "Machine | Machine | kg | 1 | whole", "Cable | Cable | kg | 1 | whole", "Kettlebell | Kettlebell | kg | 1 | whole",
+      " |  | kg | 1 | whole",
+    ])
+  }
+
   @Test func anonymousCatalogueAndCustomRenamesStayOnDevice() throws {
     let (harness, gym) = fixture()
     let seed = try #require(gym.catalogue.find(ID("back-squat")))

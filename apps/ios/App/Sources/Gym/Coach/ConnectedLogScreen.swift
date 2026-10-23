@@ -116,8 +116,9 @@ struct ConnectedLogScreen: View {
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
   // The screen's one primary; signed in, its symbol names the browser it leaves for.
+  var connectTitle: String { gym.coachAccountAvailable ? "Connect a tool" : "Sign in first" }
   var connect: some View {
-    ActionBand(title: gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", room: .gym, actionIdentifier: "coach-connect-tool",
+    ActionBand(title: connectTitle, room: .gym, actionIdentifier: "coach-connect-tool",
                symbol: gym.coachAccountAvailable ? "arrow.up.forward" : nil) {
       if gym.coachAccountAvailable { browse("connect", action: "connect") } else { openAccount?() }
     }.accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
