@@ -6,7 +6,8 @@ pages.
 
 Design lives on separate [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) and [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433) and
-[desktop board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543). The pages contain 39 mobile screens and 15 desktop screens.
+[desktop board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543). The pages contain
+40 mobile and 17 desktop screen compositions, plus six transparent Activity overlay prototype assets.
 
 ## Behavior
 
@@ -166,11 +167,26 @@ choices; do not claim the server currently rejects every cycle or dangling edge.
 
 ## Activity, node details and workspace
 
-Desktop Board has a 304px Activity sidebar containing the actual event feed. It does not repeat the
-Up next column. The standalone mobile Activity view is reachable from the bottom action group and
-may include Up next context. Activity is roadmap-wide; node History filters the available log to the
-selected node. Both reuse the canonical avatar, verb badge, sentence and relative-time EventRow.
-Removed or unavailable nodes are struck through and do not navigate.
+Activity is closed by default. The desktop **Activity** toggle opens a 380px overlay drawer over the
+right side of the Board; the three columns keep their positions and widths. The lower mobile
+Activity trigger opens a bottom modal sheet over the current Board. Both use the same event feed,
+without repeating Up next. The panel hugs a short feed and scrolls internally when its content
+reaches the available viewport height. The populated desktop specimen is 324px tall; mobile is
+388px tall, with a 52px **Close activity** button at the bottom above the safe area.
+
+Close, Escape and the outside scrim dismiss Activity; desktop also exposes the same expanded
+Activity toggle. Opening and closing preserve category, search, color selection, sort direction/key
+and Board scroll. The proposed implementation focuses the close control on opening, traps focus
+inside the active modal, makes background controls inert, exposes dialog and expanded-control
+semantics, and restores focus to the invoking Activity trigger on dismissal. The desktop expanded
+toggle is part of the active overlay. Only one overlay is active: choosing an available node from
+the feed closes Activity before opening the node modal or dedicated page. Returning to Board
+preserves the same originating state.
+
+Activity is roadmap-wide; node History filters the available log to the selected node. Both reuse
+the canonical avatar, verb badge, sentence and relative-time EventRow. Removed or unavailable nodes
+are struck through and do not navigate. Empty roadmaps open the feed's empty state. Light and dark
+overlay targets explicitly retain both Theme and Roadmap color modes.
 
 Available activity combines a capped server feed, synthesized current completion records and local
 session events. It is not a complete durable audit. History uses that same available log; workspace
@@ -212,11 +228,12 @@ local workspace column on the right. Returning preserves category, filter, sort 
 
 Below 744px, show one full-width column with 16px outer padding. At 744–1023px, keep one focused
 column up to 680px wide. At 1024px and above, use three equal columns with 16px gaps and 24px outer
-padding; show the 304px Activity sidebar when the remaining Board columns can each stay at least
-280px. At narrower desktop widths, Activity opens as an overlay instead of compressing the columns.
-The 1440px specimen has 344px columns. Node modals are 760px wide with 20px padding; dedicated node
-pages use the available width in two useful columns. Creation uses a 600px modal. Mobile details
-fill the viewport and retain the parent roadmap in back navigation.
+padding. Activity always overlays the Board and never reserves a column. The 1440px specimen has
+three 453.33px columns, unchanged when Activity opens. At 1024px and above, Activity uses a 380px
+right drawer, 24px from the edge; below 1024px, it uses a bottom modal sheet. Node modals are 760px
+wide with 20px padding; dedicated node pages use the available width in two useful columns.
+Creation uses a 600px modal. Mobile details fill the viewport and retain the parent roadmap in back
+navigation.
 
 Cards use 12px padding, 8px internal gaps and a 100px minimum height. Content can grow for
 two-line descriptions. Desktop Board uses 24px outer padding and 16px column gaps. The dedicated
@@ -265,6 +282,7 @@ lines then truncate; full authored content remains readable in details.
 | 04.02 · Local-only board | [188:1585](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1585) |
 | 04.03 · Create with keyboard | [188:1636](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1636) |
 | 04.04 · Dark board | [193:1193](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=193-1193) |
+| 04.05 · Dark node page · Activity destination | [252:1157](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=252-1157) |
 | 05.01 · Color filter active | [209:2397](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=209-2397) |
 | 05.02 · Sort options | [209:2485](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=209-2485) |
 | 05.03 · Unlocked · newest | [209:2573](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=209-2573) |
@@ -278,7 +296,7 @@ lines then truncate; full authored content remains readable in details.
 | 06.07 · First node created | [226:1055](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=226-1055) |
 | 07.01 · Node workspace | [228:994](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-994) |
 | 07.02 · Node history | [228:1101](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1101) |
-| 07.03 · Roadmap activity | [228:1179](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1179) |
+| 07.03 · Activity overlay · open | [228:1179](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1179) |
 | 07.04 · Shared node | [228:1283](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1283) |
 | 07.05 · Edit local note | [228:1352](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1352) |
 | 07.06 · Subtasks complete node | [231:1174](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=231-1174) |
@@ -300,17 +318,36 @@ lines then truncate; full authored content remains readable in details.
 | 04.05 · New node · prerequisites | [232:2139](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-2139) |
 | 04.06 · Created in Closed | [232:2380](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-2380) |
 | 04.07 · Choose prerequisites | [232:2615](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=232-2615) |
+| 05.01 · Activity open · light | [246:3694](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-3694) |
+| 05.02 · Activity open · dark | [246:3918](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-3918) |
+
+| Activity prototype asset | Figma |
+|---|---|
+| Desktop · light | [246:4142](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4142) |
+| Desktop · dark | [246:4198](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4198) |
+| Desktop · empty feed | [246:4254](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4254) |
+| Mobile · light | [246:4330](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4330) |
+| Mobile · dark | [246:4383](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4383) |
+| Mobile · empty feed | [246:4436](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=246-4436) |
 
 Prototype starts: [Mobile](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433&page-id=183%3A900&starting-point-node-id=183%3A1433)
 and [Desktop](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543&page-id=183%3A901&starting-point-node-id=184%3A1543).
 The prototype connects representative inspect, complete, reset/Undo, editor, dependency, tag,
 recovery and Graph paths. It is a fixture walkthrough, not a functional app; outcome screens do not
 link to contradictory pre-change counts, and data-entry commits remain static where no result is drawn.
+Activity triggers use native Figma OVERLAY actions. Their viewport-sized targets contain only the
+scrim, panel and desktop expanded toggle; no copied Board is inside those targets. Explicit CLOSE
+actions handle the scrim, close controls and Escape. The Read the wind feed row demonstrates closing
+Activity before node navigation. The three full-context open compositions are review illustrations;
+the six transparent targets provide the context-preserving prototype behavior.
+The dark mobile node specimen covers Activity → node → dark Board; other node actions follow the
+shared behavior contract and are not duplicated as additional dark outcome screens.
 
 ## Validation and limits
 
-All 54 screens are native editable Figma layers: 39 mobile and 15 desktop, with numbered journeys
-on separate proposal pages. The page-tree audit finds no full-screen image fills; interface copy uses
+All 57 screen compositions and six overlay assets are native editable Figma layers, with 40 mobile
+and 17 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
+finds no full-screen image fills; interface copy uses
 node terminology and Closed, Up next and Done categories. Nunito, Baloo 2 and the existing monospace
 caption font remain in use. No category totals or written color names appear on cards. Small color markers,
 authored description excerpts, overall progress and real dependency counts remain.
@@ -324,7 +361,7 @@ specified once rather than multiplying every responsive combination.
 Visual review covers the dense Board, four-node Closed success, blank/filled creation, prerequisite
 picker, required-name and retry states, keyboard, shared reader, device workspace and note editing,
 subtask completion/Undo, Activity and History, desktop creation and success, wide dedicated page,
-and light/dark modal/Board compositions. Activity contains a single desktop event feed, external links
+and light/dark modal/Board compositions. Activity contains one reusable overlay feed, external links
 use native monochrome icons, and each footer has one contextual action. Fields and scroll areas
 follow their responsive container widths.
 
@@ -333,6 +370,10 @@ all filter combinations, persisted date history or every save outcome. Native ke
 illustrative, and Graph lighting remains a static component approximation. No browser implementation,
 live user test, backend transaction completion, deployment or telemetry-arrival claim is made.
 
-Current revision evidence, screenshots and inventory are in `/tmp/roadmap-board-node-creation/`.
-The active design work is tracked by `roadmap-board-node-creation-20261024`. The proposal remains
+The Activity revision checks default-closed and open geometry, light/dark targets, empty-feed routing,
+explicit dismissal actions and 44px close targets. Browser focus trapping and focus restoration are
+implementation requirements; native Figma reactions do not verify DOM accessibility behavior.
+
+Current revision evidence, screenshots and inventory are in `/tmp/roadmap-board-activity-overlay/`.
+The active design work is tracked by `roadmap-board-activity-overlay-20261024`. The proposal remains
 💡 pending human approval; no flow is marked Ready for dev or In production.
