@@ -39,14 +39,16 @@ nonisolated enum JournalEchoFailure: Error, Equatable {
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let session: URLSession
+  // Every echo read and verdict ends by its deadline, an answer that trickles in included.
+  let deadline: TimeInterval
 
-  init(runtime: AppRuntime?, telemetry: any Telemetry = NoopTelemetry(), session: URLSession? = nil) {
-    self.runtime = runtime; self.telemetry = telemetry
+  init(runtime: AppRuntime?, telemetry: any Telemetry = NoopTelemetry(), session: URLSession? = nil, deadline: TimeInterval = 15) {
+    self.runtime = runtime; self.telemetry = telemetry; self.deadline = deadline
     let configuration = session?.configuration ?? URLSessionConfiguration.ephemeral
     configuration.httpShouldSetCookies = false; configuration.httpCookieStorage = nil
     configuration.urlCache = nil; configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
     configuration.waitsForConnectivity = false
-    configuration.timeoutIntervalForRequest = 15; configuration.timeoutIntervalForResource = 15
+    configuration.timeoutIntervalForRequest = deadline; configuration.timeoutIntervalForResource = deadline
     self.session = URLSession(configuration: configuration)
   }
 
@@ -81,7 +83,7 @@ nonisolated enum JournalEchoFailure: Error, Equatable {
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else {
       throw JournalEchoFailure.unavailable
     }
-    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 15)
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: deadline)
     request.httpMethod = method; request.httpShouldHandleCookies = false
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -93,8 +95,8 @@ nonisolated enum JournalEchoFailure: Error, Equatable {
       guard runtime.engine.status.online else { throw URLError(.notConnectedToInternet) }
       let (data, response) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
         group.addTask { [session, request] in try await session.data(for: request) }
-        group.addTask {
-          try await Task.sleep(for: .seconds(15))
+        group.addTask { [deadline] in
+          try await Task.sleep(for: .seconds(deadline))
           throw URLError(.timedOut)
         }
         defer { group.cancelAll() }

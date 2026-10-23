@@ -98,11 +98,11 @@ import SyncTesting
   }
 
   func workoutSettled(_ model: AppModel, _ id: ID<Session>) async throws {
-    for _ in 0..<200 {
+    for _ in 0..<1_000 {
       let settled = try model.runner.read(Gym.scope) { try $0.confirmed(Session.self, id) != nil }
       let pending = try model.runtime!.store.read { try $0.device().activeReplica.outbox.contains { $0.scope == Gym.scope } }
       if settled && !pending { model.refresh(); return }
-      try await Task.sleep(for: .milliseconds(50))
+      try await Task.sleep(for: .milliseconds(10))
     }
     throw AppFailure(message: "Gym writes did not settle")
   }
@@ -166,10 +166,10 @@ import SyncTesting
     #expect(Set(reopened.gym.sets.map(\.id)) == Set(expected.map(\.id)))
     for set in expected { #expect(reopened.gym.sets.first { $0.id == set.id }?.fields == set.fields) }
     remote.runtime?.engine.foreground()
-    for _ in 0..<200 {
+    for _ in 0..<1_000 {
       remote.refresh()
       if Set(remote.gym.sets.map(\.id)) == Set(expected.map(\.id)) { break }
-      try await Task.sleep(for: .milliseconds(50))
+      try await Task.sleep(for: .milliseconds(10))
     }
     #expect(Set(remote.gym.sets.map(\.id)) == Set(expected.map(\.id)))
     #expect(try reopened.runtime!.store.read { try $0.device().activeReplica.outbox.allSatisfy { $0.scope != Gym.scope || !$0.isQueued } })

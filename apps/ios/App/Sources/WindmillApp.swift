@@ -32,59 +32,67 @@ struct WindmillApp: App {
     // An open iOS 26 menu never lets UIKit animations settle, so XCTest would stall after every menu tap.
     if settings.automated { UIView.setAnimationsEnabled(false) }
   }
+  // A unit-test host opens no runtime and draws nothing: each test builds its own model, runtime and window.
+  static let hostsUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
   var body: some Scene {
     WindowGroup {
-      Group {
-        if let model {
-          if introduction {
-            OnboardingScreen(replay: false, telemetry: telemetry) { introduction = false }
-          } else { RootScreen(model: model) }
-        } else if let failure {
-          ZStack { ShellPalette.canvas.ignoresSafeArea(); Text(failure).foregroundStyle(ShellPalette.ink).padding(24) }
-        } else { ShellPalette.canvas.ignoresSafeArea() }
-      }.background {
-        WindowChrome(tint: windowTint, style: OnboardingFixture.appearance.map(UIUserInterfaceStyle.init)
-          ?? (model?.appearance ?? AppModel.Appearance(preferences: preferences)).style)
-      }
-        .onOpenURL { url in
-          launchLink = true; introduction = false
-          if url.scheme == "windmill", url.host == "workout" { workoutLink = true; model?.openActivityWorkout() }
+      if Self.hostsUnitTests { Color.clear } else { root }
+    }
+  }
+
+  var root: some View {
+    Group {
+      if let model {
+        if introduction {
+          OnboardingScreen(replay: false, telemetry: telemetry) { introduction = false }
+        } else { RootScreen(model: model) }
+      } else if let failure {
+        ZStack { ShellPalette.canvas.ignoresSafeArea(); Text(failure).foregroundStyle(ShellPalette.ink).padding(24) }
+      } else { ShellPalette.canvas.ignoresSafeArea() }
+    }.background {
+      WindowChrome(tint: windowTint, style: OnboardingFixture.appearance.map(UIUserInterfaceStyle.init)
+        ?? (model?.appearance ?? AppModel.Appearance(preferences: preferences)).style)
+    }
+    .onOpenURL { url in
+      launchLink = true; introduction = false
+      if url.scheme == "windmill", url.host == "workout" { workoutLink = true; model?.openActivityWorkout() }
+    }
+    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { _ in launchLink = true; introduction = false }
+    .onChange(of: scenePhase) { _, phase in
+      model?.scenePhaseChanged(phase)
+      if phase == .background { telemetry.event("app_backgrounded") }
+      else if phase == .active { telemetry.event("app_foregrounded") }
+    }
+    .modifier(AppStartup(model: model))
+    .task(id: scenePhase) {
+      guard scenePhase == .active, model == nil else { return }
+      await Task.yield()
+      guard !Task.isCancelled else { return }
+      do {
+        let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? OfflineFixture.runtime(settings: settings, telemetry: telemetry) ?? AppRuntime(settings: settings, telemetry: telemetry)
+        if !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
+        let authenticationTime = settings.appleFixture == "hello-failure" ? Date() : nil
+        let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry,
+          authRetryNow: { authenticationTime ?? Date() })
+        WorkoutActivityIntentHandler.model = created
+        if let owed = created.discardOwed { _ = await created.discard(owed) }
+        created.gym.startWorkoutActivity()
+        var onboardingFixture = false
+        if let board = settings.board, !settings.restoreBoard {
+          onboardingFixture = await OnboardingFixture.prepare(board, model: created)
+          if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
         }
-        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { _ in launchLink = true; introduction = false }
-        .onChange(of: scenePhase) { _, phase in
-        model?.scenePhaseChanged(phase)
-        if phase == .background { telemetry.event("app_backgrounded") }
-        else if phase == .active { telemetry.event("app_foregrounded") }
-      }.modifier(AppStartup(model: model))
-      .task(id: scenePhase) {
-        guard scenePhase == .active, model == nil else { return }
-        await Task.yield()
-        guard !Task.isCancelled else { return }
-        do {
-          let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? OfflineFixture.runtime(settings: settings, telemetry: telemetry) ?? AppRuntime(settings: settings, telemetry: telemetry)
-          if !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
-          let authenticationTime = settings.appleFixture == "hello-failure" ? Date() : nil
-          let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry,
-            authRetryNow: { authenticationTime ?? Date() })
-          WorkoutActivityIntentHandler.model = created
-          if let owed = created.discardOwed { _ = await created.discard(owed) }
-          created.gym.startWorkoutActivity()
-          var onboardingFixture = false
-          if let board = settings.board, !settings.restoreBoard {
-            onboardingFixture = await OnboardingFixture.prepare(board, model: created)
-            if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
-          }
-          try await OfflineFixture.prepare(created)
-          await CoachFixture.prepare(created.gym, signIn: true)
-          if settings.board == nil && settings.scenario == nil || onboardingFixture {
-            introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
-          }
-          if workoutLink { created.openActivityWorkout() }
-          WorkoutActivityIntentHandler.present(created)
-          QuickActionHandler.present(created)
-          model = created
-        } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
-      }
+        try await OfflineFixture.prepare(created)
+        await CoachFixture.prepare(created.gym, signIn: true)
+        if settings.board == nil && settings.scenario == nil || onboardingFixture {
+          introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
+        }
+        if workoutLink { created.openActivityWorkout() }
+        WorkoutActivityIntentHandler.present(created)
+        QuickActionHandler.present(created)
+        model = created
+      } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
     }
   }
 }
