@@ -227,20 +227,22 @@ start's draft on the phone beside the account's own, `-coach-board after-sign-in
 change to *Full body B*,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
-Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
+Debug simulator offline launches seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
 or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
-`-offline-fixture no-network`, `unreachable` or `stalled`. The HTTP loader injects a missing network,
-a refused connection or a request that never answers; only `no-network` also removes the path.
-The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
-with no loader or connectivity substitution.
-These opted-in offline fixtures use the fixed `BoardClock` across seeding, cold launch and resume.
-Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
-and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
+`-offline-fixture no-network`, `unreachable` or `stalled` (`OfflineFixture.Mode`). Each mode's HTTP loader
+injects a missing network, a refused connection or a request that never answers; only `no-network` also
+removes the path. `-offline-fixture black-hole` with `https://192.0.2.1` uses the ordinary HTTP transport and
+path monitor, with no loader or connectivity substitution. These fixtures use the fixed `BoardClock` across
+seeding, cold launch and resume. `StartupRecoveryTests` runs every mode, signed in and out, through
+`OfflineFixture.runtime`: journal writing, a routine and its workout, room switching, resume and a cold launch
+stay on the phone, and You keeps or lacks the account. `OfflineFlowTests` drives the black-hole launch signed
+in and a resume during a stalled hello signed out through the native UI. No host networking changes or real
+credentials are used.
 
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
 protected Application Support directory. `JournalDomain` owns writing and first-run state.
-The writing tests use `-journal-layout-test` on Debug simulators to read selection, focus and text,
+The journal geometry and echo flows use `-journal-layout-test` on Debug simulators to read selection, focus and text,
 ink visibility, and UIKit's caret and last-line rectangles in window coordinates, through the editor's accessibility value.
 
 A journal day exists only while its body contains writing. Whitespace and ratings alone do not count;
@@ -327,11 +329,9 @@ journal actions with a deterministic echoes service; `journal-echoes-first` carr
 `journal-echoes-AX3-RM` covers larger type and the source-scroll Reduce Motion path, including Back to
 tonight. `journal-echoes-unicode` and `journal-echoes-unicode-decomposed` apply real source edits:
 reading the first source changes only its normalization; Useful, reaching the second passage, removes
-the first quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
-UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
-remains read-only. `JournalEchoFlowTests`
-belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
-`WM_IOS_ECHO_SHOTS` is supplied.
+the first quotation. The source quote sits after 14 paragraphs; the echo flows use the Debug simulator's UIKit quote rectangle to check that the exact passage reaches the
+visible canvas centre and remains read-only. `JournalEchoFlowTests` walks the light flow; the larger-type,
+Reduce Motion and canvas-end checks run in the opt-in `NightlyFlowTests`.
 Journal's principles are in `docs/design/brand-foundations.md`; Figma's phone echo
 boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
 
@@ -376,10 +376,16 @@ run without UIKit animations: an open iOS 26 menu never lets them settle, so XCT
 after every menu tap.
 
 The Live Activity UI test waits for published Island content and presses SpringBoard's Activity
-container to expand it. To capture its
-minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose Play QA tone button
-changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
-The test finishes the workout and verifies that the Activity disappears after logging from the Island.
+container to expand it. To check its minimal layout too, `WM_ACTIVITY_RENDER_MEDIA` can point to a local
+audio page whose Play QA tone button changes to QA tone is playing after playback starts. Audio must
+continue while Safari is backgrounded. The test finishes the workout and verifies that the Activity
+disappears after logging from the Island.
+
+`NightlyFlowTests` holds the slow end-to-end checks a daily run is enough for: the workout control in Control
+Center, the Home Screen's quick actions from the background and from a cold start, the journal's Write seat
+geometry (Reduce Motion and the largest text included), echoes at accessible text, and the introduction at the
+accessibility sizes. XCTest skips every one unless the test runner sees `WM_NIGHTLY_UI=1`
+(`TEST_RUNNER_WM_NIGHTLY_UI=1` when invoking xcodebuild).
 
 ## Design captures
 
