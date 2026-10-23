@@ -54,29 +54,26 @@ import UIKit
     #expect(reopened.current.entries == [RoutineEntry(exerciseId: ID("chin-up")), RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 60)])])
   }
 
-  @Test func editorCancelKeepsCommittedTargetsAndChangedOwnerCannotSaveDraft() throws {
+  @Test func editorCancelRestoresIdentityAndTargetsAndOuterSaveIsTheOnlyWrite() throws {
     let (harness, gym) = fixture()
     var stored = draft(gym)
     #expect(gym.saveRoutine(&stored))
     let editing = RoutineEditingSession(gym: gym, routine: stored.current)
-    editing.follow([.targets(ID("bench-press"))])
-    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
-    editing.targetDraft.type("12", field: .reps)
-    editing.cancelTargets()
+    editing.editMovement(ID("bench-press"), gym: gym)
+    #expect(editing.editor?.targets == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
+    editing.editor?.name = "Cancelled press"
+    editing.editor?.targets.type("12", field: .reps)
+    editing.cancelMovement()
     #expect(editing.path.isEmpty && editing.draft.current == stored.current)
     #expect(gym.routines == [stored.current])
-    editing.follow([.targets(ID("bench-press"))])
-    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
-    editing.cancelTargets()
-    editing.pickMovement(); editing.query = "Custom press"
-    editing.createMovement(gym)
-    let createdID = try #require(editing.creation?.id)
-    editing.creation?.name = "Custom press kept"
-    editing.follow([.movements])
-    editing.createMovement(gym)
-    #expect(editing.query == "Custom press" && editing.creation?.id == createdID && editing.creation?.name == "Custom press kept")
-    editing.follow([])
-    editing.draft.current.name = "Revised"
+    editing.editMovement(ID("bench-press"), gym: gym)
+    #expect(editing.editor?.name == "Bench Press")
+    #expect(editing.editor?.targets == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
+    editing.editor?.name = "My press"
+    editing.editor?.targets.type("12", field: .reps)
+    #expect(editing.stageMovement(gym))
+    #expect(gym.catalogue.find(ID("bench-press"))?.name == "Bench Press")
+    #expect(gym.routines == [stored.current])
     let pending = editing.draft.current
     gym.account = "another-owner"; gym.isAnonymous = false
     #expect(!editing.save(gym))
@@ -86,47 +83,94 @@ import UIKit
     harness.failNextCommit()
     #expect(!editing.save(gym))
     #expect(editing.draft.current == pending && editing.id == stored.id && gym.routines == [stored.current])
+    #expect(gym.catalogue.find(ID("bench-press"))?.name == "Bench Press")
     #expect(editing.save(gym))
     #expect(gym.routines == [pending])
+    #expect(gym.catalogue.find(ID("bench-press"))?.name == "My press")
   }
 
   @Test func editorMovesRemovesAndReselectsMovements() {
     let (_, gym) = fixture()
     let editing = RoutineEditingSession(gym: gym, routine: nil)
     let (bench, deadlift, chinUp) = (RoutineEntry(exerciseId: ID("bench-press")), RoutineEntry(exerciseId: ID("deadlift")), RoutineEntry(exerciseId: ID("chin-up")))
-    [bench, deadlift, chinUp].forEach(editing.select)
+    for entry in [bench, deadlift, chinUp] {
+      editing.editMovement(entry.exerciseId, gym: gym)
+      #expect(editing.stageMovement(gym))
+    }
     editing.move(2, by: -1)
     #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
     editing.move(0, by: -1); editing.move(2, by: 1)
     #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
     editing.remove(1)
     #expect(editing.draft.current.entries == [bench, deadlift])
-    editing.select(chinUp)
+    editing.editMovement(chinUp.exerciseId, gym: gym); #expect(editing.stageMovement(gym))
     #expect(editing.draft.current.entries == [bench, deadlift, chinUp])
-    editing.remove(0); editing.select(bench)
+    editing.remove(0); editing.editMovement(bench.exerciseId, gym: gym); #expect(editing.stageMovement(gym))
     #expect(editing.draft.current.entries == [deadlift, chinUp, bench])
   }
 
-  @Test func targetsOpenOnTheSchemeTheirMovementHoldsAndCommitIntoIt() throws {
+  @Test func customMovementAndInlineTargetsStayLocalUntilOuterSaveAndSurviveReopen() throws {
     let (_, gym) = fixture()
     let editing = RoutineEditingSession(gym: gym, routine: nil)
-    editing.select(RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 5, weightKg: 100)]))
-    editing.pickMovement(); editing.query = "Sled push"
+    editing.draft.current.name = "Push"
+    editing.pickMovement(); editing.query = "Single press"
     editing.createMovement(gym)
-    let created = try #require(editing.creation?.id)
-    editing.follow([.movements, .creation, .targets(created)])
-    #expect(editing.targetDraft == RoutineTargetDraft(sets: nil) && editing.targetDraft.reading == .open)
-    editing.targetDraft.type("2", field: .sets)
-    editing.setTargets([SetTarget(), SetTarget()])
-    #expect(editing.path == [.movements, .creation] && editing.creation?.sets == [SetTarget(), SetTarget()])
-    editing.follow([.movements, .creation, .targets(created)])
-    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(), SetTarget()]))
-    editing.follow([.targets(ID("bench-press"))])
-    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 5, weightKg: 100)]))
-    editing.setTargets(nil)
-    #expect(editing.path.isEmpty && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
-    editing.setTargets([SetTarget(reps: 1)])
-    #expect(editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
+    let created = try #require(editing.editor?.id)
+    editing.editor?.equipment = "dumbbell"; editing.editor?.loadCount = 1
+    editing.editor?.targets.type("2", field: .sets)
+    editing.editor?.targets.type("10", field: .reps)
+    editing.editor?.targets.type("16", field: .weight)
+    #expect(editing.stageMovement(gym))
+    #expect(gym.catalogue.find(created) == nil && gym.routines.isEmpty)
+    editing.editMovement(created, gym: gym)
+    #expect(editing.editor?.base == nil)
+    #expect(editing.editor?.targets.reading == .scheme([SetTarget(reps: 10, weightKg: 16), SetTarget(reps: 10, weightKg: 16)]))
+    editing.editor?.name = "Discarded change"
+    editing.editor?.targets.type("", field: .sets)
+    editing.cancelMovement()
+    #expect(editing.exercise(created, in: gym)?.name == "Single press")
+    #expect(editing.draft.current.entries == [RoutineEntry(exerciseId: created, sets: [SetTarget(reps: 10, weightKg: 16), SetTarget(reps: 10, weightKg: 16)])])
+    #expect(editing.save(gym))
+    #expect(gym.catalogue.find(created)?.name == "Single press")
+    #expect(gym.catalogue.find(created)?.loadCount == 1)
+    #expect(gym.routines.first?.entries == editing.draft.current.entries)
+  }
+
+  @Test func discardedOuterSessionAndRemovedNewMovementNeverWriteCatalogue() throws {
+    let (_, gym) = fixture()
+    let editing = RoutineEditingSession(gym: gym, routine: nil)
+    editing.draft.current.name = "Push"
+    editing.pickMovement(); editing.query = "Never saved"; editing.createMovement(gym)
+    let created = try #require(editing.editor?.id)
+    #expect(editing.stageMovement(gym))
+    editing.editMovement(ID("bench-press"), gym: gym)
+    editing.editor?.name = "Also not saved"
+    #expect(editing.stageMovement(gym))
+    #expect(gym.routines.isEmpty && gym.catalogue.find(created) == nil)
+    let reopened = RoutineEditingSession(gym: gym, routine: nil)
+    #expect(reopened.draft.current.entries.isEmpty && reopened.movements.isEmpty)
+    editing.remove(0)
+    #expect(editing.movements[created] == nil)
+    #expect(editing.save(gym))
+    #expect(gym.catalogue.find(created) == nil)
+    #expect(gym.catalogue.find(ID("bench-press"))?.name == "Also not saved")
+  }
+
+  @Test func accountTransitionPreventsCombinedStageAndInvalidTextRemainsEditable() throws {
+    let (_, gym) = fixture()
+    let editing = RoutineEditingSession(gym: gym, routine: nil)
+    editing.editMovement(ID("bench-press"), gym: gym)
+    editing.editor?.targets.type("21", field: .sets)
+    #expect(!editing.stageMovement(gym))
+    #expect(editing.editor?.targets.countText == "21" && editing.draft.current.entries.isEmpty)
+    editing.editor?.targets.type("2", field: .sets)
+    editing.editor?.targets.type("0", field: .weight)
+    #expect(!editing.stageMovement(gym))
+    #expect(editing.editor?.targets.shared(.weight) == "0")
+    editing.editor?.targets.type("-12.5", field: .weight)
+    gym.account = "changed"
+    #expect(!editing.stageMovement(gym))
+    #expect(editing.editor?.targets.shared(.weight) == "-12.5" && editing.draft.current.entries.isEmpty)
   }
 
   @Test func aRefusalAnswersASaveOrLeavingAChangedNameAndTheNextEditClearsIt() {
@@ -137,13 +181,13 @@ import UIKit
     editing.draft.current.name = "Push A"
     #expect(editing.refusal == nil)
     #expect(!editing.save(gym) && editing.refusal == "A routine is at least one movement." && gym.error == nil)
-    editing.select(RoutineEntry(exerciseId: ID("bench-press")))
+    editing.editMovement(ID("bench-press"), gym: gym); #expect(editing.stageMovement(gym))
     #expect(editing.refusal == nil)
     editing.remove(0)
     #expect(editing.refusal == nil && editing.draft.current.entries.isEmpty)
     editing.refusal = "This routine could not be saved. Try again."
     #expect(editing.refusal == "This routine could not be saved. Try again.")
-    editing.select(RoutineEntry(exerciseId: ID("bench-press")))
+    editing.editMovement(ID("bench-press"), gym: gym); #expect(editing.stageMovement(gym))
     #expect(editing.refusal == nil && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
     editing.draft.current.name = " "
     #expect(editing.refusal == nil)
@@ -409,13 +453,13 @@ import UIKit
     }
     try await settle(1)
     for visit in 1...2 {
-      editing.follow([.targets(ID("bench-press"))]); try await settle(1 + visit)
-      editing.cancelTargets(); try await settle(1 + visit)
+      editing.editMovement(ID("bench-press"), gym: gym); try await settle(1 + visit)
+      editing.cancelMovement(); try await settle(1 + visit)
     }
     editing.pickMovement(); try await settle(4)
     editing.createMovement(gym); try await settle(5)
-    editing.follow([]); try await settle(5)
-    #expect(screens() == ["routine_editor", "routine_targets", "routine_targets", "routine_movement", "routine_movement"])
+    editing.path = []; try await settle(5)
+    #expect(screens() == ["routine_editor", "routine_movement_editor", "routine_movement_editor", "routine_movement", "routine_movement_editor"])
   }
 
   @Test func newestProposalUsesCreationStampInsteadOfRecordID() {

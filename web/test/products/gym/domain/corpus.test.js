@@ -15,7 +15,7 @@ import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domai
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
 import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.js';
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
-import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
+import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SaveRoutinePlan, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Session, SessionRules, SetRules, TrainingSet } from '../../../../src/products/gym/domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
@@ -269,6 +269,19 @@ const handlers = {
   },
   'gym/domain/routines-actions.json': (vector) => {
     const input = vector.input.input;
+    if (vector.input.action === 'SaveRoutinePlan') {
+      /** @param {any} form */
+      const movement = (form) => {
+        const value = Exercise.decode(Fields.values('exercise', form.id, form.fields));
+        return new ExerciseValue(value.id, value.name, value.pattern, value.equipment, value.stepKg, value.aliases, form.loadCount);
+      };
+      const action = new SaveRoutinePlan(Routine.decode(Fields.values('routine', input.base.id, input.base.fields)),
+        Routine.decode(Fields.values('routine', input.current.id, input.current.fields)), input.isNew,
+        input.movements.map((/** @type {any} */ edit) => ({ base: edit.base ? movement(edit.base) : null, current: movement(edit.current) })));
+      const result = corpus.decision(action, vector, (id) => id.json, refusalForm);
+      if (result.decision.write) result.decision.write.gesture.local = [];
+      return result;
+    }
     if (vector.input.action === 'SaveRoutine' || vector.input.action === 'CreateRoutine') {
       const value = Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields));
       return vector.input.action === 'CreateRoutine'

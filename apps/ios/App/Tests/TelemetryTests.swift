@@ -105,6 +105,64 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
   }
 
+  @Test func workoutPickerStepsExcludeMovementAndRackContent() {
+    #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
+    for action in ["open", "select", "cancel"] {
+      #expect(TelemetryPrivacy.properties(["action": action, "outcome": "refused", "query": "private-marker",
+                                           "exerciseId": "private-id", "name": "private-marker", "weightKg": "105", "reps": "5"]) ==
+              ["action": .label(action), "outcome": .label("refused")])
+    }
+  }
+
+  @Test func logWeightActionsExcludeMeasurementContent() {
+    for item in ["weigh_in", "bodyweight"] {
+      #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",
+                                           "day": "2026-10-24", "recordedAt": "1792857600000", "id": "private-id"]) ==
+              ["screen": .label("log"), "action": .label("open"), "item": .label(item)])
+    }
+  }
+
+  @Test func coachConversationActionsExcludeContentAndIdentifiers() {
+    for action in ["new_chat", "view_answer", "open_conversation", "delete_conversation"] {
+      for door in ["tab", "history", "handoff", "new_chat"] {
+        #expect(TelemetryPrivacy.properties(["screen": "coach", "action": action, "door": door, "outcome": "ok",
+                                             "draft": "private-marker", "question": "private-marker", "photo": "private-marker",
+                                             "threadId": "private-id", "requestId": "private-id", "ownerId": "private-id"]) ==
+                ["screen": .label("coach"), "action": .label(action), "door": .label(door), "outcome": .label("ok")])
+      }
+    }
+  }
+
+  @Test func weighInDateActionsExcludeSelectedDateAndMeasurement() {
+    for action in ["open", "apply", "cancel"] {
+      #expect(TelemetryPrivacy.properties(["screen": "weigh_in", "action": action, "item": "date", "weightKg": "82.5",
+                                           "day": "2026-10-24", "recordedAt": "1792857600000", "id": "private-id"]) ==
+              ["screen": .label("weigh_in"), "action": .label(action), "item": .label("date")])
+    }
+  }
+
+  @Test func receiptMenuAndRetryExcludeWorkoutContent() {
+    for action in ["menu", "retry"] {
+      #expect(TelemetryPrivacy.properties(["screen": "receipt", "action": action, "name": "private-marker",
+                                           "sessionId": "private-id", "sets": "7", "volume": "3980", "review": "private-marker"]) ==
+              ["screen": .label("receipt"), "action": .label(action)])
+    }
+  }
+
+  @Test func routineEditorStagesAndSavesExcludeIdentityAndTargets() {
+    for item in ["movement", "targets"] {
+      #expect(TelemetryPrivacy.properties(["screen": "routine_movement_editor", "action": "stage", "item": item, "outcome": "ok",
+                                           "name": "private-marker", "exerciseId": "private-id", "equipment": "barbell",
+                                           "sets": "4", "reps": "8", "weightKg": "82.5"]) ==
+              ["screen": .label("routine_movement_editor"), "action": .label("stage"), "item": .label(item), "outcome": .label("ok")])
+    }
+    for outcome in ["saved", "refused", "failed"] {
+      #expect(TelemetryPrivacy.properties(["screen": "routine_editor", "action": "update", "item": "routine", "outcome": outcome,
+                                           "name": "private-marker", "routineId": "private-id", "entries": "private-marker"]) ==
+              ["screen": .label("routine_editor"), "action": .label("update"), "item": .label("routine"), "outcome": .label(outcome)])
+    }
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",

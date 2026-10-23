@@ -53,7 +53,7 @@ import SyncTesting
     #expect(telemetry.entries.withLock { $0.allSatisfy { !$0.properties.values.contains { $0.contains("PRIVATE_FROZEN_PLAN") } } })
   }
 
-  @Test func monthGroupedTimelineFiltersOpenAndFutureAndPagesAllLocalRows() throws {
+  @Test func dayGroupedTimelineFiltersOpenAndFutureAndPagesAllLocalRows() throws {
     let (_, gym) = fixture()
     for day in 1...35 { _ = try session(gym, daysAgo: day, kg: 60) }
     let open = gym.runner.mint(Session.self); gym.run(StartSession(id: open))
@@ -67,28 +67,59 @@ import SyncTesting
     #expect(visible.map(\.startedAt) == visible.map(\.startedAt).sorted(by: >))
   }
 
-  @Test func weeklyMomentsChooseLatestStrengthBeforeWeighIn() throws {
+  @Test func allWeightsRemainVisibleAlongsideTheWeeklyStrengthMoment() throws {
     let (_, gym) = fixture()
     _ = try session(gym, daysAgo: 2, kg: 60)
     let last = try session(gym, daysAgo: 1, kg: 70)
-    for (days, kg) in [(1, 82.0), (0, 82.2)] { var draft = Draft(new: WeighIn(day: gym.log!.moment.today.adding(days: -days), kg: kg)); gym.save(&draft) }
+    for (days, kg) in [(1, 82.0), (0, 82.2)] {
+      var draft = Draft(new: WeighIn(day: gym.log!.moment.today.adding(days: -days), kg: kg)); gym.save(&draft)
+    }
     let rows = gym.logTimeline(limit: 30).flatMap(\.entries).filter { $0.priority >= 0 }
-    let monday = gym.log!.moment.today.adding(days: 1 - gym.log!.moment.today.weekday)
-    let thisWeek = rows.filter { LocalDay($0.at, in: gym.log!.moment.zone) >= monday }
-    #expect(thisWeek.count == 1)
-    if let row = thisWeek.first, case .best(_, let record) = row.kind { #expect(record.point.id == last.id) }
-    else { Issue.record("Strength moment should win this week") }
+    #expect(rows.map { row -> String in
+      switch row.kind {
+      case .weight(let weight): "weight:\(weight.kg)"
+      case .best(_, let record): record.point.id == last.id ? "best" : "unexpected best"
+      default: row.id
+      }
+    } == ["weight:82.2", "best", "weight:82.0"])
   }
 
-  @Test func theNewestWeighInIsTheHeadsAndOnlyAnOlderOneIsWoven() {
+  @Test func theNewestWeightAppearsEvenWithoutAWorkoutAndAllDaysAreKept() {
     let (_, gym) = fixture(), today = gym.log!.moment.today
     var newest = Draft(new: WeighIn(day: today, kg: 82.4)); gym.save(&newest)
-    #expect(gym.finishedLogSessions.isEmpty && gym.logTimeline(limit: 30).isEmpty)
-    var older = Draft(new: WeighIn(day: today.adding(days: -8), kg: 83.1)); gym.save(&older)
-    let rows = gym.logTimeline(limit: 30).flatMap(\.entries).map { row -> String in
-      if case .weight(let entry) = row.kind { "\(entry.day) · \(entry.kg)" } else { row.id }
+    #expect(gym.finishedLogSessions.isEmpty)
+    #expect(gym.logTimeline(limit: 30).flatMap(\.entries).map(\.id) == ["weight:\(today)"])
+    for offset in 1...8 {
+      var older = Draft(new: WeighIn(day: today.adding(days: -offset), kg: 83)); gym.save(&older)
     }
-    #expect(rows == ["\(today.adding(days: -8)) · 83.1"])
+    #expect(gym.logTimeline(limit: 30).flatMap(\.entries).map(\.id) == (0...8).map { "weight:\(today.adding(days: -$0))" })
+  }
+
+  @Test func sameDayWeightsSitBetweenWorkoutsAndBackdatedWeightsStayOnTheirChosenDay() throws {
+    let (harness, gym) = fixture(), today = try #require(gym.log?.moment.today)
+    let first = try session(gym, daysAgo: 0)
+    var weight = Draft(new: WeighIn(day: today, kg: 82.4)); gym.save(&weight)
+    harness.advance(ms: 7_200_000); gym.refresh()
+    let second = try session(gym, daysAgo: 0)
+    var yesterday = Draft(new: WeighIn(day: today.adding(days: -1), kg: 83)); gym.save(&yesterday)
+    let rows = gym.logTimeline(limit: 30).flatMap(\.entries)
+    #expect(rows.map(\.id) == ["session:\(second.id)", "weight:\(today)", "session:\(first.id)", "weight:\(today.adding(days: -1))"])
+    #expect(gym.bodyweight?.entry(on: today.adding(days: -1))?.time(in: gym.log!.moment.zone) == nil)
+    let dates = gym.logTimeline(limit: 30).map(\.id)
+    #expect(dates == [today.text, today.adding(days: -1).text])
+  }
+
+  @Test func pagingKeepsEveryWeightInEachLoadedDayWithoutDuplicatingIt() throws {
+    let (_, gym) = fixture(), today = try #require(gym.log?.moment.today)
+    for day in 1...35 {
+      _ = try session(gym, daysAgo: day)
+      var weight = Draft(new: WeighIn(day: today.adding(days: -day), kg: 82)); gym.save(&weight)
+    }
+    let firstPage = gym.logTimeline(limit: 30).flatMap(\.entries)
+    let all = gym.logTimeline(limit: 60).flatMap(\.entries)
+    #expect(firstPage.filter { $0.priority == 2 }.map(\.id) == (1...30).map { "weight:\(today.adding(days: -$0))" })
+    #expect(all.filter { $0.priority == 2 }.map(\.id) == (1...35).map { "weight:\(today.adding(days: -$0))" })
+    #expect(Set(all.map(\.id)).count == all.count)
   }
 
   @Test func completedMonthRequiresWorkingSetsInEveryCalendarWeek() throws {
@@ -104,8 +135,8 @@ import SyncTesting
     #expect(moments.first.map { LocalDay($0.at, in: gym.log!.moment.zone) } == lastDay)
   }
 
-  // Wednesday Mar 10, 2027: February trained in each of its four weeks names its month, whatever the head says of the last four.
-  @Test func aMonthMomentNamesItsMonthWhateverTheHeadSays() throws {
+  // Wednesday Mar 10, 2027: February trained in each of its four weeks is an annotation on its last day.
+  @Test func aMonthMomentKeepsItsDateGroupAndIsNotAttachedToAWorkout() throws {
     let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner), zone = try #require(gym.log?.moment.zone)
@@ -121,13 +152,11 @@ import SyncTesting
       }
     }
     for daysAgo in [37, 30, 23, 16, 9] { _ = try session(gym, daysAgo: daysAgo, kg: 0, reps: 12) }
-    #expect(gym.logConsistency == "Trained 3 of the last 4 weeks")
-    #expect(read() == ["2027-03: 2027-03-01",
-                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+    #expect(read() == ["2027-03-01: 2027-03-01", "2027-02-28: Trained every week of February",
+                       "2027-02-22: 2027-02-22", "2027-02-15: 2027-02-15", "2027-02-08: 2027-02-08", "2027-02-01: 2027-02-01"])
     _ = try session(gym, daysAgo: 1, kg: 0, reps: 12)
-    #expect(gym.logConsistency == "Trained 4 of the last 4 weeks")
-    #expect(read() == ["2027-03: 2027-03-09, 2027-03-01",
-                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+    #expect(read() == ["2027-03-09: 2027-03-09", "2027-03-01: 2027-03-01", "2027-02-28: Trained every week of February",
+                       "2027-02-22: 2027-02-22", "2027-02-15: 2027-02-15", "2027-02-08: 2027-02-08", "2027-02-01: 2027-02-01"])
   }
 
   @Test(arguments: [-43200, 0, 7200, 50400]) func momentDaysUseTheInjectedZone(offset: Int) {
@@ -219,8 +248,9 @@ import SyncTesting
       }
     }
     #expect(rows == ["equal", "wednesday", "best wednesday over tuesday", "tuesday ●", "baseline"])
-    let dates = gym.dates, record = try #require(gym.logRecords?.movements.values.first?.last)
-    #expect(LogPresentation.newBest(record, dates: dates) == "81.7 kg est · up 5.9 kg since \(dates.day(tuesday.startedAt, inSentence: true))")
+    let record = try #require(gym.logRecords?.movements.values.first?.last)
+    #expect(Readout.estimatedWeight(record.estimate) == "81.7")
+    #expect(record.point.id == wednesday.id && record.previous.id == tuesday.id)
   }
 
   // The log's end is its total from two finished workouts, and an empty log with a workout open says none is finished yet.

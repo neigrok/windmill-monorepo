@@ -186,11 +186,13 @@ extension CoachTests {
     try cache.write(account, account: "account")
     try cache.adopt(from: #require(coach.owner), account: "account", discard: false)
     let adopted = try cache.read("account")
-    #expect(adopted.text == "Existing account draft" && adopted.phoneDrafts == [CoachPhoneDraft(text: "Program two", photo: nil, photoData: nil, setupChoice: .describe)])
-    #expect(adopted.onboarding == coach.saved.onboarding)
+    #expect(adopted.text == "Existing account draft" && adopted.phoneDrafts == nil && adopted.onboarding == nil)
+    let local = try cache.archive("account").conversation(coach.saved.threadId)
+    #expect(local.text == "Program two" && local.setupChoice == .describe && local.onboarding == coach.saved.onboarding)
     try cache.write(coach.saved, account: #require(coach.owner))
     try cache.adopt(from: #require(coach.owner), account: "account", discard: false)
-    #expect(try cache.read("account").phoneDrafts == adopted.phoneDrafts)
+    #expect(try cache.archive("account").entries.count == 2)
+    #expect(try cache.archive("account").conversation(coach.saved.threadId).onboarding == local.onboarding)
   }
 }
 

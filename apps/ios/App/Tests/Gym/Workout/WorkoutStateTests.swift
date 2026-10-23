@@ -730,6 +730,29 @@ import SyncTesting
     #expect(try WorkoutWalk(json) == workout.walk)
   }
 
+  @Test func movementAdditionPreservesTheDraftAndRejectsUnavailableWrites() throws {
+    let (harness, gym) = try fixture(), workout = try begin(gym)
+    workout.weightKg = 35; workout.reps = 6
+    #expect(workout.flushRack())
+    let held = workout.walk
+    gym.accountChanging = true
+    #expect(!workout.add(second))
+    #expect(workout.walk == held && workout.weightKg == 35 && workout.reps == 6 && workout.sets.isEmpty)
+    gym.accountChanging = false
+    harness.failNextCommit()
+    #expect(!workout.add(second))
+    #expect(workout.walk == held && workout.weightKg == 35 && workout.reps == 6 && workout.sets.isEmpty)
+    #expect(workout.message == "Gym could not save this change. Try again.")
+    #expect(workout.add(second))
+    #expect(workout.walk.order == [first, second] && workout.selected == second && workout.sets.isEmpty)
+    #expect(!workout.add(second))
+    workout.select(first)
+    #expect(workout.weightKg == 35 && workout.reps == 6)
+    let reopened = GymModel(runner: harness.runner)
+    #expect(reopened.workout.walk == workout.walk)
+    #expect(reopened.workout.sets.isEmpty)
+  }
+
   @Test func addingMovementSelectsItsHistoricalRackAndLogsTheNextSetThere() throws {
     let (harness, gym) = try fixture()
     let priorId = gym.runner.mint(Session.self)

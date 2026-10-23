@@ -38,7 +38,8 @@ struct CoachTab: View {
   @Binding var handoff: CoachHandoff?
   // A proposal whose card the conversation scrolls to, from its Routines row.
   @Binding var revealedProposal: String?
-  @State var coach: CoachConversation
+  @State var workspace: CoachWorkspace
+  var coach: CoachConversation { workspace.current }
   @State var history: CoachHistory
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
@@ -52,15 +53,19 @@ struct CoachTab: View {
   @Environment(\.scenePhase) var phase
   @Environment(\.dynamicTypeSize) var typeSize
   @FocusState var composing: Bool
-  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), revealedProposal: Binding<String?> = .constant(nil), coach: CoachConversation? = nil,
-       escapeSetup: ((CoachSetupChoice) -> Void)? = nil) { self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; _revealedProposal = revealedProposal; let rest = coach?.rest ?? CoachFixture.rest(gym)
-    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest))
-    _fixturePrepared = State(initialValue: !gym.isAnonymous) }
+  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), revealedProposal: Binding<String?> = .constant(nil),
+       coach: CoachConversation? = nil, workspace: CoachWorkspace? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil) {
+    self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; _revealedProposal = revealedProposal
+    let conversation = workspace?.current ?? coach ?? CoachConversation(gym: gym, rest: CoachFixture.rest(gym))
+    _workspace = State(initialValue: workspace ?? CoachWorkspace(coach: conversation))
+    _history = State(initialValue: CoachHistory(gym: gym, rest: conversation.rest))
+    _fixturePrepared = State(initialValue: !gym.isAnonymous)
+  }
 
   var body: some View {
     room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
-        if !gym.isAnonymous {
+        if coach.allowed {
           ToolbarItem(placement: .topBarTrailing) {
             Button("History", systemImage: "clock") { destination = .history }
               .accessibilityIdentifier("coach-history")
@@ -71,7 +76,7 @@ struct CoachTab: View {
       }.roomBar(.gym)
       .navigationDestination(item: $destination) { destination in
         switch destination {
-        case .history: CoachHistoryScreen(gym: gym, coach: coach, history: history)
+        case .history: CoachHistoryScreen(gym: gym, workspace: workspace, history: history)
         case .notes: NotesScreen(gym: gym)
         case .connectedLog: ConnectedLogScreen(gym: gym)
         }
@@ -85,38 +90,40 @@ struct CoachTab: View {
               .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
           }
           if coach.allowed, coach.refusal != .absent { composer }
-        }.background { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
+        }
       }
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
         if !CoachFixture.setup, !fixturePrepared { fixturePrepared = await CoachFixture.prepare(gym) }
-        history.resetOwner(); await coach.activate(); CoachFixture.seedDraft(coach)
-        if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
+        history.resetOwner(); await workspace.activate(resume: false); CoachFixture.seedDraft(coach)
+        if let handoff, workspace.begin(handoff) { self.handoff = nil; composing = !handoff.send }
         coach.noteOffline()
       }
-      .onChange(of: coach.asking) { _, asking in
-        if !asking, let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
+      .onChange(of: workspace.pending?.saved.threadId) { _, pending in
+        workspace.refreshHistory()
+        if pending == nil, let handoff, workspace.begin(handoff) { self.handoff = nil; composing = !handoff.send }
       }
       .onChange(of: coach.offline) { _, offline in
         if offline { coach.noteOffline() } else if coach.error == CoachCopy.offline, !coach.retryable { coach.error = nil }
       }
       .onChange(of: phase) { _, phase in
-        if phase == .background { coach.work?.cancel(); coach.stopWork?.cancel() }
-        if phase == .active { Task { await coach.activate() } }
+        if phase == .background { workspace.suspend() }
+        if phase == .active { Task { await workspace.activate() } }
       }
       .photosPicker(isPresented: $choosePhoto, selection: $photo, matching: .images)
       .onChange(of: photo) { _, value in
         guard let value else { return }
         preparing = true
-        let owner = gym.account, thread = coach.saved.threadId
+        let conversation = coach
+        let owner = gym.account, thread = conversation.saved.threadId
         Task {
           defer { preparing = false; photo = nil }
           do {
             guard let data = try await value.loadTransferable(type: Data.self) else { throw AppFailure(message: "Choose a supported photo.") }
-            guard owner == gym.account, coach.saved.threadId == thread else { return }
-            try coach.addPhoto(data)
-          } catch { coach.error = "Choose a supported photo." }
+            guard owner == gym.account, conversation.allowed, conversation.saved.threadId == thread else { return }
+            try conversation.addPhoto(data)
+          } catch { if conversation.allowed { conversation.error = "Choose a supported photo." } }
         }
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "coach"]) }
@@ -230,6 +237,16 @@ struct CoachTab: View {
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
     let recovery = tooLong || spoken ? nil : CoachRecovery(coach.refusal, anonymous: coach.anonymous)
     return VStack(alignment: .leading, spacing: RoomSpace.small) {
+      if workspace.answeringElsewhere {
+        HStack {
+          Text("Answer in progress").font(.footnote).foregroundStyle(GymPalette.inkDim)
+            .accessibilityIdentifier("coach-answer-in-progress")
+          Spacer()
+          Button("View chat") { composing = false; _ = workspace.viewAnswer() }
+            .font(.subheadline.weight(.semibold)).buttonStyle(.bordered).buttonBorderShape(.capsule)
+            .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-view-answer")
+        }.padding(.horizontal, RoomSpace.inset)
+      }
       if let recovery {
         VStack(alignment: .leading, spacing: RoomSpace.small) { accessRecovery(recovery) }
           .font(.footnote).foregroundStyle(GymPalette.inkDim).padding(.horizontal, RoomSpace.inset)
@@ -284,7 +301,7 @@ struct CoachTab: View {
       Button { coach.stopResponse() } label: { circle("stop.fill", fill: GymPalette.ink, ink: GymPalette.canvas, dimmed: coach.stopping) }.buttonStyle(.plain)
         .disabled(coach.stopping).accessibilityLabel(coach.anonymous ? "Stop waiting" : coach.uploading ? "Cancel upload" : "Stop response").accessibilityIdentifier("coach-stop")
     } else if CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || coach.anonymousRetryable {
-      let held = preparing || coach.saved.text.utf8.count > coach.textLimit
+      let held = preparing || workspace.answeringElsewhere || coach.saved.text.utf8.count > coach.textLimit
       Button { if coach.blockedReason == nil { composing = false }; coach.send() } label: {
         circle("arrow.up", fill: GymPalette.accent, ink: GymPalette.onAccent, dimmed: held || coach.blockedReason != nil)
       }.buttonStyle(.plain).disabled(held)
@@ -323,7 +340,7 @@ struct CoachTab: View {
       } else if coach.asking, record.id == coach.anonymousRequest?.id {
         CoachTyping()
       } else if !record.finished, record.stopped || record.response?.status != "failed" {
-        Button("Check response") { coach.resumeOnboarding() }.accessibilityIdentifier("coach-check-response")
+        Button("Check response") { coach.resumeOnboarding() }.disabled(!coach.mayRequest).accessibilityIdentifier("coach-check-response")
       }
       if refused {
         if let allowance = coach.spentAllowance(record) { allowanceMessage(allowance, current: record.id == coach.anonymousRequest?.id) }

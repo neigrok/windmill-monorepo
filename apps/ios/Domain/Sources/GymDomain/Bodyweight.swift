@@ -94,10 +94,17 @@ public struct Bodyweight: Equatable, Sendable {
   public struct Entry: Equatable, Sendable {
     public let day: LocalDay
     public let kg: Double
+    public let recordedAt: Instant?
 
-    public init(day: LocalDay, kg: Double) {
+    public init(day: LocalDay, kg: Double, recordedAt: Instant? = nil) {
       self.day = day
       self.kg = kg
+      self.recordedAt = recordedAt
+    }
+
+    public func time(in zone: any Zone) -> Instant? {
+      guard let recordedAt, LocalDay(recordedAt, in: zone) == day else { return nil }
+      return recordedAt
     }
   }
 
@@ -149,7 +156,7 @@ public struct Bodyweight: Equatable, Sendable {
     stance = Stance(storing: stored, firstPullComplete: firstPullComplete)
     today = moment.today
     entries = drawn
-      .compactMap { w in w.day.flatMap { day in w.kg.map { Entry(day: day, kg: $0) } } }
+      .compactMap { w in w.day.flatMap { day in w.kg.map { Entry(day: day, kg: $0, recordedAt: w.recordedAt) } } }
       .filter { $0.day <= moment.today }
       .sorted { $0.day < $1.day }
   }
@@ -160,7 +167,7 @@ public struct Bodyweight: Equatable, Sendable {
               firstPullComplete: try read.firstPullComplete(), at: read.moment)
   }
 
-  // The log head: the newest weigh-in and its age; nil draws nothing.
+  // The newest weigh-in and its age in local days.
   public var reading: Reading? {
     entries.last.map { Reading(entry: $0, daysAgo: $0.day.days(until: today)) }
   }

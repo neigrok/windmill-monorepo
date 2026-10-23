@@ -6,7 +6,7 @@ import DomainKit
 nonisolated enum CoachSpeaker { case lifter, coach }
 
 // A message bubble, 18 pt round; the last bubble of a group carries a tail at its foot, on its speaker's side.
-struct CoachBubbleShape: Shape {
+nonisolated struct CoachBubbleShape: Shape {
   let speaker: CoachSpeaker
   let tail: Bool
   func path(in rect: CGRect) -> SwiftUI.Path {

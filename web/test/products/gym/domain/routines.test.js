@@ -6,9 +6,9 @@ import { GymProduct } from '../../../../../packages/api-contract/sync/reference/
 import { Draft } from '../../../../src/platform/domain-kit/drafts.js';
 import { Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, Exercise, ExerciseName, ExerciseValue } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
-import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SetTarget } from '../../../../src/products/gym/domain/routines.js';
+import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutinePlan, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 
@@ -94,6 +94,95 @@ test('a failed routine save retains the draft and retry commits the same record'
   assert.deepEqual(unchanged.result, { kind: 'saved', receipt: null });
   await a.sync();
   assert.deepEqual(fields(a), [{ id: 'routine1', ...saved.draft.current.fields() }]);
+});
+
+test('a routine plan retries one atomic catalogue and targets save after storage failure and survives restart', async (t) => {
+  const a = await open(t);
+  const b = await a.device();
+  const custom = new ExerciseValue(new Id('exercise1', Exercise), ' Single press ', 'press', 'dumbbell', 2, [], 1);
+  const base = new RoutineValue(new Id('routine1', Routine));
+  const current = new RoutineValue(base.id, ' Push ', 0, [new RoutineEntry(custom.id, [new SetTarget(8, 16)])]);
+  const action = new SaveRoutinePlan(base, current, true, [{ base: null, current: custom }]);
+  const before = (await a.engine.store.read()).device.toJSON();
+  a.failNextCommit();
+  await assert.rejects(a.runner.run(action));
+  assert.deepEqual((await a.engine.store.read()).device.toJSON(), before);
+  assert.deepEqual(a.env.failures, ['storage']);
+  assert.deepEqual([a.drawn(Routine), a.drawn(Exercise), a.drawn(ExerciseName)], [[], [], []]);
+  const saved = await a.runner.run(action);
+  assert.equal(saved.kind, 'committed');
+  assert.equal(saved.kind === 'committed' && saved.result.equals(base.id), true);
+  assert.equal(a.engine.device.activeReplica.entries().length, 1);
+  await a.restart();
+  await a.sync();
+  for (const phone of [a, b]) {
+    assert.deepEqual(fields(phone), [{ id: 'routine1', name: 'Push', position: 0,
+      entries: [{ exerciseId: 'exercise1', sets: [{ reps: 8, weightKg: 16 }] }] }]);
+    assert.deepEqual(phone.drawn(Exercise).map((value) => ({ id: value.id.record, ...value.fields() })),
+      [{ id: 'exercise1', name: 'Single press', pattern: 'press', equipment: 'dumbbell', stepKg: 2 }]);
+    assert.deepEqual(phone.drawn(ExerciseName).map((value) => ({ id: value.id.record, ...value.fields() })),
+      [{ id: 'exercise1', loadCount: 1 }]);
+    const movement = phone.runner.read(Exercise.scope, (read) => new Catalogue(read).find(custom.id));
+    assert.equal(movement?.loadCount, 1);
+    assert.deepEqual(phone.notices(GymRefusals), []);
+  }
+});
+
+test('a concurrent equipment edit refuses the entire routine plan with one notice and no renamed movement or new targets', async (t) => {
+  const a = await open(t);
+  const b = await a.device();
+  const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'bench-press');
+  assert.ok(seed);
+  const base = new RoutineValue(new Id('routine1', Routine), 'Push', 0, [new RoutineEntry(seed.id)]);
+  assert.equal((await a.runner.run(new SaveRoutinePlan(base, base, true, []))).kind, 'committed');
+  await a.sync();
+  const equipment = new ExerciseValue(seed.id, seed.name, seed.pattern, 'dumbbell', seed.stepKg, seed.aliases, 1);
+  assert.equal((await a.runner.run(new SaveRoutinePlan(base, base, false, [{ base: seed, current: equipment }]))).kind, 'committed');
+  const current = new RoutineValue(base.id, base.name, 0, [new RoutineEntry(seed.id, [new SetTarget(8, 60)])]);
+  const rename = new ExerciseValue(seed.id, 'My press', seed.pattern, seed.equipment, seed.stepKg, seed.aliases, seed.loadCount);
+  assert.equal((await b.runner.run(new SaveRoutinePlan(base, current, false, [{ base: seed, current: rename }]))).kind, 'committed');
+  assert.deepEqual(b.runner.read(Exercise.scope, (read) => new Catalogue(read).find(seed.id)?.aliases), ['Bench Press']);
+  await a.sync();
+  assert.deepEqual(b.notices(GymRefusals).map((/** @type {import('../../../../src/platform/domain-kit/refusals.js').DomainNotice<import('../../../../src/products/gym/domain/gymRules.js').GymRefusal>} */ notice) => refusalForm(notice.refusal)),
+    [{ stale: { subject: base.id.ref, path: 'notice' } }]);
+  for (const phone of [a, b]) {
+    assert.deepEqual(fields(phone), [{ id: 'routine1', ...base.fields() }]);
+    const movement = phone.runner.read(Exercise.scope, /** @returns {ExerciseValue | null} */ (read) => new Catalogue(read).find(seed.id));
+    assert.deepEqual(movement, equipment);
+    assert.deepEqual(phone.drawn(ExerciseName).map((value) => ({ id: value.id.record, ...value.fields() })),
+      [{ id: 'bench-press', equipment: 'dumbbell', loadCount: 1 }]);
+  }
+});
+
+test('successive routine edits preserve local former names and count while no-op and hidden routine saves write nothing', async (t) => {
+  const a = await open(t);
+  const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'bench-press');
+  assert.ok(seed);
+  const custom = new ExerciseValue(new Id('exercise1', Exercise), 'Single press', 'press', 'dumbbell', 2, [], 1);
+  const base = new RoutineValue(new Id('routine1', Routine), 'Push', 0, [new RoutineEntry(seed.id), new RoutineEntry(custom.id)]);
+  assert.equal((await a.runner.run(new SaveRoutinePlan(base, base, true, [{ base: null, current: custom }]))).kind, 'committed');
+  const firstSeed = new ExerciseValue(seed.id, 'My press', seed.pattern, seed.equipment, seed.stepKg, seed.aliases, seed.loadCount);
+  const firstCustom = new ExerciseValue(custom.id, 'First press', custom.pattern, custom.equipment, custom.stepKg, custom.aliases, custom.loadCount);
+  assert.equal((await a.runner.run(new SaveRoutinePlan(base, base, false,
+    [{ base: seed, current: firstSeed }, { base: custom, current: firstCustom }]))).kind, 'committed');
+  const next = new ExerciseValue(custom.id, 'Next press', custom.pattern, custom.equipment, custom.stepKg, [], 1);
+  assert.equal((await a.runner.run(new SaveRoutinePlan(base, base, false, [{ base: firstCustom, current: next }]))).kind, 'committed');
+  await a.restart();
+  const catalogue = a.runner.read(Exercise.scope, (read) => new Catalogue(read));
+  assert.deepEqual(catalogue.find(custom.id), new ExerciseValue(custom.id, 'Next press', 'press', 'dumbbell', 2, ['First press', 'Single press'], 1));
+  assert.deepEqual(catalogue.find(seed.id), new ExerciseValue(seed.id, 'My press', seed.pattern, seed.equipment, seed.stepKg, ['Bench Press'], 1));
+  const beforeNoOp = (await a.engine.store.read()).device.toJSON();
+  assert.deepEqual(await a.runner.run(new SaveRoutinePlan(base, base, false, [{ base: next, current: next }])),
+    { kind: 'unchanged', result: base.id });
+  assert.deepEqual((await a.engine.store.read()).device.toJSON(), beforeNoOp);
+  const removed = await a.runner.run(DeleteRoutine(base.id));
+  assert.equal(removed.kind, 'committed');
+  const beforeRefusal = (await a.engine.store.read()).device.toJSON();
+  const refused = await a.runner.run(new SaveRoutinePlan(base, base, false, [{ base: next, current: custom }]));
+  assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal), { gone: { subject: base.id.ref, path: 'predicted' } });
+  assert.deepEqual((await a.engine.store.read()).device.toJSON(), beforeRefusal);
+  if (removed.kind === 'committed') assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.deepEqual(fields(a), [{ id: 'routine1', ...base.fields() }]);
 });
 
 test('routine reordering counts held deletions until Undo restores them', async (t) => {

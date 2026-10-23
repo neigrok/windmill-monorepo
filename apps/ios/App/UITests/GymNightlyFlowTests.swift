@@ -75,8 +75,14 @@ import XCTest
     openTab("Routines", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     openTab("Coach", app)
-    let switched = settledFrame(review)
-    XCTAssertEqual(switched.minY, atEnd.minY, accuracy: 1, "Back from another tab the last card \(switched) stands where it stood \(atEnd)")
+    XCTAssertFalse(review.exists, "A deliberate Coach tab entry starts fresh")
+    app.buttons["coach-history"].tap()
+    let previous = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
+    XCTAssertTrue(previous.waitForExistence(timeout: 5)); previous.tap()
+    for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
+    let reopened = settledFrame(review)
+    XCTAssertLessThanOrEqual(reopened.maxY, composer.frame.minY + 1, "The reopened conversation clears the composer")
+    for name in ["Routines", "The log", "Coach"] { XCTAssertTrue(app.tabBars.buttons[name].isHittable) }
   }
 
   func launchLog() -> XCUIApplication {
@@ -102,6 +108,13 @@ import XCTest
     XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Log coverage\n")
     app.buttons["add-movement"].tap()
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
+    let add = app.buttons["gym-movement-editor-commit"]
+    XCTAssertTrue(add.waitForExistence(timeout: 5)); XCTAssertEqual(add.label, "Add")
+    XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Bench Press")
+    XCTAssertTrue(app.textFields["gym-target-sets"].exists)
+    add.tap()
+    XCTAssertTrue(app.buttons["builder-movement-bench-press"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()

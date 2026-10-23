@@ -94,7 +94,8 @@ sign-in, hello and adoption questions leave training available. `rest` is the au
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and Coach, account-only proposal review, Notes and Connected log.
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
-routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
+routine or its editor. Coach has a direct History button for local conversations and signed-in server history;
+Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
 precedence. Coach greets the user locally in two bubbles — who it is, then what it can do, each line led by its anchor
@@ -103,9 +104,34 @@ under them. A signed-in gym that already holds routines opens on an empty conver
 relaunch and failed sends until the first accepted message, and steps aside while a message is on its
 way. Goals and constraints use plain dialogue.
 Routines, empty or not, has one bottom-trailing glass plus, *New routine*, opening the routine builder.
+The builder stages exercise name, equipment and targets in one movement form. Done/Add changes the
+routine draft; outer Save commits the routine and changed exercise metadata atomically through
+`SaveRoutinePlan`. Outer Cancel discards those staged edits; editor Cancel restores the entry draft.
+Exercise metadata applies across the account, while targets belong to that routine entry. The form
+keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
+destination. Stale metadata or a changed owner refuses the whole save.
+
+The Log groups workouts, every weigh-in and optional records by local date. Timed entries share a
+chronological sequence; a backdated or legacy weight with day-only precision follows timed entries
+on that day. Workouts use filled cards, weights use separated rows and records use inset markers.
+Weights remain factual rows regardless of highlight limits. Workout and weight rows open their
+respective detail/correction; derived records open progress and have no independent Delete. A weight’s
+context menu opens the Bodyweight chart. Weigh in floats directly above the canvas.
+
+The content-sized weigh-in sheet preserves the typed weight while a native graphical `DatePicker`
+stages another day; Back cancels the date change and checkmark accepts it without saving the weight.
+The calendar dismisses the keyboard and expands within the same sheet. Correction keeps its day fixed.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
-account- or replica-scoped local Coach archive. Every new routine is a draft, and an answer's drafts
+account- or replica-scoped versioned Coach archive. Deliberately entering the Coach tab opens a fresh
+canvas; History restores each nonempty chat, draft or interrupted request. An answer stays with its
+original conversation while a fresh draft waits for that request to settle. Empty visits create no
+archive row or network request, and foreground or photo-picker returns retain the selected chat.
+A fresh draft shows Answer in progress and View chat while the prior request owns Send. Signed-in
+History refreshes cached server turns without resending and keeps the local draft usable offline.
+The archive migrates the legacy file and applies adoption or deletion to all conversations for the
+captured owner. Coach keeps the full tab bar while scrolling; the composer has no backing panel.
+Every new routine is a draft, and an answer's drafts
 stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
 movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
 on this phone with no server call and leaves *Rejected · 3 routines*, which stays through a new chat, an
@@ -151,7 +177,17 @@ adoption and are removed on explicit Discard. An authenticated bind returning in
 permits account Coach; other authentication, transport and accounting failures block dispatch until
 recovered. Work from a previous account/replica cannot publish into the active seat.
 
-The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action. Signed
+The live workout uses a compact ledger with up to three 44-point rows at default text size;
+accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
+statistics strip. Assembly and Add movement share one sheet destination. Selecting a movement returns
+to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+
+The finished-workout receipt places 👑 Share with Coach and the primary Done action in two full-width rows.
+A native top-trailing options menu offers Discard workout and its actual-set-count confirmation.
+The bottom actions use 52-point minimum heights and 12-point separation, growing with text; the menu
+and actions are disabled during account transitions. The menu uses UIKit `UIButton` / `UIMenu`, with
+open events from `.menuActionTriggered`. The approved gold crown is the original-color
+`gym/coach-crown` image asset. Keep and review retry remain in the scrollable receipt content. Signed
 out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
 tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
 suggests it and no later receipt does, signed out or in.
@@ -350,6 +386,8 @@ asset catalogue, one palette enum per room), the named type roles, the spacing s
 [the iOS colour roles](../../../docs/design/ios/ios-redesign.md), which `Tools/tests/test_theme_assets.py`
 checks against the asset catalogue. The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
+The [six-flow Gym handoff](../../../docs/engineering/ios-gym-ui-flows.md) records approved designs,
+accepted runtime captures, scoped verification results and remaining performance/coverage limits.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
 colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,

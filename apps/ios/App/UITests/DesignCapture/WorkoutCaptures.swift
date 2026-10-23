@@ -199,6 +199,12 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
       app.swipeUp()
       capture("gym-workout-finish-receipt-actions", look, app)
+      app.buttons["workout-receipt-options"].tap()
+      XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+      capture("03.18-finish-options", look, app)
+      app.buttons["Discard workout"].tap()
+      XCTAssertTrue(app.alerts["Discard this workout?"].waitForExistence(timeout: 5))
+      capture("03.19-finish-discard-confirmation", look, app)
     }
   }
 

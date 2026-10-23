@@ -93,11 +93,21 @@ struct WorkoutMovementPicker: View {
   let gym: GymModel
   let workout: WorkoutState
   @Environment(\.dismiss) private var dismiss
+  @State private var selected = false
   var body: some View {
     NavigationStack {
       MovementPicker(gym: gym, purpose: .workout, selected: Set(workout.walk.order),
                      onBuildRoutine: { if gym.hideWorkout() { workout.handoff = .writtenProgram } },
-                     onSelect: { workout.add($0.exerciseId); dismiss() })
+                     onSelect: { entry in
+                       let accepted = workout.add(entry.exerciseId)
+                       gym.telemetry.event("gym_workout_picker", properties: ["action": "select", "outcome": accepted ? "ok" : "refused"])
+                       guard accepted else { return }
+                       selected = true; dismiss()
+                     })
     }.modifier(GymPage()).presentationDetents([.large])
+      .onAppear { gym.telemetry.event("gym_workout_picker", properties: ["action": "open"]) }
+      .onDisappear {
+        if !selected { gym.telemetry.event("gym_workout_picker", properties: ["action": "cancel"]) }
+      }
   }
 }

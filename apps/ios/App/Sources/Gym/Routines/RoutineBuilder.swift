@@ -6,16 +6,16 @@ import SyncCore
 
 @Observable @MainActor
 final class RoutineEditingSession: Identifiable {
-  enum Step: Hashable { case movements, creation, targets(DomainKit.ID<Exercise>) }
-  let id: ID<Routine>
+  enum Step: Hashable { case movements, editor }
+  let id: DomainKit.ID<Routine>
   let account: String?
   let anonymous: Bool
   // A refusal answers an attempt — a Save, or leaving a name the owner changed — and the next edit clears it.
   var draft: Draft<Routine> { didSet { if draft.current != oldValue.current { refusal = nil } } }
   var path: [Step] = []
   var query = ""
-  var creation: MovementCreationDraft?
-  var targetDraft = RoutineTargetDraft(sets: nil)
+  var editor: RoutineMovementDraft? { didSet { if editor != oldValue { refusal = nil } } }
+  var movements: [DomainKit.ID<Exercise>: RoutineMovementChange] = [:]
   var saving = false
   var saved = false
   var refusal: String?
@@ -33,39 +33,59 @@ final class RoutineEditingSession: Identifiable {
     refusal = problem
   }
 
-  // The stack hands every link push here, so a targets screen opens on the scheme its movement holds now.
-  func follow(_ next: [Step]) {
-    if case .targets(let exerciseId)? = next.last, next.last != path.last {
-      targetDraft = RoutineTargetDraft(sets: exerciseId == creation?.id ? creation?.sets : draft.current.entries.first { $0.exerciseId == exerciseId }?.sets)
-    }
-    path = next
+  var isDirty: Bool { draft.isDirty || movements.values.contains(where: \.isDirty) }
+
+  func exercise(_ id: DomainKit.ID<Exercise>, in gym: GymModel) -> Exercise? {
+    movements[id]?.current ?? gym.catalogue.find(id)
   }
+
   func pickMovement() {
-    query = ""; creation = nil; path = [.movements]
+    query = ""; editor = nil; path = [.movements]
   }
+
   func createMovement(_ gym: GymModel) {
-    var draft = creation ?? MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "")
-    draft.takeQuery(query)
-    creation = draft; path.append(.creation)
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query)),
+                            pattern: "isolation", equipment: "barbell", stepKg: ExerciseRules.defaultStepKg(equipment: "barbell"))
+    editor = RoutineMovementDraft(exercise: exercise, base: nil, entry: nil)
+    path.append(.editor)
   }
-  func cancelTargets() {
-    if case .targets? = path.last { path.removeLast() }
+
+  func editMovement(_ id: DomainKit.ID<Exercise>, gym: GymModel) {
+    guard let exercise = exercise(id, in: gym) else { return }
+    let base = movements[id].map(\.base) ?? exercise
+    editor = RoutineMovementDraft(exercise: exercise, base: base,
+                                  entry: draft.current.entries.first { $0.exerciseId == id })
+    path.append(.editor)
   }
-  func setTargets(_ sets: [SetTarget]?) {
-    guard case .targets(let exerciseId)? = path.last else { return }
-    var transaction = Transaction(animation: nil); transaction.disablesAnimations = true
-    withTransaction(transaction) {
-      if exerciseId == creation?.id { creation?.sets = sets; creation?.refusal = nil }
-      else if let index = draft.current.entries.firstIndex(where: { $0.exerciseId == exerciseId }) { draft.current.entries[index].sets = sets }
-      path.removeLast()
+
+  func cancelMovement() {
+    editor = nil
+    if path.last == .editor { path.removeLast() }
+  }
+
+  @discardableResult func stageMovement(_ gym: GymModel) -> Bool {
+    guard let editor else { return false }
+    guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
+      refusal = "The account changed while editing. Open the routine again."
+      return false
     }
-  }
-  func select(_ entry: RoutineEntry) {
-    guard draft.current.entries.count < 50, !draft.current.entries.contains(where: { $0.exerciseId == entry.exerciseId }) else { return }
-    var transaction = Transaction(animation: nil); transaction.disablesAnimations = true
-    withTransaction(transaction) {
-      draft.current.entries.append(entry); path = []
+    guard editor.problem == nil else { return false }
+    let sets: [SetTarget]?
+    switch editor.targets.reading {
+    case .open: sets = nil
+    case .scheme(let targets): sets = targets
+    case .refused: return false
     }
+    if let index = draft.current.entries.firstIndex(where: { $0.exerciseId == editor.id }) {
+      draft.current.entries[index].sets = sets
+    } else {
+      guard draft.current.entries.count < 50 else { return false }
+      draft.current.entries.append(RoutineEntry(exerciseId: editor.id, sets: sets))
+    }
+    movements[editor.id] = RoutineMovementChange(base: editor.base, current: editor.exercise)
+    self.editor = nil; path = []
+    gym.telemetry.event("gym_action", properties: ["screen": "routine_movement_editor", "action": "stage", "outcome": "ok"])
+    return true
   }
   func move(_ index: Int, by offset: Int) {
     let destination = index + offset
@@ -74,22 +94,37 @@ final class RoutineEditingSession: Identifiable {
   }
   func remove(_ index: Int) {
     guard draft.current.entries.indices.contains(index) else { return }
+    movements.removeValue(forKey: draft.current.entries[index].exerciseId)
     draft.current.entries.remove(at: index)
   }
   @discardableResult func save(_ gym: GymModel) -> Bool {
-    guard account == gym.account, anonymous == gym.isAnonymous else {
-      refusal = "The account changed while editing. Open the routine again."; return false
+    guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
+      refusal = "The account changed while editing. Open the routine again."
+      gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": "update", "outcome": "refused"])
+      return false
     }
-    if let problem = RoutinePlanning.problem(draft.current) { refusal = problem; return false }
+    if let problem = RoutinePlanning.problem(draft.current) {
+      refusal = problem
+      gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": draft.isNew ? "create" : "update", "outcome": "refused"])
+      return false
+    }
     saving = true
     defer { saving = false }
-    if gym.saveRoutine(&draft) { saved = true; return true }
+    let outcome = gym.run(SaveRoutinePlan(base: draft.base, current: draft.current, isNew: draft.isNew, movements: Array(movements.values)))
+    gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": draft.isNew ? "create" : "update",
+                                                 "outcome": outcome == nil ? "failed" : outcome?.refusal == nil ? "saved" : "refused"])
+    if let outcome, outcome.refusal == nil {
+      if outcome.receipt != nil { gym.telemetry.event("gym_routine_saved", properties: ["screen": "routine_editor", "action": draft.isNew ? "create" : "update"]) }
+      saved = true; return true
+    }
     refusal = gym.error ?? "This routine could not be saved. Try again."
     return false
   }
   @discardableResult func delete(_ gym: GymModel) -> Bool {
-    guard account == gym.account, anonymous == gym.isAnonymous else {
-      refusal = "The account changed while editing. Open the routine again."; return false
+    guard account == gym.account, anonymous == gym.isAnonymous, !gym.accountTransition else {
+      refusal = "The account changed while editing. Open the routine again."
+      gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": "update", "outcome": "refused"])
+      return false
     }
     guard let outcome = gym.run(DeleteRoutine(id)), outcome.refusal == nil else {
       refusal = gym.error ?? "This routine could not be deleted. Try again."; return false
@@ -102,17 +137,17 @@ struct RoutineBuilder: View {
   let gym: GymModel
   @Bindable var editing: RoutineEditingSession
   let onSave: (ID<Routine>) -> Void
-  @State private var exerciseToEdit: Exercise?
+  @State private var discardChanges = false
   @FocusState private var nameFocused: Bool
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    NavigationStack(path: Binding(get: { editing.path }, set: { editing.follow($0) })) {
+    NavigationStack(path: $editing.path) {
       plan
         .navigationTitle(editing.draft.isNew ? "New routine" : "Edit routine").navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("routine-builder")
-        .sheetCommit("Save", identifier: "save-routine", disabled: gym.accountTransition || !editing.draft.isDirty, busy: editing.saving,
-                     dismiss: { dismiss() }, commit: save)
+        .sheetCommit("Save", identifier: "save-routine", disabled: gym.accountTransition || !editing.isDirty, busy: editing.saving,
+                     dismiss: cancel, commit: save)
         .reachBand {
           GymTransient(gym: gym, message: editing.refusal,
                        errorIdentifier: "routine-refusal")
@@ -129,9 +164,12 @@ struct RoutineBuilder: View {
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
     }.modifier(GymPage()).presentationDetents([.large])
-      .sheet(isPresented: Binding(get: { exerciseToEdit != nil }, set: { if !$0 { exerciseToEdit = nil } })) {
-        if let exerciseToEdit { RenameMovementSheet(gym: gym, exercise: exerciseToEdit) }
+      .interactiveDismissDisabled(editing.isDirty || editing.editor?.isDirty == true || editing.saving)
+      .confirmationDialog("Discard routine changes?", isPresented: $discardChanges, titleVisibility: .visible) {
+        Button("Discard", role: .destructive) { discard() }
+        Button("Keep editing", role: .cancel) {}
       }
+
   }
 
   var plan: some View {
@@ -144,11 +182,11 @@ struct RoutineBuilder: View {
         }
         Section {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
-            let exercise = gym.catalogue.find(entry.exerciseId)
+            let exercise = editing.exercise(entry.exerciseId, in: gym)
             OrderedMovementRow(exercise: exercise, index: index, count: editing.draft.current.entries.count,
                                identifier: "builder-movement-\(entry.exerciseId)",
-                               open: { if let exercise { editing.follow([.targets(exercise.id)]) } },
-                               move: { editing.move(index, by: $0) }, remove: { editing.remove(index) }, edit: { exerciseToEdit = $0 }) {
+                               open: { editing.editMovement(entry.exerciseId, gym: gym) },
+                               move: { editing.move(index, by: $0) }, remove: { editing.remove(index) }, edit: { editing.editMovement($0.id, gym: gym) }) {
               GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")",
                      meta: RoutineLines.movement(entry.sets, equipment: MovementEquipment(exercise)))
             }
@@ -178,22 +216,27 @@ struct RoutineBuilder: View {
     switch step {
     case .movements:
       MovementPicker(gym: gym, purpose: .routine, selected: Set(editing.draft.current.entries.map(\.exerciseId)), query: $editing.query,
-                     onCreate: { editing.createMovement(gym) }, onCancel: { editing.follow([]) }) { editing.select($0) }
+                     onCreate: { editing.createMovement(gym) }, onCancel: { editing.path = []; gym.telemetry.event("gym_action", properties: ["screen": "routine_movement", "action": "cancel", "outcome": "ok"]) }) { editing.editMovement($0.exerciseId, gym: gym) }
         .navigationBarBackButtonHidden()
-    case .creation:
-      if let creation = editing.creation {
-        CreateMovementSheet(gym: gym, draft: Binding(get: { editing.creation ?? creation }, set: { editing.creation = $0 }), purpose: .routine,
-                            account: editing.account, anonymous: editing.anonymous,
-                            onCancel: { if editing.path.last == .creation { editing.follow(Array(editing.path.dropLast())) } }) { editing.select($0) }
+    case .editor:
+      if let editor = editing.editor {
+        RoutineMovementEditor(gym: gym, draft: Binding(get: { editing.editor ?? editor }, set: { editing.editor = $0 }),
+                              refusal: editing.refusal, onCancel: { editing.cancelMovement() },
+                              onCommit: { editing.stageMovement(gym) })
           .navigationBarBackButtonHidden()
       }
-    case .targets(let exerciseId):
-      if let exercise = exerciseId == editing.creation?.id ? editing.creation?.exercise : gym.catalogue.find(exerciseId) {
-        RoutineTargetsSheet(gym: gym, exercise: exercise, draft: $editing.targetDraft,
-                            onCancel: { editing.cancelTargets() }, onCommit: { editing.setTargets($0) })
-          .navigationBarBackButtonHidden()
-      }
+
     }
+  }
+
+  private func cancel() {
+    nameFocused = false
+    if editing.isDirty { discardChanges = true } else { discard() }
+  }
+
+  private func discard() {
+    gym.telemetry.event("gym_action", properties: ["screen": "routine_editor", "action": "cancel", "outcome": "ok"])
+    dismiss()
   }
 
   private func save() {

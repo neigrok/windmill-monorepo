@@ -12,11 +12,11 @@ import XCTest
   }
 
   // The board's clock stands at noon UTC on Sep 26; the app reads it in UTC and en_US, so every time it draws is fixed.
-  func launch() -> XCUIApplication {
+  func launch(arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchEnvironment["TZ"] = "UTC"
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", "light",
-                           "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-fixture"]
+                           "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-fixture"] + arguments
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     let menu = app.buttons["room-menu"]
@@ -35,7 +35,7 @@ import XCTest
     }, object: nil)
     return XCTWaiter.wait(for: [ready], timeout: 30) == .completed
   }
-  // Scrolling minimizes the tab bar to its selected tab; tapping that tab brings the other tabs back.
+  // Other tabs may minimize while scrolling; Coach keeps all tabs visible.
   func openTab(_ name: String, _ app: XCUIApplication) {
     let viewport = app.frame
     let tabBar = app.tabBars.firstMatch
@@ -110,6 +110,10 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     back(app)
     openTab("Coach", app)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-header"].exists)
+    app.buttons["coach-history"].tap()
+    let previous = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
+    XCTAssertTrue(previous.waitForExistence(timeout: 5)); previous.tap()
     let card = app.descendants(matching: .any)["coach-proposal-header"]
     XCTAssertTrue(waitForVisible(card, in: app))
     XCTAssertEqual(card.value as? String ?? "", "")
@@ -133,5 +137,32 @@ import XCTest
     XCTAssertFalse(conversation.label.contains("waiting"), conversation.label)
     conversation.tap()
     XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 5))
+  }
+  func testFreshCanvasKeepsThePendingAnswerAndDraftInHistory() {
+    let app = launch(arguments: ["-coach-streaming"])
+    let question = app.descendants(matching: .any)["coach-question"]
+    question.tap(); question.typeText("What should Thursday look like?")
+    app.buttons["coach-send"].tap()
+    XCTAssertTrue(app.buttons["coach-stop"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    app.scrollViews.firstMatch.swipeUp()
+    for name in ["Routines", "The log", "Coach"] {
+      XCTAssertTrue(app.tabBars.buttons[name].isHittable, "Coach scrolling keeps every tab visible")
+    }
+    openTab("Routines", app); openTab("Coach", app)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-answer-in-progress"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["coach-stop"].exists)
+    question.tap(); question.typeText("A separate draft")
+    XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+    app.buttons["coach-keyboard-done"].tap()
+    app.buttons["coach-view-answer"].tap()
+    XCTAssertTrue(app.buttons["coach-stop"].waitForExistence(timeout: 5))
+    app.buttons["coach-stop"].tap()
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    app.buttons["coach-history"].tap()
+    let draft = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "A separate draft")).firstMatch
+    XCTAssertTrue(draft.waitForExistence(timeout: 5)); draft.tap()
+    XCTAssertEqual(question.value as? String, "A separate draft")
+    XCTAssertTrue(app.buttons["coach-send"].isEnabled)
   }
 }

@@ -5,14 +5,22 @@ import DomainKit
 import SyncCore
 
 struct WorkoutScreen: View {
+  nonisolated enum Sheet: Identifiable, Equatable {
+    case assembly, movement, fix(TrainingSet), wheel
+    var id: String {
+      switch self {
+      case .assembly: "assembly"
+      case .movement: "movement"
+      case .fix(let set): "fix-\(set.id)"
+      case .wheel: "wheel"
+      }
+    }
+  }
   let gym: GymModel
   @Bindable var workout: WorkoutState
   @Environment(\.scenePhase) var scenePhase
-  @State var assembly = false
-  @State var addMovement = false
-  @State var addAfterAssembly = false
-  @State var fixing: TrainingSet?
-  @State var wheel = false
+  @State var activeSheet: Sheet?
+  @State var nextSheet: Sheet?
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
@@ -42,7 +50,7 @@ struct WorkoutScreen: View {
       .toolbar {
         if workout.session?.isOpen == true {
           ToolbarItem(placement: .topBarLeading) {
-            Button("This workout", systemImage: "list.bullet") { assembly = true }.labelStyle(.iconOnly)
+            Button("This workout", systemImage: "list.bullet.clipboard") { activeSheet = .assembly }.labelStyle(.iconOnly)
               .accessibilityIdentifier("workout-assembly")
           }
           ToolbarItem(placement: .confirmationAction) {
@@ -55,47 +63,71 @@ struct WorkoutScreen: View {
       }.roomBar(.gym)
     }
   }
-  var body: some View {
+  var presentation: some View {
     navigation.modifier(GymPage())
     .accessibilityIdentifier("gym-workout")
     .modifier(WorkoutActivityFixtureProbe(gym: gym))
-    .sheet(isPresented: $assembly, onDismiss: {
-      if addAfterAssembly { addAfterAssembly = false; addMovement = true }
-    }) {
-      WorkoutAssembly(workout: workout, add: { addAfterAssembly = true; assembly = false })
-    }
-    .sheet(isPresented: $addMovement) { WorkoutMovementPicker(gym: gym, workout: workout) }
-    .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-      if let set = fixing { SetEditor(gym: gym, set: set, identifier: "workout-fix") }
-    }
-    .sheet(isPresented: $wheel) {
-      let movement = workout.selected.flatMap { gym.catalogue.find($0) }
-      SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
-                    weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
+    .sheet(item: $activeSheet, onDismiss: {
+      activeSheet = nextSheet; nextSheet = nil
+    }) { destination in
+      switch destination {
+      case .assembly:
+        WorkoutAssembly(workout: workout, add: { nextSheet = .movement; activeSheet = nil })
+      case .movement:
+        WorkoutMovementPicker(gym: gym, workout: workout)
+      case .fix(let set):
+        SetEditor(gym: gym, set: set, identifier: "workout-fix")
+      case .wheel:
+        let movement = workout.selected.flatMap { gym.catalogue.find($0) }
+        SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
+                      weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
+      }
     }
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
-    .onChange(of: wheel) { _, open in workout.rackEditing = open }
-    .onAppear {
-      if workout.sessionId != gym.openSession?.id && gym.openSession != nil { workout.restore() }
-      workout.reconcile(); updateAwake()
-      gym.telemetry.event("gym_screen_viewed", properties: ["screen": "workout"])
-    }
-    .onChange(of: gym.sets) { _, _ in workout.reconcile() }
-    .onChange(of: gym.openSession?.id) { _, _ in workout.reconcile(); updateAwake() }
-    .onChange(of: gym.notices.map(\.id)) { _, _ in workout.reconcile() }
-    .onChange(of: workout.message ?? gym.workoutNotice ?? gym.error) { _, message in
+  }
+
+  var observedWorkout: some View {
+    presentation
+    .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in workout.rackEditing = destination == Sheet.wheel }
+    .onChange(of: gym.sets) { (_: [TrainingSet], _: [TrainingSet]) in workout.reconcile() }
+    .onChange(of: gym.openSession?.id) { (_: ID<Session>?, _: ID<Session>?) in workout.reconcile(); updateAwake() }
+    .onChange(of: gym.notices.map(\.id)) { (_: [String], _: [String]) in workout.reconcile() }
+    .onChange(of: workout.message ?? gym.workoutNotice ?? gym.error) { (_: String?, message: String?) in
       if let message { UIAccessibility.post(notification: .announcement, argument: message) }
     }
-    .onChange(of: gym.readFailed) { _, failed in if !failed { workout.reconcile() } }
-    .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
-    .onChange(of: gym.accountTransition) { _, changing in if changing { finishTask?.cancel() } }
+    .onChange(of: gym.readFailed) { (_: Bool, failed: Bool) in if !failed { workout.reconcile() } }
+  }
+
+  var body: some View {
+    observedWorkout
+    .onAppear(perform: appear)
+    .onChange(of: gym.account) { _, _ in
+      nextSheet = nil; activeSheet = nil; finishTask?.cancel(); workout.accountChanged(); updateAwake()
+    }
+    .onChange(of: gym.accountTransition) { _, changing in
+      if changing { nextSheet = nil; activeSheet = nil; finishTask?.cancel() }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { workout.flushRack(); finishTask?.cancel() }
       updateAwake()
     }
-    .onDisappear { workout.flushRack(); workout.rackEditing = false; finishTask?.cancel(); releaseAwake() }
+    .onDisappear(perform: disappear)
+  }
+
+  func appear() {
+    if workout.sessionId != gym.openSession?.id && gym.openSession != nil { workout.restore() }
+    workout.reconcile()
+    updateAwake()
+    gym.telemetry.event("gym_screen_viewed", properties: ["screen": "workout"])
+  }
+
+  func disappear() {
+    workout.flushRack()
+    workout.rackEditing = false
+    finishTask?.cancel()
+    releaseAwake()
   }
 
   var live: some View {
@@ -105,13 +137,13 @@ struct WorkoutScreen: View {
           Spacer()
           Text("Choose your first movement").font(.title2.weight(.semibold)).foregroundStyle(GymPalette.ink)
             .multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
-          Button("Add movement", systemImage: "plus") { addMovement = true }
+          Button("Add movement", systemImage: "plus") { activeSheet = .movement }
             .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large).tint(GymPalette.accent).fontWeight(.semibold)
             .padding(.top, RoomSpace.panel).accessibilityIdentifier("workout-add")
           Spacer()
         }.padding(.horizontal, RoomSpace.inset).padding(.bottom, 120).frame(maxWidth: .infinity)
       } else {
-        WorkoutPager(gym: gym, workout: workout, assembly: { assembly = true }, fix: { fixing = $0 })
+        WorkoutPager(gym: gym, workout: workout, assembly: { activeSheet = .assembly }, fix: { activeSheet = .fix($0) })
       }
     }
     .modifier(GymPage())
@@ -121,7 +153,7 @@ struct WorkoutScreen: View {
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
-          WorkoutRack(workout: workout, edit: { wheel = true })
+          WorkoutRack(workout: workout, edit: { activeSheet = .wheel })
             .padding(RoomSpace.inset)
             .background {
               UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
@@ -176,6 +208,7 @@ struct WorkoutLedger: View {
             ForEach(ledger.rows) { row in
               WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
                 .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+                .listRowInsets(EdgeInsets(top: 0, leading: RoomSpace.inset, bottom: 0, trailing: RoomSpace.inset))
                 .onTapGesture { if let set = row.set, fixable { fix(set) } }
                 .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
                 .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
@@ -185,12 +218,15 @@ struct WorkoutLedger: View {
             }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.plain)
+          .environment(\.defaultMinListRowHeight, RoomSpace.minimumTarget)
           .contentMargins(.vertical, 0, for: .scrollContent).modifier(GymPage())
+          .accessibilityIdentifier("workout-ledger")
           .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
           .onChange(of: ledger.sets.count) { _, _ in
             withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
           }
-      }.frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : 144)
+      }.frame(height: typeSize.isAccessibilitySize ? nil : CGFloat(min(ledger.rows.count, 3)) * RoomSpace.minimumTarget)
+        .frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : nil)
         .background(GymPalette.card).clipShape(RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
         .padding(.horizontal, RoomSpace.inset)
       if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
@@ -198,23 +234,9 @@ struct WorkoutLedger: View {
   }
 
   var details: some View {
-    let ledger = workout.ledger(exerciseId)
-    return VStack(spacing: RoomSpace.related) {
+    VStack(spacing: RoomSpace.related) {
       WorkoutPageControl(workout: workout, exerciseId: exerciseId).frame(height: RoomSpace.minimumTarget)
       WorkoutFacts(workout: workout)
-      ScrollView(.horizontal) {
-        HStack(spacing: RoomSpace.related) {
-          Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)).unit)
-            .font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          ForEach(0..<max(ledger.targets.count, ledger.performed + 1), id: \.self) { index in
-            Image(systemName: index < ledger.performed ? "checkmark.circle.fill" : index == ledger.performed ? "record.circle" : "circle.fill")
-              .font(.system(size: 20)).foregroundStyle(index < ledger.performed ? GymPalette.done : index == ledger.performed ? GymPalette.accent : GymPalette.inkFaint)
-              .frame(width: 28, height: 28)
-          }
-        }.padding(.horizontal, RoomSpace.inset)
-      }.scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets, " + MovementEquipment(gym.catalogue.find(exerciseId)).unit).accessibilityValue(ledger.tally)
-        .accessibilityIdentifier("workout-set-progress")
     }
   }
 }
@@ -262,9 +284,9 @@ struct WorkoutLedgerRow: View {
     case .logged: unsent ? ("iphone", GymPalette.inkDim) : ("checkmark", GymPalette.done)
     case .current, .planned: ("circle.fill", GymPalette.accent)
     }
-    HStack(spacing: RoomSpace.inset) {
+    HStack(spacing: RoomSpace.related) {
       Text(row.marker).foregroundStyle(row.place == .current ? GymPalette.accent : row.place == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
-        .frame(minWidth: 24, alignment: .leading)
+        .frame(minWidth: 20, alignment: .leading)
       Text(row.reading).foregroundStyle(row.place == .planned ? GymPalette.inkFaint : GymPalette.ink)
         .fixedSize(horizontal: false, vertical: true)
         .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion))

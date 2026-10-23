@@ -8,7 +8,7 @@ import SyncCore
 enum BodyweightLogInput {
   static let notANumber = "That is not a number yet."
   static let onePoint = "One decimal point only."
-  static let outOfRange = "Between 20 and 400 kg — check the number."
+  static let outOfRange = "Between 20 and 400 kg"
   static let notAForecast = "A weigh-in is not a forecast — today or earlier."
 
   enum Parsed: Equatable {
@@ -34,8 +34,8 @@ enum BodyweightLogInput {
   // The sheet's checkmark waits for a weight it could save: not while nothing is typed, a refusal stands, or a weigh-in
   // reads as it was.
   static func canSave(_ typed: String, refusal: String?, entry: Bodyweight.Entry?) -> Bool {
-    !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && refusal == nil
-      && entry.map { parse(typed) == .weight($0.kg) } != true
+    guard refusal == nil, case .weight(let kg) = parse(typed) else { return false }
+    return entry?.kg != kg
   }
 
   static func kilograms(_ kg: Double) -> String {
@@ -53,9 +53,13 @@ extension GymModel {
 
   @discardableResult
   func logSaveWeighIn(_ draft: inout Draft<WeighIn>) -> String? {
+    let action = draft.isNew ? "create" : "update"
     switch save(&draft) {
-    case .saved: return nil
+    case .saved:
+      telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": action, "outcome": "saved"])
+      return nil
     case .refused(let refusal):
+      telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": action, "outcome": "refused"])
       if case .future = refusal { return BodyweightLogInput.notAForecast }
       if case .invalid(let violation) = refusal {
         if violation.rule == WeighInRules.dayRule { return BodyweightLogInput.notAForecast }
@@ -65,14 +69,20 @@ extension GymModel {
       }
       return error ?? "That weigh-in could not be saved."
     case .failed:
+      telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": action, "outcome": "failed"])
       return accountTransition ? "Wait for the account change to finish." : "That weigh-in could not be saved. Try again."
     }
   }
 
   @discardableResult
   func logDeleteWeighIn(day: LocalDay) -> Bool {
-    guard let outcome = run(DeleteWeighIn(ID(day))) else { return false }
-    return outcome.refusal == nil
+    guard let outcome = run(DeleteWeighIn(ID(day))) else {
+      telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "discard", "outcome": "failed"])
+      return false
+    }
+    let accepted = outcome.refusal == nil
+    telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "discard", "outcome": accepted ? "saved" : "refused"])
+    return accepted
   }
 }
 
@@ -168,8 +178,11 @@ struct WeighInSheet: View {
   @State private var saving = false
   @State private var saved = false
   @State private var refusal: String?
-  @State private var choosingDate = false
+  @State private var proposedDate: Date?
+  @State private var contentHeight: CGFloat = 0
+  @State private var navigationHeight: CGFloat = RoomSpace.minimumTarget + RoomSpace.inset
   private var today: LocalDay { gym.bodyweight?.today ?? LogPresentation.day(Date()) }
+  private var choosingDate: Bool { proposedDate != nil }
   private var cannotSave: Bool { !BodyweightLogInput.canSave(typed, refusal: refusal, entry: entry) }
 
   init(gym: GymModel, entry: Bodyweight.Entry? = nil) {
@@ -179,79 +192,143 @@ struct WeighInSheet: View {
   }
 
   var body: some View {
-    NavigationStack {
-      Form {
-        Section {
-          HStack(spacing: RoomSpace.related) {
-            TextField("Weight", text: $typed)
-              .font(.title2.weight(.medium)).monospacedDigit()
-              .keyboardType(.decimalPad)
-              .focused($weightFocused)
-              .accessibilityLabel("Weight in kilograms")
-              .accessibilityIdentifier("gym-weigh-in-weight")
-              .onSubmit { save() }
-            Text("kg").foregroundStyle(GymPalette.inkDim)
-          }
-          if let refusal {
-            Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
-              .accessibilityIdentifier("gym-weigh-in-refusal")
-          }
-        }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card)
-          .strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5))
-        Section {
-          if let entry {
-            LabeledContent("Date", value: gym.dates.subtitle(entry.day)).accessibilityIdentifier("gym-weigh-in-fixed-date")
-          } else {
-            LabeledContent("Date") {
-              Button(gym.dates.day(LogPresentation.day(date))) { choosingDate = true }
-                .buttonStyle(.plain).font(.subheadline).foregroundStyle(GymPalette.ink)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityLabel("Date").accessibilityValue(gym.dates.day(LogPresentation.day(date)))
-                .accessibilityIdentifier("gym-weigh-in-date")
-                .popover(isPresented: $choosingDate) {
-                  DatePicker("Date", selection: $date, in: ...LogPresentation.date(today), displayedComponents: .date)
-                    .datePickerStyle(.graphical).labelsHidden().tint(GymPalette.accent).padding()
-                    .presentationCompactAdaptation(.popover)
-                }
-            }
-          }
-        }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card))
-        if let entry {
-          Section {
-            Button("Delete weigh-in", role: .destructive) {
-              if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
-              else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
-            }.accessibilityIdentifier("gym-weigh-in-delete")
-          }.listRowBackground(RoundedRectangle(cornerRadius: 24).fill(GymPalette.card))
-        }
-      }
-      .listSectionSpacing(12)
-      .contentMargins(.top, RoomSpace.related, for: .scrollContent)
-      .disabled(saving)
-      .modifier(GymPage())
-      .navigationTitle("Weigh in")
-      .navigationBarTitleDisplayMode(.inline)
-      .sheetCommit("Save", identifier: "gym-weigh-in-save", dismissalIdentifier: "gym-weigh-in-cancel", disabled: cannotSave, busy: saving,
-                   dismiss: { dismiss() }, commit: save)
+    NavigationStack { form }
+      .tint(GymPalette.accent)
+      .presentationBackground(GymPalette.canvas)
+      .presentationDragIndicator(.visible)
+      .presentationDetents([.height(max(RoomSpace.minimumTarget, contentHeight) + navigationHeight)])
       .interactiveDismissDisabled(saving)
       .sensoryFeedback(.success, trigger: saved)
-      .onChange(of: typed) { _, _ in refusal = nil }
-      .onChange(of: refusal) { _, refusal in
+      .onChange(of: typed) { (_: String, _: String) in refusal = nil }
+      .onChange(of: weightFocused) { (_: Bool, focused: Bool) in
+        if !focused { validateWeight() }
+      }
+      .onChange(of: refusal) { (_: String?, refusal: String?) in
         if let refusal { UIAccessibility.post(notification: .announcement, argument: refusal) }
       }
-      .onChange(of: date) { _, _ in refusal = nil; draft = nil; choosingDate = false }
-      .onChange(of: gym.account) { _, _ in dismiss() }
-      .onChange(of: gym.accountTransition) { _, changing in if changing { dismiss() } }
+      .onChange(of: gym.account) { (_: String?, _: String?) in dismiss() }
+      .onChange(of: gym.accountTransition) { (_: Bool, changing: Bool) in if changing { dismiss() } }
       .onAppear {
         weightFocused = true
         gym.telemetry.event("gym_screen_viewed", properties: ["screen": "weigh_in"])
       }
-    }.modifier(GymPage()).presentationDetents([.medium])
+  }
+
+  private var form: some View {
+    ScrollView {
+      VStack(spacing: RoomSpace.related + RoomSpace.small) {
+        if choosingDate { calendar } else { fields }
+      }.padding(RoomSpace.inset)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { (height: CGFloat) in contentHeight = height }
+    }
+    .scrollBounceBehavior(.basedOnSize)
+    .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { (height: CGFloat) in
+      if height > 0 { navigationHeight = height }
+    }
+    .disabled(saving)
+    .background(GymPalette.canvas)
+    .navigationTitle(choosingDate ? "Date" : "Weigh in")
+    .navigationBarTitleDisplayMode(.inline)
+    .modifier(SheetCommit(title: choosingDate ? "Use date" : "Save",
+                          identifier: choosingDate ? "gym-weigh-in-date-accept" : "gym-weigh-in-save",
+                          dismissal: choosingDate ? "Back" : "Cancel",
+                          dismissalIdentifier: choosingDate ? "gym-weigh-in-date-back" : "gym-weigh-in-cancel",
+                          disabled: !choosingDate && cannotSave, busy: saving,
+                          dismiss: cancel, commit: {
+                            if choosingDate { acceptDate() } else { save() }
+                          }))
+  }
+
+  @ViewBuilder var fields: some View {
+    VStack(alignment: .leading, spacing: RoomSpace.related) {
+      HStack(spacing: RoomSpace.related) {
+        TextField("Weight", text: $typed)
+          .font(.title2.weight(.medium)).monospacedDigit()
+          .keyboardType(.decimalPad).focused($weightFocused)
+          .accessibilityLabel("Weight in kilograms").accessibilityIdentifier("gym-weigh-in-weight")
+          .onSubmit { save() }
+        Text("kg").foregroundStyle(GymPalette.inkDim)
+      }.padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
+        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
+        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(weightFocused ? GymPalette.accent : .clear, lineWidth: 1.5) }
+      if let refusal {
+        Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
+          .padding(.horizontal, RoomSpace.inset).fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("gym-weigh-in-refusal")
+      }
+    }
+    Group {
+      if let entry {
+        LabeledContent("Date", value: gym.dates.subtitle(entry.day))
+          .padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
+          .accessibilityIdentifier("gym-weigh-in-fixed-date")
+      } else {
+        Button {
+          weightFocused = false
+          proposedDate = date
+          gym.telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "open", "item": "date"])
+        } label: {
+          LabeledContent("Date") {
+            Text(gym.dates.day(LogPresentation.day(date)))
+              .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+              .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 8))
+          }.padding(.horizontal, RoomSpace.inset).frame(minHeight: 52).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
+          .accessibilityLabel("Date").accessibilityValue(gym.dates.day(LogPresentation.day(date)))
+          .accessibilityIdentifier("gym-weigh-in-date")
+      }
+    }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
+    if let entry {
+      Button("Delete weigh-in", role: .destructive) {
+        if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
+        else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
+      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, RoomSpace.inset).frame(minHeight: 52)
+        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 24))
+        .accessibilityIdentifier("gym-weigh-in-delete")
+    }
+  }
+
+  var calendar: some View {
+    DatePicker("Date", selection: Binding(get: { proposedDate ?? date }, set: { proposedDate = $0 }),
+               in: ...LogPresentation.date(today), displayedComponents: .date)
+      .datePickerStyle(.graphical).labelsHidden().fixedSize(horizontal: false, vertical: true)
+      .tint(GymPalette.accent)
+      .accessibilityIdentifier("gym-weigh-in-calendar")
+  }
+
+  func cancel() {
+    if choosingDate {
+      proposedDate = nil
+      weightFocused = true
+      gym.telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "cancel", "item": "date"])
+      return
+    }
+    gym.telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "cancel", "outcome": "cancelled"])
+    dismiss()
+  }
+
+  func acceptDate() {
+    guard let proposedDate else { return }
+    date = proposedDate
+    self.proposedDate = nil
+    draft = nil
+    weightFocused = true
+    gym.telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "apply", "item": "date"])
+  }
+
+  func validateWeight() {
+    guard !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          case .refused(let message) = BodyweightLogInput.parse(typed) else { return }
+    if refusal != message {
+      gym.telemetry.event("gym_action", properties: ["screen": "weigh_in", "action": "fix", "outcome": "refused"])
+    }
+    refusal = message
   }
 
   private func save() {
-    guard !saving, !cannotSave else { return }
+    guard !saving else { return }
+    validateWeight()
+    guard !cannotSave else { return }
     let kg: Double
     switch BodyweightLogInput.parse(typed) {
     case .weight(let value): kg = value

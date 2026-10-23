@@ -519,6 +519,28 @@
     }
   },
   {
+    "name": "read guards can share a written record and duplicate registers collapse",
+    "input": {
+      "plan": [
+        {"op": "guardRead", "t": "card", "id": "cardA001", "fields": ["title", "tier"]},
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"], "guarded": true},
+        {"op": "guardRead", "t": "card", "id": "cardA001", "fields": ["tier"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [{"t": "card", "id": "cardA001", "field": "tier"}, {"t": "card", "id": "cardA001", "field": "title"}],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
     "name": "guards from every operation sort by type, then id bytes, then field bytes",
     "input": {
       "plan": [

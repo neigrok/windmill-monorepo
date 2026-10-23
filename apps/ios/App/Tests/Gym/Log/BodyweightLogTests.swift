@@ -29,7 +29,7 @@ import SyncStore
 
   @Test(arguments: ["19.999", "400.001", "0", "999999999999999999999999999999"])
   func checksBoundsBeforeRounding(typed: String) {
-    #expect(BodyweightLogInput.parse(typed) == .refused("Between 20 and 400 kg — check the number."))
+    #expect(BodyweightLogInput.parse(typed) == .refused("Between 20 and 400 kg"))
   }
 
   @Test func acceptsCommaBoundsAndRoundsHalfUp() {
@@ -44,10 +44,10 @@ import SyncStore
   @Test func theSheetsCheckmarkWaitsForAWeightItCouldSave() {
     let saved = Bodyweight.Entry(day: LocalDay("2026-09-26")!, kg: 82.4)
     let cases: [(String, String?, Bodyweight.Entry?)] = [
-      ("", nil, nil), ("  ", nil, nil), ("19", nil, nil), ("19", "Between 20 and 400 kg — check the number.", nil), ("82.4", nil, nil),
+      ("", nil, nil), ("  ", nil, nil), ("19", nil, nil), ("19", "Between 20 and 400 kg", nil), ("82.4", nil, nil),
       ("82.4", nil, saved), ("82.40", nil, saved), ("82.5", nil, saved), (".", nil, saved),
     ]
-    #expect(cases.map { BodyweightLogInput.canSave($0.0, refusal: $0.1, entry: $0.2) } == [false, false, true, false, true, false, false, true, true])
+    #expect(cases.map { BodyweightLogInput.canSave($0.0, refusal: $0.1, entry: $0.2) } == [false, false, false, false, true, false, false, true, false])
   }
 
   @Test func newAndReplacementKeepOneEntryPerDayAndStampSave() throws {
@@ -57,13 +57,13 @@ import SyncStore
     draft.current.kg = 82.4
     #expect(gym.logSaveWeighIn(&draft) == nil && !draft.isNew)
     let firstStamp = try #require(draft.current.recordedAt)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.4)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.4, recordedAt: firstStamp)])
     harness.advance(ms: 1_000)
     var correction = try gym.logWeighInDraft(day: day)
     #expect(!correction.isNew && correction.current.kg == 82.4)
     correction.current.kg = 81.95
     #expect(gym.logSaveWeighIn(&correction) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81.95)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81.95, recordedAt: correction.current.recordedAt)])
     #expect(correction.current.recordedAt?.ms == firstStamp.ms + 1_000)
     #expect(try harness.stored(WeighIn.self).count == 1)
     harness.sync()
@@ -79,9 +79,34 @@ import SyncStore
     harness.failNextCommit()
     #expect(gym.logSaveWeighIn(&draft) == "That weigh-in could not be saved. Try again.")
     #expect(draft.current.kg == 81 && draft.base.kg == 80)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80, recordedAt: draft.base.recordedAt)])
     #expect(gym.logSaveWeighIn(&draft) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 81, recordedAt: draft.current.recordedAt)])
+  }
+
+  @Test func weighInWritesReportBoundedOutcomesAndStorageFailures() throws {
+    let (harness, _) = fixture(), telemetry = TelemetryRecorder()
+    let gym = GymModel(runner: harness.runner, telemetry: telemetry), day = try gym.runner.moment().today
+    var draft = try gym.logWeighInDraft(day: day)
+    draft.current.kg = 82.46
+    #expect(gym.logSaveWeighIn(&draft) == nil)
+    draft.current.kg = 82.5
+    harness.failNextCommit()
+    #expect(gym.logSaveWeighIn(&draft) == "That weigh-in could not be saved. Try again.")
+    #expect(gym.logSaveWeighIn(&draft) == nil)
+    draft.current.kg = 401
+    #expect(gym.logSaveWeighIn(&draft) == "Between 20 and 400 kg")
+    #expect(gym.logDeleteWeighIn(day: day))
+    let events = telemetry.entries.withLock { $0.filter { $0.properties["screen"] == "weigh_in" }.map(\.properties) }
+    #expect(events == [
+      ["screen": "weigh_in", "action": "create", "outcome": "saved"],
+      ["screen": "weigh_in", "action": "update", "outcome": "failed"],
+      ["screen": "weigh_in", "action": "update", "outcome": "saved"],
+      ["screen": "weigh_in", "action": "update", "outcome": "refused"],
+      ["screen": "weigh_in", "action": "discard", "outcome": "saved"],
+    ])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } ==
+            [["operation": "gym_action", "failure_kind": "storage"]])
   }
 
   @Test func futureAndInvalidWeightNeverWrite() throws {
@@ -92,7 +117,7 @@ import SyncStore
     var invalid = try gym.logWeighInDraft(day: day)
     #expect(gym.logSaveWeighIn(&invalid) == "That is not a number yet.")
     invalid.current.kg = 401
-    #expect(gym.logSaveWeighIn(&invalid) == "Between 20 and 400 kg — check the number.")
+    #expect(gym.logSaveWeighIn(&invalid) == "Between 20 and 400 kg")
     #expect(gym.bodyweight?.entries.isEmpty == true)
   }
 
@@ -103,7 +128,7 @@ import SyncStore
     #expect(gym.logSaveWeighIn(&draft) == nil)
     harness.failNextCommit()
     #expect(!gym.logDeleteWeighIn(day: day))
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80, recordedAt: draft.current.recordedAt)])
     #expect(gym.logDeleteWeighIn(day: day))
     #expect(gym.bodyweight?.entries.isEmpty == true && gym.bodyweight?.stance == .empty)
     #expect(try harness.stored(WeighIn.self).isEmpty)
@@ -123,7 +148,8 @@ import SyncStore
     fault.point.withLock { $0 = nil }; gym.refresh()
     #expect(gym.bodyweight?.entries.isEmpty == true)
     #expect(gym.logSaveWeighIn(&reweigh) == nil)
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45)])
+    let recordedAt = try #require(reweigh.current.recordedAt)
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45, recordedAt: recordedAt)])
   }
 
   // A weigh-in row reads its weight first and its day after: today and yesterday by name, any other day by its date.

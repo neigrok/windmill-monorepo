@@ -82,7 +82,7 @@ class Plan {
     val isHeld: Boolean get() = operations.any { it.kind == Operation.Kind.Remove && it.entity.heldRemoval == true }
     fun gesture(scope: ScopeRef, registry: Registry): Gesture {
         val changes = operations.mapNotNull { it.change(scope, registry) }
-        val keys = operations.map { RecordKey(it.entity.type, it.recordID(registry)) }
+        val keys = operations.filter { it.writes }.map { RecordKey(it.entity.type, it.recordID(registry)) }
         if (keys.distinct().size != keys.size) throw PlanError(2, "two operations name one record")
         if (isHeld && (operations.any { it.kind != Operation.Kind.Remove || it.entity.heldRemoval != true } || command != null || predictions.isNotEmpty()))
             throw PlanError(3, "a held plan contains more than held removals and device writes")

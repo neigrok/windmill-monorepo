@@ -37,6 +37,10 @@ import XCTest
     let search = routineEditor ? app.textFields["gym-movement-search"] : app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
+    if routineEditor {
+      XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5))
+      app.buttons["gym-movement-editor-commit"].tap()
+    }
   }
   func back(_ app: XCUIApplication) { app.navigationBars.buttons.element(boundBy: 0).tap() }
   func logAndFinish(_ app: XCUIApplication, close: Bool = true, count: Int = 4, keep: Bool = false) {
@@ -48,6 +52,14 @@ import XCTest
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
+    let options = app.buttons["workout-receipt-options"]
+    XCTAssertTrue(options.waitForExistence(timeout: 5)); options.tap()
+    let discard = app.buttons["Discard workout"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 5))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-share-coach"].exists)
+    XCTAssertTrue(app.buttons["workout-done"].exists)
     if keep { XCTAssertEqual(app.buttons["workout-keep"].label, "Only on this phone · Keep it") }
     if !close { return }
     app.buttons["workout-done"].tap()
@@ -59,11 +71,45 @@ import XCTest
     app.buttons["add-movement"].tap()
     pickBench(app, routineEditor: true)
     app.buttons["builder-movement-bench-press"].tap()
-    replace(app.textFields["gym-target-sets"], "4"); replace(app.textFields["gym-target-reps"], "8"); replace(app.textFields["gym-target-weight"], "60")
-    app.buttons["gym-target-set"].tap(); app.buttons["save-routine"].tap()
+    for (identifier, value) in [("gym-target-sets", "4"), ("gym-target-reps", "8"), ("gym-target-weight", "60")] {
+      let field = app.textFields[identifier], commit = app.buttons["gym-movement-editor-commit"]
+      let navigation = app.navigationBars["Edit movement"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5))
+      for _ in 0..<8 {
+        let top = navigation.frame.maxY + 8, bottom = commit.frame.minY - 8
+        if field.frame.minY >= top && field.frame.maxY <= bottom { break }
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
+          .withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
+        let distance: CGFloat = field.frame.maxY > bottom ? -80 : 80
+        start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: distance)), withVelocity: .slow, thenHoldForDuration: 0.1)
+      }
+      XCTAssertGreaterThanOrEqual(field.frame.minY, navigation.frame.maxY)
+      XCTAssertLessThanOrEqual(field.frame.maxY, commit.frame.minY)
+      field.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      if let previous = field.value as? String, !["open", "max", "last time"].contains(previous) {
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count))
+      }
+      field.typeText(value)
+      XCTAssertTrue(field.waitForValue(value))
+      app.buttons["gym-target-keyboard-done"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    }
+    app.buttons["gym-movement-editor-commit"].tap(); app.buttons["save-routine"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
     app.buttons["routine-start"].tap()
     hideAndReturn(app)
+    let rackWeight = app.buttons["workout-weight"].label
+    let rackSet = app.descendants(matching: .any)["workout-current-set"].label
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+    app.navigationBars.buttons["Cancel"].tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["workout-weight"].label, rackWeight)
+    XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, rackSet)
+    XCTAssertFalse(app.buttons["workout-assembly-add"].exists)
     logAndFinish(app)
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
@@ -77,7 +123,21 @@ import XCTest
     XCTAssertTrue(first.waitForLabel("1 · 70 × 8, +10 over plan"), first.label)
     back(app)
     XCTAssertTrue(session.waitForExistence(timeout: 10))
-    app.buttons["gym-weigh-in"].tap(); replace(app.textFields["gym-weigh-in-weight"], "82.4"); app.buttons["gym-weigh-in-save"].tap()
+    app.buttons["gym-weigh-in"].tap()
+    let weight = app.textFields["gym-weigh-in-weight"]
+    replace(weight, "82.4")
+    let date = app.buttons["gym-weigh-in-date"], originalDate = app.buttons["gym-weigh-in-date"].value as? String
+    date.tap()
+    let calendar = app.descendants(matching: .any)["gym-weigh-in-calendar"]
+    XCTAssertTrue(calendar.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertGreaterThan(calendar.frame.height, 250)
+    XCTAssertGreaterThan(calendar.frame.width, app.frame.width * 0.8)
+    app.buttons["gym-weigh-in-date-back"].tap()
+    XCTAssertTrue(weight.waitForExistence(timeout: 5))
+    XCTAssertEqual(weight.value as? String, "82.4")
+    XCTAssertEqual(date.value as? String, originalDate)
+    app.buttons["gym-weigh-in-save"].tap()
     app.tabBars.buttons["Routines"].tap()
     if !app.buttons["edit-routine"].exists {
       let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "routine-", "Integration A")).firstMatch
@@ -181,11 +241,14 @@ import XCTest
     let start = app.buttons["routine-start"]
     XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    let currentSet = app.descendants(matching: .any)["workout-current-set"]
+    let loggedSets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
     app.buttons["workout-log"].tap()
-    XCTAssertTrue(progress.waitForValue("1 set"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 2, current, open target"))
+    XCTAssertEqual(loggedSets.count, 1)
     app.buttons["workout-log"].tap()
-    XCTAssertTrue(progress.waitForValue("2 sets"))
+    XCTAssertTrue(currentSet.waitForLabel("Set 3, current, open target"))
+    XCTAssertEqual(loggedSets.count, 2)
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()

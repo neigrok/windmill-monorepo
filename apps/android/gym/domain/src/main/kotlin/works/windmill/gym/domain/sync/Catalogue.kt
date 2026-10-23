@@ -67,24 +67,30 @@ object ExerciseRules {
 }
 
 data class Catalogue(val exercises: List<Exercise>) {
-    constructor(custom: List<Exercise>, names: List<ExerciseName>) : this(
+    constructor(custom: List<Exercise>, names: List<ExerciseName>, formerNames: Map<String, Json> = emptyMap()) : this(
         (SeedExercises.all + custom).map { exercise ->
             val override = names.firstOrNull { it.id.record == exercise.id.record }
-            if (override == null) exercise else {
+            val resolved = if (override == null) exercise else {
                 val seed = SeedExercises.all.any { it.id == exercise.id }
                 val equipment = override.equipment ?: exercise.equipment
                 exercise.copy(name = if (seed) override.name ?: exercise.name else exercise.name,
                     aliases = if (seed) override.aliases else exercise.aliases, equipment = equipment,
                     loadCount = if (equipment == "dumbbell") override.loadCount ?: ExerciseRules.defaultLoadCount(equipment, exercise.id.record.string) else 1)
             }
+            val former = formerNames[exercise.id.record.toString()]
+            if (former == null || former.member("name").str() != resolved.name) resolved
+            else resolved.copy(aliases = ExerciseRules.renamedAliases(resolved.name, resolved.name,
+                former.member("aliases").arr().map { it.str() } + resolved.aliases))
         }.sortedWith { a, b -> works.windmill.sync.core.compareBytes(a.name, b.name).takeIf { it != 0 } ?: a.id.compareTo(b.id) },
     )
-    constructor(read: Reader, view: ViewMode = ViewMode.drawn) : this(read.repository(Exercise).all(view), read.repository(ExerciseName).all(view))
+    constructor(read: Reader, view: ViewMode = ViewMode.drawn) : this(read.repository(Exercise).all(view),
+        read.repository(ExerciseName).all(view), read.device(formerNamesKey)?.obj().orEmpty())
     fun find(id: Id<Exercise>): Exercise? = exercises.firstOrNull { it.id == id }
     fun search(text: String): List<Exercise> {
         val query = text.lowercase()
         return exercises.filter { it.name.lowercase().contains(query) || it.aliases.any { alias -> alias.lowercase().contains(query) } }
     }
+    companion object { const val formerNamesKey = "rack:catalogue" }
 }
 
 class CreateExercise(val value: Exercise) : Action<Moment, Id<Exercise>, GymRefusal> {

@@ -966,7 +966,7 @@ reports `unchanged` (§9.2 step 7).
 Translation throws `PlanError`, a programming fault that fails the run and any test reaching it,
 when:
 1. an operation's type lives in a scope other than the action's;
-2. two operations name one record;
+2. two writing operations name one record; read guards may name that same record;
 3. a held plan contains any operation other than removals of held types and device writes, or runs a
    command;
 4. `create` names an `Ordered` type (use `insert`), or `create(_:fields:)` a minted type;
