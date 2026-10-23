@@ -395,7 +395,7 @@ struct CoachTab: View {
   func allowanceMessage(_ allowance: AiAllowance, current: Bool) -> some View {
     VStack(spacing: RoomSpace.small) {
       Text(allowance.message)
-      if let detail = allowance.detail { Text(detail) }
+      if let detail = allowance.detail(gym.dates) { Text(detail) }
       if current, let recovery = CoachRecovery(code: allowance.code, anonymous: coach.anonymous) { accessRecovery(recovery) }
     }.font(.footnote).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center).frame(maxWidth: .infinity)
       .padding(.top, 40).accessibilityElement(children: .contain).accessibilityIdentifier("coach-allowance")

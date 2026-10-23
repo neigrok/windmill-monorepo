@@ -19,6 +19,7 @@ on:
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '.github/workflows/ios-ui-tests.yml'
+      - '.github/workflows/ios-nightly.yml'
       - '!apps/ios/**/*.md'
   pull_request:
     paths:
@@ -30,6 +31,7 @@ on:
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '.github/workflows/ios-ui-tests.yml'
+      - '.github/workflows/ios-nightly.yml'
       - '!apps/ios/**/*.md'
   workflow_dispatch:
 
@@ -172,8 +174,8 @@ jobs:
           xcodebuild test -project Windmill.xcodeproj -scheme WindmillUnitTests \
             -destination 'platform=iOS Simulator,name=iPhone 17'
 
-  # Three shards balanced on measured test times, about eight minutes of tests each. Five macOS jobs is the most that
-  # run at once, so a fourth shard would queue rather than shorten the run.
+  # Three shards balanced on measured test times. Five macOS jobs is the most that run at once, so a fourth shard would
+  # queue rather than shorten the run.
   app-ui-tests:
     name: App UI tests (${{ matrix.shard }})
     strategy:

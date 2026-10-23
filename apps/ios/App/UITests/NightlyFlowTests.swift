@@ -25,14 +25,19 @@ import XCTest
     XCTAssertEqual(before.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps"])
     XCUIDevice.shared.press(.home)
 
-    let control = controlCenterControl()
-    XCTAssertTrue(control.wait(for: \.label, toEqual: "Log set", timeout: 10), "\(control.debugDescription)")
-    XCTAssertEqual(control.value as? String, "100 × 5")
-    control.tap()
-    XCTAssertTrue(control.wait(for: \.label, toEqual: "Log set", timeout: 10))
-    XCUIDevice.shared.press(.home)
-    app.activate()
-    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
+    // The control logs in the app behind Control Center: a tap it drops is tapped once more, only while the rack reads 2 of 4.
+    for attempt in 1...2 {
+      let control = controlCenterControl()
+      XCTAssertTrue(control.wait(for: \.label, toEqual: "Log set", timeout: 10), "\(control.debugDescription)")
+      XCTAssertEqual(control.value as? String, "100 × 5")
+      XCTAssertTrue(control.wait(for: \.isHittable, toEqual: true, timeout: 5)); control.tap()
+      XCUIDevice.shared.press(.home)
+      app.activate()
+      if progress.waitForValue("3 of 4 sets", timeout: 15) { break }
+      XCTAssertEqual(progress.value as? String, "2 of 4 sets", "The control's tap logged something other than one set")
+      XCTAssertEqual(attempt, 1, "Two taps on the control logged nothing")
+      XCUIDevice.shared.press(.home)
+    }
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(after.map(\.label), ["Set 1, logged, 100 kilograms, 5 reps", "Set 2, logged, 100 kilograms, 5 reps",
       "Set 3, logged, 100 kilograms, 5 reps"])

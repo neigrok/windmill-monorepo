@@ -329,8 +329,22 @@ PY
 
 Then run the UI tests with `WM_GYM_E2E_SERVER=http://127.0.0.1:8088`,
 `WM_GYM_E2E_IDENTITIES=/private/tmp/<yours>/identities.json` and
-`WM_GYM_E2E_SESSION=/private/tmp/<yours>/session.json`. Without them the tests run on the app's
-in-process model server; the conflict fixture persists its model account and server state across
+`WM_GYM_E2E_SESSION=/private/tmp/<yours>/session.json`, each prefixed `TEST_RUNNER_` on the
+`xcodebuild test` command line so they reach the test runner:
+
+```sh
+TEST_RUNNER_WM_GYM_E2E_SERVER=http://127.0.0.1:8088 \
+TEST_RUNNER_WM_GYM_E2E_IDENTITIES=/private/tmp/<yours>/identities.json \
+TEST_RUNNER_WM_GYM_E2E_SESSION=/private/tmp/<yours>/session.json \
+  xcodebuild test -project apps/ios/App/Windmill.xcodeproj -scheme Windmill \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:WindmillUITests/GymIntegrationFlowTests/testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit \
+  -only-testing:WindmillUITests/GymIntegrationFlowTests/testAnonymousWorkoutAdoptedAtSignIn \
+  -only-testing:WindmillUITests/GymIntegrationFlowTests/testFinishedAndOpenAnonymousWorkoutsStaySeparateFromAccountsOpenWorkout
+```
+
+The three tests use the `signed`, `adopt` and `conflict` identities in that order. Without the
+variables the tests run on the app's in-process model server; the conflict fixture persists its model account and server state across
 relaunches and checks the same session/set assertions. Use the isolated backend fixtures to verify
 the actual server. Mint fresh identities for every run: each link signs in once.
 

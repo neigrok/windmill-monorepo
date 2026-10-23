@@ -37,12 +37,19 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
-`-scenario <name>` isolates a launch's storage under that name. Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI.
+`-scenario <name>` isolates a launch's storage under that name.
+`-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
+backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
+server run supplies `-code-file <absolute path>` with development codes in its isolated database.
+Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI.
 Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
 A separate client seeds the model server through real Gym actions; atomic snapshots
 preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
 value exposes confirmed rows to the same assertions used by REST verification. Missing, corrupt or
 unwritable snapshots fail the fixture. With a backend configured, the test uses REST verification.
+The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
+writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
+for local replay verification; the final report contains no credential.
 
 `AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
 subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay

@@ -362,5 +362,13 @@ Regression tests block the technical sink while committing and subscribing, prov
 enter adaptive writer timing; they also exercise queue restoration off startup, oversized/growing
 files, storage backoff and recovery of a full 500-event dirty queue without relaunch.
 
-Native crash delivery, real Apple sign-in, Sentry symbolication, Amplitude acceptance and App Store
-Connect/TestFlight upload require separate credentials/device or vendor checks.
+The simulator-only `-scenario telemetry-first-run -report <path> -code-file <path>` fixture uses the
+real backend with a seeded development code in a throwaway database. It saves anonymously, chooses
+Keep, signs in, backs up, exercises session revocation/reauthentication and sign-out, and returns to
+the same account. With Resend unset, its final code request forces a real handled 502 auth failure.
+Run with `-server http://127.0.0.1:8089 -telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`, a local
+Sentry envelope collector and the checkpoint helper described in App/README.md. Inspect `events`
+with `props->>'platform'='ios'` and the collector envelope for excluded content and scrubbed fields.
+These checks establish first-party and local SDK receipt. Native crash delivery, real Apple sign-in,
+Sentry symbolication, Amplitude acceptance and App Store Connect/TestFlight upload require separate
+credentials/device or vendor checks.

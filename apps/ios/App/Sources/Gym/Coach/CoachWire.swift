@@ -405,9 +405,10 @@ nonisolated extension AiAllowance {
     default: return "Coach’s AI allowance is unavailable right now."
     }
   }
-  // When Coach answers again, said only where a reset brings it back: a spent allowance at its period's end, a shared
-  // free pool when its day or month turns. Nothing else lifts at a reset — a request too large, one in progress, debt.
-  var detail: String? {
+  // When Coach answers again, in the zone `dates` reads days in, said only where a reset brings it back: a spent allowance
+  // at its period's end, a shared free pool when its day or month turns. Nothing else lifts at a reset — a request too
+  // large, one in progress, debt.
+  func detail(_ dates: GymDate) -> String? {
     let reset: Int64?
     switch code {
     case "subject_exhausted": reset = spent ? resetsAtMs : nil
@@ -415,7 +416,8 @@ nonisolated extension AiAllowance {
     default: reset = nil
     }
     guard let reset else { return nil }
-    let date = Date(timeIntervalSince1970: Double(reset) / 1000)
-    return "You can use Coach again on " + date.formatted(.dateTime.month(.abbreviated).day()) + " at " + date.formatted(date: .omitted, time: .shortened) + "."
+    let instant = Instant(ms: reset)
+    let day = dates.draw(LocalDay(instant, in: dates.moment.zone), .dateTime.month(.abbreviated).day())
+    return "You can use Coach again on \(day) at \(dates.time(instant))."
   }
 }
