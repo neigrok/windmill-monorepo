@@ -469,8 +469,6 @@ and Android disagree.
     does (Barbell, Dumbbells, Machine, Cable, Kettlebell, Bodyweight), from the one
     `MovementEquipment.choices`. Its basis help is the one `MovementEquipment.help`, so Edit
     exercise, Targets and Create movement read the same words.
-  - Weigh in (06.1): on a phone the keyboard lifts the `.medium` sheet to the top, where the board
-    draws it at its detent.
   - Notes (09.1, 09.2): on iOS a row and the editor are the note's one text, while the domain still
     stores a title and a body: the editor takes a first line of up to 60 characters as the title and
     the rest as the body, and a longer first line keeps the whole text in the body under a title cut

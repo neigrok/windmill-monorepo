@@ -217,3 +217,7 @@ The Log carries `WeighIn.recordedAt` through the read model without a schema cha
 are independent of optional highlights, so highlight limits cannot hide them. Local day groups,
 workout cards, separated weigh-ins and subordinate record markers distinguish their destinations and
 deletion behavior. Day-only records follow timed records without an invented clock time.
+
+The weigh-in sheet measures its content and stages a native graphical calendar in the same sheet
+after dismissing the keyboard. Cancelling the calendar keeps both the prior day and typed kg;
+accepting a date does not persist the weight. Correction keeps the original day fixed.

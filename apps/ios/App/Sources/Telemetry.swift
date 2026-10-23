@@ -54,7 +54,7 @@ nonisolated enum TelemetryPrivacy {
     "cap": ["daily", "ceiling", "allowance"],
     "surface": ["activity", "control", "shortcut"],
     "intent": ["start_workout", "open_workout"],
-    "item": ["write", "start", "open_workout", "weigh_in", "bodyweight"],
+    "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date"],
     "state": ["shown", "opened"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],

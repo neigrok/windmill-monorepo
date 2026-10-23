@@ -124,6 +124,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func weighInDateActionsExcludeSelectedDateAndMeasurement() {
+    for action in ["open", "apply", "cancel"] {
+      #expect(TelemetryPrivacy.properties(["screen": "weigh_in", "action": action, "item": "date", "weightKg": "82.5",
+                                           "day": "2026-10-24", "recordedAt": "1792857600000", "id": "private-id"]) ==
+              ["screen": .label("weigh_in"), "action": .label(action), "item": .label("date")])
+    }
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",

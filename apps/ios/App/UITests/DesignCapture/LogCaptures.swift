@@ -151,6 +151,71 @@ final class LogCaptures: DesignCapture {
     }
   }
 
+  func testWeighInCalendarPreservesWeightAndStagesItsDate() {
+    for look in Look.both {
+      let app = openLog(look)
+      app.buttons["gym-weigh-in"].tap()
+      let field = app.textFields["gym-weigh-in-weight"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5)); field.typeText("82.45")
+      let date = app.buttons["gym-weigh-in-date"], original = date.value as? String
+      XCTAssertGreaterThanOrEqual(date.frame.height, 44)
+      date.tap()
+      let calendar = app.descendants(matching: .any)["gym-weigh-in-calendar"]
+      XCTAssertTrue(calendar.waitForExistence(timeout: 5))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      XCTAssertGreaterThan(calendar.frame.height, 250)
+      XCTAssertGreaterThan(calendar.frame.width, app.frame.width * 0.8)
+      capture("06.3-weigh-in-calendar", look, app)
+      let day = calendar.buttons["Tuesday, September 15"]
+      XCTAssertTrue(day.wait(for: \.isHittable, toEqual: true, timeout: 5)); day.tap()
+      app.buttons["gym-weigh-in-date-back"].tap()
+      XCTAssertTrue(field.waitForExistence(timeout: 5))
+      XCTAssertEqual(field.value as? String, "82.45")
+      XCTAssertEqual(date.value as? String, original)
+      date.tap()
+      XCTAssertTrue(calendar.waitForExistence(timeout: 5)); day.tap()
+      app.buttons["gym-weigh-in-date-accept"].tap()
+      XCTAssertTrue(field.waitForExistence(timeout: 5))
+      XCTAssertEqual(field.value as? String, "82.45")
+      XCTAssertNotEqual(date.value as? String, original)
+      XCTAssertTrue(app.buttons["gym-weigh-in-save"].isEnabled)
+      capture("06.1-weigh-in-date-retained", look, app)
+      app.buttons["gym-weigh-in-save"].tap()
+      XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+      app.terminate()
+    }
+  }
+
+  func testWeighInValidationAndKeyboardClearance() {
+    for look in Look.both + Look.bothAtLargestText {
+      let app = openLog(look)
+      app.buttons["gym-weigh-in"].tap()
+      let field = app.textFields["gym-weigh-in-weight"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5)); field.typeText("19")
+      XCTAssertFalse(app.staticTexts["gym-weigh-in-refusal"].exists, "Typing an incomplete number does not announce a refusal")
+      XCTAssertFalse(app.buttons["gym-weigh-in-save"].isEnabled)
+      let date = app.buttons["gym-weigh-in-date"]
+      for _ in 0..<3 where !date.isHittable { app.scrollViews.firstMatch.swipeUp() }
+      date.tap()
+      XCTAssertTrue(app.buttons["gym-weigh-in-date-back"].waitForExistence(timeout: 5))
+      app.buttons["gym-weigh-in-date-back"].tap()
+      XCTAssertTrue(app.staticTexts["gym-weigh-in-refusal"].waitForExistence(timeout: 5))
+      XCTAssertEqual(app.staticTexts["gym-weigh-in-refusal"].label, "Between 20 and 400 kg")
+      XCTAssertFalse(app.buttons["gym-weigh-in-save"].isEnabled)
+      for _ in 0..<3 where !date.isHittable { app.scrollViews.firstMatch.swipeUp() }
+      XCTAssertTrue(date.isHittable)
+      XCTAssertLessThanOrEqual(date.frame.maxY, app.keyboards.firstMatch.frame.minY)
+      XCTAssertTrue(app.buttons["gym-weigh-in-cancel"].isHittable)
+      capture("06.4-weigh-in-invalid", look, app)
+      field.tap(); field.typeText(XCUIKeyboardKey.delete.rawValue + XCUIKeyboardKey.delete.rawValue + "82.4")
+      XCTAssertTrue(app.staticTexts["gym-weigh-in-refusal"].waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["gym-weigh-in-save"].isEnabled)
+      app.buttons["gym-weigh-in-cancel"].tap()
+      XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+      app.terminate()
+    }
+  }
+
   // Bodyweight scrubs like the Record; its rows open the Weigh in sheet.
   func testBodyweight() {
     captureBoard("06.2-bodyweight", settle: 1.5) { look in

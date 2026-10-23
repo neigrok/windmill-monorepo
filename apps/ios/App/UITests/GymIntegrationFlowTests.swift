@@ -77,7 +77,21 @@ import XCTest
     XCTAssertTrue(first.waitForLabel("1 · 70 × 8, +10 over plan"), first.label)
     back(app)
     XCTAssertTrue(session.waitForExistence(timeout: 10))
-    app.buttons["gym-weigh-in"].tap(); replace(app.textFields["gym-weigh-in-weight"], "82.4"); app.buttons["gym-weigh-in-save"].tap()
+    app.buttons["gym-weigh-in"].tap()
+    let weight = app.textFields["gym-weigh-in-weight"]
+    replace(weight, "82.4")
+    let date = app.buttons["gym-weigh-in-date"], originalDate = app.buttons["gym-weigh-in-date"].value as? String
+    date.tap()
+    let calendar = app.descendants(matching: .any)["gym-weigh-in-calendar"]
+    XCTAssertTrue(calendar.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertGreaterThan(calendar.frame.height, 250)
+    XCTAssertGreaterThan(calendar.frame.width, app.frame.width * 0.8)
+    app.buttons["gym-weigh-in-date-back"].tap()
+    XCTAssertTrue(weight.waitForExistence(timeout: 5))
+    XCTAssertEqual(weight.value as? String, "82.4")
+    XCTAssertEqual(date.value as? String, originalDate)
+    app.buttons["gym-weigh-in-save"].tap()
     app.tabBars.buttons["Routines"].tap()
     if !app.buttons["edit-routine"].exists {
       let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "routine-", "Integration A")).firstMatch

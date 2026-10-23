@@ -112,6 +112,10 @@ Weights remain factual rows regardless of highlight limits. Workout and weight r
 respective detail/correction; derived records open progress and have no independent Delete. A weight’s
 context menu opens the Bodyweight chart. Weigh in floats directly above the canvas.
 
+The content-sized weigh-in sheet preserves the typed weight while a native graphical `DatePicker`
+stages another day; Back cancels the date change and checkmark accepts it without saving the weight.
+The calendar dismisses the keyboard and expands within the same sheet. Correction keeps its day fixed.
+
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
 account- or replica-scoped versioned Coach archive. Deliberately entering the Coach tab opens a fresh
 canvas; History restores each nonempty chat, draft or interrupted request. An answer stays with its
