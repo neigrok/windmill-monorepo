@@ -279,7 +279,7 @@ struct AccountSheet: View {
 
   @ViewBuilder var appleDoor: some View {
       if model.runtime?.settings.appleEnabled == true {
-        if model.runtime?.settings.fakeApple == true {
+        if model.runtime?.settings.modelServer == true {
           Button {
             model.performAuthentication {
               guard let auth = model.runtime?.auth else { model.error = "Sign-in is unavailable."; return }

@@ -40,21 +40,10 @@ enum BoardFixture {
     if board.hasPrefix("shell-") {
       if board == "shell-anonymous" { model.welcome = true; return }
       model.openJournal()
-      if board == "shell-adoption-two-rooms", let runtime = model.runtime, let server = runtime.auth.fake {
-        try? await model.signIn(server.identity(email: "shell@example.com"))
-        model.journal.type("An account page."); model.journal.done()
-        var remote = Draft(new: Routine(id: model.runner.mint(Routine.self), name: "Account routine", entries: [RoutineEntry(exerciseId: ID("back-squat"))]))
-        _ = model.gym.save(&remote)
-        await model.beginSignOut(); await model.finishSignOut(.discard)
-        model.openJournal()
-        var local = Draft(new: Routine(id: model.runner.mint(Routine.self), name: "Phone routine", entries: [RoutineEntry(exerciseId: ID("back-squat"))]))
-        _ = model.gym.save(&local)
-      }
       model.journal.type("A page on this phone."); model.journal.done(); model.journal.dismissScales()
-      if board == "shell-adoption-two-rooms" { model.keep() }
       return
     }
-    model.welcome = board.hasPrefix("01") || board.hasPrefix("02")
+    model.welcome = board.hasPrefix("02")
     if board.hasPrefix("02-returning") { await ReturningFixture.prepare(model, held: board == "02-returning-held") }
     guard !model.welcome else { return }
     model.preferences.set(true, forKey: "journalOpened")
@@ -92,8 +81,7 @@ enum BoardFixture {
       AdoptionFixture.phone(model)
     }
     if board.hasPrefix("05") { return }
-    if board == "journal-read-only" { model.working = true; return }
-    if board.hasPrefix("journal-empty-later") || board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+    if board.hasPrefix("journal-empty-later") || board.hasPrefix("journal-history") {
       guard let engine = model.runtime?.engine else { return }
       let count = board.hasPrefix("journal-history") ? 12 : 1
       for offset in 1...count {
@@ -109,36 +97,15 @@ enum BoardFixture {
       }
       model.keepDismissed = true
       model.refresh()
-      if board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+      if board.hasPrefix("journal-history") {
         model.journal.type("Short walk, then an early night."); model.journal.save(); model.journal.done()
       }
       return
     }
     if AdoptionFixture.pages > 0 {
-      model.journal.type(board.hasPrefix("21") ? shortProse : prose)
+      model.journal.type(prose)
       model.journal.save(); model.journal.done()
-      if !board.hasPrefix("07-journal") && !board.hasPrefix("06") {
-        model.journal.setScale("mood", 7); model.journal.setScale("energy", 4)
-      }
-    }
-    if board.hasPrefix("21") {
-      model.keepDismissed = true; model.journal.document.mood = nil; model.journal.document.energy = nil
-    }
-    if board.hasPrefix("07b") || board.hasPrefix("21b") {
-      if let identity = try? model.runtime?.auth.fakeApple() { try? await model.signIn(identity) }
-      await model.runtime?.engine.start()
-      for _ in 0..<30 {
-        model.refresh()
-        if model.journal.backup == "backed up" { break }
-        try? await Task.sleep(for: .milliseconds(100))
-      }
-    }
-    if board == "paused-backup", let runtime = model.runtime, let identity = try? runtime.auth.fakeApple() {
-      try? await model.signIn(identity)
-      await runtime.engine.start()
-      try? await AppScenario.backedUp(model)
-      try? await runtime.auth.logout(token: identity.token)
-      await runtime.engine.start(); model.refresh(); model.sheet = .you
+      model.journal.setScale("mood", 7); model.journal.setScale("energy", 4)
     }
     if board.hasPrefix("14") { model.keep() }
     if board.hasPrefix("23"), let runtime = model.runtime {
@@ -158,10 +125,6 @@ enum BoardFixture {
         }
       }
     }
-    if board.hasPrefix("15") {
-      model.email = "you@example.com"; model.codeSentAt = Date(); model.sheet = .code
-    }
-    if board.hasPrefix("06") { model.journal.editing = true }
     #endif
   }
 }
@@ -272,99 +235,36 @@ enum ReturningFixture {
 #endif
 
 enum AppScenario {
+  // The gym end-to-end scenarios open the gym and sign in as the verify skill's account; other scenarios only isolate storage.
   static func run(model: AppModel) async {
     #if DEBUG && targetEnvironment(simulator)
-    if model.runtime?.settings.scenario?.hasPrefix("gym-e2e") == true {
-      model.openRoom(.gym)
-      if model.runtime?.settings.restoreBoard == true {
-        if ProcessInfo.processInfo.arguments.contains("-sign-in-link-fixture") { model.sheet = .code }
-        return
-      }
-      guard let runtime = model.runtime, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true else { return }
-      do {
-        if runtime.settings.scenario == "gym-e2e-conflict" {
-          try await GymConflictFixture.prepare(model: model)
-          return
-        }
-        let identity: AuthIdentity
-        if let path = runtime.settings.codeFile {
-          let data = try Data(contentsOf: URL(fileURLWithPath: path))
-          guard let values = try JSONSerialization.jsonObject(with: data) as? [String: String],
-                let account = values["account"], let token = values["token"], let email = values["email"] else {
-            throw AppFailure(message: "The Gym verification session is unreadable.")
-          }
-          identity = AuthIdentity(account: account, token: SessionToken(token), name: "Gym QA", email: email)
-        } else if let fake = runtime.auth.fake { identity = fake.identity(email: "gym-e2e@example.com") }
-        else { throw AppFailure(message: "The Gym verification session is unavailable.") }
-        try await model.signIn(identity)
-      } catch { model.error = error.localizedDescription }
+    guard let runtime = model.runtime, runtime.settings.scenario?.hasPrefix("gym-e2e") == true else { return }
+    model.openRoom(.gym)
+    if runtime.settings.restoreBoard {
+      if ProcessInfo.processInfo.arguments.contains("-sign-in-link-fixture") { model.sheet = .code }
       return
     }
-    guard let runtime = model.runtime, let report = runtime.settings.report else { return }
-    var steps: [String] = []
+    guard runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true else { return }
     do {
-      model.openJournal(); model.journal.type("A page written before signing in."); guard model.journal.save() else { throw AppFailure(message: "anonymous save failed") }
-      model.journal.done(); model.journal.dismissScales(); guard model.journal.keepDue else { throw AppFailure(message: "Keep not due") }; steps.append("anonymous-writing")
-      model.keep(); steps.append("keep"); model.email = "journal-e2e@example.com"
-      if runtime.settings.codeFile == nil { await model.sendCode() } else { model.sheet = .code }
-      if let path = runtime.settings.codeFile { model.code = try String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) }
-      else { model.code = "482913" }
-      await model.verifyCode(); if model.sheet == .adoption { await model.adopt(.add, asked: model.pendingAdoptions) }
-      try await backedUp(model); let expectedPage = model.journal.document.body; steps.append("email-sign-in-backed-up")
-      let account = try runtime.account() ?? ""
-      let replica = try runtime.store.read { try $0.device().activeReplica.meta.replica }
-      if runtime.settings.codeFile != nil {
-        try await checkpoint(report, pending: "revoke-session", values: ["account": account], steps: steps)
-      } else if let token = runtime.tokens.token(for: account) {
-        try await runtime.auth.logout(token: token)
+      if runtime.settings.scenario == "gym-e2e-conflict" {
+        try await GymConflictFixture.prepare(model: model)
+        return
       }
-      await runtime.engine.start()
-      for _ in 0..<200 {
-        if model.authPaused { break }
-        try await Task.sleep(for: .milliseconds(100))
-      }
-      guard model.authPaused else { throw AppFailure(message: "revoked session did not pause backup") }
-      steps.append("session-revoked-backup-paused")
-      model.sheet = .you
-      if runtime.settings.codeFile == nil { model.codeSentAt = nil; await model.sendCode() }
-      else { model.sheet = .code }
-      model.code = try runtime.settings.codeFile.map { try String(contentsOfFile: $0, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) } ?? "482913"
-      await model.verifyCode(); try await backedUp(model)
-      guard !model.authPaused, try runtime.store.read({ try $0.device().activeReplica.meta.replica }) == replica else {
-        throw AppFailure(message: "reauthentication changed replica lineage")
-      }
-      steps.append("same-account-reauthenticated-backed-up")
-      let signingOutToken = runtime.tokens.token(for: account)?.value ?? ""
-      await model.beginSignOut(); await model.finishSignOut(.keep)
-      guard model.account == nil else { throw AppFailure(message: "sign-out failed") }; steps.append("sign-out-keep")
-      if runtime.settings.codeFile != nil {
-        try await checkpoint(report, pending: "signed-out", values: ["account": account, "revokedToken": signingOutToken], steps: steps)
-        model.sheet = .code
-      } else { model.codeSentAt = nil; await model.sendCode() }
-      model.code = try runtime.settings.codeFile.map { try String(contentsOfFile: $0, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) } ?? "482913"
-      await model.verifyCode(); try await backedUp(model); steps.append("sign-in-again-backed-up")
-      guard !expectedPage.isEmpty && model.journal.document.body == expectedPage else { throw AppFailure(message: "restored page differs from the backed-up page") }
-      if runtime.settings.scenario == "telemetry-first-run" {
-        model.codeSentAt = nil
-        await model.sendCode()
-        if model.error != nil { steps.append("forced-handled-auth-failure") }
-      }
-      try JSONSerialization.data(withJSONObject: ["ok": true, "steps": steps]).write(to: URL(fileURLWithPath: report))
-    } catch {
-      try? JSONSerialization.data(withJSONObject: ["ok": false, "steps": steps, "error": error.localizedDescription]).write(to: URL(fileURLWithPath: report))
-    }
+      let identity: AuthIdentity
+      if let path = runtime.settings.codeFile {
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        guard let values = try JSONSerialization.jsonObject(with: data) as? [String: String],
+              let account = values["account"], let token = values["token"], let email = values["email"] else {
+          throw AppFailure(message: "The Gym verification session is unreadable.")
+        }
+        identity = AuthIdentity(account: account, token: SessionToken(token), name: "Gym QA", email: email)
+      } else if let fake = runtime.auth.fake { identity = fake.identity(email: "gym-e2e@example.com") }
+      else { throw AppFailure(message: "The Gym verification session is unavailable.") }
+      try await model.signIn(identity)
+    } catch { model.error = error.localizedDescription }
     #endif
   }
-  static func checkpoint(_ report: String, pending: String, values: [String: String], steps: [String]) async throws {
-    var payload: [String: Any] = values
-    payload["ok"] = false; payload["pending"] = pending; payload["steps"] = steps
-    try JSONSerialization.data(withJSONObject: payload).write(to: URL(fileURLWithPath: report), options: .atomic)
-    for _ in 0..<600 {
-      if (try? String(contentsOfFile: report + ".ready", encoding: .utf8)) == pending { return }
-      try await Task.sleep(for: .milliseconds(100))
-    }
-    throw AppFailure(message: "local server checkpoint timed out: \(pending)")
-  }
+
   static func backedUp(_ model: AppModel) async throws {
     for _ in 0..<200 {
       model.refresh(); if model.journal.backup == "backed up" { return }

@@ -80,13 +80,13 @@ struct WindmillApp: App {
         created.gym.startWorkoutActivity()
         var onboardingFixture = false
         if let board = settings.board, !settings.restoreBoard {
-          onboardingFixture = await OnboardingFixture.prepare(board, model: created)
+          onboardingFixture = OnboardingFixture.prepare(board, model: created)
           if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
         }
         try await OfflineFixture.prepare(created)
         await CoachFixture.prepare(created.gym, signIn: true)
         if settings.board == nil && settings.scenario == nil || onboardingFixture {
-          introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
+          introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink)
         }
         if workoutLink { created.openActivityWorkout() }
         WorkoutActivityIntentHandler.present(created)
@@ -183,8 +183,7 @@ struct RootScreen: View {
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     Group {
-      if model.runtime?.settings.board == "01-launch" { ShellPalette.canvas.ignoresSafeArea() }
-      else if let restore = model.restore, !restore.opened { arrival(restore) }
+      if let restore = model.restore, !restore.opened { arrival(restore) }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
       else { GymRoom(gym: model.gym, app: model) }

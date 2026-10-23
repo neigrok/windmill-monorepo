@@ -37,18 +37,12 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
-`-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
-backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
-server run supplies `-code-file <absolute path>` with development codes in its isolated database.
-Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
+`-scenario <name>` isolates a launch's storage under that name. Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
 Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
 A separate client seeds the model server through real Gym actions; atomic snapshots
 preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
 value exposes confirmed rows to the same assertions used by REST verification. Missing, corrupt or
 unwritable snapshots fail the fixture. With a backend configured, the test uses REST verification.
-The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
-writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
-for local replay verification; the final report contains no credential.
 
 `AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
 subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay
@@ -264,7 +258,7 @@ Hand-drawn Caveat ink notes appear automatically only on a true first Journal op
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
 stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
 ink notes belong to the first Journal open.
-`journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
+`journal-empty-later` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
 `journal` screen, without page content. When the local day changes at
@@ -324,12 +318,10 @@ show no echo surface. Requests are cancelled and old replies discarded across ac
 changes. Verdict failures roll back without a retry queue; opened signals never delay source
 navigation. HTTP caching is disabled.
 
-`journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
-journal actions with a deterministic echoes service; `journal-echoes-first` carries the first-echo flag.
-`journal-echoes-AX3-RM` covers larger type and the source-scroll Reduce Motion path, including Back to
-tonight. `journal-echoes-unicode` and `journal-echoes-unicode-decomposed` apply real source edits:
-reading the first source changes only its normalization; Useful, reaching the second passage, removes
-the first quotation. The source quote sits after 14 paragraphs; the echo flows use the Debug simulator's UIKit quote rectangle to check that the exact passage reaches the
+The `journal-echoes` board fixture uses real journal actions with a deterministic echoes service;
+`journal-echoes-first` carries the first-echo flag. `journal-echoes-AX3-RM` covers larger type and the
+source-scroll Reduce Motion path, including Back to tonight. The source quote sits after 14 paragraphs;
+the echo flows use the Debug simulator's UIKit quote rectangle to check that the exact passage reaches the
 visible canvas centre and remains read-only. `JournalEchoFlowTests` walks the light flow; the larger-type,
 Reduce Motion and canvas-end checks run in the opt-in `NightlyFlowTests`.
 Journal's principles are in `docs/design/brand-foundations.md`; Figma's phone echo

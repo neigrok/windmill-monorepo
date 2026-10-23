@@ -16,53 +16,32 @@ enum JournalEchoFixture {
       model.keepDismissed = true
       let today = model.journal.today
       let first = today.adding(days: -120), second = today.adding(days: -240), third = today.adding(days: -400)
-      let unicode = board.contains("unicode"), decomposedEdit = board.contains("decomposed")
-      let unicodeQuote = "I remembered the café by the river."
-      let spoken = unicode ? (decomposedEdit ? unicodeQuote : unicodeQuote.decomposedStringWithCanonicalMapping)
-        : "The long walk home helped me notice the evening."
+      let spoken = "The long walk home helped me notice the evening."
       let copied = "Pay attention to the walk, not the destination."
       let longSource = (1...14).map { step in
         "I took a different street on the way home, passing the small gardens and the corner shop. I remembered one ordinary detail from the day: the quiet pause at stop \(step)."
       }.joined(separator: "\n\n") + "\n\n\(spoken)\n\nI made tea when I got back. The kitchen window was still open, and the room had cooled down.\n\nI put my shoes by the door and left the rest of the evening unplanned."
-      let empty = board.contains("empty")
-      if !empty {
-        for offset in Array(1...18) + [120, 240, 400] {
-          let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
-          let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
-          let body = offset == 120 ? longSource
-            : offset == 240 ? "I copied this into today's page:\n\(copied)"
-            : "A quiet evening, a short walk, and a page before bed."
-          let document = PageDocument(body: body, source: offset == 120 ? "spoken" : "typed")
-          let result = try runner.run(SavePage(day: today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"]))
-          guard result.refusal == nil else { throw JournalEchoFailure.unavailable }
-        }
-        model.refresh()
-        model.journal.type("The rain cleared before my walk. I took the long way home and left my phone in my pocket.")
-        guard model.journal.save() else { throw JournalEchoFailure.unavailable }
-        model.journal.done()
-        model.journal.dismissScales()
+      for offset in Array(1...18) + [120, 240, 400] {
+        let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
+        let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
+        let body = offset == 120 ? longSource
+          : offset == 240 ? "I copied this into today's page:\n\(copied)"
+          : "A quiet evening, a short walk, and a page before bed."
+        let document = PageDocument(body: body, source: offset == 120 ? "spoken" : "typed")
+        let result = try runner.run(SavePage(day: today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"]))
+        guard result.refusal == nil else { throw JournalEchoFailure.unavailable }
       }
-      let response = JournalEchoResponse(pages: empty ? [] : [JournalEchoPage(day: today.text, matches: [
+      model.refresh()
+      model.journal.type("The rain cleared before my walk. I took the long way home and left my phone in my pocket.")
+      guard model.journal.save() else { throw JournalEchoFailure.unavailable }
+      model.journal.done()
+      model.journal.dismissScales()
+      let response = JournalEchoResponse(pages: [JournalEchoPage(day: today.text, matches: [
         JournalEchoMatch(day: first.text, text: spoken, isSelf: true, source: "spoken", useful: false, occurrenceHint: 0),
         JournalEchoMatch(day: second.text, text: copied, isSelf: false, source: "typed", useful: false, occurrenceHint: 0),
         JournalEchoMatch(day: third.text, text: "a short walk", isSelf: true, source: "typed", useful: false, occurrenceHint: 0),
-      ])], pagesWritten: empty ? 0 : 22, floorWaived: false, firstEchoEver: board.contains("first"))
-      let service = JournalEchoFixtureService(response: response, offline: board.contains("offline"))
-      if unicode {
-        // Reading the first source re-encodes its page, an equivalent edit; Useful on the second removes the quotation.
-        service.onSignal = { [weak model] signal, day in
-          guard (signal == .opened && day == first.text) || (signal == .useful && day == second.text) else { return }
-          let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - 120 * 86_400)
-          let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
-          let body = signal == .opened
-            ? (decomposedEdit ? longSource.decomposedStringWithCanonicalMapping : longSource.precomposedStringWithCanonicalMapping)
-            : longSource.replacingOccurrences(of: spoken, with: "The river path is closed.")
-          let result = try runner.run(SavePage(day: first, document: PageDocument(body: body, source: "spoken")))
-          guard result.refusal == nil else { throw JournalEchoFailure.unavailable }
-          model?.refresh()
-        }
-      }
-      model.journal.echoes = JournalEchoes(service: service,
+      ])], pagesWritten: 22, floorWaived: false, firstEchoEver: board.contains("first"))
+      model.journal.echoes = JournalEchoes(service: JournalEchoFixtureService(response: response),
         preferences: model.preferences, telemetry: model.telemetry)
       model.refresh()
     } catch {
@@ -78,21 +57,12 @@ enum JournalEchoFixture {
 #if DEBUG && targetEnvironment(simulator)
 @MainActor final class JournalEchoFixtureService: JournalEchoServing {
   var response: JournalEchoResponse
-  let offline: Bool
-  var onSignal: ((JournalEchoSignal, String?) throws -> Void)?
 
-  init(response: JournalEchoResponse, offline: Bool) {
-    self.response = response; self.offline = offline
-  }
+  init(response: JournalEchoResponse) { self.response = response }
 
-  func list(through day: String) async throws -> JournalEchoResponse {
-    if offline { throw URLError(.notConnectedToInternet) }
-    return response
-  }
+  func list(through day: String) async throws -> JournalEchoResponse { response }
 
   func signal(_ signal: JournalEchoSignal, triggerDay: String, matchDay: String?) async throws {
-    if offline { throw URLError(.notConnectedToInternet) }
-    try onSignal?(signal, matchDay)
     guard signal != .opened else { return }
     response.pages = response.pages.compactMap { page in
       guard page.day == triggerDay else { return page }

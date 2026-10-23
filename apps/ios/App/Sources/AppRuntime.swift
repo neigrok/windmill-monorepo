@@ -34,10 +34,8 @@ struct AppSettings {
   let board: String?
   let restoreBoard: Bool
   let modelServer: Bool
-  let fakeApple: Bool
   let appleFixture: String?
   let appleEnabled: Bool
-  let report: String?
   let scenario: String?
   let codeFile: String?
   let automated: Bool
@@ -54,14 +52,12 @@ struct AppSettings {
     #if DEBUG && targetEnvironment(simulator)
     board = argument("board")
     restoreBoard = arguments.contains("-restore-board")
-    modelServer = arguments.contains("-model-server") || arguments.contains("-fake-apple") || board != nil
-    fakeApple = modelServer
+    modelServer = arguments.contains("-model-server") || board != nil
     appleFixture = argument("apple-fixture")
     scenario = argument("scenario")
-    report = argument("report")
     codeFile = argument("code-file")
     #else
-    board = nil; restoreBoard = false; modelServer = false; fakeApple = false; appleFixture = nil; scenario = nil; report = nil; codeFile = nil
+    board = nil; restoreBoard = false; modelServer = false; appleFixture = nil; scenario = nil; codeFile = nil
     #endif
     automated = modelServer || scenario != nil
     var info = bundle.infoDictionary ?? [:]
@@ -71,7 +67,7 @@ struct AppSettings {
     if arguments.contains("-telemetry") { info["WMTelemetryEnvironment"] = "test" }
     #endif
     telemetryInfo = info
-    appleEnabled = fakeApple || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
+    appleEnabled = modelServer || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
   }
 
   // You's How you sign in footer: what Apple opens, said only where this build offers Apple.

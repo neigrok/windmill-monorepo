@@ -498,7 +498,7 @@ final class AppModel {
     return true
   }
 
-  func showAuthError(_ failure: any Error, appleFlow: Bool = false) {
+  func showAuthError(_ failure: any Error) {
     if (failure as? EngineError) == .upgradeRequired || (failure as? AuthRefusal)?.code == AuthRefusal.updateRequired.code {
       requireUpdateAtSignIn(); return
     }
@@ -848,7 +848,7 @@ final class AppModel {
         telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "linked"])
       }
     }
-    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error, appleFlow: !attaching) }
+    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error) }
   }
 
   func cancelSignOut() async {

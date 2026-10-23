@@ -146,7 +146,7 @@ struct KeychainInstallationError: Error {}
       let (data, response) = try await NativeAuth.data(for: request, session: session)
       guard let http = response as? HTTPURLResponse, data.count <= 2_000_000 else { throw URLError(.badServerResponse) }
       guard (200..<300).contains(http.statusCode) else {
-        throw AiRequestFailure(status: http.statusCode, body: data, message: "Coach couldn’t complete this request.")
+        throw AiRequestFailure(status: http.statusCode, body: data)
       }
       return data
     } catch {
@@ -173,7 +173,6 @@ nonisolated struct InstallationFailure: Decodable {
 nonisolated struct AiRequestFailure: Error {
   let status: Int
   let body: Data
-  let message: String
 }
 
 nonisolated final class AiInstallationRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

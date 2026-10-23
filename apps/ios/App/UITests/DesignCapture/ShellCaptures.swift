@@ -41,7 +41,7 @@ final class ShellCaptures: DesignCapture {
 
   // 26b, 27a–27g: Delete account from You, against the fake server; `-delete-fixture` holds the request or refuses it offline.
   func openDeletion(_ board: String, _ look: Look, _ fixture: String? = nil) -> XCUIApplication {
-    let app = launch(board, look, arguments: ["-fake-apple", "-apple-fixture", "linking"] + (fixture.map { ["-delete-fixture", $0] } ?? []))
+    let app = launch(board, look, arguments: ["-apple-fixture", "linking"] + (fixture.map { ["-delete-fixture", $0] } ?? []))
     reach(app.buttons["delete-account"], app).tap()
     XCTAssertTrue(app.textFields["delete-account-email"].waitForExistence(timeout: 10))
     return app
@@ -53,7 +53,7 @@ final class ShellCaptures: DesignCapture {
   }
   func testDeleteAccount() {
     captureBoard("26b-you-signed-in") { look in
-      let app = launch("24b", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      let app = launch("24b", look, arguments: ["-apple-fixture", "linking"])
       XCTAssertTrue(app.buttons["delete-account"].waitForExistence(timeout: 30))
       return app
     }
@@ -88,18 +88,18 @@ final class ShellCaptures: DesignCapture {
   // 24a, 24c, 24d: How you sign in, Remove Apple? and Apple ID already in use on the You list that ends Sign out · Delete account.
   func testHowYouSignIn() {
     captureBoard("24a-how-you-sign-in-email-only") { look in
-      let app = launch("24a", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      let app = launch("24a", look, arguments: ["-apple-fixture", "linking"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 30))
       XCTAssertTrue(app.buttons["delete-account"].exists)
       return app
     }
     captureBoard("24c-remove-apple") { look in
-      let app = launch("24c", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      let app = launch("24c", look, arguments: ["-apple-fixture", "linking"])
       XCTAssertTrue(app.buttons["Remove Apple"].waitForExistence(timeout: 30))
       return app
     }
     captureBoard("24d-apple-id-already-in-use") { look in
-      let app = launch("24a", look, arguments: ["-fake-apple", "-apple-fixture", "taken"])
+      let app = launch("24a", look, arguments: ["-apple-fixture", "taken"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 30)); app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.alerts["Apple ID already in use"].waitForExistence(timeout: 10))
       return app
@@ -180,7 +180,7 @@ final class ShellCaptures: DesignCapture {
 
   func testAppleLinkingSheets() {
     for look in Look.both {
-      let app = launch("23-start", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      let app = launch("23-start", look, arguments: ["-apple-fixture", "linking"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 20))
       capture("shell-keep-sheet-apple-door", look, app)
       app.buttons["apple-sign-in"].tap()
@@ -226,7 +226,7 @@ final class ShellCaptures: DesignCapture {
     ]
     for (question, confirmation, workouts, pages, message, discardTitle) in boards {
       for look in Look.both {
-        let app = launch("23d", look, arguments: ["-fake-apple", "-apple-fixture", "linking", "-adoption-workouts", "\(workouts)", "-adoption-pages", "\(pages)"])
+        let app = launch("23d", look, arguments: ["-apple-fixture", "linking", "-adoption-workouts", "\(workouts)", "-adoption-pages", "\(pages)"])
         let adoption = app.alerts["Add to your account?"]
         XCTAssertTrue(adoption.waitForExistence(timeout: 30))
         XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label == %@", message)).firstMatch.exists)
@@ -245,7 +245,7 @@ final class ShellCaptures: DesignCapture {
     for (board, fixture, message) in [("16c-sign-out", "24b", "Your pages and log stay in your account and leave this phone."),
       ("16e-sign-out-unconfirmed", "16e", "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.")] {
       captureBoard(board) { look in
-        let app = launch(fixture, look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+        let app = launch(fixture, look, arguments: ["-apple-fixture", "linking"])
         reach(app.buttons["sign-out"], app).tap()
         let alert = app.alerts["Sign out?"]
         XCTAssertTrue(alert.waitForExistence(timeout: 15))
@@ -257,7 +257,7 @@ final class ShellCaptures: DesignCapture {
 
   func testAppleRecoveryScreens() {
     for look in Look.both {
-      var app = launch("23-start", look, arguments: ["-fake-apple", "-apple-fixture", "linking"])
+      var app = launch("23-start", look, arguments: ["-apple-fixture", "linking"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 20)); app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.buttons["Use my account"].waitForExistence(timeout: 5)); app.buttons["Use my account"].tap()
       let email = app.textFields["email-address"]
@@ -269,20 +269,20 @@ final class ShellCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["Try another email"].exists)
       capture("shell-apple-no-account", look, app)
 
-      app = launch("23-start", look, arguments: ["-fake-apple", "-apple-fixture", "expired"])
+      app = launch("23-start", look, arguments: ["-apple-fixture", "expired"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 20)); app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.staticTexts["Continue with Apple again"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["apple-sign-in"].exists && app.buttons["email-sign-in"].exists)
       capture("shell-apple-expired", look, app)
 
-      app = launch("23-start", look, arguments: ["-fake-apple", "-apple-fixture", "hello-failure"])
+      app = launch("23-start", look, arguments: ["-apple-fixture", "hello-failure"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 20)); app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.buttons["Create account"].waitForExistence(timeout: 5)); app.buttons["Create account"].tap()
       XCTAssertTrue(app.buttons["auth-retry"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.staticTexts["Finish signing in"].exists)
       capture("shell-authenticated-sign-in-pending", look, app)
 
-      app = launch("24a", look, arguments: ["-fake-apple", "-apple-fixture", "taken"])
+      app = launch("24a", look, arguments: ["-apple-fixture", "taken"])
       XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 20)); app.buttons["apple-sign-in"].tap()
       XCTAssertTrue(app.alerts["Apple ID already in use"].waitForExistence(timeout: 5))
       capture("shell-apple-identity-in-use-alert", look, app)
