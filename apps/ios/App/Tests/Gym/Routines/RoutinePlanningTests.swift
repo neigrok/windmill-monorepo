@@ -389,13 +389,15 @@ import UIKit
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
     let window = UIWindow(windowScene: scene)
+    // Without animations a push or pop lands within a run-loop turn, so a short settle shows any second event it records.
+    UIView.setAnimationsEnabled(false)
     window.rootViewController = UIHostingController(rootView: RoutineBuilder(gym: gym, editing: editing) { _ in })
     window.makeKeyAndVisible()
-    defer { window.isHidden = true; window.rootViewController = nil; previousKeyWindow?.makeKeyAndVisible() }
+    defer { window.isHidden = true; window.rootViewController = nil; previousKeyWindow?.makeKeyAndVisible(); UIView.setAnimationsEnabled(true) }
     let screens = { telemetry.entries.withLock { $0.filter { $0.name == "gym_screen_viewed" }.compactMap { $0.properties["screen"] } } }
     func settle(_ count: Int) async throws {
       for _ in 0..<100 where screens().count < count { try await Task.sleep(for: .milliseconds(20)) }
-      try await Task.sleep(for: .milliseconds(700))
+      try await Task.sleep(for: .milliseconds(100))
     }
     try await settle(1)
     for visit in 1...2 {

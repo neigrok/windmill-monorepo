@@ -75,6 +75,8 @@ extension CoachTests {
     let configuration = NativeAuth.nativeSession().configuration
     #expect(configuration.timeoutIntervalForRequest == 8 && configuration.timeoutIntervalForResource == 15)
     configuration.protocolClasses = [CoachTestProtocol.self]
+    // The production timeouts, scaled down: the stream outlives a request timeout it would otherwise die at.
+    configuration.timeoutIntervalForRequest = 0.2; configuration.timeoutIntervalForResource = 0.4
     let rest = GymRESTClient(runtime: original.runtime, telemetry: gym.telemetry, session: URLSession(configuration: configuration))
     var activity = 0, ended = false
     let work = Task {
@@ -83,7 +85,7 @@ extension CoachTests {
     }
     try await settle { activity == 2 }
     #expect(CoachTestProtocol.state.withLock { $0.active?.request.timeoutInterval } == 60)
-    try await Task.sleep(for: .seconds(9))
+    try await Task.sleep(for: .milliseconds(600))
     #expect(!ended && rest.tasks.count == 1)
     work.cancel(); _ = try? await work.value
     #expect(rest.tasks.isEmpty)

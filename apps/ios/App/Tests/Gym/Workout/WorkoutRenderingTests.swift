@@ -83,7 +83,14 @@ import SyncTesting
     XCTAssertEqual(image.size, window.bounds.size)
   }
 
+  // The two screenshot walks below draw every workout screen for design review and assert only that each drew; like the
+  // design capture suite they run when the runner sees WM_DESIGN_CAPTURE=1.
+  func skipUnlessCapturing() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["WM_DESIGN_CAPTURE"] == "1", "Set WM_DESIGN_CAPTURE=1 to draw the workout screens")
+  }
+
   func testEveryWorkoutScreenInLightAndDark() async throws {
+    try skipUnlessCapturing()
     for (name, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
       let (_, gym) = try fixture()
       try await capture(WorkoutScreen(gym: gym), name: "live-" + name, appearance: appearance)
@@ -201,6 +208,7 @@ import SyncTesting
   }
 
   func testLargeNumeralsAtLargeAndLargestText() async throws {
+    try skipUnlessCapturing()
     for (name, type) in [("large", DynamicTypeSize.xxxLarge), ("AX", .accessibility5)] {
       for (skin, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
         let (_, gym) = try fixture()

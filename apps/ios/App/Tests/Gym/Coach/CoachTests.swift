@@ -52,7 +52,7 @@ import SyncTesting
     let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport, connectivity: connectivity)
     let identity = transport.identity(email: "coach-test@example.com")
     _ = try await runtime.engine.signIn(account: identity.account, token: identity.token)
-    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry, waits: GymWaits(coachBeat: .milliseconds(5)))
     let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CoachTestProtocol.self]
     config.timeoutIntervalForRequest = timeout
     CoachTestProtocol.state.withLock { $0 = .init(reply: reply) }

@@ -443,10 +443,6 @@ struct FinishWorkout: Action {
 
   static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."
 
-  // A set the log accepted a moment ago is confirmed by the next pull. Online, Finish gives that pull this long; a
-  // server that answers nothing in time leaves the decision to what this phone holds.
-  static let confirmationWait = Duration.seconds(3)
-
   // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
     guard flushRack() else { return }
@@ -459,7 +455,7 @@ struct FinishWorkout: Action {
       return loaded.serverHeld && loaded.stranded
     }
     if unconfirmed == true, let runtime = gym.runtime, !gym.isAnonymous, runtime.engine.status.online, !syncFailed {
-      _ = await Self.drain(timeout: Self.confirmationWait) { await self.flushAndConfirm(session.id, finished: false) }
+      _ = await Self.drain(timeout: gym.waits.confirmation) { await self.flushAndConfirm(session.id, finished: false) }
       guard gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
     }
     let pending: Bool
@@ -483,7 +479,7 @@ struct FinishWorkout: Action {
     finishing = false
     if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
     if gym.runtime != nil, !gym.isAnonymous {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: true) }) else { return }
+      guard await drainForFinish(timeout: gym.waits.finish, operation: { await self.flushAndConfirm(session.id, finished: true) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
@@ -522,7 +518,7 @@ struct FinishWorkout: Action {
     message = nil
     gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "ok"])
   }
-  func drainForFinish(timeout: Duration = .seconds(15), operation: @escaping @Sendable () async -> Void) async -> Bool {
+  func drainForFinish(timeout: Duration, operation: @escaping @Sendable () async -> Void) async -> Bool {
     let account = gym.account, id = sessionId
     let completed = await Self.drain(timeout: timeout, operation: operation)
     if !completed && !Task.isCancelled && gym.account == account && sessionId == id && !gym.accountTransition {
@@ -530,7 +526,7 @@ struct FinishWorkout: Action {
     }
     return completed
   }
-  static func drain(timeout: Duration = .seconds(15), operation: @escaping @Sendable () async -> Void) async -> Bool {
+  static func drain(timeout: Duration, operation: @escaping @Sendable () async -> Void) async -> Bool {
     let (results, continuation) = AsyncStream<Bool>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let work = Task { await operation(); continuation.yield(!Task.isCancelled); continuation.finish() }
     let timer = Task {

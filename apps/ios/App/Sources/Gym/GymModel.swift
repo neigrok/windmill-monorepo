@@ -8,6 +8,18 @@ import SyncEngine
 import SyncSchema
 import SyncStore
 
+// How long the room waits on the log and on Coach before it says so or asks again.
+nonisolated struct GymWaits {
+  // A set the log accepted a moment ago is confirmed by the next pull. Online, a finish gives that pull this long; a
+  // server that answers nothing in time leaves the decision to what this phone holds.
+  var confirmation = Duration.seconds(3)
+  // A finish waits this long for the log to take it, then says it is saved on this phone.
+  var finish = Duration.seconds(15)
+  // The unit Coach paces itself in: a poll backs off from one beat to sixteen, a dropped stream reconnects after two,
+  // four, then eight, and a signed-out question is checked every beat.
+  var coachBeat = Duration.seconds(1)
+}
+
 // The room's engine-backed model. An extension one track reads lives in that track's folder; a rule several read lives here.
 @Observable @MainActor
 final class GymModel {
@@ -16,6 +28,7 @@ final class GymModel {
   let telemetry: any Telemetry
   let rest: GymRESTClient
   let locale: Locale
+  let waits: GymWaits
   // What this phone remembers under any account or none.
   let phone: UserDefaults?
   var log: TrainingLog? { didSet { logRecordsRead = nil } }
@@ -63,8 +76,8 @@ final class GymModel {
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
-       phone: UserDefaults? = nil) {
-    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale; self.phone = phone
+       phone: UserDefaults? = nil, waits: GymWaits = GymWaits()) {
+    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale; self.phone = phone; self.waits = waits
     self.rest = rest ?? GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()

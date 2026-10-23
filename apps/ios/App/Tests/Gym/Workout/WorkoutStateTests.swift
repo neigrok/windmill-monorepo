@@ -312,7 +312,8 @@ import SyncTesting
     let runtime = try Self.faultRuntime(fault, connectivity: network, drivesLoops: true)
     let identity = fault.model.identity(email: "finish-unconfirmed@example.com")
     #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
-    let recorder = TelemetryRecorder(), gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: recorder)
+    let recorder = TelemetryRecorder(), waits = GymWaits(confirmation: .milliseconds(300))
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: recorder, waits: waits)
     _ = try #require(gym.startWorkout(following: ID("back-squat")))
     let workout = gym.workout, id = try #require(workout.sessionId)
     workout.logSet()
@@ -340,7 +341,7 @@ import SyncTesting
     await finishing.value
     let decided = tapped.duration(to: .now)
     switch wait {
-    case .stalledServer: #expect(decided >= WorkoutState.confirmationWait && decided < WorkoutState.confirmationWait + .seconds(2))
+    case .stalledServer: #expect(decided >= waits.confirmation && decided < waits.confirmation + .seconds(2))
     case .cancelledWait, .offline: #expect(decided < .seconds(1))
     }
     #expect(!workout.finishing && !workout.finishQueued && workout.session?.isOpen == true && workout.receipt == nil && workout.canLog)
@@ -353,7 +354,7 @@ import SyncTesting
     let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
     let identity = fault.model.identity(email: "finish-confirmed-late@example.com")
     #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
-    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, waits: GymWaits(finish: .milliseconds(300)))
     _ = try #require(gym.startWorkout(following: ID("back-squat")))
     let workout = gym.workout, id = try #require(workout.sessionId)
     workout.logSet()
