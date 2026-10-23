@@ -26,10 +26,14 @@ test('every registered product is named in the deal, open or not', () => {
   for (const product of PRODUCTS) assert.equal(deal.includes(product.label), true);
 });
 
-test('the deal promises no erasure and no deadline, because the server performs neither', () => {
-  const forbidden = /\b(erased?|deleted|destroyed|wiped|30 days|30-day)\b/i;
+test('the deal names the grace the server keeps, then deletion for good, in the phones’ words', () => {
+  assert.equal(closingDeal([])[4],
+    'For 30 days, you can sign in again to bring it all back. After that, it is deleted for good.');
+});
+
+test('no line of the deal promises an undo without a limit', () => {
   for (const line of closingDeal(PRODUCTS.map((product) => product.label)))
-    assert.equal(forbidden.test(line), false, `"${line}" claims something AuthService::closeAccount does not do`);
+    assert.equal(/\b(the undo|back whole|any time|forever)\b/i.test(line), false, `"${line}" promises more than 30 days`);
 });
 
 test('closing discards this account’s device data, including changes the server has not received', () => {

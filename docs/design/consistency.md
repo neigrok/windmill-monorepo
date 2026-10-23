@@ -56,7 +56,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     account and leaves this phone.*; iOS names pages and log) and ask Keep / Discard with *3 changes
     haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or
     discard them from this phone.* Android signs out at once and always keeps (`plat/you/YouSheet.kt`,
-    `store/GymEngineSession.kt:122`); iOS asks with longer words (`AccountSheet.swift:80-90`).
+    `store/GymEngineSession.kt:122`); iOS asks in these words (`AppModel.signOutMessage`).
   - The web asks for journal and gym with the count, Keep and Discard (`SyncDecisions.jsx`), but on
     sign-out or any change of account it wipes the account's roadmap trees from the browser,
     unsynced edits included, with no warning: `accountChange.js` calls each product's
@@ -83,10 +83,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     training. Add them, or discard them from this phone.* / *Cancel sign-in* · *Discard* · *Add*, and
     its confirm *Discard 3 workouts?* / *They are deleted from this phone. You can’t undo this.* (Shell
     iOS 23d `2:2940`, 23f `49:4140`; Gym Android 07.4 `1254:33533`, 07.5 `1254:33632`); the nouns follow
-    what the phone holds (12n). Both codes word
-    it differently (`AppModel.swift:848-856`, `AccountSheet.swift:547` *Not now*;
-    `app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says signed-out work
-    *moves to the account on sign-in* with no question.
+    what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
+    differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
+    signed-out work *moves to the account on sign-in* with no question.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in; `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: any`, so a signed-out Coach turn could write one. Rule which
@@ -104,11 +103,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   failing instead. Confirm one storage sentence for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
-  iOS's counts only writing operations (`Translation.swift`), and the iOS gym relies on it: saving a
-  workout's deviation guards the routine's `revision` with a `guardRead` and updates the same
-  routine in one plan (`SaveWorkoutDeviation`, `WorkoutState.swift`). That plan goes with the
-  deviation question (12a). Rule whether a guard read may accompany a write to its record before
-  another plan needs it, then align the kit spec and both kits. Owner: domain kit.
+  iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
+  record. Rule whether a guard read may accompany a write to its record before a plan needs it,
+  then align the kit spec and both kits. Owner: domain kit.
 
 ### Durable draft adoption on native clients
 
@@ -143,12 +140,14 @@ Apple sign-in is off in every build, so no surface draws it yet.
 - **8g · Web Google forks the same way.** On the web, a Google address that differs from the
   account's creates a second account with no question. Decide whether Continue with Google asks
   *Already on Windmill?* too.
-- **8h · The room in the sign-in question.** The sign-in question asks one room at a time: *Add to
-  your account?* · *2 workouts · 1 routine from before you signed in are only on this phone, and your
-  account already has training. Add them, or discard them for good.* iOS asks Journal, then Gym,
-  and prefixes the room to the message: *Gym · 2 workouts · 1 routine from before you signed in …*
-  (`AppModel.swift`, `adoptionAlertMessage`). Board 23d shows a journal question only. Rule whether
-  a question names its room when one sign-in asks two, then align the boards and the app.
+- **8h · The room in the sign-in question.** Canon (Shell iOS 23g–23j): one question names every room
+  due by kind, *This phone has 2 workouts and 3 journal pages from before you signed in. Your account
+  already has training and journal pages. Add them, or discard them from this phone.*, and one answer
+  covers them all; iOS follows it (`AdoptionQuestion.swift`). The web asks one room at a time in the
+  older words, *… are only on this device, and your account already has … Add them, or discard them
+  for good.* (`web/src/shell/auth/SyncDecisions.jsx`). Two iOS states are not drawn: one item confirms *It is
+  deleted from this phone.*, and a phone holding only unnamed kinds (settings, movement names) counts
+  its records as changes, *This phone has 1 change from before you signed in.*
 
 ## iOS
 
@@ -241,9 +240,6 @@ and Android disagree.
   (*Renumber sets for import*, *import limit 200*), *Choose set kind* and no Discard, and a refusal
   banner on Routines (`ui/RefusalBanner.kt`). iOS's discard question still says *This permanently
   removes the copy saved on this phone.* (`WorkoutInspectScreen.swift:52-58`); see 12g.
-- **9l · Live Activity clocks carry no words (owner ruling, 2026-10-22; iOS build).** Boards 04.2
-  and 04.4 draw the clocks with no names; VoiceOver names them. The widget's position line still
-  adds *… since last set* (`WorkoutActivityWidget.swift`, `position`): build work in iOS task 59.
 - **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the app on
   2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
   predate the native chrome; redraw them from the app.
@@ -745,17 +741,17 @@ rulings. Entries 9k, 9o, 9p, 9q, 9r, 9s, 9y, 9z, 7c and 7d carry the rulings tha
 question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, Android paths as above.
 
 - **12a · Lifting above the plan is just logged.** No surface asks to change a routine when the
-  lifter beats it; targets change only through Coach's proposals (catalogue 08.21). Both phones ask
-  today: iOS an alert *Save {w} to {routine}?* or the sheet *Heavier than the plan*
-  (`Workout/WorkoutSheets.swift:105-151`, `WorkoutState` `resolveDeviation`, `SaveWorkoutDeviation`),
-  Android the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are deleted on both
-  pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
+  lifter beats it; targets change only through Coach's proposals (catalogue 08.21). iOS just logs;
+  Android still asks in the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are
+  deleted on both pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
 - **12b · Every workout starts from a routine.** No free workout on either phone, and the Control
   Center control and the Quick Settings tile open Routines when no workout is open (both 04.1).
   Boards 03.9 are deleted on both pages. Android still offers *Start logging*
   (`ui/RoutinesScreen.kt:162-177`), the first-movement picker (`ui/LoggerScreen.kt:364`) and *Save a
-  routine* on the receipt (`ui/FinishScreen.kt:68,379-395`); iOS still draws *Choose your first
-  movement* (`Workout/WorkoutScreen.swift:107-113`).
+  routine* on the receipt (`ui/FinishScreen.kt:68,379-395`). iOS starts only from a routine, but a
+  connected agent's `start_session` may still open one without (its `routineId` is optional), and
+  iOS draws *Choose your first movement* for it (`Workout/WorkoutScreen.swift`, `WorkoutScreen.live`),
+  the one way to add its first movement. No board draws that state; designer to rule.
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
@@ -771,23 +767,25 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   last row: an explanation, *Type your email to confirm*, *Deleting…*, *Your account is deleted* /
   *Sign in before Nov 21 to bring it back.*, and *Couldn’t delete your account. Check your connection
   and try again.* (Shell iOS section 4c `47:3852`, boards 27a–27e; Shell Android `33:1568`, 27a
-  `54:1269`–27e `54:1606`). Neither phone has it. The copy promises deletion after 30 days, which the
-  server does not do: `DELETE /v1/me` soft-closes with `closingOn` = now + 30 days, but
-  `AuthService::revived` revives a closed account at any later sign-in and nothing deletes a closed
-  account's data (dogfood `account-delete-grace-enforced`).
+  `54:1269`–27e `54:1606`). iOS builds it (`AccountDeletion.swift`); Android does not. Two iOS states
+  have no board: a failure on the phone itself (a room that cannot save, the discard owed after the
+  close) says 27e's *Check your connection* sentence, and a 401 after the confirm closes the page onto
+  You signed out, as 27d needs the day the server names; designer to rule. The server keeps the
+  copy's promise: `DELETE /v1/me` closes with `closingOn` = now + 30 days, a sign-in before then
+  brings the account back, and from then on it is erased with all its data (`backend/AUTH.md`).
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
-  `1283:42292`). Neither phone builds it: iOS offers Keep only from Coach's receipts and from Share
-  with Coach signed out (`Coach/CoachTab.swift:318`, `GymRoom.swift:200`); Android shows a standing
-  card on Routines (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
+  `1283:42292`). iOS builds it; Android does not, and shows a standing card on Routines
+  (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
   (`plat/auth/SignInDoor.kt:117`), both removed from the boards.
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
-  The sign-in question: 7d. iOS says *This permanently removes the workout and its sets.*
-  (`Workout/WorkoutReceipt.swift:186-193`), *This permanently removes the copy saved on this phone.*
-  (`Recovery/WorkoutInspectScreen.swift:52-58`) and *This permanently removes the conversation.* /
-  *Delete conversation* (`Coach/CoachHistory.swift:124-131`); Android asks nothing (11b).
+  The sign-in question: 7d. iOS asks these words through one alert for every workout door
+  (`Gym/Components/GymRows.swift`, `DiscardWorkoutAlert`), except Inspect's stranded sets, which are
+  not drawn: *Discard 2 sets* still asks *This permanently removes the copy saved on this phone.*
+  (`Recovery/WorkoutInspectScreen.swift`). A workout with no sets is not drawn either; iOS says *This
+  deletes the workout. You can’t undo this.* Android asks nothing (11b).
 - **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight
   is · Total → Each dumbbell*; the day's cap reads *You can ask again in about 2 hours.* with *Use your
   own AI agent*; *This Windmill does not have Coach. You can still read your log.* with no doors;
@@ -816,17 +814,22 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   confirmed by your account. They are deleted too.* (Shell iOS 27f `91:5187`, 27g `91:5256`; Shell
   Android 27f `96:2122`, 27g `96:2157`). The phone flushes for up to 5 s, then calls
   `DELETE /v1/me`, then discards its copy, as the web's closure does (`AuthProvider.jsx`
-  `closeAccount`); neither phone builds Delete account yet (iOS 50, Android 48). The fact's symbols
-  (`iOS / Symbol / icloud.slash`, `Android / Symbol` `cloud_off`) are in the Design System but not
-  published: until the owner publishes, those 8 boards draw local stand-ins named `⟳ DS publish · …`,
-  which `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
-- **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** Only the
-  kinds present, in this order: workouts, routines, weigh-ins, movements, notes, journal pages (iOS).
-  Sets go with their workout; settings, movement names and Coach drafts are not named. The account
-  line names what the account holds; *it* for one item, else *them*; the confirm title is *Discard
-  {phrase}?* for one or two kinds, *Discard all of it?* for three or more. On iOS one alert answers
-  both rooms. Boards: Shell iOS 23g–23j (`94:5426`, `94:5455`, `94:5482`, `94:5511`); Gym Android
-  07.9 `1336:17333`, 07.10 `1336:17426`. Build: iOS 48, Android 25.
+  `closeAccount`). iOS counts the engine's live unsent entries (ready and sent), which leaves out
+  pending device work, as the engine's live status does not carry it; Android builds no Delete
+  account (48). The fact's symbols (`iOS / Symbol / icloud.slash`, `Android / Symbol` `cloud_off`)
+  are in the Design System but not published: until the owner publishes, those 8 boards draw local
+  stand-ins named `⟳ DS publish · …`, which
+  `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
+- **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
+  7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
+  movements, notes, journal pages. Sets go with their workout; settings, movement names and Coach
+  drafts are not named. The account line names what the account holds; *it* for one item, else
+  *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
+  three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
+  `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
+  (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
+  iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
+  never reaches a room the question did not name; designer to rule.
 
 ### Coach on the client
 
@@ -918,8 +921,7 @@ these places.
 - **9z · One noun per thing (owner rulings, 2026-10-16 and 2026-10-22).** Every phone screen says
   *workout* (never *session*), *movement* (never *exercise*) and *The log* (tab and title); *session*
   stays in code and on the wire. Both pages draw this (iOS 05.9 *Edit movement*; Android pager
-  *Movement 3 of 5*, tab *The log*). Code still differs: iOS *Edit exercise* (`Components/GymRows.swift:118`,
-  `Log/MovementRecordScreen.swift:66`, `Components/RenameMovementSheet.swift`); Android *Log* (tab and
+  *Movement 3 of 5*, tab *The log*). Code still differs: Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,

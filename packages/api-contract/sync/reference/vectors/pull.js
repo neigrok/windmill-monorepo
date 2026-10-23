@@ -222,6 +222,15 @@ function hellos() {
     rows: { 'acct:B/probe': [] },
     spent: { 'acct:B/probe': [{ t: 'card', id: 'card0008', born: st(1500), lifeStamp: st(2600), seq: 1 }] },
   });
+  const editedCard = serverState({
+    scopes: { 'acct:B/probe': productScope('B') },
+    rows: {
+      'acct:B/probe': [
+        row({ t: 'card', id: 'card0005', life: ['alive', st(4000)], born: st(4000), f: { title: ['Five', st(4000)] }, seq: 1, rc: 4000, ru: 4000 }),
+        row({ t: 'card', id: 'card0004', life: ['alive', st(1000)], born: st(1000), f: { title: ['Four again', st(6000)] }, seq: 2, rc: 1000, ru: 6000 }),
+      ],
+    },
+  });
   return [
     helloed('an account holding an alive primary record holds records', { state: state(), account: 'A' }),
     helloed('a sent credential that resolves to no account answers 401', { state: state(), account: null, credential: 'unresolved' }),
@@ -231,6 +240,7 @@ function hellos() {
     helloed('a kept dead row of a primary type is not visible, so the account holds none', { state: deadBoard, account: 'B' }),
     helloed('an alive row of the governing primary type holds records', { state: aliveBoard, account: 'B' }),
     helloed('an account without a product scope holds none', { state: state(), account: 'B' }),
+    helloed('holdings name the last write: a card made first and edited since outranks a card made later', { state: editedCard, account: 'B' }),
     helloed('a hello with no credential is served as anonymous, as null, with no holdsRecords', { state: state(), account: null }),
   ];
 }

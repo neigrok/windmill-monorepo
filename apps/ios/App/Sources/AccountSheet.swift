@@ -5,7 +5,7 @@ import CryptoKit
 import SyncReplica
 
 struct AccountSheet: View {
-  enum SettingsDestination: Hashable { case notes, connectedLog }
+  enum SettingsDestination: Hashable { case notes, connectedLog, deleteAccount }
   @State var settingsPath: [SettingsDestination] = []
   @Bindable var model: AppModel
   @FocusState var focusedInput: AppModel.Sheet?
@@ -30,6 +30,8 @@ struct AccountSheet: View {
   var faint: Color { ShellPalette.inkFaint }
   var brand: Color { ShellPalette.brand }
   var offline: Bool { model.runtime?.engine.status.online == false }
+  // Only the email door says it also creates an account; the address Apple asks for opens one that exists.
+  var addressNote: String? { model.sheet == .appleAddress ? nil : "New here? This also creates your account." }
   var body: some View {
     NavigationStack(path: $settingsPath) {
       Group {
@@ -44,6 +46,7 @@ struct AccountSheet: View {
             switch destination {
             case .notes: NotesScreen(gym: model.gym)
             case .connectedLog: ConnectedLogScreen(gym: model.gym)
+            case .deleteAccount: DeleteAccountScreen(model: model)
             }
           }.environment(\.coachOpenAccount, { settingsPath = []; model.openYou() })
         }
@@ -65,7 +68,7 @@ struct AccountSheet: View {
             }
         }.presentationDetents([.large]).presentationDragIndicator(.hidden)
       }
-      .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil)
+      .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil || model.deletion == .deleting)
       .disabled(answeringSignOut)
       .animation(.easeOut(duration: reduceMotion ? 0.2 : 0.28), value: model.sheet)
       .sensoryFeedback(.success, trigger: model.authSuccess)
@@ -242,12 +245,14 @@ struct AccountSheet: View {
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
+  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b).
   var keep: some View {
-    let journal = model.selectedRoom == .journal || model.welcome
+    let returning = model.welcome, journal = model.selectedRoom == .journal
     return VStack(alignment: .leading, spacing: 14) {
-      head("icloud.and.arrow.up")
-      Text(journal ? "Keep your pages" : model.keepRoutines ? "Keep your routines" : "Keep your log").font(ShellType.title)
-      Text(journal ? "They live only on this phone. Sign in to back them up and open them on the web."
+      head(returning ? "person.crop.circle.badge.checkmark" : "icloud.and.arrow.up")
+      Text(returning ? "Pick up where you left off" : journal ? "Keep your pages" : model.keepRoutines ? "Keep your routines" : "Keep your log").font(ShellType.title)
+      Text(returning ? "Your pages and log come back to this phone."
+           : journal ? "They live only on this phone. Sign in to back them up and open them on the web."
            : model.keepRoutines ? "Your routines live only on this phone. Sign in to back them up and open them on the web. This Coach conversation and photo stay on this phone." : "It lives only on this phone. Sign in to back it up and open it on the web.").foregroundStyle(dim).lineSpacing(4)
       if model.canSignIn {
         authDoors.padding(.top, 10)
@@ -274,7 +279,7 @@ struct AccountSheet: View {
 
   @ViewBuilder var appleDoor: some View {
       if model.runtime?.settings.appleEnabled == true {
-        if model.runtime?.settings.fakeApple == true {
+        if model.runtime?.settings.modelServer == true {
           Button {
             model.performAuthentication {
               guard let auth = model.runtime?.auth else { model.error = "Sign-in is unavailable."; return }
@@ -327,13 +332,13 @@ struct AccountSheet: View {
         Button(model.runtime?.settings.appleEnabled == true ? "Use email instead" : "Continue with email") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
-      Text(model.sheet == .appleAddress ? "We'll send a code to confirm it's yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)
+      Text(model.sheet == .appleAddress ? "We’ll send a code to confirm it’s yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)
       TextField("Email address", text: Binding(get: { model.email }, set: { if !model.working { model.email = $0 } })).keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focusedInput, equals: model.sheet == .appleAddress ? .appleAddress : .address)
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
       Button { model.performAuthentication { await model.sendCode() } } label: {
         Text("Send code").frame(maxWidth: .infinity)
       }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
-      Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim)
+      if let addressNote { Text(addressNote).font(ShellType.meta).foregroundStyle(dim) }
       }
     }
   }
@@ -367,15 +372,23 @@ struct AccountSheet: View {
     }
   }
 
+  // You's sign-in doors: signed out, or a paused account signing in again, with no sign-in already finishing.
+  var youDoors: Bool { model.canSignIn && !model.signInPending && (model.account == nil || model.authPaused) }
+  // What the doors' section says under them: why they wait offline, or that a paused account signs in to itself.
+  var youFooter: String? {
+    guard youDoors else { return nil }
+    if offline { return "Sign-in needs a connection." }
+    return model.account != nil ? "Sign in to the same account. Your writing stays on this phone." : nil
+  }
+
   var you: some View {
     let signedIn = model.account != nil
-    let doors = model.canSignIn && !model.signInPending && (!signedIn || model.authPaused)
     let apple = model.signInMethods.first { $0.kind == "apple" }
     return List {
       if model.signInPending { signInPending }
       Section {
         identityRow
-        if doors {
+        if youDoors {
           appleDoor.listRowSeparator(.hidden)
           emailDoor.frame(maxWidth: .infinity, minHeight: 44).listRowSeparator(.hidden)
         }
@@ -386,8 +399,7 @@ struct AccountSheet: View {
           }.buttonStyle(.plain).accessibilityIdentifier("get-update")
         }
       } footer: {
-        if doors && offline { Text("Sign-in needs a connection.") }
-        else if doors && signedIn { Text("Sign in to the same account. Your writing stays on this phone.") }
+        if let youFooter { Text(youFooter) }
       }.listRowBackground(card)
       if !signedIn {
         let holdings = model.phoneHoldings
@@ -436,6 +448,9 @@ struct AccountSheet: View {
           Button(role: .destructive) { model.performAuthentication { await model.beginSignOut() } } label: {
             Text("Sign out").foregroundStyle(ShellPalette.danger)
           }.accessibilityIdentifier("sign-out")
+          Button(role: .destructive) { settingsPath.append(.deleteAccount) } label: {
+            Text("Delete account").foregroundStyle(ShellPalette.danger)
+          }.disabled(model.signOutSession != nil).accessibilityIdentifier("delete-account")
         } footer: {
           if let refusal = model.signOutRefusal { Text(refusal).foregroundStyle(ShellPalette.danger).accessibilityIdentifier("sign-out-error") }
         }.listRowBackground(card)
@@ -523,6 +538,7 @@ struct AccountConfirmation: UIViewControllerRepresentable {
       while let parent = host.parent { host = parent }
       guard host.presentedViewController == nil else { return }
       let alert = UIAlertController(title: model.adoptionAlertTitle, message: model.adoptionAlertMessage, preferredStyle: .alert)
+      let asked = model.pendingAdoptions
       dialog = alert
       func button(_ title: String, style: UIAlertAction.Style = .default, action: @escaping @MainActor () async -> Void) {
         alert.addAction(UIAlertAction(title: title, style: style) { [weak self, weak alert] _ in
@@ -542,11 +558,11 @@ struct AccountConfirmation: UIViewControllerRepresentable {
         button("OK") { model.identityTaken = false }
       } else if model.sheet == .discardAdoption {
         button("Cancel", style: .cancel) { model.choose("cancel", screen: "discard_adoption"); model.sheet = .adoption }
-        button("Discard", style: .destructive) { await model.adopt(.discard) }
+        button("Discard", style: .destructive) { await model.adopt(.discard, asked: asked) }
       } else {
-        button("Not now", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
-        button("Add") { await model.adopt(.add) }
-        button("Discard") { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
+        button("Add") { await model.adopt(.add, asked: asked) }
+        button("Discard", style: .destructive) { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
+        button("Cancel sign-in", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
       }
       host.present(alert, animated: true)
     }

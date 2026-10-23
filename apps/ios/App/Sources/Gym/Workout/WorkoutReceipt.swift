@@ -7,11 +7,12 @@ import SyncCore
 @Observable nonisolated final class WorkoutReceiptData {
   let session: Session
   let sets: [TrainingSet]
+  let suggestsKeep: Bool
   var review: WorkoutReview?
   var reviewFailed = false
   var readingReview = false
-  init(session: Session, sets: [TrainingSet]) {
-    self.session = session
+  init(session: Session, sets: [TrainingSet], suggestsKeep: Bool = false) {
+    self.session = session; self.suggestsKeep = suggestsKeep
     self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
   }
   var slight: Bool { sets.count < 4 }
@@ -141,7 +142,6 @@ struct WorkoutReceipt: View {
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
   @State var discard = false
-  @State var discardConfirmed = false
   // The receipt opens over the workout's detail at full height only, with no grabber, so the detail's tiles never show
   // beside its own; its title and subtitle head the page above the tiles (03.7).
   var body: some View {
@@ -156,6 +156,18 @@ struct WorkoutReceipt: View {
               .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue), ground: .own)
               .listRowInsets(EdgeInsets(top: RoomSpace.inset, leading: 0, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
+            if receipt.suggestsKeep {
+              Button {
+                gym.telemetry.event("gym_setup_step", properties: ["screen": "receipt", "action": "keep"])
+                gym.workout.handoff = .keep(receipt.session.id); dismiss()
+              } label: {
+                HStack(spacing: RoomSpace.related) {
+                  Image(systemName: "iphone").accessibilityHidden(true)
+                  Text("Only on this phone · ") + Text("Keep it").foregroundStyle(GymPalette.accent)
+                }.font(.footnote).foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget)
+              }.buttonStyle(.plain).accessibilityIdentifier("workout-keep")
+                .listRowInsets(EdgeInsets(top: 0, leading: RoomSpace.inset, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
+            }
           }.listRowSeparator(.hidden)
           if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
             Section {
@@ -183,23 +195,10 @@ struct WorkoutReceipt: View {
       }.modifier(GymPage()).toolbar(.hidden, for: .navigationBar)
         .reachBand(onSurface: true) { band }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.hidden)
-      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
-        Button("Discard workout", role: .destructive) {
-          discardConfirmed = true
-          guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
-          gym.workout.handoff = .detail(nil); dismiss()
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: { Text("This permanently removes the workout and its sets.") }
-      .onChange(of: discard) { _, shown in
-        if shown {
-          discardConfirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "discard", "state": "shown"])
-        } else if !discardConfirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "cancel", "outcome": "cancelled"])
-        }
+      .discardWorkoutAlert(gym, screen: "workout", isPresented: $discard, sets: receipt.sets.count) {
+        guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
+        gym.workout.handoff = .detail(nil); dismiss()
       }
-      .onChange(of: gym.account) { _, _ in discard = false }
       .task { await receipt.loadReview(gym) }
   }
 

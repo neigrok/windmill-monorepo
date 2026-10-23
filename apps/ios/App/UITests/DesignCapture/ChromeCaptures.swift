@@ -77,11 +77,7 @@ final class ChromeCaptures: DesignCapture {
     workout.buttons["workout-weight"].tap()
     workout.turnLoadWheel(to: "105")
     workout.buttons["workout-log"].tap(); workout.descendants(matching: .any)["workout-current-set"].swipeLeft()
-    let heavier = workout.alerts["Save 105 to Lower A?"]
-    XCTAssertTrue(heavier.waitForExistence(timeout: 5))
-    capture("gym-layout-heavier-dialog", look, workout)
-    heavier.buttons["Today only"].firstMatch.tap()
-    XCTAssertTrue(workout.buttons["workout-finish"].waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
+    XCTAssertTrue(workout.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
     XCTAssertTrue(workout.buttons["Done"].waitForExistence(timeout: 10))
     capture("gym-layout-receipt", look, workout)
     workout.swipeUp(velocity: .slow)
@@ -110,8 +106,12 @@ final class ChromeCaptures: DesignCapture {
     }
     XCTAssertTrue(routines.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
     capture("gym-layout-builder", look, routines)
-    XCTAssertTrue(routines.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder")).firstMatch.exists)
+    reach(routines.buttons["builder-movement-deadlift"], routines).press(forDuration: 1)
+    let moveUp = routines.buttons["Move up"]
+    XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5))
     capture("gym-layout-builder-reorder", look, routines)
+    moveUp.tap()
+    XCTAssertTrue(moveUp.waitForNonExistence(timeout: 5))
     reach(routines.buttons["builder-movement-bench-press"], routines).tap()
     XCTAssertTrue(routines.buttons["gym-target-set"].waitForExistence(timeout: 5))
     capture("gym-layout-targets", look, routines)
@@ -143,10 +143,10 @@ final class ChromeCaptures: DesignCapture {
     let discard = log.buttons["trash-swipe"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
     XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(log.buttons["Discard workout"].waitForExistence(timeout: 5))
+    XCTAssertTrue(log.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
     capture("gym-layout-log-discard-confirmation", look, log)
     log.cancelConfirmation()
-    XCTAssertTrue(log.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(log.alerts["Discard this workout?"].waitForNonExistence(timeout: 5))
 
     let coach = launchSignedInCoach(look)
     let question = coach.descendants(matching: .any)["coach-question"]

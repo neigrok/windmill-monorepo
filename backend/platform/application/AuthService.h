@@ -34,7 +34,9 @@ struct SessionView {
 };
 
 // Holds no policy of its own: lifetimes, limits, the name cap and the close grace live in
-// domain/Auth. Every session it revokes is told to `revocations` once its row is gone.
+// domain/Auth. Every session it revokes is told to `revocations` once its row is gone. A close is
+// revived by a sign-in within its grace; past it, the account is erased, by the sign-in that meets
+// it first or by eraseFinalCloses.
 class AuthService {
 public:
   AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
@@ -61,7 +63,8 @@ public:
     std::optional<SignedIn> signedIn;
     std::string forkSource;  // the pending fork the link carried; empty for a plain sign-in
   };
-  // A within-grace sign-in clears the close before the session is minted.
+  // A within-grace sign-in clears the close before the session is minted; past the grace the old
+  // account is erased and the sign-in starts a new one.
   Completion completeLink(const std::string& linkSecret, const SessionContext& ctx = {});
 
   // Resolves the newest live code row for the address; spends an attempt on a wrong guess, burns
@@ -142,12 +145,22 @@ public:
   // Drops every session and disconnects every tool. Returns the instant the account finally closes.
   UnixMs closeAccount(const UserId& userId);
 
+  // Erases accounts whose close is final, the earliest first and at most `limit`, each with every
+  // database row any product keys to it. Answers how many went; one that fails is reported and the
+  // rest still go.
+  int eraseFinalCloses(int limit);
+
 private:
   // Find-or-create by email, revive a within-grace close, mint and persist a session.
   SignedIn mintSessionFor(const Email& email, const std::string& name, const SessionContext& ctx,
                           UnixMs now);
-  // A within-grace close clears before any session is minted onto it.
-  User revived(User user);
+  // The account a sign-in opens: `found`, its within-grace close cleared first. nullopt when there
+  // is none, or when its close is final and it was erased here.
+  std::optional<User> standing(std::optional<User> found, UnixMs now);
+  // `found`, unless its close is final: then it is erased here and nothing is left to find.
+  std::optional<User> unlessFinal(std::optional<User> found, UnixMs now);
+  // `door` is who met the final close: a sign-in ("server-origin") or the sweep ("background").
+  bool erase(const UserId& userId, UnixMs now, const std::string& door);
   SignedIn mintSession(const User& user, const SessionContext& ctx, UnixMs now);
 
   AuthRepository& repo_;

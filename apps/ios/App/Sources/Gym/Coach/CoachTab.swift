@@ -91,7 +91,7 @@ struct CoachTab: View {
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
         if !CoachFixture.setup, !fixturePrepared { fixturePrepared = await CoachFixture.prepare(gym) }
-        history.resetOwner(); await coach.activate(); CoachFixture.seedDraftPhoto(coach)
+        history.resetOwner(); await coach.activate(); CoachFixture.seedDraft(coach)
         if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
         coach.noteOffline()
       }

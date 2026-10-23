@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 import DomainKit
 import GymDomain
 import JournalDomain
@@ -14,16 +15,15 @@ import SyncTesting
 @testable import Windmill
 
 @Suite @MainActor struct AppModelTests {
-  @Test func ordinaryBackupPreservesAnUnfinishedAdoptionAndItsAnswers() async throws {
+  @Test func ordinaryBackupPreservesAnUnfinishedAdoption() async throws {
     let (_, owner, model, localRoutine) = try await twoRooms()
-    await model.adopt(.add)
     let session = try #require(model.signInSession)
-    let decision = try #require(model.currentAdoption)
+    let pending = model.pendingAdoptions
     #expect(!model.syncStarted && !model.restoringSignIn && model.pendingSignIn == nil)
     await model.resumeBackup()
-    #expect(model.signInSession === session && model.currentAdoption == decision)
-    #expect(model.adoptionAnswers == ["journal": .add] && model.account == nil && model.sheet == .adoption)
-    await model.adopt(.add)
+    #expect(model.signInSession === session && model.pendingAdoptions == pending && pending.map(\.product) == ["journal", "gym"])
+    #expect(model.adoptionAnswers.isEmpty && model.account == nil && model.sheet == .adoption)
+    await model.adopt(.add, asked: model.pendingAdoptions)
     #expect(model.account == owner.account && model.sheet == nil && !model.editorReadOnly)
     #expect(model.journal.document.body == "Local page" && model.gym.routines.contains { $0.id == localRoutine })
   }
@@ -83,14 +83,14 @@ import SyncTesting
     return id
   }
 
-  func twoRooms() async throws -> (JournalModelTransport, AuthIdentity, AppModel, ID<Routine>) {
+  func twoRooms(telemetry: any Telemetry = NoopTelemetry()) async throws -> (JournalModelTransport, AuthIdentity, AppModel, ID<Routine>) {
     let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
     let owner = server.identity(email: "two-rooms@example.com")
     try await existing.signIn(owner)
     existing.journal.type("Account page"); existing.journal.done()
     _ = try routine(existing, name: "Account routine")
     await existing.beginSignOut(); await existing.finishSignOut(.keep)
-    let local = try LineageFlowTests().fixture(server)
+    let local = try LineageFlowTests().fixture(server, telemetry: telemetry)
     local.journal.type("Local page"); local.journal.done()
     let localRoutine = try routine(local, name: "Local routine")
     try await local.signIn(server.identity(email: "two-rooms@example.com"))
@@ -98,11 +98,11 @@ import SyncTesting
   }
 
   func workoutSettled(_ model: AppModel, _ id: ID<Session>) async throws {
-    for _ in 0..<200 {
+    for _ in 0..<1_000 {
       let settled = try model.runner.read(Gym.scope) { try $0.confirmed(Session.self, id) != nil }
       let pending = try model.runtime!.store.read { try $0.device().activeReplica.outbox.contains { $0.scope == Gym.scope } }
       if settled && !pending { model.refresh(); return }
-      try await Task.sleep(for: .milliseconds(50))
+      try await Task.sleep(for: .milliseconds(10))
     }
     throw AppFailure(message: "Gym writes did not settle")
   }
@@ -132,8 +132,8 @@ import SyncTesting
       if id == finished { _ = try local.runner.run(FinishSession(id: id, finishedAt: Instant(ms: start + 3_000))) }
     }
     try await local.signIn(server.identity(email: identity.email))
-    #expect(local.currentAdoption?.product == "gym")
-    await local.adopt(.add)
+    #expect(local.pendingAdoptions.map(\.product) == ["gym"])
+    await local.adopt(.add, asked: local.pendingAdoptions)
     await local.runtime?.engine.start()
     try await workoutSettled(local, finished)
     local.refresh()
@@ -166,34 +166,37 @@ import SyncTesting
     #expect(Set(reopened.gym.sets.map(\.id)) == Set(expected.map(\.id)))
     for set in expected { #expect(reopened.gym.sets.first { $0.id == set.id }?.fields == set.fields) }
     remote.runtime?.engine.foreground()
-    for _ in 0..<200 {
+    for _ in 0..<1_000 {
       remote.refresh()
       if Set(remote.gym.sets.map(\.id)) == Set(expected.map(\.id)) { break }
-      try await Task.sleep(for: .milliseconds(50))
+      try await Task.sleep(for: .milliseconds(10))
     }
     #expect(Set(remote.gym.sets.map(\.id)) == Set(expected.map(\.id)))
     #expect(try reopened.runtime!.store.read { try $0.device().activeReplica.outbox.allSatisfy { $0.scope != Gym.scope || !$0.isQueued } })
     remote.gym.stop(); reopened.gym.stop()
   }
 
-  @Test func sequentialDecisionsCountBothRoomsAndBindOnlyAfterLastAnswer() async throws {
-    let (_, owner, model, localRoutine) = try await twoRooms()
+  @Test func oneQuestionNamesBothRoomsAndOneAnswerBindsThem() async throws {
+    let recorder = TelemetryRecorder()
+    let (_, owner, model, localRoutine) = try await twoRooms(telemetry: recorder)
     #expect(model.account == nil && model.editorReadOnly && model.sheet == .adoption)
-    #expect(model.currentAdoption?.product == "journal" && model.currentAdoption?.counts["page"] == 1)
-    await model.adopt(.add)
-    #expect(model.account == nil && model.editorReadOnly && model.sheet == .adoption)
-    #expect(model.adoptionAnswers == ["journal": .add])
-    #expect(model.currentAdoption?.product == "gym" && model.currentAdoption?.counts == ["routine": 1])
-    await model.adopt(.discard)
+    #expect(model.pendingAdoptions.map(\.product) == ["journal", "gym"] && model.adoptionCounts[.journal]?[Page.type] == 1)
+    #expect(model.adoptionAlertTitle == "Add to your account?")
+    #expect(model.adoptionAlertMessage == "This phone has 1 routine and 1 journal page from before you signed in. Your account already has training and journal pages. Add them, or discard them from this phone.")
+    model.sheet = .discardAdoption
+    #expect(model.adoptionAlertTitle == "Discard 1 routine and 1 journal page?")
+    #expect(model.adoptionAlertMessage == "They are deleted from this phone. You can’t undo this.")
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account == owner.account && !model.editorReadOnly && model.sheet == nil)
     #expect(model.adoptionAnswers.isEmpty && model.preferences.data(forKey: "roomAdoption") == nil)
     #expect(!model.gym.routines.contains { $0.id == localRoutine })
-    #expect(try model.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:").members.count } == 1)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_adoption_answered" }.map(\.properties) } ==
+            [["room": "journal", "action": "discard"], ["room": "gym", "action": "discard"]])
   }
 
   @Test func partialAnswerSurvivesModelRelaunchWithoutAskingJournalAgain() async throws {
     let (_, owner, model, localRoutine) = try await twoRooms()
-    await model.adopt(.add)
+    try model.saveAdoptionAnswers(["journal": .add], session: try #require(model.signInSession))
     let restored = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
     await restored.start()
     defer {
@@ -201,27 +204,26 @@ import SyncTesting
     }
     #expect(restored.account == nil && restored.sheet == .adoption && restored.editorReadOnly)
     #expect(restored.adoptionAnswers == ["journal": .add])
-    #expect(restored.currentAdoption?.product == "gym" && restored.currentAdoption?.counts == ["routine": 1])
-    await restored.adopt(.add)
-    #expect(restored.account == owner.account && restored.sheet == nil && restored.currentAdoption == nil)
+    #expect(restored.pendingAdoptions.map(\.product) == ["gym"] && restored.adoptionCounts == [.gym: ["routine": 1]])
+    await restored.adopt(.add, asked: restored.pendingAdoptions)
+    #expect(restored.account == owner.account && restored.sheet == nil && restored.pendingAdoptions.isEmpty)
     #expect(restored.gym.routines.contains { $0.id == localRoutine })
   }
 
-  @Test func changedGymWorkRevokesItsAnswerAndPreservesJournalApproval() async throws {
+  @Test func changedGymWorkAsksAgainAboutTheGymAloneAndKeepsTheJournalAnswer() async throws {
     let (_, _, model, _) = try await twoRooms()
-    await model.adopt(.add)
     _ = try routine(model, name: "Another local routine")
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account == nil && model.sheet == .adoption && model.error != nil)
-    #expect(model.adoptionAnswers == ["journal": .add])
-    #expect(model.currentAdoption?.product == "gym" && model.currentAdoption?.counts == ["routine": 2])
+    #expect(model.adoptionAnswers == ["journal": .discard])
+    #expect(model.pendingAdoptions.map(\.product) == ["gym"] && model.adoptionCounts == [.gym: [Routine.type: 2]])
     #expect(model.gym.routines.count == 2)
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account != nil && model.sheet == nil)
     #expect(!model.gym.routines.contains { $0.name == "Local routine" || $0.name == "Another local routine" })
   }
 
-  @Test func gymAdoptionNamesWeighInsAndPreferencesInTheDiscardConfirmation() async throws {
+  @Test func gymAdoptionNamesWeighInsButNeverPreferencesOrMovementNames() async throws {
     let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
     try await existing.signIn(server.identity(email: "gym-counts@example.com"))
     _ = try routine(existing, name: "Account routine")
@@ -238,12 +240,12 @@ import SyncTesting
     _ = try #require(preferencesReceipt)
     _ = try #require(try model.runner.run(RenameExercise(ID("back-squat"), name: "Renamed squat")).receipt)
     try await model.signIn(server.identity(email: "gym-counts@example.com"))
-    #expect(model.account == nil && model.currentAdoption?.product == "gym")
-    #expect(model.currentAdoption?.counts == [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1])
-    #expect(model.adoptionSummary == "1 weigh-in · 1 movement name · 1 training preference")
+    #expect(model.account == nil && model.pendingAdoptions.map(\.product) == ["gym"])
+    #expect(model.adoptionCounts == [.gym: [WeighIn.type: 1, GymPreferences.type: 1, ExerciseName.type: 1]])
+    #expect(model.adoptionAlertMessage == "This phone has 1 weigh-in from before you signed in. Your account already has training. Add it, or discard it from this phone.")
     model.sheet = .discardAdoption
-    #expect(model.adoptionAlertTitle == "Discard 1 weigh-in · 1 movement name · 1 training preference?")
-    #expect(AppModel.summary([Page.type: 1, JournalState.type: 1]) == "1 page")
+    #expect(model.adoptionAlertTitle == "Discard 1 weigh-in?")
+    #expect(model.adoptionAlertMessage == "It is deleted from this phone. You can’t undo this.")
   }
 
   @Test func existingGymAloneSuppressesIntroductionAndWelcome() throws {
@@ -340,6 +342,7 @@ import SyncTesting
     model.sheet = .code; model.email = "update@example.com"; model.code = "482913"
     await model.verifyCode()
     #expect(model.signInPending && model.updateRequired && model.sheet == .you)
+    #expect(model.identityTitle == "Not signed in" && model.identityStatus == "Syncing paused · update Windmill")
     let pending = try #require(model.pendingSignIn)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == pending.identity.account)
     #expect(runtime.tokens.token(for: pending.identity.account) == pending.identity.token)
@@ -347,6 +350,7 @@ import SyncTesting
     #expect(model.sheet == .you)
     model.cancelSignIn()
     #expect(!model.signInPending && model.sheet == .you && model.error == nil && !model.editorReadOnly)
+    #expect(model.identityStatus == nil, "Signed out with nothing finishing, the identity has no status")
     // The engine heard the server's 426 at the sign-in hello and keeps it; only the sign-in's own flag is cleared.
     #expect(!model.updateRequiredAtSignIn && model.updateTrigger == "sync")
     #expect(model.preferences.string(forKey: "pendingAuthMethod") == nil)
@@ -376,8 +380,8 @@ import SyncTesting
             [["screen": "you", "action": "sign_out"], ["screen": "you", "action": "cancel"]])
     #expect([0, 1, 3].map(AppModel.signOutMessage(unsent:)) == [
       "Your pages and log stay in your account and leave this phone.",
-      "1 change hasn't been confirmed by your account yet. Keep it on this phone until you sign back in, or discard it from this phone. Everything else is in your account and leaves this phone.",
-      "3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back in, or discard them from this phone. Everything else is in your account and leaves this phone."])
+      "1 change hasn’t been confirmed by your account yet. Keep it on this phone until you sign in again, or discard it from this phone.",
+      "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone."])
   }
 
   // An answer the sign-out cannot carry out closes the question, keeps the account and says why under Sign out until it is tapped again.
@@ -458,10 +462,12 @@ import SyncTesting
     let residue = { ["accountName:", "accountEmail:"].map { model.preferences.string(forKey: $0 + identity.account) } }
     let steps = { [model.email, model.code, model.appleReceiptEmail, model.codeSentAt == nil ? "-" : "sent"] }
     model.email = "residue@example.com"; model.code = "482913"; model.codeSentAt = Date(); model.appleReceiptEmail = "residue@example.com"
+    model.preferences.set("first-workout", forKey: GymModel.keepReceipt)
     try await model.signIn(identity)
     #expect(residue() == ["Sam", "residue@example.com"])
     await model.beginSignOut(); await model.finishSignOut(choice)
     #expect(model.account == nil && residue() == [nil, nil])
+    #expect(model.preferences.string(forKey: GymModel.keepReceipt) == "first-workout", "the receipt's Keep it is offered once per phone")
     #expect(steps() == ["", "", "", "-"])
   }
 
@@ -509,7 +515,7 @@ import SyncTesting
     await model.runtime?.engine.start()
     for _ in 0..<100 where model.runtime?.engine.status.upgradeRequired != true { try await Task.sleep(for: .milliseconds(20)) }
     model.noticeUpdateRequired()
-    #expect(model.updateAlert && model.updateTrigger == "sync")
+    #expect(model.updateAlert && model.updateTrigger == "sync" && model.identityStatus == "Syncing paused · update Windmill")
     #expect(model.updateMessage == "Update Windmill to keep syncing. Your work is saved on this phone.")
     model.updateAlertPresented()
     model.getUpdate(); model.updateOpened(true); model.noticeUpdateRequired()
@@ -522,12 +528,14 @@ import SyncTesting
             [["state": "shown", "status": "426", "trigger": "sync"], ["action": "update", "trigger": "sync"], ["state": "shown", "status": "426", "trigger": "sync"]])
   }
 
+  // The choice is the window's interface style, so every room, sheet and keyboard answers it; System leaves it to the phone.
   @Test func appearanceIsChosenOnceAndRemembered() throws {
     let recorder = TelemetryRecorder()
     let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
     #expect(model.appearance == .system)
     model.chooseAppearance(.dark); model.chooseAppearance(.dark)
     #expect(try AppModel(runner: model.runner, preferences: model.preferences).appearance == .dark)
+    #expect(AppModel.Appearance.allCases.map(\.style) == [.light, .dark, .unspecified])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
   }
 

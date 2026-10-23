@@ -50,8 +50,6 @@ public struct RoutineEntry: ValueObject, Equatable {
                          "restSeconds": restSeconds.map(JSON.init)])
   }
 
-  public var isOpen: Bool { sets == nil }
-
   public func validated(at path: Path) throws(Violation) -> RoutineEntry {
     _ = try RoutineRules.exercise.apply(exerciseId.record.string ?? "", at: path + "exerciseId")
     return RoutineEntry(exerciseId: exerciseId, sets: try RoutineRules.targets.apply(sets, at: path + "sets"),
@@ -110,15 +108,10 @@ public typealias PlannedExercise = RoutineEntry
 public struct SessionPlan: Equatable, Sendable {
   public let routine: String
   public let entries: [RoutineEntry]
-  public var exercises: [PlannedExercise] { entries }
 
   public init(routine: String, entries: [RoutineEntry]) {
     self.routine = routine
     self.entries = entries
-  }
-
-  public init(routine: String, exercises: [PlannedExercise]) {
-    self.init(routine: routine, entries: exercises)
   }
 
   public init(_ routine: Routine) {
@@ -134,8 +127,6 @@ public struct SessionPlan: Equatable, Sendable {
                        entries: try fields.optionalList("entries", of: RoutineEntry.self) ?? [])
   }
 }
-
-public typealias PlanSnapshot = SessionPlan
 
 public enum RoutineRules {
   public static let name = TextSpec("routine.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)

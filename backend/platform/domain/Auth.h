@@ -22,13 +22,15 @@ struct Email {
 };
 std::optional<Email> parseEmail(const std::string& raw);
 
-// `deletedAt` is the soft-close stamp: set while the grace runs, cleared when a magic link signs
-// the account back in.
+// `deletedAt` is the close stamp and `closesAt` the instant that close turns final; a sign-in before
+// it clears both, and from it on the account is erased, row and all. A close older than `closesAt`
+// itself may carry none until a deploy gives it one, and is never final meanwhile.
 struct User {
   UserId id;
   Email email;
   std::string name;
   std::optional<UnixMs> deletedAt;
+  std::optional<UnixMs> closesAt;
 };
 std::string nameFromEmail(const Email& email);
 
@@ -63,8 +65,13 @@ inline UnixMs linkExpiry(UnixMs now) { return now + AuthPolicy::linkLifetimeMs; 
 inline UnixMs sessionExpiry(UnixMs now) { return now + AuthPolicy::sessionLifetimeMs; }
 inline bool sessionExpired(UnixMs expiresAt, UnixMs now) { return now >= expiresAt; }
 
-// The instant a close becomes final.
+// The instant a close made at `deletedAt` becomes final.
 inline UnixMs closesAt(UnixMs deletedAt) { return deletedAt + AuthPolicy::closeGraceMs; }
+
+// A final close revives no more: the account is erased, and the next sign-in starts a new one.
+inline bool closeIsFinal(const User& user, UnixMs now) {
+  return user.deletedAt && user.closesAt && now >= *user.closesAt;
+}
 
 // A last_seen of 0 means unset; the creation stamp stands in for it.
 inline UnixMs effectiveLastSeen(UnixMs lastSeenMs, UnixMs createdMs) {

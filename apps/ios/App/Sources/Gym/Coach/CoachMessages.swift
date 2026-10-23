@@ -1,7 +1,6 @@
 import SwiftUI
 import UIKit
 import DomainKit
-import GymDomain
 
 // Who speaks a bubble: the lifter's are accent and stand at the trailing edge, Coach's are card and stand at the leading.
 nonisolated enum CoachSpeaker { case lifter, coach }

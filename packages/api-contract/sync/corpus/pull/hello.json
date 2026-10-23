@@ -240,6 +240,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
+          },
+          "holdings": {
+            "probe": {
+              "count": 3,
+              "lastWrittenAt": 5000
+            }
           }
         }
       }
@@ -794,6 +800,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "lastWrittenAt": null
+            }
           }
         }
       }
@@ -852,6 +864,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "lastWrittenAt": null
+            }
           }
         }
       }
@@ -915,6 +933,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "lastWrittenAt": null
+            }
           }
         }
       }
@@ -978,6 +1002,12 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": true
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "lastWrittenAt": null
+            }
           }
         }
       }
@@ -1224,6 +1254,107 @@
           "minSchema": 2,
           "holdsRecords": {
             "probe": false
+          },
+          "holdings": {
+            "probe": {
+              "count": 0,
+              "lastWrittenAt": null
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "holdings name the last write: a card made first and edited since outranks a card made later",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "1b181caac929058cf7f64f2b8bc35ba84ba68515b018236905df43037e12ecf9"
+          }
+        },
+        "rows": {
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Four again",
+                  "6000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 1000,
+              "ru": 6000
+            },
+            {
+              "t": "card",
+              "id": "card0005",
+              "life": [
+                "alive",
+                "4000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "4000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Five",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "B",
+          "schema": 2,
+          "minSchema": 2,
+          "holdsRecords": {
+            "probe": true
+          },
+          "holdings": {
+            "probe": {
+              "count": 2,
+              "lastWrittenAt": 6000
+            }
           }
         }
       }

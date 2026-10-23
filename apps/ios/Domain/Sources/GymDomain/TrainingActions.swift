@@ -71,11 +71,6 @@ public struct TrainingState: Sendable {
     catalogue = try Catalogue(read, in: .stored); moment = read.moment
   }
   public func session(_ id: ID<Session>) -> Session? { stored.first { $0.id == id } ?? drawn.first { $0.id == id } }
-  public func overlap(start: Instant, finish: Instant, excluding id: ID<Session>) -> Session? {
-    stored.filter { $0.id != id && SessionRules.crosses(start, finish, other: $0) }.sorted {
-      $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt
-    }.first
-  }
 }
 
 public struct StartSession: Action {

@@ -15,14 +15,19 @@ release workflow reads it from the repository variable `IOS_APPLE_SIGN_IN_ENABLE
 Release builds use automatic development signing with your team; App Store export signs for distribution. Enable Sign in with Apple for this bundle ID.
 An actual Apple ID on a device is required for the production Apple flow.
 
-Debug simulator launches support `-model-server` for the full engine model transport. It supplies
-email code `482913` and a fake Apple identity; these authentication shortcuts are absent in Release.
+Debug simulator launches support `-model-server` for the full engine model transport. It answers inside the app,
+so the engine counts it online whatever the simulator's network path reports. It supplies email code `482913` and a fake Apple identity; these authentication shortcuts are absent in Release.
 An unbound fake Apple identity returns a memory-only ticket before any account or session exists.
 `-apple-fixture linking` uses a relay address; `offline` loses connectivity after Apple authorization;
 `expired` advances that ticket past its 15-minute lifetime; `taken` binds Apple to an account with
 data; `empty` binds it to an empty account whose door can move. Boards `23-start`, `23a`–`23d` and
 `24a`–`24d` seed the existing email account through the real engine. `23-start` opens Keep for full
-interaction; `23c` holds the linked receipt for screenshot inspection. A new address plus a valid
+interaction; `23c` holds the linked receipt for screenshot inspection. `-adoption-workouts N` and
+`-adoption-pages N` set what the phone holds before `23d`'s sign-in (one page by default; workouts give
+the account training too), so it asks the sign-in question of 23d–23j. Board `16e` leaves three
+changes the server never confirms, with You open on Sign out. Board `02-returning` seeds an account of 142 journal
+pages and 38 workouts, the gym last written to, which Apple opens from Where to start?; `02-returning-held` serves small pull
+pages, answers four signed-in pulls a second apart and holds the rest, so *Bringing it back* climbs, then stands part-way. A new address plus a valid
 code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
 the first authenticated engine hello after an Apple ticket and freezes the authentication backoff
 clock, so Try again exercises manual recovery without racing automatic recovery or reusing the
@@ -32,23 +37,18 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
-`-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
-backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
-server run supplies `-code-file <absolute path>` with development codes in its isolated database.
-Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
+`-scenario <name>` isolates a launch's storage under that name. Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads; against a backend, `TEST_RUNNER_WM_GYM_E2E_SENTRY` names the Sentry DSN those runs report to. These simulator-only fixtures use the real engine and native UI.
 Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
 A separate client seeds the model server through real Gym actions; atomic snapshots
 preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
 value exposes confirmed rows to the same assertions used by REST verification. Missing, corrupt or
 unwritable snapshots fail the fixture. With a backend configured, the test uses REST verification.
-The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
-writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
-for local replay verification; the final report contains no credential.
 
 `AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
 subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay
-local until adoption. Occupied accounts ask Journal then Gym with counts by kind; Add/Discard
-answers persist against the exact counted work and complete together. Changed work asks again.
+local until adoption. Occupied accounts ask one question naming both rooms' work by kind
+(`AdoptionQuestion`); one Add/Discard answers every room, persists against the exact counted work and
+completes together. Changed work asks again about the room that changed.
 Sign-out flushes both rooms, releases held deletes, and keeps dormant work only for its account.
 
 Routine-removal reviews commit their proposal snapshot beside the Apply command in the replica's
@@ -144,18 +144,20 @@ adoption and are removed on explicit Discard. An authenticated bind returning in
 permits account Coach; other authentication, transport and accounting failures block dispatch until
 recovered. Work from a previous account/replica cannot publish into the active seat.
 
-The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
+The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action. Signed
+out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
+tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
+suggests it and no later receipt does, signed out or in.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
-dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
-opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation (a
+dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, the
+receipt's Keep it opens it there with Keep over it, Share with Coach sends *Check my last workout.* in a new conversation (a
 handoff belongs to the account it was asked under, so the sign-in it waited for keeps it), and
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
-the workout's movement order, selected movement, hidden status and deviation offer — the offered
-entry and the routine's revision, which Save guards; an offer the routine has moved past is rebuilt
-against the current routine. A set logged before the clock passes the latest set completes 1 ms
+the workout's movement order, selected movement and hidden status. Lifting above the plan only
+logs the set; a routine's targets change in the routine editor or through Coach's proposals. A set logged before the clock passes the latest set completes 1 ms
 after it, so every surface draws sets in logged order. Before the engine changes the replica,
 `GymBinding` saves the rack's pending value, ends the Live Activity and snapshots each signed-out workout for recovery; a failed
 snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's
@@ -166,7 +168,11 @@ opens the workout. The App Shortcuts *Log set* and *Start workout* (`WorkoutActi
 in the app too: *Log set* without an offer logs the rack's and answers with it, and *Start workout* opens Routines at its
 root, or the logger while a workout is open. The workout control (Control Center, the Lock Screen, the Action button)
 draws only what `WorkoutActivityController` last wrote to the App Group `group.works.windmill.app`: *Log set* with
-the rack's numbers, *Open workout*, or *Start workout*. Parity with Android is tracked in `PARITY.md`.
+the rack's numbers, *Open workout*, or *Start workout*. The Home Screen's quick actions (`Sources/QuickActions.swift`)
+are *Write tonight*, which opens tonight's page with the keyboard up, and *Start ‹routine›* for the routine last trained
+(else the first in Routines; none without a routine), which starts its workout, or *Open workout* while one runs. The
+items follow the gym as it changes; one that launches Windmill waits for the first screen and opens past the
+introduction. Parity with Android is tracked in `PARITY.md`.
 
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
@@ -186,12 +192,13 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `update-required` board signs in against a model server that answers 426 (and keeps answering it across
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
-`GymAnonymousCoachFlowTests` runs light, dark and accessible large text in the standard Coach UI
-shard through the deterministic installation/Coach transport fixture and real local engine. Set
-`TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for the same UI flow against an isolated backend and
-`TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
+`GymAnonymousCoachFlowTests` runs one flow in the standard Coach UI through the deterministic installation/Coach
+transport fixture and real local engine: signed out, Coach drafts routines and the lifter applies them, Keep your
+routines signs in, and the same conversation goes on. Set `TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for its signed-out
+half against an isolated backend and `TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
 `TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
-to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP. Without those variables, the
+to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP, in a fresh keychain
+service each run unless `TEST_RUNNER_WM_ANONYMOUS_COACH_KEYCHAIN` names one. Without those variables, the
 photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
@@ -210,24 +217,27 @@ first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) 
 proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
 with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
 with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
-one routine, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
+one routine, `-coach-choices` has the setup fixture ask two things before it drafts, `-coach-kept-draft` keeps a signed-out
+start's draft on the phone beside the account's own, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
 change to *Full body B*,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
-Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
+Debug simulator offline launches seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
 or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
-`-offline-fixture no-network`, `unreachable` or `stalled`. The HTTP loader injects a missing network,
-a refused connection or a request that never answers; only `no-network` also removes the path.
-The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
-with no loader or connectivity substitution.
-These opted-in offline fixtures use the fixed `BoardClock` across seeding, cold launch and resume.
-Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
-and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
+`-offline-fixture no-network`, `unreachable` or `stalled` (`OfflineFixture.Mode`). Each mode's HTTP loader
+injects a missing network, a refused connection or a request that never answers; only `no-network` also
+removes the path. `-offline-fixture black-hole` with `https://192.0.2.1` uses the ordinary HTTP transport and
+path monitor, with no loader or connectivity substitution. These fixtures use the fixed `BoardClock` across
+seeding, cold launch and resume. `StartupRecoveryTests` runs every mode, signed in and out, through
+`OfflineFixture.runtime`: journal writing, a routine and its workout, room switching, resume and a cold launch
+stay on the phone, and You keeps or lacks the account. `OfflineFlowTests` drives the black-hole launch signed
+in and a resume during a stalled hello signed out through the native UI. No host networking changes or real
+credentials are used.
 
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
 protected Application Support directory. `JournalDomain` owns writing and first-run state.
-The writing tests use `-journal-layout-test` on Debug simulators to read selection, focus and text,
+The journal geometry and echo flows use `-journal-layout-test` on Debug simulators to read selection, focus and text,
 ink visibility, and UIKit's caret and last-line rectangles in window coordinates, through the editor's accessibility value.
 
 A journal day exists only while its body contains writing. Whitespace and ratings alone do not count;
@@ -240,12 +250,16 @@ The 44 pt Write seat at bottom-right returns from history to today and opens wri
 becomes Done writing above the keyboard. It hides during read-only transitions and account sheets.
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
-introduction on Where to start?.
+introduction on Where to start?. Its quiet Sign in opens the account sheet as *Pick up where you left off* (02b). After that
+sign-in, *Bringing it back* (02c) counts each room's visible records as they land against the totals the account's
+hello tallies by the same rule (`SignInRestore`), and opens the room the person last wrote to once its own records are
+in; the other keeps arriving behind it. A lost connection or session opens that room at once, and so do ten seconds
+in which nothing lands (a hung pull, a server backing off).
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
 stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
 ink notes belong to the first Journal open.
-`journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
+`journal-empty-later` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
 `journal` screen, without page content. When the local day changes at
@@ -260,7 +274,13 @@ local editing. Account requests can be dismissed with Back, Close or Done; cance
 late navigation, and a pending sign-in or adoption can be deferred while the phone remains usable. Adoption and
 sign-out flush dirty writing and recount before completion. A paused session plainly shows that backup
 is paused and offers email or Apple sign-in to the same account; reauthentication retains its replica.
-Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
+Delete account, from You signed in, confirms with the account's email, flushes and holds every
+room and door as sign-out does, sends `DELETE /v1/me` naming the signed-in user id, then
+discards this phone's copy and the account's Coach drafts; 27d waits for that discard, and Done returns
+to You signed out. From the server's close, or a 401 after the confirm (which lands on You signed out),
+the phone owes the discard: preferences keep `accountDiscardOwed`, the rooms stay held, and Try again or
+the next launch, before any room opens, settles it. The `-delete-fixture held` and `offline` launch
+arguments hold or refuse that request on the model server. Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
 
@@ -269,7 +289,7 @@ Offline boundary observations:
 | Boundary | UI behavior and limit |
 |---|---|
 | Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
-| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
+| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Cancel sign-in. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
 | Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
 | Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity; a reply that is not a stream and not finished is asked again after 1, 2, 4, 8 and then every 16 seconds. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |
@@ -299,16 +319,12 @@ show no echo surface. Requests are cancelled and old replies discarded across ac
 changes. Verdict failures roll back without a retry queue; opened signals never delay source
 navigation. HTTP caching is disabled.
 
-`journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
-journal actions with a deterministic echoes service; `journal-echoes-first` carries the first-echo flag.
-`journal-echoes-AX3-RM` covers larger type and the source-scroll Reduce Motion path, including Back to
-tonight. `journal-echoes-unicode` and `journal-echoes-unicode-decomposed` apply real source edits:
-reading the first source changes only its normalization; Useful, reaching the second passage, removes
-the first quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
-UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
-remains read-only. `JournalEchoFlowTests`
-belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
-`WM_IOS_ECHO_SHOTS` is supplied.
+The `journal-echoes` board fixture uses real journal actions with a deterministic echoes service;
+`journal-echoes-first` carries the first-echo flag. `journal-echoes-AX3-RM` covers larger type and the
+source-scroll Reduce Motion path, including Back to tonight. The source quote sits after 14 paragraphs;
+the echo flows use the Debug simulator's UIKit quote rectangle to check that the exact passage reaches the
+visible canvas centre and remains read-only. `JournalEchoFlowTests` walks the light flow; the larger-type,
+Reduce Motion and canvas-end checks run in the opt-in `NightlyFlowTests`.
 Journal's principles are in `docs/design/brand-foundations.md`; Figma's phone echo
 boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
 
@@ -353,10 +369,18 @@ run without UIKit animations: an open iOS 26 menu never lets them settle, so XCT
 after every menu tap.
 
 The Live Activity UI test waits for published Island content and presses SpringBoard's Activity
-container to expand it. To capture its
-minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose Play QA tone button
-changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
-The test finishes the workout and verifies that the Activity disappears after logging from the Island.
+container to expand it. To check its minimal layout too, `WM_ACTIVITY_RENDER_MEDIA` can point to a local
+audio page whose Play QA tone button changes to QA tone is playing after playback starts. Audio must
+continue while Safari is backgrounded. The test finishes the workout and verifies that the Activity
+disappears after logging from the Island.
+
+`NightlyFlowTests` holds the slow end-to-end checks a daily run is enough for: the workout control in Control
+Center, the Home Screen's quick actions from the background and from a cold start, the journal's Write seat
+geometry (Reduce Motion and the largest text included), echoes at accessible text, and the introduction at the
+accessibility sizes. `GymNightlyFlowTests` holds the gym's layout checks at the screen's edges: the log's end clear
+of the tab bar and the accessory, and the conversation's end clear of the composer, after a pushed screen pops or a bounce brings the bar back. XCTest
+skips both classes unless the test runner sees `WM_NIGHTLY_UI=1` (`TEST_RUNNER_WM_NIGHTLY_UI=1` when invoking
+xcodebuild); [iOS nightly](../../../.github/workflows/ios-nightly.yml) runs them once a day.
 
 ## Design captures
 
@@ -389,6 +413,9 @@ opens on Routines. `launchSignedInCoach` launches with `-coach-fixture`, which s
 workout and a waiting proposal once Coach opens; `-gym-log-fixture` seeds a routine, 35 workouts and
 weigh-ins once The log opens. The boards outside the app (04.x, `WorkoutCaptures`) set the simulator's appearance for each look, leave a
 workout running with its Live Activity, and add the workout control to Control Center when the simulator lacks it.
+A launch from the Home Screen carries no arguments, so a UI test that needs one launches first with `-keep-for-relaunch`:
+every later launch without arguments takes that launch's arguments with its board restored, until a launch with other
+arguments drops them (`RelaunchArguments`, simulator debug builds only).
 
 Run one capture test, or a whole area by its class, then export it. From this directory, with your own simulator
 and a fresh result path:

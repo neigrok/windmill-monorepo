@@ -25,7 +25,8 @@ class ModelServer(val registry: Registry, val rules: ServerRules = NoServerRules
     private fun failure(status: Int, error: String, account: String?, now: Long) = Reply(status, base(account, now).with("error" to Json.of(error)))
     fun hello(credential: Credential, at: Long): Reply {
         val now = now(at); if (credential.fails) return failure(401, "unauthenticated", null, now)
-        return Reply(200, base(credential.account, now).with("schema" to Json.of(registry.version), "minSchema" to Json.of(registry.minVersion), "holdsRecords" to credential.account?.let { feed.holdsRecords(it, tables) }))
+        return Reply(200, base(credential.account, now).with("schema" to Json.of(registry.version), "minSchema" to Json.of(registry.minVersion), "holdsRecords" to credential.account?.let { feed.holdsRecords(it, tables) },
+            "holdings" to credential.account?.let { feed.holdings(it, tables) }))
     }
     fun push(request: Json, credential: Credential, at: Long, faults: PushFaults = PushFaults()) = push(request.jcs.encodeToByteArray(), credential, at, faults)
     fun push(received: ByteArray, credential: Credential, at: Long, faults: PushFaults = PushFaults()): Reply {

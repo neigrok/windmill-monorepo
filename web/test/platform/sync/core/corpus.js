@@ -14,6 +14,7 @@ import { between, compareMembers, dropKey } from '../../../../../packages/api-co
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { INTENT_MACHINE, REPLICA_MACHINE, transition } from '../../../../../packages/api-contract/sync/reference/core/machines.js';
 import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../../../../packages/api-contract/sync/reference/core/merge.js';
+import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { registry } from '../oracle-adapters/fixtures.js';
 import { doubleOf } from '../oracle-adapters/jcs.js';
@@ -73,6 +74,14 @@ const RUNNERS = {
   'join/born.json': ({ a, b }) => ({ join: orNull(joinBorn(orAbsent(a), orAbsent(b))) }),
   'join/record.json': ({ type, a, b }) => ({ join: joinRecord(registry.type(type), a, b) }),
   'derive/slug.json': ({ label, fallback, taken }) => ({ id: derive(label, fallback, new Set(taken)) }),
+  'registry/refusals.json': ({ registry: document }) => {
+    try {
+      new Registry(document);
+      return { admitted: true };
+    } catch {
+      return { admitted: false };
+    }
+  },
   'identity/seeded.json': (input) => (input.op === 'parse'
     ? { parsed: parseSeeded(input.id) }
     : attempt(() => ({ id: seededId(registry.type(input.type), input.seed, input.n) }))),

@@ -323,6 +323,10 @@
           "description": "A record of this type in the product scope makes the account hold records in the product (§9.2 holdsRecords).",
           "const": true
         },
+        "headline": {
+          "description": "The primary type of a product scope an account's records in the product are tallied by: hello's holdings count its visible records and name the last write among them (§9.2). At most one per product.",
+          "const": true
+        },
         "mint": {
           "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Every minted id matches idPattern.",
           "type": "object",

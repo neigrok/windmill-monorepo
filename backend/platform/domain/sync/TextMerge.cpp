@@ -171,6 +171,10 @@ std::optional<std::string> baseTextOf(std::string_view head, Seq headRev, const 
 
 }
 
+std::span<const std::pair<char32_t, char32_t>> whitespace() {
+  return kWhitespace;
+}
+
 bool isBlank(std::string_view text) {
   for (std::size_t at = 0; at < text.size();) {
     const CodePoint point = codePointAt(text, at);

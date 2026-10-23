@@ -180,6 +180,7 @@ struct FeedTests {
     var server = ModelServer(registry: registry, rules: ProbeServerRules(), state: state)
     #expect(server.hello(credential: .account("A"), at: 1_000).body == [
       "serverTime": 1_000, "epoch": "ep-1", "as": "A", "schema": 1, "minSchema": 1, "holdsRecords": ["p": .bool(visible)],
+      "holdings": [:],
     ])
   }
 

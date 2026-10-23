@@ -74,10 +74,10 @@ enum RecoveryFixture {
     }
 
     // A copy of `count` sets three minutes apart from `start`; `finish` nil leaves it open.
-    func copy(_ id: String, routine: Routine?, exercise: String, start: Int64, finish: Int64?, count: Int,
+    func copy(_ id: String, routine: Routine, exercise: String, start: Int64, finish: Int64?, count: Int,
               late: Bool = false) -> SignedOutWorkout {
       let session = Session(id: ID(RecordID(id)), startedAt: Instant(ms: start), finishedAt: finish.map(Instant.init(ms:)),
-                            closedBy: finish == nil ? nil : "finish", routineId: routine?.id, plan: routine.map(SessionPlan.init))
+                            closedBy: finish == nil ? nil : "finish", routineId: routine.id, plan: SessionPlan(routine))
       return SignedOutWorkout(session: session, sets: (0..<count).map { index -> TrainingSet in
         let last = index == count - 1
         let completed: Int64 = start + Int64(index + 1) * 180_000 + (late && last ? Self.day : 0)
@@ -120,24 +120,24 @@ enum RecoveryFixture {
       gym.refresh(); gym.workout.reconcile()
       guard gym.hideWorkout() else { throw AppFailure(message: "the account workout stayed in front") }
       await runtime.engine.flushOnLeave()
-      try await refused(copy("fixture-id-taken", routine: nil, exercise: "barbell-row", start: now - 6 * Self.day, finish: now - 6 * Self.day + Self.hour, count: 4), .idTaken, runtime: runtime, server: server)
-      try await refused(copy("fixture-parent-dead", routine: nil, exercise: "overhead-press", start: now - 7 * Self.day, finish: now - 7 * Self.day + Self.hour, count: 3), .parentDead, runtime: runtime, server: server)
+      try await refused(copy("fixture-id-taken", routine: legs, exercise: "barbell-row", start: now - 6 * Self.day, finish: now - 6 * Self.day + Self.hour, count: 4), .idTaken, runtime: runtime, server: server)
+      try await refused(copy("fixture-parent-dead", routine: pull, exercise: "overhead-press", start: now - 7 * Self.day, finish: now - 7 * Self.day + Self.hour, count: 3), .parentDead, runtime: runtime, server: server)
       try run(Save(workouts: [
-        copy("fixture-missing-movement", routine: nil, exercise: "fixture-retired-movement", start: now - 5 * Self.day, finish: now - 5 * Self.day + Self.hour, count: 3),
+        copy("fixture-missing-movement", routine: push, exercise: "fixture-retired-movement", start: now - 5 * Self.day, finish: now - 5 * Self.day + Self.hour, count: 3),
         copy("fixture-open-copy", routine: pull, exercise: "barbell-row", start: now - 3 * Self.hour, finish: nil, count: 3),
         copy("fixture-overlap", routine: push, exercise: "bench-press", start: now - 2 * Self.day + 1_800_000, finish: now - 2 * Self.day + 2 * Self.hour, count: 12),
         copy("fixture-late-set", routine: legs, exercise: "back-squat", start: now - 4 * Self.day, finish: now - 4 * Self.day + Self.hour, count: 4, late: true),
-        copy("fixture-many-sets", routine: nil, exercise: "bench-press", start: now - 8 * Self.day, finish: now - 8 * Self.day + 3 * Self.hour, count: 201),
-        copy("fixture-unsent", routine: nil, exercise: "romanian-deadlift", start: now - 9 * Self.day, finish: now - 9 * Self.day + Self.hour, count: 3),
+        copy("fixture-many-sets", routine: push, exercise: "bench-press", start: now - 8 * Self.day, finish: now - 8 * Self.day + 3 * Self.hour, count: 201),
+        copy("fixture-unsent", routine: legs, exercise: "romanian-deadlift", start: now - 9 * Self.day, finish: now - 9 * Self.day + Self.hour, count: 3),
       ]))
       await runtime.engine.flushOnLeave()
       try await settled(gym) { $0.workoutsToReview.count == 9 }
     }
 
     func paused(runtime: AppRuntime, token: SessionToken) async throws {
-      let push = try routine("Push A", "bench-press")
+      let push = try routine("Push A", "bench-press"), legs = try routine("Legs", "back-squat")
       let sending = copy("fixture-sending", routine: push, exercise: "bench-press", start: now - Self.day, finish: now - Self.day + Self.hour, count: 6)
-      try run(Save(workouts: [sending, copy("fixture-unsent", routine: nil, exercise: "back-squat", start: now - 2 * Self.day, finish: now - 2 * Self.day + Self.hour, count: 3)]))
+      try run(Save(workouts: [sending, copy("fixture-unsent", routine: legs, exercise: "back-squat", start: now - 2 * Self.day, finish: now - 2 * Self.day + Self.hour, count: 3)]))
       try await runtime.auth.logout(token: token)
       try run(AdoptWorkout(sending.session.id, mode: .keep))
       await runtime.engine.flushOnLeave()

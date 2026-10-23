@@ -12,6 +12,7 @@ struct WorkoutInspectScreen: View {
   @State var fixing: WorkoutFix?
   @State var message: String?
   @State var discard = false
+  @State var discardSets = false
   @State var discardConfirmed = false
   @Environment(\.dismiss) var dismiss
 
@@ -34,13 +35,19 @@ struct WorkoutInspectScreen: View {
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "recovery-more") {
               if recovery.canFix, recovery.primary != .fix { Button("Fix workout", systemImage: "pencil") { fix() } }
-              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { discard = true }
+              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) {
+                if recovery.retry == .restoreSets { discardSets = true } else { discard = true }
+              }
                 .accessibilityIdentifier("recovery-discard")
             }
           }
         }
       }
-      .onChange(of: discard) { _, shown in
+      .discardWorkoutAlert(gym, screen: "on_this_phone", isPresented: $discard, sets: workout?.sets.count ?? 0) {
+        if gym.discardWorkout(id) { dismiss() }
+      }
+      // A landed workout's stranded sets are not drawn yet: they keep their own question.
+      .onChange(of: discardSets) { _, shown in
         if shown {
           discardConfirmed = false
           gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "discard", "state": "shown"])
@@ -48,8 +55,8 @@ struct WorkoutInspectScreen: View {
           gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "cancel", "outcome": "cancelled"])
         }
       }
-      .onChange(of: gym.account) { _, _ in discard = false }
-      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
+      .onChange(of: gym.account) { _, _ in discardSets = false }
+      .confirmationDialog("Discard this workout?", isPresented: $discardSets, titleVisibility: .visible) {
         Button(recovery?.discardTitle ?? "Discard workout", role: .destructive) {
           discardConfirmed = true
           if gym.discardWorkout(id) { dismiss() }
@@ -102,8 +109,8 @@ struct WorkoutInspectScreen: View {
       GymTransient(gym: gym, message: message ?? gym.addingLine(id) ?? (waiting ? gym.recoveryWait : nil),
                    dismiss: message == nil ? nil : { message = nil },
                    errorIdentifier: "recovery-error")
-      if let recovery, let primary {
-        ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary, recovery) }
+      if let primary {
+        ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary) }
       }
     }
   }
@@ -117,7 +124,7 @@ struct WorkoutInspectScreen: View {
 
   // A queued Keep or Retry clears what the band last said: the workout on its way is the model's line until the log
   // confirms it, and a refusal that comes back says its reason.
-  func act(_ primary: WorkoutRecovery.Primary, _ recovery: WorkoutRecovery) {
+  func act(_ primary: WorkoutRecovery.Primary) {
     switch primary {
     case .fix: fix()
     case .keep: if gym.keepAdoptedWorkout(id) { message = nil }

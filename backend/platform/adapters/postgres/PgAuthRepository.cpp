@@ -6,21 +6,25 @@
 
 namespace wm {
 
-PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint)
-    : pool_(std::move(pool)), footprint_(std::move(footprint)) {}
+PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint,
+                                   std::vector<AccountErasure> productErasures)
+    : pool_(std::move(pool)), footprint_(std::move(footprint)), productErasures_(std::move(productErasures)) {}
 
 namespace {
-// A users row → User, carrying the soft-close stamp (null deleted_at → a live account).
+// A users row → User, carrying the close and the instant it turns final (null deleted_at → a live account).
 // `const auto&` for the row: pqxx names the row type differently across versions (row vs row_ref),
 // and deducing it keeps the build portable macOS↔Linux.
+std::optional<UnixMs> msOf(const auto& field) {
+  if (field.is_null()) return std::nullopt;
+  return static_cast<UnixMs>(field.template as<long long>());
+}
 User userFrom(const auto& row) {
-  std::optional<UnixMs> deletedAt;
-  if (!row["deleted_ms"].is_null()) deletedAt = static_cast<UnixMs>(row["deleted_ms"].template as<long long>());
   return User{UserId{row["id"].template as<std::string>()}, Email{row["email"].template as<std::string>()},
-              row["name"].template as<std::string>(), deletedAt};
+              row["name"].template as<std::string>(), msOf(row["deleted_ms"]), msOf(row["closes_ms"])};
 }
 const char* kUserColumns =
-    "id::text, email::text, name, (extract(epoch from deleted_at) * 1000)::bigint AS deleted_ms";
+    "id::text, email::text, name, (extract(epoch from deleted_at) * 1000)::bigint AS deleted_ms, "
+    "(extract(epoch from closes_at) * 1000)::bigint AS closes_ms";
 // The token_hash of every row a DELETE … RETURNING token_hash dropped.
 std::vector<std::string> digestsOf(const pqxx::result& rows) {
   std::vector<std::string> digests;
@@ -50,8 +54,10 @@ std::optional<User> PgAuthRepository::findUserById(const UserId& id) {
 User PgAuthRepository::createUser(const Email& email, const std::string& name) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // Two first sign-ins at one address race here; the loser answers the account the winner made.
   pqxx::result rows = txn.exec_params(
       "INSERT INTO users (id, email, name) VALUES (gen_random_uuid(), $1, $2) "
+      "ON CONFLICT (email) DO UPDATE SET email = users.email "
       "RETURNING " + std::string(kUserColumns),
       email.value, name);
   txn.commit();
@@ -65,20 +71,24 @@ void PgAuthRepository::updateName(const UserId& userId, const std::string& name)
   txn.commit();
 }
 
-void PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now) {
+void PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("UPDATE users SET deleted_at = to_timestamp($2::double precision / 1000.0) "
-                  "WHERE id = $1::uuid",
-                  userId.str(), static_cast<long long>(now));
+  txn.exec_params("UPDATE users SET deleted_at = to_timestamp($2::double precision / 1000.0), "
+                  "closes_at = to_timestamp($3::double precision / 1000.0) WHERE id = $1::uuid",
+                  userId.str(), static_cast<long long>(now), static_cast<long long>(closesAt));
   txn.commit();
 }
 
-void PgAuthRepository::reviveUser(const UserId& userId) {
+bool PgAuthRepository::reviveUser(const UserId& userId, UnixMs now) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("UPDATE users SET deleted_at = NULL WHERE id = $1::uuid", userId.str());
+  const pqxx::result revived = txn.exec_params(
+      "UPDATE users SET deleted_at = NULL, closes_at = NULL WHERE id = $1::uuid AND deleted_at IS NOT NULL "
+      "AND (closes_at IS NULL OR closes_at > to_timestamp($2::double precision / 1000.0))",
+      userId.str(), static_cast<long long>(now));
   txn.commit();
+  return revived.affected_rows() != 0;
 }
 
 std::vector<std::string> PgAuthRepository::deleteUser(const UserId& userId) {
@@ -91,6 +101,62 @@ std::vector<std::string> PgAuthRepository::deleteUser(const UserId& userId) {
   txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
   txn.commit();
   return digestsOf(sessions);
+}
+
+std::vector<UserId> PgAuthRepository::finalClosedAccounts(UnixMs now, int limit) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec_params(
+      "SELECT id::text FROM users WHERE deleted_at IS NOT NULL "
+      "AND closes_at <= to_timestamp($1::double precision / 1000.0) ORDER BY closes_at, id LIMIT $2",
+      static_cast<long long>(now), limit);
+  std::vector<UserId> accounts;
+  for (const auto& row : rows) accounts.push_back(UserId{row[0].template as<std::string>()});
+  return accounts;
+}
+
+bool PgAuthRepository::eraseAccount(const UserId& userId, UnixMs now) {
+  std::vector<std::vector<std::string>> erasedKeys(productErasures_.size());
+  {
+    PgLease conn{*pool_};
+    pqxx::work txn{*conn};
+    // The lock re-reads the row once it is held, so a revive that committed first leaves nothing to erase.
+    const pqxx::result locked = txn.exec_params(
+        "SELECT email::text FROM users WHERE id = $1::uuid AND deleted_at IS NOT NULL "
+        "AND closes_at <= to_timestamp($2::double precision / 1000.0) FOR UPDATE",
+        userId.str(), static_cast<long long>(now));
+    if (locked.empty()) return false;
+    const std::string email = locked[0][0].as<std::string>();
+
+    for (std::size_t product = 0; product < productErasures_.size(); ++product)
+      for (const std::string& statement : productErasures_[product].statements) {
+        const pqxx::result erased = txn.exec_params(statement, userId.str());
+        if (erased.columns() == 0) continue;
+        for (const auto& row : erased) erasedKeys[product].push_back(row[0].template as<std::string>());
+      }
+    // The engine's rows reference the account without a cascade; its spent records hang off its scopes.
+    txn.exec_params("DELETE FROM sync_spent WHERE scope_key IN (SELECT key FROM sync_scopes WHERE owner = $1::uuid)",
+                    userId.str());
+    txn.exec_params("DELETE FROM sync_scopes WHERE owner = $1::uuid", userId.str());
+    txn.exec_params("DELETE FROM sync_replicas WHERE account = $1::uuid", userId.str());
+    txn.exec_params("DELETE FROM sync_requests WHERE account = $1::uuid", userId.str());
+    txn.exec_params("DELETE FROM org_members WHERE user_id = $1::uuid", userId.str());
+    // What the person did and said, and the errors they met. Feedback left signed out is theirs by the
+    // address typed into it; an open account's own feedback stays, whatever address it typed.
+    txn.exec_params("DELETE FROM events WHERE user_id = $1::uuid", userId.str());
+    txn.exec_params("DELETE FROM feedback WHERE user_id = $1::uuid OR (user_id IS NULL AND lower(email) = lower($2))",
+                    userId.str(), email);
+    txn.exec_params("DELETE FROM server_errors WHERE actor = $1::uuid", userId.str());
+    // Billing's mirror, by account and by the address that bridges to a Paddle customer.
+    txn.exec_params("DELETE FROM paddle_subscriptions WHERE user_id = $1::uuid", userId.str());
+    txn.exec_params("DELETE FROM paddle_customers WHERE email = $1", email);
+    // Everything else references the row and cascades with it: sessions, doors, keys, grants, reminders, journal, gym.
+    txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
+    txn.commit();
+  }
+  for (std::size_t product = 0; product < productErasures_.size(); ++product)
+    if (productErasures_[product].committed) productErasures_[product].committed(erasedKeys[product]);
+  return true;
 }
 
 std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const std::string& subject) {
@@ -142,7 +208,7 @@ std::optional<User> PgAuthRepository::signInApple(const ProviderIdentity& identi
       "WHERE user_identities.user_id=excluded.user_id RETURNING user_id",
       identity.subject, userId.str(), identity.email.value, trustOf(identity) == AddressTrust::appOnly);
   if (bound.empty()) return std::nullopt;
-  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), userId.str());
+  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL, closes_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), userId.str());
   txn.exec_params("INSERT INTO sessions(token_hash,user_id,expires_ms,user_agent,ip,last_seen_ms) VALUES($1,$2::uuid,$3,$4,$5,$6)",
       sessionDigest, userId.str(), static_cast<long long>(expiresAt), userAgent, ip, static_cast<long long>(now));
   txn.commit();
@@ -269,7 +335,7 @@ AppleTicketResult PgAuthRepository::redeemAppleTicket(const std::string& digest,
     if (linking) txn.commit();
     return {AppleTicketOutcome::identityTaken, std::nullopt};
   }
-  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), account);
+  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL, closes_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), account);
   if (users.empty()) return {AppleTicketOutcome::noAccount, std::nullopt};
   txn.exec_params("INSERT INTO sessions(token_hash,user_id,expires_ms,user_agent,ip,last_seen_ms) VALUES($1,$2::uuid,$3,$4,$5,$6)",
       sessionDigest, account, static_cast<long long>(expiresAt), userAgent, ip, static_cast<long long>(now));

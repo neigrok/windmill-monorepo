@@ -4,7 +4,6 @@ import DomainKit
 import DomainKitTesting
 import GymDomain
 import SyncCore
-import SyncTesting
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct SetEditorTests {

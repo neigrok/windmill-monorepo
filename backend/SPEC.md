@@ -315,6 +315,9 @@ Rules:
 - Tree deletion writes `deleted_at` and retires its room. Reads exclude deleted rows and save never
   clears the tombstone. Recreating the caller's own deleted ID returns `Creation::retired`, so a
   client can stop replaying it instead of reminting an ID.
+- An erased account's trees are deleted outright, with their rows, ops and everyone's progress on
+  them (`backend/AUTH.md`), and their rooms are retired once that commits. A save lands only on a row
+  that stands: a room whose tree row is gone saves nothing and lands no op rows.
 - Progress upserts compare numeric `(stamp_ms, stamp_counter)` strictly; a tie loses without
   consulting the actor. Clears retain a stamped `none` row.
 - The og-image and og-video rows carry no FK to `trees`: they are addressed by tree id and read

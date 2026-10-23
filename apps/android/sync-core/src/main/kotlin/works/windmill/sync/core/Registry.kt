@@ -224,11 +224,13 @@ class TypeDef(val json: Json) {
     val seeded = json["seeded"]
     val mint = json["mint"]?.let(::Mint)
     val cap = json["cap"]?.long(1)
+    // §9.2 holdings: the one primary type a product's records are tallied by.
+    val headline = json["headline"]?.bool() == true
     val hasBorn: Boolean get() = identity == "minted" || identity == "derived"
     init {
         require(name.matches(Regex("[a-z][A-Za-z0-9]*")))
         require(scope == "tree" || scope == "overlay" || scope.matches(Regex("product:[a-z][a-z0-9]*")))
-        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary"))
+        json.expectKeys(listOf("type", "scope", "identity", "life", "origins", "fields"), listOf("idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows", "governs", "cap", "visibleWhen", "primary", "headline"))
         require(identity in listOf("minted", "derived", "keyed", "singleton"))
         val origins = json.member("origins").distinctStrings()
         require("replica" in origins && origins.all { it in listOf("replica", "server") })
@@ -236,6 +238,7 @@ class TypeDef(val json: Json) {
         json["deadRows"]?.let { require(it.str() in listOf("keep", "spent")) }
         json["singletonId"]?.str()
         json["primary"]?.let { require(it.bool()) }
+        json["headline"]?.let { require(it.bool() && json["primary"] != null && scope.startsWith("product:")) }
         json["derive"]?.let {
             it.expectKeys(listOf("fallback"))
             require(it.member("fallback").str().matches(Regex("[a-z0-9]+(-[a-z0-9]+)*")))
@@ -300,6 +303,7 @@ class Registry(input: Json) {
     init {
         require(name.matches(Regex("[a-z][a-z0-9-]*")))
         require(types.map { it.name }.distinct().size == types.size)
+        require(types.filter { it.headline }.map { it.scope }.let { scopes -> scopes.distinct().size == scopes.size })
         require(commands.map { it.member("name").str() }.distinct().size == commands.size)
         val codes = mutableSetOf<String>()
         for ((name, product) in products) {

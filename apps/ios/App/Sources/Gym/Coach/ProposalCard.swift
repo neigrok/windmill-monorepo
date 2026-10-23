@@ -52,16 +52,23 @@ struct ProposalCard: View {
     if pending { return gym.coachDecisionUnreached ? "No connection. " + CoachCopy.notApplied + "." : nil }
     return gym.coachApplyRefusal(proposal)
   }
-  // Try again once the Apply failed, or once it has waited past the card's wait with the cause unknown.
-  var retryable: Bool { failure != nil || (pending && stalled && !retrying) }
-  // Apply keeps its place through the wait: the act in flight until the log answers, then Try again.
-  var primaryTitle: String {
-    if retryable { return "Try again" }
-    switch waiting {
-    case nil, .reject: return removal ? "Remove routine" : "Apply"
-    case .apply: return removal ? "Removing…" : "Applying…"
-    case .unreadable: return "Sending…"
+  // Apply and Reject as the card draws them. Apply keeps its place through the wait: the act in flight until the log
+  // answers, then Try again once the Apply failed, or once it has waited past the card's wait with the cause unknown.
+  struct Decision: Equatable {
+    let title: String
+    let retries: Bool
+    let applies: Bool
+    let rejects: Bool
+  }
+  func decision(stalled: Bool) -> Decision {
+    let retries = failure != nil || (pending && stalled && !retrying)
+    let title = switch waiting {
+    case _ where retries: "Try again"
+    case nil, .reject: removal ? "Remove routine" : "Apply"
+    case .apply: removal ? "Removing…" : "Applying…"
+    case .unreadable: "Sending…"
     }
+    return Decision(title: title, retries: retries, applies: retries || decidable, rejects: decidable)
   }
 
   var body: some View {
@@ -160,7 +167,8 @@ struct ProposalCard: View {
   }
 
   func buttons(_ proposal: Proposal) -> some View {
-    VStack(spacing: 10) {
+    let decision = decision(stalled: stalled)
+    return VStack(spacing: 10) {
       // Try again resends a decision still queued, never writing it twice, or decides again after the log refused it.
       Button(role: removal ? .destructive : nil) {
         guard pending else { _ = gym.coachDecideProposal(proposal, apply: true); return }
@@ -170,13 +178,13 @@ struct ProposalCard: View {
         Task { await resend.value; retrying = false }
       } label: {
         HStack(spacing: RoomSpace.related) {
-          if pending && !retryable { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
-          Text(primaryTitle)
+          if pending && !decision.retries { ProgressView().tint(removal ? GymPalette.destructive : GymPalette.onAccent) }
+          Text(decision.title)
         }
-      }.buttonStyle(ChangeCardButtonStyle(prominent: !removal)).disabled(!retryable && !decidable)
+      }.buttonStyle(ChangeCardButtonStyle(prominent: !removal)).disabled(!decision.applies)
         .accessibilityIdentifier("coach-apply-proposal")
       Button("Reject") { _ = gym.coachDecideProposal(proposal, apply: false) }
-        .buttonStyle(ChangeCardButtonStyle()).disabled(!decidable).accessibilityIdentifier("coach-reject-proposal")
+        .buttonStyle(ChangeCardButtonStyle()).disabled(!decision.rejects).accessibilityIdentifier("coach-reject-proposal")
     }.padding(.top, 16)
   }
 

@@ -4,7 +4,6 @@ import UIKit
 import DomainKit
 import GymDomain
 import SyncCore
-import SyncSchema
 import SyncEngine
 @testable import Windmill
 
@@ -257,7 +256,7 @@ extension CoachTests {
     await model.gym.workout.finish()
     let expected = coach.saved.onboarding
     try await model.signIn(AuthIdentity(account: account, token: SessionToken(token), name: "Fixture"))
-    for _ in 0..<4 where model.signInPending { await model.adopt(.add) }
+    for _ in 0..<4 where model.signInPending { await model.adopt(.add, asked: model.pendingAdoptions) }
     model.refresh()
     #expect(model.account == account && !model.signInPending)
     #expect(runtime.installation.resolvedAccount == account)

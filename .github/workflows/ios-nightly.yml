@@ -1,0 +1,56 @@
+name: iOS nightly
+
+# What pull requests leave out, once a day: the opt-in nightly UI classes (layout at the edges of the screen, Control
+# Center, quick actions, journal seat geometry, the largest text sizes) and a full replay fuzz of the sync engine over
+# a new window of seeds each day.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-nightly
+  cancel-in-progress: false
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  TZ: UTC
+
+jobs:
+  # 128 seeds of 300 actions, the size that holds the coverage floor, starting where yesterday's window ended. A failure
+  # names its seed; `SYNC_SEED=<seed> SYNC_SIM_SEEDS=1` replays it.
+  sync-fuzz:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/ios/Sync
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 26.3
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
+      - name: Run the replay fuzz
+        env:
+          SYNC_SIM_SEEDS: "128"
+        run: |
+          day=$(( $(date -u +%s) / 86400 ))
+          export SYNC_SEED=$(( day * 128 + 1 ))
+          echo "First seed: $SYNC_SEED"
+          swift test --explicit-target-dependency-import-check error \
+            --filter SimulatorTests/everySeedHoldsEveryInvariantAfterQuiescence
+
+  ui-nightly:
+    name: App UI tests (nightly)
+    uses: ./.github/workflows/ios-ui-tests.yml
+    with:
+      shard: nightly
+      timeout: 75
+      nightly: true
+      tests: >-
+        -only-testing:WindmillUITests/NightlyFlowTests
+        -only-testing:WindmillUITests/GymNightlyFlowTests

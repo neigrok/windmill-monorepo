@@ -51,6 +51,12 @@ internal class Feed(val registry: Registry, val limits: ServerLimits) {
             type.json["primary"]?.bool() == true && visible(row, type)
         })
     })
+    // §9.2 holdings[p], for each product with a headline type: its visible rows in acct:A/p and the greatest ru among them, the last write.
+    fun holdings(account: String, state: ServerState) = Json.Obj(registry.products.keys.mapNotNull { product ->
+        val headline = registry.types.firstOrNull { it.headline && it.scope == "product:$product" } ?: return@mapNotNull null
+        val rows = state.rows["acct:$account/$product"].orEmpty().values.map(::Row).filter { it.key.type == headline.name && visible(it, headline) }
+        product to Json.objectOf("count" to Json.of(rows.size), "lastWrittenAt" to (rows.mapNotNull { it.ru }.maxOrNull()?.let { Json.of(it) } ?: Json.Null))
+    })
     private fun visible(row: Row, type: TypeDef): Boolean = when {
         type.identity == "singleton" -> true; type.life -> row.isAlive
         type.json["visibleWhen"] == null -> row.lattice.fields.isNotEmpty() || row.texts.isNotEmpty()

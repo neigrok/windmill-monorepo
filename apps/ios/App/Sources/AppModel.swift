@@ -54,7 +54,7 @@ final class AppModel {
   var authBusyIndicator = false
   var working = false
   var accountTransition = false
-  var signingOut = false { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
+  var signingOut = false { didSet { holdGym() } }
   var syncStarted = false
   // Routines at its root, asked for from outside the app; GymRoom answers it.
   var routinesRequested = false
@@ -63,7 +63,18 @@ final class AppModel {
   var resumingBackup = false
   var authGeneration = 0
   var signInSession: SignInSession?
-  var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
+  // Returning on a new phone (02c): the account's rooms arriving after a sign-in from Where to start?.
+  var restore: SignInRestore?
+  // Delete account's page, from You (27a–27g).
+  var deletion: AccountDeletion?
+  var signOutSession: SignOutSession? { didSet { holdGym() } }
+  var discardOwed: OwedDiscard? {
+    didSet {
+      if let discardOwed, let data = try? JSONEncoder().encode(discardOwed) { preferences.set(data, forKey: OwedDiscard.key) }
+      else { preferences.removeObject(forKey: OwedDiscard.key) }
+      holdGym()
+    }
+  }
   // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
@@ -116,11 +127,13 @@ final class AppModel {
   init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), authRetryNow: @escaping () -> Date = Date.init) throws {
     self.runner = runner; self.preferences = preferences; self.runtime = runtime; self.telemetry = telemetry; self.authRetryNow = authRetryNow
     journal = try JournalModel(runner: runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
-    gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry)
+    gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
     selectedRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     welcome = preferences.string(forKey: "lastRoom") == nil && (!preferences.bool(forKey: "journalOpened") || preferences.bool(forKey: "roomWelcomeRequired"))
     keepDismissed = preferences.bool(forKey: "keepDismissed")
     appearance = Appearance(preferences: preferences)
+    discardOwed = OwedDiscard(preferences)
+    holdGym()
     journal.app = self
     refresh()
     if let account {
@@ -141,7 +154,9 @@ final class AppModel {
   // A sign-in the server has verified but the engine has not finished: You carries it until it lands or is given up.
   var signInPending: Bool { pendingSignIn != nil || signInSession?.isComplete == false }
   var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
-  var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && signInPending) || signOutSession != nil }
+  var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && signInPending) || signOutSession != nil || discardOwed != nil }
+  // The gym takes no change while an account leaves this phone: a sign-out held or running, or a closed account's discard.
+  func holdGym() { gym.accountChanging = signingOut || signOutSession != nil || discardOwed != nil }
   var appleSessionToken: SessionToken? {
     guard !authPaused, let account else { return nil }
     return runtime?.tokens.token(for: account)
@@ -208,9 +223,6 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var adoptionCount: Int { adoptionCounts["page"] ?? 0 }
-  var adoptionIsSingle: Bool { adoptionCounts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
-
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
 
@@ -257,7 +269,38 @@ final class AppModel {
   }
 
   func refresh() {
-    poll(); gym.refresh()
+    poll(); gym.refresh(); advanceRestore()
+  }
+
+  // 02c: SignInRestore's rule opens the room and ends the arrival; a phone out of reach opens it at once and stops.
+  func advanceRestore() {
+    guard var restore else { return }
+    let now = Date(), reachable = runtime?.engine.status.online != false && !authPaused && !updateRequired
+    restore.land(Dictionary(uniqueKeysWithValues: restore.rooms.map { ($0, restoreLanded($0)) }),
+                 arrived: Set(restore.rooms.filter(restoreArrived)), at: now)
+    if case .open(let room) = restore.step(at: now, reachable: reachable) {
+      restore.opened = true
+      selectedRoom = room; preferences.set(false, forKey: "roomWelcomeRequired")
+      telemetry.event("sign_in_restore", properties: ["stage": "room_opened"])
+    }
+    if !reachable { self.restore = nil; return }
+    if restore.step(at: now, reachable: reachable) == .complete {
+      self.restore = nil
+      telemetry.event("sign_in_restore", properties: ["stage": "complete"])
+      return
+    }
+    if self.restore != restore { self.restore = restore }
+  }
+
+  // A room's visible headline records in the account's replica, as the hello tallies them, read past the room's own view.
+  func restoreLanded(_ room: Room) -> Int {
+    let landed = try? room == .journal
+      ? runner.read(Journal.scope) { try $0.repository(Page.self).all(in: .drawn).count }
+      : runner.read(Gym.scope) { try $0.repository(Session.self).all(in: .drawn).count }
+    return landed ?? 0
+  }
+  func restoreArrived(_ room: Room) -> Bool {
+    (try? runner.read(room == .journal ? Journal.scope : Gym.scope) { read in try !read.isAnonymous && read.firstPullComplete() }) ?? false
   }
 
   // The clock re-reads the journal, the account and the connection once the store moves; the gym observes its own records.
@@ -323,6 +366,7 @@ final class AppModel {
           try? await Task.sleep(for: .milliseconds(350))
           guard let self, !Task.isCancelled else { return }
           if self.pollDue { self.poll() }
+          self.advanceRestore()
           self.noticeUpdateRequired()
           self.expireAppleTicket()
           if !self.signInDeferred, !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= self.authRetryNow() {
@@ -356,7 +400,7 @@ final class AppModel {
 
   func resumeBackup() async {
     guard !Task.isCancelled, !syncStarted, !resumingBackup, !accountTransition, !working,
-          signOutSession == nil, signInSession?.isComplete != false || restoringSignIn,
+          signOutSession == nil, discardOwed == nil, signInSession?.isComplete != false || restoringSignIn,
           pendingSignIn == nil || restoringSignIn, let runtime else { return }
     if let recoveryDue, recoveryDue > ContinuousClock.now { return }
     let generation = authGeneration
@@ -373,7 +417,7 @@ final class AppModel {
       let resumed = restoring ? try await runtime.engine.resumeSignIn() : nil
       try Task.checkCancellation()
       setSignInSession(resumed)
-      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed) }
+      if let resumed, !resumed.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(resumed) }
       if resumed?.isComplete != false, let active = try runtime.account(), active == preferences.string(forKey: "coachAdoptionAccount") {
         try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard"))
       }
@@ -454,7 +498,7 @@ final class AppModel {
     return true
   }
 
-  func showAuthError(_ failure: any Error, appleFlow: Bool = false) {
+  func showAuthError(_ failure: any Error) {
     if (failure as? EngineError) == .upgradeRequired || (failure as? AuthRefusal)?.code == AuthRefusal.updateRequired.code {
       requireUpdateAtSignIn(); return
     }
@@ -685,7 +729,7 @@ final class AppModel {
     do {
       try? await runtime.installation.bind(account: identity.account, token: identity.token)
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
-      if let session = signInSession, !session.isComplete, currentAdoption == nil { try await completeAdoption(session) }
+      if let session = signInSession, !session.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(session) }
       if signInSession?.isComplete == true { try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard")) }
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
@@ -693,9 +737,16 @@ final class AppModel {
     if presentResult { presentSignInResult() }
   }
 
+  // A sign-in from Where to start? on a phone holding nothing brings the account's rooms back (02c).
   func presentSignInResult() {
-    if signInSession?.isComplete == false { sheet = .adoption }
-    else { sheet = nil; welcome = false; refresh() }
+    if signInSession?.isComplete == false { sheet = .adoption; return }
+    let returning = welcome
+    sheet = nil; welcome = false; refresh()
+    guard returning, let account, let restore = SignInRestore(method: pendingSignIn?.method ?? "email",
+                                                               holdings: runtime?.engine.holdings(of: account) ?? [:], at: Date()) else { return }
+    self.restore = restore
+    telemetry.event("sign_in_restore", properties: ["stage": "started"])
+    advanceRestore()
   }
 
   func beginSignOut() async {
@@ -737,14 +788,7 @@ final class AppModel {
       _ = try await session.finish(choice)
       runtime.updateTelemetryIdentity()
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
-      signOutSession = nil; signInSession = nil
-      preferences.removeObject(forKey: "accountName:\(session.account)"); preferences.removeObject(forKey: "accountEmail:\(session.account)")
-      journal.liftInk()
-      sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
-      appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
-      email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
-      keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
-      preferences.set(false, forKey: "keepDismissed")
+      sheet = nil; forgetAccount(session.account)
       Task { await runtime.revokeSignedOutSessions(force: true) }
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
@@ -753,6 +797,18 @@ final class AppModel {
       reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }
       await refuseSignOut(Self.signOutFailed)
     }
+  }
+
+  // The account has left this phone: none of it stays in the model or preferences, and Where to start? opens again.
+  func forgetAccount(_ account: String) {
+    signOutSession = nil; signInSession = nil; restore = nil
+    preferences.removeObject(forKey: "accountName:\(account)"); preferences.removeObject(forKey: "accountEmail:\(account)")
+    journal.liftInk()
+    self.account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
+    appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
+    email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
+    keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
+    preferences.set(false, forKey: "keepDismissed")
   }
 
   // A sign-out that could not begin, or an answer it could not carry out, ends the held sign-out and leaves the account
@@ -792,7 +848,7 @@ final class AppModel {
         telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "linked"])
       }
     }
-    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error, appleFlow: !attaching) }
+    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error) }
   }
 
   func cancelSignOut() async {
@@ -803,12 +859,12 @@ final class AppModel {
   // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
   static let signOutFailed = "Couldn't sign out. Try again."
 
-  // Sign out asks one question, and when the account has not confirmed some changes it says how many.
+  // Sign out asks one question, and when the account has not confirmed some changes it says how many (16c, 16e).
   static func signOutMessage(unsent count: Int) -> String {
     if count == 0 { return "Your pages and log stay in your account and leave this phone." }
-    let changes = count == 1 ? "1 change hasn't" : "\(count) changes haven't"
+    let changes = count == 1 ? "1 change hasn’t" : "\(count) changes haven’t"
     let them = count == 1 ? "it" : "them"
-    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign back in, or discard \(them) from this phone. Everything else is in your account and leaves this phone."
+    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign in again, or discard \(them) from this phone."
   }
 
   struct SavedAdoption: Codable {
@@ -818,42 +874,31 @@ final class AppModel {
     let answers: [String: String]
   }
 
-  var currentAdoption: SignedOutDecision? {
+  // Every room's decision still unanswered; one answer settles them all.
+  var pendingAdoptions: [SignedOutDecision] {
     let decisions = signInSession?.decisions ?? []
-    return Room.allCases.compactMap { room in decisions.first { $0.product == room.rawValue && adoptionAnswers[$0.product] == nil } }.first
+    return Room.allCases.compactMap { room in decisions.first { $0.product == room.rawValue && adoptionAnswers[$0.product] == nil } }
   }
 
-  var adoptionSummary: String {
-    Self.summary(adoptionCounts)
+  // What each pending room holds on this phone, by type; the journal's pages are its written days.
+  var adoptionCounts: [Room: [String: Int]] {
+    pendingAdoptions.reduce(into: [:]) { counts, decision in
+      guard let room = Room(rawValue: decision.product) else { return }
+      counts[room] = decision.counts
+      if room == .journal, let journalAdoptionPages { counts[room]?[Page.type] = journalAdoptionPages }
+    }
   }
 
-  var adoptionCounts: [String: Int] {
-    guard let decision = currentAdoption else { return [:] }
-    var counts = decision.counts
-    if decision.product == "journal", let journalAdoptionPages { counts["page"] = journalAdoptionPages }
-    return counts
-  }
+  var adoptionQuestion: AdoptionQuestion { AdoptionQuestion(counts: adoptionCounts) }
 
-  static func summary(_ counts: [String: Int]) -> String {
-    let kinds = [(Page.type, "page", "pages"), (Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
-      (TrainingSet.type, "set", "sets"), (WeighIn.type, "weigh-in", "weigh-ins"), (Note.type, "note", "notes"),
-      (Exercise.type, "movement", "movements"), (ExerciseName.type, "movement name", "movement names"),
-      (GymPreferences.type, "training preference", "training preferences"), (Proposal.type, "proposal", "proposals")]
-    return kinds.compactMap { kind in
-      guard let count = counts[kind.0], count > 0 else { return nil }
-      return "\(count) \(count == 1 ? kind.1 : kind.2)"
-    }.joined(separator: " · ")
+  var adoptionAlertTitle: String {
+    if identityTaken { return "Apple ID already in use" }
+    return sheet == .discardAdoption ? adoptionQuestion.discardTitle : adoptionQuestion.title
   }
-
-  var adoptionAlertTitle: String { identityTaken ? "Apple ID already in use" : sheet == .discardAdoption ? "Discard \(adoptionSummary)?" : "Add to your account?" }
   var adoptionAlertMessage: String {
     if identityTaken { return AuthRefusal.identityTaken.message }
-    if sheet == .discardAdoption { return "They never reached an account, and deleting them from this phone can't be undone." }
-    guard let decision = currentAdoption else { return "Your choices are kept. Try Add again to finish signing in." }
-    let room = decision.product == "journal" ? "Journal" : "Gym"
-    let accountData = decision.product == "journal" ? "pages" : "training"
-    let one = adoptionIsSingle
-    return "\(room) · \(adoptionSummary) from before you signed in \(one ? "is" : "are") only on this phone, and your account already has \(accountData). Add \(one ? "it" : "them"), or discard \(one ? "it" : "them") for good."
+    if pendingAdoptions.isEmpty { return "Your choices are kept. Try Add again to finish signing in." }
+    return sheet == .discardAdoption ? adoptionQuestion.discardMessage : adoptionQuestion.message
   }
 
   func setSignInSession(_ session: SignInSession?) {
@@ -918,10 +963,11 @@ final class AppModel {
     signInSession = nil; clearAdoptionAnswers(); sheet = nil; welcome = false; refresh()
   }
 
-  func adopt(_ answer: LineageAnswer) async {
+  // `asked` is what the question named when it was shown: the answer applies to those decisions only.
+  func adopt(_ answer: LineageAnswer, asked: [SignedOutDecision]) async {
     guard !accountTransition, var session = signInSession else { return }
     let generation = authGeneration
-    if currentAdoption == nil {
+    if pendingAdoptions.isEmpty {
       accountTransition = true
       defer { if authGeneration == generation { accountTransition = false } }
       guard flushRooms() else { return }
@@ -930,7 +976,7 @@ final class AppModel {
       catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Try again." } }
       return
     }
-    guard let decision = currentAdoption else { return }
+    let pending = asked
     accountTransition = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false } }
     do {
@@ -940,16 +986,16 @@ final class AppModel {
           try Task.checkCancellation()
           session = recounted; setSignInSession(recounted)
         }
-        if !session.isComplete, currentAdoption == nil { try await completeAdoption(session); return }
+        if !session.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(session); return }
         if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
       }
-      guard currentAdoption == decision else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
-      var answers = adoptionAnswers; answers[decision.product] = answer
+      guard pendingAdoptions == pending else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
+      var answers = adoptionAnswers
+      for decision in pending { answers[decision.product] = answer }
       try saveAdoptionAnswers(answers, session: session)
-      telemetry.event("room_adoption_answered", properties: ["room": decision.product, "action": answer.rawValue])
+      for decision in pending { telemetry.event("room_adoption_answered", properties: ["room": decision.product, "action": answer.rawValue]) }
       choose(answer == .add ? "add" : "discard", screen: "adoption")
       error = nil
-      if currentAdoption != nil { sheet = .adoption; return }
       try await completeAdoption(session)
     } catch EngineError.signInChanged {
       await recountAdoption()
@@ -961,7 +1007,7 @@ final class AppModel {
       let resumed = try await runtime?.engine.resumeSignIn()
       try Task.checkCancellation()
       if let resumed { setSignInSession(resumed) }
-      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed); return }
+      if let resumed, !resumed.isComplete, pendingAdoptions.isEmpty { try await completeAdoption(resumed); return }
       sheet = .adoption; error = "The work changed. Choose again for the current counts."
     } catch {
       guard !Task.isCancelled else { return }

@@ -48,7 +48,7 @@ public enum Corpus {
   // corpus/README.md's role table: a directory entry ends in "/"; a file's own entry wins over its directory's.
   public static let roles: [(entry: String, role: CorpusRole)] = [
     ("constants.json", .all), ("stamp/", .all), ("hlc/tick.json", .all), ("hlc/observe.json", .all), ("jcs/", .all),
-    ("join/", .all), ("derive/", .all), ("identity/seeded.json", .all), ("digest/", .all), ("protocol/", .all),
+    ("join/", .all), ("derive/", .all), ("registry/", .all), ("identity/seeded.json", .all), ("digest/", .all), ("protocol/", .all),
     ("identity/table.json", .server), ("admit/", .server), ("text/", .server), ("envelope/credentials.json", .server),
     ("push/serve.json", .server), ("pull/serve.json", .server), ("pull/hello.json", .server), ("live/death.json", .server),
     ("machine/scope.json", .server), ("gym/admit.json", .server),

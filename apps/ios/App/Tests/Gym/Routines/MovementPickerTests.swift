@@ -155,11 +155,13 @@ import SyncModelServer
     #expect(MovementPickerOptions.firstSession(log: log(sessions: [session("current", open: true)]), routines: [], readFailed: false))
   }
 
+  // A workout with no routine arrives only from a connected agent; before any routine it opens on the welcome.
   @Test func firstWorkoutKeepsItsWelcomeAndFourSetsAcrossRelaunch() throws {
     let (harness, gym) = fixture()
     let picker = MovementPicker(gym: gym, purpose: .workout)
     #expect(picker.firstSession)
-    let id = try #require(gym.startWorkout())
+    let id = gym.runner.mint(Session.self)
+    #expect(gym.run(StartSession(id: id))?.refusal == nil && gym.restoreWorkout())
     #expect(picker.firstSession && gym.workout.selected == nil)
     gym.workout.add(ID("back-squat"))
     for weight in [100.0, 100.0, 102.5] {

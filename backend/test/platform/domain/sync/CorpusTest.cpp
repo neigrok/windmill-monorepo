@@ -5,6 +5,7 @@
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Lattice.h"
 #include "platform/domain/sync/Record.h"
+#include "platform/domain/sync/Registry.h"
 #include "platform/domain/sync/Scope.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/domain/sync/TextMerge.h"
@@ -199,6 +200,15 @@ Json::Value derivedId(const Json::Value& input) {
   return object({{"id", deriveId(input["label"].asString(), input["fallback"].asString(), taken)}});
 }
 
+Json::Value registryLoads(const Json::Value& input) {
+  try {
+    Registry registry{input["registry"]};
+  } catch (const RegistryError&) {
+    return object({{"admitted", false}});
+  }
+  return object({{"admitted", true}});
+}
+
 Json::Value seededId(const Json::Value& input) {
   if (input["op"].asString() == "parse") {
     const std::optional<SeededId> parsed = SeededId::parse(input["id"].asString());
@@ -366,6 +376,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"digest/row.json", digestRow},
       {"digest/scope.json", digestScope},
       {"derive/slug.json", derivedId},
+      {"registry/refusals.json", registryLoads},
       {"identity/seeded.json", seededId},
       {"text/tokens.json", textTokens},
       {"text/script.json", textScript},

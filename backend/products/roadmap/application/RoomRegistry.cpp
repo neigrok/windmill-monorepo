@@ -66,10 +66,12 @@ void RoomRegistry::evict(const TreeId& id) {
   auto it = rooms_.find(id);
   if (it == rooms_.end()) return;
   auto [state, legend] = it->second.room->dirtyState();
-  repo_.save(id, state, legend, it->second.room->title(), it->second.room->head());
-  it->second.room->markClean();
-  land(id, *it->second.room);  // the lattice is durable at this head; now the rows may say so
-  rooms_.erase(it);            // a row that did not land is dropped here, and the room's teardown says so
+  // A tree whose row is gone takes its room's edits and op rows with it.
+  if (repo_.save(id, state, legend, it->second.room->title(), it->second.room->head())) {
+    it->second.room->markClean();
+    land(id, *it->second.room);  // the lattice is durable at this head; now the rows may say so
+  }
+  rooms_.erase(it);  // a row that did not land is dropped here, and the room's teardown says so
 }
 
 // The lattice is durable before this is called, so a failed append is an incident for the log
@@ -96,6 +98,14 @@ void RoomRegistry::retire(const TreeId& id) {
     rooms_.erase(id);
   }
   if (accessChanged_) accessChanged_(id);
+}
+
+void RoomRegistry::retireErased(const std::vector<std::string>& trees) {
+  for (const std::string& tree : trees) {
+    const TreeId id{tree};
+    std::lock_guard<std::mutex> strand(strandFor(id));
+    retire(id);
+  }
 }
 
 void RoomRegistry::sweep(std::chrono::steady_clock::duration idleFor) {
@@ -143,7 +153,7 @@ void RoomRegistry::persist(const TreeId& id) {
   // the export above and the markClean below. The lattice lands first and the op rows after, so a
   // crash between the two leaves a lattice at `head` with no row at `head` — replay is a no-op and
   // the feed misses one deed — never a row the lattice cannot back.
-  repo_.save(id, state, legend, title, head);
+  if (!repo_.save(id, state, legend, title, head)) return;  // the row is gone; so is what this room would add to it
   room->markClean();
   land(id, *room);
 }

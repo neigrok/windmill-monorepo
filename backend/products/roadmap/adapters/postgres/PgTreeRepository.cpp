@@ -11,6 +11,21 @@
 
 namespace wm {
 
+AccountErasure roadmapAccountErasure() {
+  const std::string owned = "(SELECT id FROM trees WHERE owner_id = $1::uuid)";
+  return {{
+      "DELETE FROM tree_nodes WHERE tree_id IN " + owned,
+      "DELETE FROM tree_edges WHERE tree_id IN " + owned,
+      "DELETE FROM tree_kinds WHERE tree_id IN " + owned,
+      "DELETE FROM tree_og_images WHERE tree_id IN " + owned,
+      "DELETE FROM tree_og_videos WHERE tree_id IN " + owned,
+      "DELETE FROM tree_ops WHERE tree_id IN " + owned,
+      "DELETE FROM node_progress WHERE tree_id IN " + owned + " OR user_id = $1::uuid::text",
+      "DELETE FROM tend_runs WHERE tree_id IN " + owned + " OR user_id = $1::uuid",
+      "DELETE FROM trees WHERE owner_id = $1::uuid RETURNING id",
+  }, {}};
+}
+
 namespace {
 
 // Add-biased presence, computed by the writer so reads never compare HLC text in SQL.
@@ -248,17 +263,15 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
                     static_cast<std::uint64_t>(row["created_ms"].as<long long>())};
 }
 
-void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+bool PgTreeRepository::save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                             const Lww<std::string>& title, Seq head) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params(
-      "INSERT INTO trees (id, title, title_hlc, title_ms, title_counter, head_seq) "
-      "VALUES ($1, $2, $3, $4, $5, $6) "
-      "ON CONFLICT (id) DO UPDATE SET head_seq = EXCLUDED.head_seq, updated_at = now()",
-      tree.str(), title.value, toString(title.stamp),
-      static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter),
-      static_cast<long long>(head));
+  // Only onto a row that stands: a tree erased under its live room is not written back.
+  if (txn.exec_params("UPDATE trees SET head_seq = $2, updated_at = now() WHERE id = $1 RETURNING id", tree.str(),
+                      static_cast<long long>(head))
+          .empty())
+    return false;
   // The title register is LWW at the column: it lands only under a dominating stamp. (ms, counter)
   // order numerically; a tie falls to byte order (COLLATE "C"), which is the actor tiebreak.
   txn.exec_params(
@@ -270,6 +283,7 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
   upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
   txn.commit();
   markCurrentWrite();
+  return true;
 }
 
 void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const LegendState& legend,

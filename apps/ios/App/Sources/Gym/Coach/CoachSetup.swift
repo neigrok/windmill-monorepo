@@ -21,7 +21,7 @@ struct CoachSetupView: View {
   @Environment(\.dynamicTypeSize) var typeSize
   var capabilities: [(String, String)] {
     [("Build", "a program from a screenshot or your own words."), ("Goals", "tell me your goals, and I will plan for them.")]
-      + (signedIn ? [("Notes", "I save important facts, like an old injury."), ("Changes", "as you train, I suggest changes to your routines.")]
+      + (signedIn ? [("Notes", "I save important facts, like an old injury."), ("Changes", "ask me, and I suggest changes to your routines.")]
          : [("Account", "sign in, and I can also save notes and suggest changes to your routines.")])
   }
   var body: some View {
@@ -44,13 +44,16 @@ struct CoachSetupView: View {
       }.padding(.top, RoomSpace.related)
     }
   }
+  // What the greeting offers under its bubbles, in order; a goal or just logging is never one of them.
+  static let choices: [(choice: CoachSetupChoice, title: String, symbol: String)] = [
+    (.screenshot, "Add screenshot", "photo.badge.plus"), (.buildManually, "Build my own", "plus"),
+  ]
   @ViewBuilder var actions: some View {
-    ForEach([CoachSetupChoice.screenshot, .buildManually], id: \.self) { choice in
-      Button { choose(choice) } label: {
-        Label(choice == .screenshot ? "Add screenshot" : "Build my own", systemImage: choice == .screenshot ? "photo.badge.plus" : "plus")
-          .font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+    ForEach(Self.choices, id: \.choice) { action in
+      Button { choose(action.choice) } label: {
+        Label(action.title, systemImage: action.symbol).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
       }.buttonStyle(.bordered).buttonBorderShape(.capsule).tint(GymPalette.accent).frame(minHeight: RoomSpace.minimumTarget)
-        .accessibilityIdentifier("coach-setup-" + choice.rawValue)
+        .accessibilityIdentifier("coach-setup-" + action.choice.rawValue)
     }
   }
 }

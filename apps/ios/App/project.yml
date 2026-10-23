@@ -191,3 +191,13 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
         SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+schemes:
+  # The app and its unit tests, without the UI-test bundle and its runner: what CI's unit job builds and runs.
+  WindmillUnitTests:
+    build:
+      targets:
+        Windmill: all
+        WindmillTests: [test]
+    test:
+      config: Debug
+      targets: [WindmillTests]

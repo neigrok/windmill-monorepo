@@ -74,14 +74,13 @@ nonisolated enum ShellPalette {
 struct RoomColors {
   let ink: Color
   let inkDim: Color
-  let card: Color
   let accent: Color
   let onAccent: Color
 
-  static let gym = RoomColors(ink: GymPalette.ink, inkDim: GymPalette.inkDim, card: GymPalette.card, accent: GymPalette.accent,
+  static let gym = RoomColors(ink: GymPalette.ink, inkDim: GymPalette.inkDim, accent: GymPalette.accent,
                               onAccent: GymPalette.onAccent)
-  static let shell = RoomColors(ink: ShellPalette.ink, inkDim: ShellPalette.inkDim, card: ShellPalette.card, accent: ShellPalette.brand,
+  static let shell = RoomColors(ink: ShellPalette.ink, inkDim: ShellPalette.inkDim, accent: ShellPalette.brand,
                                 onAccent: ShellPalette.onBrand)
-  static let journal = RoomColors(ink: JournalPalette.ink, inkDim: JournalPalette.inkDim, card: JournalPalette.card,
-                                  accent: JournalPalette.lamp, onAccent: JournalPalette.canvas)
+  static let journal = RoomColors(ink: JournalPalette.ink, inkDim: JournalPalette.inkDim, accent: JournalPalette.lamp,
+                                  onAccent: JournalPalette.canvas)
 }

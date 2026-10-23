@@ -50,6 +50,13 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var upgradeRequired = false
     // Every push gets no answer, after this many seconds in flight.
     var pushesUnansweredAfter: Double?
+    // Delete account: the closed accounts and when each closes for good, a close held this long, or refused as offline.
+    var closedAccounts: [String: Int64] = [:]
+    var closeHeldSeconds: Double?
+    var closeOffline = false
+    // Signed-in pulls past this many are held without an answer, so a restore stops part-way; each answered one waits first.
+    var pullsAnsweredBeforeHold: Int?
+    var pullDelaySeconds: Double?
   }
   struct Ticket: Sendable {
     let subject: String
@@ -198,6 +205,18 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
       if state.loseRemovalResponse { state.loseRemovalResponse = false; throw AuthRefusal.offline }
     }
   }
+  // DELETE /v1/me: the signed-in account closes 30 days from now, and every one of its sessions ends at once.
+  func closeAccount(_ account: String, token: SessionToken) throws -> Date {
+    try state.withLock { state in
+      guard state.authOnline, !state.closeOffline else { throw AuthRefusal.offline }
+      guard let caller = state.sessions[token.value] else { throw AuthRefusal(code: "unauthorized", message: "Sign in again to delete your account.") }
+      guard caller == account else { throw AuthRefusal(code: "account-mismatch", message: "the signed-in account changed; no account was closed") }
+      let closes = now + 30 * 86_400_000
+      state.closedAccounts[caller] = closes
+      state.sessions = state.sessions.filter { $0.value != caller }
+      return Date(timeIntervalSince1970: Double(closes) / 1000)
+    }
+  }
   func revoke(_ token: SessionToken) throws {
     try state.withLock { state in
       guard state.logoutOnline else { throw AppFailure(message: "Offline") }
@@ -233,7 +252,17 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     }
   }
   func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    state.withLock { state in
+    let (held, delay) = state.withLock { state in
+      guard token != nil, let answered = state.pullsAnsweredBeforeHold else { return (false, nil as Double?) }
+      state.pullsAnsweredBeforeHold = max(0, answered - 1)
+      return (answered == 0, state.pullDelaySeconds)
+    }
+    if held {
+      try? await Task.sleep(for: .seconds(3_600))
+      return .unreachable
+    }
+    if let delay { try? await Task.sleep(for: .seconds(delay)) }
+    return state.withLock { state in
       if token != nil && state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.pull(request.json, credential: c, at: now)

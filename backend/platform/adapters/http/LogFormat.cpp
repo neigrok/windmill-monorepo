@@ -80,8 +80,8 @@ std::string privacySafeLogBody(const std::string& body, const std::string& sourc
       "WriteObservation.cpp", "WriteRoutes.cpp", "AccessLog.cpp", "VendorCall.cpp", "SentryClient.cpp",
       "main.cpp", "mcp_http_main.cpp", "RoomRegistry.cpp", "TreeRoom.cpp", "HttpEmbedder.cpp",
       "OpenAiTranscriber.cpp", "ReminderSweep.cpp", "Collab.cpp", "SyncSocket.cpp", "AuthService.cpp",
-      "RetentionSweep.h", "ResendWebhookApi.cpp", "PgSweepMutex.h", "EventsApi.cpp", "FeedbackApi.cpp",
-      "OAuthApi.cpp", "BillingApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
+      "RetentionSweep.h", "ClosedAccountSweep.h", "ResendWebhookApi.cpp", "PgSweepMutex.h", "EventsApi.cpp",
+      "FeedbackApi.cpp", "OAuthApi.cpp", "BillingApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
       "EchoDerivations.cpp", "AppleOAuthClient.cpp", "AnthropicStream.cpp", "AnthropicClient.cpp",
       "AnthropicAsk.cpp", "AnthropicAgent.cpp", "AiCallBudget.cpp", "PgAiUsageRepository.cpp"};
   const std::string safeSource = privacySafeLogSource(source);

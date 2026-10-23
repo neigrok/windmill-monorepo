@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
@@ -9,6 +10,12 @@
 #include <string>
 
 namespace wm {
+
+// Every roadmap row an account owns that no foreign key to users cascades from: its trees with all
+// they hold, everyone's progress on them included, and its own progress and tending runs anywhere.
+// Only an owner writes a tree, so no op of the account's lives in a tree it does not own. The trees'
+// ids come back to `committed`, which the composition points at the live rooms.
+AccountErasure roadmapAccountErasure();
 
 // Stores a tree's lattice as per-entry rows (tree_nodes / tree_edges / tree_kinds), so a save
 // upserts only the slice it is given. Each call borrows a connection from the shared pool for
@@ -21,7 +28,7 @@ public:
   std::optional<TreeAccess> loadAccess(const TreeId& tree) override;
   std::optional<UserId> retiredOwner(const TreeId& tree) override;
   ForkLineage loadForkLineage(const TreeId& tree) override;
-  void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+  bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override;
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override;

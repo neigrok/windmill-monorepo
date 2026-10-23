@@ -10,6 +10,17 @@ import Testing
     let rgb = String(format: "#%02X%02X%02X", Int((red * 255).rounded()), Int((green * 255).rounded()), Int((blue * 255).rounded()))
     return alpha < 1 ? rgb + String(format: "@%.0f%%", alpha * 100) : rgb
   }
+  // WCAG 2 contrast of two opaque colours in one appearance.
+  func contrast(_ text: Color, on fill: Color, _ style: UIUserInterfaceStyle) -> Double {
+    func luminance(_ color: Color) -> Double {
+      var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+      UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+      let linear = [red, green, blue].map { $0 <= 0.04045 ? Double($0) / 12.92 : pow((Double($0) + 0.055) / 1.055, 2.4) }
+      return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    }
+    let lighter = max(luminance(text), luminance(fill)), darker = min(luminance(text), luminance(fill))
+    return (lighter + 0.05) / (darker + 0.05)
+  }
 
   // The 00.2 board and ios-redesign.md §2, role by role, Dark then Daylight.
   @Test func gymRolesResolveToTheirHexInBothAppearances() {
@@ -34,5 +45,18 @@ import Testing
       gym/record #D9B04C #6E5217
       gym/alarm #D08268 #A84E35
       """)
+  }
+
+  // A room's primary — the band's button, a sheet's checkmark — draws on-accent on the accent fill, which reads at 4.5:1 or
+  // more in both appearances.
+  @Test @MainActor func primaryLabelsReadOnTheirFillInBothAppearances() {
+    let rooms: [(String, RoomColors)] = [("gym", .gym), ("shell", .shell), ("journal", .journal)]
+    let table = rooms.flatMap { name, room in
+      [("dark", UIUserInterfaceStyle.dark), ("light", .light)].map { look, style in
+        "\(name) \(look) \(String(format: "%.1f", contrast(room.onAccent, on: room.accent, style)))"
+      }
+    }
+    #expect(table == ["gym dark 9.5", "gym light 6.4", "shell dark 6.5", "shell light 5.2", "journal dark 10.4", "journal light 4.8"])
+    #expect(rooms.allSatisfy { _, room in [.dark, .light].allSatisfy { contrast(room.onAccent, on: room.accent, $0) >= 4.5 } })
   }
 }

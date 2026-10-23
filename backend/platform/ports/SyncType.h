@@ -39,7 +39,10 @@ public:
   virtual void apply(SyncTxn&, const ScopeKey& scope, const std::vector<RowWrite>& writes) = 0;
   // The rows of `query`, exactly as apply stored them, in (seq, id) order.
   virtual std::vector<Row> feed(SyncTxn&, const ScopeKey& scope, const FeedQuery& query) = 0;
+  // How many rows feed(query) answers, counted where the rows sit: limit 1 asks whether there is one.
   virtual std::uint64_t count(SyncTxn&, const ScopeKey& scope, const FeedQuery& query) = 0;
+  // §9.2: the rows feed answers with visibleOnly, tallied where they sit.
+  virtual Tally tally(SyncTxn&, const ScopeKey& scope) = 0;
   // Step 11: the highest `field` among the alive rows whose fields hold `match`.
   virtual std::optional<std::int64_t> maxSerial(SyncTxn&, const ScopeKey& scope, const std::string& field,
                                                 const std::map<std::string, Json::Value>& match) = 0;

@@ -45,7 +45,7 @@ public struct ModelServer: Sendable {
 
   // MARK: - Hello
 
-  // §9.2: `holdsRecords` is present iff the hello is served as an account.
+  // §9.2: `holdsRecords` and `holdings` are present iff the hello is served as an account.
   public mutating func hello(credential: Credential, at wall: Int64) -> Reply {
     let serverNow = physNow(wall: wall)
     guard !credential.fails else { return failure(401, "unauthenticated", as: nil, at: serverNow) }
@@ -55,6 +55,7 @@ public struct ModelServer: Sendable {
       "schema": JSON(registry.version), "minSchema": JSON(registry.minVersion),
     ]
     body["holdsRecords"] = account.map { feed.holdsRecords($0, in: state) }
+    body["holdings"] = account.map { feed.holdings($0, in: state) }
     return Reply(status: 200, body: .object(body))
   }
 

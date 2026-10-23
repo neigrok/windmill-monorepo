@@ -764,7 +764,7 @@ TEST(authenticate_refuses_a_session_whose_account_is_closed) {
   const std::string session = done.signedIn->sessionSecret;  // s2/d2
   CHECK(h.service.authenticate(session).has_value());
 
-  h.repo.markUserDeleted(done.signedIn->user.id, h.clock.now);
+  h.repo.markUserDeleted(done.signedIn->user.id, h.clock.now, closesAt(h.clock.now));
   CHECK_FALSE(h.service.authenticate(session).has_value());
   CHECK_EQ(h.repo.sessions.size(), 1u);
 }
@@ -812,6 +812,164 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   std::optional<User> back = h.service.authenticate(revived.signedIn->sessionSecret);
   REQUIRE(back.has_value());
   CHECK_EQ(back->email.value, std::string("sam@example.com"));
+}
+
+TEST(the_last_millisecond_of_the_grace_revives_and_the_next_one_erases_the_account) {
+  Harness h;
+  h.requestLink("sam@example.com");                                          // s1/d1
+  const UserId lastChance = h.service.completeLink("s1").signedIn->user.id;          // s2/d2
+  const UnixMs closedAt = h.clock.now;
+  h.service.closeAccount(lastChance);
+
+  h.clock.now = closesAt(closedAt) - 1;
+  h.requestLink("sam@example.com");                                          // s3/d3
+  CHECK_EQ(h.service.completeLink("s3").signedIn->user.id.str(), lastChance.str());   // s4/d4
+  CHECK(h.repo.erased.empty());
+
+  h.service.closeAccount(lastChance);
+  const UnixMs closedAgain = h.clock.now;
+  h.clock.now = closesAt(closedAgain);
+  h.requestLink("sam@example.com");                                          // s5/d5
+  AuthService::Completion fresh = h.service.completeLink("s5");                       // s6/d6
+  REQUIRE(fresh.signedIn.has_value());
+  CHECK(fresh.signedIn->user.id.str() != lastChance.str());
+  CHECK_FALSE(fresh.signedIn->user.deletedAt.has_value());
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{lastChance.str()}));
+  CHECK_EQ(h.repo.usersById.size(), 1u);
+}
+
+TEST(a_close_from_before_closes_at_existed_is_never_final_and_any_sign_in_brings_it_back) {
+  Harness h;
+  h.requestLink("sam@example.com");                                          // s1/d1
+  const UserId closed = h.service.completeLink("s1").signedIn->user.id;              // s2/d2
+  h.repo.setDeleted(closed, h.clock.now);  // closed under the old promise: no instant it turns final
+
+  h.clock.now += 10 * AuthPolicy::closeGraceMs;
+  CHECK_EQ(h.service.eraseFinalCloses(100), 0);
+  h.requestLink("sam@example.com");                                          // s3/d3
+  CHECK_EQ(h.service.completeLink("s3").signedIn->user.id.str(), closed.str());       // s4/d4
+  CHECK_FALSE(h.repo.usersById.at(closed.str()).deletedAt.has_value());
+  CHECK(h.repo.erased.empty());
+}
+
+TEST(a_code_sign_in_past_the_grace_starts_a_new_account_on_the_same_address) {
+  Harness h;
+  h.requestCode("sam@example.com");
+  const UserId closed = h.service.completeCode("sam@example.com", h.lastCode()).signedIn->user.id;
+  h.service.closeAccount(closed);
+
+  h.clock.now += AuthPolicy::closeGraceMs + 24ull * 60 * 60 * 1000;
+  h.requestCode("sam@example.com");
+  AuthService::CodeCompletion fresh = h.service.completeCode("sam@example.com", h.lastCode());
+  CHECK(fresh.verdict == CodeVerdict::valid);
+  REQUIRE(fresh.signedIn.has_value());
+  CHECK(fresh.signedIn->user.id.str() != closed.str());
+  CHECK_EQ(fresh.signedIn->user.email.value, std::string("sam@example.com"));
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{closed.str()}));
+  CHECK(h.service.authenticate(fresh.signedIn->sessionSecret).has_value());
+}
+
+TEST(a_bound_door_past_the_grace_opens_a_new_account_and_binds_itself_to_it) {
+  Harness h;
+  const UserId closed = h.service.completeProvider(googleId("g-1", "sam@example.com"))->signedIn.user.id;
+  h.service.closeAccount(closed);
+
+  h.clock.now += AuthPolicy::closeGraceMs;
+  std::optional<AuthService::ProviderSignIn> fresh = h.service.completeProvider(googleId("g-1", "sam@example.com"));
+  REQUIRE(fresh.has_value());
+  CHECK(fresh->created);
+  CHECK(fresh->signedIn.user.id.str() != closed.str());
+  CHECK_EQ(h.repo.findIdentity(Provider::google, "g-1"), std::optional<UserId>{fresh->signedIn.user.id});
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{closed.str()}));
+}
+
+TEST(apple_past_the_grace_finds_no_account_and_hands_back_a_ticket) {
+  Harness h;
+  const ProviderIdentity apple{Provider::apple, "a-1", Email{"sam@example.com"}, "Sam", true, false};
+  const AuthService::AppleCreation created = h.service.createApple(h.service.beginApple(apple).ticket);
+  REQUIRE(created.signIn.has_value());
+  const UserId closed = created.signIn->signedIn.user.id;
+  h.service.closeAccount(closed);
+
+  h.clock.now += AuthPolicy::closeGraceMs;
+  const AuthService::AppleStart start = h.service.beginApple(apple);
+  CHECK_FALSE(start.signIn.has_value());
+  CHECK_FALSE(start.ticket.empty());
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{closed.str()}));
+}
+
+TEST(erasing_final_closes_takes_only_closes_past_their_grace_oldest_first_and_within_the_limit) {
+  Harness h;
+  const UserId oldest = h.repo.createUser(Email{"oldest@example.com"}, "").id;
+  const UserId older = h.repo.createUser(Email{"older@example.com"}, "").id;
+  const UserId recent = h.repo.createUser(Email{"recent@example.com"}, "").id;
+  const UserId open = h.repo.createUser(Email{"open@example.com"}, "").id;
+  h.service.closeAccount(oldest);
+  h.clock.now += 60'000;
+  h.service.closeAccount(older);
+  h.clock.now += AuthPolicy::closeGraceMs - 60'000;
+  h.service.closeAccount(recent);
+
+  CHECK_EQ(h.service.eraseFinalCloses(1), 1);
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{oldest.str()}));
+  CHECK_EQ(h.service.eraseFinalCloses(100), 0);   // older's grace has a minute to run
+
+  h.clock.now += 60'000;
+  CHECK_EQ(h.service.eraseFinalCloses(100), 1);
+  CHECK_EQ(h.repo.erased, (std::vector<std::string>{oldest.str(), older.str()}));
+  CHECK(h.repo.usersById.count(recent.str()) == 1);
+  CHECK(h.repo.usersById.count(open.str()) == 1);
+}
+
+TEST(an_account_that_will_not_erase_is_reported_once_and_holds_back_no_other) {
+  struct StuckRepo : FakeAuthRepository {
+    std::string stuck;
+    bool eraseAccount(const UserId& userId, UnixMs now) override {
+      if (userId.str() == stuck) throw std::runtime_error("PRIVATE stuck@example.com");
+      return FakeAuthRepository::eraseAccount(userId, now);
+    }
+  } repo;
+  struct Reporter : FailureReporter {
+    std::vector<std::string> writes;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string&) override {
+      writes.push_back(operation + " " + product + " " + door + " " + outcome);
+    }
+  };
+  FakeOAuthRepository oauthRepo;
+  FakeEmail email;
+  FakeTokens tokens;
+  FakeClock clock;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
+  const UserId stuck = repo.createUser(Email{"stuck@example.com"}, "").id;
+  const UserId gone = repo.createUser(Email{"gone@example.com"}, "").id;
+  repo.stuck = stuck.str();
+  service.closeAccount(stuck);
+  clock.now += 1;
+  service.closeAccount(gone);
+  clock.now += AuthPolicy::closeGraceMs;
+
+  auto reporter = std::make_shared<Reporter>();
+  std::vector<WriteCompletion> completions;
+  installWriteReporter(reporter);
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  const int erased = service.eraseFinalCloses(100);
+  installWriteSink({});
+  installWriteReporter({});
+
+  CHECK_EQ(erased, 1);
+  CHECK_EQ(repo.erased, (std::vector<std::string>{gone.str()}));
+  CHECK_EQ(reporter->writes, (std::vector<std::string>{"auth.account.erase platform background failed"}));
+  REQUIRE_EQ(completions.size(), 2u);
+  CHECK_EQ(completions[0].operation + " " + completions[0].door + " " + completions[0].outcome,
+           std::string("auth.account.erase background failed"));
+  CHECK_EQ(completions[1].operation + " " + completions[1].door + " " + completions[1].outcome,
+           std::string("auth.account.erase background ok"));
+  CHECK(completions[1].severity == WriteSeverity::info);
 }
 
 // ── The code door: the same mint, typed instead of tapped ─────────────────────────────────────

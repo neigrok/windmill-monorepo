@@ -93,7 +93,7 @@ PgTableType::PgTableType(const TypeDef& type, TableMap map) : type_(type), map_(
       columns_.push_back({column + "_rev", name, Part::rev, SqlType::bigint});
       columns_.push_back({column + "_merged", name, Part::merged, SqlType::boolean});
       anyField.push_back(column + "_rev is not null");
-      if (visibility) visibleWhen.push_back("(" + column + "_rev is not null and " + column + " <> '')");
+      if (visibility) visibleWhen.push_back("(" + column + "_rev is not null and " + holdsNonBlank(column) + ")");
       continue;
     }
     if (field.kind == FieldKind::serial) {
@@ -275,8 +275,13 @@ std::vector<Row> PgTableType::feed(SyncTxn& txn, const ScopeKey& scope, const Fe
 std::uint64_t PgTableType::count(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
   pqxx::params params;
   const std::string where = keysetWhere(params, scope, query);
-  const pqxx::result result = sqlOf(txn).exec("select count(*) as total from " + map_.table + where, params);
-  return result[0]["total"].as<std::uint64_t>();
+  return countOf(txn, map_.table + where, params, query.limit);
+}
+
+Tally PgTableType::tally(SyncTxn& txn, const ScopeKey& scope) {
+  pqxx::params params;
+  const std::string where = keysetWhere(params, scope, FeedQuery{.visibleOnly = true});
+  return tallyOf(txn, map_.table + where, params);
 }
 
 std::optional<std::int64_t> PgTableType::maxSerial(SyncTxn& txn, const ScopeKey& scope, const std::string& field,

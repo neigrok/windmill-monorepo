@@ -45,10 +45,10 @@ struct OnThisPhoneList: View {
 
   var body: some View {
     let rows = gym.waitingRows
-    let needYou = rows.filter { $0.reason != nil }, adding = rows.filter { $0.reason == nil }
     List {
-      if !needYou.isEmpty { Section("Needs you") { ForEach(needYou) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
-      if !adding.isEmpty { Section("Adding") { ForEach(adding) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
+      ForEach(Self.sections(rows), id: \.title) { section in
+        Section(section.title) { ForEach(section.rows) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card)
+      }
     }.listStyle(.insetGrouped).modifier(GymPage()).navigationTitle("On this phone").navigationBarTitleDisplayMode(.inline)
       .gymTabBar().accessibilityIdentifier("recovery-list")
       .reachBand {
@@ -56,6 +56,11 @@ struct OnThisPhoneList: View {
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "on_this_phone"]) }
       .onChange(of: rows.isEmpty) { _, empty in if empty { dismiss() } }
+  }
+
+  // Needs you first, then Adding; a section with no row is left out.
+  static func sections(_ rows: [WaitingRow]) -> [(title: String, rows: [WaitingRow])] {
+    [("Needs you", rows.filter { $0.reason != nil }), ("Adding", rows.filter { $0.reason == nil })].filter { !$0.rows.isEmpty }
   }
 }
 
@@ -81,17 +86,7 @@ extension WorkoutRecovery {
   }
 
   var line: String { reason.line(stranded: strandedSets.count) }
-
-  // The one way out the reason names; a retry is offered only for a reason a retry can change. A spent identity has no
-  // primary, since its way out is Discard, which is never a prominent fill.
-  var primary: Primary? {
-    switch reason {
-    case .accountWorkoutOpen: .keep
-    case .strandedSets, .unsent: .retry
-    case .identityTaken: nil
-    case .overlap, .badTime, .tooManySets, .invalidSet, .unknownMovement, .other: .fix
-    }
-  }
+  var primary: Primary? { reason.primary }
 
   // What Discard drops: the whole copy, or the sets of a landed workout it still holds.
   var discardTitle: String { retry == .restoreSets ? "Discard \(GymCount.of(strandedSets.count, "set"))" : "Discard workout" }
@@ -111,12 +106,22 @@ extension WorkoutRecovery {
 }
 
 extension WorkoutRecovery.Reason {
+  // The one way out the reason names; a retry is offered only for a reason a retry can change. A spent identity has no
+  // primary, since its way out is Discard, which is never a prominent fill.
+  var primary: WorkoutRecovery.Primary? {
+    switch self {
+    case .accountWorkoutOpen: .keep
+    case .strandedSets, .unsent: .retry
+    case .identityTaken: nil
+    case .overlap, .badTime, .tooManySets, .invalidSet, .unknownMovement, .other: .fix
+    }
+  }
   func line(stranded: Int) -> String {
     switch self {
     case .accountWorkoutOpen: "Your account has an open workout — keep this one as finished."
     case .overlap: "Overlaps another workout — fix its times."
     case .identityTaken: "Already added once — discard this copy."
-    case .badTime: "Its times don't line up — fix the times."
+    case .badTime: "Its times don’t line up — fix the times."
     case .tooManySets: "Over 200 sets — remove some, then retry."
     case .unknownMovement: "A movement is missing — fix its sets, then retry."
     case .strandedSets: stranded == 1 ? "A set missed its workout — retry puts it back."

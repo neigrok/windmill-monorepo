@@ -105,11 +105,11 @@ struct FakeTreeRepository : TreeRepository {
       if (from == tree.str() && !deletedIds.count(id)) lineage.forkCount++;
     return lineage;
   }
-  void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+  bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
             const Lww<std::string>& title, Seq head) override {
     savedNodeCounts.push_back(state.nodes.size());
-    const bool fresh = byId.count(tree.str()) == 0;
-    StoredTree& stored = byId[tree.str()];  // upsert semantics: merge the slice, keep the rest
+    if (byId.count(tree.str()) == 0) return false;  // a tree with no row is left without one
+    StoredTree& stored = byId[tree.str()];  // merge the slice, keep the rest
     for (const NodeStateEntry& node : state.nodes) {
       auto match = std::find_if(stored.state.nodes.begin(), stored.state.nodes.end(),
                                 [&](const NodeStateEntry& n) { return n.id == node.id; });
@@ -129,8 +129,9 @@ struct FakeTreeRepository : TreeRepository {
       else stored.legend.kinds.push_back(kind);
     }
     // The title register lands only under a dominating stamp, the rule PgTreeRepository enforces in SQL; only Postgres carries the byte-order tiebreak collation.
-    if (fresh || title.stamp > stored.title.stamp) stored.title = title;
+    if (title.stamp > stored.title.stamp) stored.title = title;
     stored.head = head;
+    return true;
   }
   void create(const TreeId& tree, const GraphState& state, const LegendState& legend,
               const std::string& title, const UserId& owner) override {

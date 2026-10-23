@@ -230,7 +230,7 @@ TEST(pg_apple_code_no_account_spends_only_code_and_a_followup_code_can_attach) {
   CHECK(!f.repo.findUserByEmail(f.identity.email));
   CHECK(!f.repo.findSession("pg-apple-no-account-session"));
   f.repo.insertLink("pg-apple-code-followup", "code-digest", f.mine.email, f.now, linkExpiry(f.now), "");
-  f.repo.markUserDeleted(f.mine.id, f.now);
+  f.repo.markUserDeleted(f.mine.id, f.now, closesAt(f.now));
   result = f.repo.redeemAppleTicket("pg-apple-ticket", f.now, f.mine.id, "", "pg-apple-followup-session",
                                    sessionExpiry(f.now), "", "", "pg-apple-code-followup");
   CHECK(result.outcome == AppleTicketOutcome::completed);
@@ -277,7 +277,7 @@ TEST(pg_apple_distinct_create_tickets_for_one_subject_have_one_created_success_a
 TEST(pg_apple_matched_email_session_failure_rolls_back_binding_and_revival) {
   if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
   Fixture f;
-  f.repo.markUserDeleted(f.mine.id, f.now);
+  f.repo.markUserDeleted(f.mine.id, f.now, closesAt(f.now));
   f.repo.insertSession("pg-apple-duplicate-session", f.other.id, sessionExpiry(f.now), "", "", f.now);
   bool failed = false;
   try {

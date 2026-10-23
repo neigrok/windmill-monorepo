@@ -88,6 +88,7 @@ object Journal {
             "        \"server\"",
             "      ],",
             "      \"primary\": true,",
+            "      \"headline\": true,",
             "      \"fields\": {",
             "        \"body\": {",
             "          \"kind\": \"text\",",

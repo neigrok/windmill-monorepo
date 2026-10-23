@@ -40,13 +40,13 @@ nonisolated enum TelemetryPrivacy {
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_workout_adjusted", "gym_exercise_updated", "gym_coach_routine_confirm", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
-    "gym_intent_opened"
+    "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],
     "page": ["windmill", "roadmap", "journal", "gym"],
     "presentation": ["first_launch", "replay"],
-    "screen": ["routine", "routine_editor", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
+    "screen": ["routine", "routine_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
     "field": ["weight", "reps"],
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "clarify", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide"],
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved"],
@@ -54,7 +54,9 @@ nonisolated enum TelemetryPrivacy {
     "cap": ["daily", "ceiling", "allowance"],
     "surface": ["activity", "control", "shortcut"],
     "intent": ["start_workout", "open_workout"],
+    "item": ["write", "start", "open_workout"],
     "state": ["shown", "opened"],
+    "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
     "door": ["accessory", "row"],
     "appearance": ["light", "dark", "system"],
@@ -62,8 +64,8 @@ nonisolated enum TelemetryPrivacy {
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
     "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
-    "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["ai_installation", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
+    "operation": ["ai_installation", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {

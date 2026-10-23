@@ -112,6 +112,11 @@ struct CoachDraftStore {
     }
     try FileManager.default.removeItem(at: sourceURL)
   }
+  // A deleted account's drafts leave the phone with it.
+  func delete(_ account: String) throws {
+    let url = file(account)
+    if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+  }
   // Drafts hold photos and signed-out questions, which live only on this phone: the folder stays out of every backup.
   func write(_ saved: CoachSaved, account: String) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -380,7 +385,7 @@ struct CoachDraftStore {
             guard self.owner == owner, self.allowed, self.saved.threadId == request.thread, self.workGeneration == generation else { throw CancellationError() }
             if !data.isEmpty { try accept(JSONDecoder().decode(CoachSnapshot.self, from: data), request: request) }
             if activeGeneration?.terminal == true { break }
-            try await Task.sleep(for: .seconds(backoff)); backoff = min(16, backoff * 2)
+            try await Task.sleep(for: gym.waits.coachBeat * backoff); backoff = min(16, backoff * 2)
           } catch {
             let code = (error as? URLError)?.code
             guard [.networkConnectionLost, .timedOut].contains(code), activeGeneration != nil, reconnects < 3 else {
@@ -390,7 +395,7 @@ struct CoachDraftStore {
             guard self.owner == owner, self.allowed, self.workGeneration == generation else { throw CancellationError() }
             reconnects += 1
             self.error = CoachCopy.reconnecting
-            try await Task.sleep(for: .seconds(min(8, 1 << reconnects)))
+            try await Task.sleep(for: gym.waits.coachBeat * min(8, 1 << reconnects))
           }
         }
         guard self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation else { return }

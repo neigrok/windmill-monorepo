@@ -95,6 +95,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {
     #expect(TelemetryPrivacy.properties(["screen": "workout", "action": "share", "sessionId": "private-id", "question": "private-text"]) ==
             ["screen": .label("workout"), "action": .label("share")])
+    #expect(TelemetryPrivacy.properties(["screen": "receipt", "action": "keep", "sessionId": "private-id"]) == ["screen": .label("receipt"), "action": .label("keep")])
     for screen in ["workout", "log", "session", "on_this_phone", "history"] {
       #expect(TelemetryPrivacy.properties(["screen": screen, "action": "discard", "state": "shown", "name": "private-title"]) ==
               ["screen": .label(screen), "action": .label("discard"), "state": .label("shown")])
@@ -204,7 +205,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     exception.mechanism?.data = ["text": "private-marker"]; exception.mechanism?.desc = "private-marker"
     event.exceptions = [exception]
     SentrySDK.capture(event: event)
-    for _ in 0..<100 { if delivered.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(50)) }
+    for _ in 0..<500 { if delivered.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(10)) }
     let json = try #require(delivered.withLock { $0 })
     #expect(!json.contains("private-marker"))
     #expect(json.contains("duration_ms") && json.contains("123") && json.contains("BoundaryFailure"))
@@ -212,7 +213,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     for operation in ["gym_activity_request", "gym_activity_update"] {
       delivered.withLock { $0 = nil }
       CrashReports.failure(operation, kind: "storage", properties: ["title": "private-marker", "load": "private-marker"], durationMs: nil)
-      for _ in 0..<100 { if delivered.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(50)) }
+      for _ in 0..<500 { if delivered.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(10)) }
       let activityFailure = try #require(delivered.withLock { $0 })
       #expect(activityFailure.contains(operation) && activityFailure.contains("WindmillHandledFailure"))
       #expect(!activityFailure.contains("private-marker"))

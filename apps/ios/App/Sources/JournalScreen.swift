@@ -109,7 +109,7 @@ struct JournalScreen: View {
         do { try await Task.sleep(for: .milliseconds(2600)) } catch { return }
         echoHighlight = nil
       }.overlay(alignment: .bottomTrailing) {
-        if !model.editorReadOnly && model.sheet == nil && model.echoes.readerDay == nil && !model.compactAccountSheet {
+        if model.writeSeatShown {
           Button {
             model.liftInk()
             writeRequest += 1
@@ -122,7 +122,7 @@ struct JournalScreen: View {
               withAnimation(.easeOut(duration: 0.48)) {
                 scroll.scrollTo("journal-today", anchor: .bottom)
               } completion: {
-                if writeRequest == request && !model.editorReadOnly && model.sheet == nil && model.echoes.readerDay == nil { focused = true }
+                if writeRequest == request && model.writeSeatShown { focused = true }
               }
             }
           } label: {
@@ -152,7 +152,7 @@ struct JournalScreen: View {
       model.choose(value ? "write" : "done_writing", screen: "journal")
       if value { model.liftInk() } else { model.done() }
     }
-    .onChange(of: model.editing) { _, value in if !value { focused = false } }
+    .onChange(of: model.editing) { _, value in if focused != value { focused = value } }
     .onChange(of: model.sheet) { _, _ in writeRequest += 1 }
     .onChange(of: model.editorReadOnly) { _, _ in writeRequest += 1 }
     .onDisappear { writeRequest += 1; model.echoes.suspend() }
@@ -250,8 +250,7 @@ struct JournalScreen: View {
 
   // A read-only earlier page: its date and echo count, its words, its ink when open, and only the scales its day set.
   func pastDay(_ day: JournalRoom.Day, width: CGFloat, scroll: ScrollViewProxy, echoesVisible: Bool) -> some View {
-    let scales = [day.document.mood.map { "Mood \($0)" }, day.document.energy.map { "Energy \($0)" }].compactMap { $0 }
-    return VStack(alignment: .leading, spacing: 18) {
+    VStack(alignment: .leading, spacing: 18) {
       HStack {
         Text(date(day.day)).font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkDim)
         Spacer(minLength: 8)
@@ -259,8 +258,8 @@ struct JournalScreen: View {
       }.frame(minHeight: 44).modifier(DateRowMark(day: day.day.text, marks: marks))
       pastBody(day.document.body, day: day.day.text, width: width, echoesVisible: echoesVisible)
       echoInk(day.day.text, visible: echoesVisible, scroll: scroll)
-      if !scales.isEmpty {
-        Text(scales.joined(separator: " · ")).font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
+      if let scales = day.document.scaleLine {
+        Text(scales).font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
       }
     }.padding(.horizontal, 24).id("journal-day-\(day.day.text)")
       .accessibilityElement(children: .contain).accessibilityIdentifier("journal-day-\(day.day.text)")
@@ -390,6 +389,14 @@ struct JournalScreen: View {
 }
 
 // Screen positions kept outside SwiftUI's state, so scrolling never redraws the room.
+extension PageDocument {
+  // An earlier page's scale line names only the scales its day set: Mood 7 · Energy 4, Mood 7, or nothing at all.
+  var scaleLine: String? {
+    let scales = [mood.map { "Mood \($0)" }, energy.map { "Energy \($0)" }].compactMap { $0 }
+    return scales.isEmpty ? nil : scales.joined(separator: " · ")
+  }
+}
+
 final class CanvasMarks {
   var canvas = CGRect.zero
   var seat = CGRect.zero

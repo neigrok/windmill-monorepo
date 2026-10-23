@@ -47,6 +47,15 @@ std::string idPlaceholders(pqxx::params& params, const std::vector<RecordId>& id
 // order (§9.1); a tuple id's column already holds its JCS.
 std::string idOrder(const std::string& column, bool tupleIds);
 
+// §2.4's visibleWhen for a text column: whether it holds a code point outside the whitespace isBlank reads
+// (TextMerge.h), as a Postgres regular expression test.
+std::string holdsNonBlank(const std::string& column);
+
+// A product store's count and tally over `rows`, a table and the where clause that picks the rows: how many
+// there are, at most `limit` of them where it is set, and how many with the greatest ru among them.
+std::uint64_t countOf(SyncTxn& txn, const std::string& rows, const pqxx::params& params, std::size_t limit);
+Tally tallyOf(SyncTxn& txn, const std::string& rows, const pqxx::params& params);
+
 // The engine's own tables (§2.1) in Postgres.
 class PgSyncStore final : public SyncStore {
 public:

@@ -54,10 +54,10 @@ final class LogCaptures: DesignCapture {
     session.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     choose("gym-session-discard", from: "gym-session-more", app, capturing: "gym-session-detail-menu", look)
-    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForExistence(timeout: 5))
     capture("gym-log-discard-confirmation", look, app)
     app.cancelConfirmation()
-    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Discard this workout?"].buttons["Discard"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
@@ -140,7 +140,7 @@ final class LogCaptures: DesignCapture {
       return app
     }
   }
-  func openEditExercise(_ look: Look) -> XCUIApplication {
+  func openEditMovement(_ look: Look) -> XCUIApplication {
     let app = openRecord(look)
     for _ in 0..<3 where !app.buttons["gym-record-rename"].exists {
       app.buttons["gym-record-more"].tap(); _ = app.buttons["gym-record-rename"].waitForExistence(timeout: 3)
@@ -150,9 +150,9 @@ final class LogCaptures: DesignCapture {
     return app
   }
   // Switched to Dumbbells, the sheet asks how many are lifted and says what the weight means.
-  func testEditExercise() {
-    captureBoard("05.9-edit-exercise") { look in
-      let app = openEditExercise(look)
+  func testEditMovement() {
+    captureBoard("05.9-edit-movement") { look in
+      let app = openEditMovement(look)
       app.buttons["gym-rename-movement-equipment"].tap()
       let dumbbells = app.buttons["Dumbbells"]
       XCTAssertTrue(dumbbells.waitForExistence(timeout: 5)); dumbbells.tap()
@@ -160,9 +160,9 @@ final class LogCaptures: DesignCapture {
       return app
     }
   }
-  func testEditExerciseEquipment() {
-    captureBoard("05.10-edit-exercise-equipment", settle: 0.6) { look in
-      let app = openEditExercise(look)
+  func testEditMovementEquipment() {
+    captureBoard("05.10-edit-movement-equipment", settle: 0.6) { look in
+      let app = openEditMovement(look)
       app.buttons["gym-rename-movement-equipment"].tap()
       XCTAssertTrue(app.buttons["Kettlebell"].waitForExistence(timeout: 5))
       return app

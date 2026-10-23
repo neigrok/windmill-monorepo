@@ -1,8 +1,8 @@
 name: iOS CI
 
-# Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
-# and the engine's public-surface test (SyncTestingSurface) — and builds the product and dev-only SyncProbe apps for
-# the simulator. App unit tests and three class-based UI shards run in parallel; ships nothing. The corpus runners read
+# Tests the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain) and the engine's
+# public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app and the product app in Release for
+# the simulator. App unit tests and three class-based UI shards (ios-ui-tests.yml) run in parallel; ships nothing. The corpus runners read
 # packages/api-contract/{sync,domain-kit,gym,journal} by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
 # change to any of those contracts runs this workflow too.
@@ -18,6 +18,7 @@ on:
       - 'packages/api-contract/journal/**'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
+      - '.github/workflows/ios-ui-tests.yml'
       - '!apps/ios/**/*.md'
   pull_request:
     paths:
@@ -28,6 +29,7 @@ on:
       - 'packages/api-contract/journal/**'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
+      - '.github/workflows/ios-ui-tests.yml'
       - '!apps/ios/**/*.md'
   workflow_dispatch:
 
@@ -51,6 +53,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # One package checkout per app, laid out as apps/ios lays out the apps: the probe build, the domain kit's layering
+      # test and the Release build resolve each app's packages once.
+      - name: Share the apps' package checkouts
+        run: echo "WM_SOURCE_PACKAGES=$RUNNER_TEMP/source-packages" >> "$GITHUB_ENV"
+
       # The repository pins one toolchain: the domain kit's layering tests read sources with swift-syntax
       # 602, which must match the compiler's major (Swift 6.2), and its compile attacks assert what that
       # compiler refuses. Moving to a newer Xcode means bumping swift-syntax and re-checking the attacks.
@@ -70,6 +77,8 @@ jobs:
           brew install xcodegen
           xcodegen --version
 
+      # Every UI class runs in exactly one shard, except the opt-in ones, which must keep their guard: the design
+      # captures, and the nightly classes, which iOS nightly runs instead.
       - name: Check UI shard coverage
         run: |
           python3 - <<'PY'
@@ -77,33 +86,43 @@ jobs:
           from pathlib import Path
           import re
 
-          classes = Counter(name for source in Path("../App/UITests").rglob("*.swift")
+          tests = Path("../App/UITests")
+          workflows = Path("../../../.github/workflows")
+          classes = Counter(name for source in tests.rglob("*.swift")
                             for name in re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", source.read_text()))
-          capture = Path("../App/UITests/DesignCapture/DesignCapture.swift").read_text()
-          assert classes["DesignCapture"] == 1
-          assert 'try XCTSkipUnless(ProcessInfo.processInfo.environment["WM_DESIGN_CAPTURE"] == "1"' in capture
-          del classes["DesignCapture"]
-          workflow = Path("../../../.github/workflows/ios.yml").read_text()
-          selected = Counter(re.findall(r"-only-testing:WindmillUITests/(\w+)", workflow))
+          opt_in = {
+              "DesignCapture": ("DesignCapture/DesignCapture.swift", "WM_DESIGN_CAPTURE"),
+              "NightlyFlowTests": ("NightlyFlowTests.swift", "WM_NIGHTLY_UI"),
+              "GymNightlyFlowTests": ("GymNightlyFlowTests.swift", "WM_NIGHTLY_UI"),
+          }
+          for name, (file, variable) in opt_in.items():
+              guard = f'try XCTSkipUnless(ProcessInfo.processInfo.environment["{variable}"] == "1"'
+              assert classes.pop(name, 0) == 1 and guard in (tests / file).read_text(), f"{name} must stay opt-in behind {variable}"
+          selection = lambda workflow: Counter(re.findall(r"-only-testing:WindmillUITests/(\w+)", (workflows / workflow).read_text()))
+          selected, nightly = selection("ios.yml"), selection("ios-nightly.yml")
           assert classes and selected == classes, f"UI shard coverage differs: classes={classes}, selected={selected}"
+          assert nightly == Counter(["NightlyFlowTests", "GymNightlyFlowTests"]), f"iOS nightly selects {nightly}"
           PY
 
       # Sources/SyncSchema is generated from the product registries and checked in; a stale file fails here.
       - name: Check the generated registry
         run: swift run --explicit-target-dependency-import-check error SyncSchemaGen --check
 
-      # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it.
+      # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it. A pull request
+      # runs 32 seeds of the replay fuzz; main runs 128, the size that also holds its coverage floor.
       - name: Test on macOS
+        env:
+          SYNC_SIM_SEEDS: ${{ github.event_name == 'pull_request' && '32' || '128' }}
         run: swift test --explicit-target-dependency-import-check error
 
-      - name: Build for the iOS simulator
-        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
-
+      # The runners are Apple silicon, so a simulator build compiles the arm64 slice alone. The App build below compiles
+      # every Sync library for the simulator; the unit tests compile SyncTesting.
       - name: Build the SyncProbe app for the iOS simulator
         working-directory: apps/ios/SyncProbe
         run: |
           xcodegen generate
-          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator'
+          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator' \
+            -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/SyncProbe" ARCHS=arm64
 
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit
@@ -114,16 +133,16 @@ jobs:
         working-directory: apps/ios/SyncTestingSurface
         run: swift test --explicit-target-dependency-import-check error
 
-      - name: Check the App tools and build Debug and Release
+      # The unit and UI jobs build Debug; this is the one Release compile before a TestFlight archive.
+      - name: Check the App tools and build Release
         working-directory: apps/ios/App
         env:
           IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
         run: |
           python3 -m unittest discover -s Tools/tests -v
           python3 Tools/generate_project.py
-          xcodebuild build -project Windmill.xcodeproj -scheme Windmill -destination 'generic/platform=iOS Simulator'
           xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
-            -destination 'generic/platform=iOS Simulator'
+            -destination 'generic/platform=iOS Simulator' -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/App" ARCHS=arm64
 
   app-unit-tests:
     runs-on: macos-26
@@ -146,189 +165,40 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
+      # The unit-test scheme leaves out the UI-test bundle and its runner.
       - name: Build and run App unit tests
         run: |
           python3 Tools/generate_project.py
-          xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
-            -only-testing:WindmillTests
+          xcodebuild test -project Windmill.xcodeproj -scheme WindmillUnitTests \
+            -destination 'platform=iOS Simulator,name=iPhone 17'
 
+  # Three shards balanced on measured test times, about eight minutes of tests each. Five macOS jobs is the most that
+  # run at once, so a fourth shard would queue rather than shorten the run.
   app-ui-tests:
     name: App UI tests (${{ matrix.shard }})
-    runs-on: macos-26
-    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: log-workout-account
-            timeout: 85
+          - shard: gym-integration
             tests: >-
-              -only-testing:WindmillUITests/GymLogFlowTests
-              -only-testing:WindmillUITests/GymWorkoutFlowTests
-              -only-testing:WindmillUITests/AppleLinkingFlowTests
-              -only-testing:WindmillUITests/GymRecoveryFlowTests
               -only-testing:WindmillUITests/GymIntegrationFlowTests
-          - shard: routines-journal
-            timeout: 75
-            tests: >-
-              -only-testing:WindmillUITests/GymRoutinesFlowTests
-              -only-testing:WindmillUITests/JournalFlowTests
-              -only-testing:WindmillUITests/JournalEchoFlowTests
-              -only-testing:WindmillUITests/WorkoutActivityFlowTests
-              -only-testing:WindmillUITests/RoomTransientFlowTests
-              -only-testing:WindmillUITests/WorkoutOutsideFlowTests
-              -only-testing:WindmillUITests/OnboardingFlowTests
-              -only-testing:WindmillUITests/ShellFlowTests
-          - shard: coach-shell
-            timeout: 95
+          - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
               -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
+              -only-testing:WindmillUITests/GymWorkoutFlowTests
+              -only-testing:WindmillUITests/GymRecoveryFlowTests
+              -only-testing:WindmillUITests/JournalFlowTests
+              -only-testing:WindmillUITests/JournalEchoFlowTests
+          - shard: shell-offline-system
+            tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
-    defaults:
-      run:
-        working-directory: apps/ios/App
-    env:
-      IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Select Xcode 26.3
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app
-          xcodebuild -version
-
-      - name: Install XcodeGen
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: brew install xcodegen
-
-      # Spotlight indexes the checkout and the build while the tests run, and the app under test needs that CPU.
-      - name: Stop Spotlight indexing
-        run: |
-          sudo mdutil -a -i off || true
-          mdutil -s /System/Volumes/Data
-
-      - name: Create and prepare the UI simulator
-        timeout-minutes: 10
-        run: |
-          UI_SIMULATOR=$(xcrun simctl create "Windmill CI ${{ matrix.shard }}" \
-            com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
-          echo "UI_SIMULATOR=$UI_SIMULATOR" >> "$GITHUB_ENV"
-          python3 Tools/prepare_simulator.py "$UI_SIMULATOR"
-
-      # One line every 15 s of the runner's load, swap and busiest processes, simulator daemons included, for triage.
-      - name: Record the runner's load
-        run: |
-          cat > "$RUNNER_TEMP/ios-ui-load.sh" <<'SH'
-          while true; do
-            load=$(sysctl -n vm.loadavg | awk '{print $2}')
-            swap=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+M).*/\1/')
-            free=$(memory_pressure -Q | awk '/percentage/ {print $5}')
-            top=$(ps -Ao %cpu=,comm= -r | head -4 | awk '{cpu = $1; $1 = ""; n = split($0, path, "/"); printf "%s %s, ", path[n], cpu}')
-            echo "$(date -u +%H:%M:%S) load $load swap $swap free $free top $top"
-            sleep 15
-          done
-          SH
-          nohup bash "$RUNNER_TEMP/ios-ui-load.sh" > "$RUNNER_TEMP/ios-ui-load.log" 2>&1 &
-
-      # The build finishes and releases its memory before the first test launches the app.
-      - name: Build the UI tests
-        run: |
-          python3 Tools/generate_project.py
-          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
-            -destination "platform=iOS Simulator,id=$UI_SIMULATOR" -derivedDataPath "$RUNNER_TEMP/ios-ui-build"
-
-      - name: Run the UI shard
-        shell: bash
-        run: |
-          xcodebuild test-without-building -xctestrun "$(ls "$RUNNER_TEMP"/ios-ui-build/Build/Products/*.xctestrun)" \
-            -destination "platform=iOS Simulator,id=$UI_SIMULATOR" \
-            -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-            -testLanguage en -testRegion US \
-            -resultBundlePath "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.xcresult" \
-            ${{ matrix.tests }} 2>&1 | tee "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.log"
-
-      - name: Check every selected UI test ran once
-        env:
-          UI_TEST_SELECTION: ${{ matrix.tests }}
-          UI_TEST_LOG: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
-        run: |
-          python3 - <<'PY'
-          from collections import Counter
-          from pathlib import Path
-          import os
-          import re
-
-          selected = set(re.findall(r"-only-testing:WindmillUITests/(\w+)", os.environ["UI_TEST_SELECTION"]))
-          expected = Counter()
-          for source in Path("UITests").rglob("*.swift"):
-              text = source.read_text()
-              classes = re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", text)
-              if not classes or classes[0] not in selected:
-                  continue
-              assert len(classes) == 1, f"Expected one UI test class in {source}"
-              expected.update((classes[0], method) for method in re.findall(r"\bfunc\s+(test\w+)\s*\(", text))
-          log = Path(os.environ["UI_TEST_LOG"]).read_text()
-          started = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' started\.", log))
-          passed = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' passed ", log))
-          assert expected and started == expected, f"UI executions differ: expected={expected}, started={started}"
-          assert passed == expected, f"UI results differ: expected={expected}, passed={passed}"
-          print(f"All {sum(expected.values())} selected UI tests passed exactly once.")
-          PY
-
-      # Each failed test's app hierarchy at its failure, so the job log alone shows what the screen held.
-      - name: Show the screens of failed UI tests
-        if: ${{ failure() }}
-        env:
-          UI_RESULT: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-          import tempfile
-          from pathlib import Path
-
-          bundle = os.environ["UI_RESULT"]
-          if not Path(bundle).exists():
-              raise SystemExit("No result bundle: the shard failed before its tests ran.")
-          summary = json.loads(subprocess.check_output(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", bundle]))
-          failures = {}
-          for failure in summary.get("testFailures", []):
-              failures.setdefault(failure["testIdentifierString"], []).append(failure["failureText"])
-          for test, texts in failures.items():
-              print(f"::group::{test}")
-              print("\n".join(texts))
-              exported = Path(tempfile.mkdtemp())
-              subprocess.run(["xcrun", "xcresulttool", "export", "attachments", "--path", bundle, "--output-path", str(exported),
-                              "--test-id", test], check=True, stdout=subprocess.DEVNULL)
-              for entry in json.loads((exported / "manifest.json").read_text()):
-                  for attachment in entry["attachments"]:
-                      if attachment["suggestedHumanReadableName"].startswith("App UI hierarchy"):
-                          print((exported / attachment["exportedFileName"]).read_text())
-              print("::endgroup::")
-          PY
-
-      - name: Show the runner's load
-        if: ${{ always() }}
-        run: |
-          echo "::group::Runner load every 15 s"
-          cat "$RUNNER_TEMP/ios-ui-load.log" 2>/dev/null || echo "No load was recorded."
-          echo "::endgroup::"
-
-      - name: Retain failed UI test results
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-ui-${{ matrix.shard }}-result
-          path: |
-            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
-            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
-          retention-days: 3
-
-      - name: Delete the UI simulator
-        if: ${{ always() && env.UI_SIMULATOR != '' }}
-        timeout-minutes: 2
-        run: xcrun simctl delete "$UI_SIMULATOR"
+              -only-testing:WindmillUITests/OnboardingFlowTests
+              -only-testing:WindmillUITests/ShellFlowTests
+              -only-testing:WindmillUITests/WorkoutActivityFlowTests
+              -only-testing:WindmillUITests/WorkoutOutsideFlowTests
+    uses: ./.github/workflows/ios-ui-tests.yml
+    with:
+      shard: ${{ matrix.shard }}
+      tests: ${{ matrix.tests }}

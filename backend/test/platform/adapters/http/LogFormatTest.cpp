@@ -28,6 +28,8 @@ TEST(log_privacy_keeps_audited_write_vendor_and_database_completion_lines) {
   CHECK_EQ(privacySafeLogBody("vendor openai transcribe 200 10.5ms", "VendorCall.cpp:91"),
            std::string("vendor openai transcribe 200 10.5ms"));
   CHECK_EQ(privacySafeLogBody(completion, "PgAiUsageRepository.cpp:61"), completion);
+  CHECK_EQ(privacySafeLogBody("closed accounts: erased 2 past their grace", "ClosedAccountSweep.h:29"),
+           std::string("closed accounts: erased 2 past their grace"));
   const std::string admission = "ai_output_admission input_nanos=60000000 output_token_nanos=25000 "
       "min_tokens=1024 max_tokens=2000 selected_tokens=1200 code=ok";
   CHECK_EQ(privacySafeLogBody(admission, "AiCallBudget.cpp:200"), admission);

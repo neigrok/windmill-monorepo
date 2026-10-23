@@ -592,6 +592,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/json/CommandJsonTest.cpp
   test/products/roadmap/adapters/postgres/PgProgressRepositoryTest.cpp
   test/products/roadmap/adapters/postgres/PgOpLogTest.cpp
+  test/products/roadmap/adapters/postgres/PgTreeRepositoryTest.cpp
   test/products/roadmap/adapters/http/ComposeApiTest.cpp
   test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp

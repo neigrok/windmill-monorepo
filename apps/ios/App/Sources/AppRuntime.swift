@@ -18,6 +18,11 @@ nonisolated struct BoardClock: WallClock {
   }
 }
 
+nonisolated struct FixedConnectivity: Connectivity {
+  let isOnline: Bool
+  func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {}
+}
+
 nonisolated struct DeviceZone: Zone {
   func offsetSeconds(at instant: Instant) -> Int {
     TimeZone.autoupdatingCurrent.secondsFromGMT(for: Date(timeIntervalSince1970: Double(instant.ms) / 1000))
@@ -29,17 +34,15 @@ struct AppSettings {
   let board: String?
   let restoreBoard: Bool
   let modelServer: Bool
-  let fakeApple: Bool
   let appleFixture: String?
   let appleEnabled: Bool
-  let report: String?
   let scenario: String?
   let codeFile: String?
   let automated: Bool
   let telemetryInfo: [String: Any]
   // TestFlight offers this build's successor.
   static let updateDestination = URL(string: "itms-beta://")!
-  init(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) {
+  init(arguments: [String] = RelaunchArguments.current, bundle: Bundle = .main) {
     func argument(_ name: String) -> String? {
       guard let index = arguments.firstIndex(of: "-" + name), index + 1 < arguments.count else { return nil }
       return arguments[index + 1]
@@ -49,14 +52,12 @@ struct AppSettings {
     #if DEBUG && targetEnvironment(simulator)
     board = argument("board")
     restoreBoard = arguments.contains("-restore-board")
-    modelServer = arguments.contains("-model-server") || arguments.contains("-fake-apple") || board != nil
-    fakeApple = modelServer
+    modelServer = arguments.contains("-model-server") || board != nil
     appleFixture = argument("apple-fixture")
     scenario = argument("scenario")
-    report = argument("report")
     codeFile = argument("code-file")
     #else
-    board = nil; restoreBoard = false; modelServer = false; fakeApple = false; appleFixture = nil; scenario = nil; report = nil; codeFile = nil
+    board = nil; restoreBoard = false; modelServer = false; appleFixture = nil; scenario = nil; codeFile = nil
     #endif
     automated = modelServer || scenario != nil
     var info = bundle.infoDictionary ?? [:]
@@ -66,7 +67,7 @@ struct AppSettings {
     if arguments.contains("-telemetry") { info["WMTelemetryEnvironment"] = "test" }
     #endif
     telemetryInfo = info
-    appleEnabled = fakeApple || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
+    appleEnabled = modelServer || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
   }
 
   // You's How you sign in footer: what Apple opens, said only where this build offers Apple.
@@ -74,6 +75,21 @@ struct AppSettings {
     if methods.contains(where: { $0.kind == "apple" }) { return "Either one opens this account." }
     return appleEnabled ? "Apple will open this same account." : nil
   }
+}
+
+// A launch with -keep-for-relaunch lends its arguments, board restored, to later Home Screen launches that carry none.
+nonisolated enum RelaunchArguments {
+  static let key = "relaunchArguments"
+  static let current: [String] = {
+    let arguments = ProcessInfo.processInfo.arguments
+    #if DEBUG && targetEnvironment(simulator)
+    let defaults = UserDefaults.standard
+    if arguments.count == 1, let kept = defaults.stringArray(forKey: key) { return arguments + kept }
+    if arguments.contains("-keep-for-relaunch") { defaults.set(Array(arguments.dropFirst()) + ["-restore-board"], forKey: key) }
+    else { defaults.removeObject(forKey: key) }
+    #endif
+    return arguments
+  }()
 }
 
 final class AppRuntime {
@@ -96,10 +112,9 @@ final class AppRuntime {
 
   init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
        service: String? = nil, syncTransport: (any SyncTransport)? = nil,
-       connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
+       connectivity: (any Connectivity)? = nil, authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
     gymBinding = GymBinding()
-    self.connectivity = connectivity
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
     let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
     if directory == nil && ((settings.board != nil || settings.scenario != nil) && !settings.restoreBoard) { try? FileManager.default.removeItem(at: storageDirectory) }
@@ -126,7 +141,7 @@ final class AppRuntime {
       throw error
     }
     let transport: any SyncTransport
-    let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.mode != nil
+    let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.argument != nil
     #if DEBUG
     if settings.modelServer {
       let persistsModel = settings.scenario == "gym-e2e-conflict" || ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
@@ -154,13 +169,17 @@ final class AppRuntime {
       transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
       auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     }
+    // The model server answers inside the app, so the device's network path never stands between them.
+    let reach: any Connectivity = connectivity ?? ((syncTransport ?? transport) is JournalModelTransport ? FixedConnectivity(isOnline: true) : PathConnectivity())
     #else
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
+    let reach: any Connectivity = connectivity ?? PathConnectivity()
     #endif
+    self.connectivity = reach
     engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: connectivity, telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     updateTelemetryIdentity()
@@ -418,6 +437,22 @@ final class NativeAuth {
     _ = try await exchange("v1/me/sign-in-methods/apple", operation: "auth_apple_remove", body: nil, token: token, allowNotFound: true, method: "DELETE") { $0 }
   }
 
+  // DELETE /v1/me names the signed-in user id, never a typed address, and answers when the account closes for good. A
+  // session already gone answers 401: the refusal `unauthorized`, like the 409 `account-mismatch` of another account.
+  func deleteAccount(_ account: String, token: SessionToken) async throws -> Date {
+    #if DEBUG
+    if let fake {
+      if let held = fake.state.withLock({ $0.closeHeldSeconds }) { try await Task.sleep(for: .seconds(held)) }
+      return try modelExchange("account_delete", method: "DELETE") { try fake.closeAccount(account, token: token) }
+    }
+    #endif
+    return try await exchange("v1/me", operation: "account_delete", body: ["account": account], token: token, allowUnauthorized: true, method: "DELETE") { body in
+      guard !body.isEmpty else { throw AuthRefusal(code: "unauthorized", message: "Sign in again to delete your account.") }
+      guard let closes = body["closesMs"] as? NSNumber else { throw URLError(.cannotParseResponse) }
+      return Date(timeIntervalSince1970: closes.doubleValue / 1000)
+    }
+  }
+
   func appleResponse(_ body: [String: Any], attaching: Bool) throws -> AppleAuthResponse {
     guard body["created"] == nil || body["created"] as? Bool == false else {
       throw AppFailure(message: "Couldn't continue with Apple. Use email instead. Your pages stay on this phone.")
@@ -439,7 +474,7 @@ final class NativeAuth {
       let code = (error as? AuthRefusal)?.code ?? ""
       let status: Int? = switch code {
       case "apple-ticket-expired": 410
-      case "identity-taken": 409
+      case "identity-taken", "account-mismatch": 409
       case "no-account", "not-found": 404
       case "invalid-code", "unverified-email": 400
       case "unauthorized": 401
@@ -447,7 +482,7 @@ final class NativeAuth {
       default: nil
       }
       let kind = code == "offline" ? "offline" : status == nil ? "unexpected" : "http"
-      var properties = ["operation": operation, "method": method, "route": operation == "auth_methods" || operation == "auth_apple_remove" ? "/v1/me" : "/v1/auth", "failure_kind": kind]
+      var properties = ["operation": operation, "method": method, "route": ["auth_methods", "auth_apple_remove", "account_delete"].contains(operation) ? "/v1/me" : "/v1/auth", "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties)
       if kind == "unexpected" { telemetry.failure(operation, kind: kind, properties: properties) }
@@ -486,7 +521,10 @@ final class NativeAuth {
       let (data, response) = try await Self.data(for: request, session: session)
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       status = response.statusCode
-      if response.statusCode == 204 || (allowUnauthorized && response.statusCode == 401) || (allowNotFound && response.statusCode == 404) { return try decode([:]) }
+      if response.statusCode == 204 || (allowUnauthorized && response.statusCode == 401) || (allowNotFound && response.statusCode == 404) {
+        kind = response.statusCode == 204 ? "decode" : "http"
+        return try decode([:])
+      }
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]

@@ -70,9 +70,10 @@ struct TreeRepository {
   // Who owned a row that outlived its delete; a live row (or none) answers nullopt.
   virtual std::optional<UserId> retiredOwner(const TreeId& tree) = 0;
   virtual ForkLineage loadForkLineage(const TreeId& tree) = 0;
-  // Upsert a slice: entries given replace their rows, absent ones are untouched, and a save never
-  // deletes. The title lands only under a stamp dominating the stored one.
-  virtual void save(const TreeId& tree, const GraphState& state, const LegendState& legend,
+  // Upsert a slice onto a tree whose row stands: entries given replace their rows, absent ones are
+  // untouched, and a save never deletes. A tree with no row is left without one, and answers false.
+  // The title lands only under a stamp dominating the stored one.
+  virtual bool save(const TreeId& tree, const GraphState& state, const LegendState& legend,
                     const Lww<std::string>& title, Seq head) = 0;
   // Insert a brand-new tree. Throws DuplicateTree on an id collision (never overwrites a tree).
   virtual void create(const TreeId& tree, const GraphState& state, const LegendState& legend,

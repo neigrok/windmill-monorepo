@@ -72,6 +72,7 @@
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TendingService.h"
 #include "products/roadmap/application/TreeRegistry.h"
+#include "platform/application/ClosedAccountSweep.h"
 #include "platform/application/RetentionSweep.h"
 #include "products/roadmap/application/ReminderSweep.h"
 #include "products/roadmap/routes.h"
@@ -310,7 +311,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"sync_replicas", "account"},         // the sync engine
                 {"sync_requests", "account"},         // the sync engine
             });
-  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint);
+  // Erasing a closed account takes, beside the platform's own rows, every product row that no foreign
+  // key to users cascades from. Gym and journal rows all cascade; roadmap's trees do not, and their
+  // live rooms are retired once the erasure commits, so no reader is served one and no save brings
+  // one back.
+  AccountErasure roadmapErasure = roadmapAccountErasure();
+  roadmapErasure.committed = [registry](const std::vector<std::string>& trees) { registry->retireErased(trees); };
+  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure});
   // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
   auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
@@ -543,8 +550,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                  paddleWebhookSecret ? paddleWebhookSecret : "",
                                                  paddlePriceId ? paddlePriceId : "", aiBudgets, authRepo.get(), aiLimits.paidPeriodNanos);
 
-  // The one sweep that deletes; no product table is reachable from it. 0 or less on any window
-  // means keep forever.
+  // The sweep that deletes rows nobody owns; no product table is reachable from it. 0 or less on
+  // any window means keep forever.
   RetentionWindows retention;
   retention.eventDays = envDays("WINDMILL_EVENTS_RETENTION_DAYS", retention.eventDays);
   retention.feedbackDays = envDays("WINDMILL_FEEDBACK_RETENTION_DAYS", retention.feedbackDays);
@@ -556,6 +563,11 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       std::make_shared<RetentionSweep>(*retentionStore, *retentionLock, *systemClock, retention);
   lifetime.watch(retentionSweep, retentionStore, retentionLock, systemClock);
   retentionSweep->start();
+
+  // The close's promise: an account 30 days past its close is erased with all it holds.
+  auto closedAccountSweep = std::make_shared<ClosedAccountSweep>(*authService);
+  lifetime.watch(closedAccountSweep, authService, authRepo, systemClock);
+  closedAccountSweep->start();
 
   // No ANTHROPIC_API_KEY leaves /v1/compose answering 503.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");

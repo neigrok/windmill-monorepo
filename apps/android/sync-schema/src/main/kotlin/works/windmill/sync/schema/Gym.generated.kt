@@ -433,6 +433,7 @@ object Gym {
             "        \"server\"",
             "      ],",
             "      \"primary\": true,",
+            "      \"headline\": true,",
             "      \"fields\": {",
             "        \"routineId\": {",
             "          \"kind\": \"lww\",",

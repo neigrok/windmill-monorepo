@@ -23,8 +23,7 @@ struct GymRoom: View {
   @State var revealedProposal: String?
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
-  @State var shareAfterSignIn: ID<Session>?
-  @State var coachAfterSignIn = false
+  @State var routing = GymRoomRouting()
   @State var routine: ID<Routine>?
   @State var startRoutine: ID<Routine>?
   @State var risingFromAccessory = false
@@ -82,21 +81,12 @@ struct GymRoom: View {
     }
     .sheet(item: $setupBuilder) { editing in RoutineBuilder(gym: gym, editing: editing) { routine = $0 } }
     .sheet(item: $proposal) { proposal in ProposalSheet(gym: gym, id: proposal.id) }
-    // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
-    // shared.
-    .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in
-      SessionShareSheet(gym: gym, sessionID: request.id) { shareAfterSignIn = request.id }
+    .sheet(item: $share, onDismiss: { follow(routing.shareClosed()) }) { request in
+      SessionShareSheet(gym: gym, sessionID: request.id) { routing.signInToShare(request.id) }
     }
     .onChange(of: app.sheet) { closed, sheet in
       guard sheet == nil, closed != nil else { return }
-      if let pending = shareAfterSignIn {
-        shareAfterSignIn = nil
-        if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
-      }
-      if coachAfterSignIn {
-        coachAfterSignIn = false
-        if !gym.sharingNeedsSignIn { ask(WorkoutHandoff.coachQuestion, send: true) }
-      }
+      follow(routing.accountClosed(needsSignIn: gym.sharingNeedsSignIn))
     }
     // Only a cover closed under a workout still on screen hides it; a close the workout already made records nothing.
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0, gym.workout.isPresented { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
@@ -180,27 +170,71 @@ struct GymRoom: View {
   func escapeSetup(_ choice: CoachSetupChoice) {
     if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
   }
-  // A proposal's row opens the conversation at its card while the conversation on screen holds it; one it does not — a
-  // connected tool's, or one from another conversation — opens its card on a sheet.
   func reviewProposal(_ id: ID<Proposal>) {
-    guard coach.proposalTurn(id.description) != nil else { proposal = CoachProposalID(id: id.description); return }
-    coachPath = NavigationPath(); revealedProposal = id.description; tab = .coach
-  }
-  func ask(_ question: String, send: Bool = false) {
-    coachPath = NavigationPath(); tab = .coach
-    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send)
+    follow([GymRoomRouting.review(id.description, inConversation: coach.proposalTurn(id.description) != nil)])
   }
   func receiveWorkout() {
     risingFromAccessory = false
     guard let handoff = gym.workout.handoff ?? finishedHandoff else { return }
     finishedHandoff = nil; gym.workout.handoff = nil
-    switch handoff {
-    case .detail(let id): tab = .log; if let id { logPath.append(Destination.session(id.description)) }
-    case .coach:
-      if gym.sharingNeedsSignIn { coachAfterSignIn = true; app.keep() }
-      else { ask(WorkoutHandoff.coachQuestion, send: true) }
-    case .writtenProgram: if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") }
+    follow(routing.receive(handoff, needsSignIn: gym.sharingNeedsSignIn, signedOut: gym.isAnonymous || gym.authPaused))
+  }
+  func follow(_ routes: [GymRoomRouting.Route]) {
+    for route in routes {
+      switch route {
+      case .log(let session): tab = .log; if let session { logPath.append(Destination.session(session.description)) }
+      case .keep: app.keep()
+      case .openYou: app.openYou()
+      case .ask(let question, let send):
+        coachPath = NavigationPath(); tab = .coach
+        coachHandoff = CoachHandoff(account: gym.account, question: question, send: send)
+      case .share(let session): share = SessionShareID(id: session)
+      case .revealProposal(let id): coachPath = NavigationPath(); revealedProposal = id; tab = .coach
+      case .proposalSheet(let id): proposal = CoachProposalID(id: id)
+      }
     }
+  }
+}
+
+// Where the room sends the lifter next. A finished workout's receipt hands on to its detail, Keep or Coach; a share or a
+// Coach question that needs an account waits for the sign-in sheet to close signed in, and is dropped when it closes
+// signed out; a proposal's row opens the conversation at its card while the conversation on screen holds it, and one it
+// does not — a connected tool's, or one from another conversation — on a sheet.
+struct GymRoomRouting: Equatable {
+  enum Route: Equatable {
+    case log(session: ID<Session>?)
+    case keep
+    case openYou
+    case ask(String, send: Bool)
+    case share(ID<Session>)
+    case revealProposal(String)
+    case proposalSheet(String)
+  }
+  var shareAfterSignIn: ID<Session>?
+  var coachAfterSignIn = false
+
+  mutating func receive(_ handoff: WorkoutHandoff, needsSignIn: Bool, signedOut: Bool) -> [Route] {
+    switch handoff {
+    case .detail(let id): return [.log(session: id)]
+    case .keep(let id): return [.log(session: id), .keep]
+    case .coach:
+      guard needsSignIn else { return [.ask(WorkoutHandoff.coachQuestion, send: true)] }
+      coachAfterSignIn = true
+      return [.keep]
+    case .writtenProgram: return signedOut ? [.openYou] : [.ask("Help me turn my written program into a routine.", send: false)]
+    }
+  }
+  // Sign in to share closes the share into You.
+  mutating func signInToShare(_ session: ID<Session>) { shareAfterSignIn = session }
+  func shareClosed() -> [Route] { shareAfterSignIn == nil ? [] : [.openYou] }
+  mutating func accountClosed(needsSignIn: Bool) -> [Route] {
+    defer { shareAfterSignIn = nil; coachAfterSignIn = false }
+    guard !needsSignIn else { return [] }
+    let share: [Route] = shareAfterSignIn.map { [.share($0)] } ?? []
+    return share + (coachAfterSignIn ? [.ask(WorkoutHandoff.coachQuestion, send: true)] : [])
+  }
+  static func review(_ proposal: String, inConversation: Bool) -> Route {
+    inConversation ? .revealProposal(proposal) : .proposalSheet(proposal)
   }
 }
 

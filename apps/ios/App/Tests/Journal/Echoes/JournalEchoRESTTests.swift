@@ -73,7 +73,7 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
     let telemetry: TelemetryRecorder
   }
 
-  func fixture(_ reply: JournalEchoWireProtocol.Reply, signedIn: Bool = true) async throws -> Fixture {
+  func fixture(_ reply: JournalEchoWireProtocol.Reply, signedIn: Bool = true, deadline: TimeInterval = 15) async throws -> Fixture {
     let server = JournalModelTransport(), tokens = InMemoryTokenStore(), network = SwitchedConnectivity()
     let store = try Store.inMemory(registry: SyncSchema.registry, commandResultWrites: JournalWriting.resultWrites,
                                    pendingDeviceWork: JournalWriting.pendingWork)
@@ -92,7 +92,7 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [JournalEchoWireProtocol.self]
     let telemetry = TelemetryRecorder()
-    let rest = JournalEchoREST(runtime: runtime, telemetry: telemetry, session: URLSession(configuration: configuration))
+    let rest = JournalEchoREST(runtime: runtime, telemetry: telemetry, session: URLSession(configuration: configuration), deadline: deadline)
     return Fixture(rest: rest, runtime: runtime, server: server, network: network, telemetry: telemetry)
   }
 
@@ -230,10 +230,10 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
   }
 
   @Test(.timeLimit(.minutes(1))) func aPartialBodyCannotKeepAnEchoRequestAlivePastItsDeadline() async throws {
-    let fixture = try await fixture(.partial)
+    let fixture = try await fixture(.partial, deadline: 0.5)
     let started = ContinuousClock.now
-    await #expect(throws: URLError(.timedOut)) { try await fixture.rest.list(through: "2026-10-08") }
-    #expect(started.duration(to: .now) < .seconds(20))
+    await #expect { try await fixture.rest.list(through: "2026-10-08") } throws: { ($0 as? URLError)?.code == .timedOut }
+    #expect(started.duration(to: .now) < .seconds(5))
     let entries = fixture.telemetry.entries.withLock { $0 }
     #expect(entries.map(\.name) == ["api_request_failed", "client_error"])
     #expect(entries.first?.properties == ["operation": "journal_echoes", "route": "/v1/journal", "method": "GET", "failure_kind": "timeout"])

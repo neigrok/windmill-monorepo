@@ -358,6 +358,15 @@ public:
 
   std::uint64_t count(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) override { return feed(txn, scope, query).size(); }
 
+  Tally tally(SyncTxn& txn, const ScopeKey& scope) override {
+    Tally tally;
+    for (const Row& row : feed(txn, scope, FeedQuery{.visibleOnly = true})) {
+      ++tally.count;
+      tally.lastWrittenAt = std::max(tally.lastWrittenAt.value_or(0), row.ru);
+    }
+    return tally;
+  }
+
   std::optional<std::int64_t> maxSerial(SyncTxn& txn, const ScopeKey& scope, const std::string& field,
                                         const std::map<std::string, Json::Value>& match) override {
     std::optional<std::int64_t> highest;

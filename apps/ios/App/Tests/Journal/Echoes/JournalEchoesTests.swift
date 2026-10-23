@@ -612,8 +612,9 @@ import SyncTesting
     defer { window.isHidden = true; window.rootViewController = nil }
     func shown() -> Int { fixture.recorder.entries.withLock { $0.filter { $0.name == "journal_echo_shown" }.count } }
     func settle(until count: Int) async throws {
-      for _ in 0..<40 where shown() != count { host.view.layoutIfNeeded(); try await Task.sleep(for: .milliseconds(50)) }
-      try await Task.sleep(for: .milliseconds(300))
+      for _ in 0..<200 where shown() != count { host.view.layoutIfNeeded(); try await Task.sleep(for: .milliseconds(10)) }
+      // A passage drawn twice would record again on the next render passes.
+      for _ in 0..<5 { host.view.layoutIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
     }
     try await settle(until: 0)
     #expect(shown() == 0, "The count draws no passage")

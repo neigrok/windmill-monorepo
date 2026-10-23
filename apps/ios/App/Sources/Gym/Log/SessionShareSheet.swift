@@ -198,7 +198,6 @@ extension GymModel {
 
 struct SessionShareSheet: View {
   let gym: GymModel
-  let sessionID: ID<Session>
   let signIn: () -> Void
   @Environment(\.dismiss) private var dismiss
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -206,7 +205,7 @@ struct SessionShareSheet: View {
   @State private var sharing: SessionShareModel
 
   init(gym: GymModel, sessionID: ID<Session>, signIn: @escaping () -> Void) {
-    self.gym = gym; self.sessionID = sessionID; self.signIn = signIn
+    self.gym = gym; self.signIn = signIn
     _owner = State(initialValue: gym.account)
     _sharing = State(initialValue: SessionShareModel(mint: { try await gym.mintSessionShare(sessionID) },
                                                     revoke: { try await gym.revokeSessionShare(sessionID) }))

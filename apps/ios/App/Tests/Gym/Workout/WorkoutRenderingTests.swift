@@ -26,17 +26,16 @@ import SyncTesting
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner)
     models.append(gym)
-    var routineId: ID<Routine>?
+    let started: ID<Session>?
     if planned {
       var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Lower A", entries: [
         RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 4)),
         RoutineEntry(exerciseId: ID("romanian-deadlift"), sets: Array(repeating: SetTarget(reps: 6, weightKg: 82.5), count: 3)),
       ]))
       guard case .saved = gym.save(&draft) else { XCTFail("Fixture routine failed"); return (harness, gym) }
-      routineId = draft.current.id
-    }
-    guard let id = gym.startWorkout(routineId: routineId) else { XCTFail("Fixture start failed"); return (harness, gym) }
-    if !planned { gym.workout.add(ID("back-squat")) }
+      started = gym.startWorkout(routineId: draft.current.id)
+    } else { started = gym.startWorkout(following: ID("back-squat")) }
+    guard let id = started else { XCTFail("Fixture start failed"); return (harness, gym) }
     for index in 0..<count {
       let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
                             weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
@@ -84,7 +83,14 @@ import SyncTesting
     XCTAssertEqual(image.size, window.bounds.size)
   }
 
+  // The two screenshot walks below draw every workout screen for design review and assert only that each drew; like the
+  // design capture suite they run when the runner sees WM_DESIGN_CAPTURE=1.
+  func skipUnlessCapturing() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["WM_DESIGN_CAPTURE"] == "1", "Set WM_DESIGN_CAPTURE=1 to draw the workout screens")
+  }
+
   func testEveryWorkoutScreenInLightAndDark() async throws {
+    try skipUnlessCapturing()
     for (name, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
       let (_, gym) = try fixture()
       try await capture(WorkoutScreen(gym: gym), name: "live-" + name, appearance: appearance)
@@ -94,10 +100,6 @@ import SyncTesting
       try await capture(SetWheelSheet(title: "Set 4", movement: "Back squat", basis: MovementEquipment("barbell"), weightKg: 100, reps: 5, commit: { _, _ in }), name: "wheel-" + name, appearance: appearance)
       let set = try XCTUnwrap(gym.workout.sets.last)
       try await capture(SetEditor(gym: gym, set: set, identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
-      gym.workout.weightKg = 105; gym.workout.logSet(); gym.workout.select(ID("romanian-deadlift"))
-      let offer = try XCTUnwrap(gym.workout.deviation)
-      try await capture(WorkoutDeviationSheet(workout: gym.workout, offer: offer), name: "heavier-" + name, appearance: appearance)
-      gym.workout.resolveDeviation(save: false)
       let (_, free) = try fixture(planned: false, count: 5)
       await free.workout.finish()
       let receipt = try XCTUnwrap(free.workout.receipt)
@@ -170,8 +172,8 @@ import SyncTesting
       for _ in 0..<100 where engine.status.online { try await Task.sleep(for: .milliseconds(2)) }
       XCTAssertFalse(engine.status.online)
       let offline = GymModel(runner: runner, runtime: runtime); models.append(offline)
-      XCTAssertNotNil(offline.startWorkout())
-      offline.workout.add(ID("back-squat")); offline.workout.weightKg = 100; offline.workout.logSet()
+      XCTAssertNotNil(offline.startWorkout(following: ID("back-squat")))
+      offline.workout.weightKg = 100; offline.workout.logSet()
       XCTAssertEqual(offline.workout.sets.count, 1)
       try await capture(WorkoutScreen(gym: offline), name: "offline-" + name, appearance: appearance)
       let fault = WorkoutFaultTransport(), failedRuntime = try WorkoutStateTests.faultRuntime(fault)
@@ -179,8 +181,8 @@ import SyncTesting
       let failedAdmission = try await failedRuntime.engine.signIn(account: failedIdentity.account, token: failedIdentity.token)
       XCTAssertTrue(failedAdmission.isComplete)
       let failed = GymModel(runner: failedRuntime.runner, runtime: failedRuntime); models.append(failed)
-      XCTAssertNotNil(failed.startWorkout())
-      failed.workout.add(ID("back-squat")); failed.workout.logSet()
+      XCTAssertNotNil(failed.startWorkout(following: ID("back-squat")))
+      failed.workout.logSet()
       fault.failure.withLock { $0 = 503 }
       await failedRuntime.engine.flushOnLeave()
       for _ in 0..<100 where !failed.workout.syncFailed { try await Task.sleep(for: .milliseconds(2)) }
@@ -205,7 +207,16 @@ import SyncTesting
     XCTAssertEqual(open.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken }, ["Set 1, current, open target"])
   }
 
+  // The rack speaks its numeral in the movement's load basis and Log set with the whole set it logs.
+  func testTheRackSpeaksItsLoadInItsBasis() {
+    XCTAssertEqual([MovementEquipment("barbell"), MovementEquipment("dumbbell"), MovementEquipment("dumbbell", loadCount: 1), MovementEquipment("bodyweight")]
+      .map { WorkoutRack.spokenWeight(100, basis: $0) }, ["Weight, 100 kg total", "Weight, 100 kg each", "Weight, 100 kg", "Weight, 100 kg added"])
+    XCTAssertEqual([WorkoutRack.spokenLog(100, reps: 5), WorkoutRack.spokenLog(67.5, reps: 1)],
+                   ["Log set, 100 kilograms, 5 reps", "Log set, 67.5 kilograms, 1 rep"])
+  }
+
   func testLargeNumeralsAtLargeAndLargestText() async throws {
+    try skipUnlessCapturing()
     for (name, type) in [("large", DynamicTypeSize.xxxLarge), ("AX", .accessibility5)] {
       for (skin, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
         let (_, gym) = try fixture()

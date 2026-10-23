@@ -329,6 +329,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
                            type.idSpace != IdSpace::global))
     reader.fail("governs a tree without being a terminal minted type of a product scope in the global id space");
   if (!type.origins.replica) reader.fail("has origins without replica");
+  if (type.headline && (!type.primary || type.scope.kind != ScopeKind::product)) reader.fail("is a headline type without being a primary type of a product scope");
   if (!type.visibleWhen.empty() && type.life) reader.fail("declares visibleWhen with life");
   for (const std::string& fieldName : type.visibleWhen) {
     if (!type.field(fieldName)) reader.fail("makes the unknown field \"" + fieldName + "\" visibleWhen");
@@ -350,7 +351,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
 TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
   const Reader element(json, elementPath,
                        {"type", "scope", "identity", "idSpace", "idPattern", "key", "singletonId", "derive", "mint", "seeded",
-                        "life", "wholePut", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary"});
+                        "life", "wholePut", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary", "headline"});
   const std::string name = element.name("type", memberNames());
   const Reader reader = element.under("registry.types." + name);
   TypeDef type{
@@ -367,6 +368,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
       .origins = originsOf(reader),
       .cap = reader.optionalInteger("cap", 1),
       .primary = reader.trueOrAbsent("primary"),
+      .headline = reader.trueOrAbsent("headline"),
   };
   if (reader.has("idSpace")) type.idSpace = reader.oneOf<IdSpace>("idSpace", {{"scope", IdSpace::scope}, {"global", IdSpace::global}});
   if (reader.has("idPattern")) type.idPattern = reader.pattern("idPattern");
@@ -599,9 +601,12 @@ Registry::Registry(const Json::Value& document) {
     if (scope.kind == ScopeKind::product && !products_.contains(scope.product))
       throw RegistryError(where + " lives in the undeclared product \"" + scope.product + "\"");
   };
+  std::set<std::string> headlined;
   for (const TypeDef& type : types_) {
     const std::string where = "registry.types." + type.name;
     requireProduct(type.scope, where);
+    if (type.headline && !headlined.insert(type.scope.product).second)
+      throw RegistryError(where + " is a second headline type of the product \"" + type.scope.product + "\"");
     requireType(type.keyRef, where + ".key");
     for (const KeyPart& part : type.keyTuple) requireType(part.ref, where + ".key." + part.name);
     for (const auto& [fieldName, field] : type.fields) requireType(field.ref, where + ".fields." + fieldName);

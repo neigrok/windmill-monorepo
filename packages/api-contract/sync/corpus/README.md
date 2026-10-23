@@ -43,7 +43,7 @@ for the `gym/` files, and `../journal.registry.json` for the `journal/` files.
 
 | Role | Files |
 |---|---|
-| all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
+| all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `registry/`, `identity/seeded.json`, `digest/`, `protocol/` |
 | server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json` |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
 
@@ -58,7 +58,7 @@ journal.
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
 | `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete; a delete carries its life alone |
-| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary |
+| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary and headline |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
 | `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, whose `opens` values `unlisted` and `public` open the tree to every reader (D-4) |
@@ -438,6 +438,13 @@ side, is kept as it is. Parts absent from both sides stay absent.
 `label`. Every byte outside `[A-Za-z0-9]` is a separator; the base stops at 40 characters before its
 trailing dash is removed; suffixes are `-2`, `-3`, … appended to the base.
 
+### `registry/refusals.json` — all
+
+`input: {registry}` · `expect: {admitted}`: whether an implementation loads `registry`, a whole registry
+document, or refuses it as it loads (engine.md §2.4). Each refused document breaks one rule beside an
+admitted one; the rules are `headline`'s: true or absent, on a primary type of a product scope, at most
+one per product.
+
 ### `identity/seeded.json` — all
 
 - `input: {op: "make", type, seed, n}` · `expect: {id}` or `{error: true}`: the D-8 seeded id
@@ -789,7 +796,10 @@ configure a limit skips those vectors.
 - Every response body carries `serverTime`, `epoch` and `as`: `account`, or `null` on a 401.
 - `hello` carries `serverTime`, `epoch`, `as`, `schema` and `minSchema` (the registry's `version` and
   `minVersion`), and, for an account, `holdsRecords[product]`: a visible row of a primary type in
-  `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible.
+  `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible. For an account
+  it also carries `holdings[product]` for each product that declares a `headline` type: `count`, the
+  visible rows of that type in `acct:<A>/<product>`, and `lastWrittenAt`, the greatest `ru` among them,
+  or `null` when there are none.
 
 **Strict cursors.**
 

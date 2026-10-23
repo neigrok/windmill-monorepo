@@ -85,15 +85,50 @@ struct TrashSwipe: ViewModifier {
   }
 }
 
+// 07.5, asked by every door that discards a workout; it records shown and cancel on `screen`, closing on an account change.
+struct DiscardWorkoutAlert: ViewModifier {
+  let gym: GymModel
+  let screen: String
+  @Binding var isPresented: Bool
+  let sets: Int
+  let discard: () -> Void
+  @State var confirmed = false
+
+  static func message(sets: Int) -> String {
+    (sets == 0 ? "This deletes the workout." : "This deletes the workout and its \(GymCount.of(sets, "set")).") + " You can’t undo this."
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .alert("Discard this workout?", isPresented: $isPresented) {
+        Button("Discard", role: .destructive) { confirmed = true; discard() }
+        Button("Cancel", role: .cancel) {}
+      } message: { Text(Self.message(sets: sets)) }
+      .onChange(of: isPresented) { _, shown in
+        if shown {
+          confirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "discard", "state": "shown"])
+        } else if !confirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": screen, "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in isPresented = false }
+  }
+}
+
 extension View {
   func trashSwipe(_ act: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
     modifier(TrashSwipe(act: act, enabled: enabled, action: action))
+  }
+
+  func discardWorkoutAlert(_ gym: GymModel, screen: String, isPresented: Binding<Bool>, sets: Int, discard: @escaping () -> Void) -> some View {
+    modifier(DiscardWorkoutAlert(gym: gym, screen: screen, isPresented: isPresented, sets: sets, discard: discard))
   }
 }
 
 // A movement in a list the lifter orders, as the routine editor and This workout draw it: the list stays out of edit mode, so
 // a long press lifts the row by its drawn handle and a swipe shows the trash. Its menu and VoiceOver's actions hold the same
-// acts: Edit exercise, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
+// acts: Edit movement, Move up, Move down and, where it can go, Remove movement. The caller's `onMove` takes the lift.
 struct OrderedMovementRow<Label: View>: View {
   let exercise: Exercise?
   let index: Int
@@ -115,7 +150,7 @@ struct OrderedMovementRow<Label: View>: View {
     }.accessibilityIdentifier(identifier)
       .trashSwipe("Remove movement", enabled: removable, action: remove)
       .contextMenu {
-        if let exercise { Button("Edit exercise", systemImage: "pencil") { edit(exercise) } }
+        if let exercise { Button("Edit movement", systemImage: "pencil") { edit(exercise) } }
         Button("Move up") { move(-1) }.disabled(index == 0)
         Button("Move down") { move(1) }.disabled(index == count - 1)
         if removable { Button("Remove movement", systemImage: "trash", role: .destructive, action: remove) }
@@ -141,11 +176,17 @@ struct SetRow: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .body) private var markerColumn = 28.0
 
+  var effort: String { Readout.effort(weightKg: set.weightKg, reps: set.reps) }
+  var second: [String] { [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 } }
+  // VoiceOver reads the row in one line whatever its reading: *1 · 90 × 5, +30 over plan, RPE 8 · Smooth last set.*
+  var spoken: String {
+    (["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", ")
+  }
+
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
-    let effort = Readout.effort(weightKg: set.weightKg, reps: set.reps)
-    let second = [time, set.rpe.map { "RPE \(Readout.weight($0))" }, set.note.isEmpty ? nil : set.note].compactMap { $0 }
+    let effort = effort, second = second
     HStack(alignment: .firstTextBaseline, spacing: 0) {
       if reading == .columns {
         Text(marker).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(width: markerColumn, alignment: .leading)
@@ -165,7 +206,7 @@ struct SetRow: View {
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel((["\(marker) · \(effort)", caption].compactMap { $0 } + (second.isEmpty ? [] : [second.joined(separator: " · ")])).joined(separator: ", "))
+      .accessibilityLabel(spoken)
   }
 
   // A set by its place among the sets so far.

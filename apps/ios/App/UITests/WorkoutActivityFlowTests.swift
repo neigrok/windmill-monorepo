@@ -31,13 +31,9 @@ import XCTest
     if allow.waitForExistence(timeout: 2) { allow.tap() }
     XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
-    let banner = XCTAttachment(screenshot: springboard.screenshot())
-    banner.name = "lock-screen-banner"; banner.lifetime = .keepAlways; add(banner)
     XCUIDevice.shared.press(.home)
     let island = springboard.staticTexts["Since last set"]
     waitForVisibleIsland(island, in: springboard)
-    let compact = XCTAttachment(screenshot: springboard.screenshot())
-    compact.name = "dynamic-island-compact"; compact.lifetime = .keepAlways; add(compact)
     if let media = ProcessInfo.processInfo.environment["WM_ACTIVITY_RENDER_MEDIA"], let url = URL(string: media) {
       let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
       safari.open(url)
@@ -48,8 +44,6 @@ import XCTest
       XCUIDevice.shared.press(.home)
       XCTAssertTrue(springboard.icons["Safari"].waitForExistence(timeout: 5))
       waitForVisibleIsland(springboard.images["Workout in progress"], in: springboard)
-      let minimal = XCTAttachment(screenshot: springboard.screenshot())
-      minimal.name = "dynamic-island-minimal"; minimal.lifetime = .keepAlways; add(minimal)
       safari.terminate()
       waitForVisibleIsland(island, in: springboard)
     }
@@ -60,8 +54,6 @@ import XCTest
     activityContainer.press(forDuration: 1)
     let log = springboard.buttons["Log set"]
     XCTAssertTrue(log.waitForExistence(timeout: 5))
-    let expanded = XCTAttachment(screenshot: springboard.screenshot())
-    expanded.name = "dynamic-island-expanded"; expanded.lifetime = .keepAlways; add(expanded)
     log.tap()
     app.activate()
     let loggedProgress = app.descendants(matching: .any).matching(NSPredicate(format:
@@ -88,6 +80,6 @@ import XCTest
       guard let snapshot = try? element.snapshot() else { return false }
       return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame) && snapshot.frame.maxY < 100
     }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Dynamic Island content must be visible before capture")
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Dynamic Island content must be visible")
   }
 }

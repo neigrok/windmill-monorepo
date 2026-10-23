@@ -144,7 +144,7 @@ extension CoachConversation {
           guard keep(next, failure: "Coach’s response couldn’t be saved. Check it again.") else { throw AppFailure(message: "Coach’s response couldn’t be saved. Check it again.") }
           if response.status == "completed" { break }
           if response.status != "pending" { showOnboardingRefusal(response.errorCode ?? "expired", allowance: response.allowance); break }
-          try await Task.sleep(for: .seconds(1))
+          try await Task.sleep(for: gym.waits.coachBeat)
           let data = try await installation.request("/v1/gym/coach/onboarding/" + record.id, credential: credential)
           response = try JSONDecoder().decode(CoachOnboardingOut.self, from: data)
         }

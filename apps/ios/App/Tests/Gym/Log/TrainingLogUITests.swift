@@ -227,7 +227,7 @@ import SyncTesting
   @Test func theEndCountsTheWorkoutsAndAnEmptyLogNamesTheOpenOne() throws {
     let (_, gym) = fixture()
     #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No workouts yet", nil])
-    _ = try #require(gym.startWorkout())
+    _ = try #require(gym.startWorkout(following: ID("back-squat")))
     #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No finished workouts yet", nil])
     _ = try session(gym, daysAgo: 3)
     #expect(LogTab(gym: gym).total == nil)

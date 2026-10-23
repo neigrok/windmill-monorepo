@@ -168,18 +168,12 @@ public struct StatsProgress: Equatable, Sendable {
     self.sessions = sessions.sorted { $0.startedAt == $1.startedAt ? $0.sessionId < $1.sessionId : $0.startedAt < $1.startedAt }
   }
 
-  public init(_ read: Reader) throws { self.init(log: try TrainingLog(read)) }
-
   public var json: JSON { ["asOf": JSON(asOf.ms), "sessions": .array(sessions.map(\.json))] }
 
   public func movement(_ exerciseId: ID<Exercise>) -> MovementProgress {
     MovementProgress(exerciseId: exerciseId, isComplete: isComplete, sessions: sessions.compactMap { session in
       session.movements.first { $0.exerciseId == exerciseId }.map { MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: $0) }
     })
-  }
-
-  public func sessionEstimate(_ id: ID<Session>) -> Double? {
-    sessions.first { $0.sessionId == id }?.movements.compactMap { $0.estimate?.e1rm }.max()
   }
 
   public func consistency(now: Instant, zone: any Zone) -> Int? {

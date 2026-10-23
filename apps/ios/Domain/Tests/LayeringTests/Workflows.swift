@@ -1,8 +1,9 @@
 import Foundation
 
-// §2.4 item 4: xcodebuild and swift in .github/workflows/ios*.yml pass only listed settings (none: no workflow signs an app), no -xcconfig, no -Xswiftc.
+// §2.4 item 4: xcodebuild and swift in .github/workflows/ios*.yml pass only listed settings (ARCHS alone: a simulator build compiles one
+// slice, and no workflow signs an app), no -xcconfig, no -Xswiftc.
 enum Workflows {
-  static let allowedBuildSettings: Set<String> = []
+  static let allowedBuildSettings: Set<String> = ["ARCHS"]
   static let tools: Set<String> = ["xcodebuild", "swift"]
   static let forbiddenFlags: Set<String> = ["-xcconfig", "-Xswiftc"]
   static let configurationFileVariable = "XCODE_XCCONFIG_FILE"

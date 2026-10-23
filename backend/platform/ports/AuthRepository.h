@@ -65,11 +65,20 @@ struct AuthRepository {
   virtual std::optional<User> findUserById(const UserId& id) = 0;
   virtual User createUser(const Email& email, const std::string& name) = 0;
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
-  virtual void markUserDeleted(const UserId& userId, UnixMs now) = 0;
-  virtual void reviveUser(const UserId& userId) = 0;
+  // Stamps the close at `now`, final at `closesAt`.
+  virtual void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) = 0;
+  // Clears a close that is not final at `now`, and only such a close; true when it did.
+  virtual bool reviveUser(const UserId& userId, UnixMs now) = 0;
   // Hard delete; only for the link merge, whose precondition is an account proven empty. Returns the digests of the
   // sessions the account still held, which go with it.
   virtual std::vector<std::string> deleteUser(const UserId& userId) = 0;
+
+  // Accounts whose close is final at `now`, the earliest final first, at most `limit`.
+  virtual std::vector<UserId> finalClosedAccounts(UnixMs now, int limit) = 0;
+  // Deletes the account and every database row any product keys to it, in one transaction, while its close is still
+  // final at `now`: checked under the account's row lock, so a revive that commits first keeps it. True when the
+  // account was erased.
+  virtual bool eraseAccount(const UserId& userId, UnixMs now) = 0;
 
   // Keyed by the provider's subject, never by an address.
   virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;

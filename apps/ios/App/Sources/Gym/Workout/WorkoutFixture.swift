@@ -14,6 +14,8 @@ enum WorkoutFixture {
     guard board.hasPrefix("workout-") else { return false }
     model.openRoom(.gym)
     let gym = model.gym
+    // Only 03.15's receipt is the phone's first; every other board's comes after it.
+    if !board.hasSuffix("-first") { model.preferences.set("earlier", forKey: GymModel.keepReceipt) }
     if board == "workout-notice", let runtime = gym.runtime, let server = runtime.auth.fake {
       do {
         let identity = server.identity(email: "workout-notice-fixture@example.com")
@@ -40,8 +42,6 @@ enum WorkoutFixture {
     let id = gym.runner.mint(Session.self)
     guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000)))?.refusal == nil,
           gym.restoreWorkout() else { return true }
-    // A free workout before its first movement: 03.9 in the app, 04.4 on the Lock Screen under the live-activity board's real clock.
-    if board.hasSuffix("blank") { gym.workout.reconcile(); return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
       let logged: [(movement: String, kg: Double, reps: Int, agoMs: Int64)] = upper ? [

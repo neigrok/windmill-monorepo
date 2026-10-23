@@ -168,16 +168,24 @@ export function frameFor(state, event, account = null) {
   return { ...event.frame, as: account };
 }
 
-// §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type. A sent
+// §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type; holdings[p]
+// counts the visible rows of p's headline type and names the last write among them (the greatest ru). A sent
 // credential that fails answers 401 (§9.1); only a hello with none is anonymous.
 export function hello({ state, registry, account = null, credential, serverTime }) {
   if (credentialFails(account, credential)) return { status: 401, body: { serverTime, epoch: state.epoch, as: null, error: 'unauthenticated' } };
   const body = { serverTime, epoch: state.epoch, as: account, schema: registry.version, minSchema: registry.minVersion };
   if (account === null) return { status: 200, body };
   body.holdsRecords = {};
+  body.holdings = {};
   for (const product of Object.keys(registry.products).sort()) {
+    const rows = state.rowsOf(`acct:${account}/${product}`);
     const primary = new Set(registry.primaryTypes(product).map((type) => type.type));
-    body.holdsRecords[product] = state.rowsOf(`acct:${account}/${product}`).some((row) => primary.has(row.t) && isVisible(registry.type(row.t), row));
+    body.holdsRecords[product] = rows.some((row) => primary.has(row.t) && isVisible(registry.type(row.t), row));
+    const headline = registry.headlineType(product);
+    if (!headline) continue;
+    const counted = rows.filter((row) => row.t === headline.type && isVisible(headline, row));
+    const lastWrittenAt = counted.reduce((latest, row) => (latest === null || row.ru > latest ? row.ru : latest), null);
+    body.holdings[product] = { count: counted.length, lastWrittenAt };
   }
   return { status: 200, body };
 }

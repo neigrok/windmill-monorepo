@@ -1,7 +1,6 @@
 import SwiftUI
 import DomainKit
 import GymDomain
-import SyncAPI
 
 struct LogTab: View {
   let gym: GymModel
@@ -13,7 +12,6 @@ struct LogTab: View {
   @State var limit = 30
   @State var weighing = false
   @State var discard: ID<Session>?
-  @State var discardConfirmed = false
   @State var historyNoticeDismissed = false
 
   static var hasTabBarAccessory: Bool {
@@ -69,23 +67,10 @@ struct LogTab: View {
             .disabled(gym.accountTransition)
         }
       }
-      .onChange(of: discard) { _, shown in
-        if shown != nil {
-          discardConfirmed = false
-          gym.telemetry.event("gym_action", properties: ["screen": "log", "action": "discard", "state": "shown"])
-        } else if !discardConfirmed {
-          gym.telemetry.event("gym_action", properties: ["screen": "log", "action": "cancel", "outcome": "cancelled"])
-        }
+      .discardWorkoutAlert(gym, screen: "log", isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }),
+                           sets: discard.flatMap { gym.log?.sets(session: $0).count } ?? 0) {
+        if let discard { gym.run(DiscardSession(discard)) }
       }
-      .onChange(of: gym.account) { _, _ in discard = nil }
-      .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }), titleVisibility: .visible, presenting: discard) { id in
-        Button("Discard workout", role: .destructive) {
-          discardConfirmed = true
-          gym.run(DiscardSession(id))
-          discard = nil
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: { _ in Text("This permanently removes the workout and its sets.") }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
       .onChange(of: gym.account) { _, _ in limit = 30; historyNoticeDismissed = false }

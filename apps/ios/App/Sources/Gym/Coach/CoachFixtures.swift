@@ -61,7 +61,7 @@ enum CoachFixture {
       guard let owner = gym.account, gym.coachAccountAvailable else { throw AppFailure(message: "Coach fixture account is unavailable.") }
       CoachFixtureProtocol.now.withLock { $0 = gym.dates.moment.now.ms }
       // An account the lifter signed into after a signed-out start keeps the conversation it adopted.
-      if !ProcessInfo.processInfo.arguments.contains("-restore-board"), runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
+      if !runtime.settings.restoreBoard, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
       if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }
@@ -118,11 +118,17 @@ enum CoachFixture {
     return true
   }
 
-  // A draft program screenshot in the composer, as if just chosen from the photo picker (`-coach-draft-photo`).
-  static func seedDraftPhoto(_ coach: CoachConversation) {
+  // A draft program screenshot in the composer, as if just chosen from the photo picker (`-coach-draft-photo`), or, signed
+  // in, a draft a signed-out start left on this phone beside the account's own (`-coach-kept-draft`, 01.18).
+  static func seedDraft(_ coach: CoachConversation) {
     #if DEBUG && targetEnvironment(simulator)
-    guard ProcessInfo.processInfo.arguments.contains("-coach-draft-photo"), coach.allowed, coach.saved.photo == nil else { return }
-    try? coach.addPhoto(CoachFixtureConversation.program())
+    let arguments = ProcessInfo.processInfo.arguments
+    if arguments.contains("-coach-draft-photo"), coach.allowed, coach.saved.photo == nil { try? coach.addPhoto(CoachFixtureConversation.program()) }
+    if arguments.contains("-coach-kept-draft"), coach.allowed, !coach.anonymous, coach.saved.phoneDrafts == nil {
+      var next = coach.saved; next.text = "Make it three days."
+      next.phoneDrafts = [CoachPhoneDraft(text: "Push day twice a week, legs on Friday. I have dumbbells and a bench.", photo: nil, photoData: nil, setupChoice: .describe)]
+      _ = coach.keep(next, failure: "Your draft couldn’t be saved. Try again.")
+    }
     #endif
   }
 
@@ -222,6 +228,13 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
          "position": index, "state": "pending", "entries": ["back-squat", "bench-press", "barbell-row"].enumerated().map { position, exercise in
            ["position": position, "exerciseId": exercise, "sets": [["reps": 5, "weightKg": NSNull()]], "restSeconds": 120] as [String: Any]
          }] as [String: Any]
+      }
+      // Coach asks two things before it drafts (`-coach-choices`, 01.17).
+      if ProcessInfo.processInfo.arguments.contains("-coach-choices") {
+        generation["answer"] = ""; generation["routineDrafts"] = []
+        generation["clarification"] = ["id": "fixture-choices", "question": "Two things, so it fits your week.", "groups": [
+          ["id": "days", "label": "How many days a week?", "multiple": false, "options": [["id": "three", "label": "3 days"], ["id": "daily", "label": "Every day"]]],
+          ["id": "equipment", "label": "What is at home?", "multiple": true, "options": [["id": "dumbbells", "label": "Dumbbells"], ["id": "bands", "label": "Bands"]]]]]
       }
     }
 

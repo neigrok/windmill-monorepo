@@ -167,6 +167,14 @@ import UIKit
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 working sets · 2 movements")
   }
 
+  // A routine's summary names each movement by its place and marks the lifter's own; one gone from the catalogue says so.
+  @Test func aSummaryRowMarksTheLiftersOwnMovement() {
+    let custom = Exercise(id: ID("custom-press"), name: "Custom press kept", pattern: "press", equipment: "barbell", stepKg: 2.5)
+    let catalogue = Catalogue(custom: [custom], names: [])
+    #expect([ID<Exercise>("custom-press"), ID("bench-press"), ID("gone")].enumerated().map { RoutineLines.movement($0, $1, in: catalogue) }
+            == ["1. Custom press kept · yours", "2. Bench Press", "3. Movement unavailable"])
+  }
+
   @Test func anEditorRowReadsItsTargetsInTheMovementsLoadBasis() {
     let lines = [
       RoutineLines.movement(Array(repeating: SetTarget(reps: 8, weightKg: 60), count: 4), equipment: MovementEquipment("barbell")),
@@ -238,7 +246,7 @@ import UIKit
     #expect(gym.proposals.first { $0.id == ID("word-refused-removal") }?.state == "pending")
     #expect(gym.routineProposals.map { [$0.id.description, gym.proposalLine($0)] } == [["word-refused-change", "Not applied"]])
     let cards = ["word-removed", "word-refused-removal", "word-refused-change"].map { ProposalCard(gym: gym, id: $0) }
-    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.retryable ? $0.primaryTitle : "-"] } == [
+    #expect(cards.map { [$0.stance == .applied ? "applied" : "open", $0.failure ?? "-", $0.decision(stalled: false).retries ? $0.decision(stalled: false).title : "-"] } == [
       ["applied", "-", "-"], ["open", "Not applied.", "Try again"], ["open", "Not applied.", "Try again"]])
   }
 
@@ -302,7 +310,7 @@ import UIKit
     #expect(GymModel(runner: harness.runner).routines.isEmpty)
   }
 
-  @Test func routineStartFreezesPlanAndFreeStartKeepsNoRoutine() throws {
+  @Test func routineStartFreezesPlanAndTheNextStartTakesTheEditedRoutine() throws {
     let (_, gym) = fixture()
     var draft = draft(gym)
     #expect(gym.saveRoutine(&draft))
@@ -316,8 +324,8 @@ import UIKit
     #expect(gym.openSession?.id == session.id && gym.sessions.count == 1 && gym.refusal != nil)
     #expect(gym.error == "Finish the open workout first.")
     gym.run(FinishSession(id: session.id))
-    #expect(gym.startWorkout() != nil)
-    #expect(gym.openSession?.routineId == nil && gym.openSession?.plan == nil)
+    #expect(gym.startWorkout(routineId: draft.id) != nil)
+    #expect(gym.openSession?.routineId == draft.id && gym.openSession?.plan == SessionPlan(draft.current))
   }
 
   @Test func missingRoutineReadFailureAndAccountTransitionCannotStartOrSave() {
@@ -326,11 +334,11 @@ import UIKit
     #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.error == "That routine can’t be found. No workout was started.")
     gym.readFailed = true
-    #expect(gym.startWorkout() == nil)
+    #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.openSession == nil)
     gym.readFailed = false; gym.accountChanging = true
     #expect(!gym.saveRoutine(&draft))
-    #expect(gym.startWorkout() == nil)
+    #expect(gym.startWorkout(routineId: draft.id) == nil)
     #expect(gym.routines.isEmpty && gym.openSession == nil)
   }
 
@@ -389,13 +397,15 @@ import UIKit
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
     let window = UIWindow(windowScene: scene)
+    // Without animations a push or pop lands within a run-loop turn, so a short settle shows any second event it records.
+    UIView.setAnimationsEnabled(false)
     window.rootViewController = UIHostingController(rootView: RoutineBuilder(gym: gym, editing: editing) { _ in })
     window.makeKeyAndVisible()
-    defer { window.isHidden = true; window.rootViewController = nil; previousKeyWindow?.makeKeyAndVisible() }
+    defer { window.isHidden = true; window.rootViewController = nil; previousKeyWindow?.makeKeyAndVisible(); UIView.setAnimationsEnabled(true) }
     let screens = { telemetry.entries.withLock { $0.filter { $0.name == "gym_screen_viewed" }.compactMap { $0.properties["screen"] } } }
     func settle(_ count: Int) async throws {
       for _ in 0..<100 where screens().count < count { try await Task.sleep(for: .milliseconds(20)) }
-      try await Task.sleep(for: .milliseconds(700))
+      try await Task.sleep(for: .milliseconds(100))
     }
     try await settle(1)
     for visit in 1...2 {

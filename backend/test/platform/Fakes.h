@@ -110,6 +110,7 @@ struct FakeAuthRepository : AuthRepository {
   std::map<std::pair<std::string, std::string>, SignInMethod> identityMethods;
   std::map<std::string, StoredAppleTicket> appleTickets;
   std::set<std::string> spentAppleTickets;
+  std::vector<std::string> erased;                  // ids, in the order eraseAccount took them
   bool refuseTakeOver = false;
   int nextUserId = 0;
   int nextSessionId = 0;
@@ -125,7 +126,7 @@ struct FakeAuthRepository : AuthRepository {
     return it->second;
   }
   User createUser(const Email& email, const std::string& name) override {
-    User user{UserId{"u" + std::to_string(++nextUserId)}, email, name, std::nullopt};
+    User user{UserId{"u" + std::to_string(++nextUserId)}, email, name, std::nullopt, std::nullopt};
     usersByEmail[email.value] = user;
     usersById[user.id.str()] = user;
     return user;
@@ -136,8 +137,13 @@ struct FakeAuthRepository : AuthRepository {
     it->second.name = name;
     usersByEmail[it->second.email.value].name = name;
   }
-  void markUserDeleted(const UserId& userId, UnixMs now) override { setDeleted(userId, now); }
-  void reviveUser(const UserId& userId) override { setDeleted(userId, std::nullopt); }
+  void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override { setDeleted(userId, now, closesAt); }
+  bool reviveUser(const UserId& userId, UnixMs now) override {
+    auto it = usersById.find(userId.str());
+    if (it == usersById.end() || !it->second.deletedAt || closeIsFinal(it->second, now)) return false;
+    setDeleted(userId, std::nullopt);
+    return true;
+  }
   std::vector<std::string> deleteUser(const UserId& userId) override {
     auto it = usersById.find(userId.str());
     if (it == usersById.end()) return {};
@@ -148,6 +154,27 @@ struct FakeAuthRepository : AuthRepository {
       else ++row;
     }
     return revokeSessionsWhere([&](const auto& session) { return session.second.user == userId; });
+  }
+  // The earliest final first, as the real one orders them; ties fall to the id.
+  std::vector<UserId> finalClosedAccounts(UnixMs now, int limit) override {
+    std::vector<User> closed;
+    for (const auto& [id, user] : usersById)
+      if (closeIsFinal(user, now)) closed.push_back(user);
+    std::sort(closed.begin(), closed.end(), [](const User& a, const User& b) {
+      return std::pair(*a.closesAt, a.id.str()) < std::pair(*b.closesAt, b.id.str());
+    });
+    std::vector<UserId> ids;
+    for (const User& user : closed)
+      if (static_cast<int>(ids.size()) < limit) ids.push_back(user.id);
+    return ids;
+  }
+  // The account's row, its doors and its sessions are all this fake holds of it.
+  bool eraseAccount(const UserId& userId, UnixMs now) override {
+    auto it = usersById.find(userId.str());
+    if (it == usersById.end() || !closeIsFinal(it->second, now)) return false;
+    deleteUser(userId);
+    erased.push_back(userId.str());
+    return true;
   }
 
   std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override {
@@ -175,7 +202,7 @@ struct FakeAuthRepository : AuthRepository {
     if (!user || (owner && *owner != userId)) return std::nullopt;
     insertSession(sessionDigest, userId, expiresAt, userAgent, ip, now);
     tryBindIdentity(identity, userId);
-    if (user->deletedAt) { reviveUser(userId); user->deletedAt = std::nullopt; }
+    if (user->deletedAt) { setDeleted(userId, std::nullopt); user->deletedAt = user->closesAt = std::nullopt; }
     return user;
   }
   std::vector<SignInMethod> signInMethods(const UserId& userId) override {
@@ -229,7 +256,7 @@ struct FakeAuthRepository : AuthRepository {
     }
     const bool created = !user;
     if (!user) user = createUser(ticket->identity.email, name);
-    if (user->deletedAt) { reviveUser(user->id); user->deletedAt = std::nullopt; }
+    if (user->deletedAt) { setDeleted(user->id, std::nullopt); user->deletedAt = user->closesAt = std::nullopt; }
     tryBindIdentity(ticket->identity, user->id);
     insertSession(sessionDigest, user->id, expiresAt, userAgent, ip, now);
     spentAppleTickets.insert(digest);
@@ -346,11 +373,13 @@ struct FakeAuthRepository : AuthRepository {
     return revoked;
   }
 
-  void setDeleted(const UserId& userId, std::optional<UnixMs> at) {
+  void setDeleted(const UserId& userId, std::optional<UnixMs> at, std::optional<UnixMs> closesAt = std::nullopt) {
     auto it = usersById.find(userId.str());
     if (it == usersById.end()) return;
     it->second.deletedAt = at;
+    it->second.closesAt = closesAt;
     usersByEmail[it->second.email.value].deletedAt = at;
+    usersByEmail[it->second.email.value].closesAt = closesAt;
   }
 };
 

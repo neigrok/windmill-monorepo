@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import UIKit
+import JournalDomain
 import SyncReplica
 import Synchronization
 @testable import Windmill
@@ -103,13 +104,13 @@ import Synchronization
     #expect(model.sheet == .appleAdded && model.account == nil && model.signInSession == nil)
     #expect(model.appleReceiptEmail == "sam@example.com" && model.appleTicket == nil && model.editorReadOnly)
     await verification.value
-    #expect(model.sheet == .adoption && model.adoptionCount == 1)
-    #expect(model.adoptionAlertMessage == "Journal · 1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")
+    #expect(model.sheet == .adoption && model.adoptionCounts[.journal]?[Page.type] == 1)
+    #expect(model.adoptionAlertMessage == "This phone has 1 journal page from before you signed in. Your account already has journal pages. Add it, or discard it from this phone.")
     if !add {
       model.sheet = .discardAdoption
-      #expect(model.adoptionAlertTitle == "Discard 1 page?")
+      #expect(model.adoptionAlertTitle == "Discard 1 journal page?")
     }
-    await model.adopt(add ? .add : .discard)
+    await model.adopt(add ? .add : .discard, asked: model.pendingAdoptions)
     #expect(model.account == "model-sam@example.com" && model.sheet == nil)
     #expect(server.state.withLock { $0.appleDoors["fake-apple"] == "model-sam@example.com" })
   }
@@ -125,6 +126,26 @@ import Synchronization
     #expect(server.state.withLock { !$0.codes.contains("sam@icloud.com") && $0.emails.isEmpty && $0.sessions.isEmpty && $0.tickets.count == 1 })
     #expect(throws: AuthRefusal.wrongCode) { try server.verifyCode(email: "sam@icloud.com", code: "482913", ticket: ticket) }
     #expect(try server.createApple(ticket: ticket).email == "apple@example.com")
+  }
+
+  // 23e·A: wrong digits in Apple's linking code say so in their own words and keep the digits; no account is claimed missing.
+  @Test func aWrongLinkingCodeKeepsItsDigitsAndSaysSo() async throws {
+    let server = JournalModelTransport(), model = try fixture(server)
+    model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
+    await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
+    model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode()
+    model.code = "482931"; await model.verifyCode()
+    #expect(model.error == "That code didn't work. Check the digits, or send a fresh one." && model.code == "482931")
+    #expect(model.sheet == .code && model.account == nil && model.appleTicket != nil && model.journal.document.body == "Local page")
+  }
+
+  // 23b: only the email door says it also creates an account; the address Apple asks for opens one that exists.
+  @Test func onlyTheEmailDoorSaysItAlsoCreatesAnAccount() throws {
+    let model = try fixture(JournalModelTransport())
+    model.sheet = .address
+    #expect(AccountSheet(model: model).addressNote == "New here? This also creates your account.")
+    model.sheet = .appleAddress
+    #expect(AccountSheet(model: model).addressNote == nil)
   }
 
   @Test func expiredTicketIsCheckedBeforeCodeAndIsNotReportable() async throws {
@@ -269,8 +290,8 @@ import Synchronization
     await model.retryAuthenticatedSignIn()
     #expect(model.pendingSignIn == nil && server.state.withLock { $0.sessions == sessions })
     if link {
-      #expect(model.sheet == .adoption && model.adoptionCount == 1)
-      await model.adopt(.add)
+      #expect(model.sheet == .adoption && model.adoptionCounts[.journal]?[Page.type] == 1)
+      await model.adopt(.add, asked: model.pendingAdoptions)
     }
     #expect(model.account == (link ? "model-sam@example.com" : "model-apple@example.com") && model.sheet == nil)
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)

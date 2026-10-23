@@ -411,6 +411,7 @@ public enum Gym {
           ],
           "startedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "server"],
         ],
+        "headline": true,
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
         "identity": "minted",

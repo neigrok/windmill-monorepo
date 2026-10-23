@@ -75,6 +75,8 @@ extension CoachTests {
     let configuration = NativeAuth.nativeSession().configuration
     #expect(configuration.timeoutIntervalForRequest == 8 && configuration.timeoutIntervalForResource == 15)
     configuration.protocolClasses = [CoachTestProtocol.self]
+    // The production timeouts, scaled down: the stream outlives a request timeout it would otherwise die at.
+    configuration.timeoutIntervalForRequest = 0.2; configuration.timeoutIntervalForResource = 0.4
     let rest = GymRESTClient(runtime: original.runtime, telemetry: gym.telemetry, session: URLSession(configuration: configuration))
     var activity = 0, ended = false
     let work = Task {
@@ -83,7 +85,7 @@ extension CoachTests {
     }
     try await settle { activity == 2 }
     #expect(CoachTestProtocol.state.withLock { $0.active?.request.timeoutInterval } == 60)
-    try await Task.sleep(for: .seconds(9))
+    try await Task.sleep(for: .milliseconds(600))
     #expect(!ended && rest.tasks.count == 1)
     work.cancel(); _ = try? await work.value
     #expect(rest.tasks.isEmpty)
@@ -98,6 +100,23 @@ extension CoachTests {
     work.cancel()
     _ = try? await work.value
     #expect(rest.tasks.isEmpty)
+  }
+
+  @Test func theGreetingOffersOnlyWhatCoachDoes() {
+    let lines = { (signedIn: Bool) in CoachSetupView(signedIn: signedIn, choose: { _ in }).capabilities.map { "\($0.0) — \($0.1)" } }
+    #expect(lines(true) == [
+      "Build — a program from a screenshot or your own words.",
+      "Goals — tell me your goals, and I will plan for them.",
+      "Notes — I save important facts, like an old injury.",
+      "Changes — ask me, and I suggest changes to your routines.",
+    ])
+    #expect(lines(false) == [
+      "Build — a program from a screenshot or your own words.",
+      "Goals — tell me your goals, and I will plan for them.",
+      "Account — sign in, and I can also save notes and suggest changes to your routines.",
+    ])
+    #expect(CoachSetupView.choices.map { "coach-setup-\($0.choice.rawValue) \($0.title)" }
+            == ["coach-setup-screenshot Add screenshot", "coach-setup-build_manually Build my own"])
   }
 
   @Test func setupNeedsResolvedHydratedEmptyAccountAndAnUnoccupiedRoom() {

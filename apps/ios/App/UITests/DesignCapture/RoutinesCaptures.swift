@@ -20,6 +20,18 @@ final class RoutinesCaptures: DesignCapture {
     }
   }
 
+  // The editor of a routine that has been trained lists its workouts under History.
+  func testEditorHistory() {
+    captureBoard("02.13-editor-history") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "change"])
+      open(.routines, app)
+      app.buttons["routine-board-routine"].tap()
+      XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 10)); app.buttons["edit-routine"].tap()
+      XCTAssertTrue(app.staticTexts["History"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
   func testRoutineEditorSwipe() {
     captureBoard("02.8-routine-editor-swipe") { look in
       let app = launch("shell-last-room", look)
@@ -115,7 +127,7 @@ final class RoutinesCaptures: DesignCapture {
       XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
       XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
       app.navigationBars.buttons["More"].tap()
-      app.buttons["Edit exercise"].tap()
+      app.buttons["Edit movement"].tap()
       XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
       capture("gym-routine-rename-movement-sheet", look, app)
     }

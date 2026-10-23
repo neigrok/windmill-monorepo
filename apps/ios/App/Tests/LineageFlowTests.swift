@@ -106,9 +106,9 @@ import Synchronization
     let model = try fixture(transport)
     model.journal.type("Local"); model.journal.save(); model.journal.done()
     try await model.signIn(transport.identity(email: "occupied@example.com"))
-    #expect(model.sheet == .adoption && model.account == nil && model.adoptionCount == 1)
+    #expect(model.sheet == .adoption && model.account == nil && model.adoptionCounts[.journal]?[Page.type] == 1)
     #expect(model.journal.document.body == "Local")
-    await model.adopt(add ? .add : .discard)
+    await model.adopt(add ? .add : .discard, asked: model.pendingAdoptions)
     #expect(model.account == identity.account && model.sheet == nil)
     let pending = try model.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:").members.count }
     #expect(pending == (add ? 1 : 0))
@@ -143,7 +143,7 @@ import Synchronization
       await model.resumeBackup()
       #expect(!model.restoringSignIn)
     } else { try await model.signIn(signIn) }
-    #expect(model.account == identity.account && model.sheet == nil && model.currentAdoption == nil)
+    #expect(model.account == identity.account && model.sheet == nil && model.pendingAdoptions.isEmpty)
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)
     #expect(model.journal.document == PageDocument(body: "Account writing", mood: 3, energy: 4))
     #expect(model.journal.room?.days.count == 1)
@@ -166,7 +166,7 @@ import Synchronization
       local: [DeviceWrite(key: pending.key, value: pending.json)]))
     try await model.signIn(transport.identity(email: "mixed-pages@example.com"))
     #expect(model.sheet == .adoption && model.account == nil)
-    #expect(model.adoptionCount == 1 && model.adoptionSummary == "1 page" && model.adoptionIsSingle)
+    #expect(model.adoptionCounts[.journal]?[Page.type] == 1 && model.adoptionQuestion.phrase == "1 journal page" && model.adoptionQuestion.single)
     #expect(model.journal.document.body == "Local writing")
   }
 
@@ -178,7 +178,7 @@ import Synchronization
     let model = try fixture(transport)
     model.journal.type("One"); model.journal.save(); model.journal.done(); try await model.signIn(transport.identity(email: identity.account.replacingOccurrences(of: "model-", with: "")))
     model.journal.document.body = "Changed after question"; model.journal.dirty = true
-    await model.adopt(.discard)
+    await model.adopt(.discard, asked: model.pendingAdoptions)
     #expect(model.account == nil && model.sheet == .adoption && model.error != nil)
     #expect(model.journal.document.body == "Changed after question")
   }
@@ -234,8 +234,8 @@ import Synchronization
     model.journal.type("Persisted"); model.journal.save(); model.journal.done()
     try await model.signIn(transport.identity(email: "adoption-buffer@example.com"))
     model.journal.document.body = "Newest before autosave"; model.journal.dirty = true; model.journal.saveTask?.cancel()
-    await model.adopt(.add)
-    if model.sheet == .adoption { await model.adopt(.add) }
+    await model.adopt(.add, asked: model.pendingAdoptions)
+    if model.sheet == .adoption { await model.adopt(.add, asked: model.pendingAdoptions) }
     #expect(model.account == owner.account)
     #expect(model.journal.document.body == "Newest before autosave")
   }
@@ -292,7 +292,7 @@ import Synchronization
     #expect(model.journal.document.body == "Before autosave")
     await delayed.gate.release(); await signIn.value
     #expect(model.sheet == .adoption && model.editorReadOnly)
-    await model.adopt(.add)
+    await model.adopt(.add, asked: model.pendingAdoptions)
     #expect(model.journal.document.body == "Before autosave" && !model.journal.dirty && !model.editorReadOnly)
   }
 

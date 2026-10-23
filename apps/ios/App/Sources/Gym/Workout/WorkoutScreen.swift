@@ -23,7 +23,7 @@ struct WorkoutScreen: View {
     return NavigationStack {
       Group {
         if let session = workout.session {
-          if session.isOpen { live(session) }
+          if session.isOpen { live }
           else { SessionDetailScreen(gym: gym, sessionID: session.id) }
         } else {
           ContentUnavailableView("This workout is no longer open", systemImage: "dumbbell")
@@ -73,7 +73,6 @@ struct WorkoutScreen: View {
       SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
                     weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
     }
-    .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
@@ -99,7 +98,7 @@ struct WorkoutScreen: View {
     .onDisappear { workout.flushRack(); workout.rackEditing = false; finishTask?.cancel(); releaseAwake() }
   }
 
-  func live(_ session: Session) -> some View {
+  var live: some View {
     VStack(spacing: 0) {
       if workout.walk.order.isEmpty {
         VStack(spacing: RoomSpace.panel) {
@@ -326,6 +325,9 @@ struct WorkoutRack: View {
   let edit: () -> Void
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.dynamicTypeSize) var typeSize
+  // VoiceOver hears the numeral in its load basis, *Weight, 100 kg total*, and Log set with the set it logs.
+  static func spokenWeight(_ weightKg: Double, basis: MovementEquipment) -> String { "Weight, \(Readout.weight(weightKg)) \(basis.unit)" }
+  static func spokenLog(_ weightKg: Double, reps: Int) -> String { "Log set, \(Readout.weight(weightKg)) kilograms, \(GymCount.of(reps, "rep"))" }
   var body: some View {
     let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
     let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
@@ -335,7 +337,7 @@ struct WorkoutRack: View {
         Button(action: edit) {
           Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
-        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(workout.weightKg)) \(basis.unit)")
+        }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
           .accessibilityIdentifier("workout-weight")
         Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
       }.roomMotion(workout.weightKg)
@@ -363,7 +365,7 @@ struct WorkoutRack: View {
       Button { workout.logSet() } label: {
         Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)
       }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
-        .accessibilityLabel("Log set, \(Readout.weight(workout.weightKg)) kilograms, \(GymCount.of(workout.reps, "rep"))")
+        .accessibilityLabel(Self.spokenLog(workout.weightKg, reps: workout.reps))
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
@@ -418,7 +420,7 @@ struct WorkoutPager: UIViewControllerRepresentable {
       if pager.viewControllers?.first !== current { pager.setViewControllers([current], direction: .forward, animated: false) }
     }
     func neighbor(_ view: UIViewController, direction: Int) -> UIViewController? {
-      guard parent.workout.deviation == nil, !parent.workout.finishing,
+      guard !parent.workout.finishing,
             let id = identity(view), let position = parent.workout.walk.order.firstIndex(of: id),
             parent.workout.walk.order.indices.contains(position + direction) else { return nil }
       return page(parent.workout.walk.order[position + direction])

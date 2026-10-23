@@ -30,10 +30,13 @@ enum AppProject {
   static let sdks = ["iphoneos", "iphonesimulator"]
   static let defaultToolchain = "com.apple.dt.toolchain.XcodeDefault"
 
-  static func findings(root: URL, app: App) throws -> [Finding] {
+  // `sourcePackages` is where xcodebuild keeps the app's package checkouts; nil keeps them in scratch.
+  static func findings(root: URL, app: App, sourcePackages: URL? = nil) throws -> [Finding] {
     let specification = Data(try Shell.run(["xcodegen", "dump", "--type", "json", "--spec", root.appending(path: app.spec).path]).utf8)
     let written = try JSONDecoder().decode(JSONValue.self, from: specification)
-    let resolved = try Scratch.withDirectory { scratch in try resolve(root: root, app: app, scratch: scratch, specification: specification) }
+    let resolved = try Scratch.withDirectory { scratch in
+      try resolve(root: root, app: app, scratch: scratch, sourcePackages: sourcePackages, specification: specification)
+    }
     return specFindings(written, root: root, app: app).map { Finding(app.spec, "project", $0) }
       + resolvedFindings(resolved).map { Finding(app.spec, "build-settings", $0) }
   }
@@ -130,8 +133,10 @@ enum AppProject {
   }
 
   // Generated into scratch (its path shown as $(SRCROOT), its derived data kept there); nil when it does not resolve.
-  static func resolve(root: URL, app: App, scratch: URL, specification: Data) throws -> [Resolved]? {
-    let project = scratch.appending(path: "project"), derivedData = "-IDECustomDerivedDataLocation=\(scratch.appending(path: "derived").path)"
+  static func resolve(root: URL, app: App, scratch: URL, sourcePackages: URL?, specification: Data) throws -> [Resolved]? {
+    let project = scratch.appending(path: "project")
+    let locations = ["-IDECustomDerivedDataLocation=\(scratch.appending(path: "derived").path)"]
+      + (sourcePackages.map { ["-clonedSourcePackagesDirPath", $0.path] } ?? [])
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
     // Xcode resolves local packages from the generated project, unlike sources from --project-root.
     var spec = try JSONSerialization.jsonObject(with: specification) as! [String: Any]
@@ -150,7 +155,7 @@ enum AppProject {
       app.directory(in: root).path,
     ])
     guard let generated = try FileManager.default.contentsOfDirectory(atPath: project.path).first(where: { $0.hasSuffix(".xcodeproj") }),
-      let listing = try? Shell.run(["xcodebuild", derivedData, "-list", "-json", "-project", project.appending(path: generated).path])
+      let listing = try? Shell.run(["xcodebuild"] + locations + ["-list", "-json", "-project", project.appending(path: generated).path])
     else { return nil }
     let configurations = try JSONDecoder().decode(JSONValue.self, from: Data(listing.utf8))["project"]?["configurations"]?.elements ?? []
     let named = { (value: String) in
@@ -158,9 +163,9 @@ enum AppProject {
     }
     return try configurations.compactMap(\.text).flatMap { configuration in
       try sdks.flatMap { sdk in
-        let json = try Shell.run([
-          "xcodebuild", derivedData, "-showBuildSettings", "-json", "-project", project.appending(path: generated).path, "-alltargets",
-          "-configuration", configuration, "-sdk", sdk,
+        let json = try Shell.run(["xcodebuild"] + locations + [
+          "-showBuildSettings", "-json", "-project", project.appending(path: generated).path, "-alltargets", "-configuration", configuration,
+          "-sdk", sdk,
         ])
         let shown = try JSONDecoder().decode([ShownSettings].self, from: Data(json.utf8))
         let targets = shown.enumerated().filter { index, entry in !shown[..<index].contains { $0.target == entry.target } }.map(\.element)

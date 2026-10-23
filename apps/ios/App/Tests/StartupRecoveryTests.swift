@@ -4,8 +4,8 @@ import SwiftUI
 import Testing
 import UIKit
 import DomainKit
+import DomainKitTesting
 import GymDomain
-import SyncAPI
 import SyncCore
 import SyncEngine
 import SyncStore
@@ -53,8 +53,7 @@ import Synchronization
       try? runtime.tokens.delete(for: identity.account)
       preferences.removePersistentDomain(forName: service)
     }
-    let id = try #require(model.gym.startWorkout()), workout = model.gym.workout
-    workout.add(ID("bench-press"))
+    let id = try #require(model.gym.startWorkout(following: ID("bench-press"))), workout = model.gym.workout
     await transport.hold()
     let start = Task { await model.start() }
     defer { start.cancel() }
@@ -250,6 +249,67 @@ import Synchronization
     #expect(transport.state.withLock { $0.maximumActive } == 1)
     #expect(model.recoveryDue == nil && model.recoveryDelayMs == Constants.backoffBaseMs)
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "failed"], ["outcome": "signed_in"]])
+  }
+
+  // A phone seeded on the model server, then launched on every network the offline fixture plays: writing, a routine, its
+  // workout and sets commit on the phone, rooms switch, a resume changes nothing, You keeps or lacks the account and says
+  // why its doors wait, and a cold launch on the same network finds all of it.
+  @Test(.timeLimit(.minutes(1)), arguments: OfflineFixture.Mode.allCases, [false, true])
+  func everyOfflineLaunchKeepsTheRoomsAndTheAccountOnThePhone(mode: OfflineFixture.Mode, signedIn: Bool) async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.offline-tests.\(UUID())"
+    let preferences = UserDefaults(suiteName: service)!
+    let tokens: any TokenStore, account: String?
+    do {
+      let seeded = try AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), directory: directory, service: service)
+      tokens = seeded.tokens
+      let model = try AppModel(runner: seeded.runner, preferences: preferences, runtime: seeded)
+      try await OfflineFixture.seed(model, signedIn: signedIn)
+      account = model.account
+    }
+    defer {
+      if let account { try? tokens.delete(for: account) }
+      preferences.removePersistentDomain(forName: service)
+    }
+    #expect((account != nil) == signedIn)
+    func launch() throws -> AppModel {
+      let runtime = try #require(try OfflineFixture.runtime(mode, settings: AppSettings(arguments: ["app", "-server", "https://offline.invalid"]),
+                                                            telemetry: NoopTelemetry(), directory: directory, service: service))
+      return try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    }
+
+    let routine: ID<Routine>, session: ID<Session>
+    do {
+      let model = try launch()
+      let start = Task { await model.start() }
+      #expect(model.account == account && model.runtime?.engine.status.online == (mode != .noNetwork))
+      let you = AccountSheet(model: model)
+      #expect(you.offline == (mode == .noNetwork))
+      #expect(you.youFooter == (!signedIn && mode == .noNetwork ? "Sign-in needs a connection." : nil))
+      model.openJournal()
+      model.journal.type(model.journal.document.body + " Cold."); model.journal.done()
+      #expect(model.journal.document.body == "Saved on this phone. Cold." && !model.journal.dirty && !model.editorReadOnly)
+      model.switchRoom(.gym)
+      var draft = Draft(new: Routine(id: model.runner.mint(Routine.self), name: "Offline routine", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+      #expect(saved(model.gym.save(&draft)))
+      routine = draft.current.id
+      session = try #require(model.gym.startWorkout(routineId: routine))
+      model.gym.workout.weightKg = 60; model.gym.workout.reps = 8
+      #expect(model.gym.workout.logSet() && model.gym.hideWorkout())
+      model.scenePhaseChanged(.background); model.scenePhaseChanged(.active)
+      #expect(model.gym.restoreWorkout() && model.gym.workout.sessionId == session && model.gym.workout.sets.count == 1)
+      #expect(model.gym.workout.logSet() && model.gym.hideWorkout())
+      model.switchRoom(.journal)
+      model.journal.type(model.journal.document.body + " Resume."); model.journal.done()
+      #expect(model.selectedRoom == .journal && model.account == account && !model.editorReadOnly)
+      start.cancel(); await start.value
+      model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+    }
+
+    let reopened = try launch()
+    defer { reopened.timerTask?.cancel(); reopened.observationTask?.cancel(); reopened.gym.stop() }
+    #expect(reopened.account == account && reopened.journal.document.body == "Saved on this phone. Cold. Resume.")
+    #expect(reopened.gym.routines.map(\.id) == [routine] && reopened.gym.openSession?.id == session && reopened.gym.workoutHidden)
+    #expect(reopened.gym.workout.sessionId == session && reopened.gym.workout.sets.count == 2)
   }
 }
 
