@@ -1,13 +1,13 @@
 # Roadmap Board proposal
 
-Status: 💡 proposal awaiting human approval, 2026-10-24. No production code is changed and no Board
+Status: 💡 proposal awaiting human approval, 2026-10-25. No production code is changed and no Board
 flow is Ready for dev. Current Graph/List reconciliation remains on the existing Web and Web Mobile
 pages.
 
 Design lives on separate [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) and [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433) and
 [desktop board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543). The pages contain
-65 mobile and 28 desktop screen compositions, plus 16 transparent overlay prototype assets.
+78 mobile and 37 desktop screen compositions, plus 17 transparent overlay prototype assets.
 
 ## Behavior
 
@@ -177,7 +177,9 @@ clear target. Rows are 76px at 390px and 92px at 320px so description and ID rem
 
 Selected IDs survive query changes, clearing search and loading additional 20-result windows.
 Review shows every selected node independently of the current query. Results returns to that query;
-Find more resumes search. Removing one selection preserves the others. Duplicate names show
+Find more resumes search. The represented weather and tidal review paths return to their respective
+queries. Arbitrary query-return combinations remain an implementation requirement. Removing one
+selection preserves the others. Duplicate names show
 authored description and a shortened stable ID, without inventing one parent path for the DAG.
 Fixture IDs are illustrative abbreviations, not a new sequential ID format. Expand abbreviations
 on collision and expose the full existing ID in node details.
@@ -397,6 +399,19 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 09.07 · Roadmap context open ·320px | [261:6926](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=261-6926) |
 | 11.01 · Review 2 prerequisites | [260:4838](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-4838) |
 | 11.02 · Review 1 prerequisites | [260:4994](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-4994) |
+| 13.01 · Clear query · zero selection | [276:2838](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-2838) |
+| 13.02 · Next results · zero selection | [276:3087](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-3087) |
+| 13.03 · Clear query · two selection | [276:3340](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-3340) |
+| 13.04 · Next results · two selection | [276:3589](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-3589) |
+| 13.05 · Clear query · weather selection | [276:3846](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-3846) |
+| 13.06 · Next results · weather selection | [276:4095](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4095) |
+| 13.07 · Creation · prerequisite removed | [276:4362](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4362) |
+| 13.08 · Creation · review one prerequisite | [276:4515](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4515) |
+| 13.09 · Creation · returned one prerequisite | [276:4559](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4559) |
+| 13.10 · Edit · all prerequisites removed | [276:4607](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4607) |
+| 13.11 · Edit · returned without prerequisites | [276:4758](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4758) |
+| 12.01 · Graph handoff · dark | [276:8780](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-8780) |
+| 13.12 · Review tidal selection · weather query | [279:7741](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=279-7741) |
 
 | Desktop screen | Figma |
 |---|---|
@@ -428,6 +443,15 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 06.01 · Graph handoff · focus | [260:5978](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5978) |
 | 06.04 · Graph handoff · dark | [260:6193](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-6193) |
 | 06.05 · Search nodes · results | [261:7058](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=261-7058) |
+| 13.01 · Review after removing weather | [277:6860](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-6860) |
+| 13.02 · Clear query · zero selected | [277:6916](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-6916) |
+| 13.03 · Clear query · one selected | [277:6977](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-6977) |
+| 13.04 · Clear query · two selected | [277:7044](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-7044) |
+| 13.05 · Creation · prerequisite removed | [277:7115](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-7115) |
+| 13.06 · Creation · returned one prerequisite | [277:7398](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-7398) |
+| 13.07 · Creation · review one prerequisite | [277:7622](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-7622) |
+| 13.08 · Creation · review two prerequisites | [277:8834](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-8834) |
+| 13.09 · Review tidal selection · tidal query | [279:3962](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=279-3962) |
 
 | Transparent overlay asset | Figma |
 |---|---|
@@ -447,26 +471,31 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | Prototype overlay · color filter · gold | [263:7022](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=263-7022) |
 | 06.02 · More overlay | [260:5154](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5154) |
 | 06.03 · More overlay · dark | [260:5165](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5165) |
+| 12.02 · Roadmap context · dark overlay | [276:8806](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-8806) |
 
 Prototype starts: [Mobile](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433&page-id=183%3A900&starting-point-node-id=183%3A1433)
 and [Desktop](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543&page-id=183%3A901&starting-point-node-id=184%3A1543).
 The prototype connects representative inspect, complete, reset/Undo, editor, dependency, tag,
-recovery and Graph paths. It is a fixture walkthrough, not a functional app. Generic exploration
-links use the initial fixture where no outcome-specific destination is drawn; preserving arbitrary
-changed data and navigation state is an implementation requirement. Data-entry commits remain
-static where no result is drawn.
+recovery and Graph paths. It is a fixture walkthrough, not a functional app.
+Completion and reset outcomes retain only their coherent Undo route. Creation outcomes are terminal
+specimens showing the correct derived category and progress. The 320px large-roadmap Board opens
+its matching full-title context without navigating into Learn to sail. Product controls keep their
+intended appearance when a prototype path is unmodeled; they are not disabled product requirements.
+Arbitrary changed data, filter combinations and navigation state still require implementation.
+Data-entry commits remain static where no result is drawn.
 Activity triggers use native Figma OVERLAY actions. Their viewport-sized targets contain only the
 scrim, panel and desktop expanded toggle; no copied Board is inside those targets. Explicit CLOSE
 actions handle the scrim, close controls and Escape. The Read the wind feed row demonstrates closing
 Activity before node navigation. The three full-context open compositions are review illustrations;
 the six transparent targets provide the context-preserving prototype behavior.
-The dark mobile node specimen covers Activity → node → dark Board; other node actions follow the
-shared behavior contract and are not duplicated as additional dark outcome screens.
+Dark mobile Board, Graph, node details and roadmap context retain dark appearance; the desktop
+dark modal closes to its dark Board. Other unmodeled dark controls have no cross-theme prototype
+route. Their behavior follows the shared contract without duplicating every dark outcome.
 
 ## Validation and limits
 
-All 93 screen compositions and 16 transparent overlay assets are native editable Figma layers,
-with 65 mobile and 28 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
+All 115 screen compositions and 17 transparent overlay assets are native editable Figma layers,
+with 78 mobile and 37 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
 finds no full-screen image fills; interface copy uses
 node terminology and Closed, Up next and Done categories. Nunito, Baloo 2 and the existing monospace
 caption font remain in use. No category totals or written color names appear on cards. Small color markers,
@@ -495,13 +524,10 @@ The Activity revision checks default-closed and open geometry, light/dark target
 explicit dismissal actions and 44px close targets. Browser focus trapping and focus restoration are
 implementation requirements; native Figma reactions do not verify DOM accessibility behavior.
 
-Current exploration evidence and the component-based audit are in `/tmp/roadmap-board-exploration/`;
-research is in `/tmp/roadmap-board-exploration-research/` and picker evidence in
-`/tmp/roadmap-picker-search/`. Durable evidence is in
-`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-exploration`.
-The audit checks 37 mobile and 116 desktop Node card instances against their three component masters:
-every actual corner radius is 24px. Shared chrome has no child boundary overflow; all prototype
-destinations resolve and page sections do not overlap. The 320px stress includes a long roadmap
-title, long node title, two-line description and large progress. Activity's expanded desktop toggle
-aligns at x1320/y62 and dismisses the native overlay. The proposal remains 💡 pending human approval;
-no flow is Ready for dev or In production.
+The [25 October review](roadmap-board-review.md) records the current route and contrast checks.
+Its evidence is in
+`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-review-20261025`.
+The current audit verifies the complete inventory and native destinations, active hit targets and
+section placement. Node cards retain their 24px radius and existing shared geometry. The 320px
+stress specimen retains long title wrapping, compact progress and reachable exploration controls.
+The proposal remains 💡 pending human approval; no flow is Ready for dev or In production.

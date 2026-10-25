@@ -41,7 +41,8 @@ Separate [Web Mobile proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNu
 and [Web proposal](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901) pages.
 Main frames: [mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433),
 [desktop](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543).
-[Proposal notes](design/roadmap-board-proposal.md). This additional view is separate from the
+[Proposal notes](design/roadmap-board-proposal.md) · [Design review](design/roadmap-board-review.md).
+This additional view is separate from the
 reconciled implementation and is not Ready for dev.
 
 ## Gym · iOS
