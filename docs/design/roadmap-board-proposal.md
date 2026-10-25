@@ -13,7 +13,7 @@ proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8
 
 - Every existing graph node is one Board card, including roots. Edges are prerequisites; one existing
   kind/color becomes one color tag. Cards show that tag as a 2px border around the full perimeter,
-  without a dot, reserved dot row or written color name. Accessible tag names and picker labels remain.
+  without a dot, reserved dot row or written color name. Accessible tag names and selector labels remain.
   Lock/check indicators communicate status independently of color. No assignees, deadlines or new
   node-status field.
 - Completed nodes are Done. Incomplete nodes with every prerequisite complete are Up next; the
@@ -171,6 +171,24 @@ shows each candidate's current state. No prerequisites is valid, including in an
 roadmap. The read-only placement preview is Up next when there are no prerequisites or all are
 complete; an unmet prerequisite places the new node in Closed. There is no category selector.
 
+Color is selected inline in the current form. The [shared palette](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=306-4848)
+offers Terracotta, Olive, Gold, Brick, Sky and Plum from the existing legend variables. Six 44px targets
+with 4px gaps occupy 284px and fit inside a 320px viewport with 16px side insets. The selected swatch
+has a check and an outline; accessible radio names carry the color names without a separate label row.
+The [shared Color field](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=309-5034) stacks
+the left-aligned label above the palette on mobile (72px) and uses one desktop row (44px).
+All 20 create/edit/returned-draft specimens use actual field and palette instances. The large-roadmap
+parent drafts use Sky as their fixture color.
+
+A color choice changes only the current draft. It opens no picker page and requires no separate color
+confirmation; Create node or Save persists the whole form, while Cancel/back discards its edits.
+Use labelled radio semantics and visible keyboard focus. The prototype demonstrates Sky → Gold → Sky
+within the same 390px edit-form composition, preserving all text and prerequisites, with no transition
+or scroll reset. The Gold draft's Save is a terminal specimen rather than a false return to a Sky result.
+Other swatches remain visual states with unmodeled prototype actions; they are not disabled product
+requirements. Default Sky creation/edit routes remain reviewable. Current web `onSetKind`/recolor
+handlers apply color immediately; draft-only persistence belongs to this proposed form contract.
+
 Name is limited to 200 Unicode code points and description to 16,000. A nonempty trimmed name is a
 proposed UX rule; the current domain permits blank labels and duplicate names. Validate lengths and
 selected prerequisites before mutation. Exclude duplicates, self references and cycle-producing
@@ -178,7 +196,7 @@ choices. Preserve the complete draft on validation or save failure, with a speci
 The keyboard specimen keeps the Create node action above the keyboard.
 
 Create and edit use the same [authored-description field component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=291-4098).
-Its 224px writing area is used by all 19 composer and returned-draft specimens, including required-name,
+Its 224px writing area is used by all 20 composer and returned-draft specimens, including required-name,
 save-retry and large-roadmap drafts. It preserves the full authored text and scrolls long input.
 The form body scrolls independently of the final action. Focusing Description keeps the caret visible
 above the keyboard; the mobile specimen places the 106px action strip directly above the 252px keyboard.
@@ -281,6 +299,13 @@ Node Overview contains the shared authored description, **Node links**, explicit
 and distinct **Unlocks**. Node links travel with the roadmap, accept safe http/https/mailto schemes
 and open separately. Prerequisites are all incoming graph edges; Unlocks are direct children,
 including cross-branch children. They are not subtasks or all descendants.
+
+The [Node identity component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=306-4743)
+places a 4px color rail beside the title, with a 12px gap and 4px top/bottom rail inset. Its 15 detail
+instances retain each node's existing tag variable and semantic title color. The title wraps at its
+available width without truncation; rail height follows the title. No standalone color-dot row remains
+on overview, shared-reader, dark, modal, dedicated-page, branch or stress details. This reclaims 24px
+from the identity stack and leaves the Board's full perimeter card borders unchanged.
 
 The owner workspace contains checklist subtasks, a note and personal links. The interface uses
 content labels rather than badges or explanations about storage, sharing or synchronization.
@@ -410,7 +435,7 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 02.01 · New node · blank | [185:1631](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1631) |
 | 02.02 · Edit node | [185:1675](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1675) |
 | 02.03 · Dependencies picker | [185:1717](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1717) |
-| 02.04 · Choose color tag | [185:1765](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1765) |
+| 02.04 · Edit node · Gold draft | [185:1765](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1765) |
 | 02.05 · Completed node | [185:1819](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1819) |
 | 02.06 · Reset result | [185:1885](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-1885) |
 | 03.01 · Empty roadmap | [185:2149](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2149) |
@@ -586,7 +611,8 @@ authored description excerpts, overall progress and real dependency counts remai
 The proposal reuses Windmill Buttons, Icon Buttons, semantic/spacing/radius variables, Skill Node
 components and canonical EventRows. Compact search adapts the canonical Input's tokens. Local
 components consolidate the shared Shell, desktop/mobile identity, the mobile exploration toolbar, Node cards,
-filter/sort controls, creation form, authored description input, Node sections, prerequisite result rows,
+filter/sort controls, creation form, inline color field/palette, Node identity, authored description input,
+Node sections, prerequisite result rows,
 Activity content and device workspace. Current production
 Graph/List pages and shared components are untouched. Repeated field, empty and error behavior is
 specified once rather than multiplying every responsive combination.
@@ -610,9 +636,12 @@ implementation requirements; native Figma reactions do not verify DOM accessibil
 The [25 October review](roadmap-board-review.md) records the current route, component and contrast checks.
 The current refinement evidence is in
 `/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-refinement-20261025`.
+Inline-color and Node identity verification is in
+`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-inline-color-20261025`.
 The inventory check matches all 147 screen/overlay links to native Figma roots, with no omitted or extra
 entries. The audits cover native destinations, active hit targets and section placement. The final
-component inventory has 198 cards, 57 Shells, 19 screen Node sections and 19 screen description inputs.
+component inventory has 198 cards, 57 Shells, 19 screen Node sections, 20 screen description inputs,
+20 screen inline color fields/palettes and 15 Node identities.
 Node cards retain their 24px radius and content-driven height. The 320px Board stress specimen retains
 long title wrapping, compact progress and reachable exploration controls.
 The proposal remains 💡 pending human approval; no flow is Ready for dev or In production.
