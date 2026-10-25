@@ -39,8 +39,10 @@ class EngineLifecycleStoreTests {
     private suspend fun Room.workout(weight: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
         val opened = gym.startSession(SessionStart("session${++nextSession}", ++clockMs))
         store.refreshEngine()
+        assertEquals("External workout is adopted before logging", opened.id, store.session?.id)
         store.choose(movement)
         store.logSet(weight, 5)
+        assertEquals("The logged set is durable before account transition", listOf(weight), gym.session(opened.id)!!.sets.map { it.weightKg })
         clockMs += 60_000
         if (finish) store.finish()
         return opened

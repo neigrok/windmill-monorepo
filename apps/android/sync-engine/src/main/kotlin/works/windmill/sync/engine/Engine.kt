@@ -82,6 +82,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     fun events(): List<Json> = lock.withLock { events.toList() }
     fun diagnostics(): List<Json> = lock.withLock { diagnostics.toList() }
     fun activeReplica(): String = lock.withLock { ensureOpen(); device.current().id }
+    fun readRevision(): Long = lock.withLock { ensureOpen(); version }
     internal fun diagnostic(event: Json) { diagnostics.add(event) }
     internal data class Invalidation(val version: Long, val records: Set<Pair<ScopeRef, RecordKey>>, val full: Boolean = false, val scopes: Set<ScopeRef> = emptySet(), val firstPullScopes: Set<ScopeRef> = emptySet(), val operation: EngineOperation = EngineOperation.commit,
         val replica: String? = null, val account: String? = null)

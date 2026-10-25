@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -108,11 +109,13 @@ class FinishSheetTests {
     // Composed FIRST and worked afterwards, so a test can hold a conversation on the Coach tab
     // before the workout it then finishes.
     private fun startAWorkout(room: EngineRoomFixture) {
-        runBlocking {
+        val started = room.scope.async {
             room.startExternalWorkout()
             room.store.choose("back-squat")
             room.store.logSet(100.0, 5)
         }
+        compose.waitUntil(10_000) { compose.runOnIdle { started.isCompleted } }
+        runBlocking { started.await() }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Finish").fetchSemanticsNodes().isNotEmpty()
         }

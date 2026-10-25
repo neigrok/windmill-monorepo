@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -120,6 +121,9 @@ class BodyweightStateTests {
                 DisposableEffect(held) { onDispose { held.cancel() } }
                 LaunchedEffect(store) { store.connect(room.account()) }
                 GymMaterial { BodyweightScreen(store, "Log", {}, {}) }
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(Bodyweight.listDay(day)).fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
             compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")

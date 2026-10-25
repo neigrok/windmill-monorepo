@@ -4,15 +4,49 @@ The [Android task backlog](../../androidgym_tasks/README.md) ships one commit pe
 order. Visual work requires the task’s human-approved Figma state. A batch reaches main after
 adversarial review, simplification, targeted checks and native/local-stack acceptance.
 
+## Task 01 — background reads and native capture rig
+
+The local-only rig builds and validates its debug API origin before installation, creates its own
+Postgres database and API 37 Pixel 8 emulator, and drives deterministic MCP/sync fixtures and Coach
+responses. It captures ten current native states across Dark and Daylight, preserving the APK,
+SHA-256, source revision, dirty status, readiness measurements, idle trace and failure manifest.
+Recipe board names include dotted, suffixed and letter-prefixed canonical IDs. The
+[runbook](../../apps/android/tools/DESIGN_CAPTURE.md) documents recipes and cleanup.
+
+TrainingStore publishes background read results only while their account, replica, revision and
+workout still own the request. EngineTraining caches the parsed log by complete engine revision and
+auto-close deadline under the engine lock. Pending delivery status reads published state during
+recomposition. Bounded retries retain connection and selected-history intent; an abandoned read
+cannot leave an account loading forever, replace an edited rack, or use another account’s last time.
+Log refresh and pagination share a mutex so a queued Finish refresh cannot supersede awaited
+external-workout adoption. Engine writes and Compose state publication remain on main.
+
+The integrated gym Debug suite passes 1,167 tests with 17 opt-in live-wire cases skipped (1,184 total,
+139 classes). Sync-engine Debug and Release each pass 183 tests; the debug app assembles. Four capture
+tool tests pass. Explicit delayed-read tests cover account switches, repeated revisions, connection
+and restore completion, edited rack preservation, observer liveness and failure operation names.
+Compose tests await semantic readiness or coroutine completion without blocking main behind the
+log-read mutex. The fixture owns and cancels its child scope before closing its engine.
+
+Comparable no-Sentry-DSN baseline and task01 APKs use the same debug readiness probe, fixture and
+emulator configuration. Cold rendered readiness is 9,205 ms versus 1,821 ms. Ten-second idle traces
+record 649.977 ms versus 369.043 ms of main-thread CPU; the final trace contains no sampled main-thread
+engine read or pending-set query. The integrated telemetry-enabled APK reaches rendered Routines in
+1,655 ms; its independent accessibility selector takes 3,898 ms. Ten captures pass, with no ANR or
+fatal exception. Host timing is kept separate from device readiness and the comparable CPU pair.
+
 ## Task 06 — set semantics
 
 The app model, rack acceptance, performed rows and saved-workout recovery have no set-kind API or
 control. Every set contributes to counters, totals, history, last-time prefill and early-finish rules.
 Legacy kind fields are ignored when decoding; new set writes omit them. Shared compatibility vectors
-remain unchanged. Debug source/test compilation, the shared domain corpus and affected unit tests pass.
-Debug and Release real-wire suites each pass all 17 cases with zero skips against the local
-backend, with structured write observations present. Installed native and telemetry batch
-acceptance are pending.
+remain unchanged. Debug and Release real-wire suites each pass 17 cases with zero skips. A further
+Debug run passes all 17 against the backend auth-receipt/schema prerequisite on main.
+
+Native acceptance logs eight 60 kg × 8 sets across two routine movements. The receipt and backend
+readback count all eight sets and 3,840 kg. A local REST import carrying warmup, working, drop and
+failure values retains all four sets; the installed app shows four ordinary rows and 960 kg. No kind
+control appears. Local recovery compatibility is covered by the unit and wire suites.
 
 The simplified rack has one acceptance path for every logged set. Recovery retains source documents
 for retry without a separate kind-correction state. Wire summary fields retain their existing names;
@@ -23,13 +57,13 @@ future consolidation should preserve the shared estimate qualification and equip
 
 Movement navigation has no heavier-than-plan offer or implicit routine write. The logger retains
 only the movement-transition guard and closes an active sheet before choosing the next movement.
-Routine-editor saves and accepted Coach proposals remain the explicit routine-write paths. The
-workout regression asserts unchanged routine content and revision, no dialog or transient message,
-and one content-free set event per logged set. All 156 targeted tests pass with zero skips. The full
-gym Debug unit suite passes 1,161 tests with 17 opt-in live-wire cases skipped. Installed native and
-telemetry batch acceptance are pending.
+Routine-editor saves and accepted Coach proposals remain the explicit routine-write paths. All 156
+targeted tests pass with zero skips. The workout regression asserts unchanged routine content and
+revision, no dialog or transient message, and one content-free set event per logged set.
 
-The logger no longer coordinates offer state with movement state. Removing the isolated retarget
+Native acceptance logs four sets for each of two movements against targets of three sets at 30 kg.
+All eight performed sets use 60 kg. Navigation and Finish show no retarget sheet or alert, and the
+entire routine response is exactly equal before and after the workout. Removing the isolated retarget
 API leaves the guarded routine draft save as the editor’s one write path. Proposal comparison rows
 are private to their remaining screen.
 
@@ -37,13 +71,38 @@ are private to their remaining screen.
 
 App starts require a routine ID. The action decision checks the loaded routine and open-workout state
 atomically before creating a workout, while a repeated session identity remains idempotent. Routines
-has no free-start action, and receipts have no routine-save form or callback. Externally started
-workouts and legacy imports retain the optional routine format, existing movement picker and
-shared **Free workout** title. All 233 targeted tests pass with zero skips. The full gym Debug
-unit suite passes 1,148 tests with 17 opt-in live-wire cases skipped. Installed native and telemetry
-batch acceptance are pending.
+has no free-start action, and receipts have no routine-save form or callback. All 233 targeted tests
+pass with zero skips. Externally started workouts and legacy imports retain the optional routine
+format, existing movement picker and shared **Free workout** title.
 
-Receipt state is keyed by the workout's session ID. Removing receipt-created routine identities,
-first-workout flags, name drafts and save guards leaves one purpose for the receipt: read the saved workout and offer
-its existing Coach action. App-start tests use explicit routines; external/import fixtures enter
-through the engine boundary and exercise adoption separately.
+Native acceptance verifies both removed controls. An MCP-started workout without a routine is received
+after app restart, opens **What are you lifting?**, logs a set, finishes with a **Free workout** receipt
+and reopens its detail. The receipt counts one set and 480 kg. Receiving, finishing and reopening it
+adds no app-start event. Receipt state is keyed by session ID; it reads the saved workout and offers
+its existing Coach action.
+
+## Batch acceptance evidence
+
+The integrated run is saved at `/private/tmp/windmill-android-batch/task01-native`, including
+`capture-manifest.json`, ten board PNGs, manual acceptance PNG/XML, exact routine and session
+readbacks, `batch-acceptance-summary.json`, first-party events and structured backend write logs.
+Its APK SHA-256 is `98436a9b55060c04d3a8660324cdb27a6b83aacb4790718dd5f41784dbde68c1`,
+built from `00225342d91185c23120519e925454a79fbd1e82` plus the reviewed task01 changes. The native
+fixture uses the integration schema and matching original backend binary; the newer backend
+compatibility check is the separate 17-case Debug real-wire run.
+
+The first-party intake receives exactly nine `gym_set_logged`, two `gym_session_finished` and one
+`gym_session_started` event. Those events contain only common application metadata; there is no
+routine-save event. Backend logs contain successful sync pushes, event intake, external MCP start
+and legacy REST import observations. A deliberately malformed private workout file produces the
+installed-app Sentry event `643df758b3d0447cb0a5fca53886ce8c` under `gym.storage.read` at the local
+collector. The envelope omits exception messages, the synthetic file sentinel, fixture content and
+credentials. The exact backup is restored and the app opens normally. This verifies local SDK
+transport and first-party intake, not hosted vendor receipt.
+
+The full-suite XML is archived at `/private/tmp/windmill-android-batch/task01-full7-xml.tar.gz`.
+Comparable performance artifacts are `/tmp/windmill-android-capture-quiet-baseline` and
+`/tmp/windmill-android-capture-quiet-final2`; both preserve their APK and manifest. Future ticking
+logger or notification recipes need layout/body settlement instead of exact accessibility-tree
+identity. Later visual tasks add their own approved board recipes; these captures do not claim
+those screens already match Figma.

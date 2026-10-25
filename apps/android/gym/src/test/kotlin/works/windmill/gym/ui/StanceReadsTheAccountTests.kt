@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -90,8 +91,10 @@ class StanceReadsTheAccountTests {
     }
 
     // The finish re-reads the log in the room's scope.
-    private fun oneWorkout(room: EngineRoomFixture) = runBlocking { room.workout() }.also {
-        shadowOf(Looper.getMainLooper()).idle()
+    private fun oneWorkout(room: EngineRoomFixture): works.windmill.gym.domain.Session {
+        val workout = room.scope.async { room.workout().also { room.store.refreshEngine() } }
+        compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); workout.isCompleted }
+        return runBlocking { workout.await() }
     }
 
     // The log's own two silences. `No sessions yet` is the never-trained stance and `opening the
@@ -122,7 +125,9 @@ class StanceReadsTheAccountTests {
 
         // And the second half: the settled delete leaves the READ, so the invitation becomes true
         // rather than never being drawn again.
-        compose.runOnIdle { runBlocking { store.settleWithheld(session.id) } }
+        val deleted = compose.runOnIdle { scope.async { store.settleWithheld(session.id) } }
+        compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
+        runBlocking { deleted.await() }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.allSessions.map { it.id }) }
         compose.onNodeWithText("No sessions yet").assertIsDisplayed()
         scope.cancel()
@@ -233,7 +238,9 @@ class StanceReadsTheAccountTests {
         // And the settled delete moves it, once, to the day the account actually started on. The
         // re-read is not enough on its own: a row deeper than the page it answers with is folded
         // straight back in, so the discard has to leave the READ itself.
-        compose.runOnIdle { runBlocking { store.settleWithheld(old.id) } }
+        val deleted = compose.runOnIdle { scope.async { store.settleWithheld(old.id) } }
+        compose.waitUntil(10_000) { compose.runOnIdle { deleted.isCompleted } }
+        runBlocking { deleted.await() }
         compose.runOnIdle {
             assertEquals("the log let go of it and never drew it again",
                 listOf(new.id), store.allSessions.map { it.id })
@@ -310,11 +317,13 @@ class StanceReadsTheAccountTests {
         val store = room.store
         val old = oneWorkout(room)
         room.now = 1_800_000_000_000L
-        runBlocking {
+        val started = scope.async {
             room.startExternalWorkout()
             store.choose("back-squat")
             store.logSet(100.0, 5)
         }
+        compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idle(); started.isCompleted }
+        runBlocking { started.await() }
         store.withhold(Deletion.Session(old.id))
 
         compose.setContent { GymMaterial { GymRoom(account, store) } }

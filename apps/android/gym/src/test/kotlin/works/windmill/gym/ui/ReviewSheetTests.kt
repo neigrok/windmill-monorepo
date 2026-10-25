@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -796,7 +797,9 @@ class ReviewSheetTests {
         val waiting = "Still waiting for the log. Retry to check this removal."
         compose.onNodeWithText(waiting).assertExists()
         compose.runOnIdle { offscreen.value = true }
-        compose.runOnIdle { room.sync(server); runBlocking { room.store.refreshEngine() } }
+        val refreshed = compose.runOnIdle { room.sync(server); scope.async { room.store.refreshEngine() } }
+        compose.waitUntil(10_000) { compose.runOnIdle { refreshed.isCompleted } }
+        runBlocking { refreshed.await() }
         val settled = pending.copy(state = ProposalState.Applied)
         compose.onNodeWithText(waiting).assertDoesNotExist()
         compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsNotDisplayed()

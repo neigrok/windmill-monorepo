@@ -156,6 +156,7 @@ class LogMomentTests {
             compose.onNodeWithText("Bench Press · new best").assertDoesNotExist()
             compose.onNodeWithText("No sessions yet").assertDoesNotExist()
             compose.onNodeWithText("Load older").assertIsDisplayed().performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.older == Older.End } }
             compose.onNodeWithText("Older workout").assertIsDisplayed()
             compose.onNodeWithText("Bench Press · new best").assertIsDisplayed()
             compose.onNodeWithText("Load older").assertDoesNotExist()

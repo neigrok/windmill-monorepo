@@ -247,7 +247,7 @@ class SettingsScreenTests {
                         if (failScheduling) {
                             room.engine.crashAfterTransactions(2)
                             compose.onNodeWithText("Retry").performScrollTo().performClick()
-                            compose.waitForIdle()
+                            compose.waitUntil(10_000) { compose.runOnIdle { failures.isNotEmpty() || completedCommands.isNotEmpty() } }
                             assertEquals(listOf("gym_import_retry"), failures)
                             assertEquals(emptyList<List<String>>(), completedCommands)
                             assertEquals(setOf("set00001"), room.training.imports.retainedOperationSetIds())

@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -399,16 +400,20 @@ class LoggerScreenTests {
         try { logger(scope, logged = true, unanswered = true).use { room ->
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).assertIsDisplayed()
             compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
-            compose.runOnIdle {
+            val failed = compose.runOnIdle {
                 room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Unreachable)
-                runBlocking { room.store.refreshEngine() }
+                scope.async { room.store.refreshEngine() }
             }
+            compose.waitUntil(10_000) { compose.runOnIdle { failed.isCompleted } }
+            runBlocking { failed.await() }
             compose.onNodeWithText("1 set is saved on this device only. They’ll sync when you’re online.").assertIsDisplayed()
-            compose.runOnIdle {
+            val answered = compose.runOnIdle {
                 room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Answer(
                     works.windmill.sync.engine.SyncResponse(200, works.windmill.sync.core.Json.objectOf())))
-                runBlocking { room.store.refreshEngine() }
+                scope.async { room.store.refreshEngine() }
             }
+            compose.waitUntil(10_000) { compose.runOnIdle { answered.isCompleted } }
+            runBlocking { answered.await() }
             compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
             compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).assertIsDisplayed()
         } } finally { scope.cancel() }

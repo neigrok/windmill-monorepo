@@ -129,6 +129,16 @@ Missing routines and duplicate starts are expected refusals, including races dur
 decision; receiving or reopening an external workout emits no start event. The receipt writes no routine and has no routine-save event or
 failure boundary. Workout screen-view events retain their existing `workout` label.
 
+Local installed-app acceptance verifies the training event contract: nine logged sets produce nine
+`gym_set_logged` events, two finishes produce two `gym_session_finished` events, and the routine
+start produces one `gym_session_started` event. Receiving and reopening an external no-routine
+workout adds no start event; above-plan logging adds no routine-save event. These intake records
+contain common application metadata only. A malformed private workout document reaches the local
+Sentry collector under `gym.storage.read`, without exception messages, document content or credentials;
+restoring the exact backup returns the app to its normal state. The
+[Android implementation record](engineering/android-implementation.md) identifies the APK and evidence.
+This checks local SDK delivery and first-party intake, not hosted vendor receipt.
+
 The update dialog responds when the engine stops for an upgrade, on the server's
 `426 upgrade-required` or a hello whose `minSchema` is above the app's registry, without deleting
 local work. A bare 426, such as a proxy's, is a failure like any other and shows no dialog.

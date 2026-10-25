@@ -32,8 +32,8 @@ class GymRuntime(
     override suspend fun restoreLocal() = withContext(dispatcher) {
         val current = Triple(cachedOwner(), authorityAvailable(), authorityRevision())
         if (!restored) {
-            store.restoreWorkout(current.first, current.second)
-            restored = true
+            restored = store.restoreWorkout(current.first, current.second)
+            if (!restored) return@withContext
         } else if (current != authority) store.revokeWorkoutAuthority()
         authority = current
         store.authorizeWorkout(current.second && store.accountKey == Seat.of(current.first))

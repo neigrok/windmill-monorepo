@@ -94,7 +94,12 @@ frozen routine lineage are never silently changed.
 
 `TrainingStore` keeps the training interface and runs training reads and writes through
 `EngineTraining` and `:gym:domain`; a write commits to the selected replica at once and the engine
-delivers it. A refusal by the log's rules is said on screen and is not reported as a failure.
+delivers it. Bulk history, session and progress reads use an injected background dispatcher;
+Compose state and writes remain on the main dispatcher. Parsed history is shared per replica and
+engine revision, including device-journal changes, and expires at the next session auto-close
+boundary. A superseded read cannot publish into a different seat. Pending status shown by the
+workout uses a published read plus unconfirmed local set values, without storage reads during
+recomposition. A refusal by the log's rules is said on screen and is not reported as a failure.
 `WorkoutControls` (`windmill-gym-sets.json`) holds the open workout's device controls used by the
 shared `GymRuntime` and notification receivers: movement order, the movement in hand, the rack's
 offer and the clock each set was logged at. It is a projection of the selected replica, rebuilt
@@ -151,6 +156,11 @@ The local replica remains intact while network synchronization is paused. Update
 configuration and observability are documented in [Android observability](../../docs/ANDROID_OBSERVABILITY.md).
 
 ## Local verification
+
+The [design capture rig](tools/DESIGN_CAPTURE.md) builds against an isolated local stack, captures
+current native board states in both appearances on an API 36+ Pixel emulator, and checks cold
+startup with a private debug readiness probe. It preserves the APK, screenshots, manifest and an
+open-workout CPU trace. Its recipes grow alongside the Android board tasks.
 
 Use the full build above for both variants, lint, assembly and shared engine/domain gates. For
 device checks, build with `-Pwindmill.apiBase=http://10.0.2.2:8096` and use `Pixel_API34_Root`.

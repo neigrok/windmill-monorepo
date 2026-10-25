@@ -3,6 +3,11 @@ package works.windmill.gym.store
 import works.windmill.gym.coach.LocalCoach
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.TestDispatcher
+import kotlin.coroutines.ContinuationInterceptor
 import org.junit.Assert.*
 import works.windmill.gym.domain.*
 import works.windmill.platform.Account
@@ -19,7 +24,7 @@ import works.windmill.sync.schema.SyncSchema
 // store reads and writes through the engine, and only Coach, shares and credential lists reach REST.
 internal class EngineRoomFixture(
     val directory: File,
-    val scope: CoroutineScope,
+    scope: CoroutineScope,
     snapshot: Json? = null,
     private val rest: works.windmill.gym.net.GymRest? = null,
     private val undoWindowMs: Long = Withheld.windowMs,
@@ -33,6 +38,7 @@ internal class EngineRoomFixture(
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
 ) : AutoCloseable {
+    val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {
         fun server(): ModelServer {
             val state = ServerState().apply {
@@ -78,7 +84,8 @@ internal class EngineRoomFixture(
         scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
         mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
-        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
+        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
+        readDispatcher = scope.coroutineContext[ContinuationInterceptor] as? TestDispatcher ?: Dispatchers.Default)
     fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {
@@ -136,5 +143,8 @@ internal class EngineRoomFixture(
     fun notices(): List<Json> = engine.snapshot().let { device ->
         device.member("replicas").arr().first { it.member("meta").member("replica") == device.member("active") }["notices"]?.arr().orEmpty()
     }
-    override fun close() = engine.close()
+    override fun close() {
+        scope.cancel()
+        engine.close()
+    }
 }

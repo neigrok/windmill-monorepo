@@ -54,6 +54,10 @@ class EngineTraining(val engine: Engine) {
                 RemovalReceipts.intentResultWrites(intent, result, epoch, gestureId, values)
         }
     }
+    private data class ParsedLog(val replica: String, val revision: Long, val at: Long, val until: Long,
+        val details: List<SessionDetail>, val openId: String?, val lastTrainedAt: Map<String, Long>,
+        val staleSessions: Set<String>, val pendingSetIds: Set<String>)
+    private var parsedLog: ParsedLog? = null
     private val removalReceipts = RemovalReceipts(engine)
     fun removalReceipts(): Map<String, Proposal> = removalReceipts.confirmed()
     fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
@@ -240,11 +244,17 @@ class EngineTraining(val engine: Engine) {
             imports.prepare(SavedWorkout(detail.session, detail.sets, deleted))
         }
     }
-    fun openWorkout(): SessionDetail? {
-        val id = read { TrainingLog(it).open?.id?.text } ?: return null
-        return details().firstOrNull { it.session.id == id }
+    fun openWorkout(): SessionDetail? = read {
+        val history = details()
+        val openId = requireNotNull(parsedLog).openId
+        history.firstOrNull { it.session.id == openId }
     }
     fun details(): List<SessionDetail> = read { reader ->
+        val replica = engine.activeReplica()
+        val revision = engine.readRevision()
+        val now = reader.moment.now.ms
+        parsedLog?.takeIf { it.replica == replica && it.revision == revision && now >= it.at && now < it.until }
+            ?.let { return@read it.details }
         val log = TrainingLog(reader)
         val heldStarts = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else imports.startSources()
         val drawn = log.drawnSessions.map { session ->
@@ -254,13 +264,25 @@ class EngineTraining(val engine: Engine) {
             }.filter { reader.repository(EngineSet).record(Id(it.id, EngineSet), ViewMode.stored) == null }
             SessionDetail(session.ui(), (sets + held).distinctBy { it.id }.sortedWith(compareBy({ it.completedAtMs }, { it.id })))
         }
-        drawn + imports.retainedWorkouts().filter { pending -> drawn.none { it.session.id == pending.session.id } }
+        val retained = imports.retainedWorkouts()
+        val details = drawn + retained.filter { pending -> drawn.none { it.session.id == pending.session.id } }
             .map { SessionDetail(it.session, it.sets.filterNot { set -> set.id in it.deleted }) }
+        val until = log.sessions.filter { it.isOpen }.map { SessionRules.lastActivity(it, log.sets).ms + SessionRules.staleAfterMs }
+            .filter { it > now }.minOrNull() ?: Long.MAX_VALUE
+        parsedLog = ParsedLog(replica, revision, now, until, details, log.open?.id?.text,
+            log.drawnSessions.filter { it.routineId != null }.groupBy { it.routineId!!.text }
+                .mapValues { (_, sessions) -> sessions.maxOf { it.startedAt.ms } },
+            log.drawnSessions.filter { it.closedBy == "stale" }.mapTo(mutableSetOf()) { it.id.text },
+            reader.source.drawn(EngineSet.type).filter { it.isVisible && (reader.isAnonymous || it.isPending) }
+                .mapTo(mutableSetOf()) { it.id.toString() } +
+                imports.operations().filter { it.entry.write != Owed.Delete }.map { it.entry.set.id } +
+                retained.flatMap { row -> row.sets.filterNot { it.id in row.deleted }.map { it.id } })
+        details
     }
-    fun pendingSetIds(): Set<String> = read { reader -> reader.source.drawn(EngineSet.type)
-        .filter { it.isVisible && (reader.isAnonymous || it.isPending) }.mapTo(mutableSetOf()) { it.id.toString() } } +
-        imports.operations().filter { it.entry.write != Owed.Delete }.map { it.entry.set.id } +
-        imports.retainedWorkouts().flatMap { row -> row.sets.filterNot { it.id in row.deleted }.map { it.id } }
+    fun pendingSetIds(): Set<String> = read {
+        details()
+        requireNotNull(parsedLog).pendingSetIds
+    }
     fun pendingSessionIds(): Set<String> = read { reader ->
         val sessions = reader.source.drawn(EngineSession.type).filter { it.isVisible && (reader.isAnonymous || it.isPending) }
             .mapTo(mutableSetOf()) { it.id.toString() }
@@ -272,15 +294,15 @@ class EngineTraining(val engine: Engine) {
         }.mapTo(sessions) { it.member("sessionId").str() }
         sessions
     } + imports.operations().map { it.sessionId } + imports.retainedWorkouts().map { it.session.id }
-    fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-        if (!anonymous && !firstPullComplete && details().isEmpty()) throw TrainingUnanswered
+    fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> = read {
         val history = details()
+        if (!anonymous && !firstPullComplete && history.isEmpty()) throw TrainingUnanswered
         val catalog = catalogue()
         val names = catalog.associate { it.id to it.name }
-        return history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
+        history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
             .filter { before == null || it.session.startedAtMs < before || it.session.startedAtMs == before && (beforeId == null || it.session.id < beforeId) }
             .take(limit).map { detail ->
-                val stale = read { TrainingLog(it).drawnSessions.firstOrNull { it.id.text == detail.session.id }?.closedBy == "stale" }
+                val stale = detail.session.id in parsedLog?.staleSessions.orEmpty()
                 val summary = SessionSummary.of(detail, history, catalog)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
@@ -300,7 +322,8 @@ class EngineTraining(val engine: Engine) {
         return known
     }
     fun program(): List<Routine> = read { reader ->
-        val log = TrainingLog(reader)
+        details()
+        val lastTrainedAt = requireNotNull(parsedLog).lastTrainedAt
         val decisions = reader.commands().filter { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) }
             .mapNotNull { it.command.args["proposalId"]?.str() }.toSet()
         val proposals = reader.repository(EngineProposal).all(ViewMode.drawn).map { proposal ->
@@ -316,7 +339,7 @@ class EngineTraining(val engine: Engine) {
             val value = if (drawn.id !in decisionRoutines) drawn else reader.confirmed(EngineRoutine, drawn.id)
                 ?.takeIf { it.isVisible }?.let { EngineRoutine.decode(Fields(it)) } ?: drawn
             value.ui(
-            log.drawnSessions.filter { it.routineId == value.id }.maxOfOrNull { it.startedAt.ms },
+            lastTrainedAt[value.id.text],
             proposals.filter { it.routineId == value.id && it.state == "pending" }.maxWithOrNull(compareBy<EngineProposal> { proposalCreatedAt(it, reader) }.thenBy { it.id.text })?.ui(reader)) }
         served.sortedWith(compareByDescending<Routine> { it.lastTrainedAtMs ?: Long.MIN_VALUE }.thenBy { it.position }.thenBy { it.id })
     }

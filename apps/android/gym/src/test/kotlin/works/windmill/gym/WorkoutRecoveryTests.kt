@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -58,6 +59,10 @@ class WorkoutRecoveryTests {
 
     // The log draws only what the wall clock has reached, so these workouts happen in its past.
     private val past = 1_700_000_000_000L
+
+    private fun awaitText(text: String) {
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+    }
 
     // A finished workout off the routine `name`, one set of it, on this phone's own log.
     private fun pastWorkout(room: EngineRoomFixture, name: String, weightKg: Double, reps: Int) {
@@ -100,7 +105,9 @@ class WorkoutRecoveryTests {
         }
         try {
             compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            awaitText("Push A")
             compose.onNodeWithText("Push A").performClick()
+            awaitText("40 × 8")
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
@@ -109,6 +116,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("2").performClick()
             compose.onNodeWithText("0").performClick()
             restored.emulateSavedInstanceStateRestore()
+            awaitText("520")
             compose.onNodeWithText("520").assertIsDisplayed()
             compose.onNodeWithText(KeypadEntry.overWeight).assertIsDisplayed()
             compose.onNodeWithText("Set weight").assertIsNotEnabled()
@@ -156,12 +164,15 @@ class WorkoutRecoveryTests {
         restored.setContent { if (showing) GymMaterial { GymRoom(account, room.store) } }
         try {
             compose.onNodeWithText("Finish").performClick()
+            awaitText("Ended early.")
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
             compose.onNodeWithText("480").assertIsDisplayed()
             compose.onNodeWithText("1 × 8 · 60kg").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
+            awaitText("480")
             compose.onNodeWithText("480").assertIsDisplayed()
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
+            awaitText("60 × 8")
             compose.onNodeWithText("480 kg").assertIsDisplayed()
             compose.onNodeWithText("60 × 8").assertIsDisplayed()
             compose.onNodeWithText("60 × 8").performClick()
@@ -199,6 +210,7 @@ class WorkoutRecoveryTests {
             }
         }
         compose.onNodeWithText("Finish").performClick()
+        awaitText("Ended early.")
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
         compose.onNodeWithText("480").assertIsDisplayed()
         val beforeRestore = room
@@ -208,12 +220,14 @@ class WorkoutRecoveryTests {
             room = EngineRoomFixture(tmp.root, firstScope, snapshot).apply { now = at; selected = "u1" }
         }
         restored.emulateSavedInstanceStateRestore()
+        awaitText("480")
         compose.onNodeWithText("480").assertIsDisplayed()
         compose.runOnIdle { runBlocking {
             assertEquals(localId, room.training.session(localId)!!.session.id)
             assertEquals(listOf(setId), room.training.session(localId)!!.sets.map { it.id })
         } }
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
+        awaitText("60 × 8")
         compose.onNodeWithText("60 × 8").performClick()
         compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
@@ -222,6 +236,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("60").performClick()
         compose.onNodeWithText("5").performClick(); compose.onNodeWithText("2").performClick(); compose.onNodeWithText("0").performClick()
         restored.emulateSavedInstanceStateRestore()
+        awaitText("520")
         compose.onNodeWithText("520").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
@@ -263,7 +278,10 @@ class WorkoutRecoveryTests {
             }
         }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick(); compose.onNodeWithText("Push A").performClick()
+            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            awaitText("Push A")
+            compose.onNodeWithText("Push A").performClick()
+            awaitText("40 × 8")
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Set note").performTextInput("private note")
             restored.emulateSavedInstanceStateRestore()
@@ -271,6 +289,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("private note").assertDoesNotExist()
             compose.onNodeWithText("Push A").assertDoesNotExist()
             compose.runOnIdle { account = signedIn }
+            awaitText("private note")
             compose.onNodeWithText("private note").assertIsDisplayed()
             compose.runOnIdle { account = Account(signedIn.origin, null, resolved = false) }
             compose.runOnIdle {
@@ -314,7 +333,10 @@ class WorkoutRecoveryTests {
             }
         }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick(); compose.onNodeWithText("A workout").performClick()
+            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            awaitText("A workout")
+            compose.onNodeWithText("A workout").performClick()
+            awaitText("40 × 8")
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Set note").performTextInput("A private note")
             compose.runOnIdle { account = Account(account.origin, null, resolved = false) }
@@ -331,10 +353,12 @@ class WorkoutRecoveryTests {
                 account = room.account("u2")
             }
             compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            awaitText("B workout")
             compose.onNodeWithText("B workout").performClick()
             compose.onNodeWithText("A workout").assertDoesNotExist()
             compose.onNodeWithText("A private note").assertDoesNotExist()
             compose.onNodeWithText("40 × 8").assertDoesNotExist()
+            awaitText("70 × 5")
             compose.onNodeWithText("70 × 5").assertIsDisplayed()
             compose.onNodeWithText("70 × 5").performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
@@ -372,11 +396,12 @@ class WorkoutRecoveryTests {
         var showing by mutableStateOf(true)
         var instances = 0
         lateinit var current: TrainingStore
+        lateinit var currentScope: CoroutineScope
         val restored = StateRestorationTester(compose)
         restored.setContent {
             if (showing) {
                 val scope = remember { if (instances == 0) initialScope else CoroutineScope(SupervisorJob() + Dispatchers.Main) }
-                val held = remember { (if (instances++ == 0) room.store else room.freshStore(scope)).also { current = it } }
+                val held = remember { (if (instances++ == 0) room.store else room.freshStore(scope)).also { current = it; currentScope = scope } }
                 DisposableEffect(scope) { onDispose { scope.cancel() } }
                 GymMaterial { GymRoom(account, held) }
             }
@@ -389,10 +414,14 @@ class WorkoutRecoveryTests {
             compose.onNode(hasContentDescription("Weight 92 kg")).assertIsDisplayed()
             compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasContentDescription("Weight 92 kg")).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNode(hasContentDescription("Weight 92 kg")).assertIsDisplayed()
             compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
-            compose.runOnIdle { runBlocking { room.pull(server); current.connect(account) } }
-            compose.waitForIdle()
+            val connection = compose.runOnIdle { currentScope.async { room.pull(server); current.connect(account) } }
+            compose.waitUntil(10_000) { compose.runOnIdle { connection.isCompleted } }
+            runBlocking { connection.await() }
             compose.runOnIdle { assertEquals(listOf(80.0), current.lastTime!!.sets.map { it.weightKg }) }
             compose.onNode(hasContentDescription("Weight 92 kg")).assertIsDisplayed()
             compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()

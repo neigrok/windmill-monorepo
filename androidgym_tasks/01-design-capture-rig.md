@@ -2,16 +2,16 @@
 
 **Figma:** none. This is the tool every later task uses for its "screenshot matches the board" check. The target is the [Android page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=56-2).
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `app/`)
-- There is no capture tool. `apps/android/tools/` holds only `release.py` and `schema_gen.py`.
-- Tests are Robolectric and Compose UI tests (`apps/android/gym/build.gradle.kts:53-55`). They draw no PNG of a real screen.
-- The debug build reaches a local backend with `-Pwindmill.apiBase=http://10.0.2.2:<port>` (`apps/android/app/build.gradle.kts:14`). A malformed value falls back to production, so the base must be checked in the generated `BuildConfig` (`WM_API_BASE_URL`).
-- The app follows the system appearance only (`isSystemInDarkTheme()`, `app/MainActivity.kt:86`). Every Dark/Daylight switch recreates the activity.
-- Engine reads run on the main thread, so captures stall:
-  - `GymRuntime` runs on `Dispatchers.Main.immediate` (`store/GymRuntime.kt:25`).
-  - `TrainingStore.connect` (`store/TrainingStore.kt:511`), `refreshEngine` (:624), `loadProgress` (:1238) and `loadLog` (:1589) call `EngineTraining.details()` (`store/EngineTraining.kt:233`) and `sessions()` (:261), which parse every replica row.
-  - With about 14 workouts, a cold start takes 20 s or more, and every appearance switch shows *Windmill isn't responding*. With a workout open, the main thread stays busy even when idle.
-  - Snackbar Undo windows ran out while the screen was frozen.
+**Current implementation**
+- `apps/android/tools/design_capture.py` builds and validates a local-only debug APK, creates an isolated fixture database and Pixel emulator, and captures the current board states in both appearances. The [runbook](../apps/android/tools/DESIGN_CAPTURE.md) documents recipes, deterministic model responses, private debug sign-in, readiness, profiling and cleanup.
+- History, session, progress and program reads use `TrainingStore`'s injected background dispatcher. The engine lock protects a parsed-log cache keyed by replica and complete engine revision; auto-close deadlines also invalidate it.
+- The workout's pending-status getter uses a published read and current local set values. Recomposition performs no engine query. Superseded reads cannot publish into another account; the observer resumes pending connections and manual reads retain a retryable state.
+- The debug-only, non-exported readiness provider measures process start through a rendered frame with the fixture routines loaded. The rig independently verifies body content, preserves the APK hash and source state, enforces the 3-second budget, and records ANR/fatal failures in its manifest.
+
+**Verification**
+- The integrated Pixel 8 / API 37 run captures ten PNGs in Dark and Daylight, including deterministic Coach answers. Rendered Routines readiness is 1,655 ms; the independent accessibility selector completes in 3,898 ms. No ANR, fatal exception or capture failure is recorded.
+- The comparable baseline and task01 APKs use the same debug readiness probe and fixture. Cold readiness is 9,205 ms versus 1,821 ms; ten-second idle traces record 649.977 ms versus 369.043 ms on main, with no engine-read or pending-set query sampled on main in the final trace.
+- The integrated gym Debug suite passes 1,167 tests with 17 opt-in live-wire skips; sync-engine Debug and Release each pass 183 tests. Four capture-tool tests pass. Native event intake, structured writes and a content-free installed-app `gym.storage.read` Sentry envelope are verified in the [batch record](../docs/engineering/android-implementation.md).
 
 **Change**
 - Move engine reads off the main thread.
