@@ -7,7 +7,7 @@ pages.
 Design lives on separate [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) and [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433) and
 [desktop board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543). The pages contain
-89 mobile and 39 desktop screen compositions, plus 19 transparent overlay prototype assets.
+94 mobile and 39 desktop screen compositions, plus 19 transparent overlay prototype assets.
 
 ## Behavior
 
@@ -320,9 +320,8 @@ roadmap progress and a separate **Complete** action. Its Undo restores the prior
 changing node progress. Explicit Complete produces the 4/8 completion result and re-evaluates dependents.
 Current `useWorkspace.js` still calls node completion after 600ms when every subtask is checked;
 removing that automatic call is required implementation work, not a change delivered by this design.
-Note editing supports bold, italic, links and bullets; blur or Cmd/Ctrl+Enter
-commits and Escape cancels. Personal-link removal never removes authored node
-links. Existing workspace storage failures have no reliable save acknowledgement, so no new “Saved”
+Personal-link removal never removes authored node links. Existing workspace storage failures have
+no reliable save acknowledgement, so no new “Saved”
 promise appears. See [`NodeWorkspace.jsx`](../../web/src/products/roadmap/ui/tree/NodeWorkspace.jsx),
 [`useWorkspace.js`](../../web/src/products/roadmap/ui/tree/useWorkspace.js),
 [`WorkspaceStore.js`](../../web/src/products/roadmap/persistence/WorkspaceStore.js) and
@@ -332,6 +331,49 @@ Mobile workspace and History are proposed Board extensions: the current phone ed
 expose them. Desktop node details remain a modal plus a dedicated page, not a competing sidebar.
 The dedicated page uses shared node information and History in the left column, and a distinct
 local workspace column on the right. Returning preserves category, filter, sort and Board scroll.
+
+## Mobile note editing
+
+[Edit note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1352) opens a focused
+editor with the node name and Cancel in a 60px header. Section navigation and node completion are
+absent while drafting. At 390×844px, the scrollable writing area occupies y60–532. A 60px toolbar
+directly above the illustrative keyboard provides Bold, Italic, Link, Bullets and one **Done** action.
+The four formatting controls have 44px targets; Done is 72×44px. The same row fits at 320px.
+The note-only keyboard specimen uses Return for a newline; node-creation keyboard specimens retain
+Done. Actual keyboard height and viewport changes must resize the writing area while keeping the
+caret and toolbar visible.
+
+The editor renders the supported bold, italic, link and bullet formatting in the draft. Bold and
+Italic apply to selected text, or toggle the style of subsequent input at a caret. Bullets apply to
+the current paragraph or selected paragraphs. Active controls expose their pressed state; accessible
+names and visible keyboard focus remain required. Formatting preserves the selection bookmark and
+does not save or dismiss the editor. Moving focus to the toolbar or dismissing the software keyboard
+also leaves the note as a draft. Done, or Cmd/Ctrl+Enter with a hardware keyboard, commits the note;
+editor Cancel or Escape discards the draft.
+
+Link opens a compact panel above the keyboard, replacing the formatting toolbar and reducing the
+writing area to 360px. Selected text supplies the link label. At a caret, the implementation accepts
+Text and URL, using the URL as the label when Text is empty. The URL field uses URL input mode without
+automatic capitalization. Only http, https and mailto links are accepted. Apply remains unavailable
+until the URL is valid. **Apply**, including submission from the URL keyboard, changes only the note
+draft and returns the caret after the inserted link. **Cancel** within this panel preserves the note
+draft and restores the prior selection. Background editor controls cannot commit or discard while
+the panel is active. The final editor Done remains the sole note commit.
+
+The native walkthrough selects “Watch the telltales,” opens Link, demonstrates a fixed RYA URL,
+applies it to the draft and uses Done to show the corresponding Workspace note. The result retains
+the draft's exact two lines, 2-of-3 checklist and separate Complete action; node progress is unchanged.
+The result is a terminal prototype specimen so inherited controls cannot reopen an older note.
+Tapping the phrase and URL field are prototype shortcuts for native text selection and text entry.
+Bold, Italic and Bullets have reusable default/active controls and the contract above; arbitrary
+editing and formatting outcomes are not simulated. These unmodeled prototype actions are not
+requirements to disable the product controls.
+
+Current `NodeWorkspace.jsx` uses a raw Markdown textarea and commits on blur or Cmd/Ctrl+Enter. It has
+no selection-aware toolbar or inline-link editor. The proposed rendered draft, selection restoration
+and explicit Done boundary require implementation; replacing blur-save is necessary before toolbar
+or link focus changes can work as specified. The existing limited Markdown dialect remains the
+storage/rendering boundary; this design does not promise a general rich-text editor.
 
 ## Responsive, density and thumb contract
 
@@ -374,7 +416,7 @@ The list scrolls above the exploration band; the four-node Closed success exampl
 capacity without filler. Mobile node pages put Overview/Workspace/History navigation above
 the bottom action row. Overview retains Edit node; Workspace uses contextual Edit note at the lower
 left, with Complete or Reset on the right. Subtasks toggle inline and personal link actions stay
-inside their local section. Note editing replaces the footer with Cancel and Done. Primary and
+inside their local section. Note editing uses its focused header, writing area and keyboard toolbar. Primary and
 secondary interactive targets are at least 44px.
 
 [Node sections](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=286-3838) is one local
@@ -466,6 +508,11 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 07.04 · Shared node | [228:1283](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1283) |
 | 07.05 · Edit note | [228:1352](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1352) |
 | 07.06 · All subtasks checked | [231:1174](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=231-1174) |
+| 16.01 · Select text | [324:5159](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5159) |
+| 16.02 · Add link | [324:5256](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5256) |
+| 16.03 · Linked draft | [324:5353](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5353) |
+| 16.04 · Note committed | [324:5457](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5457) |
+| 16.05 · Editor · 320px | [324:5532](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=324-5532) |
 | 10.02 · Search tidal · keyboard | [258:4760](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4760) |
 | 10.03 · One selected · retained query | [258:5181](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-5181) |
 | 10.04 · Second query · selection retained | [258:5335](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-5335) |
@@ -601,8 +648,8 @@ route. Their behavior follows the shared contract without duplicating every dark
 
 ## Validation and limits
 
-All 128 screen compositions and 19 transparent overlay assets are native editable Figma layers,
-with 89 mobile and 39 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
+All 133 screen compositions and 19 transparent overlay assets are native editable Figma layers,
+with 94 mobile and 39 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
 finds no full-screen image fills; interface copy uses
 node terminology and Closed, Up next and Done categories. Nunito, Baloo 2 and the existing monospace
 caption font remain in use. No category totals or written color names appear on cards. Colored perimeter borders,
@@ -612,7 +659,7 @@ The proposal reuses Windmill Buttons, Icon Buttons, semantic/spacing/radius vari
 components and canonical EventRows. Compact search adapts the canonical Input's tokens. Local
 components consolidate the shared Shell, desktop/mobile identity, the mobile exploration toolbar, Node cards,
 filter/sort controls, creation form, inline color field/palette, Node identity, authored description input,
-Node sections, prerequisite result rows,
+Node sections, prerequisite result rows, note editor/header/writing variants, formatting toggles and link panel,
 Activity content and device workspace. Current production
 Graph/List pages and shared components are untouched. Repeated field, empty and error behavior is
 specified once rather than multiplying every responsive combination.
@@ -638,10 +685,14 @@ The current refinement evidence is in
 `/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-refinement-20261025`.
 Inline-color and Node identity verification is in
 `/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-inline-color-20261025`.
-The inventory check matches all 147 screen/overlay links to native Figma roots, with no omitted or extra
+Focused note-editing and link-flow evidence is in
+`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-note-formatting-20261025`.
+The inventory check matches all 152 screen/overlay links to native Figma roots, with no omitted or extra
 entries. The audits cover native destinations, active hit targets and section placement. The final
 component inventory has 198 cards, 57 Shells, 19 screen Node sections, 20 screen description inputs,
 20 screen inline color fields/palettes and 15 Node identities.
+The note journey uses five linked headers, five writing areas, four toolbars, five note-only keyboards
+and one Link panel; the toolbar instances contain 16 formatting-toggle instances.
 Node cards retain their 24px radius and content-driven height. The 320px Board stress specimen retains
 long title wrapping, compact progress and reachable exploration controls.
 The proposal remains 💡 pending human approval; no flow is Ready for dev or In production.

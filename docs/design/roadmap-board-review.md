@@ -21,17 +21,18 @@ No application code, production screen or approval status changes.
 | Node sections are duplicated frames with inconsistent corners | High / P1 | The Overview/Workspace/History control is component set 286:3838 with three selected variants. All 19 screen controls are actual instances; native main-component linkage, equal-width 44px targets and bound 16px outer/12px inset radii pass. Semantic light and dark surfaces remain readable. |
 | Checklist completion changes the node automatically | High / P1 | All three checked subtasks leave Read the wind Up next and roadmap progress 3/8. Undo changes only the checklist; explicit Complete reaches 4/8. The proposal records the current web 600ms automatic-completion call as an implementation gap. |
 | Storage architecture occupies interface space | Medium / P2 | Storage/sharing/synchronization badges and explanatory copy are absent from both proposal pages. Subtasks, Note, Personal links and Node links remain. The engineering contract still records browser-local tree-scoped storage without claiming account privacy or synchronization. |
-| Description fields constrain writing | Medium / P2 | One authored-description component 291:4098 supplies 224px inputs to all 20 composer/edit/returned-draft screens, including the inline Gold edit state. Mobile, desktop and keyboard specimens preserve final actions outside a clipped vertical scroll body. No read-only description or note editor is enlarged by this change. |
+| Description fields constrain writing | Medium / P2 | One authored-description component 291:4098 supplies 224px inputs to all 20 composer/edit/returned-draft screens, including the inline Gold edit state. Mobile, desktop and keyboard specimens preserve final actions outside a clipped vertical scroll body. Read-only descriptions and the note editor use their own components. |
 | Color dots reserve a card row | Medium / P2 | The 185 existing cards preserve their exact tag variable in a 2px full perimeter border; 13 branch cards reuse the corrected masters, giving 198 instances. The native audit finds no palette mismatch, obsolete marker/spacer, empty facts row or content bounds failure in the corrected baseline. Titles, authored descriptions and Closed dependency information remain. |
 | Shared Shell is copied as frames | High / P1 | Shared Shell component set 290:7085 supplies Mobile and Desktop masters. All 57 Shell controls are actual linked instances at 52px high, with 44px target wrappers and inherited appearance. No plain Shared Shell frame copies remain. |
 | Long node content lacks narrow-screen proof | Medium / P2 | The 390px and 320px specimens show the complete long title, 358-word description and six long resource links, including a URL fallback. Their 648px clipped vertical body leaves the 128px footer fixed at y716. Linked section controls and 44–60px link rows remain within their widths. Top views and native scroll-content excerpts pass visual inspection. |
 | A node has no focused Board exploration path | Medium / P2 | View branch exposes the anchor plus every ancestor and descendant while retaining full-roadmap prerequisite rules and progress. The six-node Read the wind fixture excludes collateral Rig the boat and Tie a bowline. Native routes cover categories, ancestor/related/anchor inspection, full Graph return and clearing only scope. |
 | Color selection leaves the node form | Medium / P2 | All 20 forms use actual inline Color field/palette instances. Six 44px targets and 4px gaps fit 284px. The former picker is a Gold edit draft with identical name, description and prerequisites. Sky ↔ Gold changes the same form composition without transition or scroll reset; Gold Save is terminal, and Cancel/back discards the draft. No separate Use tag action remains. |
 | A detail color dot consumes a full row | Medium / P2 | All 15 node-detail identities use component 306:4743: a 4px tag-color rail beside a wrapping title. Native checks retain 12 Sky and 3 Terracotta bindings, find no standalone detail-dot rows and recover 24px from each identity stack. Light/dark and 390/320px long-title visuals pass. |
+| Mobile note formatting lacks an editing flow | High / P1 | The focused editor has a 472px writing area and a 60px toolbar directly above its illustrative keyboard. Bold, Italic, Link and Bullets have 44px targets; Done is 72×44px. Selection, URL entry, linked draft and matching Workspace outcome are explicit states, with a 320px specimen. Section navigation is absent while drafting. |
 
 ## Verification
 
-The frozen inventory contains 89 mobile and 39 desktop screen compositions plus 19 transparent
+The frozen inventory contains 94 mobile and 39 desktop screen compositions plus 19 transparent
 overlay assets. Native checks found no missing prototype destinations, active click targets below
 44px, full-screen image fills or overlapping journey sections. Shared card dimensions, the compact
 identity row, lower exploration controls and 320px content wrapping retain their reviewed geometry.
@@ -59,6 +60,21 @@ form with Gold selected. Its Save has no fabricated persistence route. Desktop C
 44px and the complete placement preview remains visible. Current web immediate recolor remains an
 implementation difference from the proposed draft-only form behavior.
 
+The note audit verifies the concrete selected phrase → Link → URL entry → Apply → linked draft → Done
+journey. The empty URL variant has no Apply route; the entered variant applies only to the draft.
+Link Cancel restores the selected draft, while editor Cancel returns the original Workspace. The
+URL-entry state has no active background editor controls. The result has no effective inherited
+navigation actions and preserves the draft's exact two-line text, checklist and Complete action.
+Selection highlighting uses 18% rectangle opacity with its color binding intact. The isolated note
+keyboard uses Return; the existing node-creation keyboard still uses Done.
+
+Five editor headers and writing areas, four formatting toolbars, five note keyboards and one Link
+panel are actual component instances; the toolbars contain 16 formatting toggles. Removing section
+navigation from the editor and adding the Workspace result leaves 19 screen Node sections. Native
+geometry and reactions do not execute text selection or typing. Phrase/URL taps are fixture shortcuts;
+unmodeled formatting outcomes and the terminal result are explicitly scoped in the proposal.
+The current raw-Markdown textarea's blur-save is an implementation gap, not a shipped toolbar feature.
+
 Completion/reset → outcome → Undo, creation → derived category, and dark exploration remain
 reviewable paths. Terminal outcome controls keep the intended product appearance; an unwired Figma
 control is not a requirement to disable that control in the product. The prototype is a fixture
@@ -72,6 +88,8 @@ Shell evidence is saved under
 `/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-refinement-20261025`.
 Inline palette and Node identity evidence is saved under
 `/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-inline-color-20261025`.
+Focused note-editing screenshots, component counts and exact text/route checks are saved under
+`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-note-formatting-20261025`.
 Native geometry and paint measurements do not establish browser accessibility, focus behavior or
 5,000-node performance. Those remain implementation validation requirements.
 
