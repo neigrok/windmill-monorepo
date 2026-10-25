@@ -4,6 +4,23 @@ import works.windmill.gym.coach.AskOutcome
 import java.io.File
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ThreadContextElement
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.core.Json
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant
+import works.windmill.domain.kit.Outcome
+import works.windmill.domain.kit.Zone
+import works.windmill.gym.domain.sync.StartSession
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.Gym
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
@@ -116,7 +133,16 @@ class TelemetryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             val store = room.store
             room.select(null)
-            assertTrue(store.start() is GymResult.Ok)
+            val routine = (store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+                .adding("bench-press")) as GymResult.Ok).value
+            telemetry.events.clear()
+            val beforeMissing = room.engine.snapshot()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), store.start("missing-routine"))
+            assertEquals(beforeMissing, room.engine.snapshot())
+            assertNull(store.session)
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+            assertTrue(store.start(routine.id) is GymResult.Ok)
+            assertTrue(store.start(routine.id) is GymResult.Failed)
             store.choose("bench-press")
             val offered = requireNotNull(store.notification.value?.offer)
             val command = LogSetCommand(offered.key, offered.id)
@@ -128,6 +154,83 @@ class TelemetryTests {
                 "gym_set_logged" to emptyMap<String, String>(),
                 "gym_session_finished" to emptyMap<String, String>(),
             ), telemetry.events)
+            assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
+        }
+    }
+
+    @Test fun deletingTheSelectedRoutineBeforeTheStartDecisionCreatesNoWorkoutOrEvent() = runTest {
+        val telemetry = Recorder()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val routine = (room.store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+                .adding("bench-press")) as GymResult.Ok).value
+            telemetry.events.clear()
+            var afterDelete: Json? = null
+            var deletionAttempted = false
+            var deletionFailure: Throwable? = null
+            val deletion = object : ThreadContextElement<Unit> {
+                override val key = object : CoroutineContext.Key<ThreadContextElement<Unit>> {}
+                override fun updateThreadContext(context: CoroutineContext) {
+                    if (context[GymActionContext] == null || deletionAttempted) return
+                    deletionAttempted = true
+                    runCatching {
+                        assertTrue(room.engine.commit(ScopeRef(Gym.scope), Gesture(listOf(
+                            Change.delete(Gym.Types.routine, RecordID(routine.id))))) is CommitOutcome.Committed)
+                        afterDelete = room.engine.snapshot()
+                    }.onFailure { deletionFailure = it }
+                }
+                override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {}
+            }
+
+            val result = withContext(deletion) { room.store.start(routine.id) }
+
+            assertNull(deletionFailure?.stackTraceToString(), deletionFailure)
+            assertNotNull("the selected routine was removed before the action decision", afterDelete)
+            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")), result)
+            assertEquals(afterDelete, room.engine.snapshot())
+            assertNull(room.store.session)
+            assertTrue(room.training.details().isEmpty())
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+            assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
+        }
+    }
+
+    @Test fun aWorkoutOpenedBeforeTheStartDecisionIsResumedWithoutAnotherStartOrEvent() = runTest {
+        val telemetry = Recorder()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val routine = (room.store.saveRoutine(works.windmill.gym.domain.RoutineDraft(name = "Workout")
+                .adding("bench-press")) as GymResult.Ok).value
+            telemetry.events.clear()
+            var afterExternalStart: List<Json>? = null
+            var externalStartAttempted = false
+            var externalStartFailure: Throwable? = null
+            val externalStart = object : ThreadContextElement<Unit> {
+                override val key = object : CoroutineContext.Key<ThreadContextElement<Unit>> {}
+                override fun updateThreadContext(context: CoroutineContext) {
+                    if (context[GymActionContext] == null || externalStartAttempted) return
+                    externalStartAttempted = true
+                    runCatching {
+                        val runner = ActionRunner(room.engine, room.engine.registry, Zone { 0 },
+                            object : ActionContext { override var insideRun = false })
+                        assertTrue(runner.run(StartSession(Id("external1", works.windmill.gym.domain.sync.Session),
+                            startedAt = Instant(room.now))) is Outcome.Committed)
+                        afterExternalStart = room.outbox()
+                    }.onFailure { externalStartFailure = it }
+                }
+                override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {}
+            }
+
+            val result = withContext(externalStart) { room.store.start(routine.id) }
+
+            assertNull(externalStartFailure?.stackTraceToString(), externalStartFailure)
+            assertNotNull("the external workout opened before the action decision", afterExternalStart)
+            assertEquals(GymResult.Failed(WriteFailure.Refused("A workout is already open. Finish it first.")), result)
+            assertEquals(afterExternalStart, room.outbox())
+            assertEquals("external1", room.store.session?.id)
+            assertNull(room.store.session?.routineId)
+            assertEquals(listOf("external1"), room.training.details().map { it.session.id })
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
         }
     }

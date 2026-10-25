@@ -141,7 +141,7 @@ class TrainingStoreTests {
         val opened: Session
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            opened = (room.store.start() as GymResult.Ok).value
+            opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             assertTrue(room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable))
@@ -175,7 +175,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            (room.store.start() as GymResult.Ok).value
+            room.startExternalWorkout()
             room.sync(server)
             anotherPhone(server, room.now) { phone ->
                 assertTrue(phone.store.finish() is FinishOutcome.Closed)
@@ -201,7 +201,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             room.store.logSet(weightKg = 100.0, reps = 5)
@@ -232,7 +232,7 @@ class TrainingStoreTests {
     fun testAServerFailureKeepsTheSetOwedRatherThanRefusingIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            room.store.start(); room.store.choose("bench-press")
+            room.startExternalWorkout(); room.store.choose("bench-press")
             room.store.logSet(weightKg = 90.0, reps = 5)
 
             assertTrue(room.training.reportDelivery(room.engine.activeReplica(),
@@ -271,7 +271,7 @@ class TrainingStoreTests {
             room.now = 1_800_000_100_000L
             room.select("alice"); room.pull(server)
 
-            val refused = room.store.start(routineId = "rt_other")
+            val refused = room.store.start(routineId = live.routineId!!)
 
             assertTrue("a start while a workout is open is a refusal, never a silent join: $refused",
                 refused is GymResult.Failed)
@@ -314,7 +314,7 @@ class TrainingStoreTests {
             room.select(null)
             assertEquals(SaveState.Idle, room.store.saveState)
 
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             assertEquals("session01", opened.id)
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
@@ -343,15 +343,12 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testSignedOutARoutineIsKeptStartedFromAndExplicitlyEdited() = runTest {
+    fun testSignedOutARoutineIsSavedStartedFromAndExplicitlyEdited() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
 
-            val performed = listOf(
-                TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0, reps = 5, completedAtMs = 1_100),
-                TrainingSet(id = "set_b", exerciseId = "bench-press", weightKg = 100.0, reps = 5, completedAtMs = 1_200),
-            )
-            val kept = (room.store.keep(performed, asRoutineNamed = "Push Day") as GymResult.Ok).value
+            val kept = (room.store.saveRoutine(RoutineDraft(name = "Push Day")
+                .adding("bench-press").targeting("bench-press", List(2) { SetTarget(5, 100.0) })) as GymResult.Ok).value
             assertTrue(kept.id.startsWith("rt_"))
             assertEquals(listOf("Push Day"), room.store.routines.map { it.name })
 
@@ -360,7 +357,7 @@ class TrainingStoreTests {
             room.store.choose("bench-press")
             assertEquals("the prefill dials the routine's plan", Prefill(100.0, 5), room.store.prefill)
 
-            assertEquals("the kept routine carries every set as it was lifted",
+            assertEquals("the saved routine carries every target",
                 listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), kept.entries.first().sets)
             assertTrue(room.store.saveRoutine(RoutineDraft.of(kept)
                 .targeting("bench-press", List(2) { SetTarget(5, 105.0) })) is GymResult.Ok)
@@ -378,7 +375,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
 
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             assertEquals("no history is a first time", true, room.store.lastTime?.isFirstTime)
 
@@ -388,7 +385,7 @@ class TrainingStoreTests {
             room.store.finish()
             runCurrent()
 
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             assertEquals("every set carries: every set reaches the log",
                 listOf(60.0, 82.5), room.store.lastTime?.sets?.map { it.weightKg })
@@ -403,7 +400,7 @@ class TrainingStoreTests {
             room.select(null)
             val movement = (room.store.create("Bench Press", "barbell") as GymResult.Ok).value
 
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose(movement.id)
             room.store.logSet(weightKg = 60.0, reps = 10)
             repeat(4) { room.store.logSet(weightKg = 82.5, reps = 5) }
@@ -437,7 +434,7 @@ class TrainingStoreTests {
             room.select(null)
             movement = (room.store.create("Bench Pres", "barbell") as GymResult.Ok).value
 
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose(movement.id)
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.now += 60_000
@@ -565,7 +562,9 @@ class TrainingStoreTests {
         var set: TrainingSet
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice")
-            opened = (room.store.start() as GymResult.Ok).value
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            room.sync(server)
+            opened = (room.store.start(routine.id) as GymResult.Ok).value
             room.store.choose("bench-press"); room.store.logSet(100.0, 5)
             set = room.store.sets.single()
             room.engine.releaseHeld(true)
@@ -595,8 +594,10 @@ class TrainingStoreTests {
     fun testARefusedEngineStartIsSaidOnceAndItsOriginalIntentStaysOnThePhone() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            val opened = (room.store.start() as GymResult.Ok).value
             val server = EngineRoomFixture.server()
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            room.sync(server)
+            val opened = (room.store.start(routine.id) as GymResult.Ok).value
             server.refuse(code = "id-taken")
             room.sync(server)
             withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
@@ -740,7 +741,7 @@ class TrainingStoreTests {
     fun testFixingASetSignedOutRewritesThePhonesRowAndWritesNothingForAnIdItNeverHeld() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.now += 60_000
@@ -812,7 +813,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.choose("bench-press")
             room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
@@ -847,7 +848,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             runCurrent()
@@ -879,7 +880,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.choose("bench-press")
             room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
@@ -907,7 +908,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             runCurrent()
@@ -998,7 +999,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.store.logSet(weightKg = 90.0, reps = 3)
@@ -1045,7 +1046,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.store.logSet(weightKg = 60.0, reps = 12)
@@ -1123,7 +1124,7 @@ class TrainingStoreTests {
     fun testUnitsAreADisplayTransformAndReachNoWrite() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
 
             assertNull(room.store.savePreferences(GymPreferences(units = Units.Pounds)))
@@ -1190,86 +1191,18 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAFirstSessionIsALogThatAnsweredAndAnsweredEmpty() = runTest {
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { fresh ->
-            fresh.select(null)
-            assertTrue("signed out the phone IS the log, and it is already in hand", fresh.store.firstSession)
-        }
-
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { opened ->
-            opened.select("alice"); opened.pull(EngineRoomFixture.server()); opened.store.refreshEngine()
-            assertTrue("nothing on the log, and the log said so", opened.store.firstSession)
-        }
-
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { unreachable ->
-            unreachable.select("alice")
-            assertFalse("the log page never answered", unreachable.store.firstSession)
-        }
-
-        val folder = tmp.newFolder()
-        val snapshot: Json
-        val clock: Long
-        EngineRoomFixture(folder, backgroundScope).use { returning ->
-            returning.select(null)
-            returning.workout(load = 100.0, movement = "back-squat")
-            runCurrent()
-            returning.store.refreshEngine()
-            assertFalse("the phone holds a session now", returning.store.firstSession)
-            snapshot = returning.engine.snapshot(); clock = returning.now
-        }
-
-        EngineRoomFixture(folder, backgroundScope, snapshot).use { relaunched ->
-            relaunched.now = clock; relaunched.engine.start()
-            relaunched.select(null)
-            assertFalse("and it still does on the next launch", relaunched.store.firstSession)
-            runCurrent()
-        }
-    }
-
-    @Test
-    fun testTheFirstAccountWorkoutStaysFirstThroughDeliveryAndRelaunch() = runTest {
-        val server = EngineRoomFixture.server()
-        val directory = tmp.newFolder()
-        val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
-            room.select("alice")
-            assertFalse("the account has not answered yet", room.store.firstSession)
-            room.pull(server); room.store.refreshEngine()
-            assertTrue(room.store.firstSession)
-            val opened = (room.store.start() as GymResult.Ok).value
-            room.store.choose("bench-press"); room.store.logSet(60.0, 5)
-            assertNotNull(room.engine.nextPush())
-            room.store.refreshEngine()
-            assertEquals(listOf(opened.id), room.store.allSessions.map { it.id })
-            assertTrue("the workout in flight is still the person's first", room.store.firstSession)
-            room.sync(server); room.store.refreshEngine()
-            assertTrue("delivery does not turn the current workout into prior history", room.store.firstSession)
-            room.engine.snapshot()
-        }
-        EngineRoomFixture(directory, backgroundScope, snapshot).use { room ->
-            room.selected = "alice"
-            room.store.connect(room.account())
-            assertTrue("relaunch keeps the current workout first", room.store.firstSession)
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push").adding("bench-press")) as GymResult.Ok).value
-            assertFalse("a program is not a fresh room", room.store.firstSession)
-            room.store.withhold(Deletion.Routine(routine.id, routine.name))
-            assertFalse("an undo window does not remove the program", room.store.firstSession)
-        }
-    }
-
-    @Test
     fun testAReorderMovesTheWalkAndASwipeRefusesAMovementWithASetInIt() = runTest {
         val folder = tmp.newFolder()
         val snapshot: Json
         val clock: Long
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select(null)
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("back-squat")
             room.store.logSet(weightKg = 100.0, reps = 5)
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 80.0, reps = 8)
             room.store.refreshEngine()
-            assertTrue(room.store.firstSession)
             room.store.choose("romanian-deadlift")
             assertEquals(listOf("back-squat", "bench-press", "romanian-deadlift"), room.store.order)
 
@@ -1319,8 +1252,8 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             pushAWaitingOnADiff(room, server)
             room.select(null)
-            room.store.keep(listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 82.5,
-                reps = 5, completedAtMs = 1_100)), asRoutineNamed = "Push A")
+            room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
+                .targeting("bench-press", listOf(SetTarget(5, 82.5))))
 
             assertTrue("the phone's own routine wears no card",
                 room.store.routines.isNotEmpty() && room.store.routines.all { it.pendingProposal == null })
@@ -1994,7 +1927,7 @@ class TrainingStoreTests {
         val opened: Session
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            opened = (room.store.start() as GymResult.Ok).value
+            opened = room.startExternalWorkout()
             room.sync(server)
             runCurrent()
             snapshot = room.engine.snapshot(); clock = room.now
@@ -2064,7 +1997,7 @@ class TrainingStoreTests {
     fun testAnAbandonedDeviceSessionIsFinishedAtItsLastActivityOnConnect() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             val lastSetAt = room.store.sets.single().completedAtMs
@@ -2086,7 +2019,7 @@ class TrainingStoreTests {
 
             val second = room.freshStore()
             second.connect(room.account())
-            val startedAt = (second.start() as GymResult.Ok).value.startedAtMs
+            val startedAt = room.startExternalWorkout(second).startedAtMs
             runCurrent()
             room.now += 5 * 60 * 60 * 1000
             val empty = room.freshStore()
@@ -2103,7 +2036,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.sync(server)
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
@@ -2131,7 +2064,7 @@ class TrainingStoreTests {
     fun testALapsedSignInIsNamedRatherThanCalledNoSignal() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            room.store.start(); room.store.choose("bench-press")
+            room.startExternalWorkout(); room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
 
             assertTrue(room.training.reportDelivery(room.engine.activeReplica(),
@@ -2170,7 +2103,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 100.0, reps = 3)
             runCurrent()
@@ -2194,32 +2127,28 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAStartFromARoutineDeletedElsewhereKeepsTheWorkoutWithoutInventingAPlan() = runTest {
+    fun testAStartFromARoutineDeletedElsewhereIsRefusedWithoutCreatingAWorkout() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
+            val before = room.engine.snapshot()
 
-            val opened = (room.store.start(routineId = "rt_deleted_elsewhere") as GymResult.Ok).value
-            assertNull(opened.routineId)
-            assertNull(opened.plan)
-            room.sync(server); room.store.refreshEngine()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("That is no longer on the log.")),
+                room.store.start("rt_deleted_elsewhere"))
 
-            assertEquals(opened, room.store.session)
-            assertEquals(opened, room.training.session(opened.id)?.session)
-            assertTrue(room.store.refusals.isEmpty())
+            assertEquals(before, room.engine.snapshot())
+            assertNull(room.store.session)
+            assertTrue(room.training.details().isEmpty())
             assertTrue(room.outbox().isEmpty())
-            runCurrent()
         }
     }
 
-    // A row deleted elsewhere is gone from the strip once the log answers, and the refusal row says
-    // why rather than letting it vanish.
     @Test
     fun testAFixOfARowDeletedElsewhereTakesItOffTheStripAndSaysSo() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             runCurrent()
@@ -2252,7 +2181,7 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             runCurrent()
@@ -2322,12 +2251,9 @@ class TrainingStoreTests {
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select(null)
 
-            assertTrue("nothing has ever happened in this room", room.store.firstSession)
-            opened = (room.store.start() as GymResult.Ok).value
+            opened = room.startExternalWorkout()
             room.store.refreshEngine()
             assertNotNull("the tap opened it", room.store.session)
-            assertTrue("the picker stands over it, with the six — the session in hand is not counted",
-                room.store.firstSession)
             assertNull("nothing is chosen yet — that is what the picker is for", room.store.exerciseId)
 
             room.store.choose("back-squat")
@@ -2348,7 +2274,6 @@ class TrainingStoreTests {
             reopened.select(null)
 
             assertEquals(opened.id, reopened.store.session?.id)
-            assertTrue(reopened.store.firstSession)
             assertEquals(listOf(100.0, 100.0, 102.5, 80.0), reopened.store.sets.map { it.weightKg })
             assertEquals(listOf(5, 5, 5, 8), reopened.store.sets.map { it.reps })
             assertEquals(listOf("back-squat", "bench-press"), reopened.store.order)

@@ -72,7 +72,6 @@ class RowReturnReplayTests {
                 isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
-                onJustStart = {},
                 onBuild = {},
                 onOpenRoutine = {},
                 onDeleteRoutine = { id ->

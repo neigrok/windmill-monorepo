@@ -255,42 +255,12 @@ class FinishedSessionTests {
     }
 
     @Test
-    fun keepingASessionAsARoutineIsOfferedOnlyWhenThereWasNoRoutine() {
-        assertTrue(FinishedSession(session = session(routineId = null), sets = lifted,
-                                   review = null, isFirst = true).offersRoutine)
-        assertFalse(FinishedSession(session = session(routineId = "rt_1"), sets = lifted,
-                                    review = null, isFirst = false).offersRoutine)
-    }
-
-    @Test
-    fun aOneSetSessionIsNotOfferedAsARoutine() {
-        val oneSet = listOf(
-            TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 60.0, reps = 5,
-                        completedAtMs = 2_000),
-        )
-        assertFalse(FinishedSession(session = session(routineId = null), sets = oneSet,
-                                    review = null, isFirst = true).offersRoutine)
-    }
-
-    @Test
-    fun aShortSessionIsNeverAlsoOfferedAsARoutine() {
-        val short = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true)
-        val ended = FinishedSession(session = session(routineId = null), sets = lifted.take(3),
-                                    review = short, isFirst = true)
-
-        assertTrue(ended.slight)
-        assertFalse("too slight to say anything about is too slight to keep as a routine",
-                    ended.offersRoutine)
-    }
-
-    @Test
     fun actualSetCountDecidesTheHeadingWithoutDependingOnReview() {
         val misleading = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 20), slight = false)
         for (review in listOf(null, misleading)) {
             for (count in 0..4) {
-                val ended = FinishedSession(session = session(null), sets = lifted.take(count), review = review, isFirst = false)
+                val ended = FinishedSession(session = session(null), sets = lifted.take(count), review = review)
                 assertEquals(count < 4, ended.slight)
-                assertEquals(count == 4, ended.offersRoutine)
             }
         }
     }
@@ -304,14 +274,14 @@ class FinishedSessionTests {
             Exercise("lateral-raise", "Lateral Raise", equipment = "dumbbell"))
         fun summary(finished: FinishedSession) = SessionSummary(finished.session, finished.sets, movements)
         for (count in 1..3) {
-            val partial = FinishedSession(session(null), bench.take(count), null, false)
+            val partial = FinishedSession(session(null), bench.take(count), null)
             assertEquals(listOf(count, count * 480.0, listOf("bench-press"), true),
                 listOf(summary(partial).setCount, summary(partial).tonnageKg, summary(partial).exercises, partial.slight))
         }
-        val full = FinishedSession(session(null), bench + press + raise, null, false)
+        val full = FinishedSession(session(null), bench + press + raise, null)
         assertEquals(listOf(9, 3240.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
             listOf(summary(full).setCount, summary(full).tonnageKg, summary(full).exercises, full.slight))
-        val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null, false)
+        val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null)
         assertEquals(listOf(1, 460.0, true), listOf(summary(free).setCount, summary(free).tonnageKg, free.slight))
         val extra = full.copy(sets = full.sets + bench.first().copy(id = "warm"))
         assertEquals(listOf(10, 10, 3720.0), listOf(summary(extra).setCount, summary(extra).workingSetCount, summary(extra).tonnageKg))
@@ -332,14 +302,12 @@ class ShareWithCoachTests {
                         completedAtMs = 2_000),
         ),
         review = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true),
-        isFirst = false,
     )
 
     private val ordinary = FinishedSession(
         session = Session(id = "ses_2", startedAtMs = 1_000, finishedAtMs = 3_600_000),
         sets = List(4) { index -> short.sets.single().copy(id = "set_$index", completedAtMs = 2_000L + index) },
         review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
-        isFirst = false,
     )
 
     // One composition per test, redrawn off state: a test walks both branches through it.
@@ -352,8 +320,6 @@ class ShareWithCoachTests {
             FinishScreen(
                 finished = shown.value,
                 catalog = catalog,
-                keptName = null,
-                onKeepRoutine = {},
                 onShareWithCoach = if (reachable.value) { { shared.value += 1 } } else null,
             )
         }
@@ -388,7 +354,7 @@ class ShareWithCoachTests {
     }
 
     // Where Coach cannot be reached nothing stands in the primary's place: the receipt is the head,
-    // the readout, the optional routine card, and the dismissal the platform draws.
+    // the readout and the dismissal the platform draws.
     @Test
     fun withoutCoachNothingStandsWhereThePrimaryWould() {
         reachable.value = false
@@ -418,152 +384,25 @@ class ShareWithCoachTests {
     }
 
     @Test
+    fun noReceiptOffersToSaveARoutine() {
+        receipt()
+        for (finished in listOf(ordinary, short, ordinary.copy(session = ordinary.session.copy(routineId = "routine")))) {
+            show(finished)
+            compose.onNodeWithText("Save a routine").assertDoesNotExist()
+            compose.onNodeWithText("Save routine").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
+        }
+    }
+
+    @Test
     fun theTitleCongratulatesAnOrdinarySessionAndNotAShortOne() {
         receipt()
         compose.onNodeWithText("Well done.").assertIsDisplayed()
-        compose.onNodeWithText("Free session · Workout saved").assertIsDisplayed()
+        compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
 
-        show(short.copy(isFirst = true))
+        show(short)
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
-        compose.onNodeWithText("Free session · Workout saved").assertIsDisplayed()
+        compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
         compose.onNodeWithText("Well done.").assertDoesNotExist()
-    }
-}
-
-// The keep-as-routine card is the receipt's one form, so it says why Save is grey, what the log said
-// when it refused, and that the routine was taken — one line at a time, and only ever one. The room
-// cannot say any of it for the card: a sheet covers the bottom bar the room says everything else in.
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
-class KeepAsRoutineTests {
-    @get:Rule
-    val compose = createComposeRule()
-
-    private val ordinary = FinishedSession(
-        session = Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 3_600_000),
-        sets = List(4) { index ->
-            TrainingSet(id = "set_$index", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
-                        completedAtMs = 2_000L + index)
-        },
-        review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
-        isFirst = false,
-    )
-
-    private fun card(failure: String? = null, kept: Boolean = false) {
-        compose.setContent {
-            FinishScreen(
-                finished = ordinary,
-                catalog = catalog,
-                keptName = if (kept) Readout.weekday(ordinary.session.startedAtMs) else null,
-                onKeepRoutine = {},
-                onShareWithCoach = {},
-                failure = failure,
-            )
-        }
-    }
-
-    // The primary is the receipt's one full-strength button and it stands directly under the
-    // readout; the routine card, the one thing that writes, sits below it.
-    @Test
-    fun theRoutineCardSitsBelowShareWithCoach() {
-        card()
-        assertTrue(
-            compose.onNodeWithText("Save a routine").fetchSemanticsNode().positionInRoot.y >
-                compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().positionInRoot.y,
-        )
-    }
-
-    // The routine the receipt mints transcribes the sets per set, and the
-    // card's preview prints each line's scheme in the one readout formula — a ramp reads its ranges.
-    @Test
-    fun thePreviewPrintsTheSetsAsLiftedInTheReadoutFormula() {
-        val ramped = ordinary.copy(
-            sets = listOf(
-                TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 60.0, reps = 5, completedAtMs = 2_000),
-                TrainingSet(id = "set_2", exerciseId = "back-squat", weightKg = 80.0, reps = 5, completedAtMs = 3_000),
-                TrainingSet(id = "set_3", exerciseId = "back-squat", weightKg = 100.0, reps = 1, completedAtMs = 4_000),
-                TrainingSet(id = "set_4", exerciseId = "leg-press", weightKg = 140.0, reps = 12, completedAtMs = 5_000),
-                TrainingSet(id = "set_5", exerciseId = "leg-press", weightKg = 140.0, reps = 12, completedAtMs = 6_000),
-            ),
-        )
-        compose.setContent {
-            FinishScreen(finished = ramped, catalog = catalog, keptName = null, onKeepRoutine = {}, onShareWithCoach = {})
-        }
-        compose.onAllNodesWithText("3 × 1–5 · 60–100kg").onLast().performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("2 × 12 · 140kg").onLast().performScrollTo().assertIsDisplayed()
-        assertTrue(
-            "each scheme stands beside its movement",
-            compose.onAllNodesWithText("3 × 1–5 · 60–100kg").onLast().fetchSemanticsNode().positionInRoot.y ==
-                compose.onAllNodesWithText("Back Squat").onLast().fetchSemanticsNode().positionInRoot.y,
-        )
-    }
-
-    // The form goes when the log takes the routine, and a sentence stands where it was: the receipt
-    // draws no control after a keep, and the room's own line is behind this sheet.
-    @Test
-    fun aKeptRoutineIsSaidWhereTheFormStood() {
-        card(kept = true)
-        compose.onNodeWithText("Save routine").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
-        compose.onNodeWithText(Finish.keptAs(Readout.weekday(ordinary.session.startedAtMs)))
-            .performScrollTo()
-            .assertIsDisplayed()
-    }
-
-    @Test
-    fun anEmptyNameSaysWhySaveIsGreyAndAFilledOneSaysNothing() {
-        card()
-        compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
-
-        compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("   ")
-        compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
-
-        compose.onNodeWithContentDescription("Routine name").performTextReplacement("Push A")
-        compose.onNodeWithText(Program.nameItToSaveIt).assertDoesNotExist()
-    }
-
-    // `4c`: a routine minted on the receipt is bounded by the ROOM's cap, counted the way the editor
-    // counts it — code points, not UTF-16 units — so which surface a lifter is holding stops deciding
-    // how long a name may be. The counter does NOT come with it: this field mints a name in passing.
-    @Test
-    fun theNameFieldRetainsUnicodeTypingAndRefusesAboveTheRoomsCharacterLimit() {
-        card()
-        val field = compose.onNodeWithContentDescription("Routine name").performScrollTo()
-
-        field.performTextReplacement("\uD83D\uDE00".repeat(61))
-        assertEquals("arbitrary Unicode typing is retained", "\uD83D\uDE00".repeat(61), typedName())
-        compose.onNodeWithText("Save routine").assertIsNotEnabled()
-        compose.onNodeWithText(Program.nameTooLong).assertIsDisplayed()
-
-        field.performTextReplacement("Push A")
-        assertEquals("and a short name is left alone", "Push A", typedName())
-    }
-
-    private fun typedName(): String =
-        compose.onNodeWithContentDescription("Routine name").fetchSemanticsNode()
-            .config[SemanticsProperties.EditableText].text
-
-    // One grey button, one sentence. A blank name is what holds Save NOW, so it outranks what the
-    // log said about an earlier attempt — nothing clears `failure` while Save cannot be pressed.
-    @Test
-    fun anEmptyNameOutranksALogRefusalSoOnlyOneSentenceStands() {
-        card(failure = "that document is unclaimable")
-        compose.onNodeWithText("that document is unclaimable").assertIsDisplayed()
-
-        compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("   ")
-        compose.onNodeWithText(Program.nameItToSaveIt).assertIsDisplayed()
-        compose.onNodeWithText("that document is unclaimable").assertDoesNotExist()
-    }
-
-    @Test
-    fun theLogsRefusalIsDrawnUnderTheSaveThatRaisedIt() {
-        card(failure = "that document is unclaimable")
-        val refusal = compose.onNodeWithText("that document is unclaimable")
-        refusal.assertIsDisplayed()
-        assertTrue(
-            "it sits under Save routine, which is the control that asked",
-            refusal.fetchSemanticsNode().positionInRoot.y >
-                compose.onNodeWithText("Save routine").fetchSemanticsNode().positionInRoot.y,
-        )
     }
 }

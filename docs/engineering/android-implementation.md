@@ -32,3 +32,18 @@ telemetry batch acceptance are pending.
 The logger no longer coordinates offer state with movement state. Removing the isolated retarget
 API leaves the guarded routine draft save as the editor’s one write path. Proposal comparison rows
 are private to their remaining screen.
+
+## Task 13 — routine-only app starts
+
+App starts require a routine ID. The action decision checks the loaded routine and open-workout state
+atomically before creating a workout, while a repeated session identity remains idempotent. Routines
+has no free-start action, and receipts have no routine-save form or callback. Externally started
+workouts and legacy imports retain the optional routine format, existing movement picker and
+shared **Free workout** title. All 233 targeted tests pass with zero skips. The full gym Debug
+unit suite passes 1,148 tests with 17 opt-in live-wire cases skipped. Installed native and telemetry
+batch acceptance are pending.
+
+Receipt state is keyed by the workout's session ID. Removing receipt-created routine identities,
+first-workout flags, name drafts and save guards leaves one purpose for the receipt: read the saved workout and offer
+its existing Coach action. App-start tests use explicit routines; external/import fixtures enter
+through the engine boundary and exercise adoption separately.

@@ -80,7 +80,6 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.coach.Threads
-import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.coach.AskOutcome
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FinishOutcome
@@ -275,16 +274,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // The committed detail survives process replacement after the workout closes.
     var finished by rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
     val currentAccount by rememberUpdatedState(account)
-    var finishFailure by remember { mutableStateOf<String?>(null) }
     val finishStates = rememberSaveableStateHolder()
-    var keepingRoutine by remember { mutableStateOf(false) }
-    val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
-        confirmValueChange = { !keepingRoutine })
+    val finishSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Whether the receipt is on its way down, so a second tap during the descent is one tap.
     var closingFinish by remember { mutableStateOf(false) }
     var away by rememberSaveable(stateSaver = remember(telemetry) { awaySaver(telemetry) }) { mutableStateOf<List<Away>>(emptyList()) }
     var selectedRoutineId by rememberSaveable { mutableStateOf<String?>(null) }
-    var keptRoutine by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -373,14 +368,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // mutex, and a cancelled job completes too — so without both guards a double tap would run the
     // door's continuation twice, the second wiping what the first had just begun.
     fun closeFinish(then: () -> Unit = {}) {
-        if (closingFinish || keepingRoutine) return
+        if (closingFinish) return
         closingFinish = true
         scope.launch { finishSheet.hide() }.invokeOnCompletion { cause ->
             closingFinish = false
             if (cause != null) return@invokeOnCompletion
-            finished?.let { finishStates.removeState(it.routineCreationId) }
+            finished?.let { finishStates.removeState(it.session.id) }
             finished = null
-            finishFailure = null
             then()
         }
     }
@@ -468,7 +462,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             building = null
             selectedRoutineId = null
             reviewing = null
-            finishFailure = null
             note = null
             away = emptyList()
         }
@@ -573,7 +566,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // A double tap is a second session, so the door closes while the first is in flight. The start is
     // written to this phone's replica at once, offline too, and the engine carries it to the account.
     // A user-tapped start never silently joins.
-    fun open(routineId: String?) {
+    fun open(routineId: String) {
         scope.launch {
             if (starting) return@launch
             starting = true
@@ -609,12 +602,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
                     haptics.finished()
-                    keptRoutine = null
-                    finishFailure = null
                     away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail))
                     pruneReceipts()
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
-                        isFirst = store.allSessions.size <= 1, routinePosition = store.allRoutines.size, reviewRead = false)
+                        reviewRead = false)
                 }
                 is FinishOutcome.Failed ->
                     note = ended.why.line("the session is still open")
@@ -773,32 +764,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         tab = Tab.Routines
     }
 
-    // Nothing is claimed until the log says it was, and the door closes while one is in flight, or
-    // two taps are two routines. The refusal is the RECEIPT's while the receipt still stands, drawn
-    // under the Save that raised it because the sheet covers the bottom bar every other refusal in
-    // the room lands in; once the receipt is gone that bar is the only place left to say it.
-    fun keep(sets: List<TrainingSet>, name: String, creationId: String, position: Int) {
-        if (keepingRoutine) return
-        keepingRoutine = true
-        scope.launch {
-            val owner = currentAccount.user?.id
-            try {
-                finishFailure = null
-                val kept = store.keep(sets, name, creationId, position)
-                if (owner != currentAccount.user?.id) return@launch
-                if (kept is GymResult.Failed) {
-                    val why = kept.why.line("the routine wasn’t kept")
-                    if (finished != null) finishFailure = why else note = why
-                    return@launch
-                }
-                haptics.saved()
-                keptRoutine = (kept as GymResult.Ok).value.name
-            } finally {
-                keepingRoutine = false
-            }
-        }
-    }
-
     key(seat) {
         if (account.resolved && account.user?.id.orEmpty() == seat) {
             val origin = account.origin
@@ -872,23 +837,18 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     sets = canonical.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets })
                 ModalBottomSheet(
                     onDismissRequest = {
-                        if (keepingRoutine) return@ModalBottomSheet
-                        finishStates.removeState(original.routineCreationId)
+                        finishStates.removeState(original.session.id)
                         finished = null
-                        finishFailure = null
                     },
                     sheetState = finishSheet,
                     containerColor = skin.surface,
                     scrimColor = skin.scrim,
                 ) {
                     WindmillSheetWindow()
-                    finishStates.SaveableStateProvider(original.routineCreationId) {
+                    finishStates.SaveableStateProvider(original.session.id) {
                     FinishScreen(
                         finished = ended,
                         catalog = store.catalog,
-                        keptName = keptRoutine,
-                        onKeepRoutine = { name -> keep(ended.sets, name, original.routineCreationId, original.routinePosition) },
-                        pending = keepingRoutine,
                         // Offered only where Coach itself is: an account, and a deployment that has one.
                         // Behind the sheet's own exit, because the tab switch redraws the rail and it would
                         // come back up through a sheet still descending. Then a FRESH conversation, and the
@@ -912,7 +872,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         } else {
                             null
                         },
-                        failure = finishFailure,
                     )
                     }
                 }
@@ -1005,11 +964,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         // stands while nothing is pushed.
                         live && standing == null -> LoggerScreen(
                             store = store,
-                            isSignedIn = account.isSignedIn,
                             say = { note = it },
                             onFinish = { close() },
-                            // The shell's door: gym draws no sign-in of its own.
-                            onSignIn = shell.openSignIn,
                             onSettings = { look(Away.Settings) },
                             transient = transient,
                         )
@@ -1185,7 +1141,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             lookedAt = lookedAtIds,
                             seat = youInitial,
                             // A routine starts from its plan sheet.
-                            onJustStart = { open(null) },
                             onBuild = { building = it },
                             onOpenRoutine = { selectedRoutineId = it },
                             onDeleteRoutine = { destroy(it) },

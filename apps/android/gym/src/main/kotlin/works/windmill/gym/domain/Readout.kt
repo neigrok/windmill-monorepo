@@ -87,7 +87,7 @@ object Readout {
         return "${tenths / 10}.${tenths % 10} t"
     }
 
-    const val noRoutine = "Free session"
+    const val noRoutine = "Free workout"
 
 
     // The server computes the e1RM; this phone only spells it.

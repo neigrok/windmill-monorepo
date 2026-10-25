@@ -124,6 +124,10 @@ imports ignore legacy kind fields and retain their existing load, write and reco
 Logging above a routine target and moving between movements perform no routine write and emit no
 routine-save event. Explicit editor saves report failures under `gym.saveRoutine` and emit
 `gym_routine_saved`; accepted Coach proposals retain their own decision boundaries.
+App workout starts require an existing routine and emit `gym_session_started` once on success.
+Missing routines and duplicate starts are expected refusals, including races during the start
+decision; receiving or reopening an external workout emits no start event. The receipt writes no routine and has no routine-save event or
+failure boundary. Workout screen-view events retain their existing `workout` label.
 
 The update dialog responds when the engine stops for an upgrade, on the server's
 `426 upgrade-required` or a hello whose `minSchema` is above the app's registry, without deleting

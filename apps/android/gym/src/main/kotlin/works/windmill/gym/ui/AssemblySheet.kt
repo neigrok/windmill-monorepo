@@ -116,7 +116,7 @@ fun AssemblySheet(
     Column(Modifier.fillMaxWidth().background(skin.surface).padding(horizontal = 20.dp)
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("This session", style = WindmillFont.display(26, FontWeight.ExtraBold), color = skin.ink)
-        Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged" + (routine?.let { " · $it" } ?: " · Free session"),
+        Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged" + (routine?.let { " · $it" } ?: " · ${Readout.noRoutine}"),
             style = WindmillFont.body(14), color = skin.inkDim)
         LazyColumn(state = list, modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
             itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->

@@ -111,6 +111,8 @@ start, complete saved set and finish are acknowledged in order. The original sou
 time survive; concurrent changes leave the source available for another retry. Settings Retry
 schedules reconciliation before reporting completion. Legacy set-kind fields are ignored on reads;
 new sets carry no kind, and every set contributes to training totals and history.
+App workouts start from a saved routine. Workouts received from another surface without a routine
+retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,

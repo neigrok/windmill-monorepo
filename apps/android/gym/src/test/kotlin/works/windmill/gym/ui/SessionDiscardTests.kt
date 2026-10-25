@@ -62,7 +62,7 @@ class SessionDiscardTests {
         runBlocking {
             room.select("u1")
             room.pull(server)
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.store.logSet(weightKg = 90.0, reps = 3)

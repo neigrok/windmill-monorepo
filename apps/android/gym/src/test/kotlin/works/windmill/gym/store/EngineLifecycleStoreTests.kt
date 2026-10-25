@@ -37,7 +37,8 @@ class EngineLifecycleStoreTests {
             undoWindowMs = 0))
     }
     private suspend fun Room.workout(weight: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
-        val opened = (store.start() as GymResult.Ok).value
+        val opened = gym.startSession(SessionStart("session${++nextSession}", ++clockMs))
+        store.refreshEngine()
         store.choose(movement)
         store.logSet(weight, 5)
         clockMs += 60_000
@@ -72,8 +73,8 @@ class EngineLifecycleStoreTests {
     @Test fun addPreservesFinishedAndLiveWorkoutsAndFrozenRoutineLineage() = runTest {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account())
-            val routine = (room.store.keep(listOf(TrainingSet("seed0001", "bench-press", weightKg = 100.0, reps = 5,
-                completedAtMs = clockMs - 1)), "Push Day", creationId = "routine1") as GymResult.Ok).value
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push Day", creationId = "routine1")
+                .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 100.0)))) as GymResult.Ok).value
             val first = (room.store.start(routine.id) as GymResult.Ok).value
             room.store.choose("bench-press"); room.store.logSet(100.0, 5); room.store.logSet(102.5, 3)
             clockMs += 60_000; room.store.finish()
@@ -197,7 +198,8 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); engine.signIn("A", mapOf("gym" to false)); room.store.connect(account("A"))
             room.workout(); room.store.prepareEngineTransition(); engine.signOut("keep"); room.store.connect(account())
-            val current = (room.store.start() as GymResult.Ok).value
+            val current = room.gym.startSession(SessionStart("session${++nextSession}", ++clockMs))
+            room.store.refreshEngine()
             room.store.choose("bench-press"); assertTrue(room.store.lastTime!!.isFirstTime)
             room.add(engine)
             assertEquals(current.id, room.store.session!!.id)

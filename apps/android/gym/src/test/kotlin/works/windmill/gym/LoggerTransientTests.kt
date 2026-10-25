@@ -56,7 +56,7 @@ class LoggerTransientTests {
     private fun live(room: EngineRoomFixture) {
         runBlocking {
             room.select("u1")
-            room.store.start(null)
+            room.startExternalWorkout()
             room.store.choose("bench-press")
         }
     }

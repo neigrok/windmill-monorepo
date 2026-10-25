@@ -147,7 +147,7 @@ class WorkoutRecoveryTests {
         val account = room.account("u1")
         val live = runBlocking {
             room.select("u1")
-            val opened = (room.store.start(null) as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press"); room.store.logSet(60.0, 8)
             opened
         }
@@ -183,7 +183,7 @@ class WorkoutRecoveryTests {
         var room = EngineRoomFixture(tmp.root, firstScope)
         val account = room.account("u1")
         runBlocking {
-            room.select("u1"); room.store.start(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+            room.select("u1"); room.startExternalWorkout(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
         }
         val localId = room.store.session!!.id
         val setId = room.store.sets.single().id
@@ -365,7 +365,7 @@ class WorkoutRecoveryTests {
         val account = room.account("u1")
         val live = runBlocking {
             room.select("u1")
-            val opened = (room.store.start() as GymResult.Ok).value
+            val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
             opened
         }
@@ -417,7 +417,7 @@ class WorkoutRecoveryTests {
         val account = room.account("u1")
         val held = room.store
         runBlocking {
-            room.select("u1"); held.start(); held.choose("bench-press"); held.logSet(60.0, 8)
+            room.select("u1"); room.startExternalWorkout(held); held.choose("bench-press"); held.logSet(60.0, 8)
             room.sync(EngineRoomFixture.server()); held.refreshEngine()
         }
         val sessionId = held.session!!.id

@@ -808,14 +808,12 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   lifter beats it; targets change through explicit routine-editor Save or accepted Coach proposals
   (catalogue 08.21). Boards 03.6 are deleted on both pages. No Coach entry point fits
   *should I go heavier?* beyond asking; none is drawn.
-- **12b · Every workout starts from a routine.** No free workout on either phone, and the Control
-  Center control and the Quick Settings tile open Routines when no workout is open (both 04.1).
-  Boards 03.9 are deleted on both pages. Android still offers *Start logging*
-  (`ui/RoutinesScreen.kt:162-177`), the first-movement picker (`ui/LoggerScreen.kt:364`) and *Save a
-  routine* on the receipt (`ui/FinishScreen.kt:68,379-395`). iOS starts only from a routine, but a
-  connected agent's `start_session` may still open one without (its `routineId` is optional), and
-  iOS draws *Choose your first movement* for it (`Workout/WorkoutScreen.swift`, `WorkoutScreen.live`),
-  the one way to add its first movement. No board draws that state; designer to rule.
+- **12b · Every app workout starts from a routine.** Neither phone offers a free-workout start.
+  Boards 03.9 are deleted on both pages. Android Routines opens saved routines and the routine
+  editor; its receipt has no *Save a routine*. A connected agent's `start_session` may still omit
+  `routineId`. Android preserves **What are you lifting?** for that workout; iOS draws
+  *Choose your first movement* (`Workout/WorkoutScreen.swift`, `WorkoutScreen.live`). Any replacement
+  external-workout entry needs an approved design. The idle Quick Settings tile entry is task 16.
 - **12c · Hide workout on Android.** The logger's *Hide* (and system Back) leaves a running workout,
   which waits in `Android / Workout bar` (*Push A · 12:34*) above the navigation bar on every tab root
   (Android 03.4 `1253:29834`, 03.5 `1283:41318`). Swiping the notification away only turns it off:
@@ -993,7 +991,7 @@ these places.
   *Movement 3 of 5* through accessibility; the count is not a visible pager label. The tab is
   *The log*. Code still differs: Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
-  *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
+  *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,
   `domain/WorkoutNotification.kt:54`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).

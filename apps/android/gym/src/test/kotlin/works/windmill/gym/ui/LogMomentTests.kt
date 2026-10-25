@@ -133,7 +133,7 @@ class LogMomentTests {
                 phone.trained("Older workout", now - 90L * 86_400_000, listOf("bench-press" to 80.0))
                 val recent = (49 downTo 0).map { index ->
                     phone.now = now - index * 60_000 - 1_000
-                    val session = (phone.store.start() as GymResult.Ok).value
+                    val session = phone.startExternalWorkout()
                     phone.now += 1_000
                     assertTrue(phone.store.finish() is FinishOutcome.Closed)
                     session.id

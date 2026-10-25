@@ -155,10 +155,8 @@ private val loggerSheetSaver = Saver<LoggerSheet?, String>(
 @Composable
 fun LoggerScreen(
     store: TrainingStore,
-    isSignedIn: Boolean,
     say: (String?) -> Unit,
     onFinish: () -> Unit,
-    onSignIn: () -> Unit,
     onSettings: () -> Unit,
     // The transient overlays the ledger without covering the rack.
     transient: SnackbarHostState? = null,
@@ -289,7 +287,7 @@ fun LoggerScreen(
         }
     }
 
-    val title = store.session?.plan?.routine ?: "Free session"
+    val title = store.session?.plan?.routine ?: Readout.noRoutine
     // Finish rides the top bar: the band below holds one primary and it is Log set, pressed forty
     // times to Finish's once. The gear is a door to a planning screen, which is what a top corner
     // may hold.
@@ -333,14 +331,11 @@ fun LoggerScreen(
                     lastSets = store.lastSets,
                     nowMs = nowMs,
                     sessions = store.recent,
-                    title = if (store.firstSession) "What are you starting with?" else "What are you lifting?",
+                    title = "What are you lifting?",
                     subtitle = if (store.session?.plan == null) null else "nothing in this plan is left to walk",
-                    firstSession = store.firstSession,
-                    signedIn = isSignedIn,
                     onPick = { picked -> scope.launch { store.choose(picked) } },
                     onCreate = { name, equipment, id -> store.create(name, equipment, id) },
                     state = pickerState,
-                    onBuildRoutine = onSignIn,
                     modifier = Modifier.weight(1f),
                 )
             }

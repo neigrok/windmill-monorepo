@@ -34,7 +34,9 @@ class GymRuntimeTests {
 
     private suspend fun EngineRoomFixture.startWorkout(vararg movements: String) {
         select(null)
-        val started = store.start()
+        val routine = (store.saveRoutine(RoutineDraft(name = "Workout")
+            .adding(movements.firstOrNull() ?: "bench-press")) as GymResult.Ok).value
+        val started = store.start(routine.id)
         assertTrue(started.toString(), started is GymResult.Ok)
         movements.reversed().forEach { store.choose(it) }
     }
@@ -107,7 +109,8 @@ class GymRuntimeTests {
             val moment = WorkoutMoment(101_000, 1_000, "boot")
             room(tmp.newFolder(), WorkoutClock { moment }).use { room ->
                 room.select("A")
-                assertTrue(room.store.start() is GymResult.Ok)
+                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 room.store.choose("bench-press")
                 var owner: String? = "A"
                 var allowed = true
@@ -160,12 +163,13 @@ class GymRuntimeTests {
                 workoutAuthority = { selected -> (sessions.localSession as? LocalSession.Owned)?.user?.id == selected }).use { room ->
                 room.select("A")
                 room.now = 1_000
-                assertTrue(room.store.start() is GymResult.Ok)
+                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 room.store.choose("bench-press"); room.store.logSet(30.0, 8)
                 room.now = 2_000
                 val previous = (room.store.finish() as FinishOutcome.Closed).session
                 room.now = 100_000
-                assertTrue(room.store.start() is GymResult.Ok)
+                assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 val live = requireNotNull(room.store.session)
                 room.store.choose("bench-press"); room.store.choose("overhead-press"); room.store.choose("bench-press")
                 assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
@@ -296,7 +300,7 @@ class GymRuntimeTests {
             assertEquals("The workout could not be saved safely. Restart the app to recover it.", room.store.workoutFailure)
             assertNull(runtime.notification.value)
             assertEquals(raw, file.readText())
-            assertTrue(room.store.start() is GymResult.Failed)
+            assertTrue(room.store.start("routine") is GymResult.Failed)
             assertEquals(raw, file.readText())
             assertNull(room.training.openWorkout())
         }

@@ -65,7 +65,7 @@ class LoggerPagerTests {
         runBlocking {
             room.select("u1")
             room.pull(EngineRoomFixture.server())
-            room.store.start()
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(80.0, 5)
             room.store.choose("barbell-row")
@@ -86,8 +86,8 @@ class LoggerPagerTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, isSignedIn = true, say = {},
-                onFinish = {}, onSignIn = {}, onSettings = {})
+            LoggerScreen(store = room.store, say = {},
+                onFinish = {}, onSettings = {})
         }
         return room
     }

@@ -39,7 +39,7 @@ class TrainingFinishTests {
         var at = 0L
         val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
             room.select(null)
-            sessionId = (room.store.start() as GymResult.Ok).value.id
+            sessionId = room.startExternalWorkout().id
             room.store.choose("bench-press")
             room.store.logSet(80.0, 5)
             val performed = room.store.sets.single()
@@ -90,7 +90,7 @@ class TrainingFinishTests {
         var at = 0L
         val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
             room.select(null)
-            sessionId = (room.store.start() as GymResult.Ok).value.id
+            sessionId = room.startExternalWorkout().id
             room.store.choose("bench-press")
             room.store.logSet(80.0, 5)
             accepted = room.store.sets.single()
@@ -140,7 +140,7 @@ class TrainingFinishTests {
     @Test fun finishRecoversAnAcceptedSetAfterATransientEngineCommitFailure() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.editRack(82.5, 5)
             val offer = room.store.notification.value!!.offer!!
@@ -169,7 +169,9 @@ class TrainingFinishTests {
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+            events.clear()
+            val live = (room.store.start(routine.id) as GymResult.Ok).value
             room.store.choose("bench-press")
             room.store.editRack(82.5, 5)
             val offer = room.store.notification.value!!.offer!!
@@ -207,7 +209,7 @@ class TrainingFinishTests {
             val directory = tmp.newFolder()
             val (snapshot, accepted, at) = EngineRoomFixture(directory, backgroundScope).use { room ->
                 room.select(owner)
-                val live = (room.store.start() as GymResult.Ok).value
+                val live = room.startExternalWorkout()
                 room.store.choose("bench-press")
                 room.store.editRack(82.5, 5)
                 val offer = room.store.notification.value!!.offer!!
@@ -236,7 +238,7 @@ class TrainingFinishTests {
     @Test fun finishReadsEngineCorrectionsAndDeletionsWithoutRevivingStaleControls() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             room.store.logSet(62.5, 6)
@@ -258,7 +260,7 @@ class TrainingFinishTests {
     @Test fun refreshAndAccountChangeRecoverAnAcceptedSetAfterEngineFailure() = runTest {
         for (changeAccount in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             val offer = room.store.notification.value!!.offer!!
             room.engine.failNextCommit()
@@ -279,7 +281,8 @@ class TrainingFinishTests {
     @Test fun startingAfterAutoCloseRecoversThePreviousWorkoutsAcceptedSet() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+            val live = (room.store.start(routine.id) as GymResult.Ok).value
             room.store.choose("bench-press")
             val offer = room.store.notification.value!!.offer!!
             room.engine.failNextCommit()
@@ -287,7 +290,7 @@ class TrainingFinishTests {
             val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
             room.now += AutoClose.AFTER_MS + 60_000
 
-            val next = (room.store.start() as GymResult.Ok).value
+            val next = (room.store.start(routine.id) as GymResult.Ok).value
             assertNotEquals(live.id, next.id)
             assertEquals(SessionDetail(live.copy(finishedAtMs = accepted.completedAtMs), listOf(accepted)), room.training.session(live.id))
             assertEquals(next, room.store.session)
@@ -298,7 +301,7 @@ class TrainingFinishTests {
     @Test fun autoCloseKeepsTheAcceptedSetUntilRecoverySucceeds() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             val offer = room.store.notification.value!!.offer!!
             room.engine.failNextCommit()
@@ -321,7 +324,7 @@ class TrainingFinishTests {
     @Test fun aRefusedRecoveryKeepsTheAcceptedSetEvenIfItsWorkoutIsGone() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             val offer = room.store.notification.value!!.offer!!
             room.engine.failNextCommit()
@@ -340,7 +343,7 @@ class TrainingFinishTests {
     @Test fun finishCarriesItsRowsAndKeepsTheHeldDeletionDeadline() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val local = room.store.sets.single()
@@ -369,7 +372,8 @@ class TrainingFinishTests {
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            room.store.start()
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+            assertTrue(room.store.start(routine.id) is GymResult.Ok)
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val performed = room.store.sets.single()
@@ -395,12 +399,13 @@ class TrainingFinishTests {
     @Test fun aQueuedFinishRefreshCannotCloseTheNextWorkoutOrReplaceItsOffer() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            room.store.start()
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+            assertTrue(room.store.start(routine.id) is GymResult.Ok)
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             room.now += 60_000
             val receipt = room.store.finish() as FinishOutcome.Closed
-            room.store.start()
+            assertTrue(room.store.start(routine.id) is GymResult.Ok)
             room.store.choose("back-squat")
             room.store.logSet(100.0, 5)
             val live = room.store.session!!
@@ -430,7 +435,8 @@ class TrainingFinishTests {
                 room.select("a")
                 other.now = room.now + 600_000
                 other.select("a")
-                room.store.start()
+                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 room.store.choose("bench-press")
                 room.store.logSet(60.0, 8)
                 room.now += 60_000
@@ -462,7 +468,8 @@ class TrainingFinishTests {
                 room.select("a")
                 other.now = room.now + 600_000
                 other.select("a")
-                room.store.start()
+                val routine = (room.store.saveRoutine(RoutineDraft(name = "Workout").adding("bench-press")) as GymResult.Ok).value
+                assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 room.store.choose("bench-press")
                 room.store.logSet(60.0, 8)
                 room.now += 60_000
@@ -500,7 +507,7 @@ class TrainingFinishTests {
         val server = EngineRoomFixture.server()
         val (sessionId, corrected) = EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val logged = room.store.sets.single()
@@ -528,7 +535,7 @@ class TrainingFinishTests {
     @Test fun finishCarriesAnOwedCorrectionAndTheClosedWorkoutShowsIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val logged = room.store.sets.single()
@@ -544,7 +551,7 @@ class TrainingFinishTests {
     @Test fun finishCarriesAnOwedDeleteAndTheClosedWorkoutLacksTheRow() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             room.store.logSet(62.5, 6)
@@ -560,7 +567,7 @@ class TrainingFinishTests {
     @Test fun anAccountChangeAfterACorrectionKeepsItWithItsOwnAccount() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val logged = room.store.sets.single()
@@ -636,7 +643,7 @@ class TrainingFinishTests {
     @Test fun theHeldDeletionFiresAtItsOriginalDeadlineAfterTheFinish() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            val live = (room.store.start() as GymResult.Ok).value
+            val live = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val set = room.store.sets.single()
@@ -686,7 +693,7 @@ class TrainingFinishTests {
     @Test fun aStaleSeedCannotOverwriteAnAcceptedCorrection() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            room.store.start(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+            room.startExternalWorkout(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
             room.now += 60_000
             val receipt = (room.store.finish() as FinishOutcome.Closed).detail
             val fixed = room.store.fixSet(receipt.session.id, receipt.sets.single().id, SetFix(weightKg = 62.5, note = "steady"))
@@ -716,26 +723,28 @@ class TrainingFinishTests {
         }
     }
 
-    @Test fun keepingTheReceiptRetriesOneCreationDocumentEvenAfterTheProgramGrows() = runTest {
+    @Test fun retryingAnExplicitRoutineSaveKeepsOneCreationDocument() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
-            val first = room.store.keep(rows, "Push A", "rt_receipt", position = 0)
-            val retried = room.store.keep(rows, "Push A", "rt_receipt", position = 0)
+            val draft = RoutineDraft(name = "Push A", creationId = "rt_editor").adding("bench-press")
+                .targeting("bench-press", listOf(SetTarget(8, 60.0)))
+            val first = room.store.saveRoutine(draft)
+            val retried = room.store.saveRoutine(draft)
             assertEquals(first, retried)
-            assertEquals(listOf("rt_receipt"), room.training.program().map { it.id })
-            assertEquals(listOf("rt_receipt"), room.store.allRoutines.map { it.id })
+            assertEquals(listOf("rt_editor"), room.training.program().map { it.id })
+            assertEquals(listOf("rt_editor"), room.store.allRoutines.map { it.id })
             assertEquals(listOf(RoutineEntry(exerciseId = "bench-press", position = 1, sets = listOf(SetTarget(8, 60.0)))),
                 room.training.program().single().entries)
         }
     }
 
-    @Test fun aRetriedKeepCannotClaimADifferentNameUnderItsOriginalIdentity() = runTest {
+    @Test fun aRetriedRoutineSaveCannotClaimADifferentNameUnderItsOriginalIdentity() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
-            val kept = room.store.keep(rows, "Push A", "rt_receipt", position = 0) as GymResult.Ok
-            val retry = room.store.keep(rows, "Push B", "rt_receipt", position = 0)
+            val draft = RoutineDraft(name = "Push A", creationId = "rt_editor").adding("bench-press")
+                .targeting("bench-press", listOf(SetTarget(8, 60.0)))
+            val kept = room.store.saveRoutine(draft) as GymResult.Ok
+            val retry = room.store.saveRoutine(draft.named("Push B"))
             assertEquals(GymResult.Failed(WriteFailure.Refused(
                 "this save already holds different details — reopen the saved routine to edit it")), retry)
             assertEquals(listOf(kept.value), room.training.program())

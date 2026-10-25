@@ -54,7 +54,7 @@ class LoggerMovementWalkTests {
         runBlocking {
             room.select("u1")
             room.pull(EngineRoomFixture.server())
-            room.store.start(null)
+            room.startExternalWorkout()
             // The walk is what the session HOLDS, in the order it was walked.
             room.store.choose("bench-press")
             room.store.choose("barbell-row")
@@ -64,7 +64,7 @@ class LoggerMovementWalkTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+            LoggerScreen(store = room.store, say = {}, onFinish = {}, onSettings = {})
         }
         return room
     }

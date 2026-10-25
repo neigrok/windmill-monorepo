@@ -9,6 +9,11 @@ import org.junit.Test
 
 class ReadoutTests {
     @Test
+    fun aWorkoutWithoutARoutineHasOneSharedTitle() {
+        assertEquals("Free workout", Readout.noRoutine)
+    }
+
+    @Test
     fun testAWeightPrintsWithoutTrailingZerosAndWithARealMinus() {
         assertEquals("102.5", Readout.weight(102.5))
         assertEquals("100", Readout.weight(100.0))

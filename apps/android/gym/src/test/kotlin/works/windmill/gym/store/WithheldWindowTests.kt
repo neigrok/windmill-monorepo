@@ -341,7 +341,7 @@ class WithheldWindowTests {
     fun testASetsDeleteIsAbandonedWithEverythingElseBecauseNothingHereOutlivesTheRoom() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            val session = (room.store.start() as GymResult.Ok).value
+            val session = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.store.logSet(weightKg = 90.0, reps = 3)
@@ -377,7 +377,7 @@ class WithheldWindowTests {
     fun testASetLeftAloneOnScreenStillSettlesOnItsOwnClockAndSendsOneDelete() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            val session = (room.store.start() as GymResult.Ok).value
+            val session = room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.store.logSet(weightKg = 90.0, reps = 3)

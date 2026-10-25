@@ -130,16 +130,16 @@ class PlanningRestorationTests {
     }
 
     @Test
-    fun quickSessionRestoresItsCreateRouteAndAddsToTheInvokingSession() {
+    fun externalWorkoutRestoresItsCreateRouteAndAddsToTheInvokingWorkout() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
-            runBlocking { store.start(null) }
+            runBlocking { room.startExternalWorkout() }
             val session = store.session!!.id
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                LoggerScreen(store, false, {}, {}, {}, {})
+                LoggerScreen(store, {}, {}, {})
             }
             compose.onNode(hasSetTextAction()).performTextReplacement("Carry")
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()

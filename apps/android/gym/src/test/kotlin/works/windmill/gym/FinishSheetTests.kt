@@ -85,10 +85,10 @@ class FinishSheetTests {
         compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), room.store) } }
     }
 
-    // A workout with no routine behind it: working sets, then Finish off the logger's top bar.
+    // An externally started workout with no routine, then Finish from the logger.
     private fun finishAWorkout(room: EngineRoomFixture, sets: Int = 1) {
         runBlocking {
-            room.store.start(null)
+            room.startExternalWorkout()
             room.store.choose("back-squat")
             repeat(sets) { room.store.logSet(100.0, 5) }
         }
@@ -97,7 +97,7 @@ class FinishSheetTests {
         finish(if (sets < 4) "Ended early." else "Well done.")
     }
 
-    // Either title: one working set read off the device is slight.
+    // One set read from the device is slight.
     private fun finish(title: String = "Ended early.") {
         compose.onNodeWithText("Finish").performClick()
         compose.waitUntil(10_000) {
@@ -107,11 +107,11 @@ class FinishSheetTests {
 
     // Composed FIRST and worked afterwards, so a test can hold a conversation on the Coach tab
     // before the workout it then finishes.
-    private fun startAWorkout(store: TrainingStore) {
+    private fun startAWorkout(room: EngineRoomFixture) {
         runBlocking {
-            store.start(null)
-            store.choose("back-squat")
-            store.logSet(100.0, 5)
+            room.startExternalWorkout()
+            room.store.choose("back-squat")
+            room.store.logSet(100.0, 5)
         }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Finish").fetchSemanticsNodes().isNotEmpty()
@@ -151,7 +151,7 @@ class FinishSheetTests {
         inRoom { room ->
             val store = room.store
             val live = runBlocking {
-                val opened = (store.start(null) as GymResult.Ok).value
+                val opened = room.startExternalWorkout()
                 store.choose("back-squat")
                 store.logSet(100.0, 5)
                 store.logSet(110.0, 3)
@@ -217,7 +217,7 @@ class FinishSheetTests {
             }
             val answer = CompletableDeferred<Unit>()
             server.onAsk = { answer.await() }
-            startAWorkout(room.store)
+            startAWorkout(room)
             finish()
 
             compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
@@ -315,7 +315,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
             }
-            startAWorkout(room.store)
+            startAWorkout(room)
             finish()
 
             compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
@@ -343,7 +343,7 @@ class FinishSheetTests {
         inRoom(server, seat = null) { room ->
             show(room)
             compose.waitForIdle()
-            startAWorkout(room.store)
+            startAWorkout(room)
             finish(title = "Ended early.")
 
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
@@ -366,7 +366,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Ask.notHere).fetchSemanticsNodes().isNotEmpty()
             }
-            startAWorkout(room.store)
+            startAWorkout(room)
             finish()
 
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
@@ -375,70 +375,16 @@ class FinishSheetTests {
         }
     }
 
-    // The refusal is drawn under the Save that raised it. The room's own `note` line lives in the
-    // Scaffold's bottom bar, which this sheet covers, so a refusal said there is not said at all.
-    // Twenty-one sets of one movement are more targets than a routine line holds.
     @Test
-    fun testAKeepTheLogRefusesIsSaidOnTheSheetItself() {
-        inRoom { room ->
-            finishAWorkout(room, sets = 21)
-
-            // Scrolling to it is the point as well as the means: the sheet body carries its own scroll.
-            compose.onNodeWithText("Save routine").performScrollTo().performClick()
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Check sets.").fetchSemanticsNodes().isNotEmpty()
-            }
-            // Drawn ON the sheet and not merely on the screen: a sheet is its own window, so a refusal
-            // said in the Scaffold beneath it is behind the scrim where nobody reads it.
-            assertSame(
-                "the refusal belongs to the receipt's own window",
-                compose.onNodeWithText("Well done.").fetchSemanticsNode().root,
-                compose.onNodeWithText("Check sets.").fetchSemanticsNode().root,
-            )
-            assertEquals(emptyList<Routine>(), room.training.program())
-        }
-    }
-
-    // The door closes while one is in flight, as it does on every other write this room owns: a
-    // second tap is not a second routine.
-    @Test
-    fun testTwoTapsOnSaveRoutineKeepOneRoutine() {
+    fun aFinishedExternalWorkoutHasNoRoutineSaveAction() {
         inRoom { room ->
             finishAWorkout(room, sets = 4)
 
-            val save = compose.onNodeWithText("Save routine").performScrollTo()
-                .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
-            compose.runOnIdle { save(); save() }
-            compose.waitForIdle()
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Save routine").fetchSemanticsNodes().isEmpty()
-            }
-
-            assertEquals("one tap, one routine", 1, room.training.program().size)
-        }
-    }
-
-    // A refused keep leaves the receipt standing with the name the lifter typed, and a second Save
-    // is answered on the same sheet.
-    @Test
-    fun aRefusedKeepHoldsTheReceiptAndDraftThroughRefusalAndRetry() {
-        val server = FakeGymRest()
-        inRoom(server) { room ->
-            finishAWorkout(room, sets = 21)
-            compose.onNodeWithContentDescription("Routine name").performScrollTo().performTextReplacement("Friday strength")
-            repeat(2) {
-                compose.onNodeWithText("Save routine").performScrollTo().assertIsEnabled().performClick()
-                compose.waitUntil(10_000) {
-                    compose.onAllNodesWithText("Check sets.").fetchSemanticsNodes().isNotEmpty()
-                }
-                compose.onNodeWithText("Well done.").performScrollTo().assertIsDisplayed()
-                compose.onNodeWithText("Check sets.").performScrollTo().assertIsDisplayed()
-                compose.onNodeWithContentDescription("Routine name").performScrollTo().assert(hasText("Friday strength"))
-            }
-            compose.runOnIdle {
-                assertEquals(emptyList<Routine>(), room.training.program())
-                assertTrue(server.calls.none { it == "ask" })
-            }
+            compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
+            compose.onNodeWithText("Save a routine").assertDoesNotExist()
+            compose.onNodeWithText("Save routine").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
+            compose.runOnIdle { assertEquals(emptyList<Routine>(), room.training.program()) }
         }
     }
 }

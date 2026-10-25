@@ -97,8 +97,15 @@ internal class EngineRoomFixture(
         }
         store.connect(account(id))
     }
+    suspend fun startExternalWorkout(target: TrainingStore = store): Session {
+        val session = training.startSession(SessionStart(
+            id = "session${(++nextSession).toString().padStart(2, '0')}", startedAt = ++now))
+        target.refreshEngine()
+        return session
+    }
+
     suspend fun workout(load: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
-        val session = (store.start() as GymResult.Ok).value
+        val session = startExternalWorkout()
         store.choose(movement); store.logSet(load, 5)
         now += 60_000
         if (finish) assertTrue(store.finish() is FinishOutcome.Closed)

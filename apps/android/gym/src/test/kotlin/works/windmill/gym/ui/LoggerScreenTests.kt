@@ -1,6 +1,7 @@
 package works.windmill.gym.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -91,7 +92,7 @@ class LoggerScreenTests {
                 assertTrue(room.store.finish() is FinishOutcome.Closed)
                 room.now = today
             }
-            room.store.start(null)
+            room.startExternalWorkout()
             room.store.choose("bench-press")
             room.store.choose("barbell-row")
             room.store.choose("cable-fly")
@@ -108,10 +109,64 @@ class LoggerScreenTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
-                LoggerScreen(store = room.store, isSignedIn = true, say = say, onFinish = {}, onSignIn = {}, onSettings = {})
+                LoggerScreen(store = room.store, say = say, onFinish = {}, onSettings = {})
             }
         }
         return room
+    }
+
+    @Test
+    fun anExternalWorkoutWithoutARoutineKeepsItsPickerAndReopensAfterLogging() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val server = EngineRoomFixture.server()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            room.now = System.currentTimeMillis()
+            val external = runBlocking {
+                EngineRoomFixture(tmp.newFolder(), scope).use { source ->
+                    source.now = room.now
+                    source.select("u1")
+                    source.pull(server)
+                    source.startExternalWorkout().also { source.sync(server) }
+                }
+            }
+            runBlocking {
+                room.select("u1")
+                room.pull(server)
+                room.store.refreshEngine()
+            }
+            val shown = mutableStateOf(room.store)
+            compose.setContent { LoggerScreen(shown.value, say = {}, onFinish = {}, onSettings = {}) }
+
+            compose.onNodeWithText("Free workout").assertIsDisplayed()
+            compose.onNodeWithText("What are you lifting?").assertIsDisplayed()
+            compose.onNodeWithText("What are you starting with?").assertDoesNotExist()
+            compose.onNodeWithText("Build my routine →").assertDoesNotExist()
+            compose.onNodeWithText("Bench Press").performScrollTo().performClick()
+            compose.onNodeWithText("Log set").performClick()
+            compose.waitForIdle()
+            val sets = room.store.sets.toList()
+            val restored = room.freshStore()
+            compose.runOnIdle { runBlocking { restored.connect(room.account()) }; shown.value = restored }
+            compose.waitForIdle()
+
+            compose.onNodeWithText("Free workout").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(external, restored.session)
+                assertEquals("bench-press", restored.exerciseId)
+                assertEquals(sets, restored.sets)
+                assertEquals(listOf("bench-press"), restored.order)
+                assertEquals(emptyList<works.windmill.gym.domain.Routine>(), room.training.program())
+                assertEquals(listOf("gym_set_logged" to emptyMap<String, String>()), events)
+                assertEquals(emptyList<String>(), failures)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
@@ -156,8 +211,8 @@ class LoggerScreenTests {
             room.store.observeEngine()
             var finished: FinishOutcome? = null
             compose.setContent {
-                LoggerScreen(store = room.store, isSignedIn = false, say = { said += it },
-                    onFinish = { scope.launch { finished = room.store.finish() } }, onSignIn = {}, onSettings = {})
+                LoggerScreen(store = room.store, say = { said += it },
+                    onFinish = { scope.launch { finished = room.store.finish() } }, onSettings = {})
             }
 
             listOf("bench-press", "barbell-row", "overhead-press").forEachIndexed { index, movement ->
@@ -213,7 +268,7 @@ class LoggerScreenTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, isSignedIn = false, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+            LoggerScreen(store = room.store, say = {}, onFinish = {}, onSettings = {})
         }
         return room
     }

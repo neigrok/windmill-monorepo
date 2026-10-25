@@ -249,7 +249,7 @@ class LargestTypeTests {
         val server = EngineRoomFixture.server()
         try { store(scope, server).use { room ->
             runBlocking {
-                room.store.start(null)
+                room.startExternalWorkout()
                 room.store.choose("bench-press")
                 room.store.logSet(60.0, 5)
                 room.sync(server)
@@ -259,7 +259,7 @@ class LargestTypeTests {
                 // The room's own faces, because it is their widths at 1.3 that are being measured.
                 GymMaterial {
                     CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1.3f)) {
-                        LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                        LoggerScreen(store = room.store, say = {}, onFinish = {},
                                      onSettings = {})
                     }
                 }
@@ -296,7 +296,7 @@ class LargestTypeTests {
                                  transient: SnackbarHostState? = null): EngineRoomFixture {
         val room = store(scope, server)
         runBlocking {
-            room.store.start(null)
+            room.startExternalWorkout()
             walk.forEach { room.store.choose(it) }
             room.store.choose(walk.first())
         }
@@ -304,7 +304,7 @@ class LargestTypeTests {
             GymMaterial {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = fontScale)) {
                     Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
-                        LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                        LoggerScreen(store = room.store, say = {}, onFinish = {},
                                      onSettings = {}, transient = transient)
                     }
                 }

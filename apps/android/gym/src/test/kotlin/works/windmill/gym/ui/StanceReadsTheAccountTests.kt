@@ -140,8 +140,7 @@ class StanceReadsTheAccountTests {
         val drafts = mutableListOf<RoutineDraft>()
         compose.setContent {
             RoutinesScreen(
-                store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
-                onJustStart = {}, onBuild = { drafts += it }, onOpenRoutine = {},
+                store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s", onBuild = { drafts += it }, onOpenRoutine = {},
                 onDeleteRoutine = {}, onReview = {}, onSignIn = {},
             )
         }
@@ -162,7 +161,7 @@ class StanceReadsTheAccountTests {
         compose.runOnIdle { runBlocking { store.settleWithheld(id) } }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.allRoutines.map { it.name }) }
         compose.onNodeWithText("No routines yet.").assertIsDisplayed()
-        compose.onNodeWithText("Start logging").assertIsDisplayed()
+        compose.onNodeWithText("Start logging").assertDoesNotExist()
         scope.cancel()
     }
 
@@ -207,28 +206,6 @@ class StanceReadsTheAccountTests {
         scope.cancel()
     }
 
-    // `firstSession` opens the movement picker with a first-session title and a drawn
-    // `Build my routine`, so it is a stance and not a row. Deleting the only workout used to put a
-    // returning lifter back in the room where nothing has ever happened.
-    @Test
-    fun theFirstSessionStanceReadsTheAccountAndTheSettledDiscardBringsItBack() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val room = room(scope)
-        val store = room.store
-        val session = oneWorkout(room)
-        assertFalse("the log holds a workout", store.firstSession)
-
-        store.withhold(Deletion.Session(session.id))
-        assertFalse("and still does while a window is holding its row", store.firstSession)
-
-        runBlocking { store.settleWithheld(session.id) }
-        assertTrue("the account is empty now, and the log said so", store.firstSession)
-        scope.cancel()
-    }
-
-    // The log's foot names the day training STARTED, which is a claim about the account and not a
-    // caption on the rows: a window holding the oldest row used to move it a month, and say so with
-    // Undo still on screen.
     @Test
     fun theLogFootNamesTheDayTheAccountStartedAndNotTheOldestRowDrawn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -334,7 +311,7 @@ class StanceReadsTheAccountTests {
         val old = oneWorkout(room)
         room.now = 1_800_000_000_000L
         runBlocking {
-            store.start(null)
+            room.startExternalWorkout()
             store.choose("back-squat")
             store.logSet(100.0, 5)
         }

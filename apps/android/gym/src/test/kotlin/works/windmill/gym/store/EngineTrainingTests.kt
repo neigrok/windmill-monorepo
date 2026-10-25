@@ -44,6 +44,21 @@ class EngineTrainingTests {
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
 
+    @Test fun aRepeatedRequiredRoutineStartKeepsItsExistingSessionAfterTheRoutineIsDeleted() = runTest {
+        engine().use { engine ->
+            seedRoutine(engine)
+            val training = EngineTraining(engine)
+            val start = SessionStart("session1", now, routineId = "routine1")
+            val opened = training.startSession(start, requireRoutine = true)
+            assertTrue(engine.commit(ScopeRef(Gym.scope), Gesture(listOf(
+                Change.delete(Gym.Types.routine, RecordID("routine1"))))) is CommitOutcome.Committed)
+            val before = engine.snapshot()
+
+            assertEquals(opened, training.startSession(start, requireRoutine = true))
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
     @Test fun unreadablePlanReportsStaticFailureWhileFactsCorrectionsAndDiscardRemainAvailable() = runTest {
         val failures = mutableListOf<Pair<String, String?>>()
         val telemetry = object : Telemetry {
@@ -183,7 +198,7 @@ class EngineTrainingTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             room.select("A"); room.pull(server)
-            room.store.start(); room.sync(server)
+            room.startExternalWorkout(); room.sync(server)
             room.store.choose("bench-press"); room.store.logSet(80.0, 5)
             val pending = setOf(room.store.sets.single().id)
             assertEquals(pending, room.store.stalled)
@@ -509,7 +524,7 @@ class EngineTrainingTests {
     @Test fun trainingStoreUsesEngineForAnonymousAndNotificationLogThenFinish() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val session = (room.store.start() as GymResult.Ok).value
+            val session = room.startExternalWorkout()
             room.store.choose("back-squat")
             room.store.logSet(80.0, 5)
             assertEquals(1, room.training.session(session.id)!!.sets.size)
@@ -529,7 +544,7 @@ class EngineTrainingTests {
     @Test fun addAndDiscardThenKeepSignoutCannotResurrectAnOldAnonymousMirror() = runTest {
         for (choice in listOf("add", "discard")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val session = (room.store.start() as GymResult.Ok).value
+            val session = room.startExternalWorkout()
             room.store.choose("back-squat")
             val offer = room.store.notification.value!!.offer!!
             assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Accepted)

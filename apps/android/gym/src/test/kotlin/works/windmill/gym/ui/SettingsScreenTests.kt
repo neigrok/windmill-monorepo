@@ -290,7 +290,7 @@ class SettingsScreenTests {
                 EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).use { room ->
                     room.now = remote.now - 100_000
                     room.select(null)
-                    val source = (room.store.start() as GymResult.Ok).value
+                    val source = room.startExternalWorkout()
                     val set = if (!hasSet) null else {
                         room.store.choose("bench-press"); room.store.logSet(82.5, 5)
                         val logged = room.store.sets.single()
@@ -334,7 +334,7 @@ class SettingsScreenTests {
         try {
             EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).use { room ->
                 room.select(null)
-                val source = (room.store.start() as GymResult.Ok).value
+                val source = room.startExternalWorkout()
                 room.store.choose("bench-press")
                 repeat(201) { room.store.logSet(82.5, 5) }
                 val last = room.store.sets.last()

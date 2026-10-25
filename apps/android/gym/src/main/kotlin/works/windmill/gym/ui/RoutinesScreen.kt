@@ -63,7 +63,7 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.design.WindmillSheetWindow
 
-// Planning stays in the top bar; Start logging stays within reach.
+// Planning stays in the top bar; each routine opens its own review.
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
@@ -71,7 +71,6 @@ fun RoutinesScreen(
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     seat: String,
-    onJustStart: () -> Unit,
     onBuild: (RoutineDraft) -> Unit,
     onOpenRoutine: (String) -> Unit,
     onDeleteRoutine: (String) -> Unit,
@@ -156,24 +155,6 @@ fun RoutinesScreen(
                         )
                     }
                 }
-
-            }
-
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = WindmillSpace.x5)
-                    .padding(top = 20.dp, bottom = 12.dp)
-                    .heightIn(min = GymTap.primary)
-                    .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
-                    .clickable(role = Role.Button, onClick = onJustStart),
-            ) {
-                Text(
-                    "Start logging",
-                    style = WindmillFont.body(16, FontWeight.Bold),
-                    color = skin.onAccent,
-                )
             }
         }
     }

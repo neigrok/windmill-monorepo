@@ -494,16 +494,6 @@ class TrainingStore(
     val wayBackLeftMs: Long
         get() = (holding?.untilMs ?: 0L) - now()
 
-    // Nothing has ever happened in this room. It asks whether the log's head was read, never whether
-    // its lists came back empty: `older == End` is the log answering "there is no more". The session
-    // the lifter is IN is not counted.
-    //
-    // Both halves read what the ACCOUNT holds and neither reads a drawn list: a window decides which
-    // rows are drawn and never what state a screen is in, and this state opens the picker with a
-    // first-session title and a drawn `Build my routine`.
-    val firstSession: Boolean
-        get() = allSessions.none { it.id != session?.id } && program.isEmpty() && older == Older.End
-
     // Called on launch and on every change of who is signed in. A re-read with the same account
     // preserves open deletion windows.
     suspend fun connect(account: Account) {
@@ -655,12 +645,12 @@ class TrainingStore(
     }
 
     // The domain action freezes the routine into the session as it starts.
-    suspend fun start(routineId: String? = null): GymResult<Session> {
+    suspend fun start(routineId: String): GymResult<Session> {
         if (!workoutAuthorized || !controls.writable) return GymResult.Failed(WriteFailure.Refused(workoutFailure ?: "The account must be restored first."))
         val seat = owner
         return try {
             training.recoverAcceptedSets(controls)
-            val opened = training.startSession(SessionStart(id = mintSession(), startedAt = now(), routineId = routineId))
+            val opened = training.startSession(SessionStart(id = mintSession(), startedAt = now(), routineId = routineId), requireRoutine = true)
             if (!workoutAuthorized || seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
             adopt(opened, joined = false)
             if (!workoutAuthorized || seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
@@ -830,17 +820,6 @@ class TrainingStore(
         drawFromControls()
         loadLog()
         return true
-    }
-
-    // Composed from the session's own sets, in performed order, with the weights used as targets. The
-    // carrier session exists because RoutineWrite.from reads a SessionDetail; only its sets are read.
-    suspend fun keep(sets: List<TrainingSet>, asRoutineNamed: String, creationId: String = mintRoutine(),
-                     position: Int = program.size): GymResult<Routine> {
-        val carrier = SessionDetail(Session(id = "ses_kept", startedAtMs = now()), sets)
-        val write = RoutineWrite.from(asRoutineNamed, carrier, position = position)
-            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one set"))
-        return saveRoutine(RoutineDraft(name = write.name, position = write.position,
-            entries = Routine(write).entries, creationId = creationId))
     }
 
     // One day of the program, written WHOLE. A routine with an id is an edit, which moves the

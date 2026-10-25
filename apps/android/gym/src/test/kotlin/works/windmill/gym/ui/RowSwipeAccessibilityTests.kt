@@ -70,8 +70,7 @@ class RowSwipeAccessibilityTests {
             val deleted = mutableListOf<String>()
             compose.setContent {
                 RoutinesScreen(
-                    store = room.store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
-                    onJustStart = {}, onBuild = {}, onOpenRoutine = {},
+                    store = room.store, isSignedIn = true, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
                     onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
                 )
             }

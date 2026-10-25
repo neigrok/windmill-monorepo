@@ -83,8 +83,6 @@ import works.windmill.gym.domain.TargetEntry
 import works.windmill.platform.net.WindmillJson
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
 // A movement is a stable identity and never a typed string, so the only way to lift something the
 // catalog has never heard of is to MINT it here. The last-done read is SPARSE, so `never logged` is
@@ -252,10 +250,7 @@ fun MovementPicker(
     modifier: Modifier = Modifier,
     sessions: List<SessionSummary> = emptyList(),
     subtitle: String? = null,
-    firstSession: Boolean = false,
-    signedIn: Boolean = false,
     onClose: (() -> Unit)? = null,
-    onBuildRoutine: () -> Unit = {},
     state: MovementPickerState = rememberMovementPickerState(),
 ) {
     val skin = LocalGymColors.current
@@ -316,7 +311,6 @@ fun MovementPicker(
             }
             options.matches.forEach { MovementRow(it, onPick) }
             options.empty?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim, lineHeight = 20.sp) }
-            if (firstSession && !signedIn) BuildMyRoutine(onBuildRoutine)
         }
         TextButton(
             onClick = {
@@ -445,32 +439,6 @@ private fun CreateMovementSheet(
             Text(if (busy) "Creating…" else if (scheme != null) "Add to routine" else "Create and add",
                 style = WindmillFont.body(16, FontWeight.Bold))
         }
-    }
-}
-
-@Composable
-private fun BuildMyRoutine(onBuildRoutine: () -> Unit) {
-    val skin = LocalGymColors.current
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = WindmillSpace.x2)
-            .background(skin.surface, RoundedCornerShape(WindmillRadius.lg))
-            .dashedEdge(skin.accent, WindmillRadius.lg)
-            .clickable(role = Role.Button, onClick = onBuildRoutine)
-            .padding(GymLayout.cardInset),
-    ) {
-        Text(
-            "Have a written program? An agent can build it — sign in first.",
-            style = WindmillFont.body(14).copy(lineHeight = 21.sp),
-            color = skin.inkDim,
-        )
-        Text(
-            "Build my routine →",
-            style = WindmillFont.body(14, FontWeight.Bold),
-            color = skin.accent,
-        )
     }
 }
 

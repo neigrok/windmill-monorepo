@@ -148,7 +148,7 @@ internal fun CoachAnswer(
                 modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp),
             ) {
                 Text(
-                    "${observation.routine?.takeIf { it.isNotBlank() } ?: "Free session"} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
+                    "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
                     style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim,
                 )
                 val facts = listOfNotNull(
@@ -185,7 +185,7 @@ internal fun CoachAnswer(
                 }
                 if (expanded) {
                     observations.forEach { fact ->
-                        val about = fact.routine?.takeIf { it.isNotBlank() } ?: "Free session"
+                        val about = fact.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine
                         val scope = when (fact.coverage) {
                             "movement" -> "${Readout.movement(requireNotNull(fact.exerciseId), catalog)} · ${Readout.setCount(fact.setsRead)} read"
                             "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
@@ -33,7 +34,7 @@ class FinishLayoutTests {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun largeTextKeepsTotalsAndLongPerformedTargetsReadableAboveTheKeyboard() {
+    fun largeTextKeepsTotalsAndLongPerformedTargetsReadableOnAShortFrame() {
         val name = "Long movement name with several words"
         val sets = List(9) { index -> TrainingSet("set_$index", "move_${index / 3}",
             weightKg = listOf(60.0, 30.0, 18.0)[index / 3], reps = if (index < 6) 8 else 10, completedAtMs = 2_000L + index) }
@@ -41,12 +42,12 @@ class FinishLayoutTests {
         val review = Review(ReviewStats(600_000, 9), against = Against("past", "Push A", 0,
             listOf(AgainstMovement("move_0", Effort(3, 8, 60.0), before = Effort(3, 8, 57.5),
                 planned = PlannedLine(List(3) { SetTarget(8, 60.0) })))))
-        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 601_000), sets, review, false)
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 601_000), sets, review)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
                 GymMaterial {
                     Box(Modifier.height(340.dp)) {
-                        FinishScreen(finished, catalog, keptName = null, onKeepRoutine = {}, onShareWithCoach = {})
+                        FinishScreen(finished, catalog, onShareWithCoach = {})
                     }
                 }
             }
@@ -64,22 +65,10 @@ class FinishLayoutTests {
         plan.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
         val target = compose.onAllNodesWithText("3 × 8 · 60kg").onLast().performScrollTo().assertIsDisplayed()
-        val movement = compose.onAllNodesWithText(name).onLast().fetchSemanticsNode().boundsInRoot
+        val movement = compose.onAllNodesWithText(name).onFirst().fetchSemanticsNode().boundsInRoot
         assertTrue(target.fetchSemanticsNode().boundsInRoot.top >= movement.bottom)
-        compose.onNodeWithText("Save routine").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save routine").assertDoesNotExist()
         compose.onNodeWithText(FinishCoach.action).performScrollTo().assertIsDisplayed()
     }
 
-    @Test
-    fun aConfirmationNamesTheStoredRoutineRatherThanTheDefaultDraftName() {
-        val sets = List(4) { TrainingSet("set_$it", "bench", weightKg = 60.0, reps = 8, completedAtMs = it.toLong()) }
-        compose.setContent {
-            GymMaterial {
-                FinishScreen(FinishedSession(Session("done", startedAtMs = 0, finishedAtMs = 600_000), sets, null, false),
-                    listOf(Exercise("bench", "Bench Press")), keptName = "Push A", onKeepRoutine = {})
-            }
-        }
-        compose.onNodeWithText("Kept as Push A.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Save routine").assertDoesNotExist()
-    }
 }

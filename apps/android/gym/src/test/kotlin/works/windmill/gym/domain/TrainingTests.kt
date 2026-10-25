@@ -453,63 +453,6 @@ class LastSetTests {
     }
 }
 
-class RoutineWriteTests {
-    private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
-                     at: Long): TrainingSet =
-        TrainingSet(id = "set_$at", exerciseId = exerciseId, weightKg = weightKg,
-                    reps = reps, completedAtMs = at)
-
-    private fun aDetail(sets: List<TrainingSet>): SessionDetail =
-        SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
-
-    @Test
-    fun testARoutineKeptFromASessionIsEverySetAsItWasLifted() {
-        val write = RoutineWrite.from("Lower A", aDetail(listOf(
-            aSet("back-squat", 40.0, 10, at = 100),
-            aSet("back-squat", 60.0, 5, at = 200),
-            aSet("back-squat", 80.0, 5, at = 300),
-            aSet("back-squat", 90.0, 3, at = 400),
-            aSet("back-squat", 60.0, 12, at = 500),
-            aSet("barbell-row", 70.0, 8, at = 600),
-        )), position = 2)
-
-        assertNotNull(write)
-        assertTrue("the kept routine mints its own id", write!!.id.startsWith("rt_"))
-        assertEquals(2, write.position)
-        assertEquals("Lower A", write.name)
-        assertEquals(
-            listOf(
-                RoutineEntryWrite(exerciseId = "back-squat",
-                                  sets = listOf(SetTarget(10, 40.0), SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(12, 60.0))),
-                RoutineEntryWrite(exerciseId = "barbell-row", sets = listOf(SetTarget(8, 70.0))),
-            ),
-            write.entries)
-    }
-
-    @Test
-    fun testAMovementLiftedInTwoBlocksIsOneLineInTheOrderItWasFirstPerformed() {
-        val write = RoutineWrite.from("Push A", aDetail(listOf(
-            aSet("bench-press", 82.5, 5, at = 200),
-            aSet("overhead-press", 45.0, 8, at = 300),
-            aSet("bench-press", 85.0, 3, at = 400),
-        )), position = 0)
-
-        assertEquals(
-            listOf(
-                RoutineEntryWrite(exerciseId = "bench-press", sets = listOf(SetTarget(5, 82.5), SetTarget(3, 85.0))),
-                RoutineEntryWrite(exerciseId = "overhead-press", sets = listOf(SetTarget(8, 45.0))),
-            ),
-            write?.entries)
-    }
-
-    @Test
-    fun testOnlyAnEmptySessionKeepsNoRoutine() {
-        assertEquals(listOf(RoutineEntryWrite("bench-press", listOf(SetTarget(10, 40.0)))),
-            RoutineWrite.from("Push A", aDetail(listOf(aSet("bench-press", 40.0, 10, at = 100))), position = 0)?.entries)
-        assertNull(RoutineWrite.from("Push A", aDetail(emptyList()), position = 0))
-    }
-}
-
 class PrefillTests {
     private fun aSet(weightKg: Double, reps: Int, at: Long): TrainingSet =
         TrainingSet(id = "set_$at", exerciseId = "bench-press", weightKg = weightKg,

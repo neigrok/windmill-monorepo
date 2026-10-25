@@ -33,7 +33,7 @@ class LogSetDeliveryTests {
 
     private suspend fun EngineRoomFixture.enter(server: ModelServer): String {
         select("u1"); pull(server)
-        val session = (store.start() as GymResult.Ok).value
+        val session = startExternalWorkout()
         store.choose("bench-press")
         return session.id
     }

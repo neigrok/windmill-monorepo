@@ -88,10 +88,6 @@ object Scheme {
             )
         }
     }
-
-    // What was lifted, as a scheme: one set per performed set in the order they landed.
-    fun lifted(sets: List<TrainingSet>): List<SetTarget> =
-        sets.sortedBy { it.completedAtMs }.map { SetTarget(it.reps, Ladder.round(it.weightKg)) }
 }
 
 // No `sets` is the open line, frozen as the absence itself: the wire never carries an empty array.
@@ -588,23 +584,6 @@ data class RoutineWrite(
         },
         expectedRevision,
     )
-
-    companion object {
-        // Each movement's sets, as they were lifted; an empty session keeps no routine.
-        fun from(name: String, detail: SessionDetail, position: Int = 0): RoutineWrite? {
-            val sets = detail.sets.sortedBy { it.completedAtMs }
-            if (sets.isEmpty()) return null
-            val order = mutableListOf<String>()
-            for (set in sets) if (set.exerciseId !in order) order.add(set.exerciseId)
-            val entries = order.map { movement ->
-                RoutineEntryWrite(
-                    exerciseId = movement,
-                    sets = Scheme.lifted(sets.filter { it.exerciseId == movement }),
-                )
-            }
-            return RoutineWrite(Ids.routine(), name, position, entries)
-        }
-    }
 }
 
 // On a scheme whose sets disagree the pad follows the slot: the Nth set takes the Nth set's

@@ -51,7 +51,7 @@ data class WorkoutNotification(
 ) {
     constructor(key: WorkoutKey, session: Session, movement: String, sets: List<TrainingSet>,
         state: WorkoutState, ready: Boolean) : this(
-        key, session.plan?.routine ?: "Free session", movement,
+        key, session.plan?.routine ?: Readout.noRoutine, movement,
         state.rack?.let { "${Readout.weight(it.weightKg)} kg × ${it.reps}" } ?: "Open workout",
         LiveLines.counter(LiveLines.setCount(sets), state.rack?.exerciseId?.let { session.plan?.entry(it) }),
         state.offer.takeIf { ready }, state.hidden,

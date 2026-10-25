@@ -74,7 +74,6 @@ class RoutinesScreenTests {
                 isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
-                onJustStart = { doors += "start" },
                 onBuild = { drafts += it },
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it" },
@@ -100,14 +99,14 @@ class RoutinesScreenTests {
     }
 
     @Test
-    fun testTheBandStartsTheWorkoutAndTheNewRoutineActionIsInTheTopBar() {
+    fun testRoutinesHasNoFreeStartAndTheNewRoutineActionIsInTheTopBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val doors = mutableListOf<String>()
             val drafts = mutableListOf<RoutineDraft>()
             home(room, doors, drafts)
 
-            compose.onNodeWithText("Start logging").assertIsDisplayed()
+            compose.onNodeWithText("Start logging").assertDoesNotExist()
             val newRoutine = compose.onNodeWithText("New routine")
             newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
             newRoutine.performClick()
@@ -115,8 +114,7 @@ class RoutinesScreenTests {
             compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
             compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
-            compose.onNodeWithText("Start logging").performClick()
-            compose.runOnIdle { assertEquals(listOf("start"), doors) }
+            compose.runOnIdle { assertEquals(emptyList<String>(), doors) }
         } } finally { scope.cancel() }
     }
 
@@ -192,7 +190,6 @@ class RoutinesScreenTests {
                     isSignedIn = true,
                     lookedAt = emptySet(),
                     seat = "s",
-                    onJustStart = {},
                     onBuild = {},
                     onOpenRoutine = {},
                     onDeleteRoutine = {},
@@ -234,7 +231,6 @@ class RoutinesScreenTests {
                     isSignedIn = false,
                     lookedAt = emptySet(),
                     seat = "",
-                    onJustStart = { doors += "start" },
                     onBuild = { doors += "build" },
                     onOpenRoutine = { doors += "open:$it" },
                     onDeleteRoutine = { doors += "delete:$it" },

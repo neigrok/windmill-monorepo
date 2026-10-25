@@ -150,26 +150,40 @@ class EngineTraining(val engine: Engine) {
         })
         return catalogue().first { it.id == exerciseId }
     }
-    suspend fun startSession(start: SessionStart): Session {
+    suspend fun startSession(start: SessionStart, requireRoutine: Boolean = false): Session {
         val open = read { TrainingLog(it).open }
         if (open != null && open.id.text != start.id) throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
         val action = StartSession(Id(start.id, EngineSession), start.routineId?.let { Id(it, EngineRoutine) }, Instant(start.startedAt))
-        val id = apply(object : Action<StartSession.Loaded, Id<EngineSession>, GymRefusal> {
-            override val scope = action.scope
-            override val refusals = action.refusals
-            override fun load(read: Reader) = action.load(read)
-            override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
-                val decision = action.decide(loaded, ids)
-                if (decision !is Decision.Write) return decision
-                val command = requireNotNull(decision.plan.command)
-                val explicit = object : ServerCommand {
-                    override val name = command.name
-                    override val args = command.args.obj() + ("joinOpenSession" to Json.of(false))
-                    override val specs = emptyList<ValueSpec>()
+        val id = try {
+            apply(object : Action<StartSession.Loaded, Id<EngineSession>, GymRefusal> {
+                override val scope = action.scope
+                override val refusals = action.refusals
+                override fun load(read: Reader) = action.load(read)
+                override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
+                    if (requireRoutine && !loaded.prior) {
+                        val open = loaded.state.drawn.firstOrNull {
+                            it.id != action.id && SessionRules.drawn(it, loaded.state.drawnSets, loaded.state.moment.now).isOpen
+                        }
+                        if (open != null) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
+                        if (loaded.routine == null) {
+                            return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
+                        }
+                    }
+                    val decision = action.decide(loaded, ids)
+                    if (decision !is Decision.Write) return decision
+                    val command = requireNotNull(decision.plan.command)
+                    val explicit = object : ServerCommand {
+                        override val name = command.name
+                        override val args = command.args.obj() + ("joinOpenSession" to Json.of(false))
+                        override val specs = emptyList<ValueSpec>()
+                    }
+                    return Decision.Write(Plan(explicit, decision.plan.predictions), decision.result)
                 }
-                return Decision.Write(Plan(explicit, decision.plan.predictions), decision.result)
-            }
-        })
+            })
+        } catch (refused: TrainingRefused) {
+            if (refused.code != Gym.Codes.sessionOpen) throw refused
+            throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
+        }
         return session(id.text)?.session ?: error("The engine does not hold the record it just wrote.")
     }
     suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
