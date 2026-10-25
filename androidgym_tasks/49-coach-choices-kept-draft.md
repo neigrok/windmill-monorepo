@@ -21,7 +21,7 @@
   - When a draft written signed out on this phone meets an account that already has its own draft, the phone's draft waits in the thread as a card: overline *Draft kept on this phone*, the draft's text, and the text button **Continue saved draft**. The composer keeps the account's draft (*Swap chin-ups for pulldowns*).
   - **Continue saved draft** swaps the two: the kept draft goes into the composer and the composer's draft becomes the kept card.
   - With no account draft, the phone's draft simply becomes the composer's draft.
-- Store the kept drafts and the chosen chips with the seat's draft, so a recreation keeps them.
+- Store kept drafts and chosen chips under 37's stable owner/chat identity, so recreation and fresh Coach entry retain them in the correct History row. Do not overwrite another account's draft or cancel an older chat's pending reply.
 
 **Out of scope:** signed-out Coach itself (38); the greeting (39); drafts decided on their card (41).
 
@@ -31,6 +31,6 @@
 - A clarification the client cannot read is dropped without a Sentry report: it is the model's output, not a failure.
 - Tests: `coach/AskTests.kt` (parse and limits), `coach/AskScreenTests.kt` (chips, one choice for days, several for equipment, composer text), and a kept-draft test across sign-in.
 
-**Depends on:** 28, 38.
+**Depends on:** 28, 37, 38.
 
 **Ledger:** 12i; dogfood `android-gym-target-page`.

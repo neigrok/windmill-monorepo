@@ -16,11 +16,11 @@
 - The store calls it dismiss: `dismissProposal` (`store/TrainingStore.kt:972`), failure op `gym.dismissProposal` (`:985`), event action `dismiss` (`:989`).
 
 **Change**
-- **Reject** settles at once, with no dialog. Delete the confirm and its four strings.
+- **Reject** settles without a confirmation dialog only while no Apply/Reject command is unresolved. Persist its decision identity and reconcile the result; a timeout is not a settled rejection. Task 34 owns unknown outcomes and disables contradictory decisions. Delete the confirmation dialog and its four strings.
 - Applied (08.12):
   - The card drops its buttons and its outline.
   - Header: a check icon + *Applied · Push A*, with *5 changes* trailing.
-  - The same first two blocks stay as a record, with *Show all 5 changes*.
+  - The same first two blocks stay as a record, with *Show all 5 changes*. Their before/after order comes from the immutable proposal history contract in 32; never reconstruct it from the routine after Apply.
   - The Apply button turns into this header; one `saved` haptic (`ui/GymHaptics.kt`).
 - Rejected (08.13): the card folds to one `inkDim` line, a close icon + *Rejected · Push A.*
 - Out of date (08.14):
@@ -44,6 +44,7 @@
 - `gym_proposal_outcome` action `reject` replaces `dismiss`; outcomes stay `decided`, `moved`, `gone`, `settled`, `failed`. Update the row in `docs/ANDROID_OBSERVABILITY.md`.
 - A failed reject reports under `gym.rejectProposal` (replaces `gym.dismissProposal`).
 - `gym_proposal_receipt_shown` still fires for a visible removal receipt.
+- Reopen an applied proposal after restart and from another device: its retained change blocks remain truthful; an older record without order evidence does not invent a previous position.
 - Tests to update: `domain/ProposalTests.kt`, `coach/ThreadTests.kt`, `coach/AskScreenTests.kt`, `store/TelemetryTests.kt`, `store/RemovalReceiptTests.kt`.
 
 **Depends on:** 29.

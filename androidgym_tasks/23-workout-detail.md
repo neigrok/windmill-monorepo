@@ -1,5 +1,7 @@
 # Workout detail
 
+**Approved flow:** [Log / Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. Workout discard uses the approved [Finish overflow confirmation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362); weight Undo remains separate.
+
 **Figma:**
 - 05.3 Workout detail: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27642) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30969)
 - 05.14 Workout detail, Discard asks once: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40948) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41023)
@@ -20,14 +22,14 @@
 
 **Change**
 - The title is the routine; a workout with no routine reads `Readout.noRoutine` (13).
-- Movement header: the equipment icon (08) before the name.
+- Movement header: 08’s equipment-aware presentation before the name. Preserve existing Cable/Kettlebell labels and load semantics; the four drawn icon variants do not authorize coercing other stored equipment.
 - Plan line with the load basis and a space: *Plan 3 × 8 · 75 kg total* (barbell), *Plan 3 × 10 · 24 kg each* (two dumbbells). 08 changes `Readout.targetWithUnit`; this screen only uses it.
 - Set notes never print a kind (the kind itself goes with 06).
 - *Discard session* → *Discard workout*, an `Android / Button` Text in the error role (02).
   - A tap opens the dialog from 14 (05.14): *Discard this workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / **Cancel** · **Discard** (error role).
   - Discard removes the workout at once, then the room goes back to The log. No hold, no Undo.
 - *Share this workout* is unchanged.
-- Fix the comparison count in the domain: every working set of the movement counts, in the performed row's own form (*3 × 6–8 · 75–80*). Add a domain vector. The receipt no longer draws the block (14), so this screen is its only reader.
+- Fix the comparison count in the domain: every set of the movement counts, in the performed row's own form (*3 × 6–8 · 75–80*). Add a domain vector. The receipt no longer draws the block (14), so this screen is its only reader.
 
 **Out of scope:**
 - Deleting a set by swipe and the set row's ground (05).
@@ -39,7 +41,7 @@
 - `gym_screen_viewed` `session` still fires.
 - Discard emits `gym_action` with `screen=session`, `action=discard`, `state=shown`, then `outcome=ok` / `cancelled` / `refused` / `failed` (the event comes from 05).
 - Failures still report as `gym.discard`.
-- Tests: `ui/SessionScreenTests.kt`, `ui/SessionDiscardTests.kt`, `domain/TrainingTests.kt` (the comparison count, every working set).
+- Tests: `ui/SessionScreenTests.kt`, `ui/SessionDiscardTests.kt`, `domain/TrainingTests.kt` (the comparison count, every set).
 
 **Depends on:** 02, 05, 06, 08, 14.
 

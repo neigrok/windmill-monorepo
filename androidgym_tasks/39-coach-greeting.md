@@ -29,7 +29,7 @@
 - Under the last bubble, two tonal buttons:
   - **Add screenshot** (image icon) opens the system photo picker: `PickVisualMedia(ImageOnly)`, the same launcher as the composer.
   - **Build my own** (add icon) opens the new-routine editor.
-- The greeting stays until the first message is accepted, then it goes for good in that thread.
+- The greeting belongs to the first-open/setup states on this page. A deliberate fresh Coach entry in an established Gym uses the approved empty-composer state in 28/37; it does not replay a previous conversation or insert the setup greeting. In the setup chat, the greeting stays until the first message is accepted, then it goes for good in that thread.
   - No goal flow, no *Just log*, no allowance indicator.
 - The account seat sits in the bar: *•* signed out, the email initial signed in (03).
 - An empty Gym opens on Coach.

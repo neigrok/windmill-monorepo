@@ -10,7 +10,7 @@
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - Signed out, `AskSignedOutStance` (`coach/AskScreen.kt:268-278`): *Coach reads your log, so it needs you signed in.* at body 26 Bold at the top (`coach/Ask.kt:216`), then a primary *Sign in* at the bottom.
 - Day's cap (429 `ask-daily-limit`, `coach/CoachStore.kt:405`):
-  - The server's sentence, lower case and with no period: *the next question frees up in a couple of hours* (`backend/products/gym/adapters/http/AskApi.cpp:74`); the client fallback is *The next question frees up in a couple of hours.* (`coach/Ask.kt:180`).
+  - The backend supplies `retryAtMs` and `Retry-After` for `ask-daily-limit` (`backend/products/gym/adapters/http/AskApi.cpp`). The legacy client reads only its generic sentence/fallback and loses the actual next-question time.
   - It is drawn as body 15 ink after the thread (`coach/AskScreen.kt:221-227`).
   - The composer is replaced by `CapDoors` (`coach/AskScreen.kt:244-246`, `:339-345`): *Ask something new* and a *Connect own agent* / *Use your own AI tool* row (`:318-336`).
 - Coach absent (`AskAbsentStance`, `coach/AskScreen.kt:282-316`, shown from `GymRoom.kt:1154`): a *Notes* / *What Coach should know* door, *Coach isn’t part of this Windmill. Your log is still yours to read.* (`Ask.notHere`, `coach/Ask.kt:218`) and a *Connected log* / *Use your own AI tool* door (`ConnectDoor`, :318-336). The bar holds only the seat.
@@ -20,15 +20,17 @@
 **Change**
 - No seat (08.6): shown when there is no account and the signed-out Coach (38) is not available.
   - Centred body 18 in `inkDim`: *Coach needs your workout log. Please sign in.*
-  - **Sign in** (primary) at the bottom. The seat shows *•*. No History, no composer.
+  - **Sign in** (primary) at the bottom. The seat shows *•*; there is no anonymous Send composer. With no retained chats the board has no History. A bound installation with local chats needs the retained-History variant specified below.
 - Not on this Windmill (08.7): the bar with History and the seat; centred, the kit `error` symbol and *This Windmill does not have Coach. You can still read your log.* No Notes door, no Connected log door, no composer. Delete `AskAbsentStance`'s doors and `Ask.notHere`'s old words.
 - Day's cap (08.8):
   - The refused question stays in the composer, with Send.
-  - A centred `ChatNotice` above the composer: *You can ask again in about 2 hours.* (the client's words for `ask-daily-limit`; replace `Ask.capReached`).
+  - A centred `ChatNotice` above the composer uses the server's actual next-question time: prefer valid `retryAtMs`; otherwise turn valid `Retry-After` into a deadline when the response arrives. Render a localized relative or absolute time in the existing notice. The board's *about 2 hours* is example content, never a constant.
+  - Persist the deadline with the refusal so reopening the chat does not restart the wait. Recompute the displayed time on resume; expiration permits another user Send but never sends automatically. With missing/invalid timing, use a nonnumeric sentence such as *Coach cannot take another question yet. Try again later.*
   - One `TextButton` under it: *Use your own AI agent* (opens Connected log).
   - Board copy: *Bench has stalled for three weeks. Is Push A still doing anything?* · *Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.* · composer *What should Thursday look like?*
   - The ceiling uses the same notice with its own sentence.
   - Delete `CapDoors`, `ConnectDoor` and the cap's *Ask something new*.
+- Bound installation, signed out: `GET /v1/ai/installations/current` reports `bound=true`, or onboarding POST returns `device_bound` (38). Keep the installation and local chat archive; show Sign in and allow the approved local History route, but do not offer anonymous Send or issue a replacement credential. Continue recovering an already submitted anonymous request through GET. `android-coach-bound-installation-design` must draw and obtain approval for this combination beside 08.6/08.4 before its visual implementation.
 - A change needs an account (08.31), signed out:
   - Lifter: *Make Push A harder*. Coach: *I need your account to change a routine. Sign in, then ask again.*
   - One primary **Sign in** under the bubble opens the sign-in door.
@@ -40,10 +42,12 @@
 
 **Done when**
 - Screenshots of 08.6, 08.7, 08.8 and 08.31 match in Dark and Daylight on the emulator; the rig (01) adds `08.6-coach-no-seat-dark` / `-light`, `08.7-coach-absent-dark` / `-light`, `08.8-coach-day-cap-dark` / `-light`, `08.31-coach-change-needs-account-dark` / `-light`.
-- `gym_ask_outcome` outcomes `capped` (with `cap`), `refused` and `absent` are unchanged.
+- Verify a refusal seconds before refill, a fully exhausted bucket, fallback `Retry-After`, invalid/missing timing, persisted refusal after restart and timezone/locale changes. No automatic send occurs on deadline expiry.
+- Verify anonymous → bind → sign out → Coach, retained History, and recovery of a pre-bind pending request without anonymous POST.
+- `gym_ask_outcome` outcomes `capped` (with `cap`), `refused` and `absent` remain content-free; any new bound-installation label is bounded and listed in `docs/ANDROID_OBSERVABILITY.md`. Do not log deadlines, account or installation identities.
 - The Sign in buttons open the sign-in door as today (`auth_code_requested` and `auth_sign_in_started` still fire there); *Use your own AI agent* opens Connected log (`gym_screen_viewed` `connections`), and a browser failure still reports under `gym.openConnections`.
 - Tests to update: `coach/AskScreenTests.kt`, `coach/AskOutcomeTests.kt`, `ui/StanceReadsTheAccountTests.kt`.
 
-**Depends on:** 28, 38.
+**Depends on:** 28, 38; the bound-installation visual state requires `android-coach-bound-installation-design`.
 
 **Ledger:** 11k, 10v, 12h; dogfood `android-gym-target-page`.

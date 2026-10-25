@@ -1,5 +1,7 @@
 # On this phone: the head of The log, the list, Inspect, Fix workout, Discard, and the sign-in decision
 
+**Approved flow:** [Log backdrop](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. The separate On this phone recovery flow remains as linked below; compose it with the approved chronological Log, without a Bodyweight header.
+
 **Figma:**
 - 07.7 The log, On this phone at the head: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42660) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1285-16909)
 - 07.1 On this phone: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42787) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1285-16962)
@@ -30,7 +32,7 @@
 - 07.7, the head of The log, signed in, while workouts wait:
   - One waiting workout is its own row, a door to Inspect. Two or more are one row **On this phone** / *3 workouts* · *2 need you* with a chevron, a door to the list (as iOS `OnThisPhoneSection.summary`).
   - The log tab carries the kit Badge (Large) with how many need you, visible from every tab.
-  - The section leaves when nothing waits. Delete *Saved workouts need review (N)*.
+  - The section leaves when nothing waits. Delete *Saved workouts need review (N)*. Keep 22’s chronological weight/workout/record list beneath this recovery entry; do not restore a Bodyweight top-level card from an older backdrop.
 - 07.1, a pushed list **On this phone**: section *Needs you*, rows *Push A · 24 Sep · 5 sets* over the reason (*Overlaps another workout — fix its times.*, *Your account has an open workout — keep this one as finished.*), each a door to Inspect; section *Adding*, rows *Legs · 22 Sep · 4 sets* / *Adding…* with the kit circular progress indicator. The list closes when nothing waits.
 - 07.2, Inspect, a pushed screen (not a dialog): bar *Push A* with ⋮; the date *Thu 24 Sep*; tiles *1h 30m* **Duration** · *5* **Working sets** · *2000 kg* **Volume**; the reason; *Started 12:30*, *Finished 14:00*; the sets by movement (*Bench Press* · *1 80 × 5* …, no set kind).
   - The bottom button is the one way out the reason names: **Fix workout**, **Retry** or **Keep as finished**.
@@ -49,7 +51,7 @@
 - Keep the decision across recreation: a mode switch, a rotation or a font change must bring back the same dialog (and the confirmation step, if it was showing), not the code sheet. Hoist the confirmation step into saved state and make sure the shell does not reopen the code sheet while a decision is pending. Check every gym `ModalBottomSheet` after a mode switch for the same class of defect (19 fixes Create movement).
 
 **Out of scope:**
-- Removing `SetKind` from the domain (06); Fix set itself (10).
+- Removing remaining app-layer `SetKind` controls and filters (06); the shared sync model already ignores legacy kinds. Preserve legacy recovery input and all sets. Fix set itself is 10.
 - The rest of The log (22) and the rest of Gym settings (46).
 
 **Done when**

@@ -1,4 +1,6 @@
-# The log: its head, rows and moments as iOS draws them, Weigh in FAB, discard by swipe
+# The log: every weigh-in in chronology, distinct rows and Weigh in FAB
+
+**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25.
 
 **Figma:**
 - 05.1 The log, Weigh in FAB: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39988)
@@ -9,7 +11,7 @@
   - `Android / Swipe row` `337:2217`
   - `Android / Menu` `342:2725`
   - `Android / Top app bar` `342:2953`
-- The iOS log is the reference: `apps/ios/App/Sources/Gym/Log/LogPresentation.swift` (the head's line, a session's facts, a new best's line, the month line, and the record dot at :136).
+- The approved Android flow governs the current chronology and visual separation; do not copy a Bodyweight header from an older layout.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - The root is titled *Log* (03 renames it). No head: the list starts with the first month.
@@ -26,27 +28,16 @@
 - Defect: one moment is chosen per week (`domain/LogTimeline.kt:71-74`) and a weigh-in has the lowest priority (`domain/LogTimeline.kt:35`), so later weigh-ins can be missing from the timeline. Read from code, not yet confirmed on the emulator.
 
 **Change**
-- Head (05.1), under the bar *The log*:
-  - a door card **Bodyweight** / *82.4 kg · 3 days ago* with a chevron, opening Bodyweight (06.2, task 24); with no weigh-in it is not drawn;
-  - under it the line *Trained 3 of the last 4 weeks*.
-  - When workouts wait on this phone, *On this phone* sits above the head (07.7, task 25).
-- Months as headers (*October*, *September*). A workout row: the routine (or `Readout.noRoutine`, 13), its facts *5 working sets · 8 min* (*20 working sets · 1 h 10 min*), the day trailing (*Today*, *Tue 20*, *30 Sep*). *On this device* goes (25 moves those workouts to On this phone).
-- A record is said once:
-  - as its *new best* moment, a door: **Bench Press · new best** / *101.3 kg est · up 6.3 kg since 9 Oct*, opening the Record with that workout's point ringed (05.7, task 21);
-  - or, when the week's one-moment cap left it unstated, as a record dot after the workout's name (*Legs* •, `prInk`, TalkBack *new best*).
-  - What counts as a new best follows the shared vectors (`packages/api-contract/gym/domain/training-reads.json`, `ProgressRecords`; ledger 9p), not every exact step.
-- Moments are doors: outlined rows with a chevron, no sparkline, no expanding.
-  - A weigh-in moment **Weighed in · 82.4 kg** / *0.6 kg down since September* opens Bodyweight.
-  - The month moment *Trained every week of September* has no chevron and opens nothing.
-  - Delete the in-place chart, *Open record ›*, and the expanded state.
-- Replace `WeighInChip` with an M3 `ExtendedFloatingActionButton`: icon `monitor_weight`, label *Weigh in*, bottom end, 16 dp above the navigation bar. The list's bottom padding grows so the FAB never covers the foot. Delete `WeighInChip`.
-- The *Saved workouts need review (N)* door is replaced by On this phone at the head and a badge on The log tab (25).
-- Swipe a workout row end-to-start on `DeleteSwipeRow` (04), a11y label *Discard workout*.
-  - Past the threshold, the dialog from 14: *Discard this workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / **Cancel** · **Discard** (error role).
-  - Discard removes the workout at once, with no hold and no Undo. Cancel puts the row back.
-- The long-press menu keeps both items: *Share this workout* / *Discard workout*. Discard opens the same dialog.
-- Words: *No workouts yet* (body *Your training will land here.* unchanged), *First workout · {date}*, click label *Open workout*. `Readout.sessionCount` says *workouts* (21).
-- The weigh-in defect: the head now shows the latest weigh-in. The timeline's one-moment-per-week rule stays as the boards draw it; change `logTimeline` only after a designer ruling.
+- Build one newest-first timeline with every finished workout and every weigh-in as independent entries. Remove the top-level **Bodyweight** card/header. Keep existing training-consistency copy and the separate On this phone recovery entry (25) without turning weight into another root-level section.
+- Weigh-ins are not weekly decorative moments: exclude them from the one-moment-per-week selector. No record/month-summary selection may suppress a weight. Preserve the existing one-per-local-day weight key; correcting a day updates that entry rather than inventing multiple same-day records.
+- Preserve time provenance in the read model. Use a recorded timestamp for ordering/display only when it is valid and belongs to the selected local date. For example, today’s 12:45 weigh-in belongs between workouts at 19:10 and 07:15. Missing `recordedAt` must remain unknown; fix the engine adapter’s `0` fallback rather than rendering the epoch or fabricated midnight. Legacy/backdated date-only weights stay under their selected day, without a clock label; use a documented stable date-only tie order, not an invented instant. Test local-day/time-zone boundaries and deterministic ties.
+- Use the approved visual separation: filled workout cards, separated lighter weight rows with the weight icon, and slim gold record markers. Group by the drawn dated sections without a duplicate date below the heading. Distinguish actions through shape/icon/layout as well as color.
+- Workout cards open workout detail; show the routine (or `Readout.noRoutine`), all-set facts and valid time as drawn. *On this device* leaves these rows (25). End-to-start swipe and the long-press **Discard workout** action open 14’s single confirmation; Cancel restores the row and confirmed discard is immediate. Long-press Share retains its current link action.
+- Weight rows open the existing Bodyweight chart (24), retaining correction access. End-to-start delete uses 05/24’s nine-second held Undo; it is not the workout confirmation contract.
+- Gold *new best* markers open Record with the appropriate workout point (21) and never swipe or delete. Resolve new bests from shared `ProgressRecords` vectors. A record is stated once: selected marker, or the workout’s gold dot/accessibility state when decorative selection omits the marker. The decorative weekly cap may remain for record/month moments only, never weigh-ins.
+- Delete expanding inline moment charts; the chart/detail destinations remain available through their rows. The noninteractive month summary has no chevron. Reuse 08’s supported-equipment rules in any load text.
+- Replace `WeighInChip` with the approved 56 dp M3 `ExtendedFloatingActionButton`, icon `monitor_weight`, label **Weigh in**, bottom end with list clearance. No additional backing panel/pad beneath it; use the stable native navigation bar.
+- Use *workout* wording: *No workouts yet*, *First workout · {date}*, *Open workout*. With weights but no workouts, show the weights rather than an empty-log screen. A truly empty log retains Weigh in and the existing empty message.
 
 **Out of scope:**
 - The discard dialog itself (14); the shared swipe row (04).
@@ -55,13 +46,12 @@
 - The Record (21); workout detail (23).
 
 **Done when**
-- Screenshots of 05.1, 05.2 (mid-swipe and the dialog) and 05.12 match in Dark and Daylight; the rig (01) adds `05.1-log-dark/light`, `05.2-log-discard-swipe-dark/light`, `05.12-log-empty-dark/light`.
-- Tapping each door lands where the board says: the Bodyweight card and a weigh-in moment fire `gym_screen_viewed` `bodyweight`; a new best fires `movement`; the month moment fires nothing.
-- Discard and share emit nothing today. Add `gym_action` with `screen=log`:
-  - `action=discard`, `state=shown` when the dialog opens, then `outcome=ok` / `cancelled` / `refused` / `failed`
-  - `action=share`, `outcome=ok` / `refused` / `failed`.
-- Failures still report as `gym.discard` and `gym.share`; a refused discard puts the row back and the note line says why.
-- Tests: `ui/LogRowMenuTests.kt`, `ui/LogRowLayoutTests.kt`, `ui/LogStateTests.kt`, `ui/LogMomentTests.kt` (doors, no expansion), `LogTransientTests.kt` (no Undo snackbar), `domain/LogReadoutTests.kt` (facts line, record dot only when the cap hid the moment, *Trained every week of September*, *Trained 3 of the last 4 weeks*), and a test that the log's new bests are the domain module's `ProgressRecords` (`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/TrainingReads.kt:176`, which passes the shared vectors in `CorpusTests.kt`) rather than `LogTimeline`'s own `newBests` (`domain/LogTimeline.kt:52`).
+- Capture canonical Log, weight swipe/Undo, workout swipe/confirmation, record marker and empty states in Dark and Daylight. Check long names, large text, small phones and the last row above the FAB; no Bodyweight header or FAB backing pad remains.
+- Unit/read-model tests include workout 07:15 → weigh-in 12:45 → workout 19:10, several weigh-ins in one week, weights plus record/month moments, legacy absent timestamps, a backdated date whose recorded timestamp belongs to another day, future/invalid timestamps, time-zone boundaries and stable ties. Every eligible weight appears once; no invented time is displayed.
+- Row tests prove workout → detail, weight → Bodyweight, record → Record and no swipe/delete semantics on a record. Verify workout discard cancellation/refusal, weight Undo/expiry/rewrite races, recreation and the weight-only empty-workout case.
+- Keep `gym_screen_viewed` for destinations. Add bounded `gym_action` open/share/discard outcomes; weight held-delete/Undo events follow 24. A hidden held row is not a successful delete. Record no date, weight, routine/movement name, ID or user text. Document labels in `docs/ANDROID_OBSERVABILITY.md`.
+- Unexpected read/share/discard/delete failures retain the appropriate static boundary operations (`gym.loadLog`, `gym.share`, `gym.discard`, `gym.deleteWeighIn`); refusals restore/explain the relevant row without a Sentry Issue.
+- Update `LogRowMenu`, `LogRowLayout`, `LogState`, `LogMoment`, `LogTransient`, `LogReadout` and timeline tests. Preserve shared `ProgressRecords` parity; the UI must not invent its own best-record rule.
 
 **Depends on:** 03, 04, 05, 14, 21.
 

@@ -7,43 +7,41 @@
 - Android has no installation credential. Nothing in `apps/android` calls `/v1/ai/installations` or `/v1/gym/coach/onboarding`, or sends `X-Windmill-Installation`.
 - One question is at most 1,000 bytes: `Ask.maxTurnBytes = 1000` (`coach/Ask.kt:175`). The signed-in contract accepts 8,000.
 - Photos are re-encoded down to 5 MB and a 4,096 px edge (`coach/CoachPhotos.kt:15-16`). That fits the signed-in upload, but not the onboarding route's 1 MiB inline limit.
-- Backend, already live behind two switches:
+- Backend routes are implemented behind two switches:
   - `POST /v1/ai/installations` issues the credential. `GET /v1/ai/installations/current` reads it, and `POST /v1/ai/installations/bind` binds it to an account (`backend/platform/infra/main.cpp:832-836`).
   - `POST /v1/gym/coach/onboarding` and `GET /v1/gym/coach/onboarding/{requestId}` (`backend/products/gym/routes.cpp:33-44`).
   - Mode `conversation` (`backend/products/gym/onboarding/Onboarding.cpp:44-71`) takes `text` (at most 4,000 bytes), up to 12 `context` turns (16,000 bytes in all) and an optional inline `image`.
-  - The reply carries `status`, `message`, `routines`, `errorCode` and `allowance` (`backend/products/gym/onboarding/OnboardingApi.cpp:24-31`).
+  - The reply carries `requestId`, `resultId`, `status`, `message`, `routines`, `errorCode` and `allowance` (`backend/products/gym/onboarding/OnboardingApi.cpp:24-31`).
   - Both routes run only with `AI_ALLOWANCES_ENABLED=true` and `AI_INSTALLATIONS_ENABLED=true`. Both default to `false` (`backend/AI_ALLOWANCES.md`). With the switch off, new work answers 503 `anonymous_ai_unavailable`.
 
 **Change**
-- Installation credential, in `platform/` because it is product-neutral (for example `platform/ai/Installation.kt`):
-  - Issue it once with `POST /v1/ai/installations` and `{}`. Seal the opaque `credential` with `platform/auth/SecretVault.kt` (class at :15), in its own slot apart from the account session.
-  - Send it as `X-Windmill-Installation` on the onboarding calls only.
-  - Never re-issue over a credential that exists. A 401 `invalid_installation` is shown and reported; it is not silently replaced.
-  - Signing out keeps the credential. The $0.05 lifetime allowance belongs to the installation.
-- Onboarding client and store, in one feature package (for example `coach/onboarding/`):
-  - Mint a lowercase UUID `requestId`. Persist it with the exact input before sending.
-  - After a timeout or a relaunch, resend the same ID and the same body, or `GET` it. Poll once a second while `status` is `pending`.
-  - Never mint a new ID on its own after a failure. A new ID only follows a new Send from the lifter.
-  - Every turn uses mode `conversation`, with the earlier turns of this phone's thread as `context` (at most 12 turns).
-  - Coach's `message` becomes Coach's bubble.
-  - Completed `routines` become routine drafts, decided on their card (41).
-  - Apply imports every routine at once into the signed-out local engine through `TrainingStore.saveRoutine` (`store/TrainingStore.kt:894`), with the `resultId` as a replay receipt so a replay never imports twice.
-  - The thread, the pending request and the photo stay on this phone only. The server stores no prompt and no photo.
-- Byte limits (6s). Do not truncate. Keep the whole draft and say which limit was hit.
+- Installation credential lives in `platform/ai/` because it is product-neutral. Issue once with `POST /v1/ai/installations` and `{}`, seal the opaque credential through `SecretVault`, and keep it separate from account sessions.
+  - Read and persist the `bound` state returned by issuance/current/bind. Refresh through `GET /v1/ai/installations/current` before presenting anonymous Send when binding is unknown.
+  - Send `X-Windmill-Installation` on installation/onboarding operations that require it. Never re-issue over an existing credential. A 401 `invalid_installation` is a refusal, not permission to reset the installation or its lifetime allowance.
+  - Sign-out retains the credential and binding state. The $0.05 lifetime allowance belongs to that installation.
+- Onboarding client and store form one feature package, for example `coach/onboarding/`.
+  - Mint a lowercase UUID `requestId`; persist the exact input, request id and originating local chat/owner before sending. Use 37's stable local-chat contract.
+  - After timeout/restart recover the same request via GET. A retry POST may resend the same id/body only while the installation is still unbound; after binding, GET remains the recovery route. A new request id requires an explicit new Send.
+  - Poll once a second while pending. Bind each result, draft and failure to its original chat; navigation/fresh entry must not cancel it or deliver into the newly selected chat.
+  - Use mode `conversation`, with up to 12 earlier turns from that chat as context. `message` supplies Coach's bubble; completed `routines` become the drafts in 41.
+  - Local turns, drafts, pending input and photos stay in the owner-scoped archive. The server stores no prompt/photo. Signed-out History is local-only; no account history endpoint is called.
+- This task owns the **atomic anonymous import** used by 41, not a loop over `TrainingStore.saveRoutine`.
+  - Add a Gym-domain batch action taking the complete validated draft set, catalogue facts and preassigned record identities. It returns one Plan for all routines and required custom movements; reuse existing routine validation/plan composition rather than calling `SaveRoutinePlan` separately per routine.
+  - The adapter commits that Plan and a local replay receipt for the installation result in one engine storage transaction. The receipt is scoped to the anonymous owner/replica and `resultId`, and holds a payload fingerprint plus the resulting record identities. Persist neither the receipt before its records nor the records before the receipt.
+  - Use the engine's existing device-value/commit boundary for local metadata; extend the product-neutral commit contract only if needed to prove the shared transaction. Keep Gym mapping in Gym. `WorkoutImports` is an existing example of committing product records and recovery metadata through that boundary.
+  - A replay with the same result and payload returns the same identities without writes. A different payload for an already imported result refuses; it must not import another copy. Any invalid draft or transaction failure leaves every routine, movement and receipt uncommitted.
+  - Keep the receipt through process death and anonymous Add/adoption, remapping record identities through the engine's adoption hooks; Discard removes it with that anonymous data. A sign-in racing import cannot write into a different owner. The chat's displayed saved state is reconstructible from the durable receipt after a UI-cache failure.
+- Byte limits (6s): do not truncate; retain the whole draft and identify the exceeded limit.
   - Signed-in questions: raise `Ask.maxTurnBytes` to 8,000.
-  - Signed-out text: 4,000.
-  - Signed-out photo: JPEG or PNG, at most 1 MiB decoded and a 4,096 px edge. Re-encode to fit.
-- Signed out, Coach can only draft routines. There are no notes, no proposals and no history (36 draws a signed-out change request).
-- Routing in `GymRoom.kt`:
-  - Signed out with the credential live: the Coach tab is the signed-out conversation (39–44).
-  - Signed out and issuance answers 503 `anonymous_ai_unavailable`: the tab falls back to the no-seat state (36).
-- Sign-in: bind before account Coach is enabled.
-  - From the `AuthLifecycle.signedIn` hook (`platform/auth/Auth.kt:234`), call `POST /v1/ai/installations/bind` with the account credential and the installation credential.
-  - A same-account retry is idempotent. A 409 `installation_bound` (another account) does not block sign-in or account Coach.
-  - Adopting the signed-out routines stays with the existing Add / Discard decision (`app/MainActivity.kt:248`).
-- Refusals keep the draft:
-  - `invalid_installation`, `installation_rate_limited`, `request_limit`, `insufficient_details`, `output_truncated` and `anonymous_ai_unavailable`. No board draws these lines yet (6t). File the copy with the designers.
-  - The lifetime allowance exhausted is drawn by 43.
+  - Signed-out text: 4,000 bytes.
+  - Signed-out photo: JPEG/PNG, at most 1 MiB decoded and a 4,096 px edge; re-encode to fit.
+- Signed-out Coach drafts routines only; no note or proposal writes. Its retained local History is still available. The change-needs-account response is drawn by 36.
+- Routing:
+  - Unbound valid installation: anonymous Coach (39–44).
+  - `bound=true` or 409 `device_bound`: retain draft/archive and route to 36's sign-in stance; no anonymous POST and no replacement installation. GET for an already pending anonymous result remains available.
+  - 503 `anonymous_ai_unavailable`: fall back to 36's no-seat stance while retaining the archive and credential.
+- Bind after account sign-in through `AuthLifecycle.signedIn`. Retry the same account binding idempotently. 409 `installation_bound` for another account must not block account sign-in/Coach or reset the credential; treat the installation as bound. Existing Add/Discard owns adoption of signed-out data (25/44).
+- Refusals retain the originating draft: `invalid_installation`, `device_bound`, `installation_bound`, `installation_rate_limited`, `request_limit`, `insufficient_details`, `output_truncated` and `anonymous_ai_unavailable`. Expected 401/409/429/503 refusals are events, not Issues. The bound stance is owned by `android-coach-bound-installation-design`; other undrawn refusal copy stays a designer dependency (6t). Allowance exhaustion is 43.
 
 **Out of scope:** every visible state: the greeting (39), the photo (40), the drafts card (41), receipts (42), allowance used (43), after sign-in (44), the no-seat state (36).
 
@@ -51,7 +49,7 @@
 - On a local stack with both switches on:
   - a signed-out phone gets a credential, sends a conversation turn with and without a photo, and receives drafts;
   - it survives a kill mid-poll and resumes the same `requestId`;
-  - Apply imports once, even when replayed.
+  - Apply imports once even after a crash immediately after commit but before the chat saved-state update. Inject failure on the second routine/required movement and verify all-or-none records plus receipt; replay returns the same ids. Verify payload mismatch, concurrent Apply, sign-in/adoption and Discard.
 - With the switches off, the tab falls back to 36's state and nothing is reported as an Issue.
 - Observability:
   - `gym_ask_started` and `gym_ask_outcome` fire for signed-out sends too, with `state=anonymous`.
@@ -59,15 +57,15 @@
     - `duration_ms` stays as it is.
   - New Sentry ops:
     - `ai_installation`: unexpected issue, read or bind failures.
-    - `gym.coachOnboarding`: unexpected start, poll or import failures.
+    - `gym.coachOnboarding`: unexpected start/poll failures at the transport boundary and import failures at the import adapter, once per failure. Cards/stores consuming the reported outcome do not report it again.
   - Expected refusals (401, 409, 429, 503 codes above) are events, not Issues.
-  - No credential, request ID, text, photo or routine name in any event.
+  - Record import started/committed/refused/replayed/failed with bounded labels through the first-party intake; report unexpected import/persistence failures under a static operation. No credential, request/result/record ID, fingerprint, text, photo or routine name in any event.
   - List both ops and the `state=anonymous` label in `docs/ANDROID_OBSERVABILITY.md`.
 - Tests:
-  - New tests in `apps/android/gym/src/test/kotlin/works/windmill/gym/coach/`: persist before send, replay with the same ID, no new ID after a failure, one import per `resultId`, the byte limits keeping the draft.
-  - A credential test beside `apps/android/platform/src/test/kotlin/works/windmill/platform/auth/SecretVaultTest.kt`: sealed, kept on sign-out, bound on sign-in.
+  - New tests in `apps/android/gym/src/test/kotlin/works/windmill/gym/coach/`: persist before send, same-id recovery, no new id after failure, results returning to their originating chat, atomic import/replay and receipt crash cases, and byte limits keeping drafts. Add domain batch-action/shared-vector cases and engine-adapter transaction fault tests.
+  - A credential test beside `apps/android/platform/src/test/kotlin/works/windmill/platform/auth/SecretVaultTest.kt`: sealed, kept on sign-out, bound on sign-in, anonymous → bind → sign-out refusing new anonymous work, another-account binding, and pending GET recovery after binding.
   - Update `coach/AskTests.kt`: it pins `Ask.signedOut` and the 1,000-byte limit.
 
-**Depends on:** none.
+**Depends on:** 37 for the durable owner/chat archive. Task 37 has no dependency on this task; ordinary fresh Coach entry can ship without anonymous transport/import.
 
 **Ledger:** 6p, 11h, 6s; dogfood `android-gym-target-page`.

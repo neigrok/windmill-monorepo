@@ -1,5 +1,7 @@
 # Record: Edit movement in the overflow, Earlier records, no set kinds, workouts
 
+**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. Record drilldown is preserved; additional equipment visuals remain gated by 08.
+
 **Figma:**
 - 05.6 Record, Edit movement in the overflow: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30001) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31197)
 - 05.7 Record, a point inspected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30215) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31281)
@@ -21,7 +23,7 @@
 
 **Change**
 - Bar: replace the text *Rename* with an M3 `IconButton` ⋮ (`Icons.Rounded.MoreVert`, *More*), whose `DropdownMenu` (04) holds one item, *Edit movement* with `Icons.Outlined.Edit`. It opens the sheet from 20.
-- Subhead: the equipment icon (08) before the display word (*Barbell*, *Dumbbells*, *Bodyweight*, *Machine*).
+- Subhead: use 08’s equipment-aware presentation. The approved icon examples cover Barbell, Dumbbells, Bodyweight and Machine; preserve Cable/Kettlebell labels and existing presentation until their new visual variants are approved. Never hide or rename a supported equipment value.
 - *Personal records* becomes **Earlier records**: newest first, without the standing best, which is the *Best e1RM* tile. Rows as 05.6 draws them: *75 × 8 · e1RM 95* / *9 Oct*, *70 × 8 · e1RM 88.7* / *11 Aug*. The section shows only when an earlier record exists. What counts as a record follows the shared vectors (`ProgressRecords`, ledger 9p).
 - *Recent sets* print *{w} × {r}* only (the suffix goes with 06).
 - Every *session* on this screen says *workout*: *Last 12 weeks · 6 workouts*, *No workout · a – b*, *Earlier workout*, *Later workout*, *Workout estimates*. Change `Readout.sessionCount` itself, so the Log's moment (22) reads the same.
@@ -32,7 +34,7 @@
 
 **Out of scope:**
 - The Edit movement sheet (20).
-- Removing set kinds from the domain (06).
+- Removing remaining app-layer set-kind controls/filters (06); the shared sync migration is already shipped.
 - The Log's own copy (22).
 
 **Done when**

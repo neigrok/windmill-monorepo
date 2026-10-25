@@ -1,6 +1,6 @@
 # Remove the Heavier than the plan sheet
 
-**Figma:** none. Board 03.6 is deleted on both phones: lifting more than the plan never offers to change the routine. The workout logs what was lifted; a routine's targets change only through Coach's proposals (08.21, task 33).
+**Figma:** none. Board 03.6 is deleted on both phones: lifting more than the plan never offers to change the routine. The workout logs what was lifted; routine targets change through explicit routine-editor Save (18) or accepted Coach proposals (08.21, task 33).
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `DeviationOffer.leaving` (`domain/Deviation.kt:32-53`) raises an offer when the lifter walks off a movement lifted heavier than planned.

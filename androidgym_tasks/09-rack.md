@@ -1,4 +1,6 @@
-# The rack: equipment icon, load and reps steppers, the ladder
+# The rack: compact headerless ledger, visual movement position and preserved draft
+
+**Approved flow:** [Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) — ✅ Ready for dev, human-approved 2026-10-25.
 
 **Figma:**
 - 03.1 Rack, Dumbbells, kg each: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34026)
@@ -19,8 +21,9 @@
 - Ledger header *Set / kg / Reps* (:692-694). Warm-ups are indexed *W* (06 removes them).
 
 **Change**
-- Movement head: the equipment icon (08) left of the name. The name sizes 28 → 22 for long names. Step keys stay.
-- Pager: *Movement 3 of 5*, shown and spoken the same (`LiveSession.Place`). Every board with the pager draws it (03.1–03.4, 03.10–03.13).
+- Movement head: equipment icon (08), wrapping movement name at no less than 22 sp, and a minimum 48 dp name target opening **This workout** (11). Remove visible previous/next arrows and *Movement X of Y*.
+- Use the approved decorative position markers: current movement is an elongated accent capsule; at most seven markers, with small end markers for continuation; no markers for one movement. The markers are not tiny interactive targets. Horizontal movement switching preserves each movement draft; TalkBack announces exact position/count and exposes Previous/Next actions. Test one, two, seven and many movements and long names.
+- Remove the standalone **Add movement** button/row from the main rack. Name → **This workout** → **Add movement** remains the entry (11/19). Remove its reserved gap; retain target and elapsed/since-last-set clock context. Remove the duplicate sets/kg-total/bullet summary strip.
 - Load: `NumberStepper` (04, Display size) with the label *Load*, the numeral, and the unit by equipment (08):
   - 03.1 Dumbbells: **16** *kg each*.
   - 03.13 Barbell: **60** *kg total*.
@@ -29,7 +32,8 @@
 - The plate ladder stays under the load with the same bands. It edits the same draft.
 - Reps: the same stepper, Regular size, labelled *Reps* with the unit *reps*.
 - **Log set** stays the 64 dp primary and stays silent.
-- Ledger: *Set / kg / Reps*, the ✓ for landed sets, the accent row for the current set. No *W*.
+- Ledger: no *Set / kg / Reps* header. Show up to three 48 dp rows (144 dp maximum viewport), with the current/recent rows visible and older rows scrollable. Each row is self-explanatory: set number, equipment-aware inline load unit and × reps; ✓ distinguishes logged rows and accent identifies the current row. A newly added movement shows its single current row without reserving three empty rows. No *W*.
+- Apply this headerless layout to all rack-bearing states: units, focus/pressed/changed, Fix set/This workout backdrops, picker/custom-create returns and onboarding (52). Compact heights collapse flexible space, while controls and **Log set** remain reachable above the IME.
 - Delete the *Weight* label and `WeightReadout`.
 
 **Out of scope:** the stepper itself, keyboard, pressed and changed states (07); Fix set (10); This workout (11).
@@ -37,7 +41,8 @@
 **Done when**
 - Screenshots of 03.1, 03.12 and 03.13 match in Dark and Daylight; the rig (01) adds `03.1-rack-dumbbells-dark/light`, `03.12-rack-bodyweight-dark/light`, `03.13-rack-barbell-dark/light` (the fixture gains a bodyweight movement with added load).
 - `gym_set_logged` fires once per **Log set**. A rack refusal still reports under `gym.editRack` / `gym.acceptSet` only when unexpected.
-- `ui/LoggerScreenTests.kt`, `ui/LargestTypeTests.kt`, `domain/LadderTests.kt` and `domain/LiveSessionTests.kt` (*Movement 3 of 5*) pass with the new layout, including a 200 % font test that the load stepper and Log set stay on screen.
+- Tests verify no visible header, text pager, arrows, duplicate summary strip or main Add button; spoken position remains exact after reorder/add/remove. Check at most three ledger rows, 48 dp interaction bounds, inline units and preserved per-movement drafts. On small phones, IME and 200 % font, scroll/focus keeps the edited field and **Log set** reachable. Capture long-name/many-movement, single-movement and keyboard variants in both appearances.
+- Add content-free navigation steps to `gym_action` (`screen=workout`, bounded actions for movement switch and opening This workout); log no movement name, position, load, reps or IDs. Keep native paging cancellations separate from completed switches. Record the chosen labels in `docs/ANDROID_OBSERVABILITY.md`.
 
 **Depends on:** 06, 07, 08.
 

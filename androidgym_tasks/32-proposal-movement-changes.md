@@ -18,7 +18,9 @@
 - *Removed* block: name and values struck and dim (08.18: *Upright Row · Sets 3 · Reps 12 · Load 30 kg*). Removed blocks list last. The logged-sets line goes.
 - Swap (08.19): a *Removed* block (*Chin-up*, *Sets 3*, *Reps Max*), then an *Added* block (*Lat Pulldown*, *Sets 3*, *Reps 10*, *Load 45 kg*). Header *2 changes*. Copy: *Use Lat Pulldown instead of Chin-up until you can do 5 chin-ups.*
 - *Moved* block (08.20): the name, then *Order ~~3rd~~ → 1st*. Copy: *Do Overhead Press first, when you are fresh.*
-  - Derive the move in the domain by comparing each change's `position` with the routine's current order.
+  - For a pending proposal use the existing domain `ProposalDiff` retained-order matching. Insertions/removals that shift an index do not by themselves mean a movement moved; repeated exercise occurrences must retain their identity/order matching.
+  - This task owns the durable history contract: retain the proposal's immutable base order and proposed order with its stored data/decision receipt, including the backend/wire and shared-schema work needed to read it on another device. Capture the base at proposal creation against its expected routine revision, before any Apply. Backfill an existing pending proposal only when that expected revision still matches; otherwise retain its out-of-date refusal. Never replace the base with the changed routine. Keep the display derived from domain data rather than persisting localized strings.
+  - Expose that immutable base to the shared formatter for settled proposals. Older applied records without base-order evidence omit unprovable order lines; they must not infer history from the current routine. Retain all change kinds whose before/after fields are present.
 - Every card ends its blocks with *No change: N movements* when some movements are kept.
 - Delete `addedLine`, `removedLine` and `compactLine` (`domain/Proposal.kt:106-131`) once the card no longer reads them.
 
@@ -26,9 +28,10 @@
 
 **Done when**
 - Screenshots of 08.17–08.20 match in Dark and Daylight on the emulator; the rig (01) adds `08.17-proposal-add-movement-dark` / `-light`, `08.18-proposal-remove-movement-dark` / `-light`, `08.19-proposal-swap-dark` / `-light`, `08.20-proposal-move-dark` / `-light`.
-- A domain test covers a swap as removed + added, and a move as *Order 3rd → 1st*.
+- Extend the existing ChangeBlocks vectors for swaps, retained-order changes, duplicate movements and additions/removals that merely shift indexes. Add Apply → restart → History and another-device history cases, plus a legacy settled record without base order.
 - `gym_proposal_outcome` still fires once per decision.
-- Tests to update: `domain/ProposalTests.kt`.
+- Reuse `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/ProposalDiff.kt` and `packages/api-contract/gym/domain/proposals-actions.json`; update the shared readers and Android corpus runner for any new fields. Check wire compatibility before removing any legacy UI adapter.
+- Persistence/decode failures report under static proposal-history operations; events contain only bounded outcome labels, never routine/movement names, target values, IDs or snapshots.
 
 **Depends on:** 29.
 
