@@ -1,5 +1,7 @@
 # Hide workout: the logger can be left, the workout bar brings it back, and the notification's swipe only turns it off
 
+**Approved flow:** [Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) — ✅ Ready for dev, human-approved 2026-10-25. The management-sheet Add movement entry remains; the main rack has no standalone Add button.
+
 **Figma:**
 - 03.5 Hide workout, the workout waits above the tabs: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41318) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41409)
 - 03.4 This workout draws the *Hide workout* item and the *Notification off* · *Show* row (board linked from 11); 00.1 draws the workout bar's anatomy (board linked from 03).
@@ -21,7 +23,7 @@
 - The workout bar (03.5), new `ui/WorkoutBar.kt` from `Android / Workout bar`:
   - Shown on every tab root while a workout runs and the logger is hidden, in the Scaffold's bottom bar right above the navigation bar.
   - One `Surface(onClick)` row, 48 dp min, surface container, 1 dp `border/subtle` top edge: the accent `fitness_center` glyph, *Push A* (bold, ellipsis) and *· 12:34*, the time since start in tabular figures, ticking each second; `keyboard_arrow_up` trailing.
-  - A tap opens the logger. Content description *{routine}, in progress*.
+  - A tap opens the same preserved logger/rack draft with 09’s compact headerless ledger and visual movement position. Content description *{routine}, in progress*.
   - Not shown on pushed screens, in the editor, or while the logger is up.
 - The notification's swipe (03.4, 04 header):
   - Swiping the notification away only turns it off. Rename the state *notification off*; it never hides the workout.

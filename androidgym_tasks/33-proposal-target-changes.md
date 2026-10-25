@@ -25,14 +25,14 @@
 - Open to numbers (08.24): *Target ~~None~~ → 3 × 10*. Rest: *Rest ~~90 s~~ → 2 min*.
   - Add `restSeconds` to `ProposalTargets` so the card can read it.
 - Loads carry the load basis (*kg each*, *kg total*, *kg added*; 08).
-- Write the rule as one pure function in `domain/Proposal.kt` (before and after targets in, labelled field lines out). Delete `moves`, `FieldMove` and the sheet's `SchemeMove`.
-- Pin it with shared vectors in `packages/api-contract/gym/domain/` (uniform, varied, ramp, open, rest, max, last time) so iOS and web render the same lines.
+- Reuse the existing pure `ProposalDiff.fields` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/ProposalDiff.kt`. The shared formatter and ChangeBlocks vectors already cover uniform, varied, ramp, open, rest, Max and Last time; this task wires the UI adapter and adds missing equipment-basis cases. Do not create a second formatter in the legacy app-layer `domain/Proposal.kt`. Delete `moves`, `FieldMove` and the sheet's `SchemeMove` only after every consumer uses the domain result.
+- Preserve/extend `packages/api-contract/gym/domain/proposals-actions.json` and its cross-surface runners. The legacy `ProposalTargets` adapter must carry the `restSeconds` already held by the sync domain.
 
 **Out of scope:** the card shell (29), movement changes (32).
 
 **Done when**
 - Screenshots of 08.21–08.24 match in Dark and Daylight on the emulator; the rig (01) adds `08.21-proposal-sets-reps-load-dark` / `-light`, `08.22-proposal-vary-by-set-dark` / `-light`, `08.23-proposal-ramp-up-dark` / `-light`, `08.24-proposal-rest-target-dark` / `-light`.
-- The vectors pass in `domain/ProposalTests.kt`.
+- The existing ChangeBlocks vectors pass through the Android domain `CorpusTests` runner, and UI adapter tests assert complete field lines including rest and equipment basis.
 - `gym_proposal_outcome` still fires once per decision; no target value in any event.
 
 **Depends on:** 29, 08.

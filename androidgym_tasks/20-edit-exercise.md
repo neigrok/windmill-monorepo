@@ -1,5 +1,7 @@
 # Edit movement replaces Rename movement
 
+**Approved flow:** [Routine editor metadata contract](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25. This task’s standalone Record editor is distinct from routine staging. Its existing drawings below cover four equipment examples; new Cable/Kettlebell visuals still need designer approval (08).
+
 **Figma:**
 - 05.9 Edit movement, name and Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31338)
 - 05.10 Edit movement, the Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6469) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31377)
@@ -26,10 +28,10 @@
   - For Dumbbells: *Dumbbells lifted*, M3 segmented button *One* / *Two*.
   - Help for Dumbbells: *Enter the weight of one dumbbell. Volume counts both. Changing equipment updates past volume. Your logged weights do not change.*
   - Filled **Save** (56 dp); *Saving…* while busy. Enabled only when something changed.
-- 05.10, the Equipment menu open: an `Android / Menu` (`ExposedDropdownMenu`) with *Barbell*, *Dumbbells*, *Bodyweight*, *Machine*, each with its equipment icon (Machine draws `table_rows`, as in 08) and a check on the chosen one.
+- 05.10 draws four menu examples: *Barbell*, *Dumbbells*, *Bodyweight*, *Machine*, each with its approved icon and a check on the chosen one. They do not exhaust supported stored records. A Cable/Kettlebell record must retain its actual selected value and name-only editing must preserve equipment/load count; never default or coerce it. Preserve its existing presentation pending 08’s explicit designer follow-up for new icons/options/load-basis wording.
   - Help for Bodyweight: *Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight. Changing equipment updates past volume. Your logged weights do not change.*
 - Delete *Renames this movement everywhere.*, *Your logged sets and records keep the same movement.* and the *Old name … Searchable as an alias.* line.
-- Domain (use the `domain-feature` skill): replace `RenameExercise` with one `EditExercise(id, name, equipment, loadCount)` action that writes only what changed, keeps today's alias rule, and refuses a dumbbell count on other equipment. Add shared vectors for it before the screen.
+- Domain (use the `domain-feature` skill): the standalone `EditExercise` action is still missing; `SaveRoutinePlan` already exists only for the routine’s atomic save. Implement one `EditExercise(id, name, equipment, loadCount)` action that writes only changed fields, retains the alias/stale guards, supports all six stored equipment values and permits a count override only for dumbbells. Add shared vectors before wiring this standalone Save; do not replace the routine’s SaveRoutinePlan or use this action during routine staging.
 - Store: `TrainingStore.edit(exerciseId, name, equipment, loadCount)` replaces `rename`; invalidate progress and volume reads, as `rename` does today.
 - A refusal shows under the fields in the error role (02), keeping the server's sentence.
 
@@ -40,7 +42,7 @@
 **Done when**
 - Screenshots of 05.9 and 05.10 match in Dark and Daylight; the rig (01) adds `05.9-edit-movement-dark/light` and `05.10-edit-movement-equipment-menu-dark/light`.
 - Rename emits no event today. Add `gym_action` with `screen=record`, `action=edit`, `outcome=ok` / `refused` / `failed`; no name or equipment in properties. List it in `docs/ANDROID_OBSERVABILITY.md`.
-- The failure operation `gym.rename` becomes `gym.editExercise`.
+- The failure operation `gym.rename` becomes `gym.editExercise`. Name-only saves on seeded Cable and Kettlebell keep equipment, load basis, raw set values and volume unchanged; cancelling writes nothing. Equipment changes preserve logged weights and apply the existing domain volume rule only after Save. New visual options remain blocked on 08’s designer follow-up.
 - Tests: `store/EngineTrainingTests.kt`, `store/TrainingStoreTests.kt`, `ui/SheetDismissTests.kt` (rename cases become edit cases), and the domain tests next to `CataloguePreferencesTests.kt` in `apps/android/gym/domain/src/test/`.
 
 **Depends on:** 08.

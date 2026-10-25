@@ -33,9 +33,9 @@
 - The first two blocks show. An M3 `TextButton` *Show all 5 changes* expands in place; *Show less* folds it.
 - Buttons, stacked, full width, 56 dp: **Apply** (`Button`, primary) and **Reject** (`FilledTonalButton`). Nothing under them.
 - Delete `Ask.promise`, `Proposal.applyHint`, `atomicLine`, `applyLabel`'s *Apply all N* and the *Review* row.
-- Build the parts in `coach/ChangeCard.kt`: `ChangeCard`, `ChangeRow`, `DiffField`. Field lines come from a pure function in `domain/Proposal.kt` (before and after targets in, labelled lines out). Tasks 30–35, 41, 42 and 44 reuse them.
+- Build the parts in `coach/ChangeCard.kt`: `ChangeCard`, `ChangeRow`, `DiffField`. Field lines come from the existing pure `works.windmill.gym.domain.sync.ProposalDiff` in `apps/android/gym/domain`; adapt the legacy UI model to its inputs and preserve `restSeconds`. Extend that formatter and its shared vectors where necessary rather than creating a second formatter in the app-layer `domain/Proposal.kt`. Tasks 30–35, 41, 42 and 44 reuse them.
 - Fix the bug: a proposal id the replica does not hold yet is read again when the replica changes (key the read on the replica's revision, not on `missing`). Show nothing for it until it arrives; *This proposal is no longer available.* only for a proposal the log really dropped.
-- Delete `ui/ReviewSheet.kt` and its `ConfirmDialog` use once 17's Routines row opens the conversation at the card. A proposal from a connected agent has no conversation; open the same `ChangeCard` for it where 17 says.
+- Task 17 establishes the Routines row and its proposal-id/conversation-id navigation payload. This task owns activating that route: a conversation proposal opens its originating chat at the card; a connected-agent proposal without a conversation opens the same `ChangeCard` in the destination specified by 17. Remove `ui/ReviewSheet.kt` and its proposal-only `ConfirmDialog` use only after both routes and return navigation pass. Task 17 can land its list/chrome first; it does not depend on this task.
 
 **Out of scope:**
 - Decided states and Reject (30).
@@ -49,8 +49,8 @@
 - `gym_proposal_outcome` (`store/TrainingStore.kt:1000`) gains `screen: coach`; action `apply` stays. Expanding the card emits nothing. A decision emits one content-free event.
 - `gym_screen_viewed` `proposal` goes with the sheet; the card is part of `coach`.
 - Apply failures still report under `gym.applyProposal`.
-- Tests to update: `ui/ReviewSheetTests.kt` (delete with the sheet), `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `domain/ProposalTests.kt` (field lines), `store/TelemetryTests.kt`.
+- Tests to update: `ui/ReviewSheetTests.kt` (delete with the sheet), `coach/AskScreenTests.kt`, `coach/CoachAnswerTests.kt`, `domain/ProposalTests.kt` (UI adapter), `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/CorpusTests.kt` (existing ChangeBlocks vectors), `store/TelemetryTests.kt`.
 
-**Depends on:** 28, 08.
+**Depends on:** 17, 28, 08.
 
 **Ledger:** 11k, 10v; dogfood `android-gym-target-page`, `android-coach-fresh-proposal-unavailable`.

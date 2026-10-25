@@ -1,5 +1,7 @@
 # Routines list and empty Routines with the FAB
 
+**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25. The combined editor opens from this flow; the unshown MCP proposal row remains a separate design follow-up.
+
 **Figma:**
 - 02.1 Routines: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27415) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44402)
 - 02.7 No routines yet, FAB: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30574) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45142)
@@ -22,8 +24,8 @@
   - The list's bottom padding grows so the FAB never covers the last row's ⋮.
 - Replace the in-list `ProposalCard` with one waiting-proposal row at the top of the list:
   - leading chat icon (`Icons.Outlined.ChatBubbleOutline`), title *Push A · 3 changes* (routine + the store's `changeCount`), supporting line *From Coach · 18:42* (the proposal's `createdAtMs`), trailing chevron
-  - a tap opens the Coach conversation at that proposal's card (29), using `ProposalSource.conversation`
-  - a proposal with no conversation (written by a connected agent over MCP) is not drawn on any board. Ask the designer for that row before building it; until then keep today's path for it.
+  - define the navigation payload using `ProposalSource.conversation` and proposal identity. Task 29 owns activation of the row → Coach proposal destination and removal of the old review path after that integration passes. Task 17’s independent FAB/list work does not depend on 29; retain the functioning current destination until 29 lands, so there is no 17 ↔ 29 dependency cycle
+  - a proposal with no conversation (written by a connected agent over MCP) has no approved row/destination. Designer-owned gate `android-gym-mcp-proposal-row-design` must draw and obtain approval for it; retain today’s working review path until then. 29 must not remove that fallback when activating conversation-backed routes.
   - Unseen removal receipts keep their place above it.
 - Delete the signed-out `SignInCard` (:249-270) and its place in the list. Routines never asks to sign in; the one suggestion is the first receipt's *Only on this phone · Keep it* (14).
 - Empty (02.7): *No routines yet.* and the FAB. No bar action, no card, signed in or out. An empty Gym that first opens on Coach is 39's work.
@@ -37,7 +39,7 @@
 **Done when**
 - Screenshots of 02.1 and 02.7 match in Dark and Daylight; the rig (01) adds `02.1-routines-dark/light` and `02.7-no-routines-fab-dark/light`.
 - `gym_screen_viewed` still fires `routines`; tapping the FAB still leads to `routine_editor`.
-- Tapping the proposal row fires `gym_screen_viewed` `coach` (or `thread`), never `proposal`.
+- After 29’s integration lands, tapping a conversation-backed proposal row reaches that exact conversation/card and fires `gym_screen_viewed` `coach` (or `thread`), never `proposal`. This navigation acceptance belongs to 29, not an added prerequisite of 17.
 - Tests: `ui/RoutinesScreenTests.kt` (FAB present at every font scale, no bar action, no *Start logging*, the proposal row's title and line), `ui/StanceReadsTheAccountTests.kt` (signed out: no sign-in card, full and empty).
 
 **Depends on:** 03, 04, 05, 13.

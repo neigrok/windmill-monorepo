@@ -15,7 +15,7 @@
 - Signed out, nothing says the routines are only on this phone.
 
 **Change**
-- After Apply, the drafts card (41) becomes one receipts card, as M3 list items:
+- After all routines are confirmed saved under 41's owner-specific contract, the drafts card becomes one receipts card, as M3 list items. A partial signed-in result keeps the confirmed rows alongside unresolved drafts using `android-coach-partial-drafts-design`; it must not show a success check for an unconfirmed routine:
   - leading check in the accent
   - *Full body A* over *Routine created · 3 movements*
   - trailing `chevron_forward`
@@ -38,8 +38,8 @@
   - `gym_setup_step` adds `open_routine`, `keep_routines` and `sign_in`.
   - `gym_session_started` fires on **Start workout**.
   - `gym_screen_viewed` `routine` fires when the sheet opens.
-- Tests: `coach/CoachAnswerTests.kt` (receipts replace the drafts; Keep it shows only signed out) and `ui/RoutineSheetTests.kt` (units by equipment).
+- Tests: `coach/CoachAnswerTests.kt` (full receipts replace drafts only after confirmation; partial receipts preserve saved rows and unresolved drafts across restart; Keep it shows only for committed anonymous routines) and `ui/RoutineSheetTests.kt` (units by equipment).
 
-**Depends on:** 08, 41.
+**Depends on:** 08, 41; partial receipt presentation uses `android-coach-partial-drafts-design`.
 
 **Ledger:** 11h, 6p; dogfood `android-gym-target-page`.

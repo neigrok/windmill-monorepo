@@ -74,12 +74,14 @@ refusal codes is a defect.
 1. **Every action has an accessible alternative.** A swipe action is in the Actions rotor on iOS; an
    Android swipe row declares a custom accessibility action unless a real control offers the same
    act; a long-press menu has equivalent accessible actions.
-2. **A destructive gesture follows its surface.** On the phones a swipe delete is immediate, with
-   no Undo and no hold. On iOS it is the native trash circle; a full swipe never deletes. On Android
-   it is the Material swipe-to-dismiss row: the error-red ground with a trash icon, and the row is
-   gone on release past the threshold. A confirmation stays only where iOS keeps one: discarding a
-   workout and deleting a conversation. On the web a delete is held for nine seconds with Undo
-   before it is sent. Turning a proposal down is never a swipe.
+2. **A destructive gesture follows its surface and resource.** Phone weigh-in deletion is held
+   for nine seconds with Undo; the other phone rows commit immediately where their approved flow
+   specifies it. Workout discard and conversation deletion ask once. On iOS the affordance is the
+   native trash circle; a full swipe never deletes. On Android it is the Material swipe-to-dismiss
+   row: an error-red ground with a trash icon, dismissed on release past the threshold. Dismissing
+   a held weight row starts its Undo window; it does not mean the delete has been sent. On the web
+   a delete is held for nine seconds with Undo before it is sent. Turning a proposal down is never
+   a swipe.
 3. **One gesture has one owner.** System Back owns the leading edge and a sheet owns its dismissal;
    a product gesture starts outside the system edge and never competes with a second scroller.
 4. **Removing a control never loses delivery state.** A failure stays recoverable after its row is

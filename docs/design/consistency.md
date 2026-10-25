@@ -246,10 +246,13 @@ and Android disagree.
 - **9n · The set-note footer.** iOS's Fix set (board 03.3) draws no footer under the set note;
   Android's Fix sheet gives the field *A record for you — not an instruction to Coach.* as its
   state description (`FixSheet.kt`, `Training.kt` `noteCaption`). Rule one.
-- **9o · Moments are doors (owner ruling, 2026-10-22; Android build).** On both phones every moment
-  is a row that navigates: a best moment opens the Record at that workout's point, a weigh-in moment
-  opens Bodyweight, a month moment opens nothing (iOS section 05; Android 05.1 `1283:39834`). Android
-  expands a moment in place to its chart and *Open record* (`ui/LogScreen.kt:193-230`).
+- **9o · Log entries are distinct doors.** The approved Android Log (05.1 `1283:39834`) separates
+  filled workout cards, plain weigh-in rows between dividers, and slim gold record markers. Every
+  weigh-in appears chronologically between the appropriate workouts; it neither competes for a
+  decorative weekly moment slot nor moves to a top Bodyweight card. Workout cards open detail,
+  weight rows open Bodyweight, record markers open Record, and month markers have no action.
+  Unknown/backdated clock times are not invented. Android's current moment expansion and weekly
+  selection need the task-22 read/presentation changes.
 - **9p · A record stated once, and what counts as one.** iOS (section 05) states a record by its
   moment, or by a `gym/record` dot after a session's name when the one-a-week cap leaves it without
   one; a session row's second line is always its facts. Android states a record twice — the row's
@@ -662,21 +665,20 @@ the target, numbered like the iOS page and indexed in [the flow index](../index.
 under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or
 `app/`. Build tasks: `androidgym_tasks/`.
 
-- **11a · The page is the target (owner decision, 2026-10-22).** Journeys 00–09 carry the iOS
-  numbers; Android-only boards take the next free number in their journey. A board is 🚀 when it
-  matched the emulator pass of 2026-10-22 (Pixel 10 Pro, API 37, a debug build of origin/main
-  `cca4bd3b`), otherwise a target (✅ or 🚧). Daylight twins that show the accent stay targets until 9a
-  lands. Sign-in,
-  email code and You live in the Shell file's Android page (section `33:1568`). Boards drawn from
-  code because no capture reaches them say so in their captions (16b). The parity rulings of
-  2026-10-22 (12a–12n) apply to both pages.
-- **11b · Swipe delete is immediate (owner ruling, 2026-10-22).** One Material swipe-to-dismiss row
-  everywhere: the error-red ground with a trash icon, gone on release past the threshold, no
-  Snackbar Undo and no hold (`guidelines/system-architecture.md` §3; component `Android / Swipe row`
-  `337:2217`). Confirmations stay only for discarding a workout and deleting a conversation. Today
-  every swipe draws the word *Delete* on brick at 18 % with no icon (`ui/RowSwipe.kt:68-81`), and
-  routine, set, workout, note, weigh-in and conversation deletes are held 9 000 ms behind an Undo
-  snackbar (`store/WithheldDelete.kt:108`, `GymRoom.kt:507-563`).
+- **11a · The page is the target.** Journeys 00–09 carry the iOS numbers; Android-only boards
+  take the next free number in their journey. The six revised Coach, Log, Weigh-in, Workout, Finish
+  and Routine editor flows were human-approved on 2026-10-25: 92 frames and 46 captions are
+  **✅ Ready for dev**. Their current links and task scope are in `androidgym_tasks/README.md`.
+  Other Gym and Shell boards retain their individual delivery status. Sign-in, email code and You
+  live in the Shell file's Android page (section `33:1568`). A visual state absent from an approved
+  flow still needs its own design handoff; completing the drawings does not complete app delivery.
+- **11b · Deletion follows the resource.** Use the shared Material end-to-start swipe row with
+  the error-red ground and trash icon (`Android / Swipe row` `337:2217`). Routine, set and note
+  deletes commit immediately where their tasks specify it; workout discard and conversation delete
+  ask once. The approved Log/Weigh-in flow keeps a nine-second held weight deletion and Undo, so
+  `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
+  Current Android rows still use several grounds and callbacks; tasks 05 and 24 split their visual
+  presentation from the resource-specific commit and recovery policy.
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
@@ -687,8 +689,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
   | Workout detail set | `ui/SessionScreen.kt:449-488`, own ground (bleeds at the top-right corner), held | 05.4 `1252:27713` | shared row, immediate |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
-  | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1254:32499`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt:206-211,344`, no swipe; *Delete weigh-in* in the sheet, held | 06.2 `1254:32141`, 06.3 `1254:32246` | swipe, immediate |
+  | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
+  | Bodyweight | `ui/BodyweightScreen.kt:206-211,344`, no swipe; *Delete weigh-in* in the sheet, held | 06.2 `1254:32141`, 06.3 `1254:32246` | shared swipe, nine-second held delete and Undo |
   | Notes | `ui/NotesScreen.kt:276-279`, no swipe; *Delete note* in the editor, held | 09.1 `1254:39045`, 09.2 `1254:39104` | swipe, immediate |
   | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.34 `1254:31663` | *Delete this conversation?* |
 
@@ -709,11 +711,18 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   open a custom keypad sheet (`ui/KeypadSheet.kt`), pressing only scales to 0.96
   (`ui/LoggerScreen.kt:1009-1020`) and nothing ticks. Boards 03.1 `1252:28036`, 03.2 `1252:28178`,
   03.3 `1253:29581`, 03.10–03.13 (`1252:28389`, `1252:28534`, `1252:28687`, `1252:28829`), 02.6
-  `1252:30392`, 02.11. The weigh-in already uses the decimal keyboard (06.1, 🚀).
+  `1252:30392`, 02.11. Decimal IME is an input hint, not a guarantee of a minus key; assisted loads
+  retain an explicit signed-entry path. The approved Workout has at most three headerless 48 dp
+  ledger rows, inline load units and visual position markers instead of visible counts or arrows.
+  Add movement lives in This workout. Weigh-in uses a native decimal keyboard and date picker;
+  task 24 still needs its approved compact sheet, calendar and IME-state implementation.
 - **11e · Equipment, units and Edit movement (owner rulings, 2026-10-22).** The movement header
   carries the equipment icon; loads read *kg each* (dumbbells), *kg total* (barbell, machine) or *kg
   added* (bodyweight). Renaming renames the movement in history, and *Edit movement* holds the name and
-  equipment, with *Dumbbells lifted: One / Two*. Today every screen outside Coach says plain *kg*
+  equipment, with *Dumbbells lifted: One / Two*. Stored equipment also includes cable and kettlebell;
+  editing a name must preserve either value and its load interpretation. Tasks 08/19/20 distinguish
+  creation choices from stored types and name any missing approved icon/menu states. Today every
+  screen outside Coach says plain *kg*
   (`ui/RoutinesScreen.kt:329`; `domain/Readout.kt:51-52` prints *80kg* with no space), Create
   movement offers four radio options and no count (`ui/MovementPicker.kt:411-431`;
   `store/TrainingStore.kt:1154-1166` passes none), the picker says *Dumbbell* where the form says
@@ -768,6 +777,24 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   (`ProposalDoor::mcp`) has no conversation, and no board draws where it is decided. Rule where it
   opens on both phones.
 
+- **11p · Additional states need their own handoff.** The six-flow approval does not cover the new
+  states required by the corrected Android tasks. Track these gates in the dogfood tree;
+  domain and transport work can proceed independently, but the affected visual state needs an
+  approved Figma frame before implementation.
+
+  | Gate | Task | Required handoff |
+  |---|---|---|
+  | `android-gym-signed-load-input-design` | 07, 10, 18 | Explicit sign-action placement for an IME without minus; retain a working signed-entry path until approved. |
+  | `android-gym-equipment-variants-design` | 08, 19, 20, 21 | Cable/kettlebell menu and icon states; preserve stored equipment and current presentation. |
+  | `android-gym-empty-finish-design` | 14 | Zero-set outcome beyond the approved normal and ended-early receipts. |
+  | `android-gym-no-routine-picker-design` | 13 | Changes to the existing picker for an externally started workout without a routine. |
+  | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
+  | `android-coach-uncertain-apply-design` | 34 | Distinguish a known refusal from an apply/removal awaiting its receipt; do not promise that nothing was written. |
+  | `android-coach-partial-drafts-design` | 41, 42 | Account draft cards preserve saved, pending and refused outcomes and offer retry only for unresolved drafts. |
+  | `android-coach-bound-installation-design` | 36, 38 | After sign-out, a bound installation can retain local History and recover pending results, but cannot send anonymous questions. |
+  | `android-account-delete-recovery-design` | 48 | Unknown closure and pending local cleanup retain truthful state across retry and restart. |
+  | `account-delete-reconciliation` | 48 | Backend platform/auth supplies the account-scoped closure receipt/recovery contract after session revocation; the existing grace-period behavior does not supply it. |
+
 ### Parity rulings (owner, 2026-10-22)
 
 The owner ruled the iOS ↔ Android parity report; both Gym pages and the Shell account boards draw the
@@ -792,11 +819,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   This workout shows *Notification off* · *Show*. Android today cannot leave the logger before Finish
   (`GymRoom.kt:163,180`), and a swiped notification sets *Workout hidden* / *Show workout* in Gym
   settings (`ui/SettingsScreen.kt:113-118`, `notification/WorkoutNotifications.kt:211`).
-- **12d · The receipt follows iOS.** *Well done.* / *Ended early.*, subtitle *Push A · Tue, Aug 18*,
-  tiles *Duration* · *Working sets* · *Volume*, head *Performed*, *👑 Share with Coach* (payments open
-  soon), *Discard* (asks once) and *Done* (Android 03.7 `1254:32362`, 03.8 `1254:32441`). Android
-  says *Workout saved*, counts *Sets* · *kg lifted* · *Movements*, adds *Against plan*, and has
-  neither *Discard* nor *Done* (`ui/FinishScreen.kt:232-312`).
+- **12d · The approved Finish receipt.** Android Finish (03.7 `1254:32362`, 03.8 `1254:32441`)
+  has a readable receipt and two main actions: crowned *Share with Coach* and *Done*, each 56 dp
+  with 12 dp between. *Discard* is in the native top-end overflow and asks once. Task 14 implements
+  normal, ended-early and first signed-out variants; the first-workout Keep line follows 12f.
 - **12e · Delete account (owner ruling; build on every layer).** Both phones, signed in, from You's
   last row: an explanation, *Type your email to confirm*, *Deleting…*, *Your account is deleted* /
   *Sign in before Nov 21 to bring it back.*, and *Couldn’t delete your account. Check your connection
@@ -821,8 +847,9 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   (`Recovery/WorkoutInspectScreen.swift`). A workout with no sets is not drawn either; iOS says *This
   deletes the workout. You can’t undo this.* Android asks nothing (11b).
 - **12h · Coach details follow iOS.** What Coach read is a sheet; a movement's details read *Weight
-  is · Total → Each dumbbell*; the day's cap reads *You can ask again in about 2 hours.* with *Use your
-  own AI agent*; *This Windmill does not have Coach. You can still read your log.* with no doors;
+  is · Total → Each dumbbell*; the day's cap uses the server's actual `retryAtMs`/`Retry-After`
+  with *Use your own AI agent*, and a nonnumeric fallback when timing is absent; *This Windmill
+  does not have Coach. You can still read your log.* with no doors;
   *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
   `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.34
   `1254:31663`). Android: `coach/Ask.kt:180,218,225-240`, `coach/AskScreen.kt:142-153,282-315,332-343`,
@@ -954,8 +981,9 @@ these places.
   its actual expiry date.
 - **9z · One noun per thing (owner rulings, 2026-10-16 and 2026-10-22).** Every phone screen says
   *workout* (never *session*), *movement* (never *exercise*) and *The log* (tab and title); *session*
-  stays in code and on the wire. Both pages draw this (iOS 05.9 *Edit movement*; Android pager
-  *Movement 3 of 5*, tab *The log*). Code still differs: Android *Log* (tab and
+  stays in code and on the wire. The approved Android Workout uses visual position dots and speaks
+  *Movement 3 of 5* through accessibility; the count is not a visible pager label. The tab is
+  *The log*. Code still differs: Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,

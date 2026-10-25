@@ -1,8 +1,10 @@
-# Targets sheet on steppers, and each set
+# One movement editor for name, equipment and targets; one outer routine Save
+
+**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25.
 
 **Figma:**
-- 02.6 Targets: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
-- 02.11 Targets, each set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
+- 02.6 Combined movement editor: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
+- 02.11 Combined movement editor, Vary by set expanded on the same route: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
 - Components (Design System library, Android page):
   - `Android / Number stepper` `337:2514`
   - `Android / Keyboard` `337:2403` (Number and Decimal)
@@ -10,45 +12,30 @@
   - `Android / Button` `210:181`
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The sheet (`ui/RoutineBuilder.kt:451-491`): the movement name, *{pos} of {N} · {routine}* (:468), *Cancel*, `TargetBlock`, and the commit *Set · {summary}* (:487, `TargetEntry.commitLabel`).
-- `ui/TargetBlock.kt`:
-  - *Target* and the summary (:166-170); *You decide the numbers at the rack.* when open (:171).
-  - Three stepper rows *Sets*, *Reps*, *kg* (:172-183): a 56 dp `raised` `−` / `+` box with radius 16 (`TargetStepKey`, :398-408) around an 88 dp mono `BasicTextField` (:368-391). Placeholders *open*, *max*, *—*, and *varies* when sets differ.
-  - Bodyweight adds a `±` key, *Flip the sign — band-assisted* (:185-187, :426).
-  - Caption *kg blank: pick it at the rack the first time; after that, last time fills it.* (:189).
-  - *Ramp up* and *Vary by set* are `TextButton`s on `raised`, 40 dp tall (:190-209).
-  - *Each set* + *Fill* (:210-219); the ladder header *Set / Reps / kg* (:222-230); each row two outlined fields; a row swipes away on `RowDeleteGround` (:264-277); *+ Add set*, 56 dp (:330-341).
+- `ui/RoutineBuilder.kt` still opens a target-only sheet; `ui/TargetBlock.kt` owns uniform/per-set targets and the existing bodyweight sign action. Name and equipment are outside that edit.
+- Routine-picker creation calls `store.create` before adding to its local draft (`ui/RoutineBuilder.kt`, `ui/MovementPicker.kt`). Cancelling the outer routine can therefore leave a created movement behind.
+- The sync domain already provides `RoutineMovementChange` and `SaveRoutinePlan` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/Routines.kt`. It combines routine entries, new/custom movement metadata and overrides in one Plan, with stale guards and aliases. `TrainingStore.saveRoutine` still uses the older create/replace-routine adapter; wire the existing action rather than rebuilding it.
 
 **Change**
-- Sets, Reps and the weight become `NumberStepper` (04): 48 dp tonal − / + around a filled field, labelled *Sets*, *Reps* and *Load*, each with its unit as the suffix.
-  - 02.6 reads *Sets* 3 *sets* · *Reps* 8 *reps* · *Load* 75 *kg total*; 02.11 reads *Reps* 8 *reps* · *Load* varies *kg total*.
-  - The weight row's label *kg* becomes *Load* (the rack and Coach's cards say *Load* too).
-  - Sets and Reps open `KeyboardType.Number`; Load opens `KeyboardType.Decimal`. `ImeAction.Done` commits.
-  - Load carries the load-basis suffix from 08: *kg total* (barbell, machine), *kg each* (two dumbbells), *kg added* (bodyweight).
-  - Placeholders stay *open*, *max*, *—*; Load reads *varies* when sets differ (02.11).
-  - Keep the bodyweight sign key: the boards do not draw it, and some decimal keyboards have no minus.
-- The summary line reads with its unit: *Target* · *3 × 8 · 75 kg total*.
-- Keep the caption *kg blank: pick it at the rack the first time; after that, last time fills it.*
-- *Ramp up* and *Vary by set* become M3 `FilterChip`s (32 dp visual, 48 dp touch target). *Vary by set* shows selected while the ladder is open (02.11).
-- Each set (02.11):
-  - *Each set* with the *Fill* text button and its menu (*Ramp up* / *Match set 1*) as today.
-  - Header *Set / Reps / kg total* (the suffix follows the movement's basis).
-  - Each row: two M3 `OutlinedTextField`s; the focused one shows the accent outline.
-  - *+ Add set* as today; at the ceiling *Sets, 1 to 20.*
-  - A row swipes away on `DeleteSwipeRow` (04), a11y label *Remove set*. It leaves the draft at once, as today.
-- Commit button (`Android / Button` Filled, 56 dp): *Set · 3 × 8 · 75 kg* (02.6) or *Set · 5 sets* (02.11).
-- Delete `TargetStepKey` and the 88 dp field. Keep `TargetBlock(scheme, onChange)` as the seam (F38): the editor, Create movement (19) and Coach drafts all use it.
+- Replace the target-only destination with the approved combined movement form: **Name**, **Equipment**, dumbbell count when relevant, then **Targets**. Opening an existing routine movement edits all of these on one route. There is no separate Targets route, navigation hop or target-only commit.
+- Implement the shared Name/Equipment/count fields here using the approved combined form and 04’s native primitives;19 reuses this form for its creation contexts and is not a prerequisite of 18. **Sets** and **Reps** use Number input; **Load** uses Decimal, with equipment-aware units from 08. Preserve blank/open/varies semantics and the domain’s validation; zero is not a substitute for an unset target.
+- Assisted bodyweight load entry retains the explicit sign action from 07 and works without an IME minus key. Preserve cable/kettlebell metadata and supported-record semantics; new visuals for those options remain gated as described in 08.
+- **Vary by set** expands within this same form. Name and Equipment remain in its editable scroll hierarchy. Use the approved per-set rows, Fill actions, Add set and removal. Never recreate a target-only sheet behind the expansion. Drawn chips may be 32 dp but their touch bounds, steppers and row actions are at least 48 dp.
+- **Add** for a new selected/custom movement and **Done** for an existing movement validate and stage name, equipment, load count and target edits in the owning routine draft. They first validate the focused input buffer, then stage it; invalid input blocks the action. They perform no catalogue or routine write. Cancelling this form discards only its uncommitted movement edit; preserve previously staged outer-draft entries. Use the approved unsaved confirmation for a dirty form.
+- The outer routine **Save** is the single write boundary. Carry base/current routine plus each movement’s base/current metadata into the existing `SaveRoutinePlan`. Stable draft IDs must survive retry. Reuse its stale/visibility guards and single Plan; do not call `CreateExercise`, `RenameExercise` or a standalone Edit action before it. Removing a staged new movement prevents that creation from joining the save.
+- Cancelling/discarding the outer routine draft leaves the routine, catalogue, aliases and targets unchanged. A failed/stale Save keeps the draft available with an honest refusal; it must not leave partial metadata or a routine-only write behind. Preserve restore/recreation of the draft without submitting it.
+- Keyboard layout: compact scroll content and pinned **Add**/**Done**, not a tall padded sheet. Scroll the focused field and full error above the IME and pinned action, including the bottom Load and per-set fields. Unfocused content may scroll under the viewport boundary, but focus cannot leave a field/error clipped. Status/navigation insets remain correct after recreation.
+- Keep a shared target-editor component where useful for Coach drafts. Reusing its controls must not import routine-only staging or atomic-save claims into Coach/live-workout flows, whose owners are 19/38/41.
 
-**Out of scope:**
-- The stepper component (04), units (08), the editor list (02.5, 08).
-- Create movement's own fields (19).
+**Out of scope:** standalone Record editing (20); live-workout custom creation’s distinct write boundary (19); implementing missing Cable/Kettlebell or new sign-action placements without their design follow-up (07/08).
 
 **Done when**
-- Screenshots of 02.6 and 02.11 match in Dark and Daylight, keyboard closed and open; the rig (01) adds `02.6-targets-dark/light` and `02.11-targets-each-set-dark/light`.
-- TalkBack: each stepper reads its label, value and unit, and − / + read *Decrease Sets*, *Increase Load* and so on, as today.
-- `gym_routine_saved` still fires on Save (the targets sheet itself saves nothing).
-- Tests: `ui/TargetSheetTests.kt`, `ui/TargetSheetLadderTests.kt`, `ui/TargetSheetLayoutTests.kt`, `ui/TargetSheetSignKeyTests.kt`, `ui/CreateMovementTargetTests.kt`, `domain/TargetEntryTests.kt` (the commit label with its unit).
+- Capture the combined uniform/per-set, keyboard, Load-focus/error and unsaved states in Dark and Daylight against the approved flow. Verify compact phones, large text and 48 dp hit bounds; there is no separate Targets destination.
+- Add/Done followed by outer Cancel causes zero routine/catalogue/alias writes. Outer Save publishes new movement metadata and routine entries together through one existing `SaveRoutinePlan`; retry is idempotent. Removed staged creations never persist.
+- Exercise stale routine/metadata/equipment/target edits, unseen/deleted movement refusal, failed Save, repeated Save and recreation. Assert unchanged replica state on refusal and full retained draft content, not just a success label.
+- Preserve the existing SaveRoutinePlan/shared vectors; add adapter/draft UI tests for the new wiring. Update the relevant `RoutineEditor`, target/per-set, create-movement, planning-write and sign-entry tests to the combined route.
+- `gym_routine_saved` fires only at successful outer Save. Content-free `gym_action` tracks movement-form open/stage/cancel and outer-save refusal/failure with bounded labels; staging must not emit a created/saved event. Unexpected adapter/write failures report under static `gym.saveRoutine`; draft persistence retains `gym.saveRoutineDraft`. Record labels in `docs/ANDROID_OBSERVABILITY.md`, without names, targets, IDs or field text.
 
-**Depends on:** 04, 08.
+**Depends on:** 04, 07, 08.
 
 **Ledger:** 11d, F38; dogfood `android-gym-target-page`.

@@ -15,7 +15,7 @@
 
 **Change**
 - After sign-in and **Add**, the same thread stays on screen.
-  - The signed-out turns stay as this phone's record.
+  - The signed-out turns and retained draft/photo stay under the adopted chat identity defined by 37. Returning from sign-in is continuation, not a deliberate fresh Coach entry.
   - The next question goes to account Coach, after the installation is bound (38).
 - Next turn on the board:
   - lifter *Swap chin-ups for pulldowns*
@@ -41,6 +41,6 @@
   - `coach/AskScreenTests.kt`: the thread continues after sign-in and Add, and goes on Discard.
   - `store/GymEngineSessionTests.kt`: the thread joins adoption.
 
-**Depends on:** 29, 32, 38, 39.
+**Depends on:** 29, 32, 37, 38, 39.
 
 **Ledger:** 11h, 6p, 10v; dogfood `android-gym-target-page`.
