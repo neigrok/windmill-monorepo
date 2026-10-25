@@ -93,7 +93,7 @@ class LoggerPagerTests {
     }
 
     @Test
-    fun aDragPreviewsTheAdjacentMovementAndReversingKeepsTheDraftAndDepartureQuestion() {
+    fun aDragPreviewsTheAdjacentMovementAndReversingKeepsTheDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, heavier = true).use { room ->
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
@@ -131,7 +131,7 @@ class LoggerPagerTests {
                 swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
-            compose.onNodeWithText("Heavier than the plan").assertIsDisplayed()
+            compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 
@@ -194,7 +194,7 @@ class LoggerPagerTests {
     }
 
     @Test
-    fun aCancelledTouchPastTheMidpointKeepsTheMovementDraftAndDepartureQuestion() {
+    fun aCancelledTouchPastTheMidpointKeepsTheMovementDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, heavier = true).use { room ->
             val sets = room.store.sets.toList()

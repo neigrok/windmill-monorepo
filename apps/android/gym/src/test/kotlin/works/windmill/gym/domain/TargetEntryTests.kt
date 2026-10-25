@@ -265,7 +265,6 @@ class TargetEntryTests {
         assertEquals("Ramp up", TargetEntry.rampUp)
         assertEquals("Match set 1", TargetEntry.matchSetOne)
         assertEquals("Delete", TargetEntry.delete)
-        assertEquals("Save today’s sets", TargetEntry.saveTodaysSets)
         assertEquals("You decide the numbers at the rack.", TargetEntry.openLine)
     }
 }

@@ -211,23 +211,6 @@ class ProgramTests {
     }
 
     @Test
-    fun testRetargetingLeavesAnOpenRowOpen() {
-        val routine = Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(weightKg = 110.0) }),
-            RoutineEntry(position = 2, exerciseId = "barbell-row"),
-        ))
-
-        assertEquals(
-            Routine(id = "rt_1", name = "Heavy Thursday", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", sets = List(5) { SetTarget(weightKg = 115.0) }),
-                RoutineEntry(position = 2, exerciseId = "barbell-row"),
-            )),
-            routine.retargeting(1, "back-squat", List(5) { SetTarget(weightKg = 115.0) }))
-
-        assertNull("an open line takes no scheme from the rack — nothing is written",
-            routine.retargeting(2, "barbell-row", listOf(SetTarget(10, 60.0))))
-    }
-    @Test
     fun testTheEditSnapshotAndWireGuardSurviveSerializationWithoutMakingAnUntouchedDraftDirty() {
         val routine = Routine("rt_a", "Push", 3, revision = 7, lastTrainedAtMs = 42,
             entries = listOf(RoutineEntry(1, "bench-press", listOf(SetTarget(8, 60.0)))))

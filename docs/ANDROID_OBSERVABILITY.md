@@ -121,6 +121,9 @@ and emits no completed event; cancellation propagates without a failure report.
 Every logged set uses the rack acceptance path and emits `gym_set_logged` once. Finish emits
 `gym_session_finished`; both events carry no set values or legacy kind labels. Saved workout
 imports ignore legacy kind fields and retain their existing load, write and recovery failure boundaries.
+Logging above a routine target and moving between movements perform no routine write and emit no
+routine-save event. Explicit editor saves report failures under `gym.saveRoutine` and emit
+`gym_routine_saved`; accepted Coach proposals retain their own decision boundaries.
 
 The update dialog responds when the engine stops for an upgrade, on the server's
 `426 upgrade-required` or a hello whose `minSchema` is above the app's registry, without deleting

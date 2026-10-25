@@ -17,6 +17,8 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -27,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,6 +47,7 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.sync.engine.nextPush
+import works.windmill.platform.telemetry.Telemetry
 
 // The quiet ledger logger: the words the old screen drew are now said by the controls that own them,
 // and each pin here reads a control by its name. Signed in and synced with the account's log, so a
@@ -65,6 +69,7 @@ class LoggerScreenTests {
         unanswered: Boolean = false,
         haptics: HapticFeedback? = null,
         preferences: GymPreferences = GymPreferences(),
+        say: (String?) -> Unit = {},
     ): EngineRoomFixture {
         // No delete window here, so a deleted set settles the moment it is deleted.
         val room = EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 0)
@@ -103,10 +108,88 @@ class LoggerScreenTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
-                LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {}, onSettings = {})
+                LoggerScreen(store = room.store, isSignedIn = true, say = say, onFinish = {}, onSignIn = {}, onSettings = {})
             }
         }
         return room
+    }
+
+    @Test
+    fun anOrdinaryWalkSaysNothingAndClearsThePreviousMessage() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val said = mutableListOf<String?>("Previous message")
+        try { logger(scope, say = { said += it }).use { room ->
+            val next = compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onFirst()
+                .fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions).orEmpty()
+                .single { it.label == "Next movement" }.action
+            compose.runOnUiThread { assertTrue(next()) }
+            compose.waitForIdle()
+
+            assertEquals(listOf("Previous message", null), said)
+            assertEquals("barbell-row", room.store.exerciseId)
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun loggingAboveEveryTargetWalksAndFinishesWithoutChangingTheRoutine() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val said = mutableListOf<String?>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            room.now = System.currentTimeMillis()
+            val routine = runBlocking {
+                room.select(null)
+                val saved = (room.store.saveRoutine(RoutineDraft(name = "Push and pull")
+                    .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 60.0)))
+                    .adding("barbell-row").targeting("barbell-row", listOf(SetTarget(5, 40.0)))
+                    .adding("overhead-press").targeting("overhead-press", listOf(SetTarget(5, 20.0)))) as GymResult.Ok).value
+                room.store.start(saved.id)
+                room.store.choose("bench-press")
+                room.training.routine(saved.id)!!
+            }
+            events.clear()
+            room.store.observeEngine()
+            var finished: FinishOutcome? = null
+            compose.setContent {
+                LoggerScreen(store = room.store, isSignedIn = false, say = { said += it },
+                    onFinish = { scope.launch { finished = room.store.finish() } }, onSignIn = {}, onSettings = {})
+            }
+
+            listOf("bench-press", "barbell-row", "overhead-press").forEachIndexed { index, movement ->
+                compose.runOnIdle { assertEquals(movement, room.store.exerciseId) }
+                compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
+                compose.onNodeWithText("Log set").performClick()
+                compose.waitForIdle()
+                if (index < 2) {
+                    compose.onNode(hasContentDescription("Next movement")).performClick()
+                    compose.waitForIdle()
+                }
+                compose.onAllNodes(isDialog()).assertCountEquals(0)
+                compose.runOnIdle { assertEquals(routine, room.training.routine(routine.id)) }
+            }
+            compose.onNodeWithText("Finish").performClick()
+            compose.waitForIdle()
+
+            compose.runOnIdle {
+                assertTrue(finished is FinishOutcome.Closed)
+                assertEquals(listOf(Triple("bench-press", 62.5, 5), Triple("barbell-row", 42.5, 5),
+                    Triple("overhead-press", 22.5, 5)),
+                    (finished as FinishOutcome.Closed).detail.sets.map { Triple(it.exerciseId, it.weightKg, it.reps) })
+                assertEquals(routine, room.training.routine(routine.id))
+                assertEquals(routine.revision, room.training.routine(routine.id)?.revision)
+                assertNull(room.store.session)
+                assertEquals(List(5) { null }, said)
+                assertEquals(listOf("gym_set_logged" to emptyMap<String, String>(), "gym_set_logged" to emptyMap(),
+                    "gym_set_logged" to emptyMap(), "gym_session_finished" to emptyMap()), events)
+                assertEquals(emptyList<String>(), failures)
+            }
+            compose.onAllNodes(isDialog()).assertCountEquals(0)
+        } } finally { scope.cancel() }
     }
 
     // The rack fixture: Lower A, whose back squat is the ramp 60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 ·

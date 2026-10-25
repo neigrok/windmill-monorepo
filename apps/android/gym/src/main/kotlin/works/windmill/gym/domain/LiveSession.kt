@@ -59,8 +59,6 @@ private val SetTarget.spoken: String
 object LiveLines {
     const val onThisDevice = "on this device"
 
-    fun oneAtATime(movement: String): String = "$movement first — that question is still open."
-
     // One set that landed, numbered in performed order.
     data class Row(
         val id: String,

@@ -343,7 +343,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testSignedOutARoutineIsKeptStartedFromAndRetargeted() = runTest {
+    fun testSignedOutARoutineIsKeptStartedFromAndExplicitlyEdited() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
 
@@ -362,11 +362,11 @@ class TrainingStoreTests {
 
             assertEquals("the kept routine carries every set as it was lifted",
                 listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), kept.entries.first().sets)
-            assertNull(room.store.save(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
-                toRoutine = kept.id, atPosition = 1, forExercise = "bench-press"))
+            assertTrue(room.store.saveRoutine(RoutineDraft.of(kept)
+                .targeting("bench-press", List(2) { SetTarget(5, 105.0) })) is GymResult.Ok)
             assertEquals(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
                 room.store.routines.first { it.id == kept.id }.entries.first().sets)
-            assertEquals("and the phone's replica holds the retargeted document",
+            assertEquals("and the phone's replica holds the edited document",
                 listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
                 room.training.routine(kept.id)?.entries?.first()?.sets)
             runCurrent()
@@ -608,67 +608,6 @@ class TrainingStoreTests {
             assertEquals(1, said.size)
             repeat(2) { room.store.refreshEngine(); assertEquals("said again, held once", said, room.store.refusals) }
             assertEquals(notices, room.engine.notices("gym").notices.value)
-        }
-    }
-
-    @Test
-    fun testAWriteBackToARoutineGoneFromTheLogSaysWhyAndMovesNothing() = runTest {
-        val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select("alice"); room.pull(server)
-            val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
-            room.sync(server); room.store.refreshEngine()
-            room.store.start(pushA.id); room.store.choose("bench-press")
-
-            val heavier = List(5) { SetTarget(5, 87.5) }
-            assertEquals("a routine gone from the log is not a write",
-                WriteFailure.Refused("that routine is no longer on the log"),
-                room.store.save(heavier, toRoutine = "rt_gone", atPosition = 1, forExercise = "bench-press"))
-            assertEquals("and nothing moved",
-                List(5) { SetTarget(5, 82.5) }, room.training.routine(pushA.id)!!.entries.first().sets)
-
-            assertNull(room.store.save(heavier, toRoutine = pushA.id, atPosition = 1, forExercise = "bench-press"))
-            assertEquals(heavier, room.training.routine(pushA.id)!!.entries.first().sets)
-            assertEquals("the copy in hand moved with the log's",
-                heavier, room.store.routines.first { it.id == pushA.id }.entries.first().sets)
-            room.sync(server)
-            assertEquals(heavier, anotherPhone(server, room.now) { phone ->
-                phone.training.routine(pushA.id)!!.entries.first().sets })
-            runCurrent()
-        }
-    }
-
-    @Test
-    fun testARetargetWithNothingToMoveIsRefusedAndNeverWritten() = runTest {
-        val server = EngineRoomFixture.server()
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select("alice"); room.pull(server)
-            val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A")
-                .adding("overhead-press").targeting("overhead-press", List(3) { SetTarget(8, 45.0) })
-                .adding("bench-press").targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
-            room.sync(server); room.store.refreshEngine()
-            room.store.start(pushA.id); room.store.choose("bench-press")
-            val before = owed(room)
-
-            assertEquals(WriteFailure.Refused("Push A has changed since this session started"),
-                room.store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = pushA.id, atPosition = 1,
-                    forExercise = "bench-press"))
-            assertEquals("nothing to write is no write", before, owed(room))
-            assertEquals("and the revision did not move", 1, room.training.routine(pushA.id)!!.revision)
-            assertEquals(listOf(List(3) { SetTarget(8, 45.0) }, List(5) { SetTarget(5, 82.5) }),
-                room.training.routine(pushA.id)!!.entries.map { it.sets })
-
-            room.select(null)
-            val kept = (room.store.keep(listOf(
-                TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0, reps = 5,
-                    completedAtMs = 1_100)), asRoutineNamed = "Push Day") as GymResult.Ok).value
-            assertEquals(WriteFailure.Refused("Push Day has changed since this session started"),
-                room.store.save(listOf(SetTarget(5, 105.0)), toRoutine = kept.id, atPosition = 2,
-                    forExercise = "bench-press"))
-            assertEquals("the signed-out document stood still",
-                listOf(SetTarget(5, 100.0)), room.training.routine(kept.id)?.entries?.first()?.sets)
-            runCurrent()
         }
     }
 
@@ -1448,8 +1387,8 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val pushA = pushAWaitingOnADiff(room, server)
 
-            assertNull(room.store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = pushA.id, atPosition = 1,
-                forExercise = "bench-press"))
+            assertTrue(room.store.saveRoutine(RoutineDraft.of(pushA)
+                .targeting("bench-press", List(5) { SetTarget(5, 87.5) })) is GymResult.Ok)
             room.sync(server); room.store.refreshEngine()
             assertEquals("the log moved the revision under the diff", 2, room.store.routine(pushA.id)?.revision)
 
@@ -1475,8 +1414,8 @@ class TrainingStoreTests {
             assertEquals(1, room.store.pendingProposals.single().baseRevision)
             assertEquals(emptySet<String>(), room.store.outOfDateProposals)
 
-            assertNull(room.store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = pushA.id, atPosition = 1,
-                forExercise = "bench-press"))
+            assertTrue(room.store.saveRoutine(RoutineDraft.of(pushA)
+                .targeting("bench-press", List(5) { SetTarget(5, 87.5) })) is GymResult.Ok)
             room.store.refreshEngine()
             assertEquals("an edit the log has not confirmed already dates the diff", setOf("proposal1"), room.store.outOfDateProposals)
 

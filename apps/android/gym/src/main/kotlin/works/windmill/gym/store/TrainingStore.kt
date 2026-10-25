@@ -843,26 +843,6 @@ class TrainingStore(
             entries = Routine(write).entries, creationId = creationId))
     }
 
-    // Read the full routine, then guard its revision before replacing the targeted plan entry.
-    suspend fun save(sets: List<SetTarget>, toRoutine: String, atPosition: Int,
-                     forExercise: String): WriteFailure? {
-        return try {
-            // Absent and another account's fold into null, so there is no sentence to repeat.
-            val routine = training.routine(toRoutine)
-                ?: return WriteFailure.Refused("that routine is no longer on the log")
-            val moved = routine.retargeting(atPosition, forExercise, sets)
-                ?: return WriteFailure.Refused("${routine.name} has changed since this session started")
-            val saved = training.replaceRoutine(toRoutine, RoutineWrite(moved, routine.revision))
-            routines = program.map { if (it.id == saved.id) saved else it }
-            null
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (error: Exception) {
-            reportFailure("gym.save", error)
-            WriteFailure(error)
-        }
-    }
-
     // One day of the program, written WHOLE. A routine with an id is an edit, which moves the
     // revision and supersedes every proposal pending on it; without one it is a create and the id is
     // minted here. Savable while incomplete but not while EMPTY.

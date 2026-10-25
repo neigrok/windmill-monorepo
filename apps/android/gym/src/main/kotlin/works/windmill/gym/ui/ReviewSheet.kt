@@ -355,10 +355,7 @@ private fun ChangeRow(proposal: Proposal, change: ProposalChange, catalog: List<
     }
 }
 
-// A scheme that changed shape prints both schemes in the readout formula and unfolds on tap to the
-// two ladders, set by set in the deviation sheet's own shape — what stands, the arrow, what is
-// proposed, `—` on a side that has no such set — because a lifter deciding on a ramp has to see the
-// ramp against what it replaces. Folded again per change, where it stands.
+// Expand a changed scheme to compare every set, with a dash for a missing side.
 @Composable
 private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: List<SetTarget>, change: ProposalChange) {
     var unfolded by remember(change) { mutableStateOf(false) }
@@ -385,10 +382,8 @@ private fun SchemeMove(move: FieldMove, standing: List<SetTarget>, proposed: Lis
     }
 }
 
-// One moved field, in the shape every diff on this surface shares: the label, what stood, the arrow,
-// what is proposed. The deviation sheet draws its ladder in the same shape.
 @Composable
-internal fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
+private fun MoveLine(label: String, before: String, after: String, modifier: Modifier = Modifier) {
     val skin = LocalGymColors.current
     Text((if (label.isBlank() || label == Proposal.setsLabel) "" else "$label · ") + "$before → $after",
         style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim,

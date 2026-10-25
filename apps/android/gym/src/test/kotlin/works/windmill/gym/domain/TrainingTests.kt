@@ -462,11 +462,6 @@ class RoutineWriteTests {
     private fun aDetail(sets: List<TrainingSet>): SessionDetail =
         SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
 
-    private val lowerA = Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
-        RoutineEntry(position = 1, exerciseId = "back-squat", sets = lowerARamp),
-        RoutineEntry(position = 2, exerciseId = "barbell-row"),
-    ))
-
     @Test
     fun testARoutineKeptFromASessionIsEverySetAsItWasLifted() {
         val write = RoutineWrite.from("Lower A", aDetail(listOf(
@@ -512,42 +507,6 @@ class RoutineWriteTests {
         assertEquals(listOf(RoutineEntryWrite("bench-press", listOf(SetTarget(10, 40.0)))),
             RoutineWrite.from("Push A", aDetail(listOf(aSet("bench-press", 40.0, 10, at = 100))), position = 0)?.entries)
         assertNull(RoutineWrite.from("Push A", aDetail(emptyList()), position = 0))
-    }
-
-    @Test
-    fun testRetargetingReplacesTheWholeSchemeAndKeepsTheRest() {
-        val heavierTop = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0),
-                                SetTarget(1, 102.5), SetTarget(5, 80.0))
-
-        val retargeted = lowerA.retargeting(1, "back-squat", heavierTop)
-
-        assertEquals(
-            Routine(id = "rt_lower_a", name = "Lower A", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "back-squat", sets = heavierTop),
-                RoutineEntry(position = 2, exerciseId = "barbell-row"),
-            )),
-            retargeted)
-    }
-
-    @Test
-    fun testRetargetingWritesTheLoadsOnTheLaddersGrid() {
-        val retargeted = lowerA.retargeting(1, "back-squat", listOf(SetTarget(5, 82.499999999999996)))
-
-        assertEquals(listOf(SetTarget(5, 82.5)), retargeted?.entries?.first()?.sets)
-    }
-
-    @Test
-    fun testRetargetingLeavesAnOpenRowOpen() {
-        assertNull("nothing is written onto an open line",
-                   lowerA.retargeting(2, "barbell-row", listOf(SetTarget(8, 60.0))))
-    }
-
-    @Test
-    fun testRetargetingARowThatNoLongerHoldsTheMovementWritesNothing() {
-        assertNull("position 1 is the squat, not the row",
-                   lowerA.retargeting(1, "barbell-row", listOf(SetTarget(8, 60.0))))
-        assertNull("no row stands at position 3",
-                   lowerA.retargeting(3, "back-squat", listOf(SetTarget(5, 100.0))))
     }
 }
 

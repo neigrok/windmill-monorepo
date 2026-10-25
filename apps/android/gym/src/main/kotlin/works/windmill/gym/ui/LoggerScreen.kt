@@ -113,7 +113,6 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Blocker
-import works.windmill.gym.domain.DeviationOffer
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.Readout
@@ -130,7 +129,6 @@ private sealed class LoggerSheet {
     data object Reps : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
-    data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
     data class Fix(val setId: String) : LoggerSheet()
 }
 
@@ -174,8 +172,6 @@ fun LoggerScreen(
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
-    var pendingDeviation by remember { mutableStateOf<DeviationOffer?>(null) }
-    var asked by remember { mutableStateOf(setOf<String>()) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Zero while nothing is showing: an empty host measures no height.
     var transientHeight by remember { mutableStateOf(0.dp) }
@@ -202,44 +198,20 @@ fun LoggerScreen(
         }
     }
 
-    // `hide()` on a sheet never shown has no anchor to animate to, so it is closed only if one stands.
-    //
-    // A swipe arrives faster than a sheet can rise, so a second walk while an offer is still pending
-    // is REFUSED rather than overwriting it: the guard below was written for taps, and overwriting
-    // would drop the first movement's deviation silently. The refusal is SAID and names the movement
-    // whose question is open — a stroke that quietly did nothing reads as a broken stroke.
     fun move(to: String): Boolean {
-        val open = pendingDeviation?.let { Readout.movement(it.exerciseId, store.catalog) }
-            ?: (sheet as? LoggerSheet.Deviation)?.movement
-        if (open != null) {
-            say(LiveLines.oneAtATime(open))
-            return false
-        }
         if (goingTo != null) return false
         say(null)
-        val leaving = store.exerciseId
-        if (leaving != null && leaving != to) {
-            DeviationOffer.leaving(leaving, store.session, store.sets, asked)?.let { offer ->
-                asked = asked + leaving
-                pendingDeviation = offer
-            }
-        }
         goingTo = to
         if (sheet != null) close()
         return true
     }
 
-    // Dismiss-then-present: ModalBottomSheet only shows itself on entering composition, so presenting
-    // in the frame the old sheet left raises it under the scrim.
     LaunchedEffect(sheet, goingTo) {
         if (sheet != null) return@LaunchedEffect
         goingTo?.let { movement ->
             goingTo = null
             scope.launch { store.choose(movement) }
         }
-        val offer = pendingDeviation ?: return@LaunchedEffect
-        pendingDeviation = null
-        sheet = LoggerSheet.Deviation(offer, Readout.movement(offer.exerciseId, store.catalog))
     }
 
     val pickerUp = store.exerciseId == null || sheet == LoggerSheet.Picker
@@ -335,7 +307,7 @@ fun LoggerScreen(
           .scrollable(
               state = pager,
               orientation = Orientation.Horizontal,
-              enabled = movement != null && order.size > 1 && sheet == null && goingTo == null && pendingDeviation == null,
+              enabled = movement != null && order.size > 1 && sheet == null && goingTo == null,
               reverseDirection = direction == LayoutDirection.Ltr,
               flingBehavior = fling,
               interactionSource = bodyDrag,
@@ -496,21 +468,6 @@ fun LoggerScreen(
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },
-                )
-                is LoggerSheet.Deviation -> DeviationSheet(
-                    deviation = open.offer,
-                    movement = open.movement,
-                    onSave = {
-                        close()
-                        say(null)
-                        scope.launch {
-                            val why = store.save(open.offer.proposed, toRoutine = open.offer.routineId,
-                                                 atPosition = open.offer.position,
-                                                 forExercise = open.offer.exerciseId)
-                            if (why != null) say(why.line("${open.offer.routine} wasn’t changed"))
-                        }
-                    },
-                    onToday = { close() },
                 )
                 is LoggerSheet.Fix -> {
                     val set = fixing!!

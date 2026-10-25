@@ -801,10 +801,10 @@ The owner ruled the iOS ↔ Android parity report; both Gym pages and the Shell 
 rulings. Entries 9k, 9o, 9p, 9q, 9r, 9s, 9y, 9z, 7c and 7d carry the rulings that close an earlier
 question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, Android paths as above.
 
-- **12a · Lifting above the plan is just logged.** No surface asks to change a routine when the
-  lifter beats it; targets change only through Coach's proposals (catalogue 08.21). iOS just logs;
-  Android still asks in the sheet (`ui/DeviationSheet.kt`, `domain/Deviation.kt`). Boards 03.6 are
-  deleted on both pages. No Coach entry point fits *should I go heavier?* beyond asking; none is drawn.
+- **12a · Lifting above the plan is just logged.** Neither phone asks to change a routine when the
+  lifter beats it; targets change through explicit routine-editor Save or accepted Coach proposals
+  (catalogue 08.21). Boards 03.6 are deleted on both pages. No Coach entry point fits
+  *should I go heavier?* beyond asking; none is drawn.
 - **12b · Every workout starts from a routine.** No free workout on either phone, and the Control
   Center control and the Quick Settings tile open Routines when no workout is open (both 04.1).
   Boards 03.9 are deleted on both pages. Android still offers *Start logging*
@@ -987,7 +987,7 @@ these places.
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *Free session*, *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,
-  `domain/Deviation.kt`, `domain/WorkoutNotification.kt:54`); the web's *No sessions yet.*, *no
+  `domain/WorkoutNotification.kt:54`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).
 
 ### Figma reconciliation

@@ -288,17 +288,6 @@ data class Routine(
                 sets = entry.sets)
         },
     )
-
-    // Addressed by POSITION (plan index + 1), never by movement name. An open line stays open:
-    // nothing is written onto it.
-    fun retargeting(position: Int, exerciseId: String, sets: List<SetTarget>): Routine? {
-        val row = entries.firstOrNull { it.position == position } ?: return null
-        if (row.exerciseId != exerciseId) return null
-        if (row.isOpen) return null
-        return copy(entries = entries.map {
-            if (it.position == position) it.copy(sets = Scheme.rounded(sets)) else it
-        })
-    }
 }
 
 @Serializable

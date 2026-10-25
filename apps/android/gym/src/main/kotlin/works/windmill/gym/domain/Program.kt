@@ -99,8 +99,6 @@ object TargetEntry {
     const val rampUp = "Ramp up"
     const val matchSetOne = "Match set 1"
     const val delete = "Delete"
-    // The deviation sheet's button on a scheme whose sets disagree.
-    const val saveTodaysSets = "Save today’s sets"
 
     enum class Field { Sets, Reps, Weight }
 
