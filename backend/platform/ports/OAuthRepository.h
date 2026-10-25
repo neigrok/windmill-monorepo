@@ -25,6 +25,7 @@ struct StoredCode {
   std::string resource;
   std::string scope;
   UnixMs expiresAt = 0;
+  std::uint64_t accountGeneration = 0;
 };
 
 // `resource` is the audience the token is valid for.
@@ -34,6 +35,7 @@ struct StoredToken {
   std::string resource;
   std::string scope;
   UnixMs expiresAt = 0;
+  std::uint64_t accountGeneration = 0;
 };
 
 // `unknown`: never a refresh token here, or its window has closed. `reused`: already spent, and
@@ -63,22 +65,22 @@ struct OAuthRepository {
   // Clients registered since `sinceMs` that never completed an authorization.
   virtual int unattachedClientsSince(UnixMs sinceMs) = 0;
 
-  virtual void insertCode(const std::string& codeDigest, const StoredCode& code) = 0;
+  virtual bool insertCode(const std::string& codeDigest, const StoredCode& code,
+                          const std::string& sessionDigest, UnixMs now) = 0;
   // Atomic: returns the grant only to the caller that removed the row, so a code works once.
   virtual std::optional<StoredCode> takeCode(const std::string& codeDigest) = 0;
 
-  virtual void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
-                           const StoredToken& token, UnixMs refreshExpiresAt) = 0;
+  // The token and optional initial consent commit only while this account generation is live.
+  virtual bool insertToken(const std::string& accessDigest, const std::string& refreshDigest,
+                           const StoredToken& token, UnixMs refreshExpiresAt,
+                           std::optional<UnixMs> grantAt = std::nullopt) = 0;
   virtual std::optional<StoredToken> findAccessToken(const std::string& accessDigest) = 0;
   // Atomically spends the presented token (if unexpired and unspent) and returns its grant.
   // A spent token leaves a tombstone so reuse stays distinguishable from an invalid string; it
   // lives as long as the refresh token would have (OAuthPolicy::spentRefreshTombstoneMs).
   virtual RefreshRotation rotateRefreshToken(const std::string& refreshDigest, UnixMs now) = 0;
 
-  // recordGrant upserts: granted_ms keeps the earliest, last_used and scope advance.
   // touchGrantUsed advances last_used only past minIntervalMs.
-  virtual void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
-                           const std::string& scope) = 0;
   virtual void touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
                               UnixMs minIntervalMs) = 0;
   virtual std::vector<GrantView> listGrants(const UserId& user) = 0;

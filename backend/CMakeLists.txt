@@ -554,6 +554,7 @@ add_test(NAME sync COMMAND windmill_sync_tests)
 add_executable(windmill_adapters_tests
   test/http_main.cpp
   test/platform/adapters/http/AuthApiTest.cpp
+  test/platform/adapters/http/AccountDeletionTest.cpp
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
@@ -584,6 +585,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
   test/platform/adapters/postgres/PgAiBudgetRepositoryTest.cpp
   test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
+  test/platform/adapters/postgres/PgAccountClosureTest.cpp
   test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
   test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp

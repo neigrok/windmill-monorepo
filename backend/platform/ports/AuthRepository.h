@@ -57,6 +57,11 @@ struct SignInMethod {
   bool relay = false;
 };
 
+struct AccountCloseResult {
+  ClosureReceipt receipt;
+  std::vector<std::string> revokedSessions;
+};
+
 // Digests, not secrets, are the keys throughout.
 struct AuthRepository {
   virtual ~AuthRepository() = default;
@@ -65,8 +70,11 @@ struct AuthRepository {
   virtual std::optional<User> findUserById(const UserId& id) = 0;
   virtual User createUser(const Email& email, const std::string& name) = 0;
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
-  // Stamps the close at `now`, final at `closesAt`.
-  virtual void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) = 0;
+  // Stamps a new close; an active close keeps and returns its original deadline.
+  virtual UnixMs markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) = 0;
+  virtual AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
+      const std::string& sessionDigest, UnixMs now) = 0;
+  virtual ClosureReceipt closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) = 0;
   // Clears a close that is not final at `now`, and only such a close; true when it did.
   virtual bool reviveUser(const UserId& userId, UnixMs now) = 0;
   // Hard delete; only for the link merge, whose precondition is an account proven empty. Returns the digests of the

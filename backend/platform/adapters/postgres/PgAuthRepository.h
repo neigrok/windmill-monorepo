@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "platform/adapters/postgres/PgAccountFootprint.h"
+#include "platform/adapters/postgres/PgOAuthRepository.h"
 #include "platform/ports/AuthRepository.h"
 
 #include <functional>
@@ -28,13 +29,17 @@ public:
   // `productErasures` name every product's rows the users row's own cascade does not reach; the platform's own are
   // erased here.
   explicit PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint = nullptr,
-                            std::vector<AccountErasure> productErasures = {});
+                            std::vector<AccountErasure> productErasures = {},
+                            std::shared_ptr<PgOAuthRepository> oauth = nullptr);
 
   std::optional<User> findUserByEmail(const Email& email) override;
   std::optional<User> findUserById(const UserId& id) override;
   User createUser(const Email& email, const std::string& name) override;
   void updateName(const UserId& userId, const std::string& name) override;
-  void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override;
+  UnixMs markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override;
+  AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
+      const std::string& sessionDigest, UnixMs now) override;
+  ClosureReceipt closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) override;
   bool reviveUser(const UserId& userId, UnixMs now) override;
   std::vector<std::string> deleteUser(const UserId& userId) override;
   std::vector<UserId> finalClosedAccounts(UnixMs now, int limit) override;
@@ -84,6 +89,7 @@ private:
   std::shared_ptr<PgPool> pool_;
   std::shared_ptr<PgAccountFootprint> footprint_;
   std::vector<AccountErasure> productErasures_;
+  std::shared_ptr<PgOAuthRepository> oauth_;
 };
 
 }

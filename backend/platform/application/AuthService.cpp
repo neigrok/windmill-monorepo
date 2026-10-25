@@ -365,13 +365,23 @@ void AuthService::signOutEverywhere(const UserId& userId, const std::string& cur
 
 UnixMs AuthService::closeAccount(const UserId& userId) {
   const UnixMs now = clock_.nowMs();
-  LOG_INFO << "auth: account closed user=" << userId.str();
-  // Tear down every credential BEFORE stamping the close: the MCP token path has no deletedAt
-  // guard, so stamping first leaves a window where a token resolves for a closed account.
   revocations_.revoked(repo_.revokeAllSessions(userId));  // every device signed out
   oauth_.disconnectAll(userId);                           // every connected tool disconnected (drops its tokens)
-  repo_.markUserDeleted(userId, now, closesAt(now));      // the grace starts now; nothing the account holds is touched yet
-  return closesAt(now);
+  return repo_.markUserDeleted(userId, now, closesAt(now));
+}
+
+AccountCloseResult AuthService::closeAccount(const UserId& userId, const std::string& operationId,
+    const std::string& proof, UnixMs requestedAt, const std::string& sessionSecret) {
+  const AccountClosure operation{operationId, tokens_.digestOf("account-closure:" + proof), requestedAt};
+  auto result = repo_.closeWithReceipt(userId, operation, tokens_.digestOf(sessionSecret), clock_.nowMs());
+  if (!result.revokedSessions.empty()) revocations_.revoked(result.revokedSessions);
+  return result;
+}
+
+ClosureReceipt AuthService::closureReceipt(const UserId& userId, const std::string& operationId,
+    const std::string& proof, UnixMs requestedAt) {
+  return repo_.closureReceipt(userId,
+      AccountClosure{operationId, tokens_.digestOf("account-closure:" + proof), requestedAt}, clock_.nowMs());
 }
 
 int AuthService::eraseFinalCloses(int limit) {

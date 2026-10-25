@@ -53,11 +53,11 @@ std::optional<OAuthClient> OAuthService::describeClient(const std::string& clien
 
 std::string OAuthService::issueCode(const std::string& clientId, const std::string& redirectUri,
                                     const std::string& codeChallenge, const std::string& resource,
-                                    const std::string& scope, const UserId& user) {
+                                    const std::string& scope, const UserId& user, const std::string& sessionSecret) {
   const MintedToken code = tokens_.mint();
   const UnixMs now = clock_.nowMs();
-  repo_.insertCode(code.digest, StoredCode{clientId, user, redirectUri, codeChallenge,
-                                           canonicalResource(resource), scope, codeExpiry(now)});
+  if (!repo_.insertCode(code.digest, StoredCode{clientId, user, redirectUri, codeChallenge,
+                         canonicalResource(resource), scope, codeExpiry(now)}, tokens_.digestOf(sessionSecret), now)) return "";
   return code.secret;
 }
 
@@ -74,9 +74,8 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
   // The token stays bound to the resource the code was issued for; a repeated one must match, an
   // omitted one falls back to that binding.
   if (!resource.empty() && !audienceMatches(resource, stored->resource)) return {GrantError::badResource, std::nullopt};
-  // Record the grant apart from the rotating token rows so it survives rotation, scope included.
-  repo_.recordGrant(stored->user, stored->clientId, now, stored->scope);
-  return {GrantError::ok, mintPair(stored->clientId, stored->user, stored->resource, stored->scope, now)};
+  return mintPair(StoredToken{stored->clientId, stored->user, stored->resource, stored->scope,
+                             0, stored->accountGeneration}, now, now);
 }
 
 OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken, const std::string& clientId) {
@@ -96,7 +95,7 @@ OAuthService::TokenResult OAuthService::refresh(const std::string& refreshToken,
     return {GrantError::invalidGrant, std::nullopt};
   const StoredToken& grant = *rotation.grant;
   if (grant.clientId != clientId) return {GrantError::invalidClient, std::nullopt};
-  return {GrantError::ok, mintPair(grant.clientId, grant.user, grant.resource, grant.scope, now)};
+  return mintPair(grant, now);
 }
 
 std::optional<ToolCaller> OAuthService::resolveAccessToken(const std::string& accessToken,
@@ -121,13 +120,13 @@ void OAuthService::disconnect(const UserId& user, const std::string& clientId) {
 
 void OAuthService::disconnectAll(const UserId& user) { repo_.revokeAllGrants(user); }
 
-OAuthService::Tokens OAuthService::mintPair(const std::string& clientId, const UserId& user,
-                                            const std::string& resource, const std::string& scope, UnixMs now) {
+OAuthService::TokenResult OAuthService::mintPair(StoredToken grant, UnixMs now, std::optional<UnixMs> grantAt) {
   const MintedToken access = tokens_.mint();
   const MintedToken refresh = tokens_.mint();
-  repo_.insertToken(access.digest, refresh.digest,
-                    StoredToken{clientId, user, resource, scope, accessExpiry(now)}, refreshExpiry(now));
-  return Tokens{access.secret, refresh.secret, OAuthPolicy::accessLifetimeMs, scope};
+  grant.expiresAt = accessExpiry(now);
+  if (!repo_.insertToken(access.digest, refresh.digest, grant, refreshExpiry(now), grantAt))
+    return {GrantError::invalidGrant, std::nullopt};
+  return {GrantError::ok, Tokens{access.secret, refresh.secret, OAuthPolicy::accessLifetimeMs, grant.scope}};
 }
 
 }

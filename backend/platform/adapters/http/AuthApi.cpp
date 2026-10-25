@@ -9,6 +9,7 @@
 
 #include <openssl/rand.h>
 
+#include <algorithm>
 #include <ctime>
 #include <iterator>
 #include <optional>
@@ -164,6 +165,64 @@ std::string isoUtc(UnixMs ms) {
   char buffer[32];
   std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tm);
   return buffer;
+}
+
+struct AccountClosureIn {
+  std::string account;
+  std::string operationId;
+  std::string proof;
+  UnixMs requestedAt;
+
+  static std::optional<AccountClosureIn> parse(const std::shared_ptr<Json::Value>& body) {
+    if (!body || !body->isObject()) return std::nullopt;
+    for (const auto* field : {"account", "operationId", "proof"})
+      if (!(*body)[field].isString()) return std::nullopt;
+    if (((*body)["requestedAtMs"].type() != Json::intValue && (*body)["requestedAtMs"].type() != Json::uintValue) ||
+        !(*body)["requestedAtMs"].isUInt64() || (*body)["requestedAtMs"].asUInt64() == 0 ||
+        (*body)["requestedAtMs"].asUInt64() >= (1ULL << 53)) return std::nullopt;
+    AccountClosureIn value{(*body)["account"].asString(), (*body)["operationId"].asString(),
+        (*body)["proof"].asString(), (*body)["requestedAtMs"].asUInt64()};
+    for (const auto& id : {value.account, value.operationId}) {
+      if (id.size() != 36) return std::nullopt;
+      for (std::size_t i = 0; i < id.size(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+          if (id[i] != '-') return std::nullopt;
+          continue;
+        }
+        if (!(id[i] >= '0' && id[i] <= '9') && !(id[i] >= 'a' && id[i] <= 'f')) return std::nullopt;
+      }
+    }
+    if (value.proof.size() != 64 || !std::all_of(value.proof.begin(), value.proof.end(), [](char c) {
+      return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    })) return std::nullopt;
+    return value;
+  }
+};
+
+drogon::HttpResponsePtr closureFailure(drogon::HttpStatusCode status, const char* state, const char* code) {
+  Json::Value body(Json::objectValue);
+  body["state"] = state;
+  body["code"] = code;
+  auto response = jsonResponse(body, status);
+  response->addHeader("Cache-Control", "private, no-store");
+  return response;
+}
+
+drogon::HttpResponsePtr closureResponse(const ClosureReceipt& receipt) {
+  if (receipt.outcome == ClosureOutcome::unauthorized)
+    return closureFailure(drogon::k401Unauthorized, "pending", "unauthenticated");
+  if (receipt.outcome == ClosureOutcome::clockAhead)
+    return closureFailure(drogon::k409Conflict, "refused", "clock-ahead");
+  if (receipt.outcome != ClosureOutcome::closed)
+    return closureFailure(drogon::k404NotFound, "unavailable", "unavailable");
+  Json::Value body(Json::objectValue);
+  body["state"] = "closed";
+  body["closesMs"] = Json::UInt64(receipt.closesAt);
+  body["closingOn"] = isoUtc(receipt.closesAt);
+  body["receiptExpiresMs"] = Json::UInt64(receipt.expiresAt);
+  auto response = jsonResponse(body);
+  response->addHeader("Cache-Control", "private, no-store");
+  return response;
 }
 }
 
@@ -570,6 +629,38 @@ void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 }
 
 void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  const auto requested = req->getJsonObject();
+  if (requested && requested->isObject() &&
+      (requested->isMember("operationId") || requested->isMember("proof") || requested->isMember("requestedAtMs"))) {
+    try {
+      const auto request = AccountClosureIn::parse(requested);
+      if (!request) {
+        callback(closureFailure(drogon::k400BadRequest, "refused", "malformed"));
+        return;
+      }
+      const auto secret = sessionSecretOf(req);
+      const auto caller = auth_->authenticate(secret, contextOf(req));
+      if (!caller) {
+        callback(closureResponse({ClosureOutcome::unauthorized}));
+        return;
+      }
+      if (caller->id.str() != request->account) {
+        callback(closureFailure(drogon::k409Conflict, "refused", "account-mismatch"));
+        return;
+      }
+      const auto result = auth_->closeAccount(caller->id, request->operationId, request->proof, request->requestedAt, secret);
+      auto response = closureResponse(result.receipt);
+      if (!result.revokedSessions.empty()) clearSessionCookie(response, secureCookies_, cookieScopes_);
+      callback(response);
+    } catch (const std::exception& failure) {
+      writeHttpFailure(req, failure);
+      callback(closureFailure(drogon::k503ServiceUnavailable, "pending", "temporarily_unavailable"));
+    } catch (...) {
+      writeHttpFailureUnknown(req);
+      callback(closureFailure(drogon::k503ServiceUnavailable, "pending", "temporarily_unavailable"));
+    }
+    return;
+  }
   // Soft-close with a 30-day grace; every session and grant is signed out.
   const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
@@ -594,6 +685,24 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   auto response = jsonResponse(body);
   clearSessionCookie(response, secureCookies_, cookieScopes_);  // this device's session is gone too
   callback(response);
+}
+
+void AuthApi::deletionResult(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  try {
+    const auto request = AccountClosureIn::parse(req->getJsonObject());
+    if (!request) {
+      callback(closureFailure(drogon::k400BadRequest, "refused", "malformed"));
+      return;
+    }
+    callback(closureResponse(auth_->closureReceipt(UserId{request->account}, request->operationId,
+        request->proof, request->requestedAt)));
+  } catch (const std::exception& failure) {
+    writeHttpFailure(req, failure);
+    callback(closureFailure(drogon::k503ServiceUnavailable, "pending", "temporarily_unavailable"));
+  } catch (...) {
+    writeHttpFailureUnknown(req);
+    callback(closureFailure(drogon::k503ServiceUnavailable, "pending", "temporarily_unavailable"));
+  }
 }
 
 void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {

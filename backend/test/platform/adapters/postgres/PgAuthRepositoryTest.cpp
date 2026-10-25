@@ -104,6 +104,7 @@ void eraseLeftovers(PgAuthRepository& repo) {
     w.exec("DELETE FROM ai_usage WHERE operation = 'erase-pgtest'");
     w.exec("DELETE FROM ai_budget_grants WHERE id = 'erase-pgtest-grant'");
     w.exec("DELETE FROM ai_budget_device_accounts WHERE device_id = 'erase-pgtest-device'");
+    w.exec(withAccounts("DELETE FROM account_closures WHERE account_id IN ('SAM', 'EVE')"));
     w.exec(withAccounts("UPDATE users SET deleted_at = to_timestamp(0), closes_at = to_timestamp(0) WHERE id IN ('SAM', 'EVE')"));
     w.commit();
   }
@@ -166,9 +167,9 @@ TEST(pg_auth_erasing_a_closed_account_leaves_no_row_any_product_keys_to_it) {
   PgAuthRepository repo{pgTestPool(), nullptr, {roadmapAccountErasure()}};
   eraseLeftovers(repo);
   // Kept on purpose: the AI accounting relations keep an opaque account id with no address or content
-  // (AI_ALLOWANCES.md), and sign-in credentials are the address's, collected at their expiry by retention.
+  // (AI_ALLOWANCES.md); sign-in credentials and closure receipts are collected at their own expiry.
   const std::set<std::string> kept = {"ai_usage", "ai_budget_grants", "ai_budget_device_accounts", "ai_budget_balances",
-                                      "ai_budget_reservations", "ai_budget_alerts", "magic_links", "apple_tickets"};
+                                      "ai_budget_reservations", "ai_budget_alerts", "magic_links", "apple_tickets", "account_closures"};
   {
     PgLease c{*pgTestPool()};
     pqxx::work w{*c};
@@ -189,6 +190,7 @@ INSERT INTO tend_runs (id, tree_id, user_id, prompt) VALUES ('erase-tend', 't_er
 INSERT INTO reminder_subscription (user_id) VALUES ('SAM');
 INSERT INTO reminder_week (user_id, slot_date, decision, reason, tree_id) VALUES ('SAM', '2026-01-05', 'sent', 'ok', 't_erase_sam');
 INSERT INTO sessions (token_hash, user_id, expires_ms) VALUES ('erase-session', 'SAM', 9000000000000);
+INSERT INTO account_closures (operation_id, account_id, proof_hash, requested_ms, closes_ms, expires_ms) VALUES ('e7a50000-0000-4000-8000-000000000001', 'SAM', repeat('a',64), 1, 2, 3);
 INSERT INTO user_identities (provider, subject, user_id) VALUES ('google', 'erase-subject', 'SAM');
 INSERT INTO mcp_keys (token_hash, user_id, created_ms) VALUES ('erase-key', 'SAM', 1);
 INSERT INTO oauth_grants (user_id, client_id, granted_ms) VALUES ('SAM', 'erase-client', 1);
@@ -294,6 +296,7 @@ INSERT INTO ai_budget_device_accounts (device_id, account_id, bound_at_ms) VALUE
   CHECK_EQ(count("ai_usage WHERE user_id = 'SAM' AND operation = 'erase-pgtest'"), 1);
   CHECK_EQ(count("ai_budget_grants WHERE account_id = 'SAM' AND id = 'erase-pgtest-grant'"), 1);
   CHECK_EQ(count("ai_budget_device_accounts WHERE account_id = 'SAM' AND device_id = 'erase-pgtest-device'"), 1);
+  CHECK_EQ(count("account_closures WHERE account_id = 'SAM'"), 1);
   CHECK_EQ(count("users WHERE id = 'EVE'"), 1);
   CHECK_EQ(count("trees WHERE id = 't_erase_eve'"), 1);
   CHECK_EQ(count("tree_nodes WHERE tree_id = 't_erase_eve'"), 1);

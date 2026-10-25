@@ -43,7 +43,7 @@ public:
                << " feedback, " << report.serverErrors << " server errors, " << report.oauthCodes
                << " oauth codes, " << report.oauthTokens << " oauth tokens, " << report.oauthClients
                << " unattached oauth clients, " << report.signInLinks << " sign-in links, "
-               << report.appleTickets << " apple tickets";
+               << report.appleTickets << " apple tickets, " << report.accountClosures << " account closure receipts";
       observation.finish();
       return report;
     } catch (const std::exception& error) {

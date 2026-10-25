@@ -13,6 +13,8 @@ create table if not exists users (
 );
 
 alter table users add column if not exists name text not null default '';
+-- Never reset on restoration: fences token exchanges that began before account closure.
+alter table users add column if not exists oauth_generation bigint not null default 0;
 alter table users drop column if exists password_hash;
 alter table users drop column if exists handle;
 
@@ -231,6 +233,17 @@ alter table sessions add column if not exists last_seen_ms bigint not null defau
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
 
+-- Immutable closure receipts survive account erasure until their own bounded expiry.
+create table if not exists account_closures (
+  operation_id uuid primary key,
+  account_id uuid not null,
+  proof_hash text not null check (proof_hash ~ '^[0-9a-f]{64}$'),
+  requested_ms bigint not null check (requested_ms > 0),
+  closes_ms bigint not null,
+  expires_ms bigint not null check (expires_ms > closes_ms)
+);
+create index if not exists account_closures_expiry on account_closures (expires_ms);
+
 -- (provider, subject) is the identity; the email is only ever a hint. email_at_link records the
 -- address the door came in on and is never read to resolve anyone.
 create table if not exists user_identities (
@@ -280,6 +293,7 @@ alter table mcp_keys add column if not exists scope text not null default '';
 -- null closes_at is never final.
 alter table users add column if not exists deleted_at timestamptz;
 alter table users add column if not exists closes_at timestamptz;
+update users set oauth_generation = 1 where deleted_at is not null and oauth_generation = 0;
 update users set closes_at = greatest(deleted_at, now()) + interval '30 days'
   where deleted_at is not null and closes_at is null;
 drop index if exists users_closed;
@@ -321,6 +335,8 @@ create table if not exists oauth_codes (
   created_at     timestamptz not null default now()
 );
 
+alter table oauth_codes add column if not exists account_generation bigint not null default 0;
+
 create table if not exists oauth_tokens (
   token_hash         text primary key,  -- digest of the access token
   refresh_hash       text unique,       -- digest of the rotating refresh token
@@ -332,6 +348,7 @@ create table if not exists oauth_tokens (
   refresh_expires_ms bigint,            -- refresh-token expiry
   created_at         timestamptz not null default now()
 );
+alter table oauth_tokens add column if not exists account_generation bigint not null default 0;
 create index if not exists oauth_tokens_user on oauth_tokens (user_id);
 create index if not exists oauth_codes_user on oauth_codes (user_id);
 create index if not exists oauth_tokens_refresh on oauth_tokens (refresh_hash);

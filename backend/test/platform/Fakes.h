@@ -110,6 +110,9 @@ struct FakeAuthRepository : AuthRepository {
   std::map<std::pair<std::string, std::string>, SignInMethod> identityMethods;
   std::map<std::string, StoredAppleTicket> appleTickets;
   std::set<std::string> spentAppleTickets;
+  struct CloseRow { UserId account; AccountClosure operation; ClosureReceipt receipt; };
+  std::map<std::string, CloseRow> closures;
+  bool failClosure = false;
   std::vector<std::string> erased;                  // ids, in the order eraseAccount took them
   bool refuseTakeOver = false;
   int nextUserId = 0;
@@ -137,7 +140,37 @@ struct FakeAuthRepository : AuthRepository {
     it->second.name = name;
     usersByEmail[it->second.email.value].name = name;
   }
-  void markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) override { setDeleted(userId, now, closesAt); }
+  UnixMs markUserDeleted(const UserId& userId, UnixMs now, UnixMs deadline) override {
+    const auto user = findUserById(userId);
+    if (user && user->closesAt) return *user->closesAt;
+    setDeleted(userId, now, deadline);
+    return deadline;
+  }
+  ClosureReceipt closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) override {
+    if (failClosure) throw std::runtime_error("private closure storage failure");
+    const auto found = closures.find(operation.operationId);
+    if (found == closures.end()) return {};
+    const auto& row = found->second;
+    if (row.account != userId || row.operation.proofDigest != operation.proofDigest ||
+        row.operation.requestedAt != operation.requestedAt || now >= row.receipt.expiresAt) return {};
+    return row.receipt;
+  }
+  AccountCloseResult closeWithReceipt(const UserId& userId, const AccountClosure& operation,
+      const std::string& sessionDigest, UnixMs now) override {
+    if (failClosure) throw std::runtime_error("private closure storage failure");
+    if (closures.contains(operation.operationId)) return {closureReceipt(userId, operation, now), {}};
+    if (!operation.freshAt(now))
+      return {{operation.requestedAt > now ? ClosureOutcome::clockAhead : ClosureOutcome::unavailable}, {}};
+    const auto user = findUserById(userId);
+    const auto session = findSession(sessionDigest);
+    if (!user || user->deletedAt || !session || session->user != userId || now >= session->expiresAt)
+      return {{ClosureOutcome::unauthorized}, {}};
+    ClosureReceipt receipt{ClosureOutcome::closed, closesAt(now), now + AuthPolicy::closeReceiptLifetimeMs};
+    auto revoked = revokeAllSessions(userId);
+    markUserDeleted(userId, now, receipt.closesAt);
+    closures.emplace(operation.operationId, CloseRow{userId, operation, receipt});
+    return {receipt, std::move(revoked)};
+  }
   bool reviveUser(const UserId& userId, UnixMs now) override {
     auto it = usersById.find(userId.str());
     if (it == usersById.end() || !it->second.deletedAt || closeIsFinal(it->second, now)) return false;
@@ -478,7 +511,12 @@ struct FakeOAuthRepository : OAuthRepository {
     }
     return count;
   }
-  void insertCode(const std::string& digest, const StoredCode& code) override { codes[digest] = code; }
+  bool rejectCode = false;
+  bool insertCode(const std::string& digest, const StoredCode& code, const std::string&, UnixMs) override {
+    if (rejectCode) return false;
+    codes[digest] = code;
+    return true;
+  }
   std::optional<StoredCode> takeCode(const std::string& digest) override {
     auto it = codes.find(digest);
     if (it == codes.end()) return std::nullopt;
@@ -486,10 +524,15 @@ struct FakeOAuthRepository : OAuthRepository {
     codes.erase(it);
     return code;
   }
-  void insertToken(const std::string& accessDigest, const std::string& refreshDigest,
-                   const StoredToken& token, UnixMs refreshExpiresAt) override {
+  bool rejectToken = false;
+  bool insertToken(const std::string& accessDigest, const std::string& refreshDigest,
+                   const StoredToken& token, UnixMs refreshExpiresAt,
+                   std::optional<UnixMs> grantAt = std::nullopt) override {
+    if (rejectToken) return false;
     access[accessDigest] = token;
     refresh[refreshDigest] = Refresh{token, refreshExpiresAt, accessDigest, 0, false};
+    if (grantAt) recordGrant(token.user, token.clientId, *grantAt, token.scope);
+    return true;
   }
   std::optional<StoredToken> findAccessToken(const std::string& digest) override {
     auto it = access.find(digest);
@@ -509,7 +552,7 @@ struct FakeOAuthRepository : OAuthRepository {
   }
 
   void recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
-                   const std::string& scope) override {
+                   const std::string& scope) {
     auto key = std::make_pair(user.str(), clientId);
     auto it = grants.find(key);
     if (it == grants.end()) {

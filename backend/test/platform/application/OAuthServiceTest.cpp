@@ -24,7 +24,7 @@ TEST(oauth_full_authorization_code_flow_with_pkce) {
   REQUIRE(client.has_value());
   CHECK(svc.checkAuthorize(client->clientId, kRedirect, challenge, "S256").error == OAuthService::AuthorizeError::ok);
 
-  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   CHECK(granted.error == OAuthService::GrantError::ok);
   REQUIRE(granted.tokens.has_value());
@@ -52,7 +52,7 @@ TEST(oauth_a_token_whose_client_row_is_gone_still_resolves_with_an_empty_connect
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
   REQUIRE(client.has_value());
   std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge(verifier), kResource,
-                                   "", UserId{"u1"});
+                                   "", UserId{"u1"}, "session");
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   REQUIRE(granted.tokens.has_value());
 
@@ -71,7 +71,7 @@ TEST(oauth_token_exchange_rejects_wrong_pkce_verifier) {
   OAuthService svc(repo, tokens, clock);
 
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
-  std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge("right"), kResource, "", UserId{"u1"});
+  std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge("right"), kResource, "", UserId{"u1"}, "session");
   CHECK(svc.exchangeCode(code, client->clientId, kRedirect, "wrong", kResource).error ==
         OAuthService::GrantError::pkceMismatch);
 }
@@ -86,11 +86,11 @@ TEST(oauth_rejects_audience_and_redirect_mismatch) {
   const std::string verifier = "v";
   const std::string challenge = tokens.s256Challenge(verifier);
 
-  std::string code1 = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code1 = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   CHECK(svc.exchangeCode(code1, client->clientId, kRedirect, verifier, "https://evil.example").error ==
         OAuthService::GrantError::badResource);
 
-  std::string code2 = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code2 = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   CHECK(svc.exchangeCode(code2, client->clientId, "https://app.example/other", verifier, kResource).error ==
         OAuthService::GrantError::badRedirect);
 }
@@ -122,7 +122,7 @@ TEST(oauth_grant_is_recorded_on_exchange_and_listed_with_the_client_name) {
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
 
   const UnixMs grantedAt = clock.now;
-  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   CHECK(svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource).error == OAuthService::GrantError::ok);
 
   std::vector<GrantView> grants = svc.listGrants(UserId{"u1"});
@@ -146,7 +146,7 @@ TEST(oauth_grant_date_is_stable_across_refresh_rotation_and_last_used_advances) 
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
 
   const UnixMs grantedAt = clock.now;
-  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
 
   CHECK(svc.resolveAccessToken(granted.tokens->accessToken, kResource).has_value());
@@ -173,7 +173,7 @@ TEST(oauth_disconnect_drops_the_grant_and_kills_the_token) {
   const std::string verifier = "v";
   const std::string challenge = tokens.s256Challenge(verifier);
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
-  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"});
+  std::string code = svc.issueCode(client->clientId, kRedirect, challenge, kResource, "", UserId{"u1"}, "session");
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   CHECK(svc.resolveAccessToken(granted.tokens->accessToken, kResource).has_value());
   CHECK_EQ(svc.listGrants(UserId{"u1"}).size(), 1u);
@@ -196,7 +196,7 @@ TEST(oauth_replaying_a_rotated_refresh_token_revokes_the_whole_grant) {
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
   REQUIRE(client.has_value());
   std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge(verifier), kResource,
-                                   "roadmap:write", UserId{"u1"});
+                                   "roadmap:write", UserId{"u1"}, "session");
   OAuthService::TokenResult first = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   REQUIRE(first.tokens.has_value());
   OAuthService::TokenResult second = svc.refresh(first.tokens->refreshToken, client->clientId);
@@ -224,7 +224,7 @@ TEST(oauth_a_refresh_token_nobody_ever_issued_leaves_the_live_grant_alone) {
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
   REQUIRE(client.has_value());
   std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge(verifier), kResource,
-                                   "", UserId{"u1"});
+                                   "", UserId{"u1"}, "session");
   OAuthService::TokenResult granted = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   REQUIRE(granted.tokens.has_value());
 
@@ -301,7 +301,7 @@ TEST(oauth_an_honest_clients_immediate_retry_of_a_spent_refresh_token_keeps_the_
   std::optional<OAuthClient> client = svc.registerClient({kRedirect}, "Claude").client;
   REQUIRE(client.has_value());
   std::string code = svc.issueCode(client->clientId, kRedirect, tokens.s256Challenge(verifier), kResource,
-                                   "roadmap:write", UserId{"u1"});
+                                   "roadmap:write", UserId{"u1"}, "session");
   OAuthService::TokenResult first = svc.exchangeCode(code, client->clientId, kRedirect, verifier, kResource);
   REQUIRE(first.tokens.has_value());
   OAuthService::TokenResult won = svc.refresh(first.tokens->refreshToken, client->clientId);
@@ -323,4 +323,37 @@ TEST(oauth_an_honest_clients_immediate_retry_of_a_spent_refresh_token_keeps_the_
   CHECK(svc.refresh(first.tokens->refreshToken, thief.client->clientId).error ==
         OAuthService::GrantError::invalidGrant);
   CHECK_EQ(svc.listGrants(UserId{"u1"}).size(), static_cast<std::size_t>(0));
+}
+
+TEST(oauth_refuses_token_and_grant_when_account_generation_is_no_longer_live) {
+  FakeOAuthRepository repo;
+  fake::FakeTokens tokens;
+  fake::FakeClock clock;
+  OAuthService service{repo, tokens, clock};
+  const auto client = service.registerClient({"https://client.example/callback"}, "test").client;
+  REQUIRE(client.has_value());
+  const auto code = service.issueCode(client->clientId, "https://client.example/callback",
+      tokens.s256Challenge("verifier"), "https://mcp.example", "gym:read", UserId{"account"}, "session");
+  repo.rejectCode = true;
+  CHECK(service.issueCode(client->clientId, "https://client.example/callback",
+      tokens.s256Challenge("verifier"), "https://mcp.example", "gym:read", UserId{"account"}, "session").empty());
+  CHECK_EQ(repo.codes.size(), std::size_t{1});
+  repo.rejectToken = true;
+  const auto denied = service.exchangeCode(code, client->clientId, "https://client.example/callback", "verifier", "https://mcp.example");
+  CHECK_EQ(denied.error, OAuthService::GrantError::invalidGrant);
+  CHECK_FALSE(denied.tokens.has_value());
+  CHECK(repo.access.empty());
+  CHECK(repo.refresh.empty());
+  CHECK(repo.grants.empty());
+  repo.rejectToken = false;
+  repo.rejectCode = false;
+  const auto newCode = service.issueCode(client->clientId, "https://client.example/callback",
+      tokens.s256Challenge("verifier"), "https://mcp.example", "gym:read", UserId{"account"}, "session");
+  const auto fresh = service.exchangeCode(newCode, client->clientId, "https://client.example/callback", "verifier", "https://mcp.example");
+  REQUIRE(fresh.tokens.has_value());
+  repo.rejectToken = true;
+  const auto refusedRefresh = service.refresh(fresh.tokens->refreshToken, client->clientId);
+  CHECK_EQ(refusedRefresh.error, OAuthService::GrantError::invalidGrant);
+  CHECK_FALSE(refusedRefresh.tokens.has_value());
+  CHECK(repo.access.empty());
 }

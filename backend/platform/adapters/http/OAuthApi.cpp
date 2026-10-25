@@ -203,7 +203,11 @@ void OAuthApi::decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   if (!approve) {
     out["redirect"] = headerSafe(redirectUri) + "?error=access_denied&state=" + enc(state);
   } else {
-    const std::string code = oauth_->issueCode(clientId, redirectUri, codeChallenge, resource, scope, *caller);
+    const std::string code = oauth_->issueCode(clientId, redirectUri, codeChallenge, resource, scope, *caller, sessionSecretOf(req));
+    if (code.empty()) {
+      cb(oauthError("login_required", "sign in to authorize", drogon::k401Unauthorized));
+      return;
+    }
     out["redirect"] = headerSafe(redirectUri) + "?code=" + enc(code) + "&state=" + enc(state);
   }
   cb(jsonResponse(out));

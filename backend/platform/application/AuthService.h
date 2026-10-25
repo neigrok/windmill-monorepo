@@ -144,6 +144,10 @@ public:
 
   // Drops every session and disconnects every tool. Returns the instant the account finally closes.
   UnixMs closeAccount(const UserId& userId);
+  AccountCloseResult closeAccount(const UserId& userId, const std::string& operationId,
+      const std::string& proof, UnixMs requestedAt, const std::string& sessionSecret);
+  ClosureReceipt closureReceipt(const UserId& userId, const std::string& operationId,
+      const std::string& proof, UnixMs requestedAt);
 
   // Erases accounts whose close is final, the earliest first and at most `limit`, each with every
   // database row any product keys to it. Answers how many went; one that fails is reported and the

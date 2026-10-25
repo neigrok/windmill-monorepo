@@ -27,10 +27,11 @@ struct RetentionReport {
   int oauthClients = 0;
   int signInLinks = 0;
   int appleTickets = 0;
+  int accountClosures = 0;
 
   int rows() const {
     return events + feedback + serverErrors + oauthCodes + oauthTokens + oauthClients + signInLinks +
-           appleTickets;
+           appleTickets + accountClosures;
   }
 };
 

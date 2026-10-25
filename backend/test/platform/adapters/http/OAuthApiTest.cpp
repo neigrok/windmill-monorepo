@@ -526,3 +526,19 @@ TEST(oauth_a_registration_over_the_burst_ceiling_is_a_503_and_says_so) {
            std::string("too many clients have registered here recently; try again shortly"));
   CHECK(!body.isMember("client_id"));
 }
+
+TEST(oauth_consent_losing_its_session_at_code_admission_returns_login_required) {
+  Harness h;
+  h.signIn("session");
+  const auto client = h.registerClient();
+  h.oauthRepo.rejectCode = true;
+  const auto response = decide(h, "session", decisionBody(client, kRedirect, h.tokens.s256Challenge("verifier"), true));
+  Json::Value expected(Json::objectValue);
+  expected["error"] = "login_required";
+  expected["error_description"] = "sign in to authorize";
+  CHECK_EQ(response->statusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(*response->getJsonObject(), expected);
+  CHECK(h.oauthRepo.codes.empty());
+  CHECK(h.oauthRepo.access.empty());
+  CHECK(h.oauthRepo.grants.empty());
+}

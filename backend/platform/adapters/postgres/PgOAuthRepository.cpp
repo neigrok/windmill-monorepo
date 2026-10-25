@@ -80,15 +80,24 @@ std::optional<OAuthClient> PgOAuthRepository::findClient(const std::string& clie
                      rows[0]["client_name"].as<std::string>()};
 }
 
-void PgOAuthRepository::insertCode(const std::string& codeDigest, const StoredCode& code) {
+bool PgOAuthRepository::insertCode(const std::string& codeDigest, const StoredCode& code,
+                                   const std::string& sessionDigest, UnixMs now) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  const auto account = txn.exec_params(
+      "SELECT oauth_generation FROM users WHERE id = $1::uuid AND deleted_at IS NULL FOR UPDATE", code.user.str());
+  if (account.empty()) return false;
+  const auto session = txn.exec_params(
+      "SELECT 1 FROM sessions WHERE token_hash = $1 AND user_id = $2::uuid AND expires_ms > $3 FOR UPDATE",
+      sessionDigest, code.user.str(), now);
+  if (session.empty()) return false;
   txn.exec_params(
       "INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, "
-      "resource, scope, expires_ms) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8)",
+      "resource, scope, expires_ms, account_generation) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9)",
       codeDigest, code.clientId, code.user.str(), code.redirectUri, code.codeChallenge, code.resource,
-      code.scope, static_cast<long long>(code.expiresAt));
+      code.scope, static_cast<long long>(code.expiresAt), account[0][0].as<std::uint64_t>());
   txn.commit();
+  return true;
 }
 
 std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDigest) {
@@ -96,7 +105,7 @@ std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDig
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "DELETE FROM oauth_codes WHERE code_hash = $1 "
-      "RETURNING client_id, user_id::text, redirect_uri, code_challenge, resource, scope, expires_ms",
+      "RETURNING client_id, user_id::text, redirect_uri, code_challenge, resource, scope, expires_ms, account_generation",
       codeDigest);
   txn.commit();
   if (rows.empty()) return std::nullopt;
@@ -104,32 +113,45 @@ std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDig
   return StoredCode{row["client_id"].as<std::string>(), UserId{row["user_id"].as<std::string>()},
                     row["redirect_uri"].as<std::string>(), row["code_challenge"].as<std::string>(),
                     row["resource"].as<std::string>(), row["scope"].as<std::string>(),
-                    static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+                    static_cast<UnixMs>(row["expires_ms"].as<long long>()), row["account_generation"].as<std::uint64_t>()};
 }
 
-void PgOAuthRepository::insertToken(const std::string& accessDigest, const std::string& refreshDigest,
-                                    const StoredToken& token, UnixMs refreshExpiresAt) {
+bool PgOAuthRepository::insertToken(const std::string& accessDigest, const std::string& refreshDigest,
+                                    const StoredToken& token, UnixMs refreshExpiresAt, std::optional<UnixMs> grantAt) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  const auto account = txn.exec_params(
+      "SELECT 1 FROM users WHERE id = $1::uuid AND deleted_at IS NULL AND oauth_generation = $2 FOR UPDATE",
+      token.user.str(), token.accountGeneration);
+  if (account.empty()) return false;
   txn.exec_params(
       "INSERT INTO oauth_tokens (token_hash, refresh_hash, client_id, user_id, resource, scope, "
-      "expires_ms, refresh_expires_ms) VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8)",
+      "expires_ms, refresh_expires_ms, account_generation) VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8, $9)",
       accessDigest, refreshDigest, token.clientId, token.user.str(), token.resource, token.scope,
-      static_cast<long long>(token.expiresAt), static_cast<long long>(refreshExpiresAt));
+      static_cast<long long>(token.expiresAt), static_cast<long long>(refreshExpiresAt), token.accountGeneration);
+  if (grantAt) txn.exec_params(
+      "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms, scope) "
+      "VALUES ($1::uuid, $2, $3, $3, $4) ON CONFLICT (user_id, client_id) DO UPDATE SET "
+      "granted_ms = least(oauth_grants.granted_ms, excluded.granted_ms), "
+      "last_used_ms = excluded.last_used_ms, scope = excluded.scope",
+      token.user.str(), token.clientId, *grantAt, token.scope);
   txn.commit();
+  return true;
 }
 
 std::optional<StoredToken> PgOAuthRepository::findAccessToken(const std::string& accessDigest) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT client_id, user_id::text, resource, scope, expires_ms FROM oauth_tokens WHERE token_hash = $1",
+      "SELECT t.client_id, t.user_id::text, t.resource, t.scope, t.expires_ms, t.account_generation "
+      "FROM oauth_tokens t JOIN users u ON u.id = t.user_id "
+      "WHERE t.token_hash = $1 AND u.deleted_at IS NULL AND u.oauth_generation = t.account_generation",
       accessDigest);
   if (rows.empty()) return std::nullopt;
   const auto& row = rows[0];
   return StoredToken{row["client_id"].as<std::string>(), UserId{row["user_id"].as<std::string>()},
                      row["resource"].as<std::string>(), row["scope"].as<std::string>(),
-                     static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+                     static_cast<UnixMs>(row["expires_ms"].as<long long>()), row["account_generation"].as<std::uint64_t>()};
 }
 
 RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refreshDigest, UnixMs now) {
@@ -140,7 +162,9 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
   pqxx::result rotated = txn.exec_params(
       "UPDATE oauth_tokens SET rotated_ms = $2, expires_ms = 0 "
       "WHERE refresh_hash = $1 AND rotated_ms IS NULL AND refresh_expires_ms > $2 "
-      "RETURNING client_id, user_id::text, resource, scope",
+      "AND EXISTS (SELECT 1 FROM users u WHERE u.id = oauth_tokens.user_id "
+      "AND u.deleted_at IS NULL AND u.oauth_generation = oauth_tokens.account_generation) "
+      "RETURNING client_id, user_id::text, resource, scope, account_generation",
       refreshDigest, static_cast<long long>(now));
   if (!rotated.empty()) {
     txn.commit();
@@ -150,13 +174,14 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
                            StoredToken{row["client_id"].as<std::string>(),
                                        UserId{row["user_id"].as<std::string>()},
                                        row["resource"].as<std::string>(),
-                                       row["scope"].as<std::string>(), 0}};
+                                       row["scope"].as<std::string>(), 0, row["account_generation"].as<std::uint64_t>()}};
   }
   // Nothing to rotate: either this was never a refresh token here, or it was one and is spent —
   // and only the second is a breach signal, which the tombstone is what tells the two apart.
   pqxx::result spent = txn.exec_params(
-      "SELECT client_id, user_id::text, resource, scope, rotated_ms FROM oauth_tokens "
-      "WHERE refresh_hash = $1 AND rotated_ms IS NOT NULL",
+      "SELECT t.client_id, t.user_id::text, t.resource, t.scope, t.rotated_ms, t.account_generation "
+      "FROM oauth_tokens t JOIN users u ON u.id = t.user_id WHERE t.refresh_hash = $1 "
+      "AND t.rotated_ms IS NOT NULL AND u.deleted_at IS NULL AND u.oauth_generation = t.account_generation",
       refreshDigest);
   txn.commit();
   if (spent.empty()) return RefreshRotation{RefreshOutcome::unknown, std::nullopt};
@@ -167,24 +192,8 @@ RefreshRotation PgOAuthRepository::rotateRefreshToken(const std::string& refresh
                          StoredToken{row["client_id"].as<std::string>(),
                                      UserId{row["user_id"].as<std::string>()},
                                      row["resource"].as<std::string>(),
-                                     row["scope"].as<std::string>(), 0},
+                                     row["scope"].as<std::string>(), 0, row["account_generation"].as<std::uint64_t>()},
                          static_cast<UnixMs>(row["rotated_ms"].as<long long>())};
-}
-
-void PgOAuthRepository::recordGrant(const UserId& user, const std::string& clientId, UnixMs now,
-                                    const std::string& scope) {
-  // granted_ms is set once and kept as the earliest; last_used_ms and scope advance to this consent.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params(
-      "INSERT INTO oauth_grants (user_id, client_id, granted_ms, last_used_ms, scope) "
-      "VALUES ($1::uuid, $2, $3, $3, $4) "
-      "ON CONFLICT (user_id, client_id) DO UPDATE SET "
-      "granted_ms = least(oauth_grants.granted_ms, excluded.granted_ms), "
-      "last_used_ms = excluded.last_used_ms, "
-      "scope = excluded.scope",
-      user.str(), clientId, static_cast<long long>(now), scope);
-  txn.commit();
 }
 
 void PgOAuthRepository::touchGrantUsed(const UserId& user, const std::string& clientId, UnixMs now,
@@ -233,10 +242,14 @@ void PgOAuthRepository::revokeGrant(const UserId& user, const std::string& clien
 void PgOAuthRepository::revokeAllGrants(const UserId& user) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  revokeAllGrants(txn, user);
+  txn.commit();
+}
+
+void PgOAuthRepository::revokeAllGrants(pqxx::work& txn, const UserId& user) {
   txn.exec_params("DELETE FROM oauth_tokens WHERE user_id = $1::uuid", user.str());
   txn.exec_params("DELETE FROM oauth_codes WHERE user_id = $1::uuid", user.str());
   txn.exec_params("DELETE FROM oauth_grants WHERE user_id = $1::uuid", user.str());
-  txn.commit();
 }
 
 }

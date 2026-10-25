@@ -12,7 +12,7 @@
 
 namespace wm {
 
-// Retention in Postgres: eight bounded DELETEs, each naming the rows it takes by primary key from a
+// Retention in Postgres: bounded DELETEs, each naming the rows it takes by primary key from a
 // LIMITed subquery, so a pass takes a slice and the heartbeat comes back for the rest.
 class PgRetentionStore : public RetentionStore {
 public:
@@ -45,11 +45,12 @@ public:
     // A sign-in credential is dead at its expiry, spent or not; past it the row only keeps an address.
     report.signInLinks = pass.byExpiry("magic_links", "token_hash", "expires_ms", now);
     report.appleTickets = pass.byExpiry("apple_tickets", "token_hash", "expires_ms", now);
+    report.accountClosures = pass.byExpiry("account_closures", "operation_id", "expires_ms", now);
     return report;
   }
 
 private:
-  // One lease for the whole pass, so an IO thread's request cannot slip between the eight statements.
+  // One lease for the whole pass.
   struct Pass {
     Pass(PgPool& pool, int batch) : lease(pool), batch(batch) {}
 

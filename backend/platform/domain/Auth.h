@@ -52,6 +52,27 @@ struct AuthPolicy {
   static constexpr int maxCodeAttempts = 5;
   static constexpr std::size_t nameMaxBytes = 80;
   static constexpr UnixMs closeGraceMs = 30ull * 24 * 60 * 60 * 1000;
+  static constexpr UnixMs closeRequestWindowMs = 5ull * 60 * 1000;
+  static constexpr UnixMs closeReceiptLifetimeMs = 35ull * 24 * 60 * 60 * 1000;
+};
+
+struct AccountClosure {
+  std::string operationId;
+  std::string proofDigest;
+  UnixMs requestedAt;
+
+  bool freshAt(UnixMs now) const {
+    return requestedAt <= now ? now - requestedAt < AuthPolicy::closeRequestWindowMs
+                              : requestedAt - now < AuthPolicy::closeRequestWindowMs;
+  }
+};
+
+enum class ClosureOutcome { closed, unauthorized, unavailable, clockAhead };
+struct ClosureReceipt {
+  ClosureOutcome outcome = ClosureOutcome::unavailable;
+  UnixMs closesAt = 0;
+  UnixMs expiresAt = 0;
+  bool operator==(const ClosureReceipt&) const = default;
 };
 
 inline bool withinRateLimit(int recentLinks) { return recentLinks < AuthPolicy::maxLinksPerWindow; }

@@ -32,6 +32,13 @@ publication are separate completions: a failed watcher leaves the committed admi
 `WriteRoutes` registers all HTTP handlers, automatically wrapping mutating verbs and explicitly
 marking GET authentication/OAuth writes. The early advice finds declared write routes before rate
 limiting. Its callback and `observedHttpCallback` carry the request state across asynchronous work.
+Recoverable account closure uses `platform.DELETE.v1.me`; receipt reads use
+`auth.account.closure.read`. Their completions carry only bounded outcomes. Storage failures report
+under the same static operations even when the client receives `pending`; expected malformed,
+account-mismatch, clock-ahead, unauthenticated and unavailable results create no Issue. Receipt
+retention is counted in `platform.retention`. No account/operation id, proof, digest or deadline
+enters these observations. OAuth admission races return the existing `login_required` or
+`invalid_grant` refusal on their existing route completion, without an Issue.
 `WriteRoutes::retire` registers the 20 retired gym write paths listed in `products/gym/routes.cpp`:
 each answers 410 `client-update-required` before authentication with nothing behind it and emits one
 WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
@@ -224,6 +231,7 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/auth/logout` (platform; rest) | `platform.POST.v1.auth.logout` | completion; bounded refusal or result | unexpected |
 | `PATCH /v1/me` (platform; rest) | `platform.PATCH.v1.me` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/me` (platform; rest) | `platform.DELETE.v1.me` | completion; bounded refusal or result | unexpected |
+| `POST /v1/account-deletion/result` (platform; rest) | `auth.account.closure.read` | completion; bounded receipt availability only | unexpected |
 | `DELETE /v1/sessions` (platform; rest) | `platform.DELETE.v1.sessions` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/sessions/{id}` (platform; rest) | `platform.DELETE.v1.sessions.id` | completion; bounded refusal or result | unexpected |
 | `POST /v1/mcp-keys` (platform; rest) | `platform.POST.v1.mcp.keys` | completion; bounded refusal or result | unexpected |

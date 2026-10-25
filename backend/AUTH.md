@@ -115,6 +115,77 @@ session cookie, and answers `200 { "closingOn": "<ISO UTC>", "closesMs": <epoch 
 whose request authenticated before the close, such as a sync push in flight, may still commit after
 it; it lands in the closed account, comes back with it or goes with its erasure.
 
+#### Recoverable deletion
+
+Native callers persist the following complete request privately before sending `DELETE /v1/me`
+with their session. The existing request containing only `account` remains supported.
+
+```json
+{
+  "account": "<confirmed account UUID>",
+  "operationId": "<new random UUID>",
+  "proof": "<32 cryptographically random bytes as 64 lowercase hex characters>",
+  "requestedAtMs": 1792940000000
+}
+```
+
+Both UUIDs use canonical lowercase spelling. `requestedAtMs` is a positive integer below 2^53,
+captured once with the operation. The account, operation id, proof and instant never change on a
+retry. The phone seals the proof in its account-pinned pending-deletion record; it sends the tuple
+only in the JSON body, never a URL, log or event. A new operation is admitted only when its instant
+is less than five minutes from the server clock. A known matching receipt can be read throughout
+its retention period regardless of that admission window.
+
+Closure, the immutable receipt, session revocation and OAuth grant/code/token revocation commit
+in one database transaction. The session is rechecked under the account lock; a second request
+authenticated before revocation cannot close it again, including with a different operation id.
+The legacy close also preserves the first active close deadline. Only an explicit restoration
+clears that deadline and permits a later, newly confirmed operation.
+
+Success is `200` with the exact shape
+`{ "state": "closed", "closesMs": <epoch ms>, "closingOn": "<ISO UTC>", "receiptExpiresMs": <epoch ms> }`.
+This proves that this operation committed, not that the account remains closed now. Reading or
+resubmitting a matching old operation after restoration returns its original receipt, without
+revoking the new session, clearing its cookie, closing the account again or extending any deadline.
+
+`POST /v1/account-deletion/result` takes the same JSON tuple and requires no account session.
+Its capability reads only that operation's receipt. It never authenticates a session, reads account
+content, changes credentials or restores/closes an account. Its `200` response is identical to the
+close response. A wrong account, operation id, proof or instant, a missing receipt, and an expired
+receipt all answer the same `404 { "state": "unavailable", "code": "unavailable" }`.
+Unavailable proves neither closure nor failure: the close might still be in flight, the request
+might never have arrived, or the receipt might no longer exist. Keep the pending account fence and
+use this read endpoint for recovery; do not mint a new close operation or sign in to check.
+
+Every recoverable response is `Cache-Control: private, no-store`. The remaining answers are:
+
+| Status | Body | Meaning |
+|---|---|---|
+| 400 | `{ "state": "refused", "code": "malformed" }` | This malformed request made no mutation. |
+| 409 | `{ "state": "refused", "code": "account-mismatch" }` | The close request names another account; this attempt made no mutation. |
+| 409 | `{ "state": "refused", "code": "clock-ahead" }` | An unseen close request is at least five minutes ahead; this attempt made no mutation. Correct the clock before a newly confirmed operation. |
+| 401 | `{ "state": "pending", "code": "unauthenticated" }` | The close session is unavailable. Recover the original operation; a successful close revokes this same session. |
+| 503 | `{ "state": "pending", "code": "temporarily_unavailable" }` | Storage/transport failed. Recover the original operation; commit may have preceded the failure. |
+
+`pending` describes an unknown client outcome, not a persisted server job. A lost response, any
+unrecognized 5xx, and a refusal concerning a changed/malformed retry never disprove an earlier
+possibly committed request. A close request older than the admission window with no matching
+live receipt answers the same unavailable response, so receipt expiry cannot turn a replay into
+a new close. Do not change `requestedAtMs` to bypass that boundary.
+
+Receipts are readable for 35 days from the first close. They store only the account UUID, operation
+UUID, SHA-256 of the domain-separated proof, original request instant, close deadline and receipt
+expiry. No email, session token, raw proof or product content is retained. They survive the account's
+30-day erasure so a late phone can confirm its owed local cleanup. The hourly retention sweep
+removes expired rows in bounded batches; expiry is enforced on reads even before that sweep runs.
+The proof grants no access after expiry. Post-expiry confirmation can be unavailable permanently.
+
+Closure increments a durable OAuth account generation. Codes and refresh grants keep the generation
+that admitted them; token insertion and access require a live account with that same generation.
+Code admission rechecks the original session under the account lock. A pre-close authorization,
+consumed code or rotated refresh cannot acquire credentials after closure or restoration. Initial
+grant metadata and its token commit together. Restoration does not reset the generation.
+
 Any sign-in before `closesMs` brings the account back whole. From `closesMs` on, the close is final:
 the account is erased in one transaction with every database row any product keys to it, by the
 first sign-in that meets it or by `ClosedAccountSweep` (hourly, 100 accounts a pass), whichever
@@ -130,11 +201,12 @@ the account's own, plus feedback left signed out with its address; an open accou
 stays whatever address it typed) and, per product, in the `AccountErasure` list `main.cpp` passes
 it. Roadmap's takes the account's trees and everything keyed to them, other people's progress on
 those trees included, since the trees are gone; its hook then retires their live rooms, so no
-reader is served one, no fork copies one, and no save writes one back. Two kinds of row stay: the
+reader is served one, no fork copies one, and no save writes one back. Three kinds of row stay: the
 AI accounting relations keep the account's id, with no address or content
-([AI_ALLOWANCES.md](AI_ALLOWANCES.md)), and pending sign-in credentials belong to the address and go
-at their expiry with the retention sweep. `PgAuthRepositoryTest` plants a row in every table with
-an account-shaped column and fails on any that survives.
+([AI_ALLOWANCES.md](AI_ALLOWANCES.md)); pending sign-in credentials belong to the address and go
+at their expiry; account-closure receipts retain their narrow result until their 35-day expiry.
+The retention sweep collects both expiring kinds. `PgAuthRepositoryTest` inventories every table
+with an account-shaped column and fails on unexpected survivors.
 
 Erasure reaches this database only. Events already forwarded to Amplitude, Sentry's issues and
 logs, Resend's delivery records and database backups keep what they hold until their own retention

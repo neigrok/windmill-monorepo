@@ -13,8 +13,7 @@
 
 namespace wm {
 
-// Consent lives at the HTTP edge; this service is handed an already-authenticated UserId when a
-// code is issued.
+// Consent lives at the HTTP edge; code admission rechecks the authenticated account and session.
 class OAuthService {
 public:
   OAuthService(OAuthRepository& repo, TokenGenerator& tokens, Clock& clock);
@@ -44,7 +43,7 @@ public:
   // Mints a single-use authorization code bound to the grant; only its digest is stored.
   std::string issueCode(const std::string& clientId, const std::string& redirectUri,
                         const std::string& codeChallenge, const std::string& resource,
-                        const std::string& scope, const UserId& user);
+                        const std::string& scope, const UserId& user, const std::string& sessionSecret);
 
   struct Tokens {
     std::string accessToken;
@@ -76,8 +75,7 @@ public:
 
 private:
   // Shared by exchangeCode and refresh: mint and persist a fresh access/refresh pair.
-  Tokens mintPair(const std::string& clientId, const UserId& user, const std::string& resource,
-                  const std::string& scope, UnixMs now);
+  TokenResult mintPair(StoredToken grant, UnixMs now, std::optional<UnixMs> grantAt = std::nullopt);
 
   OAuthRepository& repo_;
   TokenGenerator& tokens_;

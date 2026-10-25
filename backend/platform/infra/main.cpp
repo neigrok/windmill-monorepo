@@ -317,7 +317,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // one back.
   AccountErasure roadmapErasure = roadmapAccountErasure();
   roadmapErasure.committed = [registry](const std::vector<std::string>& trees) { registry->retireErased(trees); };
-  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure});
+  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint, std::vector<AccountErasure>{roadmapErasure}, oauthRepo);
   // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
   auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
@@ -919,6 +919,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       "/v1/sessions",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->listSessions(req, std::move(cb)); },
       {drogon::Get});
+  routes.registerWriteHandler("auth.account.closure.read", "/v1/account-deletion/result",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->deletionResult(req, std::move(cb)); },
+      {drogon::Post});
   routes.registerHandler(
       "/v1/sessions",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->signOutEverywhere(req, std::move(cb)); },

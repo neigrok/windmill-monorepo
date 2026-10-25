@@ -1,14 +1,16 @@
 #include "platform/adapters/postgres/PgAuthRepository.h"
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "platform/application/WriteObservation.h"
 
 #include <pqxx/pqxx>
 
 namespace wm {
 
 PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint,
-                                   std::vector<AccountErasure> productErasures)
-    : pool_(std::move(pool)), footprint_(std::move(footprint)), productErasures_(std::move(productErasures)) {}
+                                   std::vector<AccountErasure> productErasures, std::shared_ptr<PgOAuthRepository> oauth)
+    : pool_(std::move(pool)), footprint_(std::move(footprint)), productErasures_(std::move(productErasures)),
+      oauth_(std::move(oauth)) {}
 
 namespace {
 // A users row → User, carrying the close and the instant it turns final (null deleted_at → a live account).
@@ -71,13 +73,66 @@ void PgAuthRepository::updateName(const UserId& userId, const std::string& name)
   txn.commit();
 }
 
-void PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) {
+UnixMs PgAuthRepository::markUserDeleted(const UserId& userId, UnixMs now, UnixMs closesAt) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("UPDATE users SET deleted_at = to_timestamp($2::double precision / 1000.0), "
-                  "closes_at = to_timestamp($3::double precision / 1000.0) WHERE id = $1::uuid",
+  const auto rows = txn.exec_params("UPDATE users SET deleted_at = coalesce(deleted_at, to_timestamp($2::double precision / 1000.0)), "
+                  "closes_at = coalesce(closes_at, to_timestamp($3::double precision / 1000.0)), "
+                  "oauth_generation = oauth_generation + CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END WHERE id = $1::uuid "
+                  "RETURNING (extract(epoch from closes_at) * 1000)::bigint",
                   userId.str(), static_cast<long long>(now), static_cast<long long>(closesAt));
+  if (rows.empty()) throw std::runtime_error("Account closure unavailable");
   txn.commit();
+  return rows[0][0].as<UnixMs>();
+}
+
+AccountCloseResult PgAuthRepository::closeWithReceipt(const UserId& userId, const AccountClosure& operation,
+    const std::string& sessionDigest, UnixMs now) {
+  if (!oauth_) throw std::logic_error("Account closure requires OAuth revocation");
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto account = txn.exec_params("SELECT deleted_at IS NULL AS live FROM users WHERE id = $1::uuid FOR UPDATE", userId.str());
+  const auto previous = txn.exec_params(
+      "SELECT proof_hash, requested_ms, closes_ms, expires_ms FROM account_closures WHERE account_id = $1::uuid AND operation_id = $2::uuid",
+      userId.str(), operation.operationId);
+  if (!previous.empty()) {
+    const auto& row = previous[0];
+    if (row["proof_hash"].as<std::string>() != operation.proofDigest ||
+        row["requested_ms"].as<UnixMs>() != operation.requestedAt || row["expires_ms"].as<UnixMs>() <= now) return {};
+    return {{ClosureOutcome::closed, row["closes_ms"].as<UnixMs>(), row["expires_ms"].as<UnixMs>()}, {}};
+  }
+  if (!operation.freshAt(now))
+    return {{operation.requestedAt > now ? ClosureOutcome::clockAhead : ClosureOutcome::unavailable}, {}};
+  if (account.empty() || !account[0]["live"].as<bool>()) return {{ClosureOutcome::unauthorized}, {}};
+  const auto session = txn.exec_params(
+      "SELECT 1 FROM sessions WHERE token_hash = $1 AND user_id = $2::uuid AND expires_ms > $3 FOR UPDATE",
+      sessionDigest, userId.str(), now);
+  if (session.empty()) return {{ClosureOutcome::unauthorized}, {}};
+  const UnixMs deadline = closesAt(now);
+  const UnixMs expires = now + AuthPolicy::closeReceiptLifetimeMs;
+  const auto inserted = txn.exec_params(
+      "INSERT INTO account_closures (operation_id, account_id, proof_hash, requested_ms, closes_ms, expires_ms) "
+      "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6) ON CONFLICT (operation_id) DO NOTHING",
+      operation.operationId, userId.str(), operation.proofDigest, operation.requestedAt, deadline, expires);
+  if (inserted.affected_rows() == 0) return {};
+  const auto sessions = txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid RETURNING token_hash", userId.str());
+  oauth_->revokeAllGrants(txn, userId);
+  txn.exec_params("UPDATE users SET deleted_at = to_timestamp($2::double precision / 1000.0), "
+                 "closes_at = to_timestamp($3::double precision / 1000.0), oauth_generation = oauth_generation + 1 WHERE id = $1::uuid", userId.str(), now, deadline);
+  txn.commit();
+  markCurrentWrite();
+  return {{ClosureOutcome::closed, deadline, expires}, digestsOf(sessions)};
+}
+
+ClosureReceipt PgAuthRepository::closureReceipt(const UserId& userId, const AccountClosure& operation, UnixMs now) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params(
+      "SELECT closes_ms, expires_ms FROM account_closures WHERE account_id = $1::uuid AND operation_id = $2::uuid "
+      "AND proof_hash = $3 AND requested_ms = $4 AND expires_ms > $5",
+      userId.str(), operation.operationId, operation.proofDigest, operation.requestedAt, now);
+  if (rows.empty()) return {};
+  return {ClosureOutcome::closed, rows[0]["closes_ms"].as<UnixMs>(), rows[0]["expires_ms"].as<UnixMs>()};
 }
 
 bool PgAuthRepository::reviveUser(const UserId& userId, UnixMs now) {
