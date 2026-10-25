@@ -7,13 +7,15 @@ pages.
 Design lives on separate [Web Mobile](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-900) and [Web](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-901)
 proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433) and
 [desktop board](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543). The pages contain
-78 mobile and 37 desktop screen compositions, plus 17 transparent overlay prototype assets.
+89 mobile and 39 desktop screen compositions, plus 19 transparent overlay prototype assets.
 
 ## Behavior
 
 - Every existing graph node is one Board card, including roots. Edges are prerequisites; one existing
-  kind/color becomes one color tag. Cards show a small color marker without a written name; accessible
-  tag names and picker labels remain. No assignees, deadlines or new node-status field.
+  kind/color becomes one color tag. Cards show that tag as a 2px border around the full perimeter,
+  without a dot, reserved dot row or written color name. Accessible tag names and picker labels remain.
+  Lock/check indicators communicate status independently of color. No assignees, deadlines or new
+  node-status field.
 - Completed nodes are Done. Incomplete nodes with every prerequisite complete are Up next; the
   remaining nodes are Closed. No prerequisites means Up next. These are the current
   `model/UnlockRules.js` rules, with completion taking precedence.
@@ -38,8 +40,8 @@ proposal pages. Start with the [mobile board](https://www.figma.com/design/HM4d8
   scroll or camera; returning to Board reveals the selected node's derived category. The Graph
   drawing is an editable focus illustration using current Skill Node components, not a replacement
   renderer specification.
-- Anonymous owners retain manual creation and editing. Local-only storage is stated on the board.
-  Sign-in is not a Board editing gate. Failed saves retain the draft and offer Retry.
+- Anonymous owners retain manual creation and editing. Sign-in is not a Board editing gate.
+  Failed saves retain the draft and offer Retry. Storage locality is not interface chrome.
 
 The proposed layout changes the current phone Tree/List presentation to Board/Graph and adds Board
 on desktop. It introduces a node composer, responsive node details and reachable mobile actions.
@@ -51,6 +53,34 @@ swatches show a check and boundary; Clear restores all colors. The Gold example 
 result; Sky shows Read the wind in Up next and Name the boat parts in Done. Filtering leaves overall
 3/8 progress unchanged. Six used colors can scroll horizontally within their strip. Sort remains
 visible separately. Existing roadmap and node overflow actions retain their current canon.
+
+## Branch exploration
+
+**View branch** follows reading a node's Prerequisites and Unlocks. It opens Board with that node as
+the anchor and reveals its derived category. The visible set is the selected node plus every
+transitive ancestor and descendant, deduplicated by stable node ID. Siblings and collateral nodes
+are excluded; a prerequisite of a descendant is not included merely because of that relationship.
+This is a dependency filter, separate from the renderer's trunk-branch terminology.
+
+For Read the wind, the six-node subset is Read the wind, Choose a sailing course, Name the boat parts,
+Leave the dock, Sail a triangle and Sail solo. It excludes Rig the boat and Tie a bowline. Availability
+still uses the complete roadmap: Leave the dock retains Rig the boat and Read the wind as its two
+prerequisites, and Sail solo retains both of its prerequisites. Branch categories contain three
+Closed, one Up next and two Done nodes; overall roadmap progress remains 3/8.
+
+The compact scope control replaces the redundant mobile column heading and sits in the existing
+desktop filter row. Its label opens the anchor; the 44px clear target removes only branch scope.
+Color and search intersect this subset, and the current date sort still applies within each category.
+Clearing branch keeps the current category and other filters. An empty intersection offers a specific
+color-clear recovery, without silently removing branch scope.
+
+Related node and ancestor details return to the same scoped Board. Graph opens the full roadmap
+focused on the anchor; returning restores the Board branch context. The native walkthrough covers
+entry, category navigation, anchor/related/ancestor inspection, Graph return, clear scope and a
+standalone Gold/Up next empty intersection. Arbitrary search/filter/sort combinations, editing and
+completion while scoped remain implementation contracts, not fully simulated prototype states.
+`SkillTree.ancestorsOf` and `childrenOf` provide current graph traversal; the shipped app has no Board
+branch filter yet.
 
 ## Date sorting contract
 
@@ -146,6 +176,14 @@ proposed UX rule; the current domain permits blank labels and duplicate names. V
 selected prerequisites before mutation. Exclude duplicates, self references and cycle-producing
 choices. Preserve the complete draft on validation or save failure, with a specific message and Retry.
 The keyboard specimen keeps the Create node action above the keyboard.
+
+Create and edit use the same [authored-description field component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=291-4098).
+Its 224px writing area is used by all 19 composer and returned-draft specimens, including required-name,
+save-retry and large-roadmap drafts. It preserves the full authored text and scrolls long input.
+The form body scrolls independently of the final action. Focusing Description keeps the caret visible
+above the keyboard; the mobile specimen places the 106px action strip directly above the 252px keyboard.
+Desktop creation modals are 600×722px, centered in the 1440×960px specimen, with a 554px scroll body and
+a separate 52px action row. Smaller viewports reduce the scroll body rather than clipping the action.
 
 Success returns to the derived category, preserves the selected date sort, scrolls the new node
 into view and briefly highlights it. Clear only search/color selections that would hide this node,
@@ -244,17 +282,20 @@ and distinct **Unlocks**. Node links travel with the roadmap, accept safe http/h
 and open separately. Prerequisites are all incoming graph edges; Unlocks are direct children,
 including cross-branch children. They are not subtasks or all descendants.
 
-The owner workspace has its own visible **On this device / Not shared or synced** boundary. It
-contains checklist subtasks, a note and personal links. Current storage is browser localStorage keyed
+The owner workspace contains checklist subtasks, a note and personal links. The interface uses
+content labels rather than badges or explanations about storage, sharing or synchronization.
+Current storage is browser localStorage keyed
 by tree ID, with no user-ID namespace or server synchronization; this is not an account-private
 cloud vault. Shared readers receive authored node content and relations, without the owner
 workspace, History or edit controls.
 
-Subtasks are local checklist entries, not graph nodes. Checking the final item completes the parent
-node after 600ms in the current workspace behavior. The Board proposal shows Done and Reset and
-requires Undo to restore both the prior checklist and node progress as one coherent result; that
-combined restoration is implementation work, not a verified current capability. The Board then
-re-evaluates dependents. Note editing supports bold, italic, links and bullets; blur or Cmd/Ctrl+Enter
+Subtasks are checklist entries, independent of graph prerequisites and node completion. Checking or
+unchecking any entry changes only the checklist. The all-checked specimen remains Up next with 3/8
+roadmap progress and a separate **Complete** action. Its Undo restores the prior checklist without
+changing node progress. Explicit Complete produces the 4/8 completion result and re-evaluates dependents.
+Current `useWorkspace.js` still calls node completion after 600ms when every subtask is checked;
+removing that automatic call is required implementation work, not a change delivered by this design.
+Note editing supports bold, italic, links and bullets; blur or Cmd/Ctrl+Enter
 commits and Escape cancels. Personal-link removal never removes authored node
 links. Existing workspace storage failures have no reliable save acknowledgement, so no new “Saved”
 promise appears. See [`NodeWorkspace.jsx`](../../web/src/products/roadmap/ui/tree/NodeWorkspace.jsx),
@@ -278,8 +319,10 @@ wide with 20px padding; dedicated node pages use the available width in two usef
 Creation uses a 600px modal. Mobile details fill the viewport and retain the parent roadmap in back
 navigation.
 
-Cards use 24px radius, 12px padding, 8px internal gaps and a 100px minimum height. Content can grow
-for two-line titles and descriptions. Desktop Board uses 24px outer padding and 16px column gaps. The dedicated
+Cards use 24px radius, 12px padding, 8px internal gaps and content-driven height, with a 44px minimum
+interaction target. Regular Up next/Done cards measure 76px; Closed cards retain their real dependency
+row at 102–122px. The 320px stress cards grow to 96–120px for wrapping. Desktop Board uses 24px outer
+padding and 16px column gaps. The dedicated
 node page uses two columns for shared content and local workspace. These are measured layout
 choices, not user-testing results.
 
@@ -289,6 +332,11 @@ specimen abbreviates progress to 3.2k/5k and opens a context sheet with the full
 3,200 of 5,000 value. Desktop uses a 64px row; the title hugs up to a 480px maximum, followed by
 progress and view icons, then flexible space before search, Activity and More. Icon controls require
 accessible names and desktop tooltips; active view has a visible surface and accent.
+
+The [shared Shell](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=290-7085) is a local
+component set with Mobile and Desktop variants and an account-label text property. All 57
+Shell controls are linked instances, with a 52px height, 44px interaction wrappers and inherited light
+or dark appearance. This proposal component leaves the production Shell unchanged.
 
 The 116px mobile exploration band contains 44px category targets and the current sort key/direction,
 then a wide search field with Filter, Activity and More. It uses the same 16px outer edge as cards.
@@ -304,12 +352,31 @@ left, with Complete or Reset on the right. Subtasks toggle inline and personal l
 inside their local section. Note editing replaces the footer with Cancel and Done. Primary and
 secondary interactive targets are at least 44px.
 
+[Node sections](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=286-3838) is one local
+component set with Overview, Workspace and History selected variants. All 19 screen controls
+are instances, preserving each specimen's routes. The control uses equal-width 44px targets, a
+16px outer radius, 4px inset and 36px selected surface with a 12px radius. The radius variables and
+semantic surfaces/text inherit light or dark appearance. This matches the proposed Board category
+control; published production Tabs retain their existing shape. The instance showcase includes
+358px mobile and 720px desktop widths.
+
 The active input and commit action remain visible above the keyboard. Swipe may change categories;
 the visible tabs provide the same navigation without gestures. Keyboard focus, arrow-key tab
 navigation, Enter to inspect and Escape to close follow web patterns. No new global creation shortcut
 is claimed. Use 180–240ms soft transitions, with immediate updates under reduced motion. Announce
 completion and newly ready counts to assistive technology. Card titles and descriptions wrap to two
 lines then truncate; full authored content remains readable in details.
+
+The 390px and 320px node stress specimens preserve a full long title, a 358-word description and six
+long resource links. The 648px body scrolls between the 68px navigation and 128px fixed footer;
+Overview/Workspace/History and the action row remain reachable. Resource links use one
+[wrapping row component](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-10080),
+with a 44px minimum height and a trailing external-link icon. Labels and URL fallbacks wrap without
+ellipsis; implementation uses overflow wrapping for unbroken URLs. Native
+[390px](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=296-8521) and
+[320px](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=296-8562) link excerpts expose
+content beyond the initial viewport for review. These synthetic content specimens
+have no routes into the short eight-node fixture and do not replace its authored copy.
 
 ## Reference basis
 
@@ -353,7 +420,7 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 03.05 · Save retry | [185:2292](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2292) |
 | 03.06 · Search no results | [185:2329](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2329) |
 | 04.01 · Graph handoff | [188:1528](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1528) |
-| 04.02 · Local-only board | [188:1585](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1585) |
+| 04.02 · Anonymous owner | [188:1585](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1585) |
 | 04.03 · Create with keyboard | [188:1636](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=188-1636) |
 | 04.04 · Dark board | [193:1193](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=193-1193) |
 | 04.05 · Dark node page · Activity destination | [252:1157](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=252-1157) |
@@ -372,8 +439,8 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 07.02 · Node history | [228:1101](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1101) |
 | 07.03 · Activity overlay · open | [228:1179](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1179) |
 | 07.04 · Shared node | [228:1283](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1283) |
-| 07.05 · Edit local note | [228:1352](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1352) |
-| 07.06 · Subtasks complete node | [231:1174](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=231-1174) |
+| 07.05 · Edit note | [228:1352](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=228-1352) |
+| 07.06 · All subtasks checked | [231:1174](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=231-1174) |
 | 10.02 · Search tidal · keyboard | [258:4760](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-4760) |
 | 10.03 · One selected · retained query | [258:5181](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-5181) |
 | 10.04 · Second query · selection retained | [258:5335](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=258-5335) |
@@ -411,6 +478,17 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 13.10 · Edit · all prerequisites removed | [276:4607](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4607) |
 | 13.11 · Edit · returned without prerequisites | [276:4758](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-4758) |
 | 12.01 · Graph handoff · dark | [276:8780](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-8780) |
+| 14.01 · Branch · Up next | [292:8702](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-8702) |
+| 14.02 · Branch · Closed | [292:8798](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-8798) |
+| 14.03 · Branch · Done | [292:8911](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-8911) |
+| 14.04 · Branch · Related node | [292:9015](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-9015) |
+| 14.05 · Branch · Anchor | [292:9084](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-9084) |
+| 14.06 · Branch · 320px | [292:9156](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=292-9156) |
+| 14.07 · Full Graph · return to branch | [294:9765](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-9765) |
+| 14.08 · Branch and color · empty intersection | [296:8416](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=296-8416) |
+| 14.09 · Branch ancestor · Name the boat parts | [296:8600](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=296-8600) |
+| 15.01 · Node long content · 390px | [294:10082](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-10082) |
+| 15.02 · Node long content · 320px | [294:10190](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-10190) |
 | 13.12 · Review tidal selection · weather query | [279:7741](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=279-7741) |
 
 | Desktop screen | Figma |
@@ -452,6 +530,8 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 13.07 · Creation · review one prerequisite | [277:7622](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-7622) |
 | 13.08 · Creation · review two prerequisites | [277:8834](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=277-8834) |
 | 13.09 · Review tidal selection · tidal query | [279:3962](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=279-3962) |
+| 14.01 · Branch Board · Read the wind | [294:8979](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-8979) |
+| 14.04 · Full Graph · return to branch | [294:9949](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-9949) |
 
 | Transparent overlay asset | Figma |
 |---|---|
@@ -472,6 +552,8 @@ design standard than WCAG 2.2 AA's general 24 CSS pixel minimum with spacing exc
 | 06.02 · More overlay | [260:5154](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5154) |
 | 06.03 · More overlay · dark | [260:5165](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=260-5165) |
 | 12.02 · Roadmap context · dark overlay | [276:8806](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=276-8806) |
+| 14.02 · Desktop branch anchor | [294:9153](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-9153) |
+| 14.03 · Desktop related node | [294:9386](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=294-9386) |
 
 Prototype starts: [Mobile](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=183-1433&page-id=183%3A900&starting-point-node-id=183%3A1433)
 and [Desktop](https://www.figma.com/proto/HM4d8YWzJZg5clVRJKNuDr?node-id=184-1543&page-id=183%3A901&starting-point-node-id=184%3A1543).
@@ -494,23 +576,24 @@ route. Their behavior follows the shared contract without duplicating every dark
 
 ## Validation and limits
 
-All 115 screen compositions and 17 transparent overlay assets are native editable Figma layers,
-with 78 mobile and 37 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
+All 128 screen compositions and 19 transparent overlay assets are native editable Figma layers,
+with 89 mobile and 39 desktop compositions in numbered journeys on separate proposal pages. The page-tree audit
 finds no full-screen image fills; interface copy uses
 node terminology and Closed, Up next and Done categories. Nunito, Baloo 2 and the existing monospace
-caption font remain in use. No category totals or written color names appear on cards. Small color markers,
+caption font remain in use. No category totals or written color names appear on cards. Colored perimeter borders,
 authored description excerpts, overall progress and real dependency counts remain.
 
 The proposal reuses Windmill Buttons, Icon Buttons, semantic/spacing/radius variables, Skill Node
 components and canonical EventRows. Compact search adapts the canonical Input's tokens. Local
-components consolidate shared desktop/mobile identity, the mobile exploration toolbar, Node cards,
-filter/sort controls, creation form, prerequisite result rows, Activity content and device workspace. Current production
+components consolidate the shared Shell, desktop/mobile identity, the mobile exploration toolbar, Node cards,
+filter/sort controls, creation form, authored description input, Node sections, prerequisite result rows,
+Activity content and device workspace. Current production
 Graph/List pages and shared components are untouched. Repeated field, empty and error behavior is
 specified once rather than multiplying every responsive combination.
 
 Visual review covers the dense Board, four-node Closed success, blank/filled creation, prerequisite
 picker, required-name and retry states, keyboard, shared reader, device workspace and note editing,
-subtask completion/Undo, Activity and History, desktop creation and success, wide dedicated page,
+independent checklist toggle/Undo and explicit node completion, Activity and History, desktop creation and success, wide dedicated page,
 and light/dark modal/Board compositions. Activity contains one reusable overlay feed, external links
 use native monochrome icons, and each footer has one contextual action. Fields and scroll areas
 follow their responsive container widths.
@@ -524,10 +607,12 @@ The Activity revision checks default-closed and open geometry, light/dark target
 explicit dismissal actions and 44px close targets. Browser focus trapping and focus restoration are
 implementation requirements; native Figma reactions do not verify DOM accessibility behavior.
 
-The [25 October review](roadmap-board-review.md) records the current route and contrast checks.
-Its evidence is in
-`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-review-20261025`.
-The current audit verifies the complete inventory and native destinations, active hit targets and
-section placement. Node cards retain their 24px radius and existing shared geometry. The 320px
-stress specimen retains long title wrapping, compact progress and reachable exploration controls.
+The [25 October review](roadmap-board-review.md) records the current route, component and contrast checks.
+The current refinement evidence is in
+`/Users/vs/.codex/visualizations/2026/10/23/01a16a42-7a67-7e02-ba5e-15aa6d67f46a/roadmap-board-refinement-20261025`.
+The inventory check matches all 147 screen/overlay links to native Figma roots, with no omitted or extra
+entries. The audits cover native destinations, active hit targets and section placement. The final
+component inventory has 198 cards, 57 Shells, 19 screen Node sections and 19 screen description inputs.
+Node cards retain their 24px radius and content-driven height. The 320px Board stress specimen retains
+long title wrapping, compact progress and reachable exploration controls.
 The proposal remains 💡 pending human approval; no flow is Ready for dev or In production.
