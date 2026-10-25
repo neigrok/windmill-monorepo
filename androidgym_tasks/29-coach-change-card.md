@@ -1,5 +1,7 @@
 # The proposal card in the conversation, with a field diff (no review sheet)
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals.
+
 **Figma:**
 - 08.2 a proposal pending: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27854) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41150)
 - 08.3 expanded in place: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28311) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41187)

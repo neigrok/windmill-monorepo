@@ -1,5 +1,7 @@
 # Proposal: a very long card, apply failed, retry in flight
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals.
+
 **Figma:**
 - 08.27 a very long proposal, expanded: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38014) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41815)
 - 08.29 apply failed, no connection: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38166) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41876)

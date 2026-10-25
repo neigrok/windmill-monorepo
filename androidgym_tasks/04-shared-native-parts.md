@@ -32,7 +32,7 @@
     - `revealed` haptic at the threshold, as today.
   - **`NumberStepper`** in a new `ui/NumberStepper.kt`:
     - 48 dp `FilledTonalIconButton` − and + around a filled `TextField` with a label and a `suffix` unit (*kg each*, *reps*, …).
-    - Tapping the value focuses the field. `KeyboardType.Decimal` for loads, `KeyboardType.Number` for counts; `ImeAction.Done` commits. Assisted loads keep an explicit sign action independent of the IME (07). Do not remove the existing working signed-input path until its focused-state placement is approved under `android-gym-signed-load-input-design`.
+    - Tapping the value focuses the field. Signed decimal input for loads uses the native keyboard's minus key; `KeyboardType.Number` is for counts and `ImeAction.Done` commits. The owner approved native minus entry on 2026-10-25: retain the approved field sizing, add no app-level sign control, and verify negative decimal entry on the target emulator in 07.
     - Sizes: Regular, and Display for the rack's load numeral.
     - Pressed: the M3 state layer (on-surface 12 % over the tonal container), not a scale.
     - Changed: the value ticks (`AnimatedContent`, short slide, tabular digits), the field flashes `accentSoft` for 300 ms, and one light haptic plays. With reduce motion on, colour only.

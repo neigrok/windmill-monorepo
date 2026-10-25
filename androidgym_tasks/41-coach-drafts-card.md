@@ -1,5 +1,7 @@
 # Routine drafts decided on their card: Apply or Reject
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals.
+
 **Figma:**
 - 01.7 three drafts, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-8716) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39439)
 - 01.14 one routine: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-8887) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39487)

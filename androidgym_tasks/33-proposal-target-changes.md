@@ -1,5 +1,7 @@
 # Proposal: sets, reps and load; vary by set; ramp up; rest and a first target
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals.
+
 **Figma:**
 - 08.21 sets, reps and load: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37543) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41731)
 - 08.22 vary by set: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-37592) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41750)

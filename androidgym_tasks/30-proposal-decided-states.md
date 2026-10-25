@@ -1,5 +1,7 @@
 # Proposal decided states: Applied, Rejected, Out of date, two proposals
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals.
+
 **Figma:**
 - 08.12 applied: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30728) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41404)
 - 08.13 rejected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-30875) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41438)

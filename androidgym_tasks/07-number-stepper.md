@@ -18,14 +18,14 @@
 - Pressing scales to 0.96 (`Modifier.pressed`, :1009-1020). No haptic on any change.
 
 **Change**
-- Migrate load and reps to `NumberStepper` (04) on the rack and in Fix set. Remove `KeypadSheet` and its entry state only after the explicit signed-input replacement is drawn, approved and verified; preserve the existing working signed-input path until then. Nonvisual parser/validation tests and unsigned component work can proceed independently.
+- Migrate load and reps to `NumberStepper` (04) on the rack and in Fix set. Replace `KeypadSheet` and its entry state with the approved native-keyboard flow, preserving signed decimal input and its refusal cases.
 - 03.2: a tap on the load focuses the field.
   - The cursor sits after the value. The system keyboard opens with `KeyboardType.Decimal`.
   - The rack rides above the IME (`imePadding`); the compact headerless ledger from 09 can scroll away. The focused value, error and commit action remain reachable without a blank reserved band.
   - The IME Done key validates and commits the focused input buffer. Explicit form actions (**Add**, **Done**, **Save fix**, **Log set**) also validate/commit that buffer before staging/submitting; they cannot silently use the previous value. Plain blur without an explicit commit and Cancel keep the prior committed value. Invalid buffered input blocks submission and remains visible for correction.
   - Refusals show as the field's supporting text, with today's sentences (move them to the domain, next to `domain/Ladder.kt`, so the rack and Fix set share them).
   - Reps opens `KeyboardType.Number`.
-- Preserve an explicit 48 dp **±** sign action for assisted bodyweight loads in the shared input: it flips the entered magnitude between positive and negative, exposes *Flip sign — band-assisted* to TalkBack, and works without an IME minus key. Reuse the existing target sign action in the rack, Fix set and combined editor; `KeyboardType.Decimal` is only an input hint. Never replace it with a phone keypad. Preserve domain acceptance of signed loads. The exact new sign-action placement is not drawn in the approved examples. Designer-owned gate `android-gym-signed-load-input-design` must supply and obtain approval for focused/error states on rack, Fix set and the combined editor before the visual replacement ships; retain the working existing path meanwhile.
+- Assisted bodyweight loads use the native keyboard’s minus key. Human clarification on 2026-10-25 establishes this as the intended sign interaction in the approved rack, Fix set and combined-editor boards; the mock keyboard does not depict every native key. Configure and verify signed decimal input on the target Android emulator. Preserve the approved control sizing and domain acceptance of signed loads; do not add an app-level ± control or carry over the withdrawn proposal’s smaller display type.
 - 03.10 pressed: a key shows the M3 state layer (on-surface 12 % over the tonal container), and an icon button takes its pressed shape. No scale.
 - 03.11 changed:
   - An accepted change ticks the value (short slide, tabular digits), the field flashes `accentSoft` with an accent numeral for 300 ms, and one light haptic plays (`GymHaptics.ticked`, 04).
@@ -37,9 +37,9 @@
 
 **Done when**
 - Screenshots of 03.2, 03.10 and 03.11 match in Dark and Daylight; the rig (01) adds `03.2-load-keyboard-dark/light`, `03.10-rack-pressed-dark/light`, `03.11-rack-changed-dark/light`.
-- TalkBack adjusts both steppers (custom actions *Increase* / *Decrease*) and reads the unit. Verify direct negative entry, sign flip, editing and commit in rack, Fix set and combined editor with an IME that lacks minus; invalid text never replaces the last committed value. Capture small-height and large-font focus/error states against 09/18.
+- TalkBack adjusts both steppers (custom actions *Increase* / *Decrease*) and reads the unit. On the target emulator, verify the native minus key, negative decimal entry, editing and commit in rack, Fix set and combined editor; invalid text never replaces the last committed value. Capture small-height and large-font focus/error states against 09/18.
 - `gym_set_logged` is unchanged. A rack edit the store refuses still reports under `gym.editRack` only when unexpected.
-- After the signed-input migration gate passes, replace keypad-specific tests with equivalent NumberStepper/sign-entry assertions and retain their refusal cases in domain tests; do not delete coverage before its replacement runs. Update Fix set, logger and haptic tests.
+- Replace keypad-specific tests with equivalent NumberStepper/native sign-entry assertions and retain their refusal cases in domain tests; do not delete coverage before its replacement runs. Update Fix set, logger and haptic tests.
 
 **Depends on:** 04.
 

@@ -25,7 +25,7 @@
 **Change**
 - Subtitle row: the equipment icon (08), then *{movement} · Set {n}*.
 - Load: the same `NumberStepper` as the rack (07, 09), with the numeral at 56 and the unit by equipment, then the ladder.
-- Reps: the reps stepper. Assisted load entry uses the shared explicit sign action from 07, including on keyboards without a minus key. Preserve the last committed values when an edit is cancelled.
+- Reps: the reps stepper. Assisted load entry uses the native keyboard’s minus key as specified in 07. Preserve the approved sizing and the last committed values when an edit is cancelled.
 - The rack behind this sheet uses 09’s compact headerless ledger and visual position indicator; no main Add or paging arrows are reintroduced by the backdrop.
 - *Effort*: a filled `ExposedDropdownMenuBox` with the same options (*Not rated*, *RPE 6* … *RPE 10*).
 - Note: a filled `TextField`, label *Set note*, placeholder *Add a note*. The board draws no caption under it; keep the spoken state until 9n is ruled.
@@ -37,7 +37,7 @@
 **Out of scope:** the stepper and keyboard (07); immediate delete (05); This workout (11).
 
 **Done when**
-- Screenshots of 03.3 match in Dark and Daylight; the rig (01) adds `03.3-fix-set-dark/light`. Include focused signed load, inline refusal and keyboard-open small-height checks; Save and the focused field remain reachable. Any new sign-action placement follows 07’s design gate.
+- Screenshots of 03.3 match in Dark and Daylight; the rig (01) adds `03.3-fix-set-dark/light`. Include focused signed load, inline refusal and keyboard-open small-height checks; Save and the focused field remain reachable. Verify negative decimal entry and commit through the native keyboard on the target emulator.
 - New `gym_action` with `screen` `workout` or `session`, `action` `fix`, `outcome` `ok` / `refused` / `failed`, content-free. Delete set keeps the 05 event (`action` `delete`).
 - Unexpected failures still report under `gym.fixSet` and `gym.deleteSet`.
 - `ui/FixSheetLayoutTests.kt`, `ui/FixSheetStateTests.kt`, `ui/FixSheetEffortTests.kt` and `ui/FixSheetKeypadTests.kt` pass with the steppers; a test asserts Delete set is painted `colorScheme.error`.

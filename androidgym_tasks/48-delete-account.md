@@ -8,6 +8,12 @@
 - Shell · Android 27c Deleting…: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1525) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1719)
 - Shell · Android 27d Account deleted: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1588) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1746)
 - Shell · Android 27e Couldn’t delete: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1606) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1757)
+- D1 Unknown closure: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-757) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-3617)
+- D2 Receipt temporarily unavailable: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-825) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-3685)
+- D3 Receipt expired: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-893) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-3753)
+- D4 Local cleanup pending: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-956) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-3816)
+- D5 Return to pending deletion: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-1024) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-3884)
+- [D1–D5 recovery section](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25. This approval covers the visuals; backend reconciliation remains required.
 - The entry is the last row of You signed in, *Delete account* in the error role (16b, linked from 46).
 - System parts: `Android / Back bar`, the kit OutlinedTextField and circular progress indicator, the M3 error role.
 
@@ -40,7 +46,7 @@
 - 27e is for a definitive not-closed/refused result or a proven failure before submission. Preserve typed email; use the appropriate error sentence and **Try again**. Cancel the engine's sign-out hold on this path. `account-mismatch` returns to You after releasing the hold, preserving both accounts.
 - A timeout, lost response, 5xx after possible mutation, or 401 on retry is an **unknown closure outcome**. A successful close revokes the session before its response; 401 alone proves neither an account switch nor deletion. Keep the operation record, recover the same result using the backend receipt contract, and do not send a fresh close operation or sign in to check (sign-in restores a closing account).
 - Every sign-out session has a disposition: finish Discard after proven closure; cancel on proven no-close, explicit pre-send cancellation or when releasing a transient session at a lifecycle boundary. An unresolved operation retains its durable write fence and recovery record independently of that transient hold, so process death neither leaks an in-memory hold nor resumes account writes. Resolve/reacquire the correct session during recovery.
-- `android-account-delete-recovery-design` owns the unknown-result/check-again, expired/unavailable-receipt and local-cleanup-pending presentations beside 27c/27e. Obtain human-approved ✅ Ready for dev states before implementing those visuals. Existing 27a–27g and the six Gym-flow approval do not supply them.
+- `android-account-delete-recovery-design` is resolved by the human-approved ✅ Ready for dev D1–D5 states dated 2026-10-25. Use those exact unknown-result/check-again, unavailable/expired-receipt, local-cleanup-pending and return-to-You presentations beside 27c/27e. The `account-delete-reconciliation` backend prerequisite remains required before this flow ships.
 
 **Out of scope:** rebuilding the shipped grace/erasure implementation (`account-delete-grace-enforced`); export; the web and iOS pages. The backend reconciliation prerequisite is required for this Android task, not assumed to exist.
 
@@ -51,6 +57,6 @@
 - Events through `POST /v1/events`: `account_delete` with `state=shown` and bounded outcomes distinguishing `pending_confirmation`, `cleanup_pending`, `ok`, `refused`, `failed`, `cancelled`. `ok` requires proven closure plus cleanup. Report unexpected transport/storage/cleanup failures to Sentry under static operations; expected refusals/offline are events. No email, account/operation id, proof, deadline or response body in telemetry; update `docs/ANDROID_OBSERVABILITY.md`. The backend prerequisite has one structured write observation per close/reconciliation mutation and no receipt secrets.
 - Tests: a new `apps/android/platform/src/test/kotlin/works/windmill/platform/you/DeleteAccountTests.kt` (button off until the email matches, the request body, each answer's screen) and `YouSheetTests.kt` (the row only signed in).
 
-**Depends on:** 46, 47; backend `account-delete-reconciliation`; design `android-account-delete-recovery-design`. Verify the already-implemented `account-delete-grace-enforced` behavior in the deployed/local backend used for acceptance.
+**Depends on:** 46, 47; backend `account-delete-reconciliation`. Design `android-account-delete-recovery-design` is human-approved 2026-10-25. Verify the already-implemented `account-delete-grace-enforced` behavior in the deployed/local backend used for acceptance.
 
 **Ledger:** 12e; dogfood `android-gym-target-page`, `account-delete-grace-enforced`, `account-delete-reconciliation`, `android-account-delete-recovery-design`.

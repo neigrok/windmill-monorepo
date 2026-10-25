@@ -7,6 +7,7 @@
 - 03.8 Finish receipt, ended early: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32441) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34614)
 - 03.14 Discard this workout?: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41920) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41989)
 - 03.15 Finish receipt, first workout, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42292) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42368)
+- Z.1 Zero-set finish: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49538) — ✅ Ready for dev, human-approved 2026-10-25.
 - Components (Design System library, Android page): `Android / Button` `210:181` (Tonal for Share with Coach; native top-end menu for Discard; Filled for Done; Filled · Tone=Error in the dialog).
 - The approved Android revision above governs layout. The iOS receipt is behavioral context; do not copy an older bottom Discard row.
 
@@ -39,7 +40,7 @@
   - **Keep it** opens the sign-in step (Shell · Android 15a, task 27).
   - Shown only on the receipt of the first finished workout on this phone while signed out; a once-only flag on this phone records that it was shown. Later receipts never show it, and ordinary training screens have no standing sign-up prompt (17/27). Preserve user-invoked account sign-in, signed-out Share with Coach and account-required Coach routes, including the bound-installation stance in 36/38.
   - Signed out, **Share with Coach** is drawn as well. Follow iOS (`apps/ios/App/Sources/Gym/GymRoom.swift:205`): it opens the sign-in step, and the question is sent once the lifter is signed in. Where this Windmill has no Coach it is not drawn, as today.
-- A workout with no set must not be presented as a saved workout or offered to Coach. Its terminal surface is absent from the approved normal/early receipts: designer-owned gate `android-gym-empty-finish-design` must draw and obtain human approval before changing that outcome. Keep this scope separate from the approved receipt work and the existing `android-empty-workout-finish` implementation follow-up; do not invent an empty receipt or claim the gate is resolved.
+- A workout with no set uses the [approved Z.1 terminal surface](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462): *No sets logged* / *This workout has ended.* / **Done** → Routines. It has no saved-workout claim, totals, celebration, sign-in offer or Share with Coach. Design prerequisite `android-gym-empty-finish-design` is human-approved 2026-10-25; the `android-empty-workout-finish` implementation follow-up remains separate.
 - Delete `Finish.discard` *Discard session* after all workout callers migrate. Remove only the workout hold caller; retain `store/WithheldDelete.kt` and weight Undo as specified by 05/24.
 
 **Out of scope:** the log row swipe (22); workout detail and its comparison (23); *Save a routine* (13); Inspect (25).

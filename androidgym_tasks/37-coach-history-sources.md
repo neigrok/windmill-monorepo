@@ -1,5 +1,7 @@
 # History, deleting a conversation, What Coach read
 
+**Release scope:** History, chat lifecycle, retained drafts, deletion and sources remain in scope. Preserve existing proposal/change cards, Apply/Reject controls, diff blocks, action/save receipts, review routes and outcome wording. Task 30's outcome-word changes and task 35's new receipt presentation are postponed.
+
 **Figma:**
 - 08.4 History: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41230)
 - 08.5 What Coach read: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28654) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41250)
@@ -24,7 +26,7 @@
 **Change**
 - History (08.4):
   - Rows are two-line M3 `ListItem`s: the first question as the headline, the outcome or the answer's first words as the supporting line, and the date trailing (*Today*, *Yesterday*, *Sep 27*).
-  - Outcome lines: *Push A · 5 changes*, *Changed a movement*, *Created 3 routines*. A settled proposal uses 30's words (*Applied*, *Rejected*, *Out of date*).
+  - Keep the current proposal and write-outcome wording in the supporting line. Task 30's *Applied*, *Rejected* and *Out of date* wording changes are deferred; the History row layout and date remain in scope.
   - Board copy: *Is Push A still doing anything?* / *Push A · 5 changes* / *Today*; *Pull-ups are bodyweight for me. I add a 10 kg belt.* / *Changed a movement* / *Yesterday*; *How heavy should I start squats?* / *Choose a weight you can lift 8 times with good form.* / *Sep 27*; *My program, 3 days a week* / *Created 3 routines* / *Sep 26*.
   - *Ask something new* becomes an `ExtendedFloatingActionButton` *New chat* (`add` icon), bottom end. It is an additional explicit fresh-chat action. Every deliberate entry into the Coach tab also opens a fresh unsent chat; returning from a sheet/History or recreating the selected screen does not.
   - This task owns the durable owner/chat archive foundation used by 28, 38, 44 and 49, including anonymous owner identities; it does not require the anonymous network/import implementation in 38. Give each local chat a stable identity before its first send. Keep draft text, selected/prepared photo, local turns, request identity and confirmations under that chat and its account/anonymous owner. A completely empty unsent chat need not create a History row.
@@ -43,12 +45,12 @@
   - **Close** (`Android / Button` Text, 56 dp) at the foot.
   - Volume is rounded like the rest of the app, with a space before *kg*.
   - *Also read your notes.* under the rows when Coach read them.
-  - Tool phrases leave this card; Coach's writes have their own receipts (35).
+  - Retain tool-write receipt content in its current presentation while task 35 waits. Do not move or restyle action outputs as part of the sources sheet.
 
-**Out of scope:** the swipe row itself (04), the chat (28), the write receipts (35).
+**Out of scope:** the swipe row itself (04), the chat (28), postponed outcome-word changes (30) and new write-receipt presentation (35). Existing tool-write content remains available.
 
 **Done when**
-- Screenshots of 08.4, 08.5 and 08.34 match in Dark and Daylight on the emulator; the rig (01) adds `08.4-coach-history-dark` / `-light`, `08.5-coach-what-read-dark` / `-light`, `08.34-history-delete-dark` / `-light`.
+- Screenshots of the active History, sources and deletion layouts in 08.4, 08.5 and 08.34 match in Dark and Daylight on the emulator, retaining current action cards, receipt presentation and outcome wording wherever the drawings include postponed changes; the rig (01) adds `08.4-coach-history-dark` / `-light`, `08.5-coach-what-read-dark` / `-light`, `08.34-history-delete-dark` / `-light`.
 - `gym_screen_viewed` `threads` and `thread` still fire; a read row opens `session`.
 - Delete emits `gym_action` `{screen: threads, action: delete, state: shown}` when the dialog shows, then `{…, outcome: ok | refused | failed | cancelled}`. No title or question text in any event.
 - Delete failures still report under `gym.deleteThread`; a refusal is an event, not an Issue. Draft/history persistence failures report under static operations and keep recoverable draft state.
@@ -56,6 +58,6 @@
 - Record fresh-entry, history-open, draft-restored and reply-open steps as bounded `gym_action` actions in `docs/ANDROID_OBSERVABILITY.md`; do not emit chat ids, text, photo names or outcome previews.
 - Tests to update: `coach/ThreadScreenTests.kt`, `coach/ThreadTests.kt`, `coach/AnswerReceiptTests.kt`, `store/WithheldWindowTests.kt` (the thread case goes).
 
-**Depends on:** 04, 05, 28, 30.
+**Depends on:** 04, 05, 28.
 
 **Ledger:** 11k, 10v, 11b, 12g, 12h; dogfood `android-gym-target-page`.

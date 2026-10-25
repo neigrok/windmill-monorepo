@@ -22,7 +22,7 @@
   - Barbell and Machine: *kg total*.
   - Bodyweight: *kg added*. A negative number is band help and still reads *kg added* (e.g. *−10 kg added*).
   - Always a space before the unit.
-- Use a shared equipment-aware formatter wherever a load is printed: `targetWithUnit` takes the exercise; migrate routine summary and Coach draft callers without losing supported cable/kettlebell behavior. Apply the approved basis wording above to its drawn equipment only; preserve current wording for the two pending visual variants.
+- Use a shared equipment-aware formatter outside Coach action cards: `targetWithUnit` takes the exercise; migrate routine summary, editor and receipt callers without losing supported cable/kettlebell behavior. Coach draft/action text retains its current formatting in this release under the owner's postponement of action-presentation changes. Apply the approved basis wording above to its drawn equipment only; preserve current wording for the two pending visual variants.
   - 02.2: *3 × 8 · 75 kg total* (barbell, machine), *3 × 10 · 24 kg each* (dumbbells).
   - 02.5: the same strings under each movement in the editor.
 - Use *Barbell*, *Dumbbells*, *Bodyweight* and *Machine* for the four approved examples; preserve the existing *Cable* and *Kettlebell* values/labels for stored and seeded records. A name-only edit must retain equipment and load count exactly. Do not relabel cable as machine, kettlebell as dumbbell, or default an unlisted selection to barbell.
@@ -35,7 +35,7 @@
 **Done when**
 - Screenshots of 02.2 and 02.5 match in Dark and Daylight; the rig (01) adds `02.2-routine-summary-dark/light`, `02.5-editor-sortable-dark/light`.
 - No new events: copy only. `gym_screen_viewed` `routine` and `routine_editor` still fire.
-- `domain/ReadoutTests.kt` covers all six supported equipment values and the two dumbbell counts. Include seeded cable/kettlebell reads and name-only edits that leave equipment, raw weights and volume unchanged. Routine summary, editor and Coach draft tests assert full strings; new visual variants stay gated until drawn and approved.
+- `domain/ReadoutTests.kt` covers all six supported equipment values and the two dumbbell counts. Include seeded cable/kettlebell reads and name-only edits that leave equipment, raw weights and volume unchanged. Routine summary and editor tests assert full strings; Coach draft tests preserve the current strings. New visual variants stay gated until drawn and approved.
 
 **Depends on:** 02.
 

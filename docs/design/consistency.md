@@ -711,8 +711,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   open a custom keypad sheet (`ui/KeypadSheet.kt`), pressing only scales to 0.96
   (`ui/LoggerScreen.kt:1009-1020`) and nothing ticks. Boards 03.1 `1252:28036`, 03.2 `1252:28178`,
   03.3 `1253:29581`, 03.10–03.13 (`1252:28389`, `1252:28534`, `1252:28687`, `1252:28829`), 02.6
-  `1252:30392`, 02.11. Decimal IME is an input hint, not a guarantee of a minus key; assisted loads
-  retain an explicit signed-entry path. The approved Workout has at most three headerless 48 dp
+  `1252:30392`, 02.11. The owner's 2026-10-25 clarification approves the native keyboard's minus
+  key for assisted loads; verify signed decimal entry on the target emulator and add no app-level
+  sign control. The approved Workout has at most three headerless 48 dp
   ledger rows, inline load units and visual position markers instead of visible counts or arrows.
   Add movement lives in This workout. Weigh-in uses a native decimal keyboard and date picker;
   task 24 still needs its approved compact sheet, calendar and IME-state implementation.
@@ -752,7 +753,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   reserved.*, 10v). Android reads only `ask-daily-limit` and `ask-out-of-budget`
   (`coach/CoachStore.kt:396-411`) and ignores `allowance.resetsAtMs`, so it cannot say when Coach
   comes back (01.11). Windmill One (01.12) ships only with checkout open.
-- **11k · Proposals decided on the card.** Android decides a proposal in a review sheet
+- **11k · Proposals decided on the card — postponed from this Android release.** Preserve the current
+  action cards, review route and outcome wording under the owner's 2026-10-25 scope decision.
+  Android decides a proposal in a review sheet
   (`ui/ReviewSheet.kt`: apply after scrolling to the end, *Turn this down* behind a confirm), its card
   says *Review* under the promise line (`coach/CoachAnswer.kt:327-341`, `Ask.promise`), and receipts
   say *Turned down* (`domain/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
@@ -784,15 +787,15 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 
   | Gate | Task | Required handoff |
   |---|---|---|
-  | `android-gym-signed-load-input-design` | 07, 10, 18 | Explicit sign-action placement for an IME without minus; retain a working signed-entry path until approved. |
+  | `android-gym-signed-load-input-design` · resolved | 07, 10, 18 | Native keyboard minus entry is human-approved 2026-10-25; retain approved sizing and verify negative decimal entry. No app-level sign control. |
   | `android-gym-equipment-variants-design` | 08, 19, 20, 21 | Cable/kettlebell menu and icon states; preserve stored equipment and current presentation. |
-  | `android-gym-empty-finish-design` | 14 | Zero-set outcome beyond the approved normal and ended-early receipts. |
+  | `android-gym-empty-finish-design` · approved | 14 | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) is ✅ Ready for dev, human-approved 2026-10-25. |
   | `android-gym-no-routine-picker-design` | 13 | Changes to the existing picker for an externally started workout without a routine. |
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
-  | `android-coach-uncertain-apply-design` | 34 | Distinguish a known refusal from an apply/removal awaiting its receipt; do not promise that nothing was written. |
-  | `android-coach-partial-drafts-design` | 41, 42 | Account draft cards preserve saved, pending and refused outcomes and offer retry only for unresolved drafts. |
+  | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |
+  | `android-coach-partial-drafts-design` · deferred, unapproved | 41, 42 | Excluded from this release with Coach action-presentation changes; the proposed mixed-result cards are not approved. |
   | `android-coach-bound-installation-design` | 36, 38 | After sign-out, a bound installation can retain local History and recover pending results, but cannot send anonymous questions. |
-  | `android-account-delete-recovery-design` | 48 | Unknown closure and pending local cleanup retain truthful state across retry and restart. |
+  | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; backend reconciliation remains required. |
   | `account-delete-reconciliation` | 48 | Backend platform/auth supplies the account-scoped closure receipt/recovery contract after session revocation; the existing grace-period behavior does not supply it. |
 
 ### Parity rulings (owner, 2026-10-22)
@@ -916,10 +919,15 @@ these places.
   Android's `Ask.maxTurnBytes` and web's `QUESTION_BYTES` remain at 1,000; the web textarea also
   limits character count to 1,000. Align those clients when delivering their setup flow, preserving
   the complete draft and a specific length refusal rather than silently truncating a pasted program.
-- **6t · States the room does not draw.** Add specimens for provider refusal, truncated output,
-  unavailable or invalid installation credentials, permanent account binding, and lifetime
-  allowance exhaustion. Anonymous waiting and local saving are distinct states; “Stop waiting”
-  cannot promise that provider spending stopped. The drawings do not cover their full matrix.
+- **6t · Coach recovery proposals awaiting approval.** Android specimens for provider refusal,
+  truncated output and unavailable or invalid installation credentials are in
+  [Gym Proposals](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069), with
+  [waiting/local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
+  and [permanent account binding](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3461).
+  These remain 💡 proposals awaiting human approval. Anonymous waiting and local saving are
+  distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
+  anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
+  variant remains excluded while checkout is closed.
 
 ### Native and web differences
 

@@ -1,5 +1,7 @@
 # After sign-in, the conversation continues and proposes a change
 
+**Release status:** Postponed from this release at user request; preserve existing Coach action visuals. Its proposal and draft-action integration depends on postponed tasks.
+
 **Figma:**
 - 01.13 after sign-in and Add, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-36454) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39744)
 - Components (Design System library, Android page):
