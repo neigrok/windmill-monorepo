@@ -80,18 +80,23 @@ Log navigation permits one recorded re-tap inside its existing deadline only whi
 Routines tab remains selected and no alert or sheet is present. The target and content assertions
 remain exact; this recovers a lost synthesized tap without claiming first-tap delivery is reliable.
 
-Release **0.2.0 (20)**, source `617b373a8af3181acc7fc4b9e1b5a64670263f2c`, is uploaded to
-App Store Connect by [iOS release run 20](https://github.com/neigrok/windmill-monorepo/actions/runs/39572022225).
-The 2026-10-21 run passed archive, stored-certificate verification and export; Apple confirmed
-*Upload succeeded* at 09:01:38 UTC. The archive-derived status artifact confirms version `0.2.0`,
-build `20`, bundle `works.windmill.app`, processing `VALID`, internal state `IN_BETA_TESTING` and
-external state `READY_FOR_BETA_SUBMISSION`. External beta review has not been submitted by this
-release. The read-only check does not inspect individual tester membership or device installation.
+Release **0.2.0 (22)**, source `3b563f5e69053ac0eb1d51609951a8f6a577ec64`, is uploaded to
+App Store Connect by [iOS release run 22](https://github.com/neigrok/windmill-monorepo/actions/runs/40195776761).
+The 2026-10-25 run passed archive, stored-certificate verification, symbol retention and export;
+Apple confirmed *Upload succeeded* at 13:11:00 UTC. The archive-derived `testflight-status-22`
+artifact confirms version `0.2.0`, build `22`, bundle `works.windmill.app`, processing `VALID`,
+internal state `IN_BETA_TESTING` and external state `READY_FOR_BETA_SUBMISSION`. This release
+changes no tester groups and submits no external beta review or public App Store release. The
+read-only check does not inspect individual tester membership or device installation.
 
-The retained `ios-dsyms-20` artifact contains the app and workout widget dSYMs for version `0.2.0`,
-build `20`. Export reported the
-nonblocking warning *Upload Symbols Failed. The archive did not include a dSYM for the
-Sentry.framework*. Production Sentry symbolication is not verified.
+The release includes the six approved Gym flow corrections from PR #35. Its iOS and release inputs
+match merge `446f2d6698f14dd2787332e76fad2c6ee7f7d0f4`; the only later changes are Roadmap
+documentation. [Main-source iOS CI](https://github.com/neigrok/windmill-monorepo/actions/runs/40039570945)
+passes, including all 714 app tests, package/Release builds and the three UI shards.
+
+The retained `ios-dsyms-22` artifact contains the app and workout widget DWARF symbols and is kept
+for 30 days. Export reported the nonblocking warning *Upload Symbols Failed. The archive did not
+include a dSYM for the Sentry.framework*. Production Sentry symbolication is not verified.
 
 Anonymous Coach uses one installation boundary, durable request records retained per conversation
 and one domain import Action. The import validates every routine before one engine Plan commits routines and replay metadata.
