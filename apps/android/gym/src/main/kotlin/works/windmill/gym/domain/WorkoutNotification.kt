@@ -53,7 +53,7 @@ data class WorkoutNotification(
         state: WorkoutState, ready: Boolean) : this(
         key, session.plan?.routine ?: "Free session", movement,
         state.rack?.let { "${Readout.weight(it.weightKg)} kg × ${it.reps}" } ?: "Open workout",
-        LiveLines.counter(LiveLines.workingCount(sets), state.rack?.exerciseId?.let { session.plan?.entry(it) }),
+        LiveLines.counter(LiveLines.setCount(sets), state.rack?.exerciseId?.let { session.plan?.entry(it) }),
         state.offer.takeIf { ready }, state.hidden,
     )
 }

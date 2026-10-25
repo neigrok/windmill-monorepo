@@ -14,9 +14,9 @@ class RecordTests {
     private val julyThirteenth = today - 29 * 86_400_000L
 
     private fun set(id: String, weightKg: Double, reps: Int, at: Long,
-                    kind: SetKind = SetKind.Working, exerciseId: String = "back-squat") =
+                    exerciseId: String = "back-squat") =
         TrainingSet(id = id, exerciseId = exerciseId, weightKg = weightKg, reps = reps,
-                    kind = kind, completedAtMs = at)
+                    completedAtMs = at)
 
     private fun session(id: String, at: Long, sets: List<TrainingSet>, open: Boolean = false) =
         SessionDetail(Session(id = id, startedAtMs = at, finishedAtMs = if (open) null else at + 3_600_000), sets)
@@ -34,9 +34,9 @@ class RecordTests {
     }
 
     @Test
-    fun testARecordReadsItsClosedDaysNewestFirstWithoutWarmups() {
+    fun testARecordReadsEverySetFromItsClosedDaysNewestFirst() {
         val history = listOf(
-            session("ses_1", julyThirteenth, listOf(set("s1", 60.0, 10, julyThirteenth, SetKind.Warmup),
+            session("ses_1", julyThirteenth, listOf(set("s1", 60.0, 10, julyThirteenth),
                                                     set("s2", 100.0, 5, julyThirteenth + 200_000))),
             session("ses_2", today, listOf(set("s3", 105.0, 5, today),
                                            set("s4", 105.0, 4, today + 200_000))),
@@ -48,10 +48,9 @@ class RecordTests {
         assertEquals(squat, record.exercise)
         assertEquals("newest first, and the open session is not in the log — it is the workout being stood in",
                      listOf("ses_2", "ses_1"), record.recentDays.map { it.sessionId })
-        assertEquals(listOf(RecordDay("ses_2", today, history[1].sets), RecordDay("ses_1", julyThirteenth, listOf(history[0].sets[1]))),
+        assertEquals(listOf(RecordDay("ses_2", today, history[1].sets), RecordDay("ses_1", julyThirteenth, history[0].sets)),
                      record.recentDays)
-        assertEquals("a warmup counts toward nothing, here as everywhere",
-                     listOf("s2"), record.recentDays.last().sets.map { it.id })
+        assertEquals(listOf("s1", "s2"), record.recentDays.last().sets.map { it.id })
     }
 
     @Test

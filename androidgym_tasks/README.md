@@ -15,7 +15,7 @@ The six revised Gym flows were approved on **2026-10-25** and their affected fra
 
 Before visual work, use the task's approved **✅ Ready for dev** frame and resolve any explicit missing-state design gate. Keep domain/transport work separate from a screen whose new state is not drawn. Existing source behavior and a Figma URL alone do not establish approval of a new visual state.
 
-Implement the six approved flows as one commit per flow, with shared prerequisites in their own reviewed commits. Each flow needs adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark its Figma flow **🚀 In production** only after verified implementation is merged; design approval does not mark app delivery complete.
+Implement one commit per numbered task. Ship batches to main after adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Create an Android release after all tasks are complete. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark each Figma flow **🚀 In production** only after its verified implementation is merged; design approval does not mark app delivery complete.
 
 ## Scoped prerequisites
 

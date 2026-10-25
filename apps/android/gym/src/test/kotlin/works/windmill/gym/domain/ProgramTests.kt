@@ -184,8 +184,8 @@ class ProgramTests {
         val plan = PlanSnapshot(routine)
 
         assertEquals(PlanEntry(exerciseId = "barbell-row"), plan.entry("barbell-row"))
-        assertEquals("set 3", LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("barbell-row")))
-        assertEquals("set 3 of 5", LiveLines.counter(workingSetsToday = 2, planEntry = plan.entry("back-squat")))
+        assertEquals("set 3", LiveLines.counter(setsToday = 2, planEntry = plan.entry("barbell-row")))
+        assertEquals("set 3 of 5", LiveLines.counter(setsToday = 2, planEntry = plan.entry("back-squat")))
     }
 
     @Test

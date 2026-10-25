@@ -113,10 +113,14 @@ refusal reasons are not telemetry. An unexpected reconciliation failure reports 
 failures report under `gym_import_fix`, `gym_import_keep` and `gym_import_retry`. Account decisions
 include pending retained work, pin revisions and preserve unsent account work with Keep. A training
 write the log's rules refuse is said on screen and never becomes a Sentry issue.
-Settings Retry and a corrected set kind enter import reconciliation before their
+Settings Retry enters import reconciliation before its
 `gym_import_recovery` completed event. Completion means the local retry was scheduled, not that
 the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
 and emits no completed event; cancellation propagates without a failure report.
+
+Every logged set uses the rack acceptance path and emits `gym_set_logged` once. Finish emits
+`gym_session_finished`; both events carry no set values or legacy kind labels. Saved workout
+imports ignore legacy kind fields and retain their existing load, write and recovery failure boundaries.
 
 The update dialog responds when the engine stops for an upgrade, on the server's
 `426 upgrade-required` or a hello whose `minSchema` is above the app's registry, without deleting

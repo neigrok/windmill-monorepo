@@ -39,7 +39,6 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
@@ -278,7 +277,7 @@ class LoggerScreenTests {
     }
 
     @Test
-    fun loggingUsesWorkingKindAndStaysSilentWithLegacyConfirmationEnabled() {
+    fun loggingStaysSilentWithLegacyConfirmationEnabled() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val sensations = mutableListOf<HapticFeedbackType>()
         val preferences = GymPreferences(confirmHaptic = true, confirmSound = true)
@@ -291,7 +290,7 @@ class LoggerScreenTests {
             compose.onNodeWithText("Kind").assertDoesNotExist()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
-                assertEquals(listOf(SetKind.Working), room.store.sets.map { it.kind })
+                assertEquals(listOf(20.0 to 5), room.store.sets.map { it.weightKg to it.reps })
                 assertEquals(preferences, room.store.preferences)
                 assertEquals(emptyList<HapticFeedbackType>(), sensations)
             }

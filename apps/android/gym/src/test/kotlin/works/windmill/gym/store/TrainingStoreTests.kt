@@ -46,7 +46,6 @@ import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.coach.ThreadOutcome
@@ -361,7 +360,7 @@ class TrainingStoreTests {
             room.store.choose("bench-press")
             assertEquals("the prefill dials the routine's plan", Prefill(100.0, 5), room.store.prefill)
 
-            assertEquals("the kept routine carries every working set as it was lifted",
+            assertEquals("the kept routine carries every set as it was lifted",
                 listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), kept.entries.first().sets)
             assertNull(room.store.save(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
                 toRoutine = kept.id, atPosition = 1, forExercise = "bench-press"))
@@ -383,7 +382,7 @@ class TrainingStoreTests {
             room.store.choose("bench-press")
             assertEquals("no history is a first time", true, room.store.lastTime?.isFirstTime)
 
-            room.store.logSet(weightKg = 60.0, reps = 10, kind = SetKind.Warmup)
+            room.store.logSet(weightKg = 60.0, reps = 10)
             room.store.logSet(weightKg = 82.5, reps = 5)
             room.now += 60_000
             room.store.finish()
@@ -391,7 +390,7 @@ class TrainingStoreTests {
 
             room.store.start()
             room.store.choose("bench-press")
-            assertEquals("every set carries: a kind the app holds never reaches the log",
+            assertEquals("every set carries: every set reaches the log",
                 listOf(60.0, 82.5), room.store.lastTime?.sets?.map { it.weightKg })
             assertEquals("the last set's weight, the first set's reps", Prefill(82.5, 10), room.store.prefill)
             runCurrent()
@@ -406,7 +405,7 @@ class TrainingStoreTests {
 
             room.store.start()
             room.store.choose(movement.id)
-            room.store.logSet(weightKg = 60.0, reps = 10, kind = SetKind.Warmup)
+            room.store.logSet(weightKg = 60.0, reps = 10)
             repeat(4) { room.store.logSet(weightKg = 82.5, reps = 5) }
             room.now += 60_000
             val ended = (room.store.finish() as FinishOutcome.Closed).session
@@ -415,7 +414,7 @@ class TrainingStoreTests {
             val record = (room.store.record(movement.id) as GymResult.Ok).value
             assertEquals("Bench Press", record.exercise.name)
             assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
-            assertEquals("every set counts, whatever kind the app held",
+            assertEquals("every set counts, with all recorded loads",
                 listOf(60.0, 82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
 
             val review = room.store.review(ended.id)
@@ -769,7 +768,7 @@ class TrainingStoreTests {
             assertEquals(60, room.store.logged.size)
             assertEquals(Older.End, room.store.older)
             room.training.startSession(SessionStart("sessionShelf", room.now - 1000))
-            room.training.appendSet("sessionShelf", SetWrite("setShelf", "bench-press", 100.0, 5, SetKind.Working, room.now - 900))
+            room.training.appendSet("sessionShelf", SetWrite("setShelf", "bench-press", 100.0, 5, room.now - 900))
             room.training.finishSession("sessionShelf", room.now - 500)
             room.store.refreshEngine()
             assertEquals("the pages the lifter walked are still under their thumb", 61, room.store.logged.size)
@@ -810,7 +809,7 @@ class TrainingStoreTests {
             runCurrent()
 
             val setId = (room.store.sessionDetail(ended.id) as GymResult.Ok).value.sets.single().id
-            val fixed = room.store.fixSet(ended.id, setId, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+            val fixed = room.store.fixSet(ended.id, setId, SetFix(weightKg = 90.0, reps = 3))
 
             assertEquals(listOf(90.0), listOf((fixed as FixOutcome.Corrected).set.weightKg))
             assertEquals("one row per set — a correction is never a second set",
@@ -822,7 +821,7 @@ class TrainingStoreTests {
             val before = owed(room)
             assertEquals("a row this workout does not hold is not one a fix can reach",
                 FixOutcome.Gone("that set is no longer on the log"),
-                room.store.fixSet(ended.id, "set_gone", SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working)))
+                room.store.fixSet(ended.id, "set_gone", SetFix(weightKg = 90.0, reps = 3)))
             assertNull(room.store.deleteSet(ended.id, "set_gone"))
             assertEquals("nothing is written for an id this phone has never held", before, owed(room))
             runCurrent()
@@ -885,7 +884,7 @@ class TrainingStoreTests {
             assertEquals(setOf(tried, behind), room.store.stalled)
             assertEquals(2, room.store.strandedCount)
 
-            val fixed = room.store.fixSet(opened.id, behind, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
+            val fixed = room.store.fixSet(opened.id, behind, SetFix(weightKg = 90.0, reps = 3))
             runCurrent()
 
             assertEquals(90.0, (fixed as FixOutcome.Corrected).set.weightKg, 0.0)
@@ -1016,7 +1015,7 @@ class TrainingStoreTests {
                 val startedAt = room.now - 100_000 + index * 1_000L
                 room.training.startSession(SessionStart(id, startedAt))
                 room.training.appendSet(id, SetWrite("set${index.toString().padStart(5, '0')}", "bench-press", 100.0, 5,
-                    SetKind.Working, startedAt + 100))
+                    startedAt + 100))
                 room.training.finishSession(id, startedAt + 500)
             }
             room.store.connect(room.account())
@@ -1044,7 +1043,7 @@ class TrainingStoreTests {
             val before = owed(room)
 
             assertEquals(FixOutcome.Gone("that set is no longer on the log"),
-                room.store.fixSet(opened.id, held.id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working)))
+                room.store.fixSet(opened.id, held.id, SetFix(weightKg = 90.0, reps = 3)))
             assertNull(room.store.deleteSet(opened.id, held.id))
             assertEquals("nothing was written", before, owed(room))
 

@@ -61,17 +61,16 @@ object LiveLines {
 
     fun oneAtATime(movement: String): String = "$movement first — that question is still open."
 
-    // One set that landed. `index` is the performed ordinal, or "W" — only a warmup skips a number.
+    // One set that landed, numbered in performed order.
     data class Row(
         val id: String,
         val index: String,
         val weight: String,
         val reps: Int,
-        val isWarmup: Boolean,
         val isOnThisDevice: Boolean,
     ) {
         val spoken: String
-            get() = listOfNotNull(if (isWarmup) "Warmup" else "Set $index", "logged", "$weight kg",
+            get() = listOfNotNull("Set $index", "logged", "$weight kg",
                 Readout.repCount(reps), onThisDevice.takeIf { isOnThisDevice }).joinToString(", ")
     }
 
@@ -88,9 +87,9 @@ object LiveLines {
     )
 
     // "set 3 of 5". An open plan line answers like no line at all — "set 3", never "set 3 of 0".
-    fun counter(workingSetsToday: Int, planEntry: PlanEntry?): String {
-        val sets = planEntry?.sets?.size?.takeIf { it > 0 } ?: return "set ${workingSetsToday + 1}"
-        return "set ${workingSetsToday + 1} of $sets"
+    fun counter(setsToday: Int, planEntry: PlanEntry?): String {
+        val sets = planEntry?.sets?.size?.takeIf { it > 0 } ?: return "set ${setsToday + 1}"
+        return "set ${setsToday + 1} of $sets"
     }
 
     // One row of the logger's ledger. State is never printed as a word: a row's look carries it on
@@ -116,11 +115,10 @@ object LiveLines {
         }
     }
 
-    // What landed, warmups where they were lifted, then the set in hand, then every planned slot the
-    // working count has not reached. Past the end of the plan the set in hand carries no target.
+    // Performed sets, the set in hand, and the remaining planned slots.
     fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>): List<Slot> {
         val landed = rows(sets, stalled).map { Slot.Landed(it) }
-        val lifted = workingCount(sets)
+        val lifted = setCount(sets)
         val plan = planEntry?.sets.orEmpty()
         val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted))
         val coming = plan.drop(lifted + 1).mapIndexed { offset, target ->
@@ -141,33 +139,27 @@ object LiveLines {
         return Place(at + 1, order.size)
     }
 
-    fun rows(sets: List<TrainingSet>, stalled: Set<String>): List<Row> {
-        var ordinal = 0
-        return sets.map { set ->
-            val isWarmup = set.kind == SetKind.Warmup
-            if (!isWarmup) ordinal += 1
+    fun rows(sets: List<TrainingSet>, stalled: Set<String>): List<Row> =
+        sets.mapIndexed { index, set ->
             Row(id = set.id,
-                index = if (isWarmup) "W" else ordinal.toString(),
+                index = (index + 1).toString(),
                 weight = Readout.weight(set.weightKg),
                 reps = set.reps,
-                isWarmup = isWarmup,
                 isOnThisDevice = set.id in stalled)
         }
-    }
 
-    // Only `working` counts toward a target, a plan counter or a record.
-    fun workingCount(sets: List<TrainingSet>, of: String? = null): Int =
-        sets.count { it.kind == SetKind.Working && (of == null || it.exerciseId == of) }
+    fun setCount(sets: List<TrainingSet>, of: String? = null): Int =
+        sets.count { of == null || it.exerciseId == of }
 
     // `just added` is the empty row at the FOOT of the walk and follows position, never the clock.
     fun assemblyRows(order: List<String>, sets: List<TrainingSet>, plan: PlanSnapshot?,
                      catalog: List<Exercise>, current: String?,
                      stalled: Set<String> = emptySet()): List<MovementRow> {
         val foot = order.lastOrNull()
-        val next = order.firstOrNull { id -> sets.none { it.exerciseId == id && it.kind == SetKind.Working } }
+        val next = order.firstOrNull { id -> sets.none { it.exerciseId == id } }
         return order.map { exerciseId ->
             val performed = sets.filter { it.exerciseId == exerciseId }
-            val done = workingCount(performed)
+            val done = setCount(performed)
             val entry = plan?.entry(exerciseId)
             val planned = entry?.sets?.size?.takeIf { it > 0 }
             // Off the plan LINE and never off its set count: an open row is still a written line.
@@ -188,10 +180,9 @@ object LiveLines {
                 canDrop = LiveOrder.droppable(exerciseId, sets, plan),
                 metadata = when {
                     performed.isNotEmpty() -> {
-                        val actual = performed.filter { it.kind == SetKind.Working }.ifEmpty { performed }
-                        val values = actual.map { Readout.effort(it.weightKg, it.reps) }.distinct()
-                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(actual.map { SetTarget(it.reps, it.weightKg) })
-                        val progress = if (planned != null) "$done of $planned sets" else Readout.setCount(actual.size)
+                        val values = performed.map { Readout.effort(it.weightKg, it.reps) }.distinct()
+                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(performed.map { SetTarget(it.reps, it.weightKg) })
+                        val progress = if (planned != null) "$done of $planned sets" else Readout.setCount(performed.size)
                         "$progress · $effort"
                     }
                     exerciseId == next -> "Up next" + (entry?.sets?.takeIf { it.isNotEmpty() }?.let { " · ${Readout.targetWithUnit(it)}" } ?: "")

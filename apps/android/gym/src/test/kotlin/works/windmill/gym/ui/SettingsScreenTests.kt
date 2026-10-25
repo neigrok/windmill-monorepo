@@ -61,7 +61,7 @@ class SettingsScreenTests {
     val tmp = TemporaryFolder()
 
     private fun editor(refusal: works.windmill.gym.store.ImportRefusal,
-        onSave: (SavedWorkout, Boolean, Set<String>) -> Unit) {
+        onSave: (SavedWorkout, Boolean) -> Unit) {
         compose.setContent { WindmillMaterial { GymMaterial {
             SavedWorkoutEditor(refusal, works.windmill.gym.domain.TheSix.movements, {}, onSave)
         } } }
@@ -76,7 +76,7 @@ class SettingsScreenTests {
         val refusal = works.windmill.gym.store.ImportRefusal("source", source, listOf(set), listOf("set00002"),
             "source-numbering", "The original set numbering cannot be kept.")
         val saved = mutableListOf<SavedWorkout>()
-        editor(refusal) { row, _, _ -> saved += row }
+        editor(refusal) { row, _ -> saved += row }
         compose.onNodeWithText("Save and retry").performClick()
         compose.runOnIdle { assertEquals(SavedWorkout(source, listOf(set), listOf("set00002")), saved.single()) }
         compose.onAllNodes(isToggleable()).onFirst().performClick()
@@ -92,7 +92,7 @@ class SettingsScreenTests {
             "source-auto-closed", "The automatic finish marker cannot be kept.")
         val saved = mutableListOf<SavedWorkout>()
         val marked = mutableListOf<Boolean>()
-        editor(refusal) { row, flag, _ -> saved += row; marked += flag }
+        editor(refusal) { row, flag -> saved += row; marked += flag }
         compose.onNodeWithText("Save and retry").performClick()
         compose.runOnIdle { assertEquals(emptyList<SavedWorkout>(), saved) }
         compose.onNodeWithText("Choose Mark as finished to remove the automatic finish marker, or Cancel to keep it.").assertIsDisplayed()
@@ -107,7 +107,7 @@ class SettingsScreenTests {
         val refusal = works.windmill.gym.store.ImportRefusal("source", source, emptyList(), emptyList(),
             "bad-instant", "Check the start time.")
         val saved = mutableListOf<SavedWorkout>()
-        editor(refusal) { row, _, _ -> saved += row }
+        editor(refusal) { row, _ -> saved += row }
         compose.onNodeWithText("Finished (yyyy-MM-dd HH:mm)").assertDoesNotExist()
         compose.onNodeWithText("Pending sets stay saved with this workout.").assertIsDisplayed()
         compose.onNodeWithText("Save and retry").performClick()
@@ -115,26 +115,18 @@ class SettingsScreenTests {
     }
 
     @Test
-    fun anUnrecognizedSetKindRequiresAChoiceBeforeSaving() {
+    fun savedWorkoutCorrectionNeverRequiresASetKind() {
         val at = 1_800_000_000_123L
         val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
         val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", weightKg = 80.0, reps = 5,
             completedAtMs = at + 1_234)
         val refusal = works.windmill.gym.store.ImportRefusal("source", source, listOf(set), emptyList(),
-            "source-kind", "Choose the kind of this set.", unrecognizedKindSetIds = listOf(set.id))
+            "bad-instant", "Check the saved workout.")
         val saved = mutableListOf<SavedWorkout>()
-        val kinds = mutableListOf<Set<String>>()
-        editor(refusal) { row, _, ids -> saved += row; kinds += ids }
+        editor(refusal) { row, _ -> saved += row }
+        compose.onNodeWithText("Choose set kind").assertDoesNotExist()
         compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle { assertEquals(emptyList<SavedWorkout>(), saved) }
-        compose.onNodeWithText("Choose set kind").performScrollTo().performClick()
-        compose.onNodeWithText("Working").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Kind: Working").assertIsDisplayed()
-        compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle {
-            assertEquals(SavedWorkout(source, listOf(set)), saved.single())
-            assertEquals(listOf(setOf(set.id)), kinds)
-        }
+        compose.runOnIdle { assertEquals(listOf(SavedWorkout(source, listOf(set))), saved) }
     }
 
     private fun room(scope: CoroutineScope, rest: FakeGymRest, signedIn: Boolean): EngineRoomFixture {
@@ -208,7 +200,7 @@ class SettingsScreenTests {
                 room.now = 100_000
                 room.training.startSession(works.windmill.gym.domain.SessionStart("session01", 1_000))
                 room.training.appendSet("session01", works.windmill.gym.domain.SetWrite("set00001", "back-squat", 60.0, 5,
-                    works.windmill.gym.domain.SetKind.Warmup, 2_000))
+                    2_000))
                 room.training.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
                 room.training.prepareAdoption()
                 val hello = server.hello(works.windmill.sync.modelserver.Credential.Account("A"), room.now)
@@ -216,7 +208,7 @@ class SettingsScreenTests {
                 room.selected = "A"
                 room.pull(server); room.sync(server)
                 room.training.appendSet("session01", works.windmill.gym.domain.SetWrite("standing1", "back-squat", 80.0, 8,
-                    works.windmill.gym.domain.SetKind.Drop, 2_500))
+                    2_500))
                 room.sync(server)
                 room.engine.commit(works.windmill.gym.store.WorkoutImports.scope,
                     works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.finish",
@@ -293,7 +285,7 @@ class SettingsScreenTests {
                 remote.now += 1_000_000
                 remote.training.startSession(works.windmill.gym.domain.SessionStart("remote01", remote.now - 10_000))
                 remote.training.appendSet("remote01", works.windmill.gym.domain.SetWrite("remoteset", "back-squat", 60.0, 5,
-                    works.windmill.gym.domain.SetKind.Working, remote.now - 9_000))
+                    remote.now - 9_000))
                 remote.sync(server)
                 EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).use { room ->
                     room.now = remote.now - 100_000

@@ -36,7 +36,7 @@ class WorkoutImportsTests {
         val snapshot = engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
             gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
@@ -92,7 +92,7 @@ class WorkoutImportsTests {
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
             for (n in 1..3) gym.appendSet("session01", SetWrite("set0000$n", "back-squat", 60.0 + n, n,
-                SetKind.Warmup, 2_000L + n))
+                2_000L + n))
             val original = gym.session("session01")!!.sets
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
@@ -115,7 +115,7 @@ class WorkoutImportsTests {
         engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
             gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
             val original = gym.session("session01")!!.sets.single()
             gym.prepareAdoption()
@@ -175,7 +175,7 @@ class WorkoutImportsTests {
         engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, testNow - 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, testNow - 1_000))
             val original = gym.session("session01")!!.sets.single()
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
@@ -196,7 +196,7 @@ class WorkoutImportsTests {
         val submitted = engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
             gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
@@ -324,11 +324,11 @@ class WorkoutImportsTests {
     private suspend fun stranded(server: ModelServer, write: Owed = Owed.Append, standingCount: Int = 1): Json = engine().use { local ->
         val gym = EngineTraining(local)
         gym.startSession(SessionStart("session01", 1_000))
-        gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+        gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
         gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
         gym.prepareAdoption()
         signIn(local, server); pull(local, server); push(local, server)
-        gym.appendSet("session01", SetWrite("standing1", "back-squat", 80.0, 8, SetKind.Drop, 2_500))
+        gym.appendSet("session01", SetWrite("standing1", "back-squat", 80.0, 8, 2_500))
         gym.fixSet("session01", "standing1", SetFix(note = "Standing", rpe = 8.0, rpeNamed = true))
         if (standingCount > 1) local.commit(scope, works.windmill.sync.api.Gesture((2..standingCount).map { number ->
             works.windmill.sync.api.Change.create("set", works.windmill.sync.api.NewID.Given(RecordID("standing$number")), mapOf(
@@ -592,16 +592,27 @@ class WorkoutImportsTests {
             val gym = EngineTraining(local)
             imports.retry("set00001")
             val stale = imports.operations().single()
-            imports.refuseOperation(stale, "source-kind")
-            imports.replaceOperationKindAndRetry("set00001", SetKind.Drop)
+            imports.refuseOperation(stale, "session-finished")
+            val corrected = stale.entry.copy(set = stale.entry.set.copy(note = "Corrected recovery note", reps = 7))
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (token, item) ->
+                        if (token != stale.token) item else Json.Obj((item.obj() + ("source" to
+                            Json.parse(diskJson.encodeToString(OwedSet.serializer(), corrected)))).toList())
+                    }
+                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+            }
+            imports.retry("set00001")
             val before = local.snapshot()
             gym.reconcileOperation(stale)
             imports.refuseOperation(stale, "session-finished")
             assertTrue(imports.recoverFinishedOperation(stale))
             assertEquals(before, local.snapshot())
-            assertEquals(SetKind.Drop, imports.operations().single().entry.set.kind)
+            assertEquals(corrected, imports.operations().single().entry)
             gym.reconcileImports(); push(local, server)
-            assertEquals(stale.entry.set.copy(setNumber = 2, kind = SetKind.Working), gym.session("session01")!!.sets.first())
+            assertEquals(corrected.set.copy(setNumber = 2), gym.session("session01")!!.sets.first())
             assertFalse(imports.hasOwedSets("session01"))
         }
     }
@@ -638,7 +649,7 @@ class WorkoutImportsTests {
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
             listOf("original1" to 2_000L, "zzzzzzzz" to 2_500L, "aaaaaaaa" to 2_500L, "fourth01" to 3_000L).forEach { (id, at) ->
-                gym.appendSet("session01", SetWrite(id, "back-squat", 60.0, 5, SetKind.Working, at))
+                gym.appendSet("session01", SetWrite(id, "back-squat", 60.0, 5, at))
             }
             gym.prepareAdoption()
             assertEquals(4, WorkoutImports(local).retainedWorkouts().single().sets.size)
@@ -666,7 +677,7 @@ class WorkoutImportsTests {
         val (set, refused) = engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Working, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
             gym.fixSet("session01", "set00001", SetFix(note = "n".repeat(3_000)))
             val set = gym.session("session01")!!.sets.single()
             gym.prepareAdoption()
@@ -695,7 +706,7 @@ class WorkoutImportsTests {
         engine().use { local ->
             val gym = EngineTraining(local); gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "exercise1", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "exercise1", 60.0, 5, 2_000))
             gym.fixSet("session01", "set00001", SetFix(rpe = 9.0, rpeNamed = true, note = "Before"))
             gym.finishSession("session01", 3_000)
             fun row() = gym.details().single().let { SavedWorkout(it.session, it.sets) }
@@ -718,6 +729,43 @@ class WorkoutImportsTests {
                     local = listOf(works.windmill.sync.api.DeviceWrite(WorkoutImports.journalPrefix + "unknown", Json.of("original source")))) to Unit
             } }
             assertEquals(before, e.snapshot()); assertTrue(outbox(e).isEmpty())
+        }
+    }
+
+    @Test fun legacyKindsInARefusedSavedWorkoutRetryAfterRestartWithoutKindChoices() = runBlocking {
+        val kinds = listOf("warmup", "working", "drop", "failure", "cluster")
+        val row = finished().copy(sets = kinds.mapIndexed { index, _ ->
+            finished().sets.single().copy(id = "set0000$index", completedAtMs = 2_000L + index)
+        }, deleted = emptyList())
+        val source = Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), row)).let { value ->
+            Json.Obj((value.obj() + ("sets" to Json.Arr(value.member("sets").arr().mapIndexed { index, set ->
+                Json.Obj((set.obj() + ("kind" to Json.of(kinds[index]))).toList())
+            }))).toList())
+        }
+        val snapshot = engine().use { local ->
+            WorkoutImports(local).prepare(row.copy(sets = row.sets.map { it.copy(setNumber = 2) }))
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (_, item) ->
+                        Json.Obj((item.obj() + mapOf("source" to source, "code" to Json.of("source-kind"))).toList())
+                    }
+                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+            }
+            local.snapshot()
+        }
+        engine(snapshot).use { reopened ->
+            val imports = WorkoutImports(reopened)
+            assertEquals(row.sets, imports.refusals().single().sets)
+            imports.retry(row.session.id)
+            assertEquals(emptyList<ImportRefusal>(), imports.refusals())
+            assertEquals(source, sources(reopened).single().member("source"))
+            val sets = outbox(reopened).single().member("intent").member("cmd").member("args").member("sets").arr()
+            assertEquals(row.sets.map { set -> Json.objectOf("id" to Json.of(set.id), "exerciseId" to Json.of(set.exerciseId),
+                "weightKg" to Json.of(set.weightKg), "reps" to Json.of(set.reps), "rpe" to Json.Null,
+                "note" to Json.of(""), "completedAt" to Json.of(set.completedAtMs)) }, sets)
+            assertEquals(row.sets, EngineTraining(reopened).session(row.session.id)!!.sets)
         }
     }
 
@@ -799,7 +847,7 @@ class WorkoutImportsTests {
         engine().use { local ->
             val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
-            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Working, 2_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, 2_000))
             gym.prepareAdoption()
             signIn(local, server); pull(local, server); push(local, server)
             val imports = WorkoutImports(local)

@@ -120,18 +120,21 @@ class TrainingWireTests {
         """)
 
         assertEquals(3, set.setNumber)
-        assertEquals(SetKind.Working, set.kind)
         assertEquals("note is a String on the wire, so an absent one is empty and not missing", "", set.note)
         assertNull(set.rpe)
         assertEquals(1_754_300_000_000, set.completedAtMs)
     }
 
     @Test
-    fun testAKindThisBuildHasNeverHeardOfReadsAsWorking() {
-        val set = json.decodeFromString(TrainingSet.serializer(),
-                                        """{"id":"set_1","exerciseId":"x","weightKg":1,"reps":1,"kind":"cluster","completedAt":1}""")
+    fun testLegacyKindsAreIgnoredAndNeverWritten() {
+        for (kind in listOf("warmup", "working", "drop", "failure", "cluster")) {
+            val set = json.decodeFromString(TrainingSet.serializer(),
+                """{"id":"set_1","exerciseId":"x","weightKg":1,"reps":1,"kind":"$kind","completedAt":1}""")
+            assertEquals(TrainingSet("set_1", "x", weightKg = 1.0, reps = 1, completedAtMs = 1), set)
+            assertEquals("""{"id":"set_1","exerciseId":"x","weightKg":1.0,"reps":1,"completedAt":1}""",
+                json.encodeToString(TrainingSet.serializer(), set))
+        }
 
-        assertEquals(SetKind.Working, set.kind)
     }
 
     @Test
@@ -162,7 +165,7 @@ class TrainingWireTests {
     }
 
     @Test
-    fun testARowWithNoWorkingSetCarriesNoTopSetAndWasNotClosedByTheRule() {
+    fun testARowWithNoSetCarriesNoTopSetAndWasNotClosedByTheRule() {
         val row = json.decodeFromString(SessionSummary.serializer(), """
         { "id": "ses_2", "startedAt": 1754300000000, "finishedAt": 1754303720000, "setCount": 2 }
         """)
@@ -358,9 +361,9 @@ class SchemeTests {
 
 class LastSetTests {
     private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
-                     kind: SetKind = SetKind.Working, at: Long): TrainingSet =
+                     at: Long): TrainingSet =
         TrainingSet(id = "set_$at", exerciseId = exerciseId, weightKg = weightKg,
-                    reps = reps, kind = kind, completedAtMs = at)
+                    reps = reps, completedAtMs = at)
 
     private fun aSession(id: String, startedAt: Long, finishedAt: Long?, sets: List<TrainingSet>) =
         SessionDetail(Session(id = id, startedAtMs = startedAt, finishedAtMs = finishedAt), sets)
@@ -394,20 +397,18 @@ class LastSetTests {
     }
 
     @Test
-    fun testAWarmupOnlyMovementAndAnOpenSessionAreBothAbsent() {
+    fun testEveryCompletedMovementIsIncludedAndAnOpenSessionIsAbsent() {
         val rows = LastSet.of(listOf(
             aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("chin-up", 0.0, 8, kind = SetKind.Warmup, at = 1_100),
+                aSet("chin-up", 0.0, 8, at = 1_100),
                 aSet("deadlift", 140.0, 5, at = 1_200),
-                aSet("deadlift", 100.0, 8, kind = SetKind.Drop, at = 1_300))),
+                aSet("deadlift", 100.0, 8, at = 1_300))),
             aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
                 aSet("deadlift", 200.0, 1, at = 9_100))),
         ))
 
-        assertEquals("a movement warmed up and never worked has nothing to say",
-                     listOf("deadlift"), rows.map { it.exerciseId })
-        assertEquals("a drop set is still what happened last, and today's session is not a last time",
-                     LastSet("deadlift", 100.0, 8, atMs = 1_000), rows.single())
+        assertEquals(listOf(LastSet("chin-up", 0.0, 8, atMs = 1_000),
+            LastSet("deadlift", 100.0, 8, atMs = 1_000)), rows)
     }
 
     @Test
@@ -416,15 +417,15 @@ class LastSetTests {
     }
 
     @Test
-    fun testLastTimeIsTheNonWarmupBlockAndThePrefillDialsOffIt() {
+    fun testLastTimeIncludesEverySetAndThePrefillDialsOffIt() {
         val history = listOf(
             aSession("ses_old", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
                 aSet("bench-press", 90.0, 5, at = 1_500))),
             aSession("ses_new", startedAt = 5_000, finishedAt = 6_000, sets = listOf(
-                aSet("bench-press", 40.0, 10, kind = SetKind.Warmup, at = 5_100),
+                aSet("bench-press", 40.0, 10, at = 5_100),
                 aSet("bench-press", 100.0, 5, at = 5_200),
-                aSet("bench-press", 100.0, 3, kind = SetKind.Failure, at = 5_300),
-                aSet("bench-press", 60.0, 12, kind = SetKind.Drop, at = 5_400))),
+                aSet("bench-press", 100.0, 3, at = 5_300),
+                aSet("bench-press", 60.0, 12, at = 5_400))),
             aSession("ses_live", startedAt = 9_000, finishedAt = null, sets = listOf(
                 aSet("bench-press", 200.0, 1, at = 9_100))),
         )
@@ -432,30 +433,31 @@ class LastSetTests {
         val last = LastTime.of("bench-press", history)
 
         assertEquals("ses_new", last.session?.id)
-        assertEquals("the failure and the drop are last time; the warmup and today's session are not",
-            listOf(100.0 to 5, 100.0 to 3, 60.0 to 12), last.sets.map { it.weightKg to it.reps })
+        assertEquals("every set of the last finished workout is included",
+            listOf(40.0 to 10, 100.0 to 5, 100.0 to 3, 60.0 to 12), last.sets.map { it.weightKg to it.reps })
         assertEquals("weight from the last row of the block, reps from the first",
-            Prefill(60.0, 5), Prefill.of(emptyList(), null, last))
+            Prefill(60.0, 10), Prefill.of(emptyList(), null, last))
         assertEquals("and the picker's line reports the same last row",
             LastSet("bench-press", 60.0, 12, atMs = 5_000), LastSet.of(history).single())
     }
 
     @Test
-    fun testAMovementOnlyWarmedUpHasNoLastTime() {
+    fun testOneSetIsEnoughForLastTime() {
         val last = LastTime.of("chin-up", listOf(
             aSession("ses_done", startedAt = 1_000, finishedAt = 2_000, sets = listOf(
-                aSet("chin-up", 0.0, 8, kind = SetKind.Warmup, at = 1_100)))))
+                aSet("chin-up", 0.0, 8, at = 1_100)))))
 
-        assertEquals(LastTime("chin-up"), last)
-        assertTrue(last.isFirstTime)
+        assertEquals(LastTime("chin-up", Session("ses_done", 1_000, 2_000),
+            sets = listOf(aSet("chin-up", 0.0, 8, at = 1_100))), last)
+        assertFalse(last.isFirstTime)
     }
 }
 
 class RoutineWriteTests {
     private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
-                     kind: SetKind = SetKind.Working, at: Long): TrainingSet =
+                     at: Long): TrainingSet =
         TrainingSet(id = "set_$at", exerciseId = exerciseId, weightKg = weightKg,
-                    reps = reps, kind = kind, completedAtMs = at)
+                    reps = reps, completedAtMs = at)
 
     private fun aDetail(sets: List<TrainingSet>): SessionDetail =
         SessionDetail(Session(id = "ses_1", startedAtMs = 1), sets)
@@ -466,13 +468,13 @@ class RoutineWriteTests {
     ))
 
     @Test
-    fun testARoutineKeptFromASessionIsEveryWorkingSetAsItWasLifted() {
+    fun testARoutineKeptFromASessionIsEverySetAsItWasLifted() {
         val write = RoutineWrite.from("Lower A", aDetail(listOf(
-            aSet("back-squat", 40.0, 10, SetKind.Warmup, at = 100),
+            aSet("back-squat", 40.0, 10, at = 100),
             aSet("back-squat", 60.0, 5, at = 200),
             aSet("back-squat", 80.0, 5, at = 300),
             aSet("back-squat", 90.0, 3, at = 400),
-            aSet("back-squat", 60.0, 12, SetKind.Drop, at = 500),
+            aSet("back-squat", 60.0, 12, at = 500),
             aSet("barbell-row", 70.0, 8, at = 600),
         )), position = 2)
 
@@ -483,7 +485,7 @@ class RoutineWriteTests {
         assertEquals(
             listOf(
                 RoutineEntryWrite(exerciseId = "back-squat",
-                                  sets = listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0))),
+                                  sets = listOf(SetTarget(10, 40.0), SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(12, 60.0))),
                 RoutineEntryWrite(exerciseId = "barbell-row", sets = listOf(SetTarget(8, 70.0))),
             ),
             write.entries)
@@ -506,10 +508,9 @@ class RoutineWriteTests {
     }
 
     @Test
-    fun testASessionOfNothingButWarmupsKeepsNoRoutine() {
-        assertNull(RoutineWrite.from("Push A", aDetail(listOf(
-            aSet("bench-press", 40.0, 10, SetKind.Warmup, at = 100),
-        )), position = 0))
+    fun testOnlyAnEmptySessionKeepsNoRoutine() {
+        assertEquals(listOf(RoutineEntryWrite("bench-press", listOf(SetTarget(10, 40.0)))),
+            RoutineWrite.from("Push A", aDetail(listOf(aSet("bench-press", 40.0, 10, at = 100))), position = 0)?.entries)
         assertNull(RoutineWrite.from("Push A", aDetail(emptyList()), position = 0))
     }
 
@@ -551,10 +552,9 @@ class RoutineWriteTests {
 }
 
 class PrefillTests {
-    private fun aSet(weightKg: Double, reps: Int, at: Long,
-                     kind: SetKind = SetKind.Working): TrainingSet =
+    private fun aSet(weightKg: Double, reps: Int, at: Long): TrainingSet =
         TrainingSet(id = "set_$at", exerciseId = "bench-press", weightKg = weightKg,
-                    reps = reps, kind = kind, completedAtMs = at)
+                    reps = reps, completedAtMs = at)
 
     private val pushA = PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })
 
@@ -598,12 +598,12 @@ class PrefillTests {
             planEntry = lowerA,
             lastTime = null
         )
-        assertEquals("two working sets landed, so the third set's numbers", Prefill(90.0, 3), rack)
+        assertEquals("two sets landed, so the third set's numbers", Prefill(90.0, 3), rack)
 
         assertEquals("before anything is lifted, set 1", Prefill(60.0, 5),
                      Prefill.of(todaySets = emptyList(), planEntry = lowerA, lastTime = null))
-        assertEquals("a warmup does not advance the slot", Prefill(60.0, 5),
-                     Prefill.of(todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup)),
+        assertEquals("each set advances the slot", Prefill(80.0, 5),
+                     Prefill.of(todaySets = listOf(aSet(40.0, 10, at = 100)),
                                 planEntry = lowerA, lastTime = null))
     }
 
@@ -613,9 +613,9 @@ class PrefillTests {
         val lastTime = LastTime(exerciseId = "back-squat", session = Session(id = "ses_p", startedAtMs = 1),
                                 sets = List(6) { aSet(70.0, 6, at = 1L + it) })
 
-        assertEquals("last time's sixth working set", Prefill(70.0, 6),
+        assertEquals("last time's sixth set", Prefill(70.0, 6),
                      Prefill.of(todaySets = fiveLanded, planEntry = lowerA, lastTime = lastTime))
-        assertEquals("and with no sixth set last time, today's last working set", Prefill(80.0, 5),
+        assertEquals("and with no sixth set last time, today's last set", Prefill(80.0, 5),
                      Prefill.of(todaySets = fiveLanded, planEntry = lowerA, lastTime = null))
     }
 
@@ -646,23 +646,23 @@ class PrefillTests {
     }
 
     @Test
-    fun testAWarmupIsNotCarriedForwardAsTheStickyWeight() {
-        val afterAWarmup = Prefill.of(
-            todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup)),
+    fun testEverySetCanSupplyTheStickyWeight() {
+        val afterOneSet = Prefill.of(
+            todaySets = listOf(aSet(40.0, 10, at = 100)),
             planEntry = pushA,
             lastTime = null
         )
-        assertEquals("the dial stays on the plan", Prefill(weightKg = 82.5, reps = 5), afterAWarmup)
+        assertEquals("the last set supplies the rack", Prefill(weightKg = 40.0, reps = 10), afterOneSet)
 
-        val afterAWorkingSet = Prefill.of(
-            todaySets = listOf(aSet(40.0, 10, at = 100, kind = SetKind.Warmup),
+        val afterThreeSets = Prefill.of(
+            todaySets = listOf(aSet(40.0, 10, at = 100),
                                aSet(85.0, 5, at = 200),
-                               aSet(65.0, 3, at = 300, kind = SetKind.Warmup)),
+                               aSet(65.0, 3, at = 300)),
             planEntry = pushA,
             lastTime = null
         )
-        assertEquals("the last working set is the one the thumb is following",
-                     Prefill(weightKg = 85.0, reps = 5), afterAWorkingSet)
+        assertEquals("the last set is the one the thumb is following",
+                     Prefill(weightKg = 65.0, reps = 3), afterThreeSets)
     }
 
     @Test

@@ -185,7 +185,7 @@ class LogMomentTests {
             compose.onNodeWithText("Trained 5 of 5 weeks")
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
             compose.onNodeWithText("July · full month").assertIsDisplayed()
-            compose.onNodeWithText("A finished workout with working sets in every calendar week.").assertIsDisplayed()
+            compose.onNodeWithText("A finished workout with sets in every calendar week.").assertIsDisplayed()
             compose.onNodeWithText("Trained 5 of 5 weeks").performClick()
             compose.onNodeWithText("Trained 5 of 5 weeks")
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))

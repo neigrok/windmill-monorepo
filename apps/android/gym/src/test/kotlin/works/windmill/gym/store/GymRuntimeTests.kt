@@ -184,7 +184,7 @@ class GymRuntimeTests {
                 assertEquals(AuthStatus.SignedIn(bea), auth.status)
                 assertEquals("u.A", room.store.accountKey)
                 assertTrue(room.store.acceptSet(LogSetCommand(original.key, original.id)) is LogSetAcceptance.Unavailable)
-                room.store.logSet(30.0, 8, SetKind.Warmup)
+                room.store.logSet(30.0, 8)
                 assertEquals(FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first.")), room.store.finish())
                 room.store.choose("overhead-press")
                 room.store.reorder(0, 1)

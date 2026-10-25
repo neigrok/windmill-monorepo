@@ -23,7 +23,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.FixOutcome
 import androidx.compose.ui.test.onAllNodesWithText
@@ -39,7 +38,7 @@ class FixSheetEffortTests {
 
     private fun sheet(set: TrainingSet = TrainingSet(
         id = "set_1", exerciseId = "bench-press", setNumber = 2,
-        weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0,
+        weightKg = 82.5, reps = 5, completedAtMs = 0,
     ), haptics: HapticFeedback? = null): () -> SetFix? {
         var saved: SetFix? = null
         compose.setContent {
@@ -58,10 +57,10 @@ class FixSheetEffortTests {
     }
 
     @Test
-    fun correctingAHistoricalWarmupKeepsItsKindAndDoesNotConfirmWithAHaptic() {
+    fun correctingAHistoricalSetHasNoKindChoiceOrConfirmationHaptic() {
         val sensations = mutableListOf<HapticFeedbackType>()
         val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
-            weightKg = 82.5, reps = 5, kind = SetKind.Warmup, completedAtMs = 0), object : HapticFeedback {
+            weightKg = 82.5, reps = 5, completedAtMs = 0), object : HapticFeedback {
             override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
                 sensations += hapticFeedbackType
             }
@@ -116,14 +115,13 @@ class FixSheetEffortTests {
             assertEquals("left shoulder", saved()!!.note)
             assertNull("the numbers never moved", saved()!!.weightKg)
             assertNull(saved()!!.reps)
-            assertNull(saved()!!.kind)
         }
     }
 
     @Test
     fun clearingANoteSendsAnEmptyStringAndClearingAnRpeNamesItAsNull() {
         val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
-            weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
+            weightKg = 82.5, reps = 5, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
         compose.onNodeWithText("felt heavy").performTextClearance()
         compose.onNodeWithText(SetEffort.rpeReading(9.0)).performClick()
@@ -140,7 +138,7 @@ class FixSheetEffortTests {
     @Test
     fun aSheetOpenedOverAnAnnotatedSetAndSavedUntouchedSendsNothingAtAll() {
         val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
-            weightKg = 82.5, reps = 5, kind = SetKind.Working, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
+            weightKg = 82.5, reps = 5, completedAtMs = 0, rpe = 9.0, note = "felt heavy"))
 
         compose.onNodeWithText("Save fix").performClick()
 

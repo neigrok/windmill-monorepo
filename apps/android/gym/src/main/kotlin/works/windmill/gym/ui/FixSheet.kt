@@ -246,7 +246,7 @@ fun FixSheet(
         Button(
             onClick = {
                 if (busy || tooLong) return@Button
-                val fix = SetFix(set, weightKg = weightKg, reps = reps, kind = set.kind, rpe = rpe, note = note)
+                val fix = SetFix(set, weightKg = weightKg, reps = reps, rpe = rpe, note = note)
                 busy = true
                 onBusy(true)
                 refusal = null

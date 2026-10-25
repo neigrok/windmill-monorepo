@@ -2,16 +2,16 @@
 
 **Approved flow:** [Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036) — ✅ Ready for dev, human-approved 2026-10-25. The compact ledger is headerless and has no kind control. Fix set (10) and import recovery (25) follow the same all-set semantics.
 
-**Today**
-- The shipped Kotlin sync model in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/Training.kt` already omits `kind` from `TrainingSet`, decoding and writes; volume counts every set. `store/EngineTraining.kt` already omits it on writes and supplies `SetKind.Working` only when adapting to the older app model.
-- Remaining drift is in `apps/android/gym/src/main/kotlin/works/windmill/gym/`: `domain/Training.kt` still defines `SetKind`, serializers, `TrainingSet.kind`, `SetFix.kind` and kind filters; `TrainingStore.logSet` accepts a kind. `LiveSession`, Record, logger, Fix set, workout detail, Finish and recovery UI still read those app-layer properties.
-- Shared vectors contain legacy `warmup` / other kind input deliberately to verify compatibility. Their presence is not an unfinished sync migration.
+**Implementation status**
+- App-layer set kinds, filters and controls are removed. Legacy saved kind fields decode without losing sets; new set writes omit the field.
+- The shared sync model and legacy-input compatibility vectors remain unchanged.
+- Debug source/test compilation, shared domain vectors and affected unit tests pass. Debug and Release real-wire suites each pass 17 cases with zero skips. Native batch acceptance counts eight routine sets and four imported legacy-kind sets without a kind control; first-party events and structured writes are verified. See [implementation status](../docs/engineering/android-implementation.md).
 
 **Change**
 - Remove the remaining app-layer `SetKind` plumbing, its serializer, kind filters, *W* ledger index, warm-up spoken prefix, raw kind notes, Record suffix and `warmupInk`. Count every set in volume, top set, records, last time, early-finish decisions, comparisons and routine-derived reads.
 - Update the engine-to-UI adapter and store signatures to the simplified app model. Preserve decoding of existing saved/local recovery data by ignoring legacy kind fields; do not restore `kind` to the sync model or write `"working"` into new wire data.
 - Reuse the already-shipped shared semantics and compatibility vectors. Change a fixture only if a separately demonstrated contract defect requires it; do not remove old-kind fixtures merely because the app no longer exposes kinds.
-- Recovery's kind picker and copy leave with 25. Coordinate that removal so import fix/retry never needs a kind choice.
+- Recovery has no kind picker or correction requirement. Task 25 owns the remaining import UI redesign.
 
 **Out of scope:** rebuilding the completed shared-domain migration; the rack layout (09), Fix set layout (10), import UI (25) and Record copy (21).
 

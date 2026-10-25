@@ -5,7 +5,6 @@ import org.junit.Test
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.SetTarget
 
@@ -21,9 +20,8 @@ class SessionScreenTests {
         weightKg: Double,
         reps: Int,
         at: Long,
-        kind: SetKind = SetKind.Working,
-    ) = TrainingSet(id = id, exerciseId = exerciseId, weightKg = weightKg,
-                    reps = reps, kind = kind, completedAtMs = at)
+        ) = TrainingSet(id = id, exerciseId = exerciseId, weightKg = weightKg,
+                    reps = reps, completedAtMs = at)
 
     private fun plan(vararg entries: PlanEntry) = PlanSnapshot(routine = "Push A", entries = entries.toList())
 
@@ -48,18 +46,15 @@ class SessionScreenTests {
     }
 
     @Test
-    fun onlyAWorkingSetIsReadAgainstThePlan() {
+    fun everySetIsReadAgainstThePlan() {
         val movements = Performed.movements(listOf(
-            set("s1", "bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup),
+            set("s1", "bench-press", 40.0, 8, at = 1_000),
             set("s2", "bench-press", 80.0, 5, at = 2_000),
-            set("s3", "bench-press", 80.0, 3, at = 3_000, kind = SetKind.Failure),
+            set("s3", "bench-press", 80.0, 3, at = 3_000),
         ), catalog, plan(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 80.0) })))
 
-        assertEquals(listOf(SetKind.Warmup, SetKind.Working, SetKind.Failure),
-                     movements[0].rows.map { it.kind })
         assertEquals(listOf("40 × 8", "80 × 5", "80 × 3"), movements[0].rows.map { it.effort })
-        assertEquals("a set taken to failure is not two reps short of anything",
-                     listOf("warmup", "on plan", "failure"), notes(movements[0]))
+        assertEquals(listOf("40 under plan", "on plan", "two short"), notes(movements[0]))
     }
 
     @Test
@@ -85,7 +80,7 @@ class SessionScreenTests {
                      movements[0].rows.map { it.note?.short ?: false })
     }
 
-    // The plan line is the scheme in the readout formula, and each working set is read against the
+    // The plan line is the scheme in the readout formula, and each set is read against the
     // slot it filled: the fourth set against the plan's fourth, never against set 3.
     @Test
     fun aRampIsReadSlotBySlotUnderOnePlanLine() {
@@ -102,7 +97,7 @@ class SessionScreenTests {
         assertEquals(listOf("on plan", "on plan", "on plan", "+2.5 over plan", "one short"), notes(movements[0]))
     }
 
-    // A sixth working set under a five-set plan fills no slot: it is read against nothing, neither
+    // A sixth set under a five-set plan fills no slot: it is read against nothing, neither
     // on plan nor over it.
     @Test
     fun aSetPastThePlanIsReadAgainstNothing() {
@@ -118,13 +113,13 @@ class SessionScreenTests {
     @Test
     fun aMovementTheSessionAddedIsNamedOnceAndNeverMeasured() {
         val movements = Performed.movements(listOf(
-            set("s1", "row", 40.0, 10, at = 1_000, kind = SetKind.Warmup),
+            set("s1", "row", 40.0, 10, at = 1_000),
             set("s2", "row", 60.0, 10, at = 2_000),
             set("s3", "row", 60.0, 9, at = 3_000),
         ), catalog, plan(PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) })))
 
         assertEquals(Performed.Against.Unplanned, movements[0].against)
-        assertEquals(listOf("warmup", "added today", null), notes(movements[0]))
+        assertEquals(listOf("added today", null, null), notes(movements[0]))
     }
 
     @Test
@@ -185,7 +180,7 @@ class SessionScreenTests {
     @Test
     fun aSetIsNamedByTheLogsOwnNumberAndFallsBackToItsPositionOnly() {
         val numbered = Performed.movements(listOf(
-            set("s1", "bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup).copy(setNumber = 1),
+            set("s1", "bench-press", 40.0, 8, at = 1_000).copy(setNumber = 1),
             set("s3", "bench-press", 82.5, 5, at = 3_000).copy(setNumber = 3),
             set("s4", "bench-press", 82.5, 5, at = 4_000).copy(setNumber = 4),
         ), catalog)
@@ -193,22 +188,21 @@ class SessionScreenTests {
                      listOf(1, 3, 4), numbered[0].rows.map { it.number })
 
         val shelved = Performed.movements(listOf(
-            set("s1", "bench-press", 40.0, 8, at = 1_000, kind = SetKind.Warmup),
+            set("s1", "bench-press", 40.0, 8, at = 1_000),
             set("s2", "bench-press", 82.5, 5, at = 2_000),
         ), catalog)
-        assertEquals("a session no account has numbered counts from one, warmups included",
+        assertEquals("a session no account has numbered counts from one",
                      listOf(1, 2), shelved[0].rows.map { it.number })
     }
 
     @Test
     fun everyRowCarriesTheSetItselfSoTheSheetCanEditIt() {
-        val logged = set("s1", "bench-press", 82.5, 5, at = 1_000, kind = SetKind.Failure)
+        val logged = set("s1", "bench-press", 82.5, 5, at = 1_000)
             .copy(rpe = 9.5, note = "left shoulder")
         val movements = Performed.movements(listOf(logged), catalog)
 
         assertEquals(logged, movements[0].rows.single().set)
         assertEquals("s1", movements[0].rows.single().id)
-        assertEquals(SetKind.Failure, movements[0].rows.single().kind)
         assertEquals("82.5 × 5", movements[0].rows.single().effort)
     }
 }

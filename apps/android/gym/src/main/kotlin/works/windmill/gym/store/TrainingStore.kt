@@ -57,7 +57,6 @@ import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
@@ -456,7 +455,6 @@ class TrainingStore(
 
     }
 
-    // Warmups included; `Prefill` is narrower and follows the working sets only.
     val todaySets: List<TrainingSet>
         get() {
             val movement = exerciseId ?: return emptyList()
@@ -744,34 +742,11 @@ class TrainingStore(
         lastSets = served.associateBy { it.exerciseId }
     }
 
-    // The row lands in the replica before the network is consulted at all. The kind is the CALLER's
-    // and is the one thing about a set that cannot be repaired later.
-    suspend fun logSet(weightKg: Double, reps: Int, kind: SetKind = SetKind.Working) {
-        if (!workoutAuthorized) return
-        val live = session ?: return
-        val movement = exerciseId ?: return
-        if (isFinishing) return
-        if (kind == SetKind.Working) {
-            if (editRack(weightKg, reps) !is WorkoutChange.Saved) return
-            val offer = notification.value?.offer ?: return
-            acceptSet(LogSetCommand(offer.key, offer.id))
-            return
-        }
-        val moment = workoutClock.now()
-        val set = TrainingSet(id = mintSet(), exerciseId = movement, weightKg = weightKg, reps = reps,
-            kind = kind, completedAtMs = moment.wallMs)
-        try {
-            controls.store(training.appendSet(live.id, SetWrite(set)), live.id, moment)
-            telemetry.event("gym_set_logged")
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refused: TrainingRefused) {
-            refusals = refusals + RefusedSet(set, if (refused.code == Gym.Codes.unknownExercise) "that movement is not in the catalog" else refused.line)
-        } catch (failure: Exception) {
-            reportFailure("gym.logSet", failure)
-            refuseWorkout()
-        }
-        drawFromControls()
+    suspend fun logSet(weightKg: Double, reps: Int) {
+        if (!workoutAuthorized || session == null || exerciseId == null || isFinishing) return
+        if (editRack(weightKg, reps) !is WorkoutChange.Saved) return
+        val offer = notification.value?.offer ?: return
+        acceptSet(LogSetCommand(offer.key, offer.id))
     }
 
     // Finishing closes the workout in the replica, which carries the close to the account behind
@@ -863,7 +838,7 @@ class TrainingStore(
                      position: Int = program.size): GymResult<Routine> {
         val carrier = SessionDetail(Session(id = "ses_kept", startedAtMs = now()), sets)
         val write = RoutineWrite.from(asRoutineNamed, carrier, position = position)
-            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one working set"))
+            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs at least one set"))
         return saveRoutine(RoutineDraft(name = write.name, position = write.position,
             entries = Routine(write).entries, creationId = creationId))
     }
@@ -1306,8 +1281,7 @@ class TrainingStore(
             val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
                 ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
             training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
-                detail.sets.map { if (it.id == setId) corrected else it }, deleted),
-                correctedKinds = if (fix.kind != null) setOf(setId) else emptySet())
+                detail.sets.map { if (it.id == setId) corrected else it }, deleted))
             changedSet(sessionId, setId, corrected)
             shelved = refusedImports()
             return FixOutcome.Corrected(corrected)

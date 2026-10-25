@@ -22,7 +22,6 @@ class SetFixTests {
         exerciseId = "bench-press",
         weightKg = 82.5,
         reps = 5,
-        kind = SetKind.Working,
         rpe = 8.0,
         note = "felt heavy",
         completedAtMs = 1_000,
@@ -30,8 +29,7 @@ class SetFixTests {
 
     @Test
     fun aSheetOpenedAndClosedWithNothingTouchedNamesNothing() {
-        val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
-                         rpe = 8.0, note = "felt heavy")
+        val fix = SetFix(stored, weightKg = 82.5, reps = 5, rpe = 8.0, note = "felt heavy")
 
         assertEquals(SetFix(), fix)
         assertFalse(fix.moves(stored))
@@ -40,8 +38,7 @@ class SetFixTests {
 
     @Test
     fun onlyTheFieldThatMovedIsNamed() {
-        val fix = SetFix(stored, weightKg = 85.0, reps = 5, kind = SetKind.Working,
-                         rpe = 8.0, note = "felt heavy")
+        val fix = SetFix(stored, weightKg = 85.0, reps = 5, rpe = 8.0, note = "felt heavy")
 
         assertEquals(SetFix(weightKg = 85.0), fix)
         assertEquals(85.0, fix.corrected(stored).weightKg, 0.0)
@@ -51,8 +48,7 @@ class SetFixTests {
 
     @Test
     fun clearingANoteNamesAnEmptyNote() {
-        val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
-                         rpe = 8.0, note = "")
+        val fix = SetFix(stored, weightKg = 82.5, reps = 5, rpe = 8.0, note = "")
 
         assertEquals(SetFix(note = ""), fix)
         assertEquals("", fix.corrected(stored).note)
@@ -60,26 +56,23 @@ class SetFixTests {
 
     @Test
     fun clearingAnRpeNamesItAsCleared() {
-        val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
-                         rpe = null, note = "felt heavy")
+        val fix = SetFix(stored, weightKg = 82.5, reps = 5, rpe = null, note = "felt heavy")
 
         assertEquals(SetFix(rpeNamed = true, rpe = null), fix)
         assertNull(fix.corrected(stored).rpe)
 
-        val untouched = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
-                               rpe = 8.0, note = "felt heavy")
+        val untouched = SetFix(stored, weightKg = 82.5, reps = 5, rpe = 8.0, note = "felt heavy")
         assertFalse("and not naming it at all leaves what is stored", untouched.rpeNamed)
         assertEquals(8.0, untouched.corrected(stored).rpe)
     }
 
     @Test
     fun everyFieldAtOnceIsOneFix() {
-        val fix = SetFix(stored, weightKg = 100.0, reps = 3, kind = SetKind.Drop,
-                         rpe = 9.5, note = "back-off")
+        val fix = SetFix(stored, weightKg = 100.0, reps = 3, rpe = 9.5, note = "back-off")
 
-        assertEquals(SetFix(100.0, 3, SetKind.Drop, "back-off", rpeNamed = true, rpe = 9.5), fix)
+        assertEquals(SetFix(100.0, 3, "back-off", rpeNamed = true, rpe = 9.5), fix)
         assertEquals(
-            stored.copy(weightKg = 100.0, reps = 3, kind = SetKind.Drop, rpe = 9.5, note = "back-off"),
+            stored.copy(weightKg = 100.0, reps = 3, rpe = 9.5, note = "back-off"),
             fix.corrected(stored),
         )
     }
@@ -87,8 +80,7 @@ class SetFixTests {
     // A weight that moves less than the ladder's own grid did not move.
     @Test
     fun theWeightIsReadOnTheLaddersGridAndNotOffRawDoubles() {
-        val drifted = SetFix(stored, weightKg = 82.5000001, reps = 5, kind = SetKind.Working,
-                             rpe = 8.0, note = "felt heavy")
+        val drifted = SetFix(stored, weightKg = 82.5000001, reps = 5, rpe = 8.0, note = "felt heavy")
         assertEquals(SetFix(), drifted)
     }
 
@@ -98,7 +90,7 @@ class SetFixTests {
     fun anOwedCorrectionRestatesTheWholeStoredRowRatherThanADiff() {
         val fix = SetFix(stored.copy(rpe = null, note = ""))
 
-        assertEquals(SetFix(82.5, 5, SetKind.Working, "", rpeNamed = true, rpe = null), fix)
+        assertEquals(SetFix(82.5, 5, "", rpeNamed = true, rpe = null), fix)
         assertTrue(fix.rpeNamed)
     }
 

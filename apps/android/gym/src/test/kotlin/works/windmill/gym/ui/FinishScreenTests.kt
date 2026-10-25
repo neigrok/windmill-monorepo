@@ -33,7 +33,6 @@ import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.PlannedLine
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TrainingSet
@@ -264,12 +263,12 @@ class FinishedSessionTests {
     }
 
     @Test
-    fun aSessionOfNothingButWarmupsIsNotOfferedAsARoutine() {
-        val warmups = listOf(
+    fun aOneSetSessionIsNotOfferedAsARoutine() {
+        val oneSet = listOf(
             TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 60.0, reps = 5,
-                        kind = SetKind.Warmup, completedAtMs = 2_000),
+                        completedAtMs = 2_000),
         )
-        assertFalse(FinishedSession(session = session(routineId = null), sets = warmups,
+        assertFalse(FinishedSession(session = session(routineId = null), sets = oneSet,
                                     review = null, isFirst = true).offersRoutine)
     }
 
@@ -285,7 +284,7 @@ class FinishedSessionTests {
     }
 
     @Test
-    fun actualWorkingCountDecidesTheHeadingWithoutDependingOnReview() {
+    fun actualSetCountDecidesTheHeadingWithoutDependingOnReview() {
         val misleading = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 20), slight = false)
         for (review in listOf(null, misleading)) {
             for (count in 0..4) {
@@ -297,7 +296,7 @@ class FinishedSessionTests {
     }
 
     @Test
-    fun actualReceiptTotalsIncludePerformedMovementsAndExcludeWarmupVolume() {
+    fun actualReceiptTotalsIncludeEverySetWithEquipmentLoadCounts() {
         val bench = List(3) { index -> TrainingSet("bench_$index", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 100L + index) }
         val press = List(3) { index -> TrainingSet("press_$index", "overhead-press", weightKg = 30.0, reps = 8, completedAtMs = 200L + index) }
         val raise = List(3) { index -> TrainingSet("raise_$index", "lateral-raise", weightKg = 18.0, reps = 10, completedAtMs = 300L + index) }
@@ -314,8 +313,8 @@ class FinishedSessionTests {
             listOf(summary(full).setCount, summary(full).tonnageKg, summary(full).exercises, full.slight))
         val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null, false)
         assertEquals(listOf(1, 460.0, true), listOf(summary(free).setCount, summary(free).tonnageKg, free.slight))
-        val warm = full.copy(sets = full.sets + bench.first().copy(id = "warm", kind = SetKind.Warmup))
-        assertEquals(listOf(10, 9, 3240.0), listOf(summary(warm).setCount, summary(warm).workingSetCount, summary(warm).tonnageKg))
+        val extra = full.copy(sets = full.sets + bench.first().copy(id = "warm"))
+        assertEquals(listOf(10, 10, 3720.0), listOf(summary(extra).setCount, summary(extra).workingSetCount, summary(extra).tonnageKg))
     }
 
 }
@@ -474,7 +473,7 @@ class KeepAsRoutineTests {
         )
     }
 
-    // The routine the receipt mints transcribes the working sets per set, and the
+    // The routine the receipt mints transcribes the sets per set, and the
     // card's preview prints each line's scheme in the one readout formula — a ramp reads its ranges.
     @Test
     fun thePreviewPrintsTheSetsAsLiftedInTheReadoutFormula() {

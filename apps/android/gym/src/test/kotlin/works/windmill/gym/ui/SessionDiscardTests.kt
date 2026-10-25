@@ -104,7 +104,7 @@ class SessionDiscardTests {
             compose.onNodeWithText(Finish.discard).performScrollTo().assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("and this is NOT the slight session the finish screen draws it for",
-                    Review.slightWorkingSets, room.store.recent.single().workingSetCount)
+                    Review.slightSets, room.store.recent.single().workingSetCount)
             }
         } } finally { scope.cancel() }
     }

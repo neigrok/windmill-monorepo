@@ -209,7 +209,7 @@ class WorkoutControls private constructor(
         if (!unresolvedPrefill || savedRack?.exerciseId != movement || savedRack.basisSetCount != today.size) {
             state = state.redial(movement, today.size, Prefill.of(today, plan, lastTime))
         }
-        val ordinal = LiveLines.workingCount(today) + 1
+        val ordinal = LiveLines.setCount(today) + 1
         state = state.offered(WorkoutKey(seat, live.id), ordinal, ready, state.offer?.id ?: if (ready && !state.editorOpen) mint() else "")
         return controls.copy(workout = state)
     }
@@ -221,7 +221,7 @@ class WorkoutControls private constructor(
         val live = mine.session ?: return LogSetAcceptance.Stale
         if (command.key != WorkoutKey(seat, live.id) || !workout.accepts(command)) return LogSetAcceptance.Stale
         val offer = requireNotNull(workout.offer)
-        if (offer.exerciseId != chosenMovement || offer.workingOrdinal != LiveLines.workingCount(sets, chosenMovement) + 1) {
+        if (offer.exerciseId != chosenMovement || offer.workingOrdinal != LiveLines.setCount(sets, chosenMovement) + 1) {
             return LogSetAcceptance.Stale
         }
         val set = TrainingSet(offer.id, offer.exerciseId, weightKg = offer.weightKg, reps = offer.reps,

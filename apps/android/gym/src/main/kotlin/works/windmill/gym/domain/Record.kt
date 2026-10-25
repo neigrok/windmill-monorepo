@@ -38,8 +38,7 @@ object Record {
                     Readout.briefDay(point.startedAt, now), point.id == best?.id)
             }, record.recentDays.map { day ->
                 Day(Readout.briefDay(day.startedAtMs, now), day.sets.joinToString(" · ") { set ->
-                    val effort = Readout.effort(set.weightKg, set.reps)
-                    if (set.kind == SetKind.Working) effort else "$effort ${set.kind.wire}"
+                    Readout.effort(set.weightKg, set.reps)
                 })
             },
             if (untrained) "Nothing logged for this movement yet. The first set you log lands here." else null,

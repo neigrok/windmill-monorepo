@@ -39,7 +39,7 @@ data class DeviationOffer(
                 .filter { it.value.exerciseId == exerciseId }
                 .mapNotNull { (index, entry) -> entry.sets.mapNotNull { it.weightKg }.maxOrNull()?.let { index to it } }
                 .maxByOrNull { it.second } ?: return null
-            val working = sets.filter { it.exerciseId == exerciseId && it.kind == SetKind.Working }
+            val working = sets.filter { it.exerciseId == exerciseId }
             val lifted = working.maxOfOrNull { it.weightKg } ?: return null
             if (lifted <= planned) return null
             // A ladder is offered as the sets lifted, and a line holds twenty sets at most: past

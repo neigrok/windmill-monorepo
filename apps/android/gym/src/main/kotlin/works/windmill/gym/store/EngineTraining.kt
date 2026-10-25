@@ -608,7 +608,7 @@ class EngineTraining(val engine: Engine) {
         SeedExercises.all.none { it.id == id }, aliases, loadCount)
     private fun EngineSession.ui() = Session(id.text, startedAt.ms, finishedAt?.ms, (historyRoutineId ?: routineId)?.text,
         plan?.let { PlanSnapshot(name ?: it.routine, it.entries.map { entry -> PlanEntry(entry.exerciseId.text, entry.sets.orEmpty().map { set -> SetTarget(set.reps, set.weightKg) }) }) })
-    private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, SetKind.Working, rpe, note, completedAt.ms)
+    private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, rpe, note, completedAt.ms)
     private fun EngineRoutine.ui(last: Long? = null, proposal: Proposal? = null) = Routine(id.text, name, position, last,
         entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId.text, entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) }, revision ?: 1, proposal)
     private fun RoutineWrite.engine(old: EngineRoutine?) = EngineRoutine(Id(id, EngineRoutine), name, position,

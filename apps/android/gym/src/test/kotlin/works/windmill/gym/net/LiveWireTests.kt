@@ -22,7 +22,6 @@ import works.windmill.gym.domain.RoutineEntryWrite
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TopSet
@@ -136,8 +135,8 @@ class LiveWireTests {
         private val routineId = "rt_probe_a$tag"
         private val sessionAId = "ses_probe_a${tag}1"
         private val sessionBId = "ses_probe_a${tag}2"
-        private val warmupId = "set_probe_a${tag}w"
-        private val workingId = "set_probe_a${tag}g"
+        private val firstSetId = "set_probe_a${tag}w"
+        private val secondSetId = "set_probe_a${tag}g"
         private val squatId = "set_probe_a${tag}q"
 
         private val startA = System.currentTimeMillis() - 3_600_000
@@ -146,7 +145,8 @@ class LiveWireTests {
         private val finishB = startB + 120_000
 
         private var openedA: works.windmill.gym.domain.Session? = null
-        private var storedWorking: TrainingSet? = null
+        private var storedFirst: TrainingSet? = null
+        private var storedSecond: TrainingSet? = null
 
         private val importedId = "ses_probe_a${tag}3"
         private val importedSetId = "set_probe_a${tag}i"
@@ -221,26 +221,27 @@ class LiveWireTests {
         assertEquals(PlanEntry("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())), plan.entry("bench-press"))
         assertEquals(PlanEntry("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))), plan.entry("back-squat"))
 
-        val warmup = appendSet(sessionAId,
-            SetWrite(warmupId, "bench-press", 40.0, 8, SetKind.Warmup, startA + 60_000))
+        val first = appendSet(sessionAId,
+            SetWrite(firstSetId, "bench-press", 40.0, 8, startA + 60_000))
         assertEquals(
-            TrainingSet(warmupId, "bench-press", 1, 40.0, 8, SetKind.Warmup, null, "", startA + 60_000),
-            warmup,
+            TrainingSet(firstSetId, "bench-press", 1, 40.0, 8, null, "", startA + 60_000),
+            first,
         )
-        val working = appendSet(sessionAId,
-            SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000))
+        val second = appendSet(sessionAId,
+            SetWrite(secondSetId, "bench-press", 82.5, 5, startA + 120_000))
         assertEquals(
-            TrainingSet(workingId, "bench-press", 2, 82.5, 5, SetKind.Working, null, "", startA + 120_000),
-            working,
+            TrainingSet(secondSetId, "bench-press", 2, 82.5, 5, null, "", startA + 120_000),
+            second,
         )
-        storedWorking = working
+        storedFirst = first
+        storedSecond = second
     }
 
     @Test
     fun t04_aReplayOfTheSameSetIdAnswersTheStoredRowByteForSame() = runBlocking {
-        val write = SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000)
+        val write = SetWrite(secondSetId, "bench-press", 82.5, 5, startA + 120_000)
         val replayed = appendSet(sessionAId, write)
-        assertEquals(storedWorking, replayed)
+        assertEquals(storedSecond, replayed)
         val rawOnce = engine.snapshot()
         val twice = appendSet(sessionAId, write)
         assertEquals(replayed, twice)
@@ -255,12 +256,12 @@ class LiveWireTests {
         assertTrue(!closed.isOpen)
 
         val replayed = appendSet(sessionAId,
-            SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000))
-        assertEquals(storedWorking, replayed)
+            SetWrite(secondSetId, "bench-press", 82.5, 5, startA + 120_000))
+        assertEquals(storedSecond, replayed)
 
         try {
             appendSet(sessionAId,
-                SetWrite("set_probe_a${tag}x", "bench-press", 85.0, 3, SetKind.Working, finishA + 1_000))
+                SetWrite("set_probe_a${tag}x", "bench-press", 85.0, 3, finishA + 1_000))
             fail("a fresh set into a finished session must refuse")
         } catch (refused: TrainingRefused) {
             assertEquals("session-finished", refused.code)
@@ -269,7 +270,7 @@ class LiveWireTests {
 
         val review = adapter.review(sessionAId)
         assertEquals(finishA - startA, review.stats.durationMs)
-        assertEquals(1, review.stats.workingSets)
+        assertEquals(2, review.stats.workingSets)
         assertNotNull(review.stats.topE1rm)
         if (review.slight) {
             assertNull("slight means record is omitted", review.record)
@@ -284,7 +285,7 @@ class LiveWireTests {
         assertTrue(!trained.isFirstTime)
         assertEquals(sessionAId, trained.session!!.id)
         assertEquals("Probe Day A", trained.routine)
-        assertEquals(listOf(storedWorking), trained.sets)
+        assertEquals(listOf(storedFirst, storedSecond), trained.sets)
 
         val untouched = adapter.lastTime("suitcase-carry")
         assertEquals("suitcase-carry", untouched.exerciseId)
@@ -310,7 +311,7 @@ class LiveWireTests {
 
         try {
             appendSet(sessionBId,
-                SetWrite(workingId, "back-squat", 100.0, 5, SetKind.Working, startB + 30_000))
+                SetWrite(secondSetId, "back-squat", 100.0, 5, startB + 30_000))
             fail("an id spent in another session must refuse")
         } catch (refused: TrainingRefused) {
             assertEquals("set-id-taken", refused.code)
@@ -319,7 +320,7 @@ class LiveWireTests {
 
         try {
             appendSet(sessionBId,
-                SetWrite("set_probe_a${tag}z", "probe-not-a-movement", 60.0, 5, SetKind.Working, startB + 40_000))
+                SetWrite("set_probe_a${tag}z", "probe-not-a-movement", 60.0, 5, startB + 40_000))
             fail("a movement outside the catalog must refuse")
         } catch (refused: TrainingRefused) {
             assertEquals(Gym.Codes.unknownExercise, refused.code)
@@ -333,7 +334,7 @@ class LiveWireTests {
             assertEquals(Reply.Unreachable, offline.hello(bearer))
         }
 
-        appendSet(sessionBId, SetWrite(squatId, "back-squat", 100.0, 5, SetKind.Working, startB + 60_000))
+        appendSet(sessionBId, SetWrite(squatId, "back-squat", 100.0, 5, startB + 60_000))
         finishSession(sessionBId, finishB)
         Unit
     }
@@ -358,6 +359,8 @@ class LiveWireTests {
         val older = pageTwo[0]
         assertEquals(sessionAId, older.id)
         assertEquals(2, older.setCount)
+        assertEquals(2, older.workingSetCount)
+        assertEquals(732.5, checkNotNull(older.tonnageKg), 0.0)
         assertEquals(listOf("Bench Press"), older.exercises)
         assertEquals(TopSet(82.5, 5), older.topSet)
         assertEquals("Probe Day A", older.plan!!.routine)
@@ -366,7 +369,7 @@ class LiveWireTests {
         assertNotNull(detail)
         assertEquals(sessionAId, detail!!.session.id)
         assertEquals(finishA, detail.session.finishedAtMs)
-        assertEquals(listOf(warmupId, workingId), detail.sets.map { it.id })
+        assertEquals(listOf(firstSetId, secondSetId), detail.sets.map { it.id })
         assertNull("an absent session folds to null", adapter.session("ses_probe_a_gone404"))
     }
 
@@ -380,7 +383,7 @@ class LiveWireTests {
 
         val day = bench.recentDays.first { it.sessionId == sessionAId }
         assertEquals("a day is stamped with its SESSION's start, never the set's clock", startA, day.startedAtMs)
-        assertEquals(listOf(workingId), day.sets.map { it.id })
+        assertEquals(listOf(storedFirst, storedSecond), day.sets)
 
         assertNull("an absent movement folds to null, exactly as an absent session does",
             adapter.record("probe-not-a-movement"))
@@ -424,7 +427,7 @@ class LiveWireTests {
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val signedOut = EngineTraining(phone)
             signedOut.startSession(SessionStart(importedId, startC))
-            signedOut.appendSet(importedId, SetWrite(importedSetId, "back-squat", 60.0, 5, SetKind.Working, startC + 60_000))
+            signedOut.appendSet(importedId, SetWrite(importedSetId, "back-squat", 60.0, 5, startC + 60_000))
             signedOut.finishSession(importedId, finishC)
             signedOut.prepareAdoption()
             assertEquals(listOf(importedId), signedOut.imports.retainedWorkouts().map { it.session.id })
@@ -437,7 +440,7 @@ class LiveWireTests {
         drain(RecordKey(Gym.Types.session, RecordID(importedId)))
         val landed = checkNotNull(adapter.session(importedId))
         assertEquals(Session(importedId, startC, finishC), landed.session)
-        assertEquals(listOf(TrainingSet(importedSetId, "back-squat", 1, 60.0, 5, SetKind.Working, null, "", startC + 60_000)),
+        assertEquals(listOf(TrainingSet(importedSetId, "back-squat", 1, 60.0, 5, null, "", startC + 60_000)),
             landed.sets)
 
         discardSession(importedId)
@@ -454,7 +457,7 @@ class LiveWireTests {
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 training.startSession(SessionStart(id, at))
-                val accepted = training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, SetKind.Working, at + 10_000))
+                val accepted = training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, at + 10_000))
                 training.prepareAdoption()
                 signIn(phone)
                 if (pullFirst) {
@@ -480,7 +483,7 @@ class LiveWireTests {
             }
             drain()
             assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
-                TrainingSet(setId, "bench-press", 1, 80.0, 5, SetKind.Working, null, "", at + 10_000))), adapter.session(id))
+                TrainingSet(setId, "bench-press", 1, 80.0, 5, null, "", at + 10_000))), adapter.session(id))
             discardSession(id)
         }
     }
@@ -494,7 +497,7 @@ class LiveWireTests {
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val training = EngineTraining(phone)
             training.startSession(SessionStart(id, at))
-            training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, SetKind.Warmup, at + 10_000))
+            training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, at + 10_000))
             training.prepareAdoption()
             signIn(phone)
             // The durable order written by affected versions: start, finish, then the owed set.
@@ -520,7 +523,7 @@ class LiveWireTests {
         }
         drain()
         assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
-            TrainingSet(setId, "bench-press", 1, 80.0, 5, SetKind.Warmup, null, "", at + 10_000))), adapter.session(id))
+            TrainingSet(setId, "bench-press", 1, 80.0, 5, null, "", at + 10_000))), adapter.session(id))
         discardSession(id)
     }
 
@@ -537,7 +540,7 @@ class LiveWireTests {
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 training.startSession(SessionStart(id, at))
-                training.appendSet(id, SetWrite(setId, "back-squat", 62.5, 6, SetKind.Warmup, completedAt))
+                training.appendSet(id, SetWrite(setId, "back-squat", 62.5, 6, completedAt))
                 training.fixSet(id, setId, SetFix(note = note, rpe = 7.5, rpeNamed = true))
                 accepted = training.session(id)!!.sets.single()
                 training.prepareAdoption()

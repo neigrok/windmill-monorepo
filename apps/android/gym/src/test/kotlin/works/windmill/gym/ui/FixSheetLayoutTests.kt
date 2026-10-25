@@ -28,7 +28,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.FixOutcome
 
@@ -41,7 +40,7 @@ class FixSheetLayoutTests {
     @Test
     fun noteAndActionsRemainReachableWithLargeTextAndKeyboardHeight() {
         val set = TrainingSet(id = "set_7", exerciseId = "bench-press", setNumber = 7,
-            weightKg = -102.5, reps = 99, kind = SetKind.Warmup, completedAtMs = 0)
+            weightKg = -102.5, reps = 99, completedAtMs = 0)
         val saved = mutableListOf<SetFix>()
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {

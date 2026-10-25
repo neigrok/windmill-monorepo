@@ -29,7 +29,6 @@ import works.windmill.gym.GymRoom
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.store.EngineRoomFixture
@@ -55,7 +54,7 @@ class RoutineSheetTests {
                 other.select("u1"); other.pull(server)
                 assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push")) is GymResult.Ok)
                 other.training.startSession(SessionStart("remote01", other.now - 10_000, routineId = "routine_push"))
-                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 50.0, 8, SetKind.Working, other.now - 9_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 50.0, 8, other.now - 9_000))
                 other.training.finishSession("remote01", other.now)
                 other.sync(server)
             } }

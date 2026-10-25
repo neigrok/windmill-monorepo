@@ -107,9 +107,10 @@ server results arrive. A locally stranded set can be retried into the finished w
 guarded correction when the server advertises registry 6. A late `session-finished` refusal, a
 finish or overlap that prevents correction, or a server advertising an older registry uses a
 separate workout with new account identities: its
-start, complete saved set and finish are acknowledged in order. The original source, values, time
-and kind survive; concurrent changes leave the source available for another retry. Settings Retry
-schedules reconciliation before reporting completion.
+start, complete saved set and finish are acknowledged in order. The original source, values and
+time survive; concurrent changes leave the source available for another retry. Settings Retry
+schedules reconciliation before reporting completion. Legacy set-kind fields are ignored on reads;
+new sets carry no kind, and every set contributes to training totals and history.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
@@ -120,7 +121,7 @@ remain drafts until **Save routine**. Review shows movements, targets, equipment
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
 server no longer holds or cannot write loses its Save. Confirmation receipts survive relaunch under their account,
 retries retain the same server operation, and a draft reads as saved when the thread or this phone's receipt says so.
-Equipment metadata resolves through the current catalogue for history and training receipts; working-set volume
+Equipment metadata resolves through the current catalogue for history and training receipts; set volume
 counts one or two dumbbells while estimates keep the entered weight unit. Shared HTTP framing lives in `net/GymHttp.kt`.
 `sharing/` owns public workout links and their card; sharing a workout does not involve a Coach conversation.
 

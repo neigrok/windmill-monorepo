@@ -157,7 +157,7 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val gym = EngineTraining(engine)
             gym.startSession(SessionStart("session1", clockMs - 300_000))
-            repeat(201) { gym.appendSet("session1", SetWrite("set${it.toString().padStart(5, '0')}", "bench-press", 82.5, 5, SetKind.Working, clockMs - 299_000 + it)) }
+            repeat(201) { gym.appendSet("session1", SetWrite("set${it.toString().padStart(5, '0')}", "bench-press", 82.5, 5, clockMs - 299_000 + it)) }
             gym.finishSession("session1", clockMs - 1_000)
             val row = gym.session("session1")!!
             gym.prepareAdoption()

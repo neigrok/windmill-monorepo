@@ -44,7 +44,6 @@ data class GymColors(
 ) {
     val weightInk = ink
     val targetInk = accent
-    val warmupInk = inkFaint
     val unsyncedInk = inkFaint
     val onAlarm = Color.White
 }

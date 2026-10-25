@@ -3,31 +3,11 @@ package works.windmill.gym.domain
 import java.security.SecureRandom
 import kotlin.math.floor
 import kotlin.math.max
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.PrimitiveKind
-import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
-
-@Serializable(with = SetKindSerializer::class)
-enum class SetKind(val wire: String) {
-    Warmup("warmup"), Working("working"), Drop("drop"), Failure("failure");
-
-    companion object {
-        fun parse(raw: String?): SetKind = entries.firstOrNull { it.wire == raw } ?: Working
-    }
-}
-
-object SetKindSerializer : KSerializer<SetKind> {
-    override val descriptor = PrimitiveSerialDescriptor("SetKind", PrimitiveKind.STRING)
-    override fun serialize(encoder: Encoder, value: SetKind) = encoder.encodeString(value.wire)
-    override fun deserialize(decoder: Decoder): SetKind = SetKind.parse(decoder.decodeString())
-}
 
 // `aliases` is what this account called this movement before, newest first, at most five.
 @Serializable
@@ -61,7 +41,7 @@ object TheSix {
     )
 }
 
-// One set of a scheme. No `reps` is max; no `weightKg` is last time's Nth working set.
+// One set of a scheme. No `reps` is max; no `weightKg` is last time's Nth set.
 @Serializable
 data class SetTarget(val reps: Int? = null, val weightKg: Double? = null)
 
@@ -78,8 +58,8 @@ object Scheme {
 
     fun straight(sets: List<SetTarget>): Boolean = rounded(sets).distinct().size == 1
 
-    // The slot the coming working set fills, counted off the working sets already lifted today.
-    fun slot(sets: List<SetTarget>, workingSetsToday: Int): SetTarget? = sets.getOrNull(workingSetsToday)
+    // The slot the coming set fills, counted off the sets already lifted today.
+    fun slot(sets: List<SetTarget>, setsToday: Int): SetTarget? = sets.getOrNull(setsToday)
 
     // There is nothing to ramp between two sets — a two-row ramp is its own ends — or between ends
     // that agree.
@@ -109,9 +89,9 @@ object Scheme {
         }
     }
 
-    // What was lifted, as a scheme: one set per working set in the order they landed.
-    fun lifted(working: List<TrainingSet>): List<SetTarget> =
-        working.sortedBy { it.completedAtMs }.map { SetTarget(it.reps, Ladder.round(it.weightKg)) }
+    // What was lifted, as a scheme: one set per performed set in the order they landed.
+    fun lifted(sets: List<TrainingSet>): List<SetTarget> =
+        sets.sortedBy { it.completedAtMs }.map { SetTarget(it.reps, Ladder.round(it.weightKg)) }
 }
 
 // No `sets` is the open line, frozen as the absence itself: the wire never carries an empty array.
@@ -153,7 +133,6 @@ data class TrainingSet(
     val setNumber: Int? = null,
     val weightKg: Double,
     val reps: Int,
-    val kind: SetKind = SetKind.Working,
     val rpe: Double? = null,
     val note: String = "",
     @SerialName("completedAt") val completedAtMs: Long,
@@ -165,7 +144,7 @@ data class SessionDetail(val session: Session, val sets: List<TrainingSet> = emp
 @Serializable
 data class TopSet(val weightKg: Double, val reps: Int)
 
-// Session fields arrive FLAT. `setCount` is every set of every kind; `workingSetCount` is drawn.
+// Session fields arrive flat; both count fields include every set.
 @Serializable
 data class SessionSummary(
     val id: String,
@@ -174,7 +153,7 @@ data class SessionSummary(
     val routineId: String? = null,
     val plan: PlanSnapshot? = null,
     val setCount: Int = 0,
-    // Absent rather than zero: a defaulted 0 would print `0 working` over a real session.
+    // Absent rather than zero when the server omitted the count.
     val workingSetCount: Int? = null,
     val tonnageKg: Double? = null,
     val exercises: List<String> = emptyList(),
@@ -191,13 +170,11 @@ data class SessionSummary(
         routineId = session.routineId,
         plan = session.plan,
         setCount = sets.size,
-        workingSetCount = sets.count { it.kind == SetKind.Working },
+        workingSetCount = sets.size,
         // Clamped the server's way: an assisted set adds zero rather than subtracting.
-        tonnageKg = sets.filter { it.kind == SetKind.Working }
-            .sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
+        tonnageKg = sets.sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
-        topSet = sets.filter { it.kind == SetKind.Working }
-            .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
+        topSet = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
         topE1rm = null,
         record = false,
@@ -210,9 +187,9 @@ data class SessionSummary(
         // Read against the account's history: its best estimate, and the dot when a session full
         // enough to count earned a record.
         fun of(detail: SessionDetail, history: List<SessionDetail>, catalog: List<Exercise>): SessionSummary {
-            val sets = working(detail)
+            val sets = performed(detail)
             return SessionSummary(detail.session, detail.sets, catalog).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
-                record = sets.size >= Review.slightWorkingSets && earned(detail, history) != null)
+                record = sets.size >= Review.slightSets && earned(detail, history) != null)
         }
     }
 }
@@ -227,14 +204,13 @@ data class LastTime(
     val isFirstTime: Boolean get() = session == null
 
     companion object {
-        // The server's rule: the most recent FINISHED session holding a non-warmup set, its sets in
-        // performed order — the predicate is `kind <> 'warmup'`, not working-only.
+        // The most recent finished session holding the movement, with its sets in performed order.
         fun of(exerciseId: String, history: List<SessionDetail>): LastTime {
             val last = history
                 .filter { it.session.finishedAtMs != null }
                 .sortedByDescending { it.session.startedAtMs }
                 .firstOrNull { detail ->
-                    detail.sets.any { it.exerciseId == exerciseId && it.kind != SetKind.Warmup }
+                    detail.sets.any { it.exerciseId == exerciseId }
                 }
                 ?: return LastTime(exerciseId)
             return LastTime(
@@ -242,7 +218,7 @@ data class LastTime(
                 session = last.session,
                 routine = last.session.plan?.routine,
                 sets = last.sets
-                    .filter { it.exerciseId == exerciseId && it.kind != SetKind.Warmup }
+                    .filter { it.exerciseId == exerciseId }
                     .sortedBy { it.completedAtMs },
             )
         }
@@ -265,15 +241,14 @@ data class LastSet(
                 .sortedByDescending { it.session.startedAtMs }
             val trained = closed
                 .flatMap { it.sets }
-                .filter { it.kind != SetKind.Warmup }
                 .map { it.exerciseId }
                 .distinct()
             return trained.mapNotNull { movement ->
                 val block = closed.firstOrNull { detail ->
-                    detail.sets.any { it.exerciseId == movement && it.kind != SetKind.Warmup }
+                    detail.sets.any { it.exerciseId == movement }
                 } ?: return@mapNotNull null
                 val last = block.sets
-                    .filter { it.exerciseId == movement && it.kind != SetKind.Warmup }
+                    .filter { it.exerciseId == movement }
                     .maxByOrNull { it.completedAtMs } ?: return@mapNotNull null
                 LastSet(movement, last.weightKg, last.reps, block.session.startedAtMs)
             }.sortedBy { it.exerciseId }
@@ -379,33 +354,33 @@ data class Review(
 ) {
     companion object {
         // The server's own slight rule; duration is not in the predicate.
-        const val slightWorkingSets = 4
+        const val slightSets = 4
 
         fun of(detail: SessionDetail): Review {
-            val working = detail.sets.count { it.kind == SetKind.Working }
+            val count = detail.sets.size
             val until = detail.session.finishedAtMs
                 ?: detail.sets.maxOfOrNull { it.completedAtMs }
                 ?: detail.session.startedAtMs
             return Review(
                 stats = ReviewStats(
                     durationMs = max(0, until - detail.session.startedAtMs),
-                    workingSets = working,
+                    workingSets = count,
                     topE1rm = null,
                 ),
-                slight = working < slightWorkingSets,
+                slight = count < slightSets,
             )
         }
 
         // Read against the account's history: the record the session earned, and the routine's
         // previous session movement by movement, with what the frozen plan asked.
         fun of(detail: SessionDetail, history: List<SessionDetail>): Review {
-            val working = working(detail)
-            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = working.mapNotNull(::estimate).maxOrNull())) }
+            val sets = performed(detail)
+            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull())) }
             if (base.slight) return base
             val previous = detail.session.routineId?.let { id -> prior(detail, history).lastOrNull { it.session.routineId == id } }
             val against = previous?.let { before -> Against(before.session.id, before.session.plan?.routine, before.session.startedAtMs,
-                working.groupBy { it.exerciseId }.map { (id, sets) -> AgainstMovement(id, effort(sets)!!,
-                    effort(working(before).filter { it.exerciseId == id }), detail.session.plan?.entry(id)?.let { PlannedLine(it.sets) }) }) }
+                sets.groupBy { it.exerciseId }.map { (id, sets) -> AgainstMovement(id, effort(sets)!!,
+                    effort(performed(before).filter { it.exerciseId == id }), detail.session.plan?.entry(id)?.let { PlannedLine(it.sets) }) }) }
             return base.copy(record = earned(detail, history), against = against)
         }
     }
@@ -414,11 +389,11 @@ data class Review(
 // What a review and a summary read off the account's history. The estimate is Epley's, rounded to
 // a tenth, and absent at or below zero load.
 private fun estimate(set: TrainingSet): Double? = if (set.weightKg > 0) floor(set.weightKg * (1 + set.reps / 30.0) * 10 + .5) / 10 else null
-private fun working(detail: SessionDetail) = detail.sets.filter { it.kind == SetKind.Working }.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
+private fun performed(detail: SessionDetail) = detail.sets.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
 private fun prior(detail: SessionDetail, history: List<SessionDetail>) = history.filter {
     !it.session.isOpen && it.session.startedAtMs < detail.session.startedAtMs
 }.sortedWith(compareBy({ it.session.startedAtMs }, { it.session.id }))
-private fun marks(history: List<SessionDetail>): List<Pair<TrainingSet, Long>> = history.flatMap { detail -> working(detail).map { it to it.completedAtMs } }
+private fun marks(history: List<SessionDetail>): List<Pair<TrainingSet, Long>> = history.flatMap { detail -> performed(detail).map { it to it.completedAtMs } }
     .groupBy { it.first.exerciseId to it.first.weightKg }.values.map { values ->
         values.sortedWith(compareByDescending<Pair<TrainingSet, Long>> { it.first.reps }.thenBy { it.second }).first()
     }
@@ -426,7 +401,7 @@ private fun earned(detail: SessionDetail, history: List<SessionDetail>): Persona
     data class Candidate(val rank: Int, val record: PersonalRecord, val set: TrainingSet)
     val before = marks(prior(detail, history))
     val candidates = mutableListOf<Candidate>()
-    for ((exercise, sets) in working(detail).groupBy { it.exerciseId }) {
+    for ((exercise, sets) in performed(detail).groupBy { it.exerciseId }) {
         val earlier = before.filter { it.first.exerciseId == exercise }
         val best = sets.filter { estimate(it) != null }.maxByOrNull { estimate(it)!! }
         val priorBest = earlier.filter { estimate(it.first) != null }.maxByOrNull { estimate(it.first)!! }
@@ -451,7 +426,7 @@ private fun effort(sets: List<TrainingSet>): Effort? {
     return Effort(sets.count { it.weightKg == top.weightKg }, top.reps, top.weightKg)
 }
 
-// One closed session's sets of a movement, warmups aside.
+// One closed session's sets of a movement.
 data class RecordDay(
     val sessionId: String,
     val startedAtMs: Long,
@@ -467,13 +442,13 @@ data class MovementRecord(
     companion object {
         const val recentDaysShown = 10
 
-        // A day is a closed session that holds a set of the movement other than a warmup.
+        // A day is a closed session that holds a set of the movement.
         fun of(exercise: Exercise, history: List<SessionDetail>): MovementRecord = MovementRecord(exercise,
             history.filter { it.session.finishedAtMs != null }
                 .sortedByDescending { it.session.startedAtMs }
                 .mapNotNull { detail ->
                     val performed = detail.sets
-                        .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
+                        .filter { it.exerciseId == exercise.id }
                         .sortedBy { it.completedAtMs }
                     if (performed.isEmpty()) return@mapNotNull null
                     RecordDay(detail.session.id, detail.session.startedAtMs, performed)
@@ -488,11 +463,10 @@ data class SetWrite(
     val exerciseId: String,
     val weightKg: Double,
     val reps: Int,
-    val kind: SetKind,
     val completedAt: Long,
 ) {
     constructor(set: TrainingSet) :
-        this(set.id, set.exerciseId, set.weightKg, set.reps, set.kind, set.completedAtMs)
+        this(set.id, set.exerciseId, set.weightKg, set.reps, set.completedAtMs)
 }
 
 // `exerciseId`, `completedAt` and `setNumber` belong to the log, and none of them is a correction.
@@ -502,17 +476,15 @@ data class SetWrite(
 data class SetFix(
     val weightKg: Double? = null,
     val reps: Int? = null,
-    val kind: SetKind? = null,
     val note: String? = null,
     val rpeNamed: Boolean = false,
     val rpe: Double? = null,
 ) {
     // What a sheet asks for, read against what the log holds: only the fields that moved travel.
-    constructor(stored: TrainingSet, weightKg: Double, reps: Int, kind: SetKind, rpe: Double?, note: String) :
+    constructor(stored: TrainingSet, weightKg: Double, reps: Int, rpe: Double?, note: String) :
         this(
             weightKg = weightKg.takeIf { Ladder.round(it) != Ladder.round(stored.weightKg) },
             reps = reps.takeIf { it != stored.reps },
-            kind = kind.takeIf { it != stored.kind },
             note = note.takeIf { it != stored.note },
             rpeNamed = rpe != stored.rpe,
             // Held only where it is named, so an untouched sheet is equal to an empty diff.
@@ -522,12 +494,11 @@ data class SetFix(
     // An owed correction restates the whole saved row, rpe included, so the account's copy of the
     // set ends up saying exactly what this phone says.
     constructor(set: TrainingSet) :
-        this(set.weightKg, set.reps, set.kind, set.note, rpeNamed = true, rpe = set.rpe)
+        this(set.weightKg, set.reps, set.note, rpeNamed = true, rpe = set.rpe)
 
     fun corrected(set: TrainingSet): TrainingSet = set.copy(
         weightKg = weightKg ?: set.weightKg,
         reps = reps ?: set.reps,
-        kind = kind ?: set.kind,
         note = note ?: set.note,
         rpe = if (rpeNamed) rpe else set.rpe,
     )
@@ -536,7 +507,7 @@ data class SetFix(
     fun moves(set: TrainingSet): Boolean {
         val after = corrected(set)
         if (Ladder.round(after.weightKg) != Ladder.round(set.weightKg)) return true
-        return after.reps != set.reps || after.kind != set.kind ||
+        return after.reps != set.reps ||
             after.note != set.note || after.rpe != set.rpe
     }
 }
@@ -630,19 +601,16 @@ data class RoutineWrite(
     )
 
     companion object {
-        // Each movement's working sets, set by set, as they were lifted; a warmup-only session
-        // keeps no routine.
+        // Each movement's sets, as they were lifted; an empty session keeps no routine.
         fun from(name: String, detail: SessionDetail, position: Int = 0): RoutineWrite? {
-            val working = detail.sets
-                .filter { it.kind == SetKind.Working }
-                .sortedBy { it.completedAtMs }
-            if (working.isEmpty()) return null
+            val sets = detail.sets.sortedBy { it.completedAtMs }
+            if (sets.isEmpty()) return null
             val order = mutableListOf<String>()
-            for (set in working) if (set.exerciseId !in order) order.add(set.exerciseId)
+            for (set in sets) if (set.exerciseId !in order) order.add(set.exerciseId)
             val entries = order.map { movement ->
                 RoutineEntryWrite(
                     exerciseId = movement,
-                    sets = Scheme.lifted(working.filter { it.exerciseId == movement }),
+                    sets = Scheme.lifted(sets.filter { it.exerciseId == movement }),
                 )
             }
             return RoutineWrite(Ids.routine(), name, position, entries)
@@ -650,10 +618,10 @@ data class RoutineWrite(
     }
 }
 
-// On a scheme whose sets disagree the pad follows the slot: the Nth working set takes the Nth set's
+// On a scheme whose sets disagree the pad follows the slot: the Nth set takes the Nth set's
 // numbers, then last time's Nth, then today's last set, then the bar. On a straight scheme, and on
 // no scheme, sticky beats the plan beats last time beats the empty bar — weight from the LAST
-// non-warmup set of last time, reps from the FIRST.
+// set of last time, reps from the FIRST.
 data class Prefill(val weightKg: Double, val reps: Int) {
     companion object {
         const val EMPTY_BAR_KG = 20.0
@@ -661,12 +629,12 @@ data class Prefill(val weightKg: Double, val reps: Int) {
 
         fun of(todaySets: List<TrainingSet>, planEntry: PlanEntry?, lastTime: LastTime?): Prefill {
             val scheme = planEntry?.sets.orEmpty()
-            val sticky = todaySets.lastOrNull { it.kind == SetKind.Working }
+            val sticky = todaySets.lastOrNull()
             val history = lastTime?.sets ?: emptyList()
             if (scheme.isNotEmpty() && !Scheme.straight(scheme)) {
-                val lifted = todaySets.count { it.kind == SetKind.Working }
+                val lifted = todaySets.size
                 val slot = Scheme.slot(scheme, lifted)
-                val lastNth = history.filter { it.kind == SetKind.Working }.getOrNull(lifted)
+                val lastNth = history.getOrNull(lifted)
                 val weight = slot?.weightKg ?: lastNth?.weightKg ?: sticky?.weightKg ?: EMPTY_BAR_KG
                 val reps = slot?.reps ?: lastNth?.reps ?: sticky?.reps ?: EMPTY_BAR_REPS
                 return Prefill(weight, max(1, reps))

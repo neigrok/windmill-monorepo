@@ -18,7 +18,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.SetFix
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
@@ -31,7 +30,7 @@ class FixSheetStateTests {
     @Test
     fun pendingSaveBlocksEditsAndDeleteThenRetainsTheDraftForRetry() {
         val set = TrainingSet(id = "set_3", exerciseId = "bench-press", setNumber = 3,
-            weightKg = 60.0, reps = 8, kind = SetKind.Drop, completedAtMs = 0)
+            weightKg = 60.0, reps = 8, completedAtMs = 0)
         val answer = CompletableDeferred<FixOutcome>()
         val attempts = mutableListOf<SetFix>()
         val busy = mutableListOf<Boolean>()
@@ -71,7 +70,7 @@ class FixSheetStateTests {
     @Test
     fun bodyAndRefusedEmbeddedBufferSurviveRestorationThenCancelKeepsTheBodyDraft() {
         val set = TrainingSet(id = "set_3", exerciseId = "bench-press", setNumber = 3,
-            weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0)
+            weightKg = 60.0, reps = 8, completedAtMs = 0)
         val restorer = StateRestorationTester(compose)
         val attempts = mutableListOf<SetFix>()
         restorer.setContent {
@@ -102,7 +101,7 @@ class FixSheetStateTests {
     @Test
     fun missingSetReportsItsOwnerOutcomeWithoutPretendingToSave() {
         val set = TrainingSet(id = "gone", exerciseId = "bench-press", setNumber = 7,
-            weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0)
+            weightKg = 60.0, reps = 8, completedAtMs = 0)
         val missing = mutableListOf<String>()
         var saves = 0
         compose.setContent {
@@ -119,7 +118,7 @@ class FixSheetStateTests {
     @Test
     fun theDraftKeyNotTheSetDecidesTheBodyAndOpenKeypadDraft() {
         var set by mutableStateOf(TrainingSet(id = "local_set", exerciseId = "bench-press", setNumber = 3,
-            weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0))
+            weightKg = 60.0, reps = 8, completedAtMs = 0))
         val attempts = mutableListOf<SetFix>()
         compose.setContent {
             FixSheet(set, "Bench Press", 3, "Push A", draftKey = "local_set",
@@ -148,7 +147,7 @@ class FixSheetStateTests {
     @Test
     fun theDraftKeyKeepsAnInFlightSaveLockedAndItsRefusalEditable() {
         var set by mutableStateOf(TrainingSet(id = "local_set", exerciseId = "bench-press", setNumber = 3,
-            weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0))
+            weightKg = 60.0, reps = 8, completedAtMs = 0))
         val answer = CompletableDeferred<FixOutcome>()
         val attempts = mutableListOf<SetFix>()
         val busy = mutableListOf<Boolean>()

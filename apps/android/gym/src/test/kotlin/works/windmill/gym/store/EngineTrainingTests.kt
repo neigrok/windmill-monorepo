@@ -377,7 +377,7 @@ class EngineTrainingTests {
         val original = engine()
         val gym = EngineTraining(original)
         gym.startSession(SessionStart("session1", now - 10_000))
-        gym.appendSet("session1", SetWrite("set00001", "back-squat", 80.0, 5, SetKind.Working, now - 9_000))
+        gym.appendSet("session1", SetWrite("set00001", "back-squat", 80.0, 5, now - 9_000))
         gym.finishSession("session1", now - 5_000)
         val snapshot = original.snapshot()
         original.close()
@@ -391,7 +391,7 @@ class EngineTrainingTests {
         engine().use { engine ->
             val gym = EngineTraining(engine)
             gym.startSession(SessionStart("session1", now - 10_000))
-            val write = SetWrite("set00001", "back-squat", 80.0, 5, SetKind.Working, now - 9_000)
+            val write = SetWrite("set00001", "back-squat", 80.0, 5, now - 9_000)
             gym.appendSet("session1", write)
             val beforeCollision = engine.snapshot()
             for ((session, collision) in listOf("session2" to write, "session1" to write.copy(exerciseId = "bench-press"),
@@ -430,7 +430,7 @@ class EngineTrainingTests {
             val gym = EngineTraining(engine)
             for (id in listOf("session1", "session2")) {
                 gym.startSession(SessionStart(id, now - 10_000))
-                gym.appendSet(id, SetWrite("set0000" + id.last(), "back-squat", 80.0, 5, if (id == "session1") SetKind.Warmup else SetKind.Working, now - 9_000))
+                gym.appendSet(id, SetWrite("set0000" + id.last(), "back-squat", 80.0, 5, now - 9_000))
                 gym.finishSession(id, now - 5_000)
             }
             assertEquals(listOf("session2"), gym.sessions(1, null, null).map { it.id })
@@ -578,7 +578,7 @@ class EngineTrainingTests {
         val midnight = 1_800_057_600_000L
         fun detail(id: String, started: Long, completed: Long, load: Double, count: Int = 1) = SessionDetail(
             Session(id, started, completed + 1, "routine1", PlanSnapshot("Frozen", listOf(PlanEntry("bench-press", listOf(SetTarget(5, load)))))),
-            (0 until count).map { TrainingSet("set$id$it", "bench-press", it + 1, load, 5, SetKind.Working, null, "", completed + it) })
+            (0 until count).map { TrainingSet("set$id$it", "bench-press", it + 1, load, 5, null, "", completed + it) })
         val first = detail("session1", midnight - 30_000, midnight + 20_000, 100.0)
         val tied = detail("session2", midnight - 10_000, midnight + 10_000, 100.0)
         val today = detail("session3", midnight + 60_000, midnight + 70_000, 110.0, 5)

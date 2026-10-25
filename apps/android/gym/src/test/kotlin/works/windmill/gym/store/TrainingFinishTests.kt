@@ -244,7 +244,7 @@ class TrainingFinishTests {
             val corrected = room.training.fixSet(live.id, kept.id, SetFix(reps = 9))
             room.training.deleteSet(live.id, deleted.id)
             val added = room.training.appendSet(live.id,
-                SetWrite("engineSet", "back-squat", 100.0, 5, SetKind.Working, ++room.now))
+                SetWrite("engineSet", "back-squat", 100.0, 5, ++room.now))
             assertEquals(listOf(kept, deleted), room.store.sets)
 
             room.now += 60_000
@@ -362,7 +362,7 @@ class TrainingFinishTests {
         val secondHistory = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("b")
             other.training.startSession(SessionStart("remote01", other.now - 10_000))
-            other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 80.0, 5, SetKind.Working, other.now - 9_000))
+            other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 80.0, 5, other.now - 9_000))
             other.training.finishSession("remote01", other.now - 5_000)
             other.sync(server)
             other.training.sessions(TrainingStore.logPage, null, null)
@@ -436,7 +436,7 @@ class TrainingFinishTests {
                 room.now += 60_000
                 val receipt = room.store.finish() as FinishOutcome.Closed
                 other.training.startSession(SessionStart("remote01", other.now - 10_000))
-                other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 5_000)
                 other.sync(server)
                 room.sync(server)
@@ -468,10 +468,10 @@ class TrainingFinishTests {
                 room.now += 60_000
                 room.store.finish()
                 other.training.startSession(SessionStart("remote01", other.now - 10_000))
-                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 8_000)
                 other.training.startSession(SessionStart("remote02", other.now - 5_000))
-                other.training.appendSet("remote02", SetWrite("remotenext", "back-squat", 100.0, 5, SetKind.Working, other.now - 4_000))
+                other.training.appendSet("remote02", SetWrite("remotenext", "back-squat", 100.0, 5, other.now - 4_000))
                 other.sync(server)
                 room.sync(server)
                 assertEquals("the finish's refresh is still queued", emptyList<SessionSummary>(), room.store.logged)

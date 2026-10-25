@@ -230,7 +230,7 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, movem
                     Text("Open record ›", style = WindmillFont.body(14, FontWeight.Bold), color = skin.accent)
                 }
             } else if (moment is LogEntry.Moment.Month) {
-                Text("A finished workout with working sets in every calendar week.",
+                Text("A finished workout with sets in every calendar week.",
                     style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
             }
         }

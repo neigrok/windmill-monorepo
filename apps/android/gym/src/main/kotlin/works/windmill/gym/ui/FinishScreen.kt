@@ -50,7 +50,6 @@ import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -161,11 +160,11 @@ data class FinishedSession(
     val reviewRead: Boolean = true,
 ) {
     val routine: String? get() = session.plan?.routine
-    val slight: Boolean get() = sets.count { it.kind == SetKind.Working } < Review.slightWorkingSets
+    val slight: Boolean get() = sets.size < Review.slightSets
 
     // Offered only for a session that had nothing written down for it, and never over a slight one.
     val offersRoutine: Boolean
-        get() = !slight && session.routineId == null && sets.any { it.kind == SetKind.Working }
+        get() = !slight && session.routineId == null && sets.isNotEmpty()
 }
 
 @Composable

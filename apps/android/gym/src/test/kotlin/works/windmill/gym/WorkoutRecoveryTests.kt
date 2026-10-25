@@ -40,7 +40,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionStart
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
@@ -61,12 +60,12 @@ class WorkoutRecoveryTests {
     private val past = 1_700_000_000_000L
 
     // A finished workout off the routine `name`, one set of it, on this phone's own log.
-    private fun pastWorkout(room: EngineRoomFixture, name: String, weightKg: Double, reps: Int, kind: SetKind = SetKind.Working) {
+    private fun pastWorkout(room: EngineRoomFixture, name: String, weightKg: Double, reps: Int) {
         runBlocking {
             val routine = (room.store.saveRoutine(RoutineDraft(name = name).adding("bench-press")) as GymResult.Ok).value
             room.store.start(routine.id)
             room.store.choose("bench-press")
-            room.store.logSet(weightKg, reps, kind)
+            room.store.logSet(weightKg, reps)
             room.now += 60_000
             room.store.finish()
         }
@@ -86,7 +85,7 @@ class WorkoutRecoveryTests {
         val room = EngineRoomFixture(tmp.newFolder(), firstScope).apply { now = past }
         val account = room.account("u1")
         runBlocking { room.select("u1") }
-        pastWorkout(room, "Push A", 40.0, 8, SetKind.Warmup)
+        pastWorkout(room, "Push A", 40.0, 8)
         val warmup = runBlocking { room.training.details() }.single().sets.single()
         var showing by mutableStateOf(true)
         val restored = StateRestorationTester(compose)
@@ -250,7 +249,7 @@ class WorkoutRecoveryTests {
         val signedIn = room.account("u1")
         var account by mutableStateOf(signedIn)
         runBlocking { room.select("u1") }
-        pastWorkout(room, "Push A", 40.0, 8, SetKind.Warmup)
+        pastWorkout(room, "Push A", 40.0, 8)
         var showing by mutableStateOf(true)
         var instances = 0
         lateinit var current: TrainingStore
@@ -355,7 +354,7 @@ class WorkoutRecoveryTests {
             runBlocking { other.select("u1"); other.pull(server) }
             runBlocking {
                 other.training.startSession(SessionStart("remote01", other.now - 10_000))
-                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 5_000)
             }
             other.sync(server)
@@ -449,11 +448,10 @@ class WorkoutRecoveryTests {
             }
             compose.onNodeWithText("Save fix").performScrollTo().performClick()
             compose.runOnIdle {
-                val fixed = logged.copy(kind = SetKind.Working, note = "Live retained note", rpe = 9.5)
+                val fixed = logged.copy(note = "Live retained note", rpe = 9.5)
                 assertEquals(listOf(fixed), runBlocking { room.training.session(sessionId) }!!.sets)
                 assertEquals(60.0, held.sets.single().weightKg, 0.0)
                 assertEquals(8, held.sets.single().reps)
-                assertEquals(SetKind.Working, held.sets.single().kind)
             }
         } finally {
             compose.runOnIdle { showing = false }

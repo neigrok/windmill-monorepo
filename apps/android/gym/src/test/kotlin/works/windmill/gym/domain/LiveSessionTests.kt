@@ -5,9 +5,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 private fun aSet(exerciseId: String, weightKg: Double, reps: Int,
-                 at: Long, kind: SetKind = SetKind.Working, id: String = ""): TrainingSet =
+                 at: Long, id: String = ""): TrainingSet =
     TrainingSet(id = id.ifEmpty { "set_$at" }, exerciseId = exerciseId,
-                weightKg = weightKg, reps = reps, kind = kind, completedAtMs = at)
+                weightKg = weightKg, reps = reps, completedAtMs = at)
 
 private val pushA = PlanSnapshot(routine = "Push A", entries = listOf(
     PlanEntry(exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) }),
@@ -19,7 +19,7 @@ class LiveOrderTests {
     fun workoutClocksUseEveryAcceptedSetAndRecomputeAfterDeleteUndoAndEdits() {
         val session = Session("workout", 10_000)
         val first = TrainingSet("first", "bench", weightKg = 60.0, reps = 5, completedAtMs = 25_000)
-        val latest = TrainingSet("latest", "row", weightKg = 20.0, reps = 8, kind = SetKind.Warmup, completedAtMs = 40_000)
+        val latest = TrainingSet("latest", "row", weightKg = 20.0, reps = 8, completedAtMs = 40_000)
         val before = WorkoutClocks(session, emptyList(), 70_000)
         assertEquals(listOf(60_000L, 60_000L), listOf(before.workoutMs, before.sinceSetMs))
         assertEquals("Since start", before.sinceSetName)
@@ -83,20 +83,20 @@ class LiveLinesTests {
     @Test
     fun testTheCounterKeepsCountingPastThePlansSetCount() {
         val entry = PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) })
-        assertEquals("set 4 of 3", LiveLines.counter(workingSetsToday = 3, planEntry = entry))
+        assertEquals("set 4 of 3", LiveLines.counter(setsToday = 3, planEntry = entry))
     }
 
     @Test
     fun testAMovementWithNoPlanCountsWithoutBorrowingATarget() {
-        assertEquals("set 1", LiveLines.counter(workingSetsToday = 0, planEntry = null))
+        assertEquals("set 1", LiveLines.counter(setsToday = 0, planEntry = null))
     }
 
     @Test
     fun testAnOpenPlanLineCountsLikeNoLineAtAll() {
         val entry = PlanEntry(exerciseId = "chin-up")
-        assertEquals("set 2", LiveLines.counter(workingSetsToday = 1, planEntry = entry))
+        assertEquals("set 2", LiveLines.counter(setsToday = 1, planEntry = entry))
         assertEquals("set 3 of 3",
-                     LiveLines.counter(workingSetsToday = 2, planEntry = entry.copy(sets = List(3) { SetTarget(8, 10.0) })))
+                     LiveLines.counter(setsToday = 2, planEntry = entry.copy(sets = List(3) { SetTarget(8, 10.0) })))
     }
 
     @Test
@@ -110,8 +110,8 @@ class LiveLinesTests {
 
         assertEquals(
             listOf(
-                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "60", 5, isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "80", 5, isWarmup = false, isOnThisDevice = true)),
+                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "60", 5, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "80", 5, isOnThisDevice = true)),
                 LiveLines.Slot.Current(index = 3, target = SetTarget(3, 90.0)),
                 LiveLines.Slot.Planned(index = 4, target = SetTarget(1, 100.0)),
                 LiveLines.Slot.Planned(index = 5, target = SetTarget(5, 80.0)),
@@ -132,40 +132,37 @@ class LiveLinesTests {
     }
 
     @Test
-    fun testAWarmupIsUncountedAndPastThePlanTheSetInHandHasNoTarget() {
+    fun testEverySetCountsAndPastThePlanTheSetInHandHasNoTarget() {
         val entry = PlanEntry(exerciseId = "chin-up", sets = List(2) { SetTarget() })
-        val sets = listOf(aSet("chin-up", 0.0, 5, at = 900, kind = SetKind.Warmup, id = "w1"),
+        val sets = listOf(aSet("chin-up", 0.0, 5, at = 900, id = "w1"),
                           aSet("chin-up", 0.0, 9, at = 1_000, id = "s1"),
                           aSet("chin-up", 0.0, 8, at = 2_000, id = "s2"),
                           aSet("chin-up", 0.0, 6, at = 3_000, id = "s3"))
 
         assertEquals(
             listOf(
-                LiveLines.Slot.Landed(LiveLines.Row("w1", "W", "0", 5, isWarmup = true, isOnThisDevice = false)),
-                LiveLines.Slot.Landed(LiveLines.Row("s1", "1", "0", 9, isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Landed(LiveLines.Row("s2", "2", "0", 8, isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Landed(LiveLines.Row("s3", "3", "0", 6, isWarmup = false, isOnThisDevice = false)),
-                LiveLines.Slot.Current(index = 4, target = null),
+                LiveLines.Slot.Landed(LiveLines.Row("w1", "1", "0", 5, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s1", "2", "0", 9, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s2", "3", "0", 8, isOnThisDevice = false)),
+                LiveLines.Slot.Landed(LiveLines.Row("s3", "4", "0", 6, isOnThisDevice = false)),
+                LiveLines.Slot.Current(index = 5, target = null),
             ),
             LiveLines.slots(sets, entry, stalled = emptySet()))
 
         val opening = LiveLines.slots(sets.take(1), entry, stalled = emptySet())
         assertEquals(
             listOf(
-                LiveLines.Slot.Landed(LiveLines.Row("w1", "W", "0", 5, isWarmup = true, isOnThisDevice = false)),
-                LiveLines.Slot.Current(index = 1, target = SetTarget()),
-                LiveLines.Slot.Planned(index = 2, target = SetTarget()),
+                LiveLines.Slot.Landed(LiveLines.Row("w1", "1", "0", 5, isOnThisDevice = false)),
+                LiveLines.Slot.Current(index = 2, target = SetTarget()),
             ),
             opening)
         assertEquals(
             listOf(
-                "Warmup, logged, 0 kg, 5 reps",
-                "Set 1, current, target last time’s weight, max reps",
-                "Set 2, planned, last time’s weight, max reps",
+                "Set 1, logged, 0 kg, 5 reps",
+                "Set 2, current, target last time’s weight, max reps",
             ),
             opening.map { it.spoken })
         assertEquals("target last × max", (opening[1] as LiveLines.Slot.Current).targetLine)
-        assertEquals("last" to "max", (opening[2] as LiveLines.Slot.Planned).let { it.weight to it.reps })
 
         val free = LiveLines.slots(emptyList(), null, stalled = emptySet())
         assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null)), free)
@@ -191,30 +188,30 @@ class LiveLinesTests {
     }
 
     @Test
-    fun testOnlyWorkingSetsCountTowardThePlanCounterAndTheAssemblyList() {
+    fun testEverySetCountsTowardThePlanCounterAndTheAssemblyList() {
         val sets = listOf(
-            aSet("bench-press", 40.0, 8, at = 900, kind = SetKind.Warmup, id = "w1"),
+            aSet("bench-press", 40.0, 8, at = 900, id = "w1"),
             aSet("bench-press", 82.5, 5, at = 1_000, id = "s1"),
             aSet("bench-press", 82.5, 5, at = 2_000, id = "s2"),
-            aSet("bench-press", 60.0, 8, at = 2_500, kind = SetKind.Drop, id = "d1"),
-            aSet("bench-press", 82.5, 3, at = 3_000, kind = SetKind.Failure, id = "f1"),
+            aSet("bench-press", 60.0, 8, at = 2_500, id = "d1"),
+            aSet("bench-press", 82.5, 3, at = 3_000, id = "f1"),
         )
 
-        assertEquals(2, LiveLines.workingCount(sets))
-        assertEquals(0, LiveLines.workingCount(sets, of = "cable-fly"))
-        assertEquals("set 3 of 5",
-                     LiveLines.counter(workingSetsToday = LiveLines.workingCount(sets),
+        assertEquals(5, LiveLines.setCount(sets))
+        assertEquals(0, LiveLines.setCount(sets, of = "cable-fly"))
+        assertEquals("set 6 of 5",
+                     LiveLines.counter(setsToday = LiveLines.setCount(sets),
                                        planEntry = pushA.entry("bench-press")))
 
         val rows = LiveLines.assemblyRows(order = listOf("bench-press"), sets = sets, plan = pushA,
                                           catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
                                           current = "bench-press")
-        assertEquals(listOf("2 of 5 sets"), rows.map { it.tag })
-        assertEquals("the card draws every set that was performed, drops and warmups included",
+        assertEquals(listOf("5 of 5 sets"), rows.map { it.tag })
+        assertEquals("the card draws every set that was performed",
                      listOf(5), rows.map { it.sets.size })
 
-        assertEquals("the today list numbers what was performed, which is not what counts",
-                     listOf("W", "1", "2", "3", "4"),
+        assertEquals("the today list numbers every performed set",
+                     listOf("1", "2", "3", "4", "5"),
                      LiveLines.rows(sets, stalled = emptySet()).map { it.index })
     }
 
@@ -223,14 +220,14 @@ class LiveLinesTests {
         val rows = LiveLines.assemblyRows(
             order = listOf("bench-press", "overhead-press", "cable-fly"),
             sets = listOf(aSet("bench-press", 82.5, 5, at = 1_000),
-                          aSet("bench-press", 40.0, 8, at = 900, kind = SetKind.Warmup, id = "w1")),
+                          aSet("bench-press", 40.0, 8, at = 900, id = "w1")),
             plan = pushA,
             catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
             current = "bench-press"
         )
         assertEquals(listOf("Bench Press", "overhead-press", "cable-fly"), rows.map { it.name })
         assertEquals("a plan line nobody has reached yet was not just added — it is not started",
-                     listOf("1 of 5 sets", null, "just added"), rows.map { it.tag })
+                     listOf("2 of 5 sets", null, "just added"), rows.map { it.tag })
         assertEquals("only a movement with no sets says what would start it",
                      listOf(null, "no sets yet — logging one starts it",
                             "no sets yet — logging one starts it"),

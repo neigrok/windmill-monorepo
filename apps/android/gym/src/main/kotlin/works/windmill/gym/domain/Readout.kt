@@ -89,7 +89,6 @@ object Readout {
 
     const val noRoutine = "Free session"
 
-    fun workingSets(count: Int): String = "$count working"
 
     // The server computes the e1RM; this phone only spells it.
     fun estimatedWeight(e1rm: Double): String = weight(floor(e1rm * 10.0 + 0.5) / 10.0)

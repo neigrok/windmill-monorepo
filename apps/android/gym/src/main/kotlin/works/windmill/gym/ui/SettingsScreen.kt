@@ -189,7 +189,6 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     val update = LocalClientUpdateDestination.current
     var revision by remember(session) { mutableIntStateOf(0) }
     var fixing by remember(session) { mutableStateOf<ImportRefusal?>(null) }
-    var fixingKind by remember(session) { mutableStateOf<ImportRefusal?>(null) }
     var inspecting by remember(session) { mutableStateOf<ImportRefusal?>(null) }
     var updateFailure by remember(session) { mutableStateOf<String?>(null) }
     val imports = remember(session) { WorkoutImports(session.engine) }
@@ -237,9 +236,6 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             if (refusal.code in setOf("source-unreadable", "source-needs-update")) TextButton(onClick = {
                 say(update.open(uri::openUri, telemetry))
             }) { Text(update.label) }
-            if (refusal.session == null && refusal.unrecognizedKindSetIds.isNotEmpty()) TextButton(onClick = {
-                fixingKind = refusal
-            }) { Text("Choose set kind") }
             TextButton(onClick = { scope.launch {
                 telemetry.event("gym_import_recovery", mapOf("action" to "retry", "state" to "started"))
                 try {
@@ -265,7 +261,7 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             } }
             itemsIndexed(refusal.sets, key = { index, set -> "$index:${set.id}" }) { _, set -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(store.catalog.firstOrNull { it.id == set.exerciseId }?.name ?: set.exerciseId)
-                Text("${set.weightKg} kg × ${set.reps} · ${if (set.id in refusal.unrecognizedKindSetIds) "Unrecognized set kind" else set.kind.name}")
+                Text("${set.weightKg} kg × ${set.reps}")
                 Text(at(set.completedAtMs))
                 set.rpe?.let { Text("RPE $it") }
                 if (set.note.isNotEmpty()) Text(set.note)
@@ -275,12 +271,11 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
         confirmButton = { TextButton(onClick = { inspecting = null }) { Text("Close") } }) }
     fixing?.let { refusal -> SavedWorkoutEditor(refusal, store.catalog, onDismiss = {
         telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "cancelled")); fixing = null
-    }, onSave = { corrected, markFinished, correctedKinds ->
+    }, onSave = { corrected, markFinished ->
         try {
-            if (corrected.session.isOpen) imports.replaceStartAndRetry(refusal.id, corrected.session,
-                correctedKinds = corrected.sets.filter { it.id in correctedKinds }.associate { it.id to it.kind })
+            if (corrected.session.isOpen) imports.replaceStartAndRetry(refusal.id, corrected.session)
             else imports.replaceAndRetry(refusal.id, corrected,
-                markFinished = markFinished, correctedKinds = correctedKinds)
+                markFinished = markFinished)
             revision++
             fixing = null
             say(null)
@@ -290,28 +285,12 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             say("The original workout is still saved on this phone. The correction could not be saved.")
         }
     }) }
-    fixingKind?.let { refusal -> AlertDialog(onDismissRequest = { fixingKind = null },
-        title = { Text("Choose set kind") }, text = { Text("The original set stays saved. Choose its kind to retry the saved operation.") },
-        confirmButton = { Column {
-            works.windmill.gym.domain.SetKind.entries.forEach { kind -> TextButton(onClick = { scope.launch {
-                try {
-                    imports.replaceOperationKindAndRetry(refusal.id, kind)
-                    store.retryImport(refusal.id)
-                    revision++; fixingKind = null; say(null)
-                    telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "completed"))
-                } catch (cancelled: CancellationException) { throw cancelled
-                } catch (failure: Exception) {
-                    telemetry.failure("gym_import_fix", failure)
-                    say("The original set is still saved on this phone. The correction could not be saved.")
-                }
-            } }) { Text(kind.name) } }
-        } }, dismissButton = { TextButton(onClick = { fixingKind = null }) { Text("Cancel") } }) }
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.windmill.gym.domain.Exercise>, onDismiss: () -> Unit,
-    onSave: (SavedWorkout, Boolean, Set<String>) -> Unit) {
+    onSave: (SavedWorkout, Boolean) -> Unit) {
     val session = requireNotNull(refusal.session)
     val zone = remember(refusal.id) { ZoneId.systemDefault() }
     val format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
@@ -325,8 +304,6 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
     var effort by remember(refusal.id) { mutableStateOf(refusal.sets.associate { it.id to (it.rpe?.toString() ?: "") }) }
     var notes by remember(refusal.id) { mutableStateOf(refusal.sets.associate { it.id to it.note }) }
     var movementMenu by remember(refusal.id) { mutableStateOf<String?>(null) }
-    var kindMenu by remember(refusal.id) { mutableStateOf<String?>(null) }
-    var correctedKinds by remember(refusal.id) { mutableStateOf<Set<String>>(emptySet()) }
     var unlink by remember(refusal.id) { mutableStateOf(false) }
     var renumber by remember(refusal.id) { mutableStateOf(false) }
     var manualFinish by remember(refusal.id) { mutableStateOf(false) }
@@ -353,7 +330,7 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
             }
             Text(if (session.isOpen) "Pending sets stay saved with this workout." else "${sets.size} sets · import limit 200")
             } }
-            itemsIndexed(sets.filter { !session.isOpen || it.id in refusal.unrecognizedKindSetIds }, key = { _, set -> set.id }) { index, set -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(if (session.isOpen) emptyList() else sets, key = { _, set -> set.id }) { index, set -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Set ${index + 1}", Modifier.weight(1f))
                     if (!session.isOpen) TextButton(onClick = { sets = sets.filter { it.id != set.id } }) { Text("Remove set") }
@@ -364,22 +341,6 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
                         catalog.forEach { movement -> DropdownMenuItem(text = { Text(movement.name) }, onClick = {
                             sets = sets.map { if (it.id == set.id) it.copy(exerciseId = movement.id) else it }; movementMenu = null
                         }) }
-                    }
-                }
-                Column {
-                    val needsKind = set.id in refusal.unrecognizedKindSetIds && set.id !in correctedKinds
-                    TextButton(onClick = { kindMenu = set.id }) {
-                        Text(if (needsKind) "Choose set kind" else "Kind: ${set.kind.name}")
-                    }
-                    if (kindMenu == set.id) Column {
-                        works.windmill.gym.domain.SetKind.entries.forEach { option ->
-                            TextButton(onClick = {
-                                sets = sets.map { if (it.id == set.id) it.copy(kind = option) else it }
-                                correctedKinds = correctedKinds + set.id
-                                kindMenu = null
-                                error = null
-                            }) { Text(option.name) }
-                        }
                     }
                 }
                 if (!session.isOpen) {
@@ -396,10 +357,6 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
         TextButton(onClick = {
         if (refusal.code == "source-auto-closed" && !manualFinish) {
             error = "Choose Mark as finished to remove the automatic finish marker, or Cancel to keep it."
-            return@TextButton
-        }
-        if (sets.any { it.id in refusal.unrecognizedKindSetIds && it.id !in correctedKinds }) {
-            error = "Choose a kind for each unrecognized set, or remove that set explicitly."
             return@TextButton
         }
         val startedAt = if (start == display(session.startedAtMs)) session.startedAtMs
@@ -433,7 +390,7 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
         onSave(SavedWorkout(session.copy(startedAtMs = startedAt, finishedAtMs = finishedAt,
             routineId = if (unlink) null else session.routineId, plan = if (unlink) null else session.plan), numberedSets,
             (refusal.deletedSetIds + refusal.sets.filter { old -> sets.none { it.id == old.id } }.map { it.id }).distinct()),
-            manualFinish, correctedKinds)
+            manualFinish)
         }) { Text("Save and retry") }
         TextButton(onClick = onDismiss) { Text("Cancel") }
         }

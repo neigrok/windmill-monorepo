@@ -6,10 +6,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private fun aSet(exerciseId: String, weightKg: Double, kind: SetKind = SetKind.Working,
-                 at: Long = 1_000): TrainingSet =
+private fun aSet(exerciseId: String, weightKg: Double, at: Long = 1_000): TrainingSet =
     TrainingSet(id = "set_${exerciseId}_${weightKg.toInt()}_$at", exerciseId = exerciseId,
-                weightKg = weightKg, reps = 5, kind = kind, completedAtMs = at)
+                weightKg = weightKg, reps = 5, completedAtMs = at)
 
 private val pushA = Session(
     id = "ses_1", startedAtMs = 1_000, routineId = "rt_push_a",
@@ -21,7 +20,7 @@ private val pushA = Session(
 
 class DeviationTests {
     @Test
-    fun testAHeavierWorkingSetRaisesTheOfferAgainstThePlansWeight() {
+    fun testAHeavierSetRaisesTheOfferAgainstThePlansWeight() {
         val deviation = DeviationOffer.leaving("bench-press", session = pushA,
                                                sets = listOf(aSet("bench-press", 82.5),
                                                              aSet("bench-press", 87.5, at = 2_000)),
@@ -50,15 +49,6 @@ class DeviationTests {
     }
 
     @Test
-    fun testAWarmupOrADropNeverRaisesTheOffer() {
-        assertNull(DeviationOffer.leaving("bench-press", session = pushA,
-                                          sets = listOf(aSet("bench-press", 100.0, kind = SetKind.Warmup),
-                                                        aSet("bench-press", 100.0, kind = SetKind.Drop, at = 2_000),
-                                                        aSet("bench-press", 100.0, kind = SetKind.Failure, at = 3_000)),
-                                          asked = emptySet()))
-    }
-
-    @Test
     fun testAMovementAlreadyAskedAboutIsNotAskedAgain() {
         assertNull(DeviationOffer.leaving("bench-press", session = pushA,
                                           sets = listOf(aSet("bench-press", 87.5)),
@@ -78,7 +68,7 @@ class DeviationTests {
     }
 
     @Test
-    fun testTheOfferCarriesTheHeaviestWorkingSetAndNotTheLast() {
+    fun testTheOfferCarriesTheHeaviestSetAndNotTheLast() {
         val deviation = DeviationOffer.leaving("bench-press", session = pushA,
                                                sets = listOf(aSet("bench-press", 90.0, at = 2_000),
                                                              aSet("bench-press", 85.0, at = 3_000)),
@@ -114,9 +104,9 @@ class DeviationTests {
     }
 
     // A ladder is saved as the sets lifted, and a line holds twenty of them at most: at twenty-one
-    // working sets nothing could be saved, so no sheet rises; at twenty the offer stands.
+    // sets nothing could be saved, so no sheet rises; at twenty the offer stands.
     @Test
-    fun testALadderIsOfferedOnlyWhileTheWorkingSetsFitALine() {
+    fun testALadderIsOfferedOnlyWhileTheSetsFitALine() {
         val lowerA = Session(
             id = "ses_5", startedAtMs = 1_000, routineId = "rt_lower_a",
             plan = PlanSnapshot(routine = "Lower A", entries = listOf(

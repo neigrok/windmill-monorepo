@@ -66,7 +66,6 @@ import works.windmill.gym.domain.Scheme
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetEffort
-import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOutcome
@@ -92,7 +91,6 @@ object Performed {
     // `setNumber` is the log's own; after a delete the log keeps the gap and the next set mints max+1.
     data class Row(val set: TrainingSet, val number: Int, val note: Note?) {
         val id: String get() = set.id
-        val kind: SetKind get() = set.kind
         val effort: String get() = Readout.effort(set.weightKg, set.reps)
     }
 
@@ -115,18 +113,17 @@ object Performed {
         return order.map { exerciseId ->
             val mine = performed.filter { it.exerciseId == exerciseId }
             val against = planned(plan, exerciseId)
-            val opening = mine.firstOrNull { it.kind == SetKind.Working }?.id
+            val opening = mine.firstOrNull()?.id
             Movement(
                 id = exerciseId,
                 movement = Readout.movement(exerciseId, catalog),
                 against = against,
                 rows = mine.mapIndexed { index, set ->
-                    val slot = mine.take(index).count { it.kind == SetKind.Working }
+                    val slot = index
                     Row(
                         set = set,
                         number = set.setNumber ?: (index + 1),
-                        note = if (set.kind != SetKind.Working) Note(set.kind.wire)
-                               else note(set, against, opening = set.id == opening, slot = slot),
+                        note = note(set, against, opening = set.id == opening, slot = slot),
                     )
                 },
             )
@@ -144,7 +141,7 @@ object Performed {
         return Against.Plan(entry, planLine(entry))
     }
 
-    // Read against the slot this working set filled — the Nth working set against the plan's Nth
+    // Read against the slot this set filled — the Nth set against the plan's Nth
     // set — fail-fast in the order the facts outrank each other: the load the plan named, then the
     // reps. A set logged past the plan has no slot and is read against nothing.
     private fun note(set: TrainingSet, against: Against, opening: Boolean, slot: Int): Note? {

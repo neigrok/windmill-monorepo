@@ -138,7 +138,7 @@ object PickerOptions {
     }
 
     // Most-used, off the log THIS DEVICE holds: a session summary names every movement in it, so the
-    // count is sessions that named it rather than working sets — the wire ranks nothing by use and
+    // count is sessions that named it rather than sets — the wire ranks nothing by use and
     // this invents no read. A session the LOG served names its movements by name and one this device
     // wrote names them by id, so a movement is counted by either spelling of itself. What the log
     // cannot fill is filled from the openers, in their own order, so a fresh account still sees six.

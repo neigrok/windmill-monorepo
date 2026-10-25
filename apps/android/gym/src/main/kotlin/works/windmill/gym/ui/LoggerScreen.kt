@@ -767,7 +767,7 @@ private fun LedgerLine(
 private fun LandedRow(slot: LiveLines.Slot.Landed, columns: LedgerColumns, enabled: Boolean, onFix: (String) -> Unit) {
     val skin = LocalGymColors.current
     val row = slot.row
-    val ink = if (row.isWarmup) skin.inkFaint else skin.inkDim
+    val ink = skin.inkDim
     LedgerLine(
         columns,
         Modifier.heightIn(min = GymTap.minimum)
@@ -777,7 +777,7 @@ private fun LandedRow(slot: LiveLines.Slot.Landed, columns: LedgerColumns, enabl
         set = {
             Row(horizontalArrangement = Arrangement.spacedBy(LedgerColumns.tickGap), verticalAlignment = Alignment.CenterVertically) {
                 Text(row.index, style = LedgerColumns.indexStyle,
-                    color = if (row.isWarmup) skin.warmupInk.copy(alpha = 0.7f) else ink, maxLines = 1)
+                    color = ink, maxLines = 1)
                 Text("✓", style = LedgerColumns.tickStyle, color = ink, maxLines = 1)
             }
         },

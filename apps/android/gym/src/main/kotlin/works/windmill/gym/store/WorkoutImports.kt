@@ -69,7 +69,7 @@ enum class Owed {
 }
 
 data class ImportRefusal(val id: String, val session: Session?, val sets: List<TrainingSet>,
-    val deletedSetIds: List<String>, val code: String, val reason: String, val unrecognizedKindSetIds: List<String> = emptyList())
+    val deletedSetIds: List<String>, val code: String, val reason: String)
 
 data class ImportOperation(val token: String, val sessionId: String, val entry: OwedSet)
 data class ImportDeletion(val token: String, val sessionId: String, val setId: String)
@@ -109,7 +109,7 @@ class WorkoutImports(private val engine: Engine) {
                     .filterKeys { it != "plan" || old == null || !unknownFinishedFields(old) }.map { it.key to it.value }.toTypedArray()),
                     "sets" to Json.Arr(typed.member("sets").arr().map { set ->
                         val original = saved[set.member("id").str()]
-                        (original ?: set).changed(*set.obj().filterKeys { it != "kind" || original == null || !unknownKind(original) }.map { it.key to it.value }.toTypedArray())
+                        (original ?: set).changed(*set.obj().map { it.key to it.value }.toTypedArray())
                     }),
                     "deleted" to Json.Arr((old?.get("deleted")?.arr().orEmpty() + row.deleted.map(Json::of) +
                         context.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(row.session.id) }.map { it.member("setId") }).distinct().sortedBy(Json::str)))
@@ -118,7 +118,7 @@ class WorkoutImports(private val engine: Engine) {
                 row.sets.forEach { set ->
                     val saved = entries[set.id]
                     if (saved == null) entries[set.id] = Json.parse(snapshotJson.encodeToString(OwedSet.serializer(), OwedSet(set, row.session.id, true, 0)))
-                    else if (decode(saved, OwedSet.serializer()).set != set && !unknownKind(saved.member("set"))) {
+                    else if (decode(saved, OwedSet.serializer()).set != set) {
                         val previousEntry = decode(saved, OwedSet.serializer())
                         val typed = Json.parse(snapshotJson.encodeToString(OwedSet.serializer(), previousEntry.copy(set = set, needsPush = true, write = if (previousEntry.attempted) Owed.Fix else Owed.Append)))
                         entries[set.id] = saved.changed("set" to saved.member("set").changed(*typed.member("set").obj().map { it.key to it.value }.toTypedArray()),
@@ -189,7 +189,6 @@ class WorkoutImports(private val engine: Engine) {
         "start" -> {
             val authored = Json.objectOf("session" to item.payload.member("session"), "sets" to Json.Arr(item.payload["entries"]?.obj().orEmpty().values.map { it.member("set") }))
             if (unknownFinishedFields(authored)) throw RefusedImport("source-needs-update")
-            if (item.payload["entries"]?.obj().orEmpty().values.any { unknownKind(it.member("set")) }) throw RefusedImport("source-kind")
             val session = decode(item.payload.member("session"), Session.serializer())
             val fields = sessionFields(session)
             val known = context.confirmed(Gym.Types.session, RecordID(session.id))?.takeIf { it.isVisible && it.born != null }
@@ -223,10 +222,6 @@ class WorkoutImports(private val engine: Engine) {
                     guards = session.routineId?.let { id -> listOf("name", "entries").map { field -> RegisterRef(Gym.Types.routine, RecordID(id), field) } }.orEmpty())
             }
         }
-        "operation" -> {
-            if (unknownKind(item.payload.member("set"))) throw RefusedImport("source-kind")
-            Gesture(emptyList())
-        }
         else -> Gesture(emptyList())
     }
 
@@ -241,9 +236,6 @@ class WorkoutImports(private val engine: Engine) {
             override fun stored(type: String, field: String, id: RecordID) = originalContext.stored(type, field, id).mapNotNull(::visible)
         }
         if (unknownFinishedFields(source)) throw RefusedImport("source-needs-update")
-        if (source["sets"]?.arr().orEmpty().any { set ->
-                set["kind"]?.str()?.let { it !in setOf("warmup", "working", "drop", "failure") } == true
-            }) throw RefusedImport("source-kind")
         val row = decode(source, SavedWorkout.serializer())
         val session = row.session
         val finished = session.finishedAtMs ?: throw RefusedImport("bad-instant")
@@ -406,7 +398,6 @@ class WorkoutImports(private val engine: Engine) {
             val set = entry.set
             val gesture = try {
                 if (context.stored(Gym.Types.set, RecordID(set.id)) != null) throw RefusedImport("record-dead")
-                if (unknownKind(item.member("source").member("set"))) throw RefusedImport("source-kind")
                 val existing = standing.map { SyncSet.decode(Fields(it)) }
                 val sameMovement = existing.filter { it.exerciseId.record.string == set.exerciseId }
                 val number = set.setNumber?.takeIf { wanted -> wanted > 0 && sameMovement.none { it.setNumber == wanted } }
@@ -451,7 +442,6 @@ class WorkoutImports(private val engine: Engine) {
             "recoveryPhase" to Json.of(phase), "fallback" to Json.of(true))
         val gesture = try {
             if (phase == "start" && context.stored(Gym.Types.set, RecordID(source.id)) != null) throw RefusedImport("record-dead")
-            if (unknownKind(item.member("source").member("set"))) throw RefusedImport("source-kind")
             val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
             val plan = when (phase) {
                 "start" -> null
@@ -518,7 +508,7 @@ class WorkoutImports(private val engine: Engine) {
     // An unfinished workout's saved sets, drawn while the account's first pull has not landed.
     fun startSources(): List<Json> = engine.read(scope) { reader -> reader.devices(journalPrefix).values.flatMap { journal ->
         journal["items"]?.obj().orEmpty().values.filter { it["kind"] == Json.of("start") && it["state"] !in setOf(Json.of("discarded"), Json.of("resolved")) &&
-            it["code"] != Json.of("source-kind") && it["cacheConsumed"] != Json.of(true) }.map { item -> effectiveSource(item) } } }
+            it["cacheConsumed"] != Json.of(true) }.map { item -> effectiveSource(item) } } }
 
     fun retireStartSources() { engine.commit(scope) { context ->
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
@@ -647,30 +637,22 @@ class WorkoutImports(private val engine: Engine) {
             } else null
             val operation = if (item["kind"] == Json.of("operation")) try { decode(source, OwedSet.serializer()) } catch (_: Exception) { null } else null
             val code = item["code"]?.str() ?: "source-unreadable"
-            val savedSets = when (item["kind"]?.str()) {
-                "operation" -> listOf(source.member("set"))
-                "start" -> source["entries"]?.obj().orEmpty().values.map { it.member("set") }
-                else -> source["sets"]?.arr().orEmpty()
-            }
-            val unknownKinds = savedSets.filter(::unknownKind).map { it.member("id").str() }
             val description = if (item["kind"] == Json.of("finished") && code in setOf("record-dead", "unknown-record")) reason("routine-missing") else reason(code)
             ImportRefusal(item.member("id").str(), row?.session ?: start,
-                row?.sets ?: startSets ?: listOfNotNull(operation?.set), row?.deleted.orEmpty(), code, description, unknownKinds)
+                row?.sets ?: startSets ?: listOfNotNull(operation?.set), row?.deleted.orEmpty(), code, description)
         } }
     }
 
     fun retry(id: String) = editAndRetry(id, null)
-    fun replaceAndRetry(id: String, corrected: SavedWorkout, markFinished: Boolean = false, correctedKinds: Set<String> = emptySet()) =
-        editAndRetry(id, Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), corrected)), markFinished = markFinished, correctedKinds = correctedKinds)
-    fun replaceStartAndRetry(id: String, corrected: Session, correctedKinds: Map<String, works.windmill.gym.domain.SetKind> = emptyMap()) {
+    fun replaceAndRetry(id: String, corrected: SavedWorkout, markFinished: Boolean = false) =
+        editAndRetry(id, Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), corrected)), markFinished = markFinished)
+    fun replaceStartAndRetry(id: String, corrected: Session) {
         check(corrected.id == id && corrected.isOpen) { "An unfinished workout keeps its identity and remains unfinished." }
-        editAndRetry(id, null, Json.parse(diskJson.encodeToString(Session.serializer(), corrected)), startKinds = correctedKinds)
+        editAndRetry(id, null, Json.parse(diskJson.encodeToString(Session.serializer(), corrected)))
     }
-    fun replaceOperationKindAndRetry(id: String, kind: works.windmill.gym.domain.SetKind) = editAndRetry(id, null, startKinds = mapOf(id to kind))
 
     private fun editAndRetry(id: String, corrected: Json?, correctedStart: Json? = null,
-        markFinished: Boolean = false, correctedKinds: Set<String> = emptySet(),
-        startKinds: Map<String, works.windmill.gym.domain.SetKind> = emptyMap()) {
+        markFinished: Boolean = false) {
         engine.commitWithPrerequisites(scope) { context ->
             val all = context.devices(journalPrefix)
             val saved = all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && (it["state"] == Json.of("refused") || it["state"] == Json.of("pending") && it["code"] == Json.of("waiting-for-firstpull")) } }
@@ -687,29 +669,11 @@ class WorkoutImports(private val engine: Engine) {
             val before = item.member("source")
             if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException(reason("source-needs-update"))
             var source = corrected ?: correctedStart?.let { before.changed("session" to it) } ?: before
-            if (corrected != null) {
-                if (!markFinished) {
-                    val closure = before["session"]?.obj().orEmpty().filterKeys { it in setOf("closedItself", "closedBy") }
-                    source = source.changed("session" to Json.Obj((source.member("session").obj() + closure).toList()))
-                }
-                val prior = before["sets"]?.arr().orEmpty().associateBy { it.member("id").str() }
-                val sets = source["sets"]?.arr().orEmpty().map { set ->
-                    val savedKind = prior[set.member("id").str()]?.get("kind")
-                    if (savedKind?.str()?.let { it !in setOf("warmup", "working", "drop", "failure") } == true && set.member("id").str() !in correctedKinds)
-                        set.changed("kind" to savedKind) else set
-                }
-                source = source.changed("sets" to Json.Arr(sets))
+            if (corrected != null && !markFinished) {
+                val closure = before["session"]?.obj().orEmpty().filterKeys { it in setOf("closedItself", "closedBy") }
+                source = source.changed("session" to Json.Obj((source.member("session").obj() + closure).toList()))
             }
             val kind = item.member("kind").str()
-            if (startKinds.isNotEmpty()) {
-                if (kind == "operation") source = source.changed("set" to source.member("set").changed("kind" to Json.of(startKinds.getValue(id).wire)))
-                else {
-                    check(kind == "start")
-                    source = source.changed("entries" to Json.Obj(source["entries"]?.obj().orEmpty().mapValues { (_, entry) ->
-                        startKinds[entry.member("set").member("id").str()]?.let { chosen -> entry.changed("set" to entry.member("set").changed("kind" to Json.of(chosen.wire))) } ?: entry
-                    }.toList()))
-                }
-            }
             check(corrected == null || kind == "finished") { "Only a finished workout can be edited here." }
             check(correctedStart == null || kind == "start") { "Only an unfinished workout can be edited here." }
             if (kind in setOf("finished", "start")) check(source.member("session").member("id").str() == id) { "A saved workout keeps its identity." }
@@ -725,12 +689,6 @@ class WorkoutImports(private val engine: Engine) {
                 "original" to (item["original"] ?: item.member("source")), "code" to null)
             if (kind == "finished" && gesture.command == null && item["gestureId"] != null)
                 items[token] = items.getValue(token).changed("resolvedGestureId" to item.member("gestureId"))
-            if (kind == "start" && startKinds.isNotEmpty()) items.replaceAll { _, child ->
-                val chosen = child["id"]?.str()?.let(startKinds::get)
-                if (child["kind"] == Json.of("operation") && child["source"]?.get("sessionId") == Json.of(id) && chosen != null)
-                    child.changed("source" to child.member("source").changed("set" to child.member("source").member("set").changed("kind" to Json.of(chosen.wire))),
-                        "state" to Json.of("pending"), "original" to (child["original"] ?: child.member("source"))) else child
-            }
             gesture.local += DeviceWrite(key, withItems(journal, items))
             gesture to Unit
         }
@@ -814,8 +772,6 @@ class WorkoutImports(private val engine: Engine) {
                 extra(entry, setOf("exerciseId", "sets", "reps", "weightKg")) || entry["sets"]?.arr().orEmpty().any { extra(it, setOf("reps", "weightKg")) }
             }
         }
-
-        private fun unknownKind(set: Json): Boolean = set["kind"]?.str()?.let { it !in setOf("warmup", "working", "drop", "failure") } == true
 
         private fun effectiveSource(item: Json): Json {
             val source = item.member("source")
@@ -926,7 +882,6 @@ class WorkoutImports(private val engine: Engine) {
             "frozen-plan-changed", "routine-missing", "stale" -> "The linked routine differs from this workout’s saved plan. Restore that routine or explicitly remove the link, then retry."
             "source-numbering" -> "This workout’s saved set numbers cannot be imported unchanged. Explicitly re-number its sets, then retry."
             "source-auto-closed" -> "This workout closed automatically. Explicitly mark it finished before retrying."
-            "source-kind" -> "A saved set kind is not recognized. Explicitly choose its kind, then retry."
             "source-needs-update" -> "This saved workout includes fields this build cannot preserve. Keep it on this phone and update the app."
             "source-unreadable" -> "This saved training cannot be read by this build. Keep it on this phone and update the app."
             "unknown-exercise" -> "A movement is missing. Restore the movement, then retry."
