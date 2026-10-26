@@ -292,3 +292,60 @@ fixes its text-side padding at 20 dp. A native editable field and Material field
 value/unit baseline and whole-width refusal independent of screen validation policy. The simplification
 pass retains one editor subtree for all responsive layouts, groups native controls in one file and
 removes duplicate pointer/prefix helpers already supplied by task 08.
+
+
+## Task 16 — Workout Quick Settings tile
+
+The native tile shares the notification snapshot and approved exercise glyph. An inactive tap
+opens Routines; an active tap rechecks the current account and workout before opening it. The
+standard TileService listening interval owns its snapshot collector and one-second subtitle clock.
+Closing Quick Settings cancels that work; reopening and service recreation restore current facts.
+No active-mode metadata, persistent background ticker or ineffective `requestListeningState` call
+is used. API 34+ opens the explicit target through an immutable PendingIntent. The same target's
+component setting and PackageManager resolution are checked before launch.
+
+Routines navigation consumes each request once, clears read-only pushed screens, and retains open
+routine, note and inline edit drafts. Default no-op draft-presence callbacks expose only whether a
+pushed edit is open. Tile launches alone close the shell's You/sign-in presentation. Deterministic
+checks cover Log/Coach/Settings return, cold launch, consumed requests through recreation, retained
+routine and historical-set drafts, stale accounts, cancellation and unavailable targets.
+
+The focused checks pass: 39 gym tests and 47 app tests per Debug/Release variant, with the final
+13 tile-service cases repeated in both variants after target-resolution hardening. Integration onto
+main `29193611` preserves task 04's specimen, viewport and immediate-capture hooks, task 27's mail
+and auth hooks, and task 08's fixture/touch helpers. The integrated 16 tile/navigation tests pass,
+both app variants compile, and the complete lightweight tools suite passes 36 tests. XML and logs
+are retained under `/private/tmp/windmill-android-task16`.
+
+The frozen native APK has SHA-256
+`2fe9b0d47071482a3ffca68fb04ab49fe62d682738c23cddda4af96dbfb099dd`, built from task 15's accepted
+`126bfeb7` tree plus task 16 source. `final3` retains all four inactive/active Dark/Daylight 04.1
+captures, raw accessibility state descriptions and SystemUI dumps. Standard system tint and geometry
+are accepted against the illustrative approved boards. The later task 04 integration is covered by
+the compile/test gate; these unconsumed components do not change the tile's native presentation.
+
+The native clock uses workout start before its first set, advances from the new set afterward,
+and survives killing the app process while the tile is listening. The retained sequential recipe
+writes the before-first-set capture before tapping Log set. PNG modification times are host clock
+values; workout/set instants originate on the emulator. Those clocks were not offset-calibrated,
+and the evidence makes no direct timing comparison between them. ActivityManager records the
+service recreation from PID 9391 to 10061. The restored tile opens the workout; Finish returns it
+to Off. Backend readback confirms all three explicit app workouts, each with one set and a finish.
+A signed-out cold tile tap opens empty Routines and starts nothing. The canonical recipe produces
+two successful Routines actions and four successful workout actions. Supplemental checks bring the
+intake to four Routines successes, six workout successes and one intentional target failure.
+The failure yields exactly one bounded `client_error` and one local Sentry `gym.tile` envelope;
+its exception has no value, and user/request/message/breadcrumb fields are absent. The envelope and
+sanitized privacy check are in `final3/1793031635823371000.envelope` and
+`final3/sentry-privacy-check.json`. This verifies local collection, not hosted vendor receipt.
+
+The host-only hierarchy helper now retains accessibility state descriptions, where SystemUI puts
+the tile subtitle. Settlement ignores only the clock suffix of the identified Workout tile; title,
+other tiles, geometry and raw XML stay intact. Taps require stable bounds for their visible control,
+so a sheet's opening animation cannot redirect a tap. Quick Settings expansion checks actual panel
+state and retries its system command at most three times. Two repeated signed-out expansions pass.
+The supplemental signed-out check needed one selector retry from a partial shade; the preserved
+summary records that limitation. Canonical captures completed without failure, and earlier failed
+attempts remain separate. The native runtime scan contains no ANR or fatal exception. All owned
+backend, emulator, database and private fixture files clean up normally. Task 16 makes no new
+performance claim.

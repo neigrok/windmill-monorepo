@@ -231,6 +231,87 @@ class DesignCaptureTests(unittest.TestCase):
         self.assertEqual("00:02", raw[0].get("text"))
         self.assertEqual("00:02", raw[0].get("content-desc"))
 
+    def test_quick_settings_expansion_rechecks_the_native_panel_and_bounds_failure(self):
+        class Panels(capture.Device):
+            def __init__(self, ready_after):
+                self.ready_after = ready_after
+                self.calls = []
+            def run(self, *args):
+                self.calls.append(args)
+            def settle(self, **kwargs):
+                root = ET.Element("hierarchy")
+                ET.SubElement(root, "node", {"content-desc": "Edit order of Quick Settings.",
+                    "visible-to-user": "true" if len(self.calls) >= self.ready_after else "false"})
+                return root
+        device = Panels(2)
+        device.quick_settings()
+        self.assertEqual([("shell", "cmd", "statusbar", "expand-settings")] * 2, device.calls)
+        device = Panels(4)
+        with self.assertRaisesRegex(RuntimeError, "did not expand"):
+            device.quick_settings()
+        self.assertEqual(3, len(device.calls))
+
+    def test_tap_waits_for_the_controls_bounds_instead_of_using_an_animation_frame(self):
+        class MovingControl(capture.Device):
+            def __init__(self):
+                self.positions = iter(["[0,0][100,100]", "[20,80][120,180]", "[20,80][120,180]"])
+                self.calls = []
+            def find(self, value, timeout=30):
+                return ET.Element("node", {"bounds": next(self.positions)})
+            def run(self, *args):
+                self.calls.append(args)
+        device = MovingControl()
+        device.tap("Start workout")
+        self.assertEqual([("shell", "input", "tap", "70", "130")], device.calls)
+
+    def test_find_waits_for_visible_native_content_after_a_transition(self):
+        class Screens(capture.Device):
+            def __init__(self):
+                self.calls = 0
+            def tree(self):
+                self.calls += 1
+                root = ET.Element("hierarchy")
+                ET.SubElement(root, "node", {"text": "Workout", "visible-to-user": "false", "bounds": "[0,0][0,0]"})
+                if self.calls > 1:
+                    ET.SubElement(root, "node", {"text": "Workout", "visible-to-user": "true", "bounds": "[0,0][100,100]"})
+                return root
+        device = Screens()
+        self.assertEqual("[0,0][100,100]", device.find("Workout").get("bounds"))
+        self.assertEqual(2, device.calls)
+
+    def test_tile_settlement_preserves_other_tiles_names_and_layout_changes(self):
+        def tree(clock, title="Push A", bounds="[0,0][100,100]", other="00:01"):
+            root = ET.Element("hierarchy")
+            tile = ET.SubElement(root, "node", {"resource-id": "com.android.systemui:id/qs_tile_large",
+                "package": "com.android.systemui", "state-desc": ", " + title + " · " + clock, "bounds": bounds})
+            ET.SubElement(tile, "node", {"text": "Workout"})
+            other_tile = ET.SubElement(root, "node", {"resource-id": "com.android.systemui:id/qs_tile_large",
+                "package": "com.android.systemui", "state-desc": ", Timer · " + other})
+            ET.SubElement(other_tile, "node", {"text": "Timer"})
+            return root
+        class Screens(capture.Device):
+            def __init__(self, trees):
+                self.trees = iter(trees)
+                self.calls = 0
+            def tree(self):
+                self.calls += 1
+                return next(self.trees)
+        for changed in (tree("00:02", title="Pull A"), tree("00:02", bounds="[0,0][101,100]"),
+                        tree("00:02", other="00:02")):
+            later = ET.fromstring(ET.tostring(changed))
+            later[0].set("state-desc", later[0].get("state-desc").replace("00:02", "00:03"))
+            device = Screens([tree("00:01"), changed, later])
+            self.assertIs(later, device.settle(tile_clock=True))
+            self.assertEqual(3, device.calls)
+        first, later = tree("00:01"), tree("00:02")
+        device = Screens([first, later])
+        self.assertIs(later, device.settle(tile_clock=True))
+        self.assertEqual(", Push A · 00:02", later[0].get("state-desc"))
+        first[0].set("state-desc", ", Off")
+        device = Screens([first, later, tree("00:03")])
+        device.settle(tile_clock=True)
+        self.assertEqual(3, device.calls)
+
     def test_model_fixture_serves_exact_tool_and_text_streams(self):
         server = capture.ThreadingHTTPServer(("127.0.0.1", 0), capture.ModelFixture)
         tool = {"type": "tool_use", "id": "tool_capture", "name": "gym_get_routines", "input": {}}

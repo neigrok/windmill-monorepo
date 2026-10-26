@@ -137,6 +137,10 @@ class TrainingStore(
     var workoutOpenRequest by mutableStateOf(0L)
         private set
     fun requestWorkout() { workoutOpenRequest += 1 }
+    var routinesOpenRequest by mutableStateOf(0L)
+        private set
+    fun requestRoutines() { routinesOpenRequest += 1 }
+    fun acknowledgeRoutinesRequest() { routinesOpenRequest = 0 }
     fun authorizeWorkout(allowed: Boolean) {
         localWorkoutAuthorized = allowed
         if (!allowed) workoutFacts.value = null

@@ -1,0 +1,97 @@
+[
+  {
+    "board": "04.1",
+    "name": "quick-settings-tile-inactive",
+    "account": "fixture",
+    "tile_clock": true,
+    "steps": [
+      {
+        "tap": "Log"
+      },
+      {
+        "wait": "Back Squat \u00b7 new best"
+      },
+      {
+        "quick_settings": "show"
+      },
+      {
+        "workout_tile": "off"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Workout"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  },
+  {
+    "board": "04.1",
+    "name": "quick-settings-tile-active",
+    "account": "fixture",
+    "tile_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "quick_settings": "show"
+      },
+      {
+        "workout_tile": "active"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 2"
+      },
+      {
+        "quick_settings": "show"
+      },
+      {
+        "workout_tile": "active"
+      },
+      {
+        "tap": "Workout"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "240 kg"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

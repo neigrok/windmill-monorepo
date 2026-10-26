@@ -316,8 +316,9 @@ class Device:
         self.touch_point = None
         self.sdk = sdk
         self.notification_clock = False
+        self.tile_clock = False
 
-    def prepare_notification_capture(self):
+    def prepare_hierarchy_capture(self):
         jdk = Path(os.environ["JAVA_HOME"]) / "bin"
         build = self.output / "hierarchy-helper"
         build.mkdir()
@@ -330,12 +331,48 @@ class Device:
         with zipfile.ZipFile(jar, "w") as archive:
             archive.write(build / "classes.dex", "classes.dex")
         self.run("push", jar, "/data/local/tmp/capture-tree.jar")
+
+    def prepare_notification_capture(self):
+        self.prepare_hierarchy_capture()
         self.run("shell", "locksettings", "set-pin", "2468")
         self.run("shell", "settings", "put", "secure", "lock_screen_allow_private_notifications", "0")
         self.notification_clock = True
         self.run("shell", "input", "keyevent", "KEYCODE_SLEEP")
         self.notification_surface("unlock")
         self.notification_clock = False
+
+    def prepare_workout_tile(self):
+        self.tile_clock = True
+        component = PACKAGE + "/works.windmill.gym.notification.WorkoutTileService"
+        self.run("shell", "cmd", "statusbar", "add-tile", component)
+        self.run("shell", "cmd", "statusbar", "set-large-tiles", "'custom(" + component + ")'")
+        self.run("shell", "cmd", "statusbar", "collapse")
+        self.tile_clock = False
+
+    def quick_settings(self):
+        for _ in range(3):
+            self.run("shell", "cmd", "statusbar", "expand-settings")
+            tree = self.settle(tile_clock=True, timeout=10)
+            if any(node.get("content-desc") == "Edit order of Quick Settings." and node.get("visible-to-user") == "true"
+                   for node in tree.iter("node")):
+                return
+        raise RuntimeError("Quick Settings did not expand.")
+
+    def workout_tile(self, state, timeout=30):
+        if state not in ("active", "off"):
+            raise ValueError("Workout tile checks require active or off.")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            tree = self.tree()
+            for node in tree.iter("node"):
+                if node.get("resource-id") == "com.android.systemui:id/qs_tile_large" and \
+                        node.get("package") == "com.android.systemui" and \
+                        any(child.get("text") == "Workout" for child in node.iter("node")):
+                    value = node.get("state-desc", "")
+                    if (state == "off" and value == ", Off") or \
+                            (state == "active" and re.fullmatch(r", .+ · [0-9]+:[0-9]{2}(?::[0-9]{2})?", value)):
+                        return node
+        raise RuntimeError("The workout tile did not reach the requested state.")
 
     def notification_surface(self, surface):
         if surface == "shade":
@@ -361,7 +398,7 @@ class Device:
 
     def tree(self):
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
-        if self.notification_clock:
+        if self.notification_clock or self.tile_clock:
             self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
                      "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
         else:
@@ -376,14 +413,14 @@ class Device:
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
-                if value in (node.get("text"), node.get("content-desc"), node.get("resource-id")):
+                if node.get("visible-to-user") != "false" and value in (node.get("text"), node.get("content-desc"), node.get("resource-id")):
                     return node
             time.sleep(.2)
         (self.output / "failure-ui.xml").write_bytes(ET.tostring(tree))
         (self.output / "failure-ui.png").write_bytes(self.run("exec-out", "screencap", "-p"))
         raise RuntimeError(f"Capture state did not expose {value!r}.")
 
-    def settle(self, *, resend_countdown=False, notification_clock=False, timeout=30):
+    def settle(self, *, resend_countdown=False, notification_clock=False, tile_clock=False, timeout=30):
         previous = None
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -398,6 +435,13 @@ class Device:
                         node.get("class") == "android.widget.Chronometer" and node.get("package") == "com.android.systemui":
                     node.set("text", "<chronometer>")
                     node.set("content-desc", "<chronometer>")
+                if tile_clock and node.get("resource-id") == "com.android.systemui:id/qs_tile_large" and \
+                        node.get("package") == "com.android.systemui" and \
+                        any(child.get("text") == "Workout" for child in node.iter("node")):
+                    value = node.get("state-desc", "")
+                    matched = re.fullmatch(r"(, .+ · )[0-9]+:[0-9]{2}(?::[0-9]{2})?", value)
+                    if matched:
+                        node.set("state-desc", matched[1] + "<clock>")
             current = ET.tostring(compared)
             if tree.tag != "unavailable" and current == previous:
                 return tree
@@ -405,11 +449,20 @@ class Device:
         raise RuntimeError("The capture screen did not settle.")
 
     def tap(self, value):
-        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", self.find(value).get("bounds", ""))
-        if not bounds:
-            raise RuntimeError("Capture control has no bounds.")
-        left, top, right, bottom = map(int, bounds.groups())
-        self.run("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+        previous = None
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node = self.find(value, timeout=max(.1, deadline - time.monotonic()))
+            current = node.get("bounds", "")
+            if current == previous:
+                bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", current)
+                if not bounds:
+                    raise RuntimeError("Capture control has no bounds.")
+                left, top, right, bottom = map(int, bounds.groups())
+                self.run("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+                return
+            previous = current
+        raise RuntimeError("The capture control did not stop moving.")
 
     def launch(self):
         return self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity", "-a", "android.intent.action.VIEW")
@@ -492,6 +545,12 @@ class Device:
                 self.tap(step["tap"])
             elif "wait" in step:
                 self.find(step["wait"])
+            elif "quick_settings" in step:
+                if step["quick_settings"] != "show":
+                    raise ValueError("Quick Settings steps support show.")
+                self.quick_settings()
+            elif "workout_tile" in step:
+                self.workout_tile(step["workout_tile"])
             elif "notification" in step:
                 self.notification_surface(step["notification"])
             elif "absent" in step:
@@ -699,7 +758,11 @@ def main():
         device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
+        elif any(scenario.get("tile_clock") for scenario in scenarios):
+            device.prepare_hierarchy_capture()
         device.run("install", apk)
+        if any(scenario.get("tile_clock") for scenario in scenarios):
+            device.prepare_workout_tile()
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
             for mode, value in (("dark", "yes"), ("light", "no")):
@@ -717,12 +780,14 @@ def main():
                     model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.notification_clock = scenario.get("notification_clock", False)
+                    device.tile_clock = scenario.get("tile_clock", False)
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
-                                             notification_clock=device.notification_clock) if scenario.get("settle", True) else None
+                                             notification_clock=device.notification_clock,
+                                             tile_clock=device.tile_clock) if scenario.get("settle", True) else None
                         if model.responses:
                             raise RuntimeError("The capture did not consume its deterministic model responses.")
                         filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
@@ -749,6 +814,7 @@ def main():
                                 device.viewport()
         manifest["mailCalls"] = mail.calls
         device.notification_clock = False
+        device.tile_clock = False
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")

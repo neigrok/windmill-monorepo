@@ -285,6 +285,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
+    var pushedDraftOpen by remember { mutableStateOf(false) }
     // The review open over the room. NOT saved: it reads the log on the way in, and a recreation
     // mid-review lands back on the card, which decides nothing either.
     var reviewing by remember { mutableStateOf<Reviewing?>(null) }
@@ -440,6 +441,19 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             away = emptyList()
             selectedRoutineId = null
             tab = Tab.Routines
+        }
+    }
+
+    LaunchedEffect(store.routinesOpenRequest) {
+        if (store.routinesOpenRequest > 0) {
+            note = null
+            tab = Tab.Routines
+            if (building == null && !savingRoutine && !pushedDraftOpen && reviewing == null && away.none { it is Away.NoteEditor }) {
+                away = emptyList()
+                selectedRoutineId = null
+                pruneReceipts()
+            }
+            store.acknowledgeRoutinesRequest()
         }
     }
 
@@ -984,6 +998,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             backTo = beneath,
                             onBack = { back() },
+                            onDraftOpen = { pushedDraftOpen = it },
                         )
                         standing is Away.Settings -> SettingsScreen(
                             store = store,
@@ -1034,6 +1049,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             say = { note = it },
                             onOpenMovement = { look(Away.Movement(it)) },
                             onDiscard = { discard(it) },
+                            onDraftOpen = { pushedDraftOpen = it },
                         )
                         }
                         standing is Away.Bodyweight -> BodyweightScreen(
@@ -1041,6 +1057,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             backTo = beneath,
                             onBack = { back() },
                             say = { note = it },
+                            onDraftOpen = { pushedDraftOpen = it },
                         )
                         standing is Away.Coach -> AskScreen(
                             store = store,

@@ -35,6 +35,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -222,13 +224,19 @@ private val weighInSaver = listSaver<WeighIn?, Any>(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, say: (String?) -> Unit) {
+fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, say: (String?) -> Unit,
+    onDraftOpen: (Boolean) -> Unit = {}) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = System.currentTimeMillis()
     val today = Bodyweight.today(nowMs)
     var window by rememberSaveable { mutableStateOf(ChartWindow.Ninety) }
     var repairing by rememberSaveable(stateSaver = weighInSaver) { mutableStateOf<WeighIn?>(null) }
+    val currentDraftOpen by rememberUpdatedState(onDraftOpen)
+    DisposableEffect(repairing) {
+        currentDraftOpen(repairing != null)
+        onDispose { currentDraftOpen(false) }
+    }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var refused by rememberSaveable { mutableStateOf<String?>(null) }

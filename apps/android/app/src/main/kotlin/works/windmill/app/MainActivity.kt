@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private var introduction by mutableStateOf(false)
     private var introductionPage = 0
     private var launchRevision by mutableIntStateOf(0)
+    private var tileLaunchRevision by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -91,7 +92,8 @@ class MainActivity : ComponentActivity() {
             }
             CompositionLocalProvider(LocalWindmillDark provides dark) {
                 Root(runtime, introduction, onIntroductionExit = { introduction = false },
-                    launchRevision = launchRevision, onIntroductionPage = { introductionPage = it })
+                    launchRevision = launchRevision, tileLaunchRevision = tileLaunchRevision,
+                    onIntroductionPage = { introductionPage = it })
             }
         }
     }
@@ -132,6 +134,11 @@ class MainActivity : ComponentActivity() {
 
     private fun route(intent: Intent) {
         val runtime = application as WindmillApplication
+        if (runtime.workoutTile.handles(intent)) {
+            tileLaunchRevision++
+            lifecycleScope.launch { runtime.workoutTile.open(intent) }
+            return
+        }
         val destination = runtime.workoutNotifications.route(intent) ?: return
         val key = when (destination) {
             is WorkoutRoute.Open -> destination.key
@@ -173,7 +180,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntroductionExit: () -> Unit,
-    launchRevision: Int = 0, onIntroductionPage: (Int) -> Unit = {}) {
+    launchRevision: Int = 0, tileLaunchRevision: Int = 0, onIntroductionPage: (Int) -> Unit = {}) {
     val auth = runtime.auth
     LaunchedEffect(Unit) { auth.restore() }
     val scope = rememberCoroutineScope()
@@ -190,6 +197,12 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     var signIn by rememberSaveable { mutableStateOf(false) }
     var about by rememberSaveable { mutableStateOf(false) }
     var aboutPage by remember { mutableIntStateOf(0) }
+    LaunchedEffect(tileLaunchRevision) {
+        if (tileLaunchRevision > 0) {
+            youUp = false
+            signIn = false
+        }
+    }
     LaunchedEffect(launchRevision) {
         if (launchRevision > 0 && about) {
             runtime.telemetry.event("onboarding_exited", mapOf("state" to "replay",

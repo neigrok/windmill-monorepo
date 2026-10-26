@@ -105,6 +105,16 @@ these synthetic fixtures. A status-bar chip is not exposed in the active Home ac
 its screenshot requires visual review, supported by the saved promoted-notification flags. App
 logger clocks are outside this normalization. The auth resend-countdown option remains separate.
 
+`--scenarios apps/android/tools/capture-recipes/workout-tile.json` captures inactive and active
+Workout tiles in both appearances. Its `tile_clock` option uses the same shell helper without
+changing lock-screen settings. The owned emulator's system commands add the tile and give it a large slot. `quick_settings: "show"` opens the expanded shade;
+`workout_tile: "off"` or `"active"` waits for the tile's actual accessibility state description.
+Only the clock suffix of SystemUI's large tile with a **Workout** label is normalized. The workout
+title, inactive/active transition, other tiles, bounds and raw state description remain intact.
+The helper records `state-desc` because the system represents the subtitle there rather than as a
+separate text node. Recipes tap the inactive tile back to Routines, open an active workout, log a
+set, and finish through the ordinary app controls.
+
 `capture-recipes/sign-in-fields.json` captures 15a with the native Email keyboard and 15b/15c with
 the keyboard hidden, plus focused Code states with the Number keyboard, in both appearances. Use
 it with `--scenarios` after rebuilding the backend.

@@ -132,6 +132,18 @@ Settings Retry enters import reconciliation before its
 the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
 and emits no completed event; cancellation propagates without a failure report.
 
+Quick Settings taps emit one `gym_action` when their route is handled, or one failed action if the
+activity cannot launch. A stale account or workout refuses navigation without a technical Issue.
+Unexpected tile rendering, restoration or launch failures report under `gym.tile`. Tile refreshes
+and the visible subtitle clock emit no events; event properties contain no workout names, movement
+names, account or workout IDs, or elapsed times.
+
+The API 37 tile acceptance packet verifies first-party intake for four successful Routines routes,
+six successful workout routes and one intentionally unavailable target. The unavailable target also
+produces one `client_error` and one local Sentry envelope under `gym.tile`, with no exception value,
+user, request, message or breadcrumbs. Service restoration emits no tile action. The packet is
+`/private/tmp/windmill-android-task16/final3`; it verifies local intake, not hosted analytics receipt.
+
 Notification actions emit one `gym_action` per delivered user action through their shared handler.
 A locked, stale or unavailable offer is `refused`; refreshing the notification or its chronometer
 emits nothing. Accepted notification sets also emit one `gym_set_logged`. Unexpected post, receive
@@ -186,6 +198,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |
+| Quick Settings tile | `gym_action` | screen: `tile`; action: `routines`, `open`; outcome: `ok`, `failed` |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |

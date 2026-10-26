@@ -9,7 +9,7 @@ account and backend. There is no subscription surface.
 |---|---|
 | `:platform` | Bearer HTTP transport, account/session storage, sign-in, tokens and product-neutral shell. |
 | `:gym` | Android training runtime, device storage, presentation models, network/notification adapters and Compose UI. |
-| `:app` | Composition root; one auth store, gym runtime, training store and notification adapter shared by activity and receivers. |
+| `:app` | Composition root; one auth store, gym runtime, training store and notification adapters shared by activity, receivers and the Quick Settings service. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
 | `:sync-api` | JVM product values, Replica port, transaction readers and typed commit failures; depends only on sync-core. |
 | `:sync-schema` | Generated JVM gym and journal registries and composition. |
@@ -116,6 +116,12 @@ start, complete saved set and finish are acknowledged in order. The original sou
 time survive; concurrent changes leave the source available for another retry. Settings Retry
 schedules reconciliation before reporting completion. Legacy set-kind fields are ignored on reads;
 new sets carry no kind, and every set contributes to training totals and history.
+The native **Workout** Quick Settings tile uses the notification snapshot. Its subtitle advances
+only while the shade listens; reopening restores the current workout and latest-set clock. An
+inactive tap opens Routines without starting anything. An active tap rechecks the owner and workout
+before opening it. Routines requests clear read-only pushed navigation and preserve open drafts;
+each request is consumed once, including across activity recreation.
+
 App workouts start from a saved routine. Workouts received from another surface without a routine
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach

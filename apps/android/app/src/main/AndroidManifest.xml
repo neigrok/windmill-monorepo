@@ -34,5 +34,14 @@
         </activity>
         <receiver android:name="works.windmill.gym.notification.WorkoutNotificationReceiver"
             android:exported="false" />
+        <service android:name="works.windmill.gym.notification.WorkoutTileService"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:icon="@drawable/gym_workout_notification"
+            android:label="Workout">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

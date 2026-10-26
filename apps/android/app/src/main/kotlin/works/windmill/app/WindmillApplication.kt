@@ -22,6 +22,8 @@ import androidx.compose.runtime.snapshotFlow
 import works.windmill.gym.notification.AndroidWorkoutClock
 import works.windmill.gym.notification.WorkoutNotificationHost
 import works.windmill.gym.notification.WorkoutNotifications
+import works.windmill.gym.notification.WorkoutTile
+import works.windmill.gym.notification.WorkoutTileHost
 import works.windmill.gym.store.GymRuntime
 import works.windmill.gym.store.WorkoutControls
 import works.windmill.gym.store.TrainingStore
@@ -49,7 +51,7 @@ import works.windmill.sync.engine.Reply
 import works.windmill.sync.core.Json
 import works.windmill.sync.schema.SyncSchema
 
-class WindmillApplication : Application(), WorkoutNotificationHost {
+class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileHost {
     private var connectivity: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var activityLifecycle: ActivityLifecycleCallbacks? = null
@@ -67,6 +69,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
     lateinit var onboardingLaunch: OnboardingLaunch
         private set
     override lateinit var workoutNotifications: WorkoutNotifications
+        private set
+    override lateinit var workoutTile: WorkoutTile
         private set
 
     override fun onCreate() {
@@ -138,6 +142,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             getSystemService(NotificationManager::class.java),
             getSystemService(KeyguardManager::class.java), telemetry = telemetry)
         workoutNotifications.start()
+        workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store::requestRoutines, telemetry)
         scope.launch {
             snapshotFlow { auth.identityRevision to auth.status }.collect {
                 gym.restoreLocal()

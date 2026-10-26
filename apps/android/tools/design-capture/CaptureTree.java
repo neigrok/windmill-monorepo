@@ -43,6 +43,7 @@ public final class CaptureTree {
         xml.startTag(null, "node");
         xml.attribute(null, "text", value.getText() == null ? "" : value.getText().toString());
         xml.attribute(null, "content-desc", value.getContentDescription() == null ? "" : value.getContentDescription().toString());
+        xml.attribute(null, "state-desc", value.getStateDescription() == null ? "" : value.getStateDescription().toString());
         xml.attribute(null, "resource-id", value.getViewIdResourceName() == null ? "" : value.getViewIdResourceName());
         xml.attribute(null, "class", value.getClassName() == null ? "" : value.getClassName().toString());
         xml.attribute(null, "package", value.getPackageName() == null ? "" : value.getPackageName().toString());

@@ -29,7 +29,8 @@ import works.windmill.platform.design.WindmillSheetWindow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit) {
+fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBack: () -> Unit,
+    onDraftOpen: (Boolean) -> Unit = {}) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val nowMs = remember(exerciseId, store.progress?.asOf) { System.currentTimeMillis() }
@@ -42,6 +43,11 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     var refused by rememberSaveable(exerciseId) { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
+    val currentDraftOpen by rememberUpdatedState(onDraftOpen)
+    DisposableEffect(renaming) {
+        currentDraftOpen(renaming)
+        onDispose { currentDraftOpen(false) }
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !saving })
     fun close() {
         if (saving || closing) return

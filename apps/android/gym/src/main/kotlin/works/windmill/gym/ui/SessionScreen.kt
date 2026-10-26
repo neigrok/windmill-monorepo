@@ -34,6 +34,8 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -183,6 +185,7 @@ fun SessionScreen(
     onOpenMovement: (String) -> Unit,
     onDiscard: (String) -> Unit,
     seed: SessionDetail? = null,
+    onDraftOpen: (Boolean) -> Unit = {},
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
@@ -192,6 +195,11 @@ fun SessionScreen(
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
     var read by remember(summary.id) { mutableStateOf(false) }
     var fixing by rememberSaveable(summary.id) { mutableStateOf<String?>(null) }
+    val currentDraftOpen by rememberUpdatedState(onDraftOpen)
+    DisposableEffect(fixing) {
+        currentDraftOpen(fixing != null)
+        onDispose { currentDraftOpen(false) }
+    }
     val fixStates = rememberSaveableStateHolder()
     // Half of the review's key — the session's id does not change when its sets do.
     var corrected by remember(summary.id) { mutableStateOf(0) }
