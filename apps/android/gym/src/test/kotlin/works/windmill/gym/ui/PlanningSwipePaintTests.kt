@@ -61,7 +61,7 @@ class PlanningSwipePaintTests {
     }
 
     @Test
-    fun routineRowsCoverDeleteAtRestRevealItDuringSwipeAndCoverItAgainAfterUndo() {
+    fun routineRowsCoverDeleteAtRestRevealItDuringSwipeAndCoverItAgainAfterRefusal() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
@@ -72,7 +72,7 @@ class PlanningSwipePaintTests {
                 CompositionLocalProvider(LocalWindmillDark provides dark) {
                     GymMaterial {
                         RoutinesScreen(store, true, emptySet(), "S", {}, {},
-                            { store.withhold(Deletion.Routine(it, "Push Day")) }, {}, {})
+                            { false }, {}, {})
                     }
                 }
             }
@@ -86,13 +86,12 @@ class PlanningSwipePaintTests {
                     down(center)
                     moveBy(Offset(-96f, 0f), delayMillis = 300)
                 }
-                assertPixel(point, skin.alarmInk.copy(alpha = 0.18f).compositeOver(skin.canvas))
+                assertPixel(point, skin.error)
                 row.performTouchInput { cancel() }
                 compose.waitForIdle()
                 assertPixel(point, skin.canvas)
                 row.performTouchInput { swipeLeft() }
-                row.assertDoesNotExist()
-                compose.runOnIdle { assertEquals(store.allRoutines.single().id, store.keepWithheld()?.subjectId) }
+                compose.waitForIdle()
                 row.assertIsDisplayed()
                 assertPixel(point, skin.canvas)
             }
@@ -117,7 +116,7 @@ class PlanningSwipePaintTests {
                 down(center)
                 moveBy(Offset(-96f, 0f), delayMillis = 300)
             }
-            assertPixel(point, GymSkin.Instrument.alarmInk.copy(alpha = 0.18f).compositeOver(GymSkin.Instrument.canvas))
+            assertPixel(point, GymSkin.Instrument.error)
             row.performTouchInput { cancel() }
             compose.waitForIdle()
             assertPixel(point, GymSkin.Instrument.canvas)

@@ -25,7 +25,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
@@ -98,7 +97,8 @@ import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.LocalGymColors
-import works.windmill.gym.ui.GymType
+import works.windmill.gym.ui.GymSnackbarHost
+import works.windmill.gym.ui.GymNativeType
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
@@ -526,9 +526,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             )
         }
         if (decided == SnackbarResult.ActionPerformed) {
-            // A tap that raced the send by a frame: the log has it, so say so rather than report a
-            // keep that did not happen.
-            if (store.keepWithheld() == null) {
+            // A closed offer cannot promise that Undo restored the row.
+            if (store.keepWithheld() == null && store.deleteRefused == null) {
                 transient.showSnackbar(Withheld.alreadyGone, duration = SnackbarDuration.Short)
             }
             return@LaunchedEffect
@@ -536,8 +535,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         transient.currentSnackbarData?.dismiss()
     }
 
-    // The one thing the room says about a settle, and it is a failure: the window closed, the log was
-    // asked and it said no. Nothing local was crossed out, so the row is back on the next read.
+    // The existing recovery band reports a failed hold or Undo once.
     LaunchedEffect(store.deleteRefused) {
         val refused = store.deleteRefused ?: return@LaunchedEffect
         // It takes the transient off whatever is standing there: a way back must never hide a
@@ -552,7 +550,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.clearDeleteRefused()
     }
 
-    // On ON_STOP the held deletes, which are the room's alone, are let go.
+    // Legacy workout/conversation windows follow the room; durable weights follow the process.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
@@ -765,17 +763,19 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
     }
 
-    // Nothing is told for nine seconds, so the builder and the page beneath it leave at once and the
-    // row is off the program while the window is open. The name is read BEFORE the withhold, because
-    // the withhold is what takes the routine off every list this room reads.
-    fun destroy(routineId: String) {
-        val named = store.routine(routineId)?.name ?: return
+    suspend fun destroy(routineId: String): Boolean {
+        val named = store.routine(routineId)?.name ?: return true
+        val failure = store.delete(Deletion.Routine(routineId, named))
+        if (failure != null) {
+            note = failure.line("$named is still in your program")
+            return false
+        }
         note = null
-        store.withhold(Deletion.Routine(routineId, named))
         building = null
         selectedRoutineId = null
         away = emptyList()
         tab = Tab.Routines
+        return true
     }
 
     key(seat) {
@@ -936,17 +936,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     if (railUp || line != null || !loggerTransient) {
                         Column(Modifier.fillMaxWidth().background(skin.canvas)) {
                             // Reserve the transient's measured height below screen-owned actions.
-                            if (!loggerTransient) SnackbarHost(transient)
+                            if (!loggerTransient) GymSnackbarHost(transient)
                             line?.let {
                                 Text(
                                     it,
-                                    style = GymType.numeral(12),
+                                    style = GymNativeType.note,
                                     color = skin.inkDim,
                                     maxLines = 2,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = WindmillSpace.x5)
-                                        .padding(bottom = WindmillSpace.x2),
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
                                 )
                             }
                             if (railUp) {

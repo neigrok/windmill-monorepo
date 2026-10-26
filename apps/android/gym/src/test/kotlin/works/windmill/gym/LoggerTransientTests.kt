@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
@@ -67,7 +68,7 @@ class LoggerTransientTests {
     private fun bounds(matcher: SemanticsMatcher) = compose.onNode(matcher).getBoundsInRoot()
 
     @Test
-    fun testLogSetOffersNoWayBackAndADeletedSetsWayBackCoversNoControlOfTheRack() {
+    fun logSetHasNoUndoAndWeightUndoCoversNoControlOfTheRack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val room = EngineRoomFixture(tmp.newFolder(), scope)
         try {
@@ -87,8 +88,9 @@ class LoggerTransientTests {
                     completedAtMs = logged.completedAtMs)),
                 runBlocking { room.training.session(sessionId) }!!.sets)
 
-            compose.runOnIdle { store.withhold(Deletion.Set(sessionId, logged)) }
-            val said = "20 kg × 5 is out of the log."
+            compose.runOnIdle { runBlocking { assertNull(store.weighIn("2026-09-01", 81.25)) } }
+            compose.runOnIdle { store.withhold(Deletion.Bodyweight("2026-09-01")) }
+            val said = "Weigh-in deleted."
             compose.waitUntil(10_000) { compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
 
@@ -108,7 +110,8 @@ class LoggerTransientTests {
 
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.runOnIdle {
-                assertEquals("Undo puts the set back", listOf(logged), store.sets)
+                assertEquals(listOf(logged), store.sets)
+                assertEquals(listOf(81.25), store.bodyweight.map { it.weightKg })
                 assertEquals(emptyList<WithheldDelete>(), store.withheld)
             }
         } finally {

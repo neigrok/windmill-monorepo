@@ -21,6 +21,7 @@ import works.windmill.gym.domain.sync.StartSession
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
@@ -244,23 +245,31 @@ class TelemetryTests {
             telemetry.events.clear()
             val original = room.store.bodyweight
             room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
             val held = room.store.withheld
             room.engine.failNextCommit()
             assertNotNull(room.store.weighIn(day, 82.45))
             assertEquals(held, room.store.withheld)
             assertTrue(room.store.bodyweight.isEmpty())
-            assertEquals(original, room.training.weighins())
-            assertTrue(telemetry.events.isEmpty())
+            assertEquals(emptyList<Any>(), room.training.weighins())
+            assertEquals(listOf("gym_action" to mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held")), telemetry.events)
             assertEquals(listOf("gym.weighIn"), telemetry.failures.map { it.first })
             assertNotNull(room.store.keepWithheld())
             assertEquals(original, room.store.bodyweight)
 
             room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
             assertNull(room.store.weighIn(day, 82.45))
             assertTrue(room.store.withheld.isEmpty())
             assertEquals(82.45, room.store.bodyweight.single().weightKg, 0.0)
             assertNotNull(room.store.weighIn(day, Double.NaN))
-            assertEquals(listOf("gym_bodyweight_saved" to emptyMap<String, String>()), telemetry.events)
+            assertEquals(listOf(
+                "gym_action" to mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held"),
+                "gym_action" to mapOf("screen" to "bodyweight", "action" to "undo", "outcome" to "ok"),
+                "gym_action" to mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "held"),
+                "gym_action" to mapOf("screen" to "bodyweight", "action" to "cancel", "outcome" to "rewritten"),
+                "gym_bodyweight_saved" to emptyMap<String, String>(),
+            ), telemetry.events)
         }
     }
 
@@ -269,7 +278,8 @@ class TelemetryTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
             room.select("account")
             for (index in 0..2) assertTrue(room.store.saveNote("private_note_$index", NoteWrite("Private title $index", "Private body")) is GymResult.Ok)
-            room.store.withhold(Deletion.Note("private_note_1"))
+            assertNull(room.store.delete(Deletion.Note("private_note_1")))
+            telemetry.events.clear()
             val visible = listOf("private_note_0", "private_note_2")
             val moved = visible.reversed()
             assertTrue(room.store.reorderNotes("private_note_2", visible) is GymResult.Ok)
@@ -283,7 +293,7 @@ class TelemetryTests {
 
             assertTrue(room.store.reorderNotes("private_note_0", moved) is GymResult.Ok)
             assertTrue(room.store.reorderNotes("private_note_0", moved) is GymResult.Ok)
-            assertEquals(listOf("private_note_1"), room.store.withheld.map { it.subjectId })
+            assertEquals(emptyList<String>(), room.store.withheld.map { it.subjectId })
             assertEquals(listOf("gym_note_moved" to emptyMap<String, String>()), telemetry.events)
         }
     }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -129,10 +130,8 @@ class NotesScreenTests {
         } } finally { scope.cancel() }
     }
 
-    // The cap counts the STORE's notes, never the drawn list: a note inside its undo window is off
-    // the list and still on the log, so ten must not read as nine and offer a mint the store refuses.
     @Test
-    fun testTheCapCountsTheStoresNotesAndNotTheOnesStillDrawn() {
+    fun deletingTheTenthNoteImmediatelyMakesRoomForAnother() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             signedIn(room, *numbered(10))
@@ -145,23 +144,19 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { store.withhold(Deletion.Note("note_003")) }
+            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_003"))) } }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
-            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
-            compose.onNodeWithText(Notes.full).assertIsDisplayed()
-            compose.onNodeWithText(Notes.add).assertDoesNotExist()
+            compose.onNodeWithText(Notes.full).assertDoesNotExist()
+            compose.onNodeWithText(Notes.add).assertIsDisplayed()
             compose.runOnIdle {
-                assertEquals("and nothing is written while the window is open",
-                    (0..9).map { "note_00$it" }, runBlocking { room.training.notes() }.map { it.id })
-                assertEquals(emptyList<Json>(), room.outbox())
+                assertEquals((0..9).filter { it != 3 }.map { "note_00$it" }, room.training.notes().map { it.id })
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertNull(store.keepWithheld())
             }
         } } finally { scope.cancel() }
     }
 
-    // And when the window closes the row STAYS gone, with the cap counting what the log now holds.
-    // The list is the store's; a screen holding a snapshot of its own drew the note back the instant
-    // the delete landed, and kept withholding `Add a note` over a notebook of nine.
     @Test
     fun testASettledDeleteLeavesTheRowGoneAndGivesTheAddRowBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -176,8 +171,7 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 3").assertIsDisplayed()
 
-            compose.runOnIdle { store.withhold(Deletion.Note("note_003")) }
-            compose.runOnIdle { runBlocking { store.settleWithheld("note_003") } }
+            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_003"))) } }
 
             compose.onNodeWithText("note 3").assertDoesNotExist()
             compose.onNodeWithText(Notes.add).assertIsDisplayed()
@@ -187,10 +181,8 @@ class NotesScreenTests {
         } } finally { scope.cancel() }
     }
 
-    // The editor's delete asks nothing: it leaves at once, nothing is sent, and the way back is the
-    // room's transient — which this editor is no longer standing in front of.
     @Test
-    fun testDeletingANoteLeavesTheEditorAtOnceAndSendsNothingWhileTheWindowRuns() {
+    fun deletingANoteLeavesTheEditorAfterItQueuesWithoutUndo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             signedIn(room, "note_001" to NoteWrite("Tone", "keep it short"))
@@ -207,10 +199,10 @@ class NotesScreenTests {
             compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
             compose.runOnIdle {
                 assertEquals("the editor leaves on the tap", 1, done)
-                assertEquals(listOf("note_001"), store.withheld.map { it.subjectId })
-                assertEquals(listOf("note_001"), runBlocking { room.training.notes() }.map { it.id })
-                assertEquals(emptyList<Json>(), room.outbox())
-                assertEquals("Note deleted.", works.windmill.gym.store.Withheld.line(store.withheld))
+                assertEquals(emptyList<String>(), store.withheld.map { it.subjectId })
+                assertEquals(emptyList<String>(), room.training.notes().map { it.id })
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertNull(works.windmill.gym.store.Withheld.line(store.withheld))
             }
         } } finally { scope.cancel() }
     }
@@ -402,7 +394,7 @@ class NotesScreenTests {
 
     // The held note keeps its key; only the dragged note moves below its drawn neighbor.
     @Test
-    fun testADragInsideAnOpenDeleteWindowKeepsTheWithheldNotesStoredPlace() {
+    fun aDragAfterDeletionMovesOnlyTheSurvivingNote() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val server = threeNotes(room)
@@ -422,22 +414,21 @@ class NotesScreenTests {
             }
             compose.onNodeWithText("note 0").assertIsDisplayed()
 
-            compose.runOnIdle { store.withhold(Deletion.Note("note_001")) }
+            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Note("note_001"))) } }
             compose.onNodeWithText("note 1").assertDoesNotExist()
 
             dragBelowTheNextRow("note 0")
 
             compose.runOnIdle {
                 assertEquals("nothing was refused", emptyList<String>(), said.filterNotNull())
-                assertEquals("and the window is still holding its note", listOf("note_001"), store.withheld.map { it.subjectId })
+                assertEquals(emptyList<String>(), store.withheld.map { it.subjectId })
                 room.sync(server)
             }
-            assertEquals("only note 0 moves, and note 1 keeps its stored key",
-                listOf("note_001", "note_002", "note_000"), onTheLog(room, server))
+            assertEquals(listOf("note_002", "note_000"), onTheLog(room, server))
             assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
             compose.onNodeWithText("note 1").assertDoesNotExist()
-            compose.runOnIdle { assertTrue(store.keepWithheld() != null) }
-            assertEquals(listOf("note 1", "note 2", "note 0"), drawnOrder("note 0", "note 1", "note 2"))
+            compose.runOnIdle { assertNull(store.keepWithheld()) }
+            assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
         } } finally { scope.cancel() }
     }
 }

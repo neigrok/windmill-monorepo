@@ -2,14 +2,15 @@ package works.windmill.app
 
 import works.windmill.gym.coach.LocalCoach
 import android.app.Application
-import android.app.Activity
 import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.os.Bundle
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +55,7 @@ import works.windmill.sync.schema.SyncSchema
 class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileHost {
     private var connectivity: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var activityLifecycle: ActivityLifecycleCallbacks? = null
+    private var processLifecycle: DefaultLifecycleObserver? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, error ->
         telemetry.failure("application_coroutine", error)
     })
@@ -168,27 +169,17 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         networkCallback = callback
         updateConnectivity()
         manager.registerDefaultNetworkCallback(callback)
-        val visibleActivities = mutableSetOf<Activity>()
-        val lifecycle = object : ActivityLifecycleCallbacks {
-            override fun onActivityStarted(activity: Activity) {
-                if (visibleActivities.add(activity) && visibleActivities.size == 1) engineSession.enter()
-            }
-            override fun onActivityStopped(activity: Activity) {
-                if (visibleActivities.remove(activity) && visibleActivities.isEmpty()) scope.launch { engineSession.leave() }
-            }
-            override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
-            override fun onActivityResumed(activity: Activity) = Unit
-            override fun onActivityPaused(activity: Activity) = Unit
-            override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
-            override fun onActivityDestroyed(activity: Activity) = Unit
+        val lifecycle = object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) { engineSession.enter() }
+            override fun onStop(owner: LifecycleOwner) { scope.launch { engineSession.leave() } }
         }
-        activityLifecycle = lifecycle
-        registerActivityLifecycleCallbacks(lifecycle)
+        processLifecycle = lifecycle
+        ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycle)
     }
 
     override fun onTerminate() {
         networkCallback?.let { connectivity?.unregisterNetworkCallback(it) }
-        activityLifecycle?.let(::unregisterActivityLifecycleCallbacks)
+        processLifecycle?.let { ProcessLifecycleOwner.get().lifecycle.removeObserver(it) }
         if (::engineSession.isInitialized) engineSession.close()
         scope.cancel()
         super.onTerminate()

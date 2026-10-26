@@ -29,8 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -222,8 +220,7 @@ fun SessionScreen(
     val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), store.catalog) }
         ?: store.recent.firstOrNull { it.id == summary.id } ?: summary
     var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
-    // Null until the read lands, which is a different silence from a session with no sets in it. A
-    // set inside its undo window is off the screen and nothing has been sent.
+    // Null until the read lands, distinct from a workout with no sets.
     val movements = currentDetail?.let { held ->
         Performed.movements(
             held.sets.filterNot { it.id in store.deletedSets || it.id in store.withheldIds },
@@ -256,8 +253,6 @@ fun SessionScreen(
         }
     }
 
-    // The withheld row's undo is the room's transient, not a row inside this scroll: the window has
-    // to stay visible while it is open, and a scroll can put a row out of sight.
     GymScreen(
         title = standing.plan?.routine ?: Readout.noRoutine,
         onBack = onBack,
@@ -281,7 +276,11 @@ fun SessionScreen(
                         movement = movement,
                         onOpenMovement = onOpenMovement,
                         onFix = { fixing = it },
-                        onDelete = { row -> store.withhold(Deletion.Set(readId, row)) },
+                        onDelete = { row ->
+                            val failure = store.delete(Deletion.Set(readId, row))
+                            say(failure?.line("that set is still on the log"))
+                            failure == null
+                        },
                     )
                 }
             }
@@ -374,12 +373,10 @@ fun SessionScreen(
                     onGone = { close(); say(it) },
                     onBusy = { fixBusy = it },
                     onEntryCancel = { cancelFixEntry = it },
-                    // Nothing is told yet: the row comes off the screen and the window opens, because the
-                    // log has no undelete. A second delete opens a window of its own and settles nothing.
                     onDelete = {
                         close()
                         say(null)
-                        store.withhold(Deletion.Set(readId, row.set))
+                        scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
                     },
                 )
             }
@@ -414,7 +411,7 @@ private fun MovementCard(
     movement: Performed.Movement,
     onOpenMovement: (String) -> Unit,
     onFix: (String) -> Unit,
-    onDelete: (TrainingSet) -> Unit,
+    onDelete: suspend (TrainingSet) -> Boolean,
 ) {
     val skin = LocalGymColors.current
     Column(
@@ -453,41 +450,10 @@ private fun MovementCard(
 private fun SwipeableSetRow(
     set: Performed.Row,
     onFix: (String) -> Unit,
-    onDelete: (TrainingSet) -> Unit,
+    onDelete: suspend (TrainingSet) -> Boolean,
 ) {
-    val haptics = rememberGymHaptics()
-    // A leading swipe never settles here — and a row put back by a refusal or an Undo arrives with
-    // no act owed, which is `rememberRowDismiss`'s whole reason to exist.
-    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
-        haptics.revealed()
-        onDelete(set.set)
-    }
-    SwipeToDismissBox(
-        state = swipe,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = { DeleteGround() },
-        modifier = Modifier.semantics {
-            customActions = listOf(CustomAccessibilityAction("Delete") { onDelete(set.set); true })
-        },
-    ) {
+    DeleteSwipeRow(actionLabel = "Delete", onDelete = { onDelete(set.set) }) {
         SetRow(set, onFix)
-    }
-}
-
-@Composable
-private fun DeleteGround() {
-    val skin = LocalGymColors.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = GymTap.minimum)
-            .clip(RoundedCornerShape(WindmillRadius.sm))
-            .background(skin.alarmInk.copy(alpha = 0.18f))
-            .padding(horizontal = GymLayout.rowInset),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Delete", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
     }
 }
 

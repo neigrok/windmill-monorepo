@@ -42,6 +42,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import org.junit.After
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -851,7 +852,7 @@ class ReviewSheetTests {
     // window taking the row off the routines home may not make a proposal decidable again. Reached by
     // deleting a routine and opening the same proposal from the Coach tab inside the nine seconds.
     @Test
-    fun anOpenProposalStaysSupersededWhileAWindowHoldsItsChangedRoutine() {
+    fun anOpenProposalStaysSupersededAfterItsChangedRoutineIsDeleted() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         val room = signedIn(scope)
@@ -874,13 +875,12 @@ class ReviewSheetTests {
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()
 
-        compose.runOnIdle { store.withhold(Deletion.Routine(edited.id, edited.name)) }
+        compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Routine(edited.id, edited.name))) } }
 
         compose.runOnIdle {
             assertEquals("the row is off the routines home", emptyList<String>(),
                          store.routines.map { it.id })
-            assertEquals("and the program still holds the revision this is judged against",
-                         listOf(edited.id), store.allRoutines.map { it.id })
+            assertEquals(emptyList<String>(), store.allRoutines.map { it.id })
         }
         compose.onNodeWithText(supersededSentence).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()

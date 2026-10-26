@@ -273,7 +273,15 @@ fun NoteEditorScreen(
             said?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
             if (note == null) Text(Notes.honesty, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-            if (note != null) TextButton(onClick = { if (!saving) { store.withhold(Deletion.Note(note.id)); onDone() } },
+            if (note != null) TextButton(onClick = { if (!saving) {
+                saving = true
+                scope.launch {
+                    try {
+                        val failure = store.delete(Deletion.Note(note.id))
+                        if (failure == null) onDone() else said = failure.line("that note is still here")
+                    } finally { saving = false }
+                }
+            } },
                 enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text(Notes.delete, style = WindmillFont.body(16), color = skin.alarmInk)
             }

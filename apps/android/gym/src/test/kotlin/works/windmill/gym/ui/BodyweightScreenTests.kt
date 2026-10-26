@@ -297,9 +297,9 @@ class BodyweightScreenTests {
             assertTrue("and it does open, once the sheet is off the tree", opened)
 
             compose.runOnIdle {
-                assertEquals("nothing is asked and NOTHING is written while the window is open",
-                    emptyList<Json>(), room.outbox())
-                assertEquals("still on the log", listOf(day.toString(), today.toString()),
+                assertEquals("the durable delete is held, not ready for sync", listOf("held"),
+                    room.outbox().map { it.member("state").str() })
+                assertEquals("the held delete is off the drawn view", listOf(today.toString()),
                     room.training.weighins().map { it.dateLocal }.sorted())
                 assertEquals("and off the series for every reader at once — the chart and the head reading",
                     listOf(today.toString()), store.bodyweight.map { it.dateLocal })
@@ -318,6 +318,8 @@ class BodyweightScreenTests {
             // one screen can never keep drawing a day the other has already dropped.
             compose.runOnIdle {
                 store.withhold(Deletion.Bodyweight(today.toString()))
+            }
+            compose.runOnIdle {
                 assertEquals(day.toString(), store.latestWeighIn?.dateLocal)
             }
         } } finally { scope.cancel() }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
@@ -347,9 +348,9 @@ class TrainingStore(
     // Writes go to `series`, which is the whole of it.
     val bodyweight: List<WeighIn>
         get() = series.filterNot { it.dateLocal in withheldIds }
-    // The whole series, a withheld weigh-in included. A window decides which ROWS are drawn and
-    // never what state a screen is in, so the chart's empty stance is read from here.
-    val allWeighIns: List<WeighIn> get() = series
+    // A held last row keeps the chart's existing stance while Undo remains available.
+    val allWeighIns: List<WeighIn> get() = (series + withheld.mapNotNull { it.receipt?.weighIn })
+        .distinctBy { it.dateLocal }.sortedBy { it.dateLocal }
     // An unread account replica is not an empty series.
     var bodyweightRead by mutableStateOf(false)
         private set
@@ -371,8 +372,7 @@ class TrainingStore(
         }
     val accountKey: String get() = Seat.of(owner)
 
-    // The account replica's notes in precedence order. The first pull distinguishes an unread
-    // notebook from an empty one; the room keeps one projection so an undo window stays hidden.
+    // The first pull distinguishes an unread notebook from an empty one.
     private val notebookWrite = Mutex()
     private val proposalWrite = Mutex()
     private var notebook: List<Note> by mutableStateOf(emptyList())
@@ -380,10 +380,7 @@ class TrainingStore(
         private set
     var noteRefusals: List<RefusedWrite> by mutableStateOf(emptyList())
         private set
-    // A note inside its undo window is off the list; `noteCount` still counts it, because the log
-    // refuses the eleventh whether or not this screen is drawing the tenth.
-    val notes: List<Note>
-        get() = notebook.filterNot { it.id in withheldIds }
+    val notes: List<Note> get() = notebook
     val noteCount: Int get() = notebook.size
     // Every proposal this room settled, as the log's receipt said it: a card minted in a conversation
     // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
@@ -392,15 +389,9 @@ class TrainingStore(
     private var removalProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
     val unseenRemovalReceipts: Map<String, Proposal> get() = removalProposals.filterValues { !it.isPending }
     private var program: List<Routine> by mutableStateOf(emptyList())
-    // The whole program, a withheld routine included. The routines home reads its empty stance and
-    // the position it writes a new routine at from here: a window decides which ROWS are drawn and
-    // never what state a screen is in.
     val allRoutines: List<Routine> get() = program
     var routines: List<Routine>
-        // A routine inside its undo window is off the program as far as every screen is concerned:
-        // nothing was written, and only Undo puts it back. Writes go to `program`, which is the whole
-        // of it.
-        get() = program.filterNot { it.id in withheldIds }
+        get() = program
         private set(value) { program = value }
     // The proposals the log would refuse to apply: the domain's rule over the routine as the engine holds and
     // confirms it, read with the program so the two never disagree.
@@ -444,17 +435,10 @@ class TrainingStore(
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes the log refused
         private set
-    // Nothing is written until a window closes. A LIST and not a slot — each delete carries its own
-    // clock and a second one never settles the first. NOT on disk: an activity recreated inside a
-    // window has written nothing, so what it held survives.
+    // Weight receipts project engine holds; workout and conversation recovery remains room-owned.
     var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
         private set
-    // One clock per subject, so a window can be taken down as well as opened: leaving the room lets
-    // go of what it was holding, and a clock still running would settle a delete nobody is holding
-    // any more. Not composition state — nothing draws it.
     private val clocks = mutableMapOf<String, Job>()
-    // A delete that could not be written after its window closed, said once and cleared. Nothing
-    // local was crossed out, so the row is back on the next read.
     var deleteRefused: String? by mutableStateOf(null)
         private set
     // One room's memory of its own deletes, never a tombstone: a session read BEFORE the delete would
@@ -677,6 +661,7 @@ class TrainingStore(
         }
         scope.launch { engine.status.state.collect { refreshes.trySend(Unit) } }
         scope.launch { engine.notices("gym").notices.collect { refreshes.trySend(Unit) } }
+        scope.launch { engine.offers.offers.collect { refreshes.trySend(Unit) } }
         for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
             scope.launch { engine.records(works.windmill.sync.core.ScopeRef.product("gym"), type).state.collect { refreshes.trySend(Unit) } }
         return requireNotNull(engineObservation)
@@ -705,10 +690,6 @@ class TrainingStore(
             // A refused delete puts its row back in the replica; an older screen must draw it again.
             deletedSets = deletedSets - detail.sets.map { it.id }.toSet()
             if (!detail.session.isOpen && detail.session.id in closedDetails) retainClosed(detail)
-            for (set in detail.sets) if (withheld.any { held ->
-                val deletion = held.deletion as? Deletion.Set
-                deletion?.sessionId == detail.session.id && deletion.set.id == set.id && deletion.set != set
-            }) changeHeldSet(detail.session.id, set.id, set)
         }
         catalog = training.catalogue()
         if (tried("gym.refreshWorkout") { readProgram(); true } != true) return
@@ -721,7 +702,11 @@ class TrainingStore(
             notesRead = training.notesReady
             noteRefusals = training.refusedNotes()
         }
-        loadBodyweight()
+        bodyweightWrite.withLock {
+            if (seat != owner) return@withLock
+            loadBodyweight()
+            refreshHeldWeights()
+        }
         if (lastSetsWanted) loadLastSets()
         if (progressWanted) loadProgress(force = true)
         drawFromControls()
@@ -951,15 +936,19 @@ class TrainingStore(
 
     // The sessions that named it keep every set and their frozen plan: a snapshot is a copy, not a
     // reference. A routine already gone is a deletion that succeeded.
-    suspend fun dropRoutine(id: String): WriteFailure? {
+    suspend fun dropRoutine(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = owner == null): WriteFailure? {
+        val seat = owner
         return try {
-            training.deleteRoutine(id)
+            training.deleteRoutine(id, replica ?: return WriteFailure.Refused(accountChanged), anonymous)
+            if (seat != owner) return WriteFailure.Refused(accountChanged)
             routines = program.filterNot { it.id == id }
             null
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             reportFailure("gym.dropRoutine", refusing)
+            if (seat != owner) return WriteFailure.Refused(accountChanged)
+            if (refusing is TrainingDeleteUnconfirmed) tried("gym.readProgram") { readProgram() }
             if ((refusing as? TrainingRefused)?.code == "unknown-record") {
                 routines = program.filterNot { it.id == id }
                 null
@@ -1129,12 +1118,12 @@ class TrainingStore(
     }
 
     // A note already gone answers as success: the row goes either way.
-    suspend fun deleteNote(id: String): WriteFailure? {
+    suspend fun deleteNote(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = owner == null): WriteFailure? {
         val seat = owner
         return notebookWrite.withLock {
             if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
             try {
-                training.deleteNote(id)
+                training.deleteNote(id, replica ?: return@withLock WriteFailure.Refused(accountChanged), anonymous)
                 if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
                 notebook = notebook.filterNot { it.id == id }
                 null
@@ -1143,6 +1132,7 @@ class TrainingStore(
             } catch (refusing: Exception) {
                 reportFailure("gym.deleteNote", refusing)
                 if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
+                if (refusing is TrainingDeleteUnconfirmed) tried("gym.readNotes") { notebook = training.notes() }
                 if ((refusing as? TrainingRefused)?.code != "unknown-record") return@withLock WriteFailure(refusing)
                 notebook = notebook.filterNot { it.id == id }
                 null
@@ -1150,7 +1140,7 @@ class TrainingStore(
         }
     }
 
-    // A drop moves its one note below the drawn neighbor; held notes keep their stored keys.
+    // A drop moves its one note below the drawn neighbor.
     suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> {
         val seat = owner
         return notebookWrite.withLock {
@@ -1237,25 +1227,20 @@ class TrainingStore(
             ?: return WriteFailure.Refused("Choose a date.")
         Bodyweight.dated(date, Bodyweight.today(now()))?.let { return WriteFailure.Refused(it) }
         val seat = owner
+        val replica = controls.engineReplica
+        val anonymous = seat == null
         return bodyweightWrite.withLock {
+            if (seat != owner || replica == null) return@withLock WriteFailure.Refused(accountChanged)
             try {
-                training.putBodyweight(dateLocal, weightKg)
+                val saved = training.putBodyweight(dateLocal, weightKg, replica, anonymous)
                 if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
                 dropWithheld(dateLocal)
-                series = training.weighins()
+                series = (series.filterNot { it.dateLocal == dateLocal } + saved).sortedBy { it.dateLocal }
                 bodyweightRead = true
                 telemetry.event("gym_bodyweight_saved")
                 null
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.weighIn", failure); WriteFailure(failure) }
-        }
-    }
-
-    suspend fun deleteWeighIn(dateLocal: String) {
-        val seat = owner
-        bodyweightWrite.withLock {
-            tried("gym.deleteWeighIn") { training.deleteBodyweight(dateLocal) }
-            if (seat == owner) series = training.weighins()
         }
     }
 
@@ -1363,17 +1348,16 @@ class TrainingStore(
         }
     }
 
-    // Once the window over it has closed, the same roads as the fix: the row is gone from this
-    // device at once and the replica carries the delete to the account. Nothing here recovers a
-    // deleted row.
-    suspend fun deleteSet(sessionId: String, setId: String): WriteFailure? {
+    // A settled delete updates the replica and every retained read of this set.
+    suspend fun deleteSet(sessionId: String, setId: String, replica: String? = controls.engineReplica, anonymous: Boolean = owner == null): WriteFailure? {
         if (!workoutAuthorized) return WriteFailure.Refused("the account changed while deleting")
         val live = session?.takeIf { it.id == sessionId }
         if (live == null) shelfDetail(sessionId)?.let { detail ->
             val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
                 ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
             training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
-                detail.sets.filterNot { it.id == setId }, (deleted + setId).distinct()))
+                detail.sets.filterNot { it.id == setId }, (deleted + setId).distinct()),
+                expectedReplica = replica ?: return WriteFailure.Refused(accountChanged), expectedAnonymous = anonymous)
             if (detail.sets.any { it.id == setId }) {
                 deletedSets = deletedSets + setId
                 shelved = refusedImports()
@@ -1383,11 +1367,12 @@ class TrainingStore(
         }
         val seat = owner
         try {
-            training.deleteSet(sessionId, setId)
+            training.deleteSet(sessionId, setId, replica ?: return WriteFailure.Refused(accountChanged), anonymous)
         } catch (interrupted: CancellationException) {
             throw interrupted
         } catch (refusing: Exception) {
             reportFailure("gym.deleteSet", refusing)
+            if (refusing is TrainingDeleteUnconfirmed && seat == owner) refreshEngine()
             return WriteFailure(refusing)
         }
         if (!workoutAuthorized || seat != owner) return WriteFailure.Refused("the account changed while deleting")
@@ -1415,14 +1400,77 @@ class TrainingStore(
         logged = logged.map { if (it.id == sessionId) fresh else it }
     }
 
-    // The row leaves the screen and NOTHING is written — withheld means not written, so an Undo can
-    // never arrive after the delete. Each delete carries its own clock and settles itself; a second
-    // one never settles the first.
-    //
-    // The clock is KEPT, keyed by the subject it was opened for, because a second window over the
-    // same row must take the first one's clock down with it: a clock left running would settle the
-    // NEW window early, with its Undo still on the screen.
-    fun withhold(deletion: Deletion) {
+    suspend fun delete(deletion: Deletion): WriteFailure? {
+        val screen = when (deletion) {
+            is Deletion.Routine -> "routines"
+            is Deletion.Set -> "session"
+            is Deletion.Note -> "notes"
+            else -> error("this resource requires its recovery flow")
+        }
+        val seat = owner
+        val replica = controls.engineReplica
+        val anonymous = seat == null
+        return scope.async(start = CoroutineStart.UNDISPATCHED) {
+            val failure = try {
+                if (seat != owner || replica == null) WriteFailure.Refused(accountChanged)
+                else when (deletion) {
+                    is Deletion.Routine -> dropRoutine(deletion.routineId, replica, anonymous)
+                    is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id, replica, anonymous)
+                    is Deletion.Note -> deleteNote(deletion.noteId, replica, anonymous)
+                    else -> error("this resource requires its recovery flow")
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                reportFailure(when (deletion) {
+                    is Deletion.Routine -> "gym.dropRoutine"
+                    is Deletion.Set -> "gym.deleteSet"
+                    else -> "gym.deleteNote"
+                }, error)
+                WriteFailure(error)
+            }
+            telemetry.event("gym_action", mapOf("screen" to screen, "action" to "delete",
+                "outcome" to when (failure) {
+                    null -> "ok"
+                    is WriteFailure.Refused -> "refused"
+                    else -> "failed"
+                }))
+            failure
+        }.await()
+    }
+
+    // Weigh-ins are durable engine holds; workout and conversation recovery stays room-owned.
+    fun withhold(deletion: Deletion.Recoverable) {
+        if (deletion is Deletion.Bodyweight) {
+            val seat = owner
+            val replica = controls.engineReplica ?: return
+            val anonymous = seat == null
+            scope.launch {
+                bodyweightWrite.withLock {
+                    if (seat != owner || replica != training.engine.activeReplica()) return@withLock
+                    try {
+                        val weight = training.weighins(deletion.dateLocal, deletion.dateLocal).singleOrNull()
+                            ?: return@withLock
+                        val receipt = training.holdBodyweight(deletion.dateLocal, replica, anonymous) ?: return@withLock
+                        if (seat != owner || replica != training.engine.activeReplica()) return@withLock
+                        val offer = training.engine.undoOffers().firstOrNull { it.id == receipt.gestureId }
+                        if (offer != null) {
+                            withheld = withheld.filterNot { it.subjectId == deletion.subjectId } +
+                                WithheldDelete(deletion, offer.releaseAt, receipt = HeldWeightReceipt(replica, anonymous, offer.id, receipt.localIds, weight))
+                            weightAction("delete", "held")
+                        } else weightAction("delete", "closed")
+                        series = series.filterNot { it.dateLocal == deletion.dateLocal }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (failure: Exception) {
+                        reportFailure("gym.deleteWeighIn", failure)
+                        if (seat == owner && replica == training.engine.activeReplica()) {
+                            weightAction("delete", if (WriteFailure(failure) is WriteFailure.Refused) "refused" else "failed")
+                            deleteRefused = WriteFailure(failure).line("that weigh-in is still on the log")
+                        }
+                    }
+                }
+            }
+            return
+        }
         val open = WithheldDelete(deletion, untilMs = now() + undoWindowMs)
         withheld = withheld.filterNot { it.subjectId == open.subjectId } + open
         armDelete(open)
@@ -1442,65 +1490,74 @@ class TrainingStore(
         }
     }
 
-    private fun changeHeldSet(sessionId: String, oldId: String, set: TrainingSet?) {
-        val held = withheld.firstOrNull {
-            val deletion = it.deletion as? Deletion.Set
-            deletion?.sessionId == sessionId && deletion.set.id == oldId
-        } ?: return
-        clocks.remove(oldId)?.cancel()
-        if (set == null) {
-            withheld = withheld - held
-            return
-        }
-        val updated = held.copy(deletion = Deletion.Set(sessionId, set))
-        withheld = withheld.map { if (it == held) updated else it }
-        armDelete(updated)
-    }
-
-    // One named window, taken back by the WRITE that names its subject again rather than by a tap.
-    // Only while nothing has been written: a delete already written is nobody's to take back, and a
-    // window that is not open at all is not an error — the day is simply free.
+    // A successful whole-record rewrite retires this day's receipt projection.
     private fun dropWithheld(subjectId: String) {
         val taking = withheld.firstOrNull { it.subjectId == subjectId && it.takeable } ?: return
         clocks.remove(subjectId)?.cancel()
         withheld = withheld - taking
+        if (taking.receipt != null) weightAction("cancel", "rewritten")
     }
 
-    // The NEWEST first, and only while nothing has been written: a keep reported over a delete
-    // already written would be a lie. Answers with what came back, or null.
+    // Undo takes the newest available offer and reports only an actual restoration.
     fun keepWithheld(): WithheldDelete? {
         val taking = withheld.lastOrNull { it.takeable } ?: return null
+        taking.receipt?.let { receipt ->
+            if (receipt.replica != training.engine.activeReplica() || receipt.anonymous != training.anonymous) {
+                withheld = withheld - taking
+                return null
+            }
+            val gesture = receipt.gestureId
+            try {
+                if (training.engine.undoOffers().none { it.id == gesture } || !training.engine.undo(gesture)) {
+                    weightAction("undo", "closed")
+                    refreshHeldWeights()
+                    return null
+                }
+                series = (series.filterNot { it.dateLocal == receipt.weighIn.dateLocal } + receipt.weighIn).sortedBy { it.dateLocal }
+                withheld = withheld - taking
+                weightAction("undo", "ok")
+            } catch (failure: Exception) {
+                weightAction("undo", "failed")
+                reportFailure("gym.deleteWeighIn", failure)
+                deleteRefused = WriteFailure(failure).line("Undo could not restore that weigh-in")
+                return null
+            }
+        }
         clocks.remove(taking.subjectId)?.cancel()
         withheld = withheld - taking
         return taking
     }
 
-    // Leaving the ROOM — its disposal, or the app leaving the foreground. The window lives only
-    // while the room is on screen in a live process, so everything still the lifter's is LET GO
-    // rather than written: the rows come back, nothing is deleted and nothing is said afterwards,
-    // because nothing happened. Settling here instead would make `swipe · switch apps · come back`
-    // destroy a row with its way back already gone, which is the one thing this whole mechanism
-    // exists to prevent; deleting again costs one stroke, and nothing is written to disk to make the
-    // decision outlive the process.
-    //
-    // One thing is left exactly where it is: a delete already being written is nobody's to take
-    // back, so it stays in the list until it is answered.
-    //
-    // Answers whether anything was let go, which is what takes the transient down with it.
+    // Navigation and recreation never abandon an engine-backed weight hold.
     fun abandonWithheld(): Boolean {
-        val letting = withheld.filter { it.takeable }
+        val letting = withheld.filter { it.takeable && it.receipt == null }
         if (letting.isEmpty()) return false
         for (going in letting) clocks.remove(going.subjectId)?.cancel()
         withheld = withheld - letting.toSet()
         return true
     }
 
-    // One window closing, and the room's clock is the only thing that closes one: leaving abandons
-    // instead. The row stops being takeable BEFORE the delete is written and stays in the list until
-    // it is answered, either way — a settle cancelled mid-flight leaves the delete still owed, and a
-    // settle over the same subject writes it again, because every one of these deletes is idempotent.
+    // Explicit settlement releases only this receipt; background release belongs to the engine.
     suspend fun settleWithheld(subjectId: String): WriteFailure? {
         val settling = withheld.firstOrNull { it.subjectId == subjectId } ?: return null
+        settling.receipt?.let { receipt ->
+            return bodyweightWrite.withLock {
+                if (receipt.replica != training.engine.activeReplica() || receipt.anonymous != training.anonymous) {
+                    withheld = withheld - settling
+                    return@withLock WriteFailure.Refused(accountChanged)
+                }
+                try {
+                    receipt.localIds.forEach(training.engine::release)
+                    refreshHeldWeights()
+                    loadBodyweight()
+                    null
+                } catch (failure: Exception) {
+                    weightAction("delete", "failed")
+                    reportFailure("gym.deleteWeighIn", failure)
+                    WriteFailure(failure)
+                }
+            }
+        }
         clocks.remove(subjectId)?.cancel()
         withheld = withheld.map { if (it.subjectId == subjectId) it.copy(sent = true) else it }
         val seat = owner
@@ -1510,24 +1567,31 @@ class TrainingStore(
         return failed
     }
 
+    private fun refreshHeldWeights() {
+        val replica = training.engine.activeReplica()
+        val offers = training.engine.undoOffers().associateBy { it.id }
+        withheld = withheld.mapNotNull { held ->
+            val receipt = held.receipt ?: return@mapNotNull held
+            if (receipt.replica != replica || receipt.anonymous != training.anonymous) return@mapNotNull null
+            val offer = offers[receipt.gestureId]
+            if (offer == null) weightAction("delete", "closed")
+            offer?.let { held.copy(untilMs = it.releaseAt) }
+        }
+    }
+
+    private fun weightAction(action: String, outcome: String) {
+        telemetry.event("gym_action", mapOf("screen" to "bodyweight", "action" to action, "outcome" to outcome))
+    }
+
     fun clearDeleteRefused() {
         deleteRefused = null
     }
 
-    // The six deletes behind one window, and they share no shape: a set leaves the replica or a
-    // refused import, a routine, a note and a weigh-in leave the replica, a conversation leaves over
-    // REST, and a session's discard answers with a bool.
-    private suspend fun send(deletion: Deletion): WriteFailure? = when (deletion) {
-        is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id)
-        is Deletion.Routine -> dropRoutine(deletion.routineId)
+    // Workout and conversation recovery retain their existing settlement paths.
+    private suspend fun send(deletion: Deletion.Recoverable): WriteFailure? = when (deletion) {
         is Deletion.Thread -> (coach.deleteThread(deletion.threadId) as? GymResult.Failed)?.why
-        is Deletion.Session ->
-            if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
-        is Deletion.Note -> deleteNote(deletion.noteId)
-        is Deletion.Bodyweight -> {
-            deleteWeighIn(deletion.dateLocal)
-            null
-        }
+        is Deletion.Session -> if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
+        is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }
 
     // Doubles as the retry for a first page the replica could not answer: with no rows the cursor is
@@ -1611,7 +1675,6 @@ class TrainingStore(
     private fun changedSet(sessionId: String, oldId: String, set: TrainingSet?) {
         invalidateProgress()
         enginePendingSessions = training.pendingSessionIds()
-        changeHeldSet(sessionId, oldId, set)
         closedDetails = closedDetails.mapValues { (_, detail) ->
             if (detail.session.id != sessionId) detail
             else detail.copy(sets = detail.sets.mapNotNull { if (it.id == oldId) set else it })
@@ -1773,15 +1836,18 @@ sealed interface GymResult<out T> {
 sealed interface WriteFailure {
     data class Refused(val said: String) : WriteFailure   // the log answered, in its own words
     data object NoAnswer : WriteFailure                   // no reply, or one this build couldn't read
+    data object UnconfirmedDelete : WriteFailure
 
     // `subject` is read only when there is no sentence from the log to say instead.
     fun line(subject: String): String = when (this) {
         is Refused -> said
         NoAnswer -> "the log didn’t answer — $subject"
+        UnconfirmedDelete -> "The delete could not be confirmed. Reopen this screen to check."
     }
 }
 
 fun WriteFailure(refusing: Throwable): WriteFailure = when (refusing) {
+    is TrainingDeleteUnconfirmed -> WriteFailure.UnconfirmedDelete
     is TrainingRefused -> WriteFailure.Refused(refusing.line)
     is WindmillApiException.Refused -> WriteFailure.Refused(refusing.line)
     else -> WriteFailure.NoAnswer

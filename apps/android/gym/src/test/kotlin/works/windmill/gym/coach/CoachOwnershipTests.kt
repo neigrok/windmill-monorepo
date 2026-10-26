@@ -328,7 +328,7 @@ class CoachOwnershipTests {
     }
 
     @Test
-    fun notesReadSaveAndDeleteKeepOneAuthoritativeOrderAcrossHeldDeletion() = runTest {
+    fun notesReadSaveAndDeleteKeepOneAuthoritativeOrderAfterImmediateDeletion() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
@@ -341,13 +341,13 @@ class CoachOwnershipTests {
             val store = room.store
             val (first, second, third) = (store.readNotes() as GymResult.Ok).value
             val saved = (store.saveNote(first.id, NoteWrite("First", "Accepted edit")) as GymResult.Ok).value
-            store.withhold(Deletion.Note(second.id))
+            assertNull(store.delete(Deletion.Note(second.id)))
             assertTrue(store.reorderNotes(first.id, listOf(third.id, third.id)) is GymResult.Failed)
             assertTrue(store.reorderNotes(first.id, listOf(third.id, first.id)) is GymResult.Ok)
-            assertEquals(listOf(third.copy(position = 1), saved.copy(position = 2)), store.notes)
-            assertEquals(3, store.noteCount)
-            store.keepWithheld()
-            assertEquals(listOf(second.copy(position = 0), third.copy(position = 1), saved.copy(position = 2)), store.notes)
+            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes)
+            assertEquals(2, store.noteCount)
+            assertNull(store.keepWithheld())
+            assertEquals(listOf(third.copy(position = 0), saved.copy(position = 1)), store.notes)
         }
     }
 

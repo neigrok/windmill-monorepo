@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -76,7 +77,7 @@ class RoutinesScreenTests {
                 seat = "s",
                 onBuild = { drafts += it },
                 onOpenRoutine = { doors += "open:$it" },
-                onDeleteRoutine = { doors += "delete:$it" },
+                onDeleteRoutine = { doors += "delete:$it"; true },
                 onReview = { doors += "review" },
                 onSignIn = { doors += "signIn" },
             )
@@ -139,9 +140,9 @@ class RoutinesScreenTests {
             val routineId = store.routines.single().id
 
             compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
-            compose.onAllNodesWithText("Delete").assertCountEquals(1)
+            compose.onAllNodesWithText("Delete").assertCountEquals(0)
 
-            val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
+            val row = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions)).fetchSemanticsNode()
             val actions = row.config[SemanticsActions.CustomActions]
             assertEquals(listOf("Delete Push Day"), actions.map { it.label })
 
@@ -192,7 +193,7 @@ class RoutinesScreenTests {
                     seat = "s",
                     onBuild = {},
                     onOpenRoutine = {},
-                    onDeleteRoutine = {},
+                    onDeleteRoutine = { true },
                     onReview = { reviewed += it.id },
                     onSignIn = {},
                 )
@@ -233,7 +234,7 @@ class RoutinesScreenTests {
                     seat = "",
                     onBuild = { doors += "build" },
                     onOpenRoutine = { doors += "open:$it" },
-                    onDeleteRoutine = { doors += "delete:$it" },
+                    onDeleteRoutine = { doors += "delete:$it"; true },
                     onReview = { doors += "review" },
                     onSignIn = { doors += "signIn" },
                 )

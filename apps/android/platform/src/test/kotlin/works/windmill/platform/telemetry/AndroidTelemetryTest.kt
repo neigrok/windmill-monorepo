@@ -29,6 +29,27 @@ import works.windmill.platform.net.WindmillJson
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidTelemetryTest {
+    @Test fun deletionActionsKeepOnlyTheirBoundedLabelsAndPreserveNotificationAndTileEvents() {
+        val valid = listOf(
+            Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"),
+            Triple("bodyweight", "delete", "held"), Triple("bodyweight", "delete", "closed"),
+            Triple("bodyweight", "undo", "ok"), Triple("bodyweight", "undo", "closed"),
+            Triple("bodyweight", "cancel", "rewritten"), Triple("notification", "log_set", "ok"),
+            Triple("notification", "open", "refused"), Triple("tile", "open", "ok"), Triple("tile", "routines", "failed"),
+        )
+        for ((screen, action, outcome) in valid) {
+            val labels = mapOf("screen" to screen, "action" to action, "outcome" to outcome, "platform" to "android")
+            assertEquals(labels, TelemetryPolicy.eventProperties("gym_action", labels + mapOf(
+                "date" to "2026-09-01", "weight" to "81.25", "name" to "private", "operation" to "private")))
+        }
+        for (labels in listOf(
+            mapOf("screen" to "private", "action" to "delete", "outcome" to "ok"),
+            mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "acknowledged"),
+            mapOf("screen" to "bodyweight", "action" to "undo", "outcome" to "private"),
+            mapOf("screen" to "notes", "action" to "private", "outcome" to "ok"),
+        )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels))
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun realSdkAndFirstPartyTransportDeliverRedactedRepeatedFailures() = runTest {

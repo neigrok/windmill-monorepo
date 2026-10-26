@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -138,36 +139,28 @@ class StanceReadsTheAccountTests {
     // program's length — not the drawn list's, or the window would file it on top of the routine it
     // is holding.
     @Test
-    fun theRoutinesHomeNeverOffersToBuildTheFirstOverAProgramThatStillHasOne() {
+    fun theRoutinesHomeOffersItsEmptyStateAfterTheLastRoutineIsDeleted() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = room(scope).store
-        runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
-        val drafts = mutableListOf<RoutineDraft>()
-        compose.setContent {
-            RoutinesScreen(
-                store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s", onBuild = { drafts += it }, onOpenRoutine = {},
-                onDeleteRoutine = {}, onReview = {}, onSignIn = {},
-            )
-        }
-        val id = store.routines.single().id
-
-        compose.runOnIdle { store.withhold(Deletion.Routine(id, "Push Day")) }
-
-        compose.onNodeWithText("No routines yet.").assertDoesNotExist()
-        compose.onNodeWithText("Build a routine").assertDoesNotExist()
-        compose.onNodeWithText("Push Day").assertDoesNotExist()
-        compose.onNodeWithText("New routine").performClick()
-        compose.runOnIdle {
-            assertEquals("the program still holds it, so the next routine goes after it",
-                listOf(1), drafts.map { it.position })
-            assertEquals(listOf("Push Day"), store.allRoutines.map { it.name })
-        }
-
-        compose.runOnIdle { runBlocking { store.settleWithheld(id) } }
-        compose.runOnIdle { assertEquals(emptyList<String>(), store.allRoutines.map { it.name }) }
-        compose.onNodeWithText("No routines yet.").assertIsDisplayed()
-        compose.onNodeWithText("Start logging").assertDoesNotExist()
-        scope.cancel()
+        try {
+            val store = room(scope).store
+            runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
+            val drafts = mutableListOf<RoutineDraft>()
+            compose.setContent {
+                RoutinesScreen(store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
+                    onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {}, onSignIn = {})
+            }
+            val id = store.routines.single().id
+            compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Routine(id, "Push Day"))) } }
+            compose.onNodeWithText("Push Day").assertDoesNotExist()
+            compose.onNodeWithText("No routines yet.").assertIsDisplayed()
+            compose.onNodeWithText("New routine").performClick()
+            compose.runOnIdle {
+                assertEquals(listOf(0), drafts.map { it.position })
+                assertEquals(emptyList<String>(), store.allRoutines.map { it.name })
+                assertNull(store.keepWithheld())
+            }
+            compose.onNodeWithText("Start logging").assertDoesNotExist()
+        } finally { scope.cancel() }
     }
 
     // The threads room read a list it held ITSELF, refreshed once on the way in — so the stance was

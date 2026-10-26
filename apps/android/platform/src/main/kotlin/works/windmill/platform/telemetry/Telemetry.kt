@@ -56,6 +56,18 @@ object TelemetryPolicy {
         (!name.startsWith("onboarding_") || name in onboardingEvents)
 
     fun eventProperties(name: String, properties: Map<String, String>): Map<String, String> {
+        if (name == "gym_action") {
+            val actions = when (properties["screen"]) {
+                "routines", "session", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
+                "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
+                    "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
+                "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
+                "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
+                else -> emptyMap()
+            }
+            val valid = properties["outcome"] in actions[properties["action"]].orEmpty()
+            return properties(properties.filterKeys { it in commonEventKeys || valid && it in setOf("screen", "action", "outcome") })
+        }
         if (!name.startsWith("onboarding_")) return properties(properties)
         val schema = onboardingEvents[name] ?: return emptyMap()
         return properties(properties.filter { (key, value) ->

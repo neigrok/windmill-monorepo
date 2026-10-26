@@ -2,41 +2,20 @@ package works.windmill.gym.store
 
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.domain.WeighIn
 
-// Everything a lifter can delete in this room, behind one window. They share no verb — a set leaves
-// the replica or a refused import kept on this phone, a routine, a session, a note and a weigh-in
-// leave the replica, and a conversation leaves over REST — so this is one abstraction over six verbs
-// and not a widened data class. What they DO share is the only thing that matters here: nothing is
-// written while the window is open, so an Undo can never arrive after the write, and none of them
-// asks a question first, because an act with a way back on screen does not get a dialog.
-//
-// And every one of them is held by the ROOM alone: this list, in this process, with nothing on disk,
-// no queue and no retry behind it. So leaving the room lets them all go the same way — a delete a
-// backgrounded app fired has nobody to read what came back. That means a weigh-in delete abandoned
-// on backgrounding puts the dot back, the same as every other verb here, a set's delete included,
-// and this file is the one place it is decided.
 sealed interface Deletion {
-    // What the window is keyed on. One window per subject, and the id every list filters against.
+    sealed interface Recoverable : Deletion
     val subjectId: String
 
-    // What the transient says while the window is open.
     val line: String
 
-    // The fact the act carries with it, said at the MOMENT of the act rather than as a caption
-    // standing on some other screen. Only the conversation has one, and only while it is the whole
-    // of what is held — a count has no one detail to carry.
     val detail: String? get() = null
 
-    // The tail of the sentence a refusal is said in, after the window closed and the log said no.
-    // Null where the verb has no terminal refusal at all: nothing is ever said afterwards, so
-    // inventing a sentence here would pin words the room can never reach.
     val stillThere: String?
 
-    // The set travels WHOLE: it is the last copy while the window is open, and Undo has to put it
-    // back exactly.
     data class Set(val sessionId: String, val set: TrainingSet) : Deletion {
         override val subjectId: String get() = set.id
-        // The room's own weight rendering, and this room draws kilograms and says so.
         override val line: String
             get() = "${Readout.weight(set.weightKg)} kg × ${set.reps} is out of the log."
         override val stillThere: String get() = "that set is still on the log"
@@ -48,15 +27,14 @@ sealed interface Deletion {
         override val stillThere: String get() = "$name is still in your program"
     }
 
-    data class Thread(val threadId: String) : Deletion {
+    data class Thread(val threadId: String) : Recoverable {
         override val subjectId: String get() = threadId
         override val line: String get() = "Conversation deleted."
-        // Applied routine changes survive conversation deletion.
         override val detail: String get() = "your routine keeps what you applied"
         override val stillThere: String get() = "that conversation is still here"
     }
 
-    data class Session(val sessionId: String) : Deletion {
+    data class Session(val sessionId: String) : Recoverable {
         override val subjectId: String get() = sessionId
         override val line: String get() = "Session deleted."
         override val stillThere: String get() = "that session is still on the log"
@@ -68,50 +46,32 @@ sealed interface Deletion {
         override val stillThere: String get() = "that note is still here"
     }
 
-    // Keyed by the day, which is what the series is keyed on. The delete lands in the replica, which
-    // carries it to the account and answers nothing back to this window, so there is no terminal
-    // refusal to say.
-    //
-    // The one subject here a later write can name AGAIN: every other key is a minted id nothing
-    // reuses. `TrainingStore.weighIn` retires this window after a successful save; a failed save
-    // keeps Undo, and a successful one cancels the clock that could delete the saved number.
-    data class Bodyweight(val dateLocal: String) : Deletion {
+    data class Bodyweight(val dateLocal: String) : Recoverable {
         override val subjectId: String get() = dateLocal
         override val line: String get() = "Weigh-in deleted."
         override val stillThere: String? get() = null
     }
 
-
 }
 
-// A delete this device has made and has NOT told the log about. `sent` is the moment the window
-// stops being the lifter's — the delete is on the wire and there is no way back — while the row
-// stays in the list until the log answers, so a settle cancelled mid-flight is still owed and the
-// next one re-sends it.
 data class WithheldDelete(
-    val deletion: Deletion,
+    val deletion: Deletion.Recoverable,
     val untilMs: Long,
     val sent: Boolean = false,
+    val receipt: HeldWeightReceipt? = null,
 ) {
     val subjectId: String get() = deletion.subjectId
     val takeable: Boolean get() = !sent
 }
 
-// The window holds MORE than one: each delete carries its own clock and a second one never settles
-// the first. One held thing NAMES what left; two or more can only be counted, because a transient
-// that named one of them would be saying the wrong thing about the others. Undo takes the newest
-// back and the transient re-reads for the rest.
-//
-// The same bytes on every surface.
+data class HeldWeightReceipt(val replica: String, val anonymous: Boolean, val gestureId: String, val localIds: List<String>, val weighIn: WeighIn)
+
 object Withheld {
-    // How long a delete stays the lifter's. Must match every surface to the millisecond.
     const val windowMs = 9_000L
 
     const val undo = "Undo"
 
-    // Said when Undo is pressed a frame after the clock fired: the log has it, and pretending
-    // otherwise would be the one lie this whole mechanism exists to prevent.
-    const val alreadyGone = "The window closed — that delete already went."
+    const val alreadyGone = "The Undo window closed."
 
     fun line(held: List<WithheldDelete>): String? {
         val open = held.count { it.takeable }

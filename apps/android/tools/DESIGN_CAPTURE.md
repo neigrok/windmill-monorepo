@@ -52,6 +52,12 @@ without changing the existing screen implementation:
 movement picker, share offer and live link in both appearances. Optional `after` steps run after a
 recipe's screenshot, allowing transient sheets to close before the next recipe or readiness check.
 
+`--scenarios apps/android/tools/capture-recipes/deletion-lifecycle.json` captures the routine Delete
+menu, held editor-movement and detail-set swipes, a settled temporary-routine deletion, and weight
+Undo in both appearances. The editor leaves its draft unsaved; the detail-set gesture returns before
+release. The weight recipe accepts Undo after its screenshot. Settled write and background-release
+checks use the same disposable account during the bounded acceptance pause.
+
 `--scenarios apps/android/tools/capture-recipes/native-parts.json` opens a debug-only native-control
 specimen guarded by the same local-origin check. The wide 1460 × 426 board is component-specimen
 evidence; portrait recipes exercise actual phone width, signed Display values and inline refusals.

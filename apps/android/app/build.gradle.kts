@@ -108,6 +108,7 @@ dependencies {
     implementation(project(":sync-engine"))
     implementation(project(":sync-schema"))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.process)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.compose.ui.test.junit4)

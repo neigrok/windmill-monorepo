@@ -19,7 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -34,12 +34,6 @@ import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.sync.core.Json
 
-// The set row's swipe, and the four things that make it safe: one trailing action, no leading one,
-// a tap that still opens the fix sheet, and — the Android half of gesture law 1 — a custom accessibility action declared by hand, because TalkBack sees a drag and this
-// row carries no overflow to inherit a real button from.
-//
-// And the two that make it survivable: a stroke carried the WHOLE way across performs exactly one
-// delete, and leaving the screen the gesture was made on does not send it.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class SetRowSwipeTests {
@@ -55,10 +49,8 @@ class SetRowSwipeTests {
         revoke = { error("no link is revoked here") },
     )
 
-    // A finished workout of two sets, synced: both are on the account's log and nothing is owed.
     private fun store(scope: CoroutineScope): EngineRoomFixture {
         val room = EngineRoomFixture(tmp.newFolder(), scope)
-        // A minute's workout that has just finished, on the wall clock.
         room.now = System.currentTimeMillis() - 60_000
         val server = EngineRoomFixture.server()
         runBlocking {
@@ -104,7 +96,7 @@ class SetRowSwipeTests {
     }
 
     @Test
-    fun testATrailingSwipeWithheldsTheRowAndALeadingOneDoesNothing() {
+    fun aTrailingSwipeDeletesTheRowAndALeadingOneDoesNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             screen(room, session(room))
@@ -118,16 +110,13 @@ class SetRowSwipeTests {
 
             compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
             compose.runOnIdle {
-                assertEquals(1, room.store.withheld.size)
-                assertTrue(room.store.withheld.single().deletion is Deletion.Set)
-                assertEquals("and nothing is on the wire", emptyList<Json>(), room.outbox())
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertNull(room.store.keepWithheld())
             }
         } } finally { scope.cancel() }
     }
 
-    // A stroke carried the whole way across is still ONE decision. `SwipeToDismissBox` settles on
-    // release, so there is no trigger-without-lifting to guard against — what has to hold is that
-    // the longest possible stroke does not delete twice, or open a second window over the same row.
     @Test
     fun testAStrokeCarriedTheWholeWayAcrossDeletesExactlyOnce() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -139,15 +128,12 @@ class SetRowSwipeTests {
             }
 
             compose.runOnIdle {
-                assertEquals("one window, not two", 1, room.store.withheld.size)
-                assertEquals(emptyList<Json>(), room.outbox())
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
             }
         } } finally { scope.cancel() }
     }
 
-    // Law 1, the Android half. Without this the swipe is half-built: a lifter on TalkBack has no way
-    // to delete a set at all, because the fix sheet's own Delete is behind a tap this row's drag
-    // cannot stand in for.
     @Test
     fun testTheRowDeclaresDeleteAsACustomActionAndItDoesTheSameThing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -163,15 +149,12 @@ class SetRowSwipeTests {
 
             compose.runOnIdle { assertTrue(declared.single().action?.invoke() == true) }
             compose.runOnIdle {
-                assertEquals(1, room.store.withheld.size)
-                assertEquals("and it is withheld, exactly as the swipe leaves it", emptyList<Json>(), room.outbox())
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
             }
         } } finally { scope.cancel() }
     }
 
-    // The row that moves up into a deleted row's place is a whole row again — where it belongs, and
-    // still opening the fix sheet. (What put this here was a leftover swipe offset seen on a phone;
-    // Robolectric does not reproduce that, so this pins the outcome and not the cause.)
     @Test
     fun theRowThatMovesUpIntoADeletedRowsPlaceIsAWholeRowAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -179,7 +162,7 @@ class SetRowSwipeTests {
             screen(room, session(room))
 
             compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
-            compose.runOnIdle { assertEquals(1, room.store.withheld.size) }
+            compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
 
             val survivor = compose.onNodeWithText("90 × 3").fetchSemanticsNode().boundsInRoot
             assertTrue("the survivor is drawn where a row belongs, not parked off the leading edge: " +
@@ -203,49 +186,43 @@ class SetRowSwipeTests {
         } } finally { scope.cancel() }
     }
 
-    // Swipe, then back. Two completely ordinary acts, and before this wave the second one committed
-    // the first — the row was destroyed while its Undo was still nominally on screen.
     @Test
-    fun testSwipeThenLeavingTheScreenDoesNotSendTheDelete() {
+    fun aSettledSwipeStaysQueuedAfterLeavingTheScreen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             val summary = session(room)
             val standing = screen(room, summary)
 
             compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
-            compose.runOnIdle { assertEquals(1, room.store.withheld.size) }
+            compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
 
             standing.value = false
             compose.runOnIdle { }
             compose.onNodeWithText("somewhere else").assertIsDisplayed()
 
             compose.runOnIdle {
-                assertTrue("the window follows the lifter rather than dying with the screen",
-                    room.store.withheld.single().takeable)
-                assertEquals("and nothing was sent", emptyList<Json>(), room.outbox())
-                assertEquals("both sets are still on the log",
-                    listOf(82.5, 90.0), room.training.details().single { it.session.id == summary.id }.sets.map { it.weightKg })
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertEquals(listOf(90.0), room.training.details().single { it.session.id == summary.id }.sets.map { it.weightKg })
             }
         } } finally { scope.cancel() }
     }
 
     @Test
-    fun testTheWindowStillHoldsTheRowAfterTheScreenIsGoneAndUndoBringsItBack() {
+    fun aDeletedRowStaysGoneWhenTheScreenReopens() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             val standing = screen(room, session(room))
 
             compose.onNodeWithText("82.5 × 5").performTouchInput { swipeLeft() }
-            compose.runOnIdle { assertEquals(1, room.store.withheld.size) }
+            compose.runOnIdle { assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() }) }
             standing.value = false
             compose.runOnIdle { }
 
-            compose.runOnIdle { assertNotNull(room.store.keepWithheld()) }
+            compose.runOnIdle { assertNull(room.store.keepWithheld()) }
             standing.value = true
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("82.5 × 5").fetchSemanticsNodes().isNotEmpty()
-            }
-            compose.onNodeWithText("82.5 × 5").assertIsDisplayed()
+            compose.onNodeWithText("90 × 3").assertIsDisplayed()
+            assertEquals(emptyList<Any>(), compose.onAllNodesWithText("82.5 × 5").fetchSemanticsNodes())
         } } finally { scope.cancel() }
     }
 }

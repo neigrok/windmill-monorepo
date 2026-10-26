@@ -995,7 +995,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testADeleteIsWithheldUntilTheWindowClosesAndUndoTakesItBackUnsent() = runTest {
+    fun aSetDeleteQueuesImmediatelyAndUpdatesEveryRead() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
@@ -1009,21 +1009,10 @@ class TrainingStoreTests {
             room.sync(server); room.store.refreshEngine()
             val taken = room.training.session(opened.id)!!.sets.first()
 
-            room.store.withhold(Deletion.Set(opened.id, taken))
-            assertEquals(
-                listOf(WithheldDelete(Deletion.Set(opened.id, taken), untilMs = room.now + Withheld.windowMs)),
-                room.store.withheld)
-            assertTrue("nothing has been told yet", room.outbox().isEmpty())
-
-            assertNotNull(room.store.keepWithheld())
+            assertNull(room.store.delete(Deletion.Set(opened.id, taken)))
             assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
-            assertNull("undo writes nothing at all — it is this device changing its mind",
-                room.store.settleWithheld(taken.id))
-            assertTrue(room.outbox().isEmpty())
-            assertEquals(2, room.training.session(opened.id)!!.sets.size)
-
-            room.store.withhold(Deletion.Set(opened.id, taken))
-            assertNull(room.store.settleWithheld(taken.id))
+            assertNull(room.store.keepWithheld())
+            assertNull(room.store.delete(Deletion.Set(opened.id, taken)))
             assertEquals(listOf("set ${taken.id}"), owed(room))
             assertEquals("the set does not stand", listOf(90.0),
                 room.training.session(opened.id)!!.sets.map { it.weightKg })
@@ -1038,11 +1027,8 @@ class TrainingStoreTests {
         }
     }
 
-    // The old rule REVERSED, and this is the one the gesture wave turns on: behind a swipe two rows
-    // can be gone in a second, and a second delete that settled the first would send it while its
-    // Undo was still on screen.
     @Test
-    fun testASecondDeleteOpensAWindowOfItsOwnAndSettlesNothing() = runTest {
+    fun consecutiveDeletesQueueOneIntentEachWithoutUndo() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
@@ -1055,46 +1041,29 @@ class TrainingStoreTests {
             runCurrent()
             room.sync(server); room.store.refreshEngine()
             val (first, second) = room.training.session(opened.id)!!.sets
-
-            room.store.withhold(Deletion.Set(opened.id, first))
-            room.store.withhold(Deletion.Set(opened.id, second))
-
-            assertTrue("nothing went out — a second delete settles nothing", room.outbox().isEmpty())
-            assertEquals(setOf(first.id, second.id), room.store.withheldIds)
-            assertEquals("both rows are off every list that reads them",
-                emptySet<String>(), room.store.deletedSets)
-
-            assertEquals("Undo takes the NEWEST back first",
-                Deletion.Set(opened.id, second), room.store.keepWithheld()?.deletion)
-            assertEquals("and the transient re-reads for the one still held",
-                Deletion.Set(opened.id, first), room.store.holding?.deletion)
-            assertNotNull(room.store.keepWithheld())
-
-            assertEquals("so both sets are still on the log", listOf(first.id, second.id),
-                room.training.session(opened.id)!!.sets.map { it.id })
-            assertTrue(room.outbox().isEmpty())
-            runCurrent()
+            assertNull(room.store.delete(Deletion.Set(opened.id, first)))
+            assertNull(room.store.delete(Deletion.Set(opened.id, second)))
+            assertEquals(listOf("set ${first.id}", "set ${second.id}"), owed(room))
+            assertEquals(emptySet<String>(), room.store.withheldIds)
+            assertEquals(setOf(first.id, second.id), room.store.deletedSets)
+            assertNull(room.store.keepWithheld())
+            assertEquals(emptyList<TrainingSet>(), room.training.session(opened.id)!!.sets)
         }
     }
 
     @Test
-    fun testAWithheldDeleteIsDroppedRatherThanSentAtSomebodyElsesLog() = runTest {
+    fun aSettledDeleteRemainsInItsAccountAcrossSignOut() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
             val opened = room.workout()
-            runCurrent()
             val taken = room.training.session(opened.id)!!.sets.single()
-            room.store.withhold(Deletion.Set(opened.id, taken))
-
+            assertNull(room.store.delete(Deletion.Set(opened.id, taken)))
             room.select("bob")
-
             assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
-            assertNull("and there is nothing left for a settle over it to find",
-                room.store.settleWithheld(taken.id))
+            assertNull(room.store.keepWithheld())
+            assertEquals(emptyList<Any>(), room.training.details())
             room.select("alice")
-            assertEquals("the set survives, which is the direction this one may fail in",
-                listOf(taken), room.training.session(opened.id)!!.sets)
-            runCurrent()
+            assertEquals(emptyList<TrainingSet>(), room.training.session(opened.id)!!.sets)
         }
     }
 
@@ -1656,13 +1625,13 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun noteDropsPreserveHeldKeysAndRefuseStaleOrMultipleMovesWithoutWriting() = runTest {
+    fun noteDropsAfterDeletionRefuseStaleOrMultipleMovesWithoutWriting() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val server = EngineRoomFixture.server()
             room.select("alice"); room.pull(server)
             for (index in 0..2) assertTrue(room.store.saveNote("note_00$index", NoteWrite("Note $index", "")) is GymResult.Ok)
             room.sync(server)
-            room.store.withhold(Deletion.Note("note_001"))
+            assertNull(room.store.delete(Deletion.Note("note_001")))
             val before = room.engine.snapshot()
             assertTrue(room.store.reorderNotes("note_002", listOf("note_000", "note_002")) is GymResult.Ok)
             assertEquals(before, room.engine.snapshot())
@@ -1677,10 +1646,10 @@ class TrainingStoreTests {
 
             assertTrue(room.store.reorderNotes("note_000", listOf("note_002", "note_000")) is GymResult.Ok)
             assertEquals(listOf("note_002", "note_000"), room.store.notes.map { it.id })
-            assertEquals(listOf("note_001", "note_002", "note_000"), room.training.notes().map { it.id })
-            assertEquals(listOf("note_001"), room.store.withheld.map { it.subjectId })
-            assertNotNull(room.store.keepWithheld())
-            assertEquals(listOf("note_001", "note_002", "note_000"), room.store.notes.map { it.id })
+            assertEquals(listOf("note_002", "note_000"), room.training.notes().map { it.id })
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertNull(room.store.keepWithheld())
+            assertEquals(listOf("note_002", "note_000"), room.store.notes.map { it.id })
 
             val moved = room.engine.snapshot()
             assertEquals(refused, room.store.reorderNotes("note_000", listOf("note_000", "note_002", "note_001")))
@@ -2216,8 +2185,7 @@ class TrainingStoreTests {
             val shown = (room.store.sessionDetail(opened.id) as GymResult.Ok).value
             val taken = shown.sets.single()
 
-            room.store.withhold(Deletion.Set(opened.id, taken))
-            assertNull(room.store.settleWithheld(taken.id))
+            assertNull(room.store.delete(Deletion.Set(opened.id, taken)))
             server.refuse(code = "invalid")
             room.sync(server); noticed(room); room.store.refreshEngine()
 
@@ -2230,8 +2198,7 @@ class TrainingStoreTests {
             assertEquals("the retained screen draws the restored row", listOf(taken),
                 room.store.retainedSession(shown).sets.filterNot { it.id in room.store.deletedSets || it.id in room.store.withheldIds })
 
-            room.store.withhold(Deletion.Set(opened.id, taken))
-            assertNull(room.store.settleWithheld(taken.id))
+            assertNull(room.store.delete(Deletion.Set(opened.id, taken)))
             room.store.refreshEngine()
             assertEquals("the previous refusal does not unmask a pending retry", setOf(taken.id), room.store.deletedSets)
             assertTrue(room.store.retainedSession(shown).sets.filterNot { it.id in room.store.deletedSets || it.id in room.store.withheldIds }.isEmpty())

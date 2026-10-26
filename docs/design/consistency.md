@@ -38,9 +38,10 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   stores and releases them, and the gym room draws their Undo from the engine's offers
   (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
   nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
-  document hides or the room unmounts; Android's holds, which are in memory, on `ON_STOP` and on
-  disposal (`GymRoom.kt`, `abandonWithheld`). The phones hold no delete at all
-  (`guidelines/system-architecture.md` §3), so Android's holds are build drift (11b).
+  document hides or the room unmounts; Android's workout/conversation windows on room disposal
+  (`GymRoom.kt`, `abandonWithheld`). Android weights use durable engine holds and the application
+  process lifecycle, preserving remaining time through recreation and releasing on true backgrounding.
+  Workout/conversation confirmation migrations remain with tasks 14 and 37 (11b).
 - **7c · Sign-out.** Canon (engine §7.10; owner ruling 2026-09-26): signing out takes the
   account's synced data off the device. When the account has not confirmed some changes, the
   confirmation states how many and offers **Keep** (hidden on the device, sent at the same
@@ -666,21 +667,21 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   deletes commit immediately where their tasks specify it; workout discard and conversation delete
   ask once. The approved Log/Weigh-in flow keeps a nine-second held weight deletion and Undo, so
   `WithheldDelete.kt` remains while that path uses it. Do not remove all holds as shared-row cleanup.
-  Current Android rows still use several grounds and callbacks; tasks 05 and 24 split their visual
-  presentation from the resource-specific commit and recovery policy.
+  Android routine/editor/detail-set rows use the shared ground. Immediate actions are application-owned;
+  weights project exact durable receipts. The remaining row migrations belong to their screen tasks.
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
-  | Routines list | `ui/RoutinesScreen.kt:184-206`, held, *{name} deleted.* + Undo | 02.10 `1253:29196` | immediate |
-  | Routine ⋮ Delete | `ui/RoutinesScreen.kt:242`, ink, held | 02.12 `1253:29480` | error role, immediate |
-  | Editor movement | `ui/RoutineBuilder.kt:392-397`, word ground | 02.8 `1252:30621` | shared row |
+  | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion verified in Dark/Daylight; FAB remains 17 |
+  | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
+  | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
   | Target set row | `ui/TargetBlock.kt:264-277`, word ground | 02.11 `1253:29263` | shared row |
   | This workout row | `ui/AssemblySheet.kt:163-195`, both directions, *Remove* on raised | 03.4 `1253:29834` | end-to-start, shared row |
-  | Workout detail set | `ui/SessionScreen.kt:449-488`, own ground (bleeds at the top-right corner), held | 05.4 `1252:27713` | shared row, immediate |
+  | Workout detail set | `ui/SessionScreen.kt`, shared row, immediate | 05.4 `1252:27713` | swipe verified in Dark/Daylight; Session copy remains 23 |
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
   | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
-  | Bodyweight | `ui/BodyweightScreen.kt:206-211,344`, no swipe; *Delete weigh-in* in the sheet, held | 06.2 `1254:32141`, 06.3 `1254:32246` | shared swipe, nine-second held delete and Undo |
-  | Notes | `ui/NotesScreen.kt:276-279`, no swipe; *Delete note* in the editor, held | 09.1 `1254:39045`, 09.2 `1254:39104` | swipe, immediate |
+  | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.3 `1254:32246` | shared swipe, nine-second held delete and Undo |
+  | Notes | `ui/NotesScreen.kt`, no swipe; immediate *Delete note* in the editor | 09.1 `1254:39045`, 09.2 `1254:39104` | swipe remains task 26 |
   | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.34 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and

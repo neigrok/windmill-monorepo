@@ -22,21 +22,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,9 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -73,16 +69,13 @@ fun RoutinesScreen(
     seat: String,
     onBuild: (RoutineDraft) -> Unit,
     onOpenRoutine: (String) -> Unit,
-    onDeleteRoutine: (String) -> Unit,
+    onDeleteRoutine: suspend (String) -> Boolean,
     onReview: (Proposal) -> Unit,
     onSignIn: () -> Unit,
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
-    // The ROWS are the window's and the STANCE is the program's: an account holding one routine the
-    // window has taken off the screen is not an account with no routines, and `Build a routine` is an
-    // ACT offered over a program that still has one. Between the two the room draws neither.
     val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
     val compactAction = LocalDensity.current.fontScale > 1.3f
@@ -167,21 +160,10 @@ private fun SwipeableRoutineRow(
     standingProposalId: String?,
     catalog: List<Exercise>,
     onOpenRoutine: (String) -> Unit,
-    onDelete: () -> Unit,
+    onDelete: suspend () -> Boolean,
     onReview: (Proposal) -> Unit,
 ) {
-    val haptics = rememberGymHaptics()
-    // A leading swipe never settles here — and a row put back by a refusal or an Undo arrives with
-    // no act owed, which is `rememberRowDismiss`'s whole reason to exist.
-    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
-        haptics.revealed()
-        onDelete()
-    }
-    SwipeToDismissBox(
-        state = swipe,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = { RowDeleteGround() },
-    ) {
+    DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = onDelete) {
         RoutineRow(routine, standingProposalId, catalog, onOpenRoutine, onDelete, onReview)
     }
 }
@@ -195,17 +177,16 @@ private fun RoutineRow(
     standingProposalId: String?,
     catalog: List<Exercise>,
     onOpenRoutine: (String) -> Unit,
-    onDelete: () -> Unit,
+    onDelete: suspend () -> Boolean,
     onReview: (Proposal) -> Unit,
 ) {
     val skin = LocalGymColors.current
+    val scope = rememberCoroutineScope()
     val waiting = routine.pendingProposal
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
         .background(skin.canvas)
         .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
-        .semantics { customActions = listOf(
-            CustomAccessibilityAction("Delete ${routine.name}") { onDelete(); true }) }
         .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -219,8 +200,9 @@ private fun RoutineRow(
             IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.gym_more), "More for ${routine.name}", Modifier.size(24.dp), tint = skin.inkDim)
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = skin.raised) {
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
+            GymMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                GymMenuItem("Delete", painterResource(R.drawable.gym_native_delete), destructive = true,
+                    onClick = { menu = false; scope.launch { onDelete() } })
             }
         }
     }

@@ -1,7 +1,9 @@
 package works.windmill.app
 
+import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Bundle
 import android.os.Looper
 import java.io.File
 import java.io.InputStream
@@ -24,13 +26,21 @@ import javax.crypto.SecretKey
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import androidx.startup.AppInitializer
+import androidx.lifecycle.ProcessLifecycleInitializer
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import java.time.Duration
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import works.windmill.gym.store.GymEngineSession
+import works.windmill.gym.store.Deletion
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
@@ -126,6 +136,57 @@ class WindmillApplicationTests {
             assertEquals(LocalSession.Owned(sam), app.auth.localSession)
             app.onTerminate()
         } finally { Security.removeProvider("AndroidKeyStore") }
+    }
+
+    @Test fun activityRecreationKeepsTheWeightHoldButProcessBackgroundReleasesIt() {
+        val keystore = Keystore2()
+        Security.addProvider(keystore)
+        val host = RuntimeEnvironment.getApplication()
+        AppInitializer::class.java.getDeclaredMethod("discoverAndInitialize", Bundle::class.java)
+            .apply { isAccessible = true }.invoke(AppInitializer.getInstance(host), Bundle().apply {
+                putString(ProcessLifecycleInitializer::class.java.name, "androidx.startup")
+            })
+        val app = WindmillApplication()
+        ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java)
+            .apply { isAccessible = true }.invoke(app, host.baseContext)
+        val activity = Robolectric.buildActivity(Activity::class.java)
+        try {
+            app.onCreate()
+            activity.setup()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(Lifecycle.State.RESUMED, ProcessLifecycleOwner.get().lifecycle.currentState)
+            runBlocking {
+                app.gym.restoreLocal()
+                assertNull(app.gym.store.weighIn("2026-09-01", 81.25))
+            }
+            app.gym.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            shadowOf(Looper.getMainLooper()).idle()
+            val store = app.gym.store
+            val hold = store.withheld.single()
+
+            activity.recreate()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
+            assertSame(store, app.gym.store)
+            assertEquals(Lifecycle.State.RESUMED, ProcessLifecycleOwner.get().lifecycle.currentState)
+            assertEquals(hold, store.withheld.single())
+            assertEquals(hold.untilMs, app.engineSession.engine.undoOffers().single().releaseAt)
+
+            activity.pause().stop()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
+            assertEquals(Lifecycle.State.CREATED, ProcessLifecycleOwner.get().lifecycle.currentState)
+            assertEquals(emptyList<Any>(), app.engineSession.engine.undoOffers())
+            assertNull(store.keepWithheld())
+            assertEquals(emptyList<Any>(), store.bodyweight)
+            activity.restart().start().resume()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull(store.holding)
+            assertNull(store.keepWithheld())
+        } finally {
+            activity.pause().stop().destroy()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(750))
+            app.onTerminate()
+            Security.removeProvider("AndroidKeyStore")
+        }
     }
 
     @Test fun anOnlineRestoreOfTheUnchangedAccountNeverReachesTheKeystore() = runBlocking {

@@ -21,12 +21,6 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.engine.signIn
 
-// One window over six verbs, and the property the whole gesture wave stands on: withheld means NOT
-// SENT. A server-only delete — a conversation — is as unsent as a set until its own clock runs out,
-// so an Undo can never arrive after the wire.
-//
-// And the window is a LIST. A second delete never settles the first: behind a swipe two rows go in a
-// second, and settling the first would send it while its own Undo was still on screen.
 class WithheldWindowTests {
     @get:Rule
     val tmp = TemporaryFolder()
@@ -35,8 +29,6 @@ class WithheldWindowTests {
         TrainingSet(id = id, exerciseId = "bench-press", weightKg = weightKg, reps = reps,
                     completedAtMs = 1_000)
 
-    // The transient's bytes are a cross-surface contract, not this room's to invent: web and Android
-    // say the same sentence about the same act, and every one of them ends in a full stop.
     @Test
     fun theTransientNamesWhichThingLeftAndCountsWhereItCannotName() {
         val set = TrainingSet(id = "set_1", exerciseId = "bench-press", weightKg = 81.5, reps = 5,
@@ -47,7 +39,7 @@ class WithheldWindowTests {
         assertEquals("Conversation deleted.", Deletion.Thread("thr_1").line)
         assertEquals("Note deleted.", Deletion.Note("nte_1").line)
         assertEquals("Weigh-in deleted.", Deletion.Bodyweight("2026-08-30").line)
-        assertEquals("The window closed — that delete already went.", Withheld.alreadyGone)
+        assertEquals("The Undo window closed.", Withheld.alreadyGone)
 
         val held = listOf(
             WithheldDelete(Deletion.Thread("thr_1"), untilMs = 10_000),
@@ -60,13 +52,9 @@ class WithheldWindowTests {
             Withheld.line(held.map { it.copy(sent = true) }))
     }
 
-    // Said at the MOMENT of the act. It used to stand as a caption three screens deep inside the
-    // conversation, where nobody is standing when they swipe a row on the list.
     @Test
     fun theConversationDeleteCarriesWhatItKeepsOnTheTransientItself() {
         assertEquals("your routine keeps what you applied", Deletion.Thread("thr_1").detail)
-        // Two lines, and the second is the shorter half: a transient in the reach band gets one line
-        // and two at most, and the detail is what moves to keep it there.
         val said = Withheld.line(listOf(WithheldDelete(Deletion.Thread("thr_1"), untilMs = 10_000)))!!
         assertEquals("Conversation deleted.\nyour routine keeps what you applied", said)
         assertEquals(2, said.lines().size)
@@ -91,7 +79,6 @@ class WithheldWindowTests {
         }
     }
 
-    // A weigh-in delete commits locally; later sync refusals do not report through the Undo window.
     @Test
     fun onlyTheVerbsTheLogCanRefuseCarryASentenceForAfterTheWindow() {
         assertEquals("that set is still on the log", Deletion.Set("ses_1", loggedSet()).stillThere)
@@ -112,13 +99,11 @@ class WithheldWindowTests {
         assertEquals("2 deleted.", Withheld.line(two))
         assertEquals("one held thing is NAMED, never counted",
             "Session deleted.", Withheld.line(two.drop(1)))
-        assertEquals("81.5 kg × 5 is out of the log.",
-            Withheld.line(listOf(WithheldDelete(Deletion.Set("ses_1", loggedSet()), untilMs = 10_000))))
+        assertEquals("Weigh-in deleted.",
+            Withheld.line(listOf(WithheldDelete(Deletion.Bodyweight("2026-08-30"), untilMs = 10_000))))
         assertNull(Withheld.line(emptyList()))
     }
 
-    // D9: naming one of several would say the wrong thing about the rest — including the detail,
-    // which belongs to one act and not to a count.
     @Test
     fun aCountNamesNothingAndCarriesNoDetail() {
         val held = listOf(
@@ -132,7 +117,6 @@ class WithheldWindowTests {
         assertFalse("and no subject is named", said.contains("Conversation"))
     }
 
-    // D1's list, re-read: the subject first, then what happened to it, and a full stop on every one.
     @Test
     fun everyTransientSentenceNamesItsSubjectFirstAndEndsInAFullStop() {
         val said = listOf(
@@ -151,7 +135,7 @@ class WithheldWindowTests {
                 "Session deleted.",
                 "Conversation deleted.",
                 "2 deleted.",
-                "The window closed — that delete already went.",
+                "The Undo window closed.",
             ),
             said,
         )
@@ -169,7 +153,6 @@ class WithheldWindowTests {
             room.store.withhold(Deletion.Thread("thr_1"))
             runCurrent()
             val window = room.store.withheld.single().untilMs - room.now
-            // Right up to the last millisecond of the window, with every dispatch it could have taken.
             advanceTimeBy(window - 1)
             runCurrent()
 
@@ -245,30 +228,19 @@ class WithheldWindowTests {
     }
 
     @Test
-    fun testARoutineIsOffTheProgramWhileItsWindowIsOpenAndComesBackWhole() = runTest {
+    fun aRoutineLeavesTheProgramAtItsSettledDeleteWithNoUndo() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press"))
-                as GymResult.Ok).value
-
-            room.store.withhold(Deletion.Routine(routine.id, routine.name))
-
-            assertEquals("off every screen that reads the program", emptyList<String>(),
-                room.store.routines.map { it.id })
-            assertNull(room.store.routine(routine.id))
-            assertEquals("and the log still holds it", listOf(routine), room.training.program())
-            assertEquals("Push A deleted.", Withheld.line(room.store.withheld))
-
-            assertNotNull(room.store.keepWithheld())
-            assertEquals("back whole, because nothing was ever sent",
-                listOf(routine), room.store.routines)
-
-            room.store.withhold(Deletion.Routine(routine.id, routine.name))
-            advanceTimeBy(Withheld.windowMs + 1)
-            runCurrent()
-            assertEquals("and the window closing is what finally tells the log",
-                emptyList<Routine>(), room.training.program())
-            assertEquals(emptyList<String>(), room.store.routines.map { it.id })
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            assertEquals(emptyList<Routine>(), room.training.program())
+            assertEquals(emptyList<Routine>(), room.store.routines)
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertNull(room.store.keepWithheld())
+            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            assertEquals(1, room.outbox().count { entry -> entry.member("intent")["d"]?.arr()?.any {
+                it["t"]?.str() == "routine" && it["life"]?.arr()?.first()?.str() == "dead"
+            } == true })
         }
     }
 
@@ -292,12 +264,6 @@ class WithheldWindowTests {
         }
     }
 
-    // D11. The window lives only while the room is on screen in a live process. Leaving it — the app
-    // going to the background, the room going away for good, or the process dying — ABANDONS
-    // everything the room alone was holding: the rows come back, nothing goes on the wire, and
-    // nothing is said afterwards, because nothing happened. Settling on the way out instead would
-    // make `swipe · switch apps · come back` an unrecoverable delete reached by two ordinary
-    // actions, which is precisely what the withheld window exists to prevent.
     @Test
     fun testLeavingTheRoomAbandonsWhatItHeldAndTellsTheLogNothing() = runTest {
         val server = FakeGymRest()
@@ -308,7 +274,6 @@ class WithheldWindowTests {
                 as GymResult.Ok).value
 
             room.store.withhold(Deletion.Thread("thr_1"))
-            room.store.withhold(Deletion.Routine(routine.id, routine.name))
             advanceTimeBy(1_000)
             runCurrent()
 
@@ -330,51 +295,25 @@ class WithheldWindowTests {
         }
     }
 
-    // D13. There is no exception. A set's delete was exempted from the abandon on the belief that it
-    // rode an on-disk queue; on this surface it sits in the very same in-memory
-    // list as every other verb, with no queue, no disk and no retry behind it. The exemption left it
-    // strictly worse off than the deletes that abandon: it fired from a backgrounded app, timed out
-    // ten seconds later against a host nothing had reached, and was dropped whatever the send
-    // answered — a delete lost in silence, reached by `swipe · press Home`. So it abandons with the
-    // rest: the row comes back, nothing is on the wire, nothing is said.
     @Test
-    fun testASetsDeleteIsAbandonedWithEverythingElseBecauseNothingHereOutlivesTheRoom() = runTest {
+    fun aSettledSetDeleteSurvivesLeavingTheRoom() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
-            val session = room.startExternalWorkout()
-            room.store.choose("bench-press")
-            room.store.logSet(weightKg = 82.5, reps = 5)
-            room.store.logSet(weightKg = 90.0, reps = 3)
-            room.now += 60_000
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
-            val taken = room.training.session(session.id)!!.sets.first()
-
-            room.store.withhold(Deletion.Set(session.id, taken))
-            advanceTimeBy(2_000)
-            runCurrent()
-
-            assertEquals("the room was holding it, so the transient goes down with it",
-                true, room.store.abandonWithheld())
-            assertEquals("nothing is held any more", emptyList<WithheldDelete>(), room.store.withheld)
-            assertEquals("and the row is back on the session it left", emptySet<String>(),
-                room.store.withheldIds)
-            assertNull("with nothing offered to take back — the delete never happened",
-                Withheld.line(room.store.withheld))
-
+            val session = room.workout()
+            val taken = room.training.session(session.id)!!.sets.single()
+            assertNull(room.store.delete(Deletion.Set(session.id, taken)))
+            assertFalse(room.store.abandonWithheld())
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertNull(room.store.keepWithheld())
             advanceTimeBy(Withheld.windowMs * 2)
             runCurrent()
-            assertEquals("the clock went down with the window: both sets are still on the log", listOf(82.5, 90.0),
-                room.training.session(session.id)!!.sets.map { it.weightKg })
-            assertEquals("and the room crossed nothing out locally either",
-                emptySet<String>(), room.store.deletedSets)
-            assertNull("nothing is said on the next open, because nothing happened", room.store.deleteRefused)
+            assertEquals(emptyList<TrainingSet>(), room.training.session(session.id)!!.sets)
+            assertEquals(setOf(taken.id), room.store.deletedSets)
         }
     }
 
-    // The control on the ruling above: abandoning is what leaving does, not what a set's delete does.
-    // Left alone on screen the window closes on its own clock and puts exactly one delete on the wire.
     @Test
-    fun testASetLeftAloneOnScreenStillSettlesOnItsOwnClockAndSendsOneDelete() = runTest {
+    fun aSettledSetDeleteQueuesExactlyOneIntent() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("u1")
             val session = room.startExternalWorkout()
@@ -385,7 +324,7 @@ class WithheldWindowTests {
             assertTrue(room.store.finish() is FinishOutcome.Closed)
             val taken = room.training.session(session.id)!!.sets.first()
 
-            room.store.withhold(Deletion.Set(session.id, taken))
+            assertNull(room.store.delete(Deletion.Set(session.id, taken)))
             advanceTimeBy(Withheld.windowMs + 1)
             runCurrent()
 
@@ -398,10 +337,6 @@ class WithheldWindowTests {
         }
     }
 
-    // Deleting the same row twice is two acts with two windows, and the first one's clock is taken
-    // down with it. Left running — which is what abandoning a window would leave behind — it settles
-    // the SECOND window early: a delete on the wire with its own Undo still on screen, the one lie
-    // this whole mechanism exists to prevent.
     @Test
     fun testASecondWindowOverTheSameRowRunsItsOwnClockAndNotWhatIsLeftOfTheFirsts() = runTest {
         val server = FakeGymRest()
@@ -451,32 +386,26 @@ class WithheldWindowTests {
         }
     }
 
-    // Settling a deletion must leave the other promised windows running. Anonymous
-    // Discard now belongs to the engine account decision rather than this Undo list.
     @Test
-    fun settlingOneEngineDeleteLeavesEveryOtherWindowRunning() = runTest {
+    fun aRoutineDeleteLeavesTheHeldWeightWindowRunning() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
-            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press"))
-                as GymResult.Ok).value
-            assertTrue(room.store.saveNote("note0001", NoteWrite("Tone", "blunt")) is GymResult.Ok)
-            room.store.readNotes()
-            room.store.withhold(Deletion.Note("note0001"))
-            room.store.withhold(Deletion.Routine(routine.id, routine.name))
-            assertEquals(listOf("note0001", routine.id), room.store.withheld.map { it.subjectId })
-            room.store.settleWithheld(routine.id)
-            assertNull(room.training.routine(routine.id))
-            assertEquals("the note's own clock is still the lifter's", listOf("note0001"), room.store.withheld.map { it.subjectId })
-            advanceTimeBy(Withheld.windowMs + 1)
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
             runCurrent()
-            assertEquals(emptyList<String>(), room.training.notes().map { it.id })
+            val held = room.store.withheld.single()
+            assertNull(room.store.delete(Deletion.Routine(routine.id, routine.name)))
+            assertNull(room.training.routine(routine.id))
+            assertEquals(listOf(held), room.store.withheld)
+            room.now = held.untilMs
+            room.engine.releaseHeld()
+            room.store.refreshEngine()
             assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertEquals(emptyList<Any>(), room.training.weighins())
         }
     }
 
-    // The notebook is the STORE's, so a settled delete drops the row AND the count together. A
-    // screen holding a snapshot of its own drew the note back the moment the window closed, and kept
-    // saying `10 of 10` over a log that held nine.
     @Test
     fun testASettledNoteDeleteTakesTheRowAndTheCapWithIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
@@ -485,10 +414,9 @@ class WithheldWindowTests {
             room.store.readNotes()
             assertEquals(10, room.store.noteCount)
 
-            room.store.withhold(Deletion.Note("note0003"))
+            assertNull(room.store.delete(Deletion.Note("note0003")))
             assertEquals("off the drawn list at once", 9, room.store.notes.size)
-            assertEquals("and the cap still counts it, because the log will refuse the eleventh",
-                10, room.store.noteCount)
+            assertEquals("the committed delete releases the note slot", 9, room.store.noteCount)
 
             advanceTimeBy(Withheld.windowMs + 1)
             runCurrent()

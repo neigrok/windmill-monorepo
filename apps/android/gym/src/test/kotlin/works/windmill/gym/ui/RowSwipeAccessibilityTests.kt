@@ -112,7 +112,7 @@ class RowSwipeAccessibilityTests {
             compose.setContent {
                 RoutinesScreen(
                     store = room.store, isSignedIn = true, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
-                    onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
+                    onDeleteRoutine = { deleted += it; true }, onReview = {}, onSignIn = {},
                 )
             }
 

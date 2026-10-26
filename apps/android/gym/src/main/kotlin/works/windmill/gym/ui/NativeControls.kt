@@ -19,6 +19,8 @@ import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,6 +48,18 @@ internal object GymNativeType {
     )
     val mono = FontFamily(Font(R.font.onboarding_mono_medium, FontWeight.Medium))
     val button = TextStyle(fontFamily = sans, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 22.sp)
+    val note = TextStyle(fontFamily = FontFamily(Font(R.font.onboarding_mono_regular)), fontSize = 12.sp, lineHeight = 16.sp)
+}
+
+@Composable
+fun GymSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
+    val type = MaterialTheme.typography
+    MaterialTheme(typography = type.copy(
+        bodyMedium = type.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp),
+        labelLarge = type.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .1.sp, fontWeight = FontWeight.Medium),
+    )) {
+        SnackbarHost(state, modifier.padding(horizontal = 4.dp))
+    }
 }
 
 @Composable

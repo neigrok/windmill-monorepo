@@ -37,8 +37,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -389,19 +387,14 @@ private fun BuildStep(
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
                         val name = Readout.movement(entry.exerciseId, store.catalog)
-                        val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
-                            onRemove(entry.exerciseId)
-                        }
-                        SwipeToDismissBox(state = swipe, enableDismissFromStartToEnd = false,
-                            enableDismissFromEndToStart = editable,
-                            backgroundContent = { RowDeleteGround() }) {
+                        DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
+                            onDelete = { onRemove(entry.exerciseId); true }) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
                                 .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
                                 .shadow(if (dragged == entry.exerciseId) 6.dp else 0.dp, RoundedCornerShape(12.dp), clip = false)
                                 .background(if (dragged == entry.exerciseId) skin.raised else skin.canvas, RoundedCornerShape(12.dp))
                                 .clickable(enabled = editable, role = Role.Button, onClickLabel = "set this movement’s target") { onOpenTarget(entry.exerciseId) }
                                 .semantics { customActions = if (!editable) emptyList() else buildList {
-                                    add(CustomAccessibilityAction("Delete $name") { onRemove(entry.exerciseId); true })
                                     if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
                                     if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") { move(index, index + 1); true })
                                 } }.padding(8.dp), verticalAlignment = Alignment.CenterVertically,

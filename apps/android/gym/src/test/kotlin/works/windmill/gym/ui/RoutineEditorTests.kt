@@ -67,8 +67,8 @@ class RoutineEditorTests {
 
     private fun actionsOn(movement: String): List<CustomAccessibilityAction> {
         val row = compose.onNodeWithText(movement).fetchSemanticsNode()
-        if (!row.config.contains(SemanticsActions.CustomActions)) return emptyList()
-        return row.config[SemanticsActions.CustomActions]
+        return generateSequence(row) { it.parent }.toList().asReversed()
+            .flatMap { if (it.config.contains(SemanticsActions.CustomActions)) it.config[SemanticsActions.CustomActions] else emptyList() }
     }
 
     private fun handle(name: String) = compose.onNodeWithContentDescription(name, useUnmergedTree = true)
@@ -80,9 +80,9 @@ class RoutineEditorTests {
             val draft = editor(room, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat"))
 
             val steps = actionsOn("bench-press")
-            assertEquals(listOf("Delete bench-press", "Move down"), steps.map { it.label })
+            assertEquals(listOf("Remove movement", "Move down"), steps.map { it.label })
 
-            compose.runOnIdle { steps.first { it.label == "Delete bench-press" }.action() }
+            compose.runOnIdle { steps.first { it.label == "Remove movement" }.action() }
             compose.runOnIdle {
                 assertEquals("and it removes the same line the swipe would",
                     listOf("squat"), draft().entries.map { it.exerciseId })
@@ -197,9 +197,9 @@ class RoutineEditorTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat").adding("row"))
-            assertEquals(listOf("Delete bench-press", "Move down"), actionsOn("bench-press").map { it.label })
-            assertEquals(listOf("Delete squat", "Move up", "Move down"), actionsOn("squat").map { it.label })
-            assertEquals(listOf("Delete row", "Move up"), actionsOn("row").map { it.label })
+            assertEquals(listOf("Remove movement", "Move down"), actionsOn("bench-press").map { it.label })
+            assertEquals(listOf("Remove movement", "Move up", "Move down"), actionsOn("squat").map { it.label })
+            assertEquals(listOf("Remove movement", "Move up"), actionsOn("row").map { it.label })
             compose.runOnIdle { actionsOn("row").first { it.label == "Move up" }.action() }
             compose.runOnIdle { assertEquals(listOf("bench-press", "row", "squat"), draft().entries.map { it.exerciseId }) }
             compose.onNodeWithText("row, 2 of 3").assertIsDisplayed()

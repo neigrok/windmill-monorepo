@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
@@ -53,9 +54,11 @@ class BodyweightWriteTests {
             room.select("a")
             assertNull(room.store.weighIn(day, 82.0))
             room.sync(server)
-            room.store.deleteWeighIn(day)
+            room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
             assertNull(room.store.weighIn(day, 84.0))
-            room.store.deleteWeighIn(day)
+            room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
             assertEquals(emptyList<WeighIn>(), room.store.bodyweight)
             room.sync(server); room.store.refreshEngine()
             assertEquals(emptyList<WeighIn>(), room.store.bodyweight)
@@ -87,7 +90,8 @@ class BodyweightWriteTests {
             room.select("a")
             assertNull(room.store.weighIn(day, 82.0))
             room.sync(server)
-            room.store.deleteWeighIn(day)
+            room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
             assertNull(room.store.weighIn(day, 84.0))
             val expected = WeighIn(day, 84.0, room.now)
             assertEquals(listOf(expected), room.store.bodyweight)

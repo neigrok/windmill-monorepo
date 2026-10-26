@@ -644,16 +644,20 @@ class WorkoutImports(private val engine: Engine) {
     }
 
     fun retry(id: String) = editAndRetry(id, null)
-    fun replaceAndRetry(id: String, corrected: SavedWorkout, markFinished: Boolean = false) =
-        editAndRetry(id, Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), corrected)), markFinished = markFinished)
+    fun replaceAndRetry(id: String, corrected: SavedWorkout, markFinished: Boolean = false,
+        expectedReplica: String? = null, expectedAnonymous: Boolean? = null) =
+        editAndRetry(id, Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), corrected)), markFinished = markFinished,
+            expectedReplica = expectedReplica, expectedAnonymous = expectedAnonymous)
     fun replaceStartAndRetry(id: String, corrected: Session) {
         check(corrected.id == id && corrected.isOpen) { "An unfinished workout keeps its identity and remains unfinished." }
         editAndRetry(id, null, Json.parse(diskJson.encodeToString(Session.serializer(), corrected)))
     }
 
     private fun editAndRetry(id: String, corrected: Json?, correctedStart: Json? = null,
-        markFinished: Boolean = false) {
-        engine.commitWithPrerequisites(scope) { context ->
+        markFinished: Boolean = false, expectedReplica: String? = null, expectedAnonymous: Boolean? = null) {
+        val admitted = engine.commitWithPrerequisites(scope) { context ->
+            if (expectedReplica != null && (context.replica != expectedReplica || context.isAnonymous != expectedAnonymous))
+                return@commitWithPrerequisites null to false
             val all = context.devices(journalPrefix)
             val saved = all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && (it["state"] == Json.of("refused") || it["state"] == Json.of("pending") && it["code"] == Json.of("waiting-for-firstpull")) } }
                 ?: all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) } }
@@ -665,7 +669,7 @@ class WorkoutImports(private val engine: Engine) {
                 ?: items.entries.firstOrNull { it.value["id"] == Json.of(id) })?.key
                 ?: throw IllegalStateException("This saved workout is unavailable.")
             val item = items.getValue(token)
-            if (item["state"] != Json.of("refused") && !(item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) return@commitWithPrerequisites null to Unit
+            if (item["state"] != Json.of("refused") && !(item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) return@commitWithPrerequisites null to true
             val before = item.member("source")
             if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException(reason("source-needs-update"))
             var source = corrected ?: correctedStart?.let { before.changed("session" to it) } ?: before
@@ -681,7 +685,7 @@ class WorkoutImports(private val engine: Engine) {
                 val changed = item.changed("source" to source, "state" to Json.of(if (refusal.code == "waiting-for-firstpull") "pending" else "refused"), "code" to Json.of(refusal.code),
                     "original" to (item["original"] ?: item.member("source")))
                 items[token] = changed
-                return@commitWithPrerequisites Gesture(emptyList(), local = listOf(DeviceWrite(key, withItems(journal, items)))) to Unit
+                return@commitWithPrerequisites Gesture(emptyList(), local = listOf(DeviceWrite(key, withItems(journal, items)))) to true
             }
             val gestureId = context.opaqueID()
             gesture.gestureId = gestureId
@@ -690,8 +694,9 @@ class WorkoutImports(private val engine: Engine) {
             if (kind == "finished" && gesture.command == null && item["gestureId"] != null)
                 items[token] = items.getValue(token).changed("resolvedGestureId" to item.member("gestureId"))
             gesture.local += DeviceWrite(key, withItems(journal, items))
-            gesture to Unit
-        }
+            gesture to true
+        }.second
+        if (!admitted) throw TrainingRefused("account-changed", "The account changed. Open this again.")
         dismissResolvedNotices()
     }
 

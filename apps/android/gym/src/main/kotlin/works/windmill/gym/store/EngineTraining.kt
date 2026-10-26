@@ -17,6 +17,7 @@ import works.windmill.gym.domain.*
 import works.windmill.gym.domain.sync.*
 import works.windmill.platform.net.WindmillJson
 import works.windmill.sync.api.ViewMode
+import works.windmill.sync.api.CommitReceipt
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.Reply
@@ -47,7 +48,7 @@ import works.windmill.gym.domain.StatsProgress
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
-class EngineTraining(val engine: Engine) {
+class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release) {
     companion object {
         val intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
             WorkoutImports.intentResultWrites(intent, result, epoch, gestureId, values) +
@@ -98,7 +99,8 @@ class EngineTraining(val engine: Engine) {
         check(!context.insideRun) { "a run cannot enter inside a run" }
         body(ActionRunner(engine, engine.registry, zone, context))
     }
-    private suspend fun <L, T> apply(action: Decider<L, T, GymRefusal>): T = writing { runner -> runner.execute(action) }
+    private suspend fun <L, T> apply(action: Decider<L, T, GymRefusal>): T =
+        writing { runner -> runner.execute(action) }
     private fun <L, T> ActionRunner.execute(action: Decider<L, T, GymRefusal>): T {
         val wrapped = object : Action<L, T, GymRefusal> {
             override val scope = action.scope
@@ -213,20 +215,23 @@ class EngineTraining(val engine: Engine) {
         apply(CorrectSet(next))
         return storedSet(next.id)
     }
-    suspend fun deleteSet(sessionId: String, setId: String) {
+    suspend fun deleteSet(sessionId: String, setId: String,
+        expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
         val id = Id(setId, EngineSet)
-        val old = read { it.repository(EngineSet).find(id, ViewMode.drawn) } ?: return
-        if (old.sessionId.text != sessionId) throw missing("That set is no longer on the log.")
         val action = Remove(EngineSet, id, GymRefusal)
-        apply(object : Action<EngineSet?, Unit, GymRefusal> {
+        remove(object : Action<EngineSet?, Unit, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
             override fun load(read: Reader) = action.load(read)
-            override fun decide(loaded: EngineSet?, ids: IDSource) = action.decide(loaded, ids).also { decision ->
-                if (decision is Decision.Write) decision.plan.device("rack:deletedSet${Sha256.hex(setId.toByteArray()).take(32)}", Json.objectOf(
-                    "setId" to Json.of(setId), "sessionId" to Json.of(sessionId)))
+            override fun decide(loaded: EngineSet?, ids: IDSource): Decision<Unit, GymRefusal> {
+                if (loaded != null && loaded.sessionId.text != sessionId)
+                    return Decision.Refuse(GymRefusal.Gone(id.ref, Refused.Path.predicted))
+                return action.decide(loaded, ids).also { decision ->
+                    if (decision is Decision.Write) decision.plan.device("rack:deletedSet${Sha256.hex(setId.toByteArray()).take(32)}", Json.objectOf(
+                        "setId" to Json.of(setId), "sessionId" to Json.of(sessionId)))
+                }
             }
-        })
+        }, expectedReplica, expectedAnonymous, release = true)
     }
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         reconcileImports()
@@ -362,7 +367,9 @@ class EngineTraining(val engine: Engine) {
         }
         read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) }!!.ui()
     }
-    suspend fun deleteRoutine(id: String) { apply(deleteRoutine(Id(id, EngineRoutine))) }
+    suspend fun deleteRoutine(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
+        remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous, release = true)
+    }
     fun proposal(id: String): Proposal? = read { reader ->
         val identity = Id(id, EngineProposal)
         val queued = reader.commands().any { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) && it.command.args["proposalId"] == identity.json }
@@ -455,7 +462,9 @@ class EngineTraining(val engine: Engine) {
         }
         return notes().firstOrNull { it.id == id } ?: notes().first { it.title == write.title.trim() && it.body == write.body.trim() }
     }
-    suspend fun deleteNote(id: String) { apply(deleteNote(Id(id, EngineNote))) }
+    suspend fun deleteNote(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
+        remove(deleteNote(Id(id, EngineNote)), expectedReplica, expectedAnonymous, release = true)
+    }
     suspend fun moveNote(id: String, drawn: List<String>, withheld: Set<String>): Boolean = writing { runner ->
         val move = moveNote(Id(id, EngineNote), drawn.getOrNull(drawn.indexOf(id) - 1)?.let { Id(it, EngineNote) })
         val action = object : Action<Pair<MoveLoaded<EngineNote>, List<String>>, Unit, GymRefusal> {
@@ -485,20 +494,78 @@ class EngineTraining(val engine: Engine) {
         reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms ?: 0) } }
             .filter { (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }.sortedBy { it.dateLocal }
     }
-    suspend fun putBodyweight(dateLocal: String, weightKg: Double): WeighIn {
+    suspend fun putBodyweight(dateLocal: String, weightKg: Double,
+        expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): WeighIn {
         val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.domain.Bodyweight.notAForecast)
-        writing { runner ->
+        val saved = writing { runner ->
             val blank = EngineWeighIn(day)
             val draft = runner.open(EngineWeighIn, blank.id, blank).edit { it.copy(kg = weightKg) }
-            when (val result = runner.save(draft, EngineWeighIn, GymRefusal) {}) {
-                is SaveResult.Refused -> throw refusal(result.refusal)
-                is SaveResult.Failed -> throw result.error
-                is SaveResult.Saved -> Unit
-            }
+            val action = SaveDraft.fromDraft(draft, EngineWeighIn, GymRefusal)
+            runner.execute(object : Action<SaveDraftLoaded<EngineWeighIn>?, Saved?, GymRefusal> {
+                override val scope = action.scope
+                override val refusals = action.refusals
+                override fun load(read: Reader): SaveDraftLoaded<EngineWeighIn>? {
+                    if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                    return action.load(read)
+                }
+                override fun decide(loaded: SaveDraftLoaded<EngineWeighIn>?, ids: IDSource): Decision<Saved?, GymRefusal> {
+                    if (loaded == null) return Decision.Unchanged(null)
+                    return when (val decision = action.decide(loaded, ids)) {
+                        is Decision.Write -> Decision.Write(decision.plan, decision.result)
+                        is Decision.Unchanged -> Decision.Unchanged(decision.result)
+                        is Decision.Refuse -> decision
+                    }
+                }
+            })
         }
-        return weighins(dateLocal, dateLocal).first()
+        if (saved == null) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+        return WeighIn(dateLocal, saved.values.getValue("kg").num(), saved.values.getValue("recordedAt").long())
     }
     suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
+    suspend fun holdBodyweight(dateLocal: String, expectedReplica: String = engine.activeReplica(),
+        expectedAnonymous: Boolean = anonymous): CommitReceipt? =
+        remove(deleteWeighIn(Id(dateLocal, EngineWeighIn)), expectedReplica, expectedAnonymous, release = false)
+
+    private data class RemovalLoaded<L>(val value: L)
+
+    private suspend fun <L> remove(action: Decider<L, Unit, GymRefusal>, expectedReplica: String,
+        expectedAnonymous: Boolean, release: Boolean): CommitReceipt? = writing { runner ->
+        val guarded = object : Action<RemovalLoaded<L>?, Boolean, GymRefusal> {
+            override val scope = action.scope
+            override val refusals = action.refusals
+            override fun load(read: Reader): RemovalLoaded<L>? {
+                if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                return RemovalLoaded(action.load(read))
+            }
+            override fun decide(loaded: RemovalLoaded<L>?, ids: IDSource): Decision<Boolean, GymRefusal> {
+                if (loaded == null) return Decision.Unchanged(false)
+                return when (val decision = action.decide(loaded.value, ids)) {
+                    is Decision.Write -> Decision.Write(decision.plan, true)
+                    is Decision.Unchanged -> Decision.Unchanged(true)
+                    is Decision.Refuse -> decision
+                }
+            }
+        }
+        when (val outcome = runner.run(guarded)) {
+            is Outcome.Committed -> {
+                if (release) {
+                    try { outcome.receipt.localIds.forEach { releaseIntent(it) } }
+                    catch (failure: Exception) {
+                        val restored = try { engine.undo(outcome.receipt.gestureId) }
+                        catch (rollback: Exception) { failure.addSuppressed(rollback); false }
+                        if (!restored) throw TrainingDeleteUnconfirmed(failure)
+                        throw failure
+                    }
+                }
+                outcome.receipt
+            }
+            is Outcome.Unchanged -> {
+                if (!outcome.result) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+                null
+            }
+            is Outcome.Refused -> throw refusal(outcome.refusal)
+        }
+    }
 
     // Signed-out training prepared for this account: confirmed starts settle, then the sets an
     // unfinished workout still owes follow it under their own ids.
@@ -689,6 +756,7 @@ class EngineTraining(val engine: Engine) {
 // A write the log's rules refuse, in the words a person reads: an expected answer, never a failure
 // to report.
 class TrainingRefused(val code: String, val line: String) : Exception()
+class TrainingDeleteUnconfirmed(cause: Exception) : Exception(cause)
 
 // What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision,
 // has not arrived.

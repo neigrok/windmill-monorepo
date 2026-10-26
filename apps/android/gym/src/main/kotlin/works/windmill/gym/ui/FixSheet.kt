@@ -257,6 +257,7 @@ fun FixSheet(
                             is FixOutcome.Gone -> onGone(outcome.said)
                             is FixOutcome.Failed -> refusal = when (val why = outcome.why) {
                                 WriteFailure.NoAnswer -> "The log didn’t answer — that set wasn’t changed."
+                                WriteFailure.UnconfirmedDelete -> why.line("")
                                 is WriteFailure.Refused -> why.said
                             }
                         }

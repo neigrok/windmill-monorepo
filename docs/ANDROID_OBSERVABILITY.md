@@ -15,6 +15,40 @@ product events or persistence boundaries. Their consumers own validation, write 
 content-free flow events. Changed/unchanged/refused edit results only control local feedback and
 IME completion; raw number text and refusal content are not sent by the components.
 
+## Deletion actions
+
+Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
+`screen=routines|session|notes`, `action=delete`, `outcome=ok|refused|failed`. Row disposal does not
+cancel that job or suppress its result. `ok` means the exact local receipt was released to the queue;
+server acceptance remains the sync result. Expected account changes and domain refusals are events,
+not Sentry issues. Unexpected failures report once at `gym.dropRoutine`, `gym.deleteSet` or
+`gym.deleteNote`. A release failure that cannot undo its exact receipt is unconfirmed, not restored.
+
+Weight actions use `screen=bodyweight`: `delete` has `held|closed|refused|failed`, `undo` has
+`ok|closed|failed`, and `cancel` has `rewritten`. `held` means a durable engine Undo offer exists;
+`closed` means Undo is unavailable and does not claim a queued or acknowledged delete. A successful
+same-day write emits `cancel=rewritten` only after the write succeeds. The engine release and sync
+write observations cover queue and server progress. Technical hold or Undo failures use
+`gym.deleteWeighIn`. Accepted holds and Undo update their exact receipt projection; whole-record
+saves use the domain action's accepted values, so no follow-up read can relabel a successful write.
+Background/restart/account release never emits a new user action.
+
+The telemetry policy accepts only these finite screen/action/outcome combinations and the existing
+notification/tile combinations. Names, note text, dates, weights, record/receipt IDs and raw failure
+messages never enter these events. Installed verification observes one result per settled set/note
+delete, one held action per weight request, two successful Undo actions and one background closure.
+The background check completes before the nine-second deadline, with no held receipt or Undo after
+resume and the delete present in backend readback. Routine swipe success is verified in the paired
+appearance recipes.
+
+One controlled local outbox failure leaves the routine present and produces one failed product
+event. The existing reporting layers produce correlated `gym.dropRoutine` / `CommitFailure` and
+`sync_storage` / `store-failure` receipts for that same failed commit; these are not two independent
+failures. Both local Sentry envelopes omit exception values, message, user, request and breadcrumbs.
+Shared reporting deduplication remains a follow-up. Evidence in
+`/private/tmp/windmill-android-task05/final-band` verifies the first-party intake and local collector,
+not hosted vendor delivery.
+
 ## Configuration
 
 Release assembly requires `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, with a valid HTTPS DSN for

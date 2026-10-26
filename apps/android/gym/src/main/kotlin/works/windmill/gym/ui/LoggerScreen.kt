@@ -50,7 +50,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -391,7 +390,7 @@ fun LoggerScreen(
                 }
             }
             val density = LocalDensity.current
-            transient?.let { SnackbarHost(it, Modifier.align(Alignment.BottomCenter).testTag("Transient")
+            transient?.let { GymSnackbarHost(it, Modifier.align(Alignment.BottomCenter).testTag("Transient")
                 .onSizeChanged { size -> transientHeight = with(density) { size.height.toDp() } }) }
         }
         Rack(
@@ -481,12 +480,10 @@ fun LoggerScreen(
                             onGone = { close(); say(it) },
                             onBusy = { fixBusy = it },
                             onEntryCancel = { cancelFixEntry = it },
-                            // The row comes off the ledger and the window opens on the room's transient;
-                            // nothing is sent until it closes.
                             onDelete = {
                                 close()
                                 say(null)
-                                if (sessionId != null) store.withhold(Deletion.Set(sessionId, set))
+                                if (sessionId != null) scope.launch { say(store.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
                             },
                         )
                     }

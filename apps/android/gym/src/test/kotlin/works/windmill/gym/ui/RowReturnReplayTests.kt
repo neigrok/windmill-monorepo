@@ -28,16 +28,7 @@ import works.windmill.gym.store.GymResult
 import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 
-// A row this room deletes LEAVES its list and comes back — put back by a log that refused the
-// settle, or taken back by an Undo. Both are ordinary, and both used to re-fire the delete.
-//
-// `rememberSwipeToDismissBoxState` is a `rememberSaveable`: LazyColumn keeps what an item was
-// holding under the item's own key and hands it back when the key returns, so the row came back
-// already `EndToStart` and the settle effect spent the act again on a gesture nobody made. A refused
-// delete then re-fired on its own nine-second clock forever, and an Undo re-deleted what it had just
-// taken back — which is the way back this whole pattern exists to provide.
-//
-// The rule these pin: the value a composition STARTS at is never a gesture.
+// A refused row returns settled; returning to composition never repeats the delete.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class RowReturnReplayTests {
@@ -76,7 +67,7 @@ class RowReturnReplayTests {
                 onOpenRoutine = {},
                 onDeleteRoutine = { id ->
                     deletes += id
-                    room.store.withhold(Deletion.Routine(id, room.store.routine(id)?.name ?: "?"))
+                    room.store.delete(Deletion.Routine(id, room.store.routine(id)?.name ?: "?")) == null
                 },
                 onReview = {},
                 onSignIn = {},
@@ -105,12 +96,11 @@ class RowReturnReplayTests {
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
             compose.runOnIdle {
                 assertEquals(1, deletes.size)
-                assertEquals("withheld means not sent", emptyList<Json>(), room.outbox())
+                assertEquals(listOf(routineId), routineDeletes(room))
             }
 
             // The window closes and the delete goes out; the log refuses it, and the row is back:
             // nothing the log holds was crossed out.
-            compose.runOnIdle { runBlocking { room.store.settleWithheld(routineId) } }
             compose.runOnIdle {
                 assertEquals("the settled row has left the list", emptyList<String>(), room.store.routines.map { it.id })
                 assertEquals("one delete on the wire", listOf(routineId), routineDeletes(room))
@@ -134,37 +124,28 @@ class RowReturnReplayTests {
         } } finally { scope.cancel() }
     }
 
-    // The other half, and the one that matters more: taking a delete back must not re-delete it.
     @Test
-    fun testAnUndoLeavesTheRowStandingAndSendsNothing() {
+    fun aLocalRefusalRestoresTheRowAndASecondGestureCanDeleteIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { program(scope, EngineRoomFixture.server()).use { room ->
             val deletes = mutableListOf<String>()
             home(room, deletes)
-
+            compose.runOnIdle { room.engine.failNextCommit() }
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-            compose.runOnIdle { assertEquals(1, room.store.withheld.size) }
-
-            compose.runOnIdle { assertNotNull("the window was still the lifter's", room.store.keepWithheld()) }
             compose.waitForIdle()
-            compose.mainClock.advanceTimeBy(window * 3)
-            compose.waitForIdle()
-
-            compose.runOnIdle {
-                assertEquals("the row a lifter took back is not deleted again", 1, deletes.size)
-                assertEquals("nothing is held", emptyList<Any>(), room.store.withheld)
-                assertEquals("and nothing ever reached the log", emptyList<Json>(), room.outbox())
-            }
-            // And it is a whole row again, where it belongs — not parked off the leading edge with the
-            // offset the swipe that removed it left behind. Which is what the second stroke proves: a
-            // state left sitting at `EndToStart` could never travel there again, so the row would be
-            // undeletable for as long as the screen stood.
             compose.onNodeWithText("Push Day").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(1, deletes.size)
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(emptyList<Json>(), room.outbox())
+            }
             compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
             compose.runOnIdle {
-                assertEquals("a row that came back can be deleted again", 2, deletes.size)
-                assertEquals(1, room.store.withheld.size)
+                assertEquals(2, deletes.size)
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(1, routineDeletes(room).size)
             }
+            compose.onNodeWithText("Push Day").assertDoesNotExist()
         } } finally { scope.cancel() }
     }
 }

@@ -347,12 +347,14 @@ class TrainingFinishTests {
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val local = room.store.sets.single()
-            room.store.withhold(Deletion.Set(live.id, local))
-            val deadline = room.store.withheld.single().untilMs
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            runCurrent()
+            val hold = room.store.withheld.single()
             val closed = room.store.finish() as FinishOutcome.Closed
             assertEquals(room.training.session(live.id), closed.detail)
             assertEquals(listOf(local), closed.detail.sets)
-            assertEquals(listOf(WithheldDelete(Deletion.Set(live.id, local), deadline)), room.store.withheld)
+            assertEquals(listOf(hold), room.store.withheld)
             assertEquals(room.store.withheld.single(), room.store.keepWithheld())
             assertEquals(closed.detail, room.store.retainedSession(closed.detail))
             assertEquals("nothing was deleted", listOf(local), room.training.session(live.id)!!.sets)
@@ -585,7 +587,7 @@ class TrainingFinishTests {
         }
     }
 
-    @Test fun aReceiptAlreadyShownKeepsItsIdentityAndDeletionDeadlineDuringEngineDelivery() = runTest {
+    @Test fun aReceiptAlreadyShownKeepsItsIdentityAndDeletedSetDuringEngineDelivery() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
             room.workout(60.0)
@@ -599,8 +601,7 @@ class TrainingFinishTests {
             val receipt = (finish.await() as FinishOutcome.Closed).detail
             assertEquals(live.id, receipt.session.id)
             assertEquals(listOf(performed), receipt.sets)
-            room.store.withhold(Deletion.Set(live.id, performed))
-            val deadline = room.store.withheld.single().untilMs
+            assertNull(room.store.delete(Deletion.Set(live.id, performed)))
             val server = EngineRoomFixture.server()
             val response = server.push(pending, works.windmill.sync.modelserver.Credential.Account("alice"), room.now)
             val reading = works.windmill.sync.core.ClockReading(room.now, room.now, "test")
@@ -609,9 +610,9 @@ class TrainingFinishTests {
             room.sync(server); room.store.refreshEngine()
             val expected = (room.store.sessionDetail(live.id) as GymResult.Ok).value
             assertEquals(receipt.session.id, expected.session.id)
-            assertEquals(listOf(performed.id), expected.sets.map { it.id })
+            assertEquals(emptyList<String>(), expected.sets.map { it.id })
             assertEquals(expected, room.store.retainedSession(receipt))
-            assertEquals(listOf(WithheldDelete(Deletion.Set(live.id, expected.sets.single()), deadline)), room.store.withheld)
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
             assertNull(room.store.session)
         }
     }
@@ -647,19 +648,22 @@ class TrainingFinishTests {
             room.store.choose("bench-press")
             room.store.logSet(60.0, 8)
             val set = room.store.sets.single()
-            room.store.withhold(Deletion.Set(live.id, set))
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
             runCurrent()
-            val window = room.store.withheld.single().untilMs - room.now
-            room.now += 60_000
+            val deadline = room.store.withheld.single().untilMs
+            room.now += 1_000
             val receipt = (room.store.finish() as FinishOutcome.Closed).detail
-            advanceTimeBy(window - 1)
-            runCurrent()
-            assertEquals(listOf(set), room.training.session(live.id)!!.sets)
-            advanceTimeBy(1)
-            runCurrent()
+            assertEquals(deadline, room.store.withheld.single().untilMs)
+            room.now = deadline - 1
+            assertEquals(emptyList<String>(), room.engine.releaseHeld())
+            room.now = deadline
+            assertEquals(1, room.engine.releaseHeld().size)
+            room.store.refreshEngine()
             assertTrue(room.store.withheld.isEmpty())
-            assertEquals(emptyList<TrainingSet>(), room.store.retainedSession(receipt).sets)
-            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+            assertEquals(listOf(set), room.store.retainedSession(receipt).sets)
+            assertEquals(listOf(set), room.training.session(live.id)!!.sets)
+            assertEquals(emptyList<Any>(), room.store.bodyweight)
         }
     }
 

@@ -1,0 +1,255 @@
+[
+  {
+    "board": "02.12",
+    "name": "routine-menu",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "More for Push A"
+      },
+      {
+        "wait": "Delete"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  },
+  {
+    "board": "02.8",
+    "name": "editor-swipe",
+    "account": "fixture",
+    "settle": false,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Edit routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Bench Press",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.1,
+            0.5
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "tap": "Back to the routine you were on"
+      },
+      {
+        "wait": "Start workout"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "New routine"
+      }
+    ]
+  },
+  {
+    "board": "02.10",
+    "name": "routine-deleted",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "tap": "Routine name"
+      },
+      {
+        "text": "Delete trial"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Add movement"
+      },
+      {
+        "wait": "Search movements"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "tap": "Save"
+      },
+      {
+        "wait": "Start workout"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Delete trial"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Delete trial",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.05,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  },
+  {
+    "board": "05.4",
+    "name": "set-swipe",
+    "account": "fixture",
+    "settle": false,
+    "steps": [
+      {
+        "tap": "Log"
+      },
+      {
+        "wait": "Record · Back Squat 57.5 × 8"
+      },
+      {
+        "tap": "Record · Back Squat 57.5 × 8"
+      },
+      {
+        "wait": "Back to Log"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "57.5 × 8",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.1,
+            0.5
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "tap": "Back to Log"
+      }
+    ]
+  },
+  {
+    "board": "00.3",
+    "name": "band",
+    "account": "fixture",
+    "settle": false,
+    "steps": [
+      {
+        "wait": "Weighed in · 80 kg"
+      },
+      {
+        "tap": "Weighed in · 80 kg"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "wait": "Delete weigh-in"
+      },
+      {
+        "tap": "Delete weigh-in"
+      },
+      {
+        "wait": "Undo"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Undo"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  }
+]

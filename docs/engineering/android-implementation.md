@@ -349,3 +349,48 @@ summary records that limitation. Canonical captures completed without failure, a
 attempts remain separate. The native runtime scan contains no ANR or fatal exception. All owned
 backend, emulator, database and private fixture files clean up normally. Task 16 makes no new
 performance claim.
+
+## Task 05 · resource-specific deletion
+
+The implementation is based on main `266c78ab`. Routine, set and note actions use the application
+store's job scope and release only their own engine receipts. A typed recoverable subset keeps
+weight/workout/conversation recovery separate. Weight receipt projections follow engine offers;
+ProcessLifecycleOwner distinguishes activity recreation from actual backgrounding. Admission guards
+pin the connected replica and anonymous status inside transactions, including import correction.
+
+The merged Debug gate passed 1,222 gym cases, with 17 opt-in LiveWire skips, all three application
+cases and six telemetry cases. The final projection checks pass 84 cases, the band checks three,
+and the focused Release checks 13. The gym gate includes ten durable-weight/cancellation/account
+cases; the application gate uses actual activity recreation and process backgrounding. Rewrite
+success/failure, expiry/release ordering, restart, account/adoption isolation and disposed-row
+cancellation are deterministic tests. XML is in `/private/tmp/android-task05-test-archives`.
+
+Ten Dark/Daylight images verify the routine menu, editor and detail-set swipe grounds, settled
+routine deletion and weight Undo. Eight unchanged surface images use candidate APK `fb35d03f`;
+the two final band images and final lifecycle/write/failure checks use `7f3b8c4e`. Exact hashes and
+per-image provenance are in `/private/tmp/windmill-android-task05/final-band`. The band uses the
+approved 16 dp horizontal margin, native 14/20 message/action type and 12/16 monospace note line.
+Its one-line weight Undo form differs intentionally from the general two-line specimen. Later
+03/17 chrome/FAB, 18 editor geometry and 23 Session copy are outside this bounded comparison.
+
+Native checks confirm two held/Undo pairs, one immediate set delete and one immediate note delete.
+Background/resume takes 4.63 seconds from the request, before its nine-second expiry: no Undo or
+held engine receipt remains and backend readback has five weights. Readback also retains all three
+routines after the controlled failure, one note and no sets in the newly finished session. Intake
+records exactly one set success, one note success, one routine failure, three weight holds, two Undo
+successes and one weight closure. The earlier routine-swipe recipes record two routine successes.
+The local storage trigger is removed after verification. Its single failed commit yields one failed
+product event and two correlated existing boundary receipts: `gym.dropRoutine` / `CommitFailure`
+and `sync_storage` / `store-failure`, 16 ms apart. Both Sentry envelopes omit content and exception
+values. This verifies local intake/collection, not hosted vendor delivery.
+
+The final automated runtime scan is clean. Supplemental manual logging retains one attributed
+uiautomator shell collision (PID 7340, 21:33:15) with no application stack or ANR. Failed selector
+attempts and the attempted native recreation check are not acceptance evidence. The acceptance
+pause was extended only while the runner slept; this task makes no performance claim. All owned
+emulator/backend/mail/model processes and the disposable database clean up normally.
+
+Structural observation: keeping receipt ownership in the application store prevents row disposal from
+cancelling durable user actions. Exact receipt release also avoids settling an unrelated weight hold.
+Shared engine/application reporting can issue two correlated technical receipts for one storage
+failure; deduplicating those existing boundaries is a separate follow-up.
