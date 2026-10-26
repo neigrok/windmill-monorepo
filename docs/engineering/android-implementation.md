@@ -248,3 +248,47 @@ bounded failure for empty or partial output. The retained task 01 trace is 396,8
 10,287.783 ms, with 405.205 ms main-thread CPU in its parsed summary at
 `/private/tmp/windmill-android-batch/task01-native`. This hardens artifact collection without changing
 the recorded cold-ready measurements. Task 15 makes no new performance claim.
+
+## Task 04 — shared native controls
+
+Reusable FABs, error buttons, menus, a trailing delete swipe and controlled number entry compose
+native Material behavior with the approved 00.4 anatomy. Number entry keeps text, rules and writes
+with the consumer; explicit changed/unchanged/refused results govern feedback and IME completion.
+Signed load input requests signed and decimal Android flags. Existing screen consumers and their
+bidirectional swipe behavior remain in their numbered migration tasks. The approved O addendum
+measures signed Display text at the actual font scale, puts the unit below on overflow and uses
+the full control width when the 32sp floor needs it. The editor stays in the same composition slot
+as the field and button positions change; focused expansion preserves selection and contracts only
+on blur. Full gym Debug passes 1,196 checks with 17 opt-in live-wire skips (1,213 total); all
+33 focused Release and 32 capture-tool checks pass. Native-font tests cover 372/280dp controls,
+100/200% text, focused selection preservation and unchanged raw invalid input at the 32sp floor.
+
+The API 37 packet `/private/tmp/windmill-android-native-parts-overflow` retains 22 planned
+Dark/Daylight PNG/XML pairs, 12 caret-end captures, six pressed/menu/swipe captures and two native
+keyboard/Done captures. APK SHA-256 is
+`d4cc305f024a14e5cd43efaf17a4578c2d57f512d16a749262dffc2ed48885e3`. The whole `-12.5`,
+`-102.5` and `-499.99` remains visible at rest and either caret end; editing `24` to `-499.99`
+expands at phone/320dp widths and 200% text. The signed decimal input connection is `0x3002`;
+actual Gboard Done hides the keyboard and blurs the field. Raw hardware Enter does not exercise
+that IME action. Size/density/text-scale overrides restore before the runner exits successfully.
+
+Native paragraph metrics grow the fitting `24` field to 146.67dp despite the requested 88/92sp
+style. Side-field heights are 184.38dp for `-12.5`, 164.95dp for `-102.5`, and 156.19dp for
+`-499.99`; narrow fields start at 156.19dp and the 200% full-width field is 185.14dp. These are
+minimum-height fields, so native text remains unclipped. Exact bounds are retained in
+`geometry.json`. No performance claim is made from this component run.
+
+The intake contains allowlisted lifecycle/auth/screen labels and no typed values, units, names or
+emails; component callbacks emit no product event. All 152 structured backend observations are
+successful. Two bounded unreachable hello outcomes are non-fault sync events; no corresponding
+Sentry Issue is expected. Five SDK session envelopes arrived during the capture interval with no
+exception event. Both runtime scans contain no app ANR or fatal exception. This verifies the local
+intake and SDK transport, not hosted receipt. Harness-only menu/IME corrections remain in the
+private evidence packet and do not change product behavior.
+
+The shared parts introduce no domain state or persistence. The extended FAB composes the native
+FAB container with the approved 16 dp icon/label padding; Material 3's packaged extended overload
+fixes its text-side padding at 20 dp. A native editable field and Material field container keep the
+value/unit baseline and whole-width refusal independent of screen validation policy. The simplification
+pass retains one editor subtree for all responsive layouts, groups native controls in one file and
+removes duplicate pointer/prefix helpers already supplied by task 08.

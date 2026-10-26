@@ -20,23 +20,17 @@ private class Felt : HapticFeedback {
 @Config(sdk = [35])
 class HapticVocabularyTests {
     @Test
-    fun theThreeSensationsAreDistinctWherePlatformHasThem() {
+    fun acceptedChangesAndTheThreeGesturesUseTheNamedPlatformSensations() {
         val felt = Felt()
         val haptics = GymHaptics(felt)
 
+        haptics.ticked()
         haptics.revealed()
         haptics.saved()
         haptics.finished()
 
-        assertEquals(3, felt.sensations.size)
-        assertEquals("a swipe that reveals ticks", HapticFeedbackType.GestureThresholdActivate,
-            felt.sensations[0])
-        assertEquals("a non-set save confirms",
-            HapticFeedbackType.Confirm, felt.sensations[1])
-        assertEquals("a finish is the room's closing note", HapticFeedbackType.GestureEnd,
-            felt.sensations[2])
-        assertEquals("and a long press is none of them any more", 3,
-            felt.sensations.count { it != HapticFeedbackType.LongPress })
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.GestureThresholdActivate,
+            HapticFeedbackType.Confirm, HapticFeedbackType.GestureEnd), felt.sensations)
     }
 
     // The extended constants land at API 30 and 34. Below those the fallback is the nearest

@@ -21,7 +21,9 @@ JAVA_HOME="/path/to/jdk" ANDROID_HOME="/path/to/android-sdk" \
 
 The output directory must be new. The script creates the database from `backend/db/schema.sql`,
 seeds three routines, twelve finished workouts across four weeks, six weigh-ins and two notes
-through the MCP and sync doors, then signs the native app into that fixture account. A separate
+through the MCP and sync doors, then signs the native app into that fixture account. Sync seeding
+retains each intent and replica across bounded prefix acknowledgements; refusals, invalid replies
+or exhausted retries stop the run before fixture acceptance. A separate
 empty installation captures signed-out states. Each appearance starts with clean app data;
 transient recipes run after the Dark/Daylight switch.
 
@@ -49,6 +51,19 @@ without changing the existing screen implementation:
 `--scenarios apps/android/tools/capture-recipes/colour-roles.json` captures the new-routine editor,
 movement picker, share offer and live link in both appearances. Optional `after` steps run after a
 recipe's screenshot, allowing transient sheets to close before the next recipe or readiness check.
+
+`--scenarios apps/android/tools/capture-recipes/native-parts.json` opens a debug-only native-control
+specimen guarded by the same local-origin check. The wide 1460 × 426 board is component-specimen
+evidence; portrait recipes exercise actual phone width, signed Display values and inline refusals.
+A recipe's optional `viewport` supplies bounded integer `width`, `height` and `density`, plus an
+optional `fontScale` from 1 to 2. The owned emulator's size, density and text scale reset in `finally`,
+before subsequent recipes or performance measurements. O recipes cover signed Display overflow at
+phone and 320dp widths, editing from `24` to `-499.99`, and 200% text.
+
+Transient recipes may set `settle: false` to capture a native pressed state or the 300 ms change
+flash immediately. These transient captures omit the settling hierarchy read so it cannot outlast
+the state being captured; all ordinary captures retain their settled XML. Pointer steps use the
+observed control bounds and release in `finally` as described below.
 
 ```json
 [

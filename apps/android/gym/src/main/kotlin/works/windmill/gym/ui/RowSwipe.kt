@@ -2,12 +2,19 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxDefaults
 import androidx.compose.material3.SwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -16,29 +23,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import works.windmill.gym.R
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
-// Every row in this room that a stroke destroys takes its dismiss state from here, and the reason
-// is one word in it: `remember`, never `rememberSaveable`.
-//
-// It is the withheld window that makes the difference load-bearing. A deleted row LEAVES its list
-// and comes back — put back by a log that refused the settle, or taken back by an Undo — and
-// `rememberSwipeToDismissBoxState` is a `rememberSaveable`: a LazyColumn keeps what an item was
-// holding under the item's own key and hands it straight back when that key returns. So the row
-// returned already `EndToStart`, drawn off its own leading edge, and the settle effect spent the act
-// again on a stroke nobody made. A refused delete re-fired on its own clock, every nine seconds, for
-// as long as the screen stood; an Undo re-deleted what it had just taken back, which is the way back
-// this whole pattern exists to provide. And the row could never be swiped again either: a state
-// already sitting at `EndToStart` cannot travel there.
-//
-// A returning row is a NEW row, settled, with its own anchors. The state is built here rather than
-// asked for, because the saver is exactly what has to go.
+// A returning row starts settled; saving its dismissal state would repeat deletion after Undo.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun rememberRowDismiss(
@@ -50,20 +54,59 @@ internal fun rememberRowDismiss(
 ): SwipeToDismissBoxState {
     val density = LocalDensity.current
     val threshold = SwipeToDismissBoxDefaults.positionalThreshold
+    val maySettle by rememberUpdatedState(settling)
     val swipe = remember {
-        SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, density, settling, threshold)
+        SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, density,
+            { it == SwipeToDismissBoxValue.Settled || maySettle(it) }, threshold)
     }
     val settle by rememberUpdatedState(onSettle)
-    LaunchedEffect(swipe.currentValue) {
-        val standing = swipe.currentValue
-        if (standing == SwipeToDismissBoxValue.Settled) return@LaunchedEffect
-        swipe.settle(standing)
+    LaunchedEffect(swipe) {
+        snapshotFlow { swipe.currentValue }.collect { standing ->
+            if (standing != SwipeToDismissBoxValue.Settled) swipe.settle(standing)
+        }
     }
     return swipe
 }
 
-// The lane behind a row whose one trailing action is Delete. Brick is the destroy hue and nothing
-// else in this room wears it.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeleteSwipeRow(
+    actionLabel: String,
+    onDelete: suspend () -> Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val haptics = rememberGymHaptics()
+    val delete by rememberUpdatedState(onDelete)
+    val swipe = rememberRowDismiss(settling = { it == SwipeToDismissBoxValue.EndToStart }) {
+        if (!delete()) reset()
+    }
+    val pastThreshold = swipe.targetValue == SwipeToDismissBoxValue.EndToStart
+    LaunchedEffect(pastThreshold) {
+        if (pastThreshold) haptics.revealed()
+    }
+    val scale by animateFloatAsState(if (pastThreshold) 1.2f else 1f, label = "Delete threshold")
+    SwipeToDismissBox(state = swipe, enableDismissFromStartToEnd = false, enableDismissFromEndToStart = enabled,
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).semantics {
+            if (enabled) customActions = listOf(CustomAccessibilityAction(actionLabel) {
+                scope.launch { delete() }
+                true
+            })
+        }, backgroundContent = {
+            if (swipe.dismissDirection != SwipeToDismissBoxValue.Settled) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.error).padding(end = 20.dp),
+                    contentAlignment = Alignment.CenterEnd) {
+                    Icon(painterResource(R.drawable.gym_native_delete), null,
+                        Modifier.size(24.dp).graphicsLayer { scaleX = scale; scaleY = scale },
+                        tint = MaterialTheme.colorScheme.onError)
+                }
+            }
+        }) { content() }
+}
+
+// Legacy consumers migrate in their screen tasks; bidirectional rows keep their own ground.
 @Composable
 internal fun RowDeleteGround() {
     val skin = LocalGymColors.current

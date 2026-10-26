@@ -7,7 +7,6 @@ import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
 import unittest
-import xml.etree.ElementTree as ET
 
 
 spec = importlib.util.spec_from_file_location("design_capture", Path(__file__).parents[1] / "design_capture.py")
@@ -135,6 +134,26 @@ class DesignCaptureTests(unittest.TestCase):
         ], calls)
         self.assertIsNone(device.touch_bounds)
         self.assertIsNone(device.touch_point)
+
+    def test_specimen_viewport_is_bounded_and_resets_size_and_density(self):
+        device = capture.Device(Path("/android-sdk"), 5582)
+        calls = []
+        device.run = lambda *args, **kwargs: calls.append(args)
+        for value in ({"width": 0, "height": 426, "density": 160},
+                      {"width": 1460, "height": 426, "density": 0},
+                      {"width": "1460", "height": 426, "density": 160},
+                      {"width": 840, "height": 1828, "density": 420, "fontScale": 3}):
+            with self.assertRaises(ValueError):
+                device.viewport(value)
+        self.assertEqual([], calls)
+        device.viewport({"width": 1460, "height": 426, "density": 160})
+        device.viewport()
+        self.assertEqual([
+            ("shell", "wm", "size", "1460x426"), ("shell", "wm", "density", "160"),
+            ("shell", "settings", "put", "system", "font_scale", "1"),
+            ("shell", "wm", "size", "reset"), ("shell", "wm", "density", "reset"),
+            ("shell", "settings", "put", "system", "font_scale", "1"),
+        ], calls)
 
     def test_recipes_accept_canonical_board_ids_and_reject_unsafe_output_names(self):
         for board in ("02.7", "08.21", "15a", "15b", "15c", "27a", "27g", "A4"):

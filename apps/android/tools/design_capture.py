@@ -414,6 +414,23 @@ class Device:
     def launch(self):
         return self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity", "-a", "android.intent.action.VIEW")
 
+    def viewport(self, value=None):
+        if value is None:
+            self.run("shell", "wm", "size", "reset")
+            self.run("shell", "wm", "density", "reset")
+            self.run("shell", "settings", "put", "system", "font_scale", "1")
+            return
+        width, height, density = (value[key] for key in ("width", "height", "density"))
+        if any(type(part) is not int for part in (width, height, density)) or \
+                not 320 <= width <= 4096 or not 320 <= height <= 4096 or not 120 <= density <= 640:
+            raise ValueError("Specimen viewport needs bounded integer size and density.")
+        font_scale = value.get("fontScale", 1)
+        if type(font_scale) not in (int, float) or not 1 <= font_scale <= 2:
+            raise ValueError("Specimen text scale must be between 1 and 2.")
+        self.run("shell", "wm", "size", f"{width}x{height}")
+        self.run("shell", "wm", "density", str(density))
+        self.run("shell", "settings", "put", "system", "font_scale", str(font_scale))
+
     def release_touch(self):
         if self.touch_point is None:
             return
@@ -510,6 +527,13 @@ class Device:
                 self.run("shell", "input", "swipe", *map(str, step["swipe"]))
             elif "touch" in step:
                 self.touch(step["touch"])
+            elif "specimen" in step:
+                if step["specimen"] not in ("board", "phone", "long-load", "bound-load", "fit-load", "refusal"):
+                    raise ValueError("Unknown native-parts specimen.")
+                self.run("shell", "am", "start", "-W", "--activity-clear-top", "-n", PACKAGE + "/.NativePartsActivity",
+                         "--es", "specimen", step["specimen"])
+                if step["specimen"] == "board" and any(node.get("text") == "Viewing full screen" for node in self.tree().iter("node")):
+                    self.tap("Got it")
             else:
                 raise ValueError("Unknown capture step.")
 
@@ -694,17 +718,21 @@ def main():
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.notification_clock = scenario.get("notification_clock", False)
                     try:
+                        if "viewport" in scenario:
+                            device.viewport(scenario["viewport"])
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
-                                             notification_clock=device.notification_clock)
+                                             notification_clock=device.notification_clock) if scenario.get("settle", True) else None
                         if model.responses:
                             raise RuntimeError("The capture did not consume its deterministic model responses.")
                         filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
-                        (args.output / filename).with_suffix(".xml").write_bytes(ET.tostring(tree))
+                        if tree is not None:
+                            (args.output / filename).with_suffix(".xml").write_bytes(ET.tostring(tree))
                         if device.notification_clock:
                             (args.output / filename).with_suffix(".notification.txt").write_bytes(device.run("shell", "dumpsys", "notification", "--noredact"))
                         (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
-                        manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
+                        manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename,
+                            **({"viewport": scenario["viewport"]} if "viewport" in scenario else {})})
                         device.steps(scenario.get("after", []))
                         if completions:
                             sessions_after = int(fixture.sql("SELECT count(*) FROM sessions;"))
@@ -714,7 +742,11 @@ def main():
                                 raise RuntimeError("The native code sign-in did not commit its session and spend its challenge.")
                             manifest["authCompletions"] += completions
                     finally:
-                        device.release_touch()
+                        try:
+                            device.release_touch()
+                        finally:
+                            if "viewport" in scenario:
+                                device.viewport()
         manifest["mailCalls"] = mail.calls
         device.notification_clock = False
         manifest["modelCalls"] = model.calls

@@ -960,6 +960,17 @@ these places.
   layout without reducing text scale or target size and verify both themes.
   Tracking: `android-gym-large-text-tab-label`.
 
+- **Android Display stepper overflow.** [O · Display overflow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1523-6723)
+  was human-approved on 2026-10-26. Task 04 implements the approved rule: retain the 88sp inline
+  display where it fits, move the unit below on overflow, fit the numeral with a 32sp floor before
+  system scaling, and use a full-width field with the existing 48dp controls below when enlarged
+  text needs that width. Focused editing expands immediately and retains its largest layout until
+  blur, preserving native caret and selection. Dark and Daylight specimens cover `-12.5`, `-102.5`
+  and `-499.99`, ordinary and 320dp viewports, focus and 200% text. Native minus remains the sign
+  input. API 37 Dark/Daylight captures verify complete signed values
+  at rest and either caret end, focused expansion at 320dp/200% text, and native metric-driven field
+  growth. The real editor retains its full value, caret and selection.
+
 ### Copy and review decisions
 
 - **Connected-log write disclosure (Android build).** `GymToolCatalog.cpp` exposes append-only

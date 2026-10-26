@@ -1,0 +1,115 @@
+[
+  {
+    "board": "00.4",
+    "name": "native-parts",
+    "account": "fixture",
+    "viewport": {"width": 1460, "height": 426, "density": 160},
+    "steps": [{"specimen": "board"}, {"wait": "Default stepper"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "00.4",
+    "name": "native-parts-phone",
+    "account": "fixture",
+    "steps": [{"specimen": "phone"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "00.4",
+    "name": "native-parts-long-load",
+    "account": "fixture",
+    "steps": [{"specimen": "long-load"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "O4",
+    "name": "overflow-bound",
+    "account": "fixture",
+    "steps": [{"specimen": "bound-load"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "00.4",
+    "name": "native-parts-refusal",
+    "account": "fixture",
+    "steps": [{"specimen": "refusal"}, {"wait": "Reps, 1 to 20."}],
+    "after": [{"key": "KEYCODE_BACK"}, {"wait": "Push A"}]
+  },
+  {
+    "board": "O5",
+    "name": "overflow-narrow-phone",
+    "account": "fixture",
+    "viewport": {"width": 840, "height": 1828, "density": 420},
+    "steps": [{"specimen": "phone"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "O6",
+    "name": "overflow-narrow-long-load",
+    "account": "fixture",
+    "viewport": {"width": 840, "height": 1828, "density": 420},
+    "steps": [{"specimen": "long-load"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "O7",
+    "name": "overflow-narrow-bound-load",
+    "account": "fixture",
+    "viewport": {"width": 840, "height": 1828, "density": 420},
+    "steps": [{"specimen": "bound-load"}, {"wait": "Load, kg added"}],
+    "after": [{"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "O9",
+    "name": "overflow-focus-edit",
+    "account": "fixture",
+    "steps": [
+      {"specimen": "fit-load"},
+      {"wait": "Load, kg added"},
+      {"keyboard": "show"},
+      {"tap": "Load, kg added"},
+      {"key": "KEYCODE_MOVE_END"},
+      {"key": "KEYCODE_DEL"},
+      {"key": "KEYCODE_DEL"},
+      {"text": "-499.99"},
+      {"wait": "-499.99"}
+    ],
+    "after": [{"keyboard": "hide"}, {"key": "KEYCODE_BACK"}]
+  },
+  {
+    "board": "O8",
+    "name": "overflow-focus-edit",
+    "account": "fixture",
+    "steps": [
+      {"specimen": "fit-load"},
+      {"wait": "Load, kg added"},
+      {"keyboard": "show"},
+      {"tap": "Load, kg added"},
+      {"key": "KEYCODE_MOVE_END"},
+      {"key": "KEYCODE_DEL"},
+      {"key": "KEYCODE_DEL"},
+      {"text": "-499.99"},
+      {"wait": "-499.99"}
+    ],
+    "after": [{"keyboard": "hide"}, {"key": "KEYCODE_BACK"}],
+    "viewport": {"width": 840, "height": 1828, "density": 420}
+  },
+  {
+    "board": "O10",
+    "name": "overflow-focus-edit",
+    "account": "fixture",
+    "steps": [
+      {"specimen": "fit-load"},
+      {"wait": "Load, kg added"},
+      {"keyboard": "show"},
+      {"tap": "Load, kg added"},
+      {"key": "KEYCODE_MOVE_END"},
+      {"key": "KEYCODE_DEL"},
+      {"key": "KEYCODE_DEL"},
+      {"text": "-499.99"},
+      {"wait": "-499.99"}
+    ],
+    "after": [{"keyboard": "hide"}, {"key": "KEYCODE_BACK"}],
+    "viewport": {"width": 840, "height": 1828, "density": 420, "fontScale": 2}
+  }
+]

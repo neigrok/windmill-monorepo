@@ -7,8 +7,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 
-// Gesture, non-set save and finish cues honor Android's touch-feedback setting.
+// Value changes, gestures, non-set saves and finish cues honor Android's touch-feedback setting.
 class GymHaptics(private val haptic: HapticFeedback) {
+    fun ticked() = haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+
     fun revealed() = haptic.performHapticFeedback(light)
 
     fun saved() = haptic.performHapticFeedback(medium)

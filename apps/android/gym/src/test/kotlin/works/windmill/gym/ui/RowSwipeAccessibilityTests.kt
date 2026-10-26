@@ -1,11 +1,20 @@
 package works.windmill.gym.ui
 
 import works.windmill.gym.coach.ThreadsScreen
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -61,6 +70,38 @@ class RowSwipeAccessibilityTests {
             .flatten()
             .map { it.label }
             .toList()
+
+    @Test fun theSharedDeleteRowNamesItsActionAndOnlySettlesEndToStart() {
+        var requests = 0
+        compose.setContent {
+            GymMaterial {
+                DeleteSwipeRow("Delete routine", { requests++; true }, Modifier.testTag("swipe-row")) {
+                    Box(Modifier.fillMaxWidth().height(68.dp).background(LocalGymColors.current.surface)) { Text("Push A") }
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("swipe-row")
+        assertEquals(listOf("Delete routine"), actionsAround(compose.onNodeWithText("Push A").fetchSemanticsNode()))
+        row.performTouchInput { swipeRight() }
+        compose.runOnIdle { assertEquals(0, requests) }
+        row.performTouchInput { swipeLeft() }
+        compose.runOnIdle { assertEquals(1, requests) }
+    }
+
+    @Test fun aRefusedSharedDeleteResetsAndCanBeSwipedAgain() {
+        var requests = 0
+        compose.setContent {
+            GymMaterial {
+                DeleteSwipeRow("Remove movement", { requests++; false }, Modifier.testTag("swipe-row")) {
+                    Box(Modifier.fillMaxWidth().height(56.dp).background(LocalGymColors.current.surface)) { Text("Bench Press") }
+                }
+            }
+        }
+        repeat(2) { index ->
+            compose.onNodeWithTag("swipe-row").performTouchInput { swipeLeft() }
+            compose.runOnIdle { assertEquals(index + 1, requests) }
+        }
+    }
 
     @Test
     fun theRoutineRowSwipesToDeleteAndDeclaresThatActionByHandNamedWithTheRoutine() {

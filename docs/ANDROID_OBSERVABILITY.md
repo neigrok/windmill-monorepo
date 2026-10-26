@@ -10,6 +10,11 @@ provider; tests default to `Telemetry.None`.
 Gym palette selection and onboarding color reuse add no behavioral events or failure boundary.
 Existing screen, action and onboarding events retain their current labels and properties.
 
+Shared native controls (`NumberStepper`, `DeleteSwipeRow`, FABs, error buttons and menus) add no
+product events or persistence boundaries. Their consumers own validation, write failures and
+content-free flow events. Changed/unchanged/refused edit results only control local feedback and
+IME completion; raw number text and refusal content are not sent by the components.
+
 ## Configuration
 
 Release assembly requires `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, with a valid HTTPS DSN for

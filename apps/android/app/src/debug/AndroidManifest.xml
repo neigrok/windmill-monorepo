@@ -4,5 +4,6 @@
     <application android:networkSecurityConfig="@xml/net_security_debug">
         <provider android:name=".DesignCaptureProvider" android:authorities="${applicationId}.design-capture" android:exported="false" />
         <activity android:name=".DesignCaptureActivity" android:exported="true" />
+        <activity android:name=".NativePartsActivity" android:exported="true" />
     </application>
 </manifest>
