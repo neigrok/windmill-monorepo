@@ -38,6 +38,7 @@ class SignInDoorLayoutTests {
         val auth = AuthStore(server.url("/"), MemorySessions())
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setBody("{}"))
+        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}"""))
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(2f, 2f), LocalWindmillDark provides dark) {
                 WindmillMaterial { Box(Modifier.height(340.dp)) { SignInDoor(auth) } }
@@ -54,6 +55,16 @@ class SignInDoorLayoutTests {
         send.performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Code field").performScrollTo().performTextReplacement("246810")
+        compose.onNodeWithText("Sign in").performClick()
+        val refusal = "That code didn't work. Check the digits, or send a fresh one."
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(refusal).fetchSemanticsNodes().isNotEmpty() }
+        val notice = compose.onNodeWithText(refusal).performScrollTo().assertIsDisplayed()
+        val refusalLayouts = mutableListOf<TextLayoutResult>()
+        notice.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(refusalLayouts)
+        assertFalse(refusalLayouts.single().didOverflowHeight)
+        assertEquals(refusal.length, refusalLayouts.single().getLineEnd(refusalLayouts.single().lineCount - 1))
+        compose.onNodeWithText("Sign in").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Change email").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Email field").performScrollTo().assertTextContains("a-very-long-address@example.com")
         compose.onNodeWithText("Send code").assertIsDisplayed()

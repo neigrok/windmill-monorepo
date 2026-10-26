@@ -3,6 +3,8 @@ package works.windmill.platform.auth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import works.windmill.platform.net.Refusal
+import works.windmill.platform.net.WindmillApiException
 
 class MagicLinkTest {
     @Test
@@ -56,8 +58,8 @@ class MagicLinkTest {
     }
 
     @Test
-    fun onlyAnOfflineFailureEscapesTheExpiredSentence() {
-        assertEquals("Can’t reach windmill.works", MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline))
+    fun absentServerWordsKeepTheExpiredFallbackAndOfflineHasItsOwnLine() {
+        assertEquals("Can’t reach windmill.works", MagicLink.refusal(WindmillApiException.Offline))
         assertEquals(MagicLink.expired, MagicLink.refusal(MagicLink.unreadable))
         assertEquals(MagicLink.expired, MagicLink.refusal(IllegalStateException("anything else")))
     }
@@ -71,7 +73,26 @@ class MagicLinkTest {
         )
         assertEquals(
             "Can’t reach windmill.works",
-            MagicLink.refusal(works.windmill.platform.net.WindmillApiException.Offline, ofCode = true),
+            MagicLink.refusal(WindmillApiException.Offline, ofCode = true),
         )
     }
+
+    @Test fun serverRefusalsJoinTheirWordsWithoutInventingExpiry() {
+        for ((refusal, expected) in listOf(
+            Refusal("That code didn't work", "Check the digits, or send a fresh one.") to
+                "That code didn't work. Check the digits, or send a fresh one.",
+            Refusal("That code didn't work.", "Check the digits.") to "That code didn't work. Check the digits.",
+            Refusal("Try again!", "Check the digits.") to "Try again! Check the digits.",
+            Refusal("  Check the digits.  ") to "Check the digits.",
+            Refusal(detail = "  Send a fresh one.  ") to "Send a fresh one.",
+            Refusal("  ", "\n") to MagicLink.expiredCode,
+        )) {
+            assertEquals(expected, MagicLink.refusal(WindmillApiException.Refused(410, refusal), ofCode = true))
+        }
+        assertEquals("That link didn't work. Send a fresh one.", MagicLink.refusal(
+            WindmillApiException.Refused(410, Refusal("That link didn't work", "Send a fresh one."))))
+        assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.", MagicLink.refusal(
+            WindmillApiException.Refused(426, Refusal("Do not show this", "Or this")), ofCode = true))
+    }
+
 }

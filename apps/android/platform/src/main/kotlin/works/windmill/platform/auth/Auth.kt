@@ -262,7 +262,17 @@ object MagicLink {
 
     fun refusal(failure: Throwable, ofCode: Boolean = false): String {
         if (failure is WindmillApiException.Offline) return failure.line
-        if (failure is WindmillApiException.Refused && failure.status == 426) return failure.line
+        if (failure is WindmillApiException.Refused) {
+            if (failure.status == 426) return failure.line
+            val message = failure.refusal.message?.trim().orEmpty()
+            val detail = failure.refusal.detail?.trim().orEmpty()
+            if (message.isNotEmpty() && detail.isNotEmpty()) {
+                val punctuation = if (message.last() in ".!?…") "" else "."
+                return "$message$punctuation $detail"
+            }
+            if (message.isNotEmpty()) return message
+            if (detail.isNotEmpty()) return detail
+        }
         return if (ofCode) expiredCode else expired
     }
 

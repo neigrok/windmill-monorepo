@@ -1,0 +1,100 @@
+[
+  {
+    "board": "15a",
+    "name": "sign-in-email",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Your account"
+      },
+      {
+        "tap": "Sign in"
+      },
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Email field"
+      },
+      {
+        "text": "lifter@example.com"
+      }
+    ]
+  },
+  {
+    "board": "15b",
+    "name": "sign-in-code",
+    "account": "empty",
+    "resend_countdown": true,
+    "steps": [
+      {
+        "tap": "Send code"
+      },
+      {
+        "wait": "Check your email"
+      },
+      {
+        "keyboard": "hide"
+      }
+    ]
+  },
+  {
+    "board": "15b",
+    "name": "sign-in-code-focused",
+    "account": "empty",
+    "resend_countdown": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Code field"
+      }
+    ]
+  },
+  {
+    "board": "15c",
+    "name": "sign-in-code-refused",
+    "account": "empty",
+    "resend_countdown": true,
+    "steps": [
+      {
+        "auth_code": "wrong"
+      },
+      {
+        "tap": "Sign in"
+      },
+      {
+        "wait": "That code didn't work. Check the digits, or send a fresh one."
+      },
+      {
+        "keyboard": "hide"
+      }
+    ]
+  },
+  {
+    "board": "15c",
+    "name": "sign-in-code-refused-focused",
+    "account": "empty",
+    "resend_countdown": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Code field"
+      }
+    ],
+    "after": [
+      {
+        "auth_code": "valid"
+      },
+      {
+        "tap": "Sign in"
+      },
+      {
+        "wait": "No routines yet."
+      }
+    ]
+  }
+]

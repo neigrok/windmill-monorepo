@@ -758,9 +758,13 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   Owner ruling (2026-10-22): on the lock screen the notification shows only the routine and the
   clock, never set content — a private notification with a public version (board 04.4; build in
   task 15).
-- **11m · Sign-in fields.** In Dark the email and code fields draw no outline until focused
-  (`platform/auth/SignInDoor.kt`); Shell · Android 15a `33:1946`, 15b `33:4237`, 15c `33:4317` draw
-  M3 outlined fields.
+- **11m · Native sign-in field states.** Shell Android 15b [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4237)
+  and [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-792) draw an empty Code
+  field with a floating label, placeholder and unfocused outline. Task 27 specifies stock Compose
+  `OutlinedTextField(label = …)`: an empty, unfocused field keeps its label inside; focus floats the
+  label, reveals the placeholder and accents the outline. Reconcile the drawing's empty/unfocused
+  state with the native component. Native acceptance must compare unfocused and focused states
+  separately; this does not authorize a custom floating-label field.
 - **11n · Android specimens.** The boards set text in Nunito and JetBrains Mono, standing in for the
   app's system sans and mono (`ui/GymMaterial.kt:57-81`); system parts come from the team Material 3
   Design Kit, themed with the Windmill Theme roles. Native implementation uses Compose Material 3.
@@ -834,8 +838,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
   `1283:42292`). iOS builds it; Android does not, and shows a standing card on Routines
-  (`ui/RoutinesScreen.kt:249-270`) and a standing line on the email step
-  (`plat/auth/SignInDoor.kt:117`), both removed from the boards.
+  (`ui/RoutinesScreen.kt:249-270`), removed from the boards.
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
@@ -857,10 +860,6 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
   movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
   device check; Android builds none (01.17 `1283:40111`, 01.18 `1283:40674`, 02.13 `1283:39087`).
-- **12j · A refused sign-in code.** Android says *That code has expired. Codes work once and last 15
-  minutes — send a fresh one.* for every refusal, a typo included (`plat/auth/Auth.kt:261-266`); both
-  phones draw the server's *That code didn’t work.* / *Check the digits, or send a fresh one.* (Shell
-  Android 15c `33:4317`).
 - **12k · No Erase data; Delete account removes the cloud copy.** No phone offers Erase data:
   removing the app erases its data. Delete account's first line says *This deletes your Windmill
   account and its copy in the cloud: your roadmaps, journal pages and gym log.* (12e).

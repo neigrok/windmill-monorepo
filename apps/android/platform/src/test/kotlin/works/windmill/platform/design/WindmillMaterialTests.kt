@@ -115,4 +115,10 @@ class WindmillMaterialTests {
             }
         }
     }
+
+    @Test fun signInRefusalsUseTheNativeErrorRoleInBothModes() {
+        assertEquals(Color(0xFFE46962), dark.error)
+        assertEquals(Color(0xFFB3261E), light.error)
+    }
+
 }

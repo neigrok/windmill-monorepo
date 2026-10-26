@@ -229,6 +229,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
   const char* resendKey = std::getenv("RESEND_API_KEY");
   const char* resendFrom = std::getenv("RESEND_FROM");
+  const char* resendBaseUrl = std::getenv("RESEND_BASE_URL");
   const char* cookieDomainEnv = std::getenv("WINDMILL_COOKIE_DOMAIN");
   const char* retiredCookieDomainsEnv = std::getenv("WINDMILL_COOKIE_RETIRED_DOMAINS");
   std::optional<SessionCookieScopes> cookieScopes;
@@ -241,7 +242,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
   auto resendClient = std::make_shared<ResendClient>(
-      resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
+      resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>",
+      resendBaseUrl ? resendBaseUrl : "https://api.resend.com");
   lifetime.watch(resendClient);
   auto emailSender = std::make_shared<ResendEmailSender>(*resendClient);
   auto tokens = std::make_shared<OpenSslTokenGenerator>();

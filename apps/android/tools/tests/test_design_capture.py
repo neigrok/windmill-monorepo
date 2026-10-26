@@ -4,6 +4,8 @@ import tempfile
 import json
 import threading
 import urllib.request
+import urllib.error
+import xml.etree.ElementTree as ET
 import unittest
 
 
@@ -76,6 +78,61 @@ class DesignCaptureTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             worker.join()
+
+    def test_mail_fixture_acknowledges_only_the_local_code_envelope(self):
+        server = capture.ThreadingHTTPServer(("127.0.0.1", 0), capture.MailFixture)
+        server.code, server.calls = None, 0
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        body = {"from": "Windmill <capture@example.test>", "to": "lifter@example.com",
+                "template": {"id": "magic-code", "variables": {"sign_in_code": "123456"}}}
+        try:
+            for path, credential, payload in (("/other", "local-capture-only", body),
+                    ("/emails", "wrong-key", body), ("/emails", "local-capture-only", {"template": {}})):
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}" + path,
+                    json.dumps(payload).encode(), {"Authorization": "Bearer " + credential})
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    client.open(request)
+                self.assertEqual(400, caught.exception.code)
+            self.assertEqual((None, 0), (server.code, server.calls))
+            request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/emails",
+                json.dumps(body).encode(), {"Authorization": "Bearer local-capture-only"})
+            with client.open(request) as response:
+                self.assertEqual((200, {"id": "capture-mail"}), (response.status, json.load(response)))
+            self.assertEqual(("123456", 1), (server.code, server.calls))
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
+    def test_auth_code_input_uses_stdin_and_wrong_intent_cannot_use_the_delivered_code(self):
+        calls = []
+        class Device(capture.Device):
+            def tap(self, value): calls.append(("tap", value))
+            def run(self, *arguments, **kwargs): calls.append((arguments, kwargs))
+        device = Device(Path("/unused"), 5584, auth_code=lambda: "246810")
+        device.steps([{"auth_code": "wrong"}, {"auth_code": "valid"}])
+        expected = []
+        for code in ("135791", "246810"):
+            expected.extend([("tap", "Code field"),
+                (("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * 6)), {}),
+                (("shell", "-T", "sh"), {"input": f"input text {code}\n".encode()})])
+        self.assertEqual(expected, calls)
+        calls.clear()
+        for code in (None, "12345", "123456; echo secret"):
+            device.auth_code = lambda: code
+            with self.assertRaises(ValueError):
+                device.steps([{"auth_code": "valid"}])
+        self.assertEqual([], calls)
+
+    def test_settlement_tolerates_only_the_bounded_resend_countdown(self):
+        states = ["Resend in 20s", "Resend in 19s"]
+        class Device(capture.Device):
+            def tree(self):
+                return ET.fromstring('<hierarchy><node text="' + states.pop(0) + '" bounds="[0,0][30,30]"/></hierarchy>')
+        Device(Path("/unused"), 5584).settle(resend_countdown=True)
+        self.assertEqual([], states)
 
 
 if __name__ == "__main__":

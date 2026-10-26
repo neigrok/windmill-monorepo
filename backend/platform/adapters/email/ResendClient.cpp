@@ -42,8 +42,8 @@ Json::Value reminderUnsubscribeHeaders(const std::string& unsubscribeUrl) {
   return headers;
 }
 
-ResendClient::ResendClient(std::string apiKey, std::string from)
-    : apiKey_(std::move(apiKey)), from_(std::move(from)) {
+ResendClient::ResendClient(std::string apiKey, std::string from, std::string baseUrl)
+    : apiKey_(std::move(apiKey)), from_(std::move(from)), baseUrl_(std::move(baseUrl)) {
   loop_.run();
 }
 
@@ -73,7 +73,7 @@ void ResendClient::sendBody(const Json::Value& body, const std::string& idempote
   builder["indentation"] = "";
   const std::string payload = Json::writeString(builder, body);
 
-  auto client = drogon::HttpClient::newHttpClient("https://api.resend.com", loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_, loop_.getLoop());
 
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);

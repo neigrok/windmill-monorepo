@@ -1,4 +1,5 @@
 #include "platform/adapters/http/AuthApi.h"
+#include "platform/adapters/http/WriteRoutes.h"
 
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
@@ -555,10 +556,36 @@ TEST(auth_a_send_that_could_not_reach_the_provider_is_reported_and_loses_no_link
   Harness h;
   h.email.failNext = true;
 
-  const drogon::HttpResponsePtr response = call(
-      h, &AuthApi::requestLink,
-      request(drogon::Post, "/v1/auth/magic-link", R"({"email":"sam@example.com"})"));
+  struct Reports : FailureReporter {
+    std::vector<std::string> failures;
+    void report(const std::string& kind, const std::string& operation, const std::string& detail) override {
+      failures.push_back(kind + "|" + operation + "|" + detail);
+    }
+    void reportWrite(const std::string& operation, const std::string& product, const std::string& door,
+                     const std::string& outcome, const std::string&, const std::string&) override {
+      failures.push_back(operation + "|" + product + "|" + door + "|" + outcome);
+    }
+  };
+  auto reports = std::make_shared<Reports>();
+  std::vector<WriteCompletion> writes;
+  struct ResetReports {
+    ~ResetReports() { installWriteReporter(nullptr); installWriteSink({}); }
+  } reset;
+  installWriteReporter(reports);
+  installWriteSink([&](const WriteCompletion& completion) { writes.push_back(completion); });
+  const auto req = request(drogon::Post, "/v1/auth/magic-link", R"({"email":"private-address@example.com","door":"app"})");
+  beginWriteRequest(req, WriteRoute{"/v1/auth/magic-link", "platform.POST.v1.auth.magic.link", "platform", "rest", {drogon::Post}});
+  const drogon::HttpResponsePtr response = call(h, &AuthApi::requestLink, req);
+  finishWriteRequest(req, response);
+  finishWriteRequest(req, response);
 
+  CHECK_EQ(reports->failures, (std::vector<std::string>{"platform.POST.v1.auth.magic.link|platform|rest|failed"}));
+  REQUIRE_EQ(writes.size(), std::size_t{1});
+  CHECK_EQ(writes[0].operation, std::string("platform.POST.v1.auth.magic.link"));
+  CHECK_EQ(writes[0].product, std::string("platform"));
+  CHECK_EQ(writes[0].door, std::string("rest"));
+  CHECK_EQ(writes[0].outcome, std::string("failed"));
+  CHECK(writes[0].durationMs >= 0);
   CHECK_EQ(response->getStatusCode(), drogon::k502BadGateway);
   const Json::Value body = *response->getJsonObject();
   CHECK_EQ(body["code"].asString(), std::string("unreachable"));

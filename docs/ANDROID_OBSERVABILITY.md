@@ -64,6 +64,9 @@ emits one `gym_session_finished` after readiness returns.
 The first-launch onboarding gate reports unreadable workout presence, unreadable first-launch state
 and failed launch-marker writes under the static operation `onboarding_storage`; failed inspection or
 flag persistence skips automatic onboarding rather than treating an unknown phone as empty.
+Sign-in shows server refusal words only in the form. Expected code refusals emit the shared API
+failure metric without a Sentry issue; unexpected local completion failures report under
+`auth_sign_in`. Neither boundary sends the email, code, link or server refusal text.
 Session decoding and Keystore failures use a bootstrap Sentry sink, available before account storage
 is read. HTTP failures are owned by the shared transport, so workout stores do not report them twice.
 SDK exception deduplication is disabled because the transport's malformed exception is a singleton;

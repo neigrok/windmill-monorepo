@@ -116,11 +116,11 @@ class YouSheetTests {
         assertEquals(1, dismissed)
     }
 
-    @Test fun modalBodyRestoresRawCodeAndRefusalWithAFreshAuthStore() {
+    @Test fun modalBodyRestoresRawCodeAndFallbackWithoutServerWordsWithAFreshAuthStore() {
         var auth by mutableStateOf(AuthStore(server.url("/"), MemorySessions()))
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setBody("{}"))
-        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"expired"}"""))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("{}"))
         val restoration = StateRestorationTester(compose)
         restoration.setContent { WindmillMaterial { YouSheet(auth, {}, startSignIn = true) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")

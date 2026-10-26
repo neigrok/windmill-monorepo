@@ -43,7 +43,7 @@ public:
     });
   }
 
-  ResendClient(std::string apiKey, std::string from);
+  ResendClient(std::string apiKey, std::string from, std::string baseUrl = "https://api.resend.com");
 
   void send(const Email& to, const std::string& templateId, const Json::Value& variables,
             const Json::Value& headers, std::function<void(bool)> done);
@@ -55,6 +55,7 @@ private:
   void sendBody(const Json::Value& body, const std::string& idempotencyKey, std::function<void(bool)> done);
   std::string apiKey_;
   std::string from_;
+  std::string baseUrl_;
   std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };

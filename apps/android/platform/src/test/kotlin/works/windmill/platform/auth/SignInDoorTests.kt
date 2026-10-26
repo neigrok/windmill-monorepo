@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import java.io.IOException
 import works.windmill.platform.User
 import works.windmill.platform.design.WindmillMaterial
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -35,7 +37,8 @@ class SignInDoorTests {
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Use a valid email."}"""))
         server.enqueue(MockResponse().setBody("{}"))
-        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"expired"}"""))
+        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}"""))
+        val refusedCode = "That code didn't work. Check the digits, or send a fresh one."
         server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com","name":"Ana"}}""")
             .addHeader("Set-Cookie", "wm_session=fresh; Path=/; HttpOnly"))
         var done = 0
@@ -43,6 +46,11 @@ class SignInDoorTests {
         restoration.setContent { WindmillMaterial { Box(Modifier.height(700.dp)) {
             SignInDoor(auth, { done++ })
         } } }
+        compose.onNodeWithText("Training on this phone can join your account. If both have training, you choose Add or Discard.").assertDoesNotExist()
+        compose.onNodeWithText("Email", useUnmergedTree = true).assertIsDisplayed()
+        val field = compose.onNodeWithContentDescription("Email field").getBoundsInRoot()
+        val label = compose.onNodeWithText("Email", useUnmergedTree = true).getBoundsInRoot()
+        assertTrue(label.top >= field.top && label.bottom <= field.bottom)
         compose.onNodeWithContentDescription("Email field").performTextReplacement("  a@example.com  ")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Use a valid email.").fetchSemanticsNodes().isNotEmpty() }
@@ -53,10 +61,12 @@ class SignInDoorTests {
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
         compose.onNodeWithText("Sign in").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText(MagicLink.expiredCode).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(refusedCode).fetchSemanticsNodes().isNotEmpty() }
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
-        compose.onNodeWithText(MagicLink.expiredCode).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(refusedCode).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Works once. Expires in 15 minutes.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Code field").assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, refusedCode))
         val finalClick = compose.onNodeWithText("Sign in").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { finalClick() }
         compose.waitUntil(5_000) { done == 1 }
@@ -136,7 +146,13 @@ class SignInDoorTests {
                 memory.stage(proposed)
             }
         }
-        val auth = AuthStore(server.url("/"), sessions)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to properties }
+        }
+        val auth = AuthStore(server.url("/"), sessions, telemetry = telemetry)
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setBody("{}"))
         repeat(2) { server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com","name":"Ana"}}""")
@@ -157,5 +173,13 @@ class SignInDoorTests {
         compose.waitUntil(5_000) { done == 1 }
         assertEquals("fresh", sessions.read())
         assertEquals(2, stages)
+        assertEquals(listOf(
+            "auth_restore" to mapOf("outcome" to "signed_out"),
+            "auth_code_requested" to emptyMap(), "auth_code_sent" to emptyMap(),
+            "auth_sign_in_started" to mapOf("method" to "code"),
+            "auth_sign_in_started" to mapOf("method" to "code"),
+            "auth_signed_in" to emptyMap(),
+        ), events)
+        assertEquals(listOf("auth_sign_in" to emptyMap<String, String>()), failures)
     }
 }

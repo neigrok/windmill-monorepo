@@ -11,6 +11,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.assertTextContains
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -97,6 +104,37 @@ class SignInDoorSkinTests {
         }
         compose.runOnIdle {
             assertEquals(mapOf("outer" to instrument, "nested" to daylight, "sibling" to instrument), seen)
+        }
+    }
+
+    @Test
+    fun aRefusedCodeKeepsItsTextAndUsesTheNativeErrorRoleAcrossAppearances() {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(MockResponse().setBody("{}"))
+            server.enqueue(MockResponse().setResponseCode(410).setBody("""{"error":"That code didn't work","detail":"Check the digits, or send a fresh one."}"""))
+            val auth = AuthStore(server.url("/"), MemorySessions())
+            runBlocking { auth.restore() }
+            val dark = mutableStateOf(true)
+            compose.setContent {
+                CompositionLocalProvider(LocalWindmillDark provides dark.value) {
+                    GymMaterial { SignInDoor(auth) }
+                }
+            }
+            compose.onNodeWithContentDescription("Email field").performTextReplacement("person@example.com")
+            compose.onNodeWithText("Send code").performClick()
+            compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Code field").performTextReplacement("123456")
+            compose.onNodeWithText("Sign in").performClick()
+            val refusal = "That code didn't work. Check the digits, or send a fresh one."
+            compose.waitUntil(5_000) { compose.onAllNodesWithText(refusal).fetchSemanticsNodes().isNotEmpty() }
+            for ((isDark, expected) in listOf(true to Color(0xFFE46962), false to Color(0xFFB3261E), true to Color(0xFFE46962))) {
+                compose.runOnIdle { dark.value = isDark }
+                val layouts = mutableListOf<TextLayoutResult>()
+                compose.onNodeWithText(refusal).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                assertEquals(expected, layouts.single().layoutInput.style.color)
+                compose.onNodeWithContentDescription("Code field").assertTextContains("123456")
+            }
         }
     }
 

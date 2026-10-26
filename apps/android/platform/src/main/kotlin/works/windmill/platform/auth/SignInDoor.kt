@@ -9,7 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import works.windmill.platform.User
+import works.windmill.platform.R
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.net.WindmillApiException
@@ -114,19 +115,24 @@ fun SignInDoor(
             if (sentTo == null) {
                 Text("New here? The same door creates your account.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim)
                 DoorField("Email", "you@example.com", email, KeyboardType.Email, pending == null && !completed, refusal) { email = it; refusal = null }
-                Text("Training on this phone can join your account. If both have training, you choose Add or Discard.",
-                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
             } else {
                 Text("Code sent to $sentTo.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.ink)
-                DoorField("Code", "6-digit code", typed, KeyboardType.Number, pending == null && !completed, refusal) { typed = it; refusal = null }
-                Text("Works once. Expires in 15 minutes.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DoorField("Code", "6-digit code", typed, KeyboardType.Number, pending == null && !completed, refusal) { typed = it; refusal = null }
+                    Text(refusal ?: "Works once. Expires in 15 minutes.",
+                        style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                        color = if (refusal == null) palette.inkDim else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { if (refusal != null) liveRegion = LiveRegionMode.Polite })
+                }
                 Text("You can also paste the email link.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
                 TextButton(onClick = ::requestCode, enabled = pending == null && !completed && seconds == 0L, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(if (seconds > 0) "Resend in ${seconds}s" else "Resend", style = WindmillFont.body(14), color = palette.inkDim)
                 }
             }
-            refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.noticeInk,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            if (sentTo == null) refusal?.let {
+                Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { if (sentTo == null) requestCode() else signIn() },
@@ -147,15 +153,14 @@ fun SignInDoor(
 private fun DoorField(label: String, placeholder: String, value: String, keyboard: KeyboardType,
     enabled: Boolean, refusal: String?, onChange: (String) -> Unit) {
     val palette = LocalWindmillPalette.current
-    Text(label, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
     OutlinedTextField(value, onValueChange = onChange, enabled = enabled, singleLine = true,
-        textStyle = WindmillFont.body(18).copy(lineHeight = 24.sp),
-        placeholder = { Text(placeholder, style = WindmillFont.body(18).copy(lineHeight = 24.sp)) },
+        label = { Text(label) }, placeholder = { Text(placeholder) },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = keyboard),
-        shape = RoundedCornerShape(20.dp), isError = refusal != null,
-        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            focusedBorderColor = palette.accent, unfocusedBorderColor = Color.Transparent, cursorColor = palette.accent,
+        isError = refusal != null,
+        trailingIcon = if (refusal == null) null else {
+            { Icon(painterResource(R.drawable.auth_field_error), contentDescription = null, modifier = Modifier.size(24.dp)) }
+        },
+        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = palette.accent, cursorColor = palette.accent,
             focusedTextColor = palette.ink, unfocusedTextColor = palette.ink),
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "$label field"; refusal?.let { error(it) } })
 }

@@ -211,8 +211,41 @@ class ModelFixture(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
 
+class MailFixture(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = 0
+        if self.path != "/emails" or self.headers.get("Authorization") != "Bearer local-capture-only" or not 0 < length <= 4096:
+            self.send_error(400)
+            return
+        try:
+            body = json.loads(self.rfile.read(length))
+            code = body["template"]["variables"]["sign_in_code"]
+            valid = body["template"]["id"] == "magic-code" and re.fullmatch(r"[0-9]{6}", code) and \
+                body["from"] == "Windmill <capture@example.test>" and isinstance(body["to"], str)
+        except (ValueError, KeyError, TypeError):
+            valid = False
+        if not valid:
+            self.send_error(400)
+            return
+        self.server.code = code
+        self.server.calls += 1
+        encoded = b'{"id":"capture-mail"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
 class Device:
-    def __init__(self, sdk, port):
+    def __init__(self, sdk, port, auth_code=None):
+        self.auth_code = auth_code
         self.adb = sdk / "platform-tools/adb"
         self.serial = f"emulator-{port}"
 
@@ -239,11 +272,16 @@ class Device:
         (self.output / "failure-ui.png").write_bytes(self.run("exec-out", "screencap", "-p"))
         raise RuntimeError(f"Capture state did not expose {value!r}.")
 
-    def settle(self):
+    def settle(self, *, resend_countdown=False):
         previous = None
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             tree = self.tree()
+            if resend_countdown:
+                for node in tree.iter("node"):
+                    for key in ("text", "content-desc"):
+                        if re.fullmatch(r"Resend in (?:[1-9]|[12][0-9]|30)s", node.get(key, "")):
+                            node.set(key, "Resend countdown")
             current = ET.tostring(tree)
             if tree.tag != "unavailable" and current == previous:
                 return
@@ -281,6 +319,27 @@ class Device:
                 self.find(step["wait"])
             elif "text" in step:
                 self.run("shell", "input", "text", step["text"].replace(" ", "%s"))
+            elif "keyboard" in step:
+                if step["keyboard"] == "show":
+                    self.run("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
+                elif step["keyboard"] == "hide":
+                    state = self.run("shell", "dumpsys", "input_method").decode()
+                    shown = re.findall(r"\bmInputShown=(true|false)\b", state)
+                    if not shown:
+                        raise RuntimeError("The native input-method state was unavailable.")
+                    if "true" in shown:
+                        self.run("shell", "input", "keyevent", "KEYCODE_BACK")
+                else:
+                    raise ValueError("Keyboard steps support show or hide.")
+            elif "auth_code" in step:
+                code = self.auth_code() if self.auth_code else None
+                if step["auth_code"] not in ("valid", "wrong") or not isinstance(code, str) or not re.fullmatch(r"[0-9]{6}", code):
+                    raise ValueError("Auth-code steps need a delivered local challenge and valid/wrong intent.")
+                if step["auth_code"] == "wrong":
+                    code = "246810" if code != "246810" else "135791"
+                self.tap("Code field")
+                self.run("shell", "input", "keyevent", "KEYCODE_MOVE_END", *(["KEYCODE_DEL"] * 6))
+                self.run("shell", "-T", "sh", input=f"input text {code}\n".encode())
             elif "key" in step:
                 self.run("shell", "input", "keyevent", step["key"])
             elif "swipe" in step:
@@ -289,7 +348,7 @@ class Device:
                 raise ValueError("Unknown capture step.")
 
 
-def start_emulator(sdk, output, port, stack):
+def start_emulator(sdk, output, port, stack, auth_code=None):
     serial = f"emulator-{port}"
     if serial in command([sdk / "platform-tools/adb", "devices"]).decode().split():
         raise RuntimeError("The selected emulator port already belongs to a device; refusing install.")
@@ -311,7 +370,7 @@ def start_emulator(sdk, output, port, stack):
         "-no-snapshot", "-no-audio", "-no-boot-anim", "-no-window"], env={**os.environ, "ANDROID_AVD_HOME": str(avds)},
         stdout=log, stderr=subprocess.STDOUT)
     stack.callback(stop, process)
-    device = Device(sdk, port)
+    device = Device(sdk, port, auth_code)
     device.output = output
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
@@ -344,6 +403,7 @@ def main():
     parser.add_argument("--backend-binary", type=Path, default=ROOT / "backend/build/windmill_server")
     parser.add_argument("--backend-port", type=int, default=8098)
     parser.add_argument("--model-port", type=int, default=8099)
+    parser.add_argument("--mail-port", type=int, default=8101)
     parser.add_argument("--emulator-port", type=int, default=5580)
     parser.add_argument("--scenarios", type=Path, help="JSON array of board/name/account/steps; each recipe is replayed after appearance switches.")
     parser.add_argument("--profile-seconds", type=int, default=10)
@@ -360,7 +420,7 @@ def main():
                 not dsn.port or not 1024 <= dsn.port <= 65535 or not dsn.username or dsn.password or \
                 not re.fullmatch(r"/[0-9]+", dsn.path) or dsn.query or dsn.fragment:
             parser.error("Sentry capture requires a local collector DSN with an explicit port.")
-    ports = (args.backend_port, args.model_port, args.emulator_port, args.emulator_port + 1)
+    ports = (args.backend_port, args.model_port, args.mail_port, args.emulator_port, args.emulator_port + 1)
     if len(set(ports)) != len(ports) or args.emulator_port % 2 or not 5554 <= args.emulator_port <= 5682:
         parser.error("Use distinct local ports and an even emulator port from 5554 through 5682.")
     for port in ports:
@@ -372,6 +432,7 @@ def main():
     origin = local_origin(f"http://127.0.0.1:{args.backend_port}")
     app_origin = local_origin(f"http://10.0.2.2:{args.backend_port}", emulator=True)
     model_origin = local_origin(f"http://127.0.0.1:{args.model_port}")
+    mail_origin = local_origin(f"http://127.0.0.1:{args.mail_port}")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
     android = ROOT / "apps/android"
@@ -382,7 +443,7 @@ def main():
         parser.error(str(error))
     manifest = {"apiOrigin": app_origin, "source": command(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
                 "sourceDirty": bool(command(["git", "status", "--porcelain"], cwd=ROOT)),
-                "baseline": args.baseline, "captures": [], "failures": []}
+                "baseline": args.baseline, "captures": [], "failures": [], "authCompletions": 0}
     manifest_path = args.output / "capture-manifest.json"
     def save_manifest(kind, value, traceback):
         if kind is not None:
@@ -405,12 +466,19 @@ def main():
         model_thread.start()
         stack.callback(model.server_close)
         stack.callback(model.shutdown)
+        mail = ThreadingHTTPServer(("127.0.0.1", args.mail_port), MailFixture)
+        mail.code, mail.calls = None, 0
+        mail_thread = threading.Thread(target=mail.serve_forever, daemon=True)
+        mail_thread.start()
+        stack.callback(mail.server_close)
+        stack.callback(mail.shutdown)
         backend_log = stack.enter_context((args.output / "backend.log").open("wb"))
         safe_env = {key: os.environ[key] for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ") if key in os.environ}
         backend = subprocess.Popen([str(args.backend_binary.resolve())], cwd=ROOT / "backend", env={**safe_env,
             "DATABASE_URL": database_url, "PORT": str(args.backend_port), "ANTHROPIC_API_KEY": "local-capture-only",
             "ANTHROPIC_BASE_URL": model_origin, "COACH_ANTHROPIC_BASE_URL": model_origin,
-            "WINDMILL_ALLOWED_ORIGINS": "http://localhost:5173"}, stdout=backend_log, stderr=subprocess.STDOUT)
+            "WINDMILL_ALLOWED_ORIGINS": "http://localhost:5173", "RESEND_BASE_URL": mail_origin,
+            "RESEND_API_KEY": "local-capture-only", "RESEND_FROM": "Windmill <capture@example.test>"}, stdout=backend_log, stderr=subprocess.STDOUT)
         stack.callback(stop, backend)
         fixture = Fixture(origin, database_url)
         for attempt in range(60):
@@ -436,11 +504,12 @@ def main():
         manifest["apkSha256"] = hashlib.sha256(apk.read_bytes()).hexdigest()
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        device = start_emulator(args.sdk, args.output, args.emulator_port, stack)
+        device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
         device.run("install", apk)
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
             for mode, value in (("dark", "yes"), ("light", "no")):
+                mail.code = None
                 device.run("shell", "pm", "clear", PACKAGE)
                 device.run("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
                 device.run("shell", "cmd", "uimode", "night", value)
@@ -449,16 +518,26 @@ def main():
                     device.sign_in(fixture.link())
                     device.find("Push A")
                 for scenario in [item for item in scenarios if item["account"] == account]:
+                    completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
+                    sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.steps(scenario["steps"])
-                    device.settle()
+                    device.settle(resend_countdown=scenario.get("resend_countdown", False))
                     if model.responses:
                         raise RuntimeError("The capture did not consume its deterministic model responses.")
                     filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
                     (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
                     manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
                     device.steps(scenario.get("after", []))
+                    if completions:
+                        sessions_after = int(fixture.sql("SELECT count(*) FROM sessions;"))
+                        digest = hashlib.sha256(mail.code.encode()).hexdigest()
+                        spent = int(fixture.sql(f"SELECT count(*) FROM magic_links WHERE code_hash='{digest}' AND consumed_ms IS NOT NULL;"))
+                        if sessions_after - sessions_before != completions or spent < 1:
+                            raise RuntimeError("The native code sign-in did not commit its session and spend its challenge.")
+                        manifest["authCompletions"] += completions
+        manifest["mailCalls"] = mail.calls
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")

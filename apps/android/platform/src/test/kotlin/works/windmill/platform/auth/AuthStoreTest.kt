@@ -18,6 +18,8 @@ import org.junit.Before
 import org.junit.Test
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.platform.net.Refusal
+import works.windmill.platform.telemetry.Telemetry
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -36,6 +38,39 @@ class AuthStoreTest {
     }
 
     private fun store(sessions: SessionStore) = AuthStore(server.url("/"), sessions)
+
+    @Test fun aCodeRefusalKeepsTheServerWordsAndNeverCreatesIdentity() = runTest {
+        val sessions = MemorySessions()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                fail("An expected code refusal must not report a technical failure")
+            }
+        }
+        val auth = AuthStore(server.url("/"), sessions, telemetry = telemetry)
+        auth.restore()
+        server.enqueue(MockResponse().setResponseCode(410).setBody(
+            """{"error":"That code didn't work","detail":"Check the digits, or send a fresh one.","code":"expired"}"""))
+        val failure = runCatching { auth.completeCode(" a@example.com ", " 246810 ") }.exceptionOrNull()
+        assertEquals(WindmillApiException.Refused(410,
+            Refusal("That code didn't work", "Check the digits, or send a fresh one.", "expired")), failure)
+        assertEquals("That code didn't work. Check the digits, or send a fresh one.",
+            MagicLink.refusal(requireNotNull(failure), ofCode = true))
+        assertEquals(AuthStatus.SignedOut, auth.status)
+        assertEquals(LocalSession.Absent, sessions.localSession)
+        assertNull(sessions.proposed)
+        val request = server.takeRequest()
+        assertEquals("/v1/auth/verify-code", request.path)
+        assertEquals("""{"email":"a@example.com","code":"246810"}""", request.body.readUtf8())
+        assertEquals(listOf(
+            "auth_restore" to mapOf("outcome" to "signed_out"),
+            "auth_sign_in_started" to mapOf("method" to "code"),
+            "api_request_failed" to mapOf("method" to "POST", "route" to "/v1/auth", "failure_kind" to "http",
+                "operation" to "auth_request", "network_phase" to "response_body", "status" to "410"),
+        ), events.map { (name, properties) -> name to (properties - "duration_ms") })
+        assertTrue(events.last().second.getValue("duration_ms").toLong() >= 0)
+    }
 
     @Test fun signInSealsIdentityBeforeWaitingForTheEngineDecisionAndPublishesAfterwards() = runTest {
         server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}""")

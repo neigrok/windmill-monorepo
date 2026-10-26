@@ -486,8 +486,9 @@ its session secret; an insert failure rolls back the binding and revival.
 
 | Var | Purpose | Default |
 |---|---|---|
-| `RESEND_API_KEY` | Resend key; without it, sends throw → `502` | — |
+| `RESEND_API_KEY` | Resend key; without it, sends are refused → `502` | — |
 | `RESEND_FROM` | Verified sender, on a domain verified in Resend. Never Resend's shared `onboarding@resend.dev` outside a scratch box: Resend accepts it only for the account owner and rejects every other recipient `422`, so sign-up breaks for everyone except the person testing it. The deploy guards it | — |
+| `RESEND_BASE_URL` | Provider origin override for isolated integration fixtures; use a local origin and dummy key, never hosted credentials | `https://api.resend.com` |
 | `WINDMILL_APP_URL` | Base for the magic-link URL; always a trusted CORS origin | `http://localhost:5183` (compose: `https://${DOMAIN_APP}`) |
 | `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only. Every sign-in and sign-out also expires the cookie in each other scope: host-only, and each retired `Domain`. A `Domain` the server refuses (Frontend integration) stops it at startup | compose: `${DOMAIN_APP}` |
 | `WINDMILL_COOKIE_RETIRED_DOMAINS` | Every `Domain` the deployment set the session cookie in before the current one, comma-separated. Add the old one here whenever `WINDMILL_COOKIE_DOMAIN` changes | compose: `${WINDMILL_COOKIE_RETIRED_DOMAINS:-}`, from the GitHub variable of the same name; empty |
@@ -537,20 +538,22 @@ code exchange. MCP transport, credentials and scopes are documented in the
 
 ## The Resend templates
 
-`ResendEmailSender` calls `POST https://api.resend.com/emails` with a stored template id —
+`ResendEmailSender` calls `POST /emails` at `RESEND_BASE_URL` (default `https://api.resend.com`)
+with a stored template id —
 `magic-link` (`template.variables.magic_link`), `magic-link-fork` (plus `tree_title` / `tree_meta`),
 or `magic-code` (`template.variables.sign_in_code`). It sends `from`, which takes precedence over
 the template's default, and **omits `subject`** so the template owns it.
 
 **Each template must define its own subject.** With the payload omitting it, a template with no
-default subject makes the send fail and the endpoint returns `502` with Resend's validation message.
+default subject makes the send fail and the endpoint returns its generic `502` refusal. Provider
+response bodies are not read or logged.
 
 **Operator step, not doable from this repo: the `magic-code` template must exist in the Resend
 dashboard before any app release ships the code door.** A missing template makes every `door:"app"`
 send fail into the 502 brick; a template pasted without the `{{{sign_in_code}}}` variable renders a
 mail with an empty slot and no local test fails. Paste-source: `web/emails/magic-code.html` / `.txt`.
 
-Any non-2xx response (or a network error) throws, which the endpoint surfaces as the `502`.
+Any non-2xx response (or a network error) refuses delivery, which the endpoint surfaces as the `502`.
 
 ## Lifetimes (`domain/Auth.h`, one source of truth)
 
