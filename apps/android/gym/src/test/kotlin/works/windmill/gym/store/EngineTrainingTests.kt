@@ -109,6 +109,35 @@ class EngineTrainingTests {
         }
     }
 
+    @Test fun seededEquipmentNameEditsKeepCountsWeightsVolumeAndLoadReadouts() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val ids = listOf("bench-press", "dumbbell-bench-press", "goblet-squat", "leg-press", "pull-up", "lat-pulldown", "kettlebell-swing")
+            val catalog = room.training.catalogue().filter { it.id in ids }.associateBy { it.id }
+            assertEquals(listOf("barbell", "dumbbell", "dumbbell", "machine", "bodyweight", "cable", "kettlebell"), ids.map { catalog.getValue(it).equipment })
+            assertEquals(listOf(1, 2, 1, 1, 1, 1, 1), ids.map { catalog.getValue(it).loadCount })
+            room.training.startSession(SessionStart("session1", room.now))
+            ids.forEachIndexed { index, id ->
+                room.training.appendSet("session1", SetWrite("set0000$index", id, if (id == "pull-up") -10.0 else 16.0, 8, completedAt = ++room.now))
+            }
+            room.training.finishSession("session1", ++room.now)
+            val before = room.training.session("session1")!!
+            val volume = SessionSummary.of(before, listOf(before), catalog.values.toList()).tonnageKg
+            assertEquals(896.0, volume)
+            for (id in ids) {
+                val original = catalog.getValue(id)
+                val renamed = room.training.renameExercise(id, "My ${original.name}")
+                assertEquals(original.copy(name = "My ${original.name}", aliases = listOf(original.name)), renamed)
+            }
+            val after = room.training.session("session1")!!
+            val renamed = room.training.catalogue().associateBy { it.id }
+            assertEquals(before, after)
+            assertEquals(volume, SessionSummary.of(after, listOf(after), renamed.values.toList()).tonnageKg)
+            assertEquals(listOf("1 × 8 · 16 kg total", "1 × 8 · 16 kg each", "1 × 8 · 16 kg", "1 × 8 · 16 kg total", "1 × 8 · −10 kg added", "1 × 8 · 16 kg", "1 × 8 · 16 kg"),
+                ids.map { id -> Readout.targetWithUnit(after.sets.filter { it.exerciseId == id }.map { SetTarget(it.reps, it.weightKg) }, renamed.getValue(id)) })
+        }
+    }
+
     @Test fun offlineEngineRowsAndFinishedHistoryKeepDeviceMarkersUntilTheServerConfirmsThem() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("A")

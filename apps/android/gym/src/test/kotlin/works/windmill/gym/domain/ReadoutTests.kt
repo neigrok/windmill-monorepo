@@ -66,6 +66,45 @@ class ReadoutTests {
     }
 
     @Test
+    fun targetUnitUsesResolvedEquipmentAndCountWithoutChangingTheLoad() {
+        val targets = List(3) { SetTarget(8, 24.0) }
+        val cases = listOf(
+            Triple("barbell", 1, "3 × 8 · 24 kg total"),
+            Triple("dumbbell", 2, "3 × 8 · 24 kg each"),
+            Triple("dumbbell", 1, "3 × 8 · 24 kg"),
+            Triple("machine", 1, "3 × 8 · 24 kg total"),
+            Triple("bodyweight", 1, "3 × 8 · 24 kg added"),
+            Triple("cable", 1, "3 × 8 · 24 kg"),
+            Triple("kettlebell", 1, "3 × 8 · 24 kg"),
+            Triple("unknown", 2, "3 × 8 · 24 kg"),
+        )
+        for ((equipment, count, expected) in cases) {
+            val exercise = Exercise("movement", "Movement", equipment = equipment, loadCount = count)
+            assertEquals(expected, Readout.targetWithUnit(targets, exercise))
+            assertEquals(expected, Readout.targetWithUnit(targets, exercise.copy(name = "My movement")))
+        }
+        assertEquals("3 × 8 · 24 kg", Readout.targetWithUnit(targets, null))
+        assertEquals(List(3) { SetTarget(8, 24.0) }, targets)
+        assertEquals("3 × 8 · 24", Readout.target(targets))
+        assertEquals("3 × 8 · 24kg", Readout.targetWithUnit(targets))
+    }
+
+    @Test
+    fun signedAndOpenTargetsKeepTheirMeaningWithEquipmentUnits() {
+        val bodyweight = Exercise("pull-up", "Pull Up", equipment = "bodyweight")
+        assertEquals("3 × 8 · −10 kg added", Readout.targetWithUnit(List(3) { SetTarget(8, -10.0) }, bodyweight))
+        assertEquals("3 × 8 · 0 kg added", Readout.targetWithUnit(List(3) { SetTarget(8, 0.0) }, bodyweight))
+        assertEquals("3 × 5–max · −10–last kg added", Readout.targetWithUnit(
+            listOf(SetTarget(5, -10.0), SetTarget(null, 5.0), SetTarget(8)), bodyweight))
+        assertEquals("open", Readout.targetWithUnit(emptyList(), bodyweight))
+        assertEquals("3 × max", Readout.targetWithUnit(List(3) { SetTarget() }, bodyweight))
+        val single = Exercise("goblet-squat", "Goblet Squat", equipment = "dumbbell")
+        val pair = Exercise("dumbbell-bench-press", "Dumbbell Bench Press", equipment = "dumbbell")
+        assertEquals("1 × 5 · 16 kg", Readout.targetWithUnit(listOf(SetTarget(5, 16.0)), single))
+        assertEquals("1 × 5 · 16 kg each", Readout.targetWithUnit(listOf(SetTarget(5, 16.0)), pair))
+    }
+
+    @Test
     fun testTheLadderUnfoldsOneSetAfterAnother() {
         assertEquals("60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5",
                      Readout.ladder(listOf(SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))))

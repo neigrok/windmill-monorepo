@@ -137,6 +137,7 @@ struct TrainingReadsTests {
         switch try fields.string("operation") {
         case "estimate": return .string(Readout.estimate(try fields.double("value")))
         case "target": return .string(Readout.target(try fields.optionalList("sets", of: SetTarget.self)))
+        case "loadUnit": return .string(Readout.loadUnit(equipment: try fields.optionalString("equipment"), loadCount: try fields.int("loadCount")))
         case "ladder": return .string(Readout.ladder(try fields.list("sets", of: SetTarget.self)))
         case "tonnes": return .of(Readout.tonnes(try fields.double("value")))
         case "duration": return .string(Readout.duration(try fields.instant("value").ms))

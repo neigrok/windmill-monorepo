@@ -125,6 +125,7 @@ function trainingReadsForm(vector, read) {
       switch (f.string('operation')) {
         case 'estimate': return Readout.estimate(f.double('value'));
         case 'target': return Readout.target(f.optionalList('sets', SetTarget.decode));
+        case 'loadUnit': return Readout.loadUnit(f.optionalString('equipment'), f.int('loadCount'));
         case 'ladder': return Readout.ladder(f.list('sets', SetTarget.decode));
         case 'tonnes': return Readout.tonnes(f.double('value'));
         case 'duration': return Readout.duration(f.instant('value').ms);

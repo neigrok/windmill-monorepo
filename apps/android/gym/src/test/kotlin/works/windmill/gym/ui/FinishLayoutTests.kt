@@ -64,7 +64,7 @@ class FinishLayoutTests {
         val layouts = mutableListOf<TextLayoutResult>()
         plan.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
-        val target = compose.onAllNodesWithText("3 × 8 · 60kg").onLast().performScrollTo().assertIsDisplayed()
+        val target = compose.onAllNodesWithText("3 × 8 · 60 kg total").onLast().performScrollTo().assertIsDisplayed()
         val movement = compose.onAllNodesWithText(name).onFirst().fetchSemanticsNode().boundsInRoot
         assertTrue(target.fetchSemanticsNode().boundsInRoot.top >= movement.bottom)
         compose.onNodeWithText("Save routine").assertDoesNotExist()

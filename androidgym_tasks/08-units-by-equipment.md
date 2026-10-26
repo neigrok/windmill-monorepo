@@ -7,14 +7,14 @@
 - 02.5 Routine editor, always sortable: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30313) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44882)
 - Components (Design System library, Android page): `Android / Equipment icon` `337:2025` (Barbell, Dumbbells, Bodyweight, Machine; Machine is `343:2377`, the Material Symbol `table_rows`).
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The sync domain `ExerciseRules.equipment` and `equipmentOverride` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/Catalogue.kt` support `barbell`, `dumbbell`, `machine`, `cable`, `bodyweight` and `kettlebell`. The four-value `Exercise.loadings` in app `domain/Training.kt` is a narrower creation menu, not the full record domain. Volume already multiplies by resolved `loadCount`; non-dumbbell records resolve to one.
-- Every screen outside Coach prints plain *kg*:
-  - `Readout.targetWithUnit` appends *kg* with no space: *3 × 5 · 80kg* (`domain/Readout.kt:51-52`). Used by the editor (`ui/RoutineBuilder.kt:431`), workout detail (`ui/SessionScreen.kt:167`), the finish receipt (`ui/FinishScreen.kt:287`, :385) and the review sheet.
-  - The routine summary appends *" kg"* itself (`ui/RoutinesScreen.kt:329`), e.g. *3 × 8 · 75 kg*.
-- Only Coach's draft card knows the basis, with its own rule: *" each"* for two dumbbells, *" total"* for barbell, *" added"* / *" assisted"* for bodyweight, nothing for machine (`coach/CoachAnswer.kt:94-108`).
-- No equipment icon is drawn anywhere.
-- The editor's dragged row is painted `raised`, with no shadow (`ui/RoutineBuilder.kt:400`).
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- Pure `sync.Readout.loadUnit` reads resolved equipment and load count. Matching Kotlin, Swift and web runners claim the nine shared `training-reads.json` cases; no iOS/web screen calls change.
+- The two-argument app `Readout.targetWithUnit` puts a space before the equipment unit. Routine summary, editor, finish receipt and workout detail pass the resolved exercise. Missing or unknown equipment reads plain *kg*.
+- The one-argument formatter remains the compact line used by the rack and Coach review. Coach draft/action presentation keeps its existing strings.
+- `ui/EquipmentIcon.kt` draws only the four approved 24 dp variants from exact Figma exports in `design-assets/equipment/`, packaged as one theme-tinted xxxhdpi image per variant. Cable, kettlebell and unknown values do not borrow another glyph. Later tasks place the component.
+- The dragged routine row uses the raised role, a 12 dp corner and M3 level 3 (6 dp) shadow. Handles remain visible.
+- All six stored equipment values, resolved dumbbell counts, raw weights and volume survive name-only edits. The four-value creation menu stays separate from stored-record support.
+- `apps/android/tools/capture-recipes/equipment-units.json` and its companion fixture reproduce the approved routine targets through the isolated MCP/database stack, including the native held-row state.
 
 **Change**
 - One load rule in the domain, next to `Readout` (with tests and shared vectors):

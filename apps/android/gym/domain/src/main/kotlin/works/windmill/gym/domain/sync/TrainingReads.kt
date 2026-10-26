@@ -238,6 +238,12 @@ object Readout {
             if (loads.min() == loads.max()) weight(loads.min()) else "${weight(loads.min())}–${weight(loads.max())}"
         return "${sets.size} × $repColumn · $load"
     }
+    fun loadUnit(equipment: String?, loadCount: Int): String = when (equipment) {
+        "dumbbell" -> if (loadCount == 2) "kg each" else "kg"
+        "barbell", "machine" -> "kg total"
+        "bodyweight" -> "kg added"
+        else -> "kg"
+    }
     fun tonnes(kg: Double): String? {
         if (!kg.isFinite() || kg <= 0) return null
         val tenths = Quantum.halfAway(kg / 100).toLong()

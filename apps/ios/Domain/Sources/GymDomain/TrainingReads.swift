@@ -361,6 +361,15 @@ public enum Readout {
     return "\(sets.count) × \(repColumn)\(loadColumn)"
   }
 
+  public static func loadUnit(equipment: String?, loadCount: Int) -> String {
+    switch equipment {
+    case "dumbbell": return loadCount == 2 ? "kg each" : "kg"
+    case "barbell", "machine": return "kg total"
+    case "bodyweight": return "kg added"
+    default: return "kg"
+    }
+  }
+
   public static func tonnes(_ kg: Double) -> String? {
     guard kg.isFinite, kg > 0 else { return nil }
     let tenths = Int((kg / 100).rounded(.toNearestOrAwayFromZero))

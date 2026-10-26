@@ -1,0 +1,63 @@
+[
+  {
+    "board": "02.2",
+    "name": "routine-summary",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Push A"
+      },
+      {
+        "wait": "3 \u00d7 10 \u00b7 24 kg each"
+      }
+    ]
+  },
+  {
+    "board": "02.5",
+    "name": "editor-sortable",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Edit routine"
+      },
+      {
+        "wait": "Move Incline Dumbbell Press, 3 of 5"
+      }
+    ]
+  },
+  {
+    "board": "02.5",
+    "name": "editor-lifted",
+    "account": "fixture",
+    "steps": [
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Move Incline Dumbbell Press, 3 of 5"
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Start workout"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

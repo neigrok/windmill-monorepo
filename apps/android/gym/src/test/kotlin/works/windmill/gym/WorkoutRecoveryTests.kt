@@ -171,7 +171,7 @@ class WorkoutRecoveryTests {
             awaitText("Ended early.")
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
             compose.onNodeWithText("480").assertIsDisplayed()
-            compose.onNodeWithText("1 × 8 · 60kg").assertIsDisplayed()
+            compose.onNodeWithText("1 × 8 · 60 kg total").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             awaitText("480")
             compose.onNodeWithText("480").assertIsDisplayed()

@@ -87,6 +87,19 @@ next field tap; `keyboard: "hide"` sends Back only when the native IME reports i
 challenge. Both replace the fixture's six-digit field through stdin; no credential is passed in host
 command arguments. The code, email and token never enter the manifest or event properties.
 
+`--fixture capture-recipes/equipment-units-fixture.json` replaces the isolated account's seeded
+program with explicit routine entries and targets, after creating its missing custom movement through
+the normal MCP write. Pair it with `--scenarios capture-recipes/equipment-units.json` for 02.2 summary,
+02.5 editor and a lifted row in both appearances. The default program is unchanged when omitted.
+The file accepts only `exercises` and `routines`; it supplies no origin, account or arbitrary tool.
+Existing catalogue identities/names cannot be replaced by a custom exercise fixture.
+
+A `touch` step has `phase: "down"`, an accessibility `target`, and optional `at: [x, y]` fractions
+inside that control's observed bounds. `move` uses those same bounds; `up` releases the pointer.
+Every scenario releases an outstanding pointer in `finally`, including capture failures. The normal
+settle check gives a long-pressed reorder handle time to expose its raised state. Local fixture sync
+accepts a valid acknowledged prefix, retains operation identity for the suffix, and bounds retries.
+
 Each `responses` entry is one Anthropic response's content blocks. Text and `tool_use` blocks work
 in JSON and streaming responses. `$routine0` is replaced with the first fixture routine's id.
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must
@@ -95,7 +108,7 @@ assert its actual backend receipt as well as its UI result.
 ## Performance and cleanup
 
 The cold-start probe records process-start and rendered-ready-frame times on the device, after
-the three fixture routines are loaded. The rig separately verifies `Push A` through accessibility
+the fixture routines are loaded. The rig separately verifies `Push A` through accessibility
 and records that slower host-side selector time. The default run fails at 3000ms or longer, or on
 an ANR/fatal exception. `--baseline` records an over-budget baseline without claiming performance
 acceptance. Keep baseline and final APKs, use identical emulator configuration and fixtures, and

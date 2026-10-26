@@ -182,6 +182,10 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
 
+Equipment-aware load labels are read-only and add no event. Routine summary and editor retain
+`gym_screen_viewed` with `screen=routine` and `screen=routine_editor`. Loads, movement names and
+equipment labels stay out of navigation properties; rename/storage failures retain their existing boundaries.
+
 `gym_proposal_outcome` carries `action` apply or dismiss and `outcome` decided, moved, gone, settled
 or failed; iOS records the same turn-down as `reject`.
 

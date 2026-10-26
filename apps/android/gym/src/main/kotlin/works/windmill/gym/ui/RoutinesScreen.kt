@@ -307,7 +307,7 @@ fun RoutineSheet(
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(Readout.movement(entry.exerciseId, store.catalog),
                                         style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                                    val target = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg" else ""
+                                    val target = Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId })
                                     Text(target, style = GymType.numeral(13), color = skin.inkDim)
                                 }
                             }

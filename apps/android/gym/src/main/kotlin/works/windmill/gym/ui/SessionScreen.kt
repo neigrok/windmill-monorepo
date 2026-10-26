@@ -112,7 +112,7 @@ object Performed {
 
         return order.map { exerciseId ->
             val mine = performed.filter { it.exerciseId == exerciseId }
-            val against = planned(plan, exerciseId)
+            val against = planned(plan, exerciseId, catalog.find { it.id == exerciseId })
             val opening = mine.firstOrNull()?.id
             Movement(
                 id = exerciseId,
@@ -131,14 +131,14 @@ object Performed {
     }
 
     // A PlanEntry carries NO ID, so a movement the plan names TWICE is annotated with nothing at all.
-    private fun planned(plan: PlanSnapshot?, exerciseId: String): Against {
+    private fun planned(plan: PlanSnapshot?, exerciseId: String, exercise: Exercise?): Against {
         if (plan == null) return Against.Silent
         val named = plan.entries.filter { it.exerciseId == exerciseId }
         if (named.isEmpty()) return Against.Unplanned
         if (named.size > 1) return Against.Silent
         val entry = named.single()
         if (entry.isOpen) return Against.Silent
-        return Against.Plan(entry, planLine(entry))
+        return Against.Plan(entry, "Plan ${Readout.targetWithUnit(entry.sets, exercise)}")
     }
 
     // Read against the slot this set filled — the Nth set against the plan's Nth
@@ -161,7 +161,6 @@ object Performed {
         return Note("on plan")
     }
 
-    private fun planLine(entry: PlanEntry): String = "Plan ${Readout.targetWithUnit(entry.sets)}"
 }
 
 private fun sessionDetailSaver(telemetry: Telemetry) = Saver<SessionDetail?, String>(

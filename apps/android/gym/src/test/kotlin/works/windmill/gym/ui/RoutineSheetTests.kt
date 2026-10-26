@@ -70,8 +70,8 @@ class RoutineSheetTests {
                 compose.onNodeWithTag("routine-sheet").assertIsDisplayed()
                 compose.onAllNodesWithText("Push Day").assertCountEquals(2)
                 compose.onNodeWithText("New routine").assertExists()
-                compose.onNodeWithText("3 × 8 · 50 kg").assertIsDisplayed()
-                compose.onNodeWithText("3 × 10 · 40 kg").assertIsDisplayed()
+                compose.onNodeWithText("3 × 8 · 50 kg total").assertIsDisplayed()
+                compose.onNodeWithText("3 × 10 · 40 kg total").assertIsDisplayed()
                 compose.onNodeWithText("History").assertDoesNotExist()
                 compose.onNodeWithText("Last trained", substring = true).assertDoesNotExist()
                 compose.onNodeWithText("Rest 1:30").assertDoesNotExist()
@@ -79,8 +79,8 @@ class RoutineSheetTests {
                 compose.onNodeWithTag("routine-sheet").assertDoesNotExist()
                 compose.onNodeWithContentDescription("Routine name").assertTextEquals("Push Day")
                 compose.onNodeWithText("Recent changes").assertDoesNotExist()
-                compose.onNodeWithText("3 × 8 · 50kg").assertIsDisplayed()
-                compose.onNodeWithText("3 × 10 · 40kg").assertIsDisplayed()
+                compose.onNodeWithText("3 × 8 · 50 kg total").assertIsDisplayed()
+                compose.onNodeWithText("3 × 10 · 40 kg total").assertIsDisplayed()
                 compose.onNodeWithContentDescription("Routine name").performTextReplacement("Push A")
                 compose.onNodeWithText("Save").performClick()
                 compose.onNodeWithTag("routine-sheet").assertIsDisplayed()
@@ -100,4 +100,34 @@ class RoutineSheetTests {
             } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
         } } finally { scope.cancel() }
     }
+    @Test
+    fun routineSummaryAndEditorShowEquipmentBasisAndSignedAddedLoad() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val entries = listOf(
+                RoutineEntry(1, "dumbbell-bench-press", List(3) { SetTarget(10, 24.0) }),
+                RoutineEntry(2, "goblet-squat", List(3) { SetTarget(8, 16.0) }),
+                RoutineEntry(3, "leg-press", List(3) { SetTarget(12, 50.0) }),
+                RoutineEntry(4, "pull-up", List(3) { SetTarget(8, -10.0) }),
+            )
+            runBlocking {
+                room.select(null)
+                assertTrue(room.store.saveRoutine(RoutineDraft(name = "Mixed equipment", entries = entries, creationId = "routine_mixed")) is GymResult.Ok)
+            }
+            val visible = mutableStateOf(true)
+            compose.setContent { if (visible.value) GymMaterial { GymRoom(room.account(), room.store) } }
+            try {
+                compose.onNodeWithText("Mixed equipment").performClick()
+                val targets = listOf("3 × 10 · 24 kg each", "3 × 8 · 16 kg", "3 × 12 · 50 kg total", "3 × 8 · −10 kg added")
+                targets.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+                compose.onNodeWithText("Edit routine").performClick()
+                targets.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+                entries.forEachIndexed { index, entry ->
+                    val name = room.store.catalog.first { it.id == entry.exerciseId }.name
+                    compose.onNodeWithContentDescription("Move $name, ${index + 1} of 4").assertIsDisplayed()
+                }
+            } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
+        } } finally { scope.cancel() }
+    }
+
 }

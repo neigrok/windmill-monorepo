@@ -48,8 +48,15 @@ object Readout {
         return "${sets.size} × ${repsColumn(sets)}${loadColumn(sets)}"
     }
 
+    // Coach review and the rack use the compact unit line.
     fun targetWithUnit(sets: List<SetTarget>): String =
         target(sets) + if (sets.any { it.weightKg != null }) "kg" else ""
+
+    fun targetWithUnit(sets: List<SetTarget>, exercise: Exercise?): String {
+        if (sets.none { it.weightKg != null }) return target(sets)
+        val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+        return "${target(sets)} $unit"
+    }
 
     // The ladder unfolded, one set after another: `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`.
     fun ladder(sets: List<SetTarget>): String = sets.joinToString(" · ", transform = ::setTarget)

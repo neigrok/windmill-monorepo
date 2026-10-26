@@ -15,6 +15,126 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_optional_fixture_retains_explicit_targets_and_rejects_other_configuration(self):
+        self.assertIsNone(capture.read_fixture(None))
+        fixture = {"exercises": [{"id": "ex_cafe0801", "name": "Landmine Press", "pattern": "press", "equipment": "barbell"}],
+                   "routines": [{"name": "Push A", "entries": [
+                       {"exerciseId": "ex_cafe0801", "sets": [{"reps": 10, "weightKg": 20}], "restSeconds": 120},
+                       {"exerciseId": "pull-up", "sets": [{"reps": 8, "weightKg": -10}]}]}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(json.dumps(fixture))
+            self.assertEqual(fixture, capture.read_fixture(path))
+            for invalid in ({"origin": "https://example.com", **fixture}, {"exercises": [], "routines": []},
+                            {"exercises": [{}], "routines": fixture["routines"]},
+                            {"exercises": [], "routines": [{"name": "Push A", "entries": ["bench-press"]}]}):
+                path.write_text(json.dumps(invalid))
+                with self.subTest(fixture=invalid), self.assertRaises(ValueError):
+                    capture.read_fixture(path)
+
+    def test_fixture_push_retains_identity_and_advances_only_acknowledged_prefixes(self):
+        requests = []
+        class PushHandler(capture.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append(body)
+                accepted = body["intents"][:1]
+                reply = {"as": body["account"], "lastN": accepted[-1]["n"],
+                         "results": [{"n": intent["n"], "s": "ok", "seq": intent["n"]} for intent in accepted]}
+                if len(body["intents"]) > 1:
+                    reply["retry"] = {"n": body["intents"][1]["n"], "retryAfterMs": 0}
+                encoded = json.dumps(reply).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+        server = capture.ThreadingHTTPServer(("127.0.0.1", 0), PushHandler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            fixture = capture.Fixture(f"http://127.0.0.1:{server.server_port}", "unused")
+            rows = [{"t": "note", "id": f"note_{index}", "f": {"title": [f"Fixture {index}", "1:0:r_fixture0000"]}} for index in range(3)]
+            fixture.push(rows, 1)
+            replica = requests[0]["replica"]
+            intents = [{"n": index + 1, "scope": "self/gym", "d": [row]} for index, row in enumerate(rows)]
+            self.assertEqual([
+                {"replica": replica, "account": fixture.account, "ackThrough": 0, "intents": intents},
+                {"replica": replica, "account": fixture.account, "ackThrough": 1, "intents": intents[1:]},
+                {"replica": replica, "account": fixture.account, "ackThrough": 2, "intents": intents[2:]},
+            ], requests)
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
+    def test_fixture_push_refuses_invalid_results_and_bounds_zero_progress(self):
+        requests = []
+        reply_mode = "refused"
+        class PushHandler(capture.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append(body)
+                reply = {"as": body["account"], "lastN": 0, "results": [], "retry": {"n": 1, "retryAfterMs": 0}}
+                if reply_mode == "refused":
+                    reply = {"as": body["account"], "lastN": 1, "results": [{"n": 1, "s": "refused", "code": "invalid"}]}
+                elif reply_mode == "gap":
+                    reply = {"as": body["account"], "lastN": 2, "results": [{"n": 2, "s": "ok", "seq": 1}]}
+                elif reply_mode == "malformed":
+                    reply = {"as": body["account"], "lastN": 1, "results": [{"n": 1, "s": "ok"}]}
+                encoded = json.dumps(reply).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+        server = capture.ThreadingHTTPServer(("127.0.0.1", 0), PushHandler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            fixture = capture.Fixture(f"http://127.0.0.1:{server.server_port}", "unused")
+            rows = [{"t": "note", "id": "note_fixture"}]
+            for reply_mode, count, message in [("refused", 1, "was refused"), ("gap", 1, "noncontiguous"),
+                                               ("malformed", 1, "malformed sync result"), ("no-progress", 20, "20 attempts")]:
+                requests.clear()
+                with self.subTest(reply=reply_mode), self.assertRaisesRegex(RuntimeError, message):
+                    fixture.push(rows, 1)
+                self.assertEqual(count, len(requests))
+                self.assertTrue(all(request == requests[0] for request in requests))
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
+    def test_touches_use_observed_bounds_and_always_release(self):
+        device = capture.Device(Path("/android-sdk"), 5582)
+        calls = []
+        device.run = lambda *args, **kwargs: calls.append(args)
+        device.find = lambda value: capture.ET.fromstring('<node bounds="[40,80][360,136]" />')
+        with self.assertRaises(ValueError):
+            device.touch({"phase": "move", "at": [.2, .5]})
+        try:
+            device.touch({"phase": "down", "target": "Pressed stepper", "at": [.925, .5]})
+            device.touch({"phase": "move", "at": [.1, .5]})
+            with self.assertRaises(ValueError):
+                device.touch({"phase": "move", "at": [2, .5]})
+        finally:
+            device.release_touch()
+        device.release_touch()
+        self.assertEqual([
+            ("shell", "input", "motionevent", "DOWN", "336", "108"),
+            ("shell", "input", "motionevent", "MOVE", "72", "108"),
+            ("shell", "input", "motionevent", "UP", "72", "108"),
+        ], calls)
+        self.assertIsNone(device.touch_bounds)
+        self.assertIsNone(device.touch_point)
+
     def test_recipes_accept_canonical_board_ids_and_reject_unsafe_output_names(self):
         for board in ("02.7", "08.21", "15a", "15b", "15c", "27a", "27g", "A4"):
             capture.validate_scenarios([{"board": board, "name": "signed-in", "account": "fixture"}])

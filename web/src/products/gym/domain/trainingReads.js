@@ -477,6 +477,13 @@ export const Readout = Object.freeze({
       : low === high ? Readout.weight(low) : `${Readout.weight(low)}–${Readout.weight(high)}`;
     return `${sets.length} × ${repColumn} · ${load}`;
   },
+  /** @param {string | null} equipment @param {number} loadCount */
+  loadUnit(equipment, loadCount) {
+    if (equipment === 'dumbbell') return loadCount === 2 ? 'kg each' : 'kg';
+    if (equipment === 'barbell' || equipment === 'machine') return 'kg total';
+    if (equipment === 'bodyweight') return 'kg added';
+    return 'kg';
+  },
   /** @param {number} kg */
   tonnes(kg) {
     if (!Number.isFinite(kg) || kg <= 0) return null;

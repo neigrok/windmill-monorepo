@@ -711,10 +711,11 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   added* (bodyweight). Renaming renames the movement in history, and *Edit movement* holds the name and
   equipment, with *Dumbbells lifted: One / Two*. Stored equipment also includes cable and kettlebell;
   editing a name must preserve either value and its load interpretation. Tasks 08/19/20 distinguish
-  creation choices from stored types and name any missing approved icon/menu states. Today every
-  screen outside Coach says plain *kg*
-  (`ui/RoutinesScreen.kt:329`; `domain/Readout.kt:51-52` prints *80kg* with no space), Create
-  movement offers four radio options and no count (`ui/MovementPicker.kt:411-431`;
+  creation choices from stored types and name any missing approved icon/menu states. Routine summary,
+  editor, finish receipt and workout detail use equipment-aware units with a preceding space;
+  one dumbbell, cable, kettlebell and missing equipment keep plain *kg*. Coach presentation and the
+  rack retain their own formatter. The four approved equipment glyphs are available for later
+  placement; Cable/Kettlebell glyphs remain gated. Create movement offers four radio options and no count (`ui/MovementPicker.kt:411-431`;
   `store/TrainingStore.kt:1154-1166` passes none), the picker says *Dumbbell* where the form says
   *Dumbbells*, and the Record offers *Rename movement*, name only (`ui/RenameSheet.kt`). The model
   (`domain/Training.kt:38-45`, `loadCount`) is already on main. Boards 02.9 `1253:29027`, 05.6

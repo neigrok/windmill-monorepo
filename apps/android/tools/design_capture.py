@@ -62,6 +62,25 @@ def validate_scenarios(scenarios):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
 
 
+def read_fixture(path):
+    if path is None:
+        return None
+    fixture = json.loads(path.read_text())
+    if not isinstance(fixture, dict) or set(fixture) != {"exercises", "routines"} or \
+            not isinstance(fixture["exercises"], list) or not isinstance(fixture["routines"], list) or not fixture["routines"]:
+        raise ValueError("Capture fixtures need exercises and nonempty routines arrays.")
+    for exercise in fixture["exercises"]:
+        if not isinstance(exercise, dict) or not {"id", "name", "pattern", "equipment"}.issubset(exercise):
+            raise ValueError("Capture exercises need explicit identity, name, pattern and equipment.")
+    for routine in fixture["routines"]:
+        if not isinstance(routine, dict) or set(routine) != {"name", "entries"} or \
+                not isinstance(routine["name"], str) or not routine["name"].strip() or \
+                not isinstance(routine["entries"], list) or not routine["entries"] or \
+                any(not isinstance(entry, dict) or not isinstance(entry.get("exerciseId"), str) for entry in routine["entries"]):
+            raise ValueError("Capture routines need a name and explicit movement entries.")
+    return fixture
+
+
 def command(arguments, *, input=None, cwd=None, env=None, check=True):
     result = subprocess.run([str(value) for value in arguments], input=input, cwd=cwd, env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
@@ -117,7 +136,42 @@ class Fixture:
         self.sql(f"INSERT INTO magic_links(token_hash,email,created_ms,expires_ms) VALUES ('{digest}','{self.email}',{now},{now + 900000});")
         return token
 
-    def seed(self):
+    def push(self, rows, schema):
+        replica = "rp_" + secrets.token_hex(16)
+        pending = [{"n": index + 1, "scope": "self/gym", "d": [row]} for index, row in enumerate(rows)]
+        ack = 0
+        for _ in range(20):
+            if not pending:
+                return
+            _, response = self.request("/v1/sync/push", {"replica": replica, "account": self.account,
+                "ackThrough": ack, "intents": pending}, self.token, {"Sync-Schema": str(schema)})
+            results = response.get("results")
+            if response.get("as") != self.account or not isinstance(results, list) or len(results) > len(pending):
+                raise RuntimeError("Capture fixture received a malformed sync reply.")
+            for expected, result in zip(pending, results):
+                if not isinstance(result, dict) or type(result.get("n")) is not int or result["n"] != expected["n"]:
+                    raise RuntimeError("Capture fixture received noncontiguous sync results.")
+                if result.get("s") == "refused":
+                    raise RuntimeError(f"Capture fixture sync intent {result['n']} was refused.")
+                if result.get("s") != "ok" or type(result.get("seq")) is not int or result["seq"] < 0:
+                    raise RuntimeError("Capture fixture received a malformed sync result.")
+            acknowledged = results[-1]["n"] if results else ack
+            if type(response.get("lastN")) is not int or response["lastN"] != acknowledged:
+                raise RuntimeError("Capture fixture received an inconsistent sync acknowledgement.")
+            pending = pending[len(results):]
+            ack = acknowledged
+            if not pending:
+                if "retry" in response:
+                    raise RuntimeError("Capture fixture received a retry after every intent was acknowledged.")
+                return
+            retry = response.get("retry")
+            if not isinstance(retry, dict) or type(retry.get("n")) is not int or retry["n"] != pending[0]["n"] or \
+                    type(retry.get("retryAfterMs")) is not int or not 0 <= retry["retryAfterMs"] <= 1000:
+                raise RuntimeError("Capture fixture received an invalid sync retry.")
+            time.sleep(retry["retryAfterMs"] / 1000)
+        raise RuntimeError("Capture fixture sync did not acknowledge every intent within 20 attempts.")
+
+    def seed(self, replacement=None):
         digest = hashlib.sha256(self.token.encode()).hexdigest()
         self.sql(f"INSERT INTO users(id,email) VALUES ('{self.account}','{self.email}');\n"
                  f"INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('{digest}','{self.account}',{self.now + 86400000});")
@@ -127,27 +181,39 @@ class Fixture:
             "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "android-design-capture", "version": "1"}}}, self.mcp_token)
         self.mcp_session = headers["Mcp-Session-Id"]
         prefix = "capture" + self.account.replace("-", "")[:12]
-        program = [("Push A", ["bench-press", "overhead-press"]), ("Pull A", ["barbell-row", "chin-up"]),
-                   ("Legs", ["back-squat", "romanian-deadlift"])]
+        program = [{"name": name, "entries": [
+            {"exerciseId": movement, "sets": [{"reps": 8, "weightKg": 30}] * 3, "restSeconds": 120}
+            for movement in movements]} for name, movements in (
+                ("Push A", ["bench-press", "overhead-press"]), ("Pull A", ["barbell-row", "chin-up"]),
+                ("Legs", ["back-squat", "romanian-deadlift"]))]
+        if replacement is not None:
+            _, existing = self.request("/v1/gym/exercises", token=self.token)
+            catalog = existing if isinstance(existing, list) else existing["exercises"]
+            for exercise in replacement["exercises"]:
+                if any(row["id"] == exercise["id"] or row["name"].casefold() == exercise["name"].casefold() for row in catalog):
+                    raise ValueError("A capture movement duplicates the existing catalogue.")
+                self.mcp("gym_create_exercise", exercise)
+                catalog.append(exercise)
+            program = replacement["routines"]
         _, catalog = self.request("/v1/gym/exercises", token=self.token)
         exercises = catalog if isinstance(catalog, list) else catalog["exercises"]
         known = {entry["id"] for entry in exercises}
-        for position, (name, movements) in enumerate(program):
-            if not all(movement in known for movement in movements):
+        for position, routine in enumerate(program):
+            if not all(entry["exerciseId"] in known for entry in routine["entries"]):
                 raise RuntimeError("The seed catalogue does not contain a capture movement.")
-            routine = "rt_" + prefix + str(position)
-            self.routines.append(routine)
-            self.mcp("gym_create_routine", {"id": routine, "name": name, "position": position, "entries": [
-                {"exerciseId": movement, "sets": [{"reps": 8, "weightKg": 30}] * 3, "restSeconds": 120} for movement in movements]})
+            routine_id = "rt_" + prefix + str(position)
+            self.routines.append(routine_id)
+            self.mcp("gym_create_routine", {"id": routine_id, "name": routine["name"], "position": position,
+                                           "entries": routine["entries"]})
         for index in range(12):
-            routine = index % 3
+            routine = index % len(program)
             started = self.now - (28 - index * 2) * 86400000
             session = "ses_" + prefix + str(index)
             self.mcp("gym_import_session", {"id": session, "startedAt": started, "finishedAt": started + 2400000,
                 "routineId": self.routines[routine], "sets": [
-                    {"id": f"set_{prefix}{index}_{movement}_{number}", "exerciseId": exercise,
+                    {"id": f"set_{prefix}{index}_{movement}_{number}", "exerciseId": entry["exerciseId"],
                      "weightKg": 30 + index * 2.5, "reps": 8, "completedAt": started + (movement * 3 + number + 1) * 120000}
-                    for movement, exercise in enumerate(program[routine][1]) for number in range(3)]})
+                    for movement, entry in enumerate(program[routine]["entries"]) for number in range(3)]})
         stamp = f"{self.now}:0:r_capture00000"
         rows = []
         today = datetime.fromtimestamp(self.now / 1000, timezone.utc).date()
@@ -160,10 +226,7 @@ class Fixture:
                          "f": {"title": [title, stamp], "body": [text, stamp], "ord": ["a" + str(index), stamp]}})
         schema = json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"]
         _, hello = self.request("/v1/sync/hello", token=self.token, headers={"Sync-Schema": str(schema)})
-        _, result = self.request("/v1/sync/push", {"replica": "rp_" + secrets.token_hex(16), "account": self.account,
-            "ackThrough": 0, "intents": [{"n": index + 1, "scope": "self/gym", "d": [row]} for index, row in enumerate(rows)]}, self.token, {"Sync-Schema": str(hello["schema"])})
-        if len(result.get("results", [])) != len(rows) or any(item.get("kind", item.get("status", "")) == "refused" or "code" in item for item in result.get("results", [])):
-            raise RuntimeError("The capture fixture sync write was refused: " + str([{key: item[key] for key in ("n", "code", "kind", "status") if key in item} for item in result.get("results", [])]))
+        self.push(rows, hello["schema"])
         _, weights = self.request("/v1/gym/bodyweight", token=self.token)
         _, notes = self.request("/v1/gym/notes", token=self.token)
         if len(weights.get("entries", [])) != 6 or len(notes.get("notes", [])) != 2:
@@ -248,6 +311,8 @@ class Device:
         self.auth_code = auth_code
         self.adb = sdk / "platform-tools/adb"
         self.serial = f"emulator-{port}"
+        self.touch_bounds = None
+        self.touch_point = None
 
     def run(self, *arguments, **kwargs):
         return command([self.adb, "-s", self.serial, *arguments], **kwargs)
@@ -298,6 +363,37 @@ class Device:
     def launch(self):
         return self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity", "-a", "android.intent.action.VIEW")
 
+    def release_touch(self):
+        if self.touch_point is None:
+            return
+        point = self.touch_point
+        self.touch_point = None
+        self.touch_bounds = None
+        self.run("shell", "input", "motionevent", "UP", *map(str, point), check=False)
+
+    def touch(self, value):
+        phase = value["phase"]
+        if phase == "up":
+            self.release_touch()
+            return
+        if phase not in ("down", "move"):
+            raise ValueError("Touch phase must be down, move or up.")
+        position = value.get("at", [.5, .5])
+        if len(position) != 2 or any(type(part) not in (int, float) or not 0 <= part <= 1 for part in position):
+            raise ValueError("Touch coordinates must be fractions of observed control bounds.")
+        if phase == "down":
+            if self.touch_point is not None:
+                raise ValueError("Release the previous touch before starting another.")
+            bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", self.find(value["target"]).get("bounds", ""))
+            if not bounds:
+                raise RuntimeError("Capture control has no touch bounds.")
+            self.touch_bounds = tuple(map(int, bounds.groups()))
+        if self.touch_bounds is None:
+            raise ValueError("Touch move requires an observed down target.")
+        left, top, right, bottom = self.touch_bounds
+        self.touch_point = (round(left + (right - left) * position[0]), round(top + (bottom - top) * position[1]))
+        self.run("shell", "input", "motionevent", phase.upper(), *map(str, self.touch_point))
+
     def sign_in(self, token):
         self.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-link", "bs=1", f"count={len(token)}", input=token.encode())
         self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.DesignCaptureActivity")
@@ -344,6 +440,8 @@ class Device:
                 self.run("shell", "input", "keyevent", step["key"])
             elif "swipe" in step:
                 self.run("shell", "input", "swipe", *map(str, step["swipe"]))
+            elif "touch" in step:
+                self.touch(step["touch"])
             else:
                 raise ValueError("Unknown capture step.")
 
@@ -406,6 +504,7 @@ def main():
     parser.add_argument("--mail-port", type=int, default=8101)
     parser.add_argument("--emulator-port", type=int, default=5580)
     parser.add_argument("--scenarios", type=Path, help="JSON array of board/name/account/steps; each recipe is replayed after appearance switches.")
+    parser.add_argument("--fixture", type=Path, help="Optional local exercises/routines JSON; replaces only this run's seeded program.")
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
@@ -439,6 +538,7 @@ def main():
     scenarios = json.loads(args.scenarios.read_text()) if args.scenarios else SCENARIOS
     try:
         validate_scenarios(scenarios)
+        replacement = read_fixture(args.fixture)
     except ValueError as error:
         parser.error(str(error))
     manifest = {"apiOrigin": app_origin, "source": command(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
@@ -492,7 +592,7 @@ def main():
                 if attempt == 59:
                     raise RuntimeError("Local backend did not become ready.") from None
                 time.sleep(.5)
-        fixture.seed()
+        fixture.seed(replacement)
         build_log = stack.enter_context((args.output / "build.log").open("wb"))
         build = subprocess.run(["./gradlew", ":app:assembleDebug", "--max-workers=4", "-Pwindmill.apiBase=" + app_origin, "-Pwindmill.debugTelemetry=true", "-Pwindmill.sentryDsn=" + args.sentry_dsn],
             cwd=android, env={**os.environ, "ANDROID_HOME": str(args.sdk)}, stdout=build_log, stderr=subprocess.STDOUT)
@@ -522,21 +622,24 @@ def main():
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
-                    device.steps(scenario["steps"])
-                    device.settle(resend_countdown=scenario.get("resend_countdown", False))
-                    if model.responses:
-                        raise RuntimeError("The capture did not consume its deterministic model responses.")
-                    filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
-                    (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
-                    manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
-                    device.steps(scenario.get("after", []))
-                    if completions:
-                        sessions_after = int(fixture.sql("SELECT count(*) FROM sessions;"))
-                        digest = hashlib.sha256(mail.code.encode()).hexdigest()
-                        spent = int(fixture.sql(f"SELECT count(*) FROM magic_links WHERE code_hash='{digest}' AND consumed_ms IS NOT NULL;"))
-                        if sessions_after - sessions_before != completions or spent < 1:
-                            raise RuntimeError("The native code sign-in did not commit its session and spend its challenge.")
-                        manifest["authCompletions"] += completions
+                    try:
+                        device.steps(scenario["steps"])
+                        device.settle(resend_countdown=scenario.get("resend_countdown", False))
+                        if model.responses:
+                            raise RuntimeError("The capture did not consume its deterministic model responses.")
+                        filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
+                        (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
+                        manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
+                        device.steps(scenario.get("after", []))
+                        if completions:
+                            sessions_after = int(fixture.sql("SELECT count(*) FROM sessions;"))
+                            digest = hashlib.sha256(mail.code.encode()).hexdigest()
+                            spent = int(fixture.sql(f"SELECT count(*) FROM magic_links WHERE code_hash='{digest}' AND consumed_ms IS NOT NULL;"))
+                            if sessions_after - sessions_before != completions or spent < 1:
+                                raise RuntimeError("The native code sign-in did not commit its session and spend its challenge.")
+                            manifest["authCompletions"] += completions
+                    finally:
+                        device.release_touch()
         manifest["mailCalls"] = mail.calls
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"

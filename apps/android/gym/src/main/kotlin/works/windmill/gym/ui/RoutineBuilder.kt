@@ -58,6 +58,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
@@ -396,7 +397,8 @@ private fun BuildStep(
                             backgroundContent = { RowDeleteGround() }) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
                                 .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
-                                .background(if (dragged == entry.exerciseId) skin.raised else skin.canvas)
+                                .shadow(if (dragged == entry.exerciseId) 6.dp else 0.dp, RoundedCornerShape(12.dp), clip = false)
+                                .background(if (dragged == entry.exerciseId) skin.raised else skin.canvas, RoundedCornerShape(12.dp))
                                 .clickable(enabled = editable, role = Role.Button, onClickLabel = "set this movement’s target") { onOpenTarget(entry.exerciseId) }
                                 .semantics { customActions = if (!editable) emptyList() else buildList {
                                     add(CustomAccessibilityAction("Delete $name") { onRemove(entry.exerciseId); true })
@@ -427,7 +429,7 @@ private fun BuildStep(
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                                    Text(Readout.targetWithUnit(entry.sets), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
+                                    Text(Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId }), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
                                 }
                             }
                         }

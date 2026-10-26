@@ -83,6 +83,7 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
         "Readout" -> when (f.string("operation")) {
             "estimate" -> Json.of(Readout.estimate(f.double("value")))
             "target" -> Json.of(Readout.target(f.optionalList("sets", SetTarget)))
+            "loadUnit" -> Json.of(Readout.loadUnit(f.optionalString("equipment"), f.int("loadCount")))
             "ladder" -> Json.of(Readout.ladder(f.list("sets", SetTarget)))
             "tonnes" -> nullable(Readout.tonnes(f.double("value")))
             "duration" -> Json.of(Readout.duration(f.instant("value").ms))

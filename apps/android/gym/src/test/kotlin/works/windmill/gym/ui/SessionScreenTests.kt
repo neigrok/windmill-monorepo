@@ -67,7 +67,7 @@ class SessionScreenTests {
             set("s5", "bench-press", 85.0, 3, at = 5_000),
         ), catalog, plan(PlanEntry(exerciseId = "bench-press", sets = List(4) { SetTarget(5, 82.5) })))
 
-        assertEquals("Plan 4 × 5 · 82.5kg", line(movements[0]))
+        assertEquals("Plan 4 × 5 · 82.5 kg total", line(movements[0]))
         assertEquals(
             "the word carries the direction, so the number beside it is a magnitude — " +
                 "\"−2.5 under plan\" says the opposite of what happened; and the fifth set, past a " +
@@ -93,7 +93,7 @@ class SessionScreenTests {
         ), catalog, plan(PlanEntry(exerciseId = "bench-press", sets = listOf(
             SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)))))
 
-        assertEquals("Plan 5 × 1–5 · 60–100kg", line(movements[0]))
+        assertEquals("Plan 5 × 1–5 · 60–100 kg total", line(movements[0]))
         assertEquals(listOf("on plan", "on plan", "on plan", "+2.5 over plan", "one short"), notes(movements[0]))
     }
 
@@ -106,7 +106,7 @@ class SessionScreenTests {
             (1..6).map { set("s$it", "bench-press", ramp.getOrNull(it - 1)?.weightKg ?: 120.0, 5, at = it * 1_000L) },
             catalog, plan(PlanEntry(exerciseId = "bench-press", sets = ramp)))
 
-        assertEquals("Plan 5 × 1–5 · 60–100kg", line(movements[0]))
+        assertEquals("Plan 5 × 1–5 · 60–100 kg total", line(movements[0]))
         assertEquals(listOf("on plan", "on plan", "on plan", "on plan", "on plan", null), notes(movements[0]))
     }
 

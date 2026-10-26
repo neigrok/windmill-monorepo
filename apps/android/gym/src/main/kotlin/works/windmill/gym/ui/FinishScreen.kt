@@ -247,7 +247,7 @@ fun FinishScreen(
                 Text("✓", style = WindmillFont.body(20), color = skin.setDone)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(Readout.movement(id, catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                    Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }), style = GymType.numeral(13), color = skin.inkDim)
+                    Text(Readout.targetWithUnit(sets.map { SetTarget(it.reps, it.weightKg) }, catalog.find { it.id == id }), style = GymType.numeral(13), color = skin.inkDim)
                 }
             }
         }
