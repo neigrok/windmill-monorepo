@@ -47,8 +47,8 @@ fun gymColorScheme(skin: GymColors, dark: Boolean): ColorScheme {
         surfaceContainer = skin.surface, surfaceContainerHigh = skin.surface,
         surfaceContainerHighest = skin.raised, surfaceTint = Color.Transparent,
         inverseSurface = skin.raised, inverseOnSurface = skin.ink, inversePrimary = skin.accent,
-        error = skin.alarmInk, onError = skin.onAlarm,
-        errorContainer = skin.raised, onErrorContainer = skin.alarmInk,
+        error = skin.error, onError = skin.onError,
+        errorContainer = skin.raised, onErrorContainer = skin.error,
         outline = skin.lineStrong, outlineVariant = skin.line, scrim = skin.scrim,
     )
 }

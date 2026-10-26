@@ -206,7 +206,7 @@ fun RoutineBuilder(
         ModalBottomSheet(
             onDismissRequest = { close() },
             sheetState = sheetState,
-            containerColor = if (open == BuilderSheet.Picker) skin.raised else skin.surface,
+            containerColor = skin.surface,
             scrimColor = skin.scrim,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         ) {
@@ -253,7 +253,6 @@ fun RoutineBuilder(
                     state = pickerState,
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())
-                        .background(skin.raised)
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { close() },

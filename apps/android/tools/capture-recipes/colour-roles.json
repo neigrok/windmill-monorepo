@@ -1,0 +1,40 @@
+[
+  {
+    "board": "02.3",
+    "name": "routine-editor-new",
+    "account": "fixture",
+    "steps": [{"tap": "New routine"}, {"wait": "Routine name"}],
+    "after": [{"tap": "Back to the routine you were on"}, {"wait": "New routine"}]
+  },
+  {
+    "board": "02.4",
+    "name": "movement-picker",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Push A"}, {"wait": "Edit routine"}, {"tap": "Edit routine"},
+      {"wait": "Routine name"}, {"tap": "Routine name"}, {"text": " afternoon"},
+      {"key": "KEYCODE_BACK"}, {"tap": "Add movement"}, {"wait": "Search movements"}
+    ],
+    "after": [
+      {"tap": "Cancel"}, {"tap": "Back to the routine you were on"},
+      {"wait": "Start workout"}, {"key": "KEYCODE_BACK"}, {"wait": "New routine"}
+    ]
+  },
+  {
+    "board": "05.5",
+    "name": "share",
+    "account": "fixture",
+    "steps": [
+      {"tap": "Log"}, {"wait": "Record · Back Squat 57.5 × 8"}, {"tap": "Record · Back Squat 57.5 × 8"},
+      {"wait": "Back to Log"}, {"swipe": [540, 1900, 540, 600, 400]},
+      {"tap": "Share this workout"}, {"wait": "Get a link"}
+    ]
+  },
+  {
+    "board": "05.13",
+    "name": "share-live",
+    "account": "fixture",
+    "steps": [{"tap": "Get a link"}, {"wait": "The link is live"}, {"wait": "Copy link"}],
+    "after": [{"key": "KEYCODE_BACK"}, {"tap": "Back to Log"}, {"tap": "Routines"}, {"wait": "Push A"}]
+  }
+]

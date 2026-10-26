@@ -142,7 +142,7 @@ fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
                 Text(
                     revoke,
                     style = WindmillFont.body(15, FontWeight.SemiBold),
-                    color = skin.inkDim,
+                    color = skin.accent,
                 )
             }
         }

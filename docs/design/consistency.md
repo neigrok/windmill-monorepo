@@ -7,9 +7,6 @@ before editing.
 
 ## Shared system
 
-- **F4 · Gym Daylight PR ink.** Web and the [approved specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
-  use gold-700 `#6E5217`; Android `GymSkin.kt` still uses `#A17822`. Align Android and check native
-  PR rows. iOS's shared `gym/record` asset uses gold-700 in Daylight.
 - **F7 / F29 · Mono weights.** `web/src/styles/fonts.js` loads JetBrains Mono 400/500/600.
   Gym and journal CSS request heavier mono weights. Normalize the uses or supply the faces.
 - **F8 · Unused numeral tokens.** `gymTokens.css` declares `--weight-size`, `--weight-leading`
@@ -197,10 +194,6 @@ for the canonical Coach-led flow, indexed in [the flow index](../index.md). Colo
 The Gym file's iOS page is the target (10o). These are the places it, the iOS build, older drawings
 and Android disagree.
 
-- **9a · Light gym accent.** Android's Daylight skin still uses iris `#4C4374` (F44),
-  while its onboarding glimpse uses verdigris `#137A6C`. Figma's shared Gym light brand is
-  `#137A6C`; its native `ios/gym/accent` is `ios/ios-redesign.md`'s darker `#106B5F`. Align Android's
-  skin and glimpse with its intended platform accent.
 - **iOS gym and shell day contrast.** `ios/ios-redesign.md` §2 and the iOS build use the light values the owner
   adopted for text: `gym/accent` `#106B5F` (5.19:1 on `gym/canvas` · 5.92:1 card · 4.60:1 raised ·
   white on it 6.38:1), with `accent-soft` tracking it, and `shell/brand` `#9F5B38` (4.79:1 on
@@ -506,10 +499,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
   screenshot.
-- **9d · Gym day accent on Android.** Android's Daylight skin ships iris `#4C4374`
-  (F44); its onboarding glimpse uses verdigris `#137A6C`. The Figma Android boards use
-  light `color/brand` `#137A6C`; iOS uses `ios/gym/accent` `#106B5F`. Align Android's glimpse and skin
-  with the intended Android accent and identify any intentional platform difference.
 - **9f · The gym glimpse draws a rack neither phone has.** The page-4 fixture (*Squat · set 3 of 5 ·
   … Set 3 · target 100 × 5 · … Last time · 97.5 kg × 5 · Set 3 logged · Log set*) and
   `_Glimpse / Gym` (`210:56`) draw a slot target, a *Last time* line and the mono face, and both
@@ -698,8 +687,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   keeps its *Dismiss*.
 - **11c · Destructive actions use the M3 error role (owner ruling, 2026-10-22).** Library Theme
   `android/system/error` (#E46962 dark · #B3261E light) and `on-error` (#410E0B · #FFFFFF). The app
-  maps M3 `error` to brick `alarmInk` (#D08268 · #A84E35; `ui/GymMaterial.kt:50`) and paints
-  destructive controls four ways: brick (*Discard session* `ui/SessionScreen.kt:322-326`, *Delete
+  maps M3 `error` and `onError` to those roles in `ui/GymMaterial.kt`. Direct destructive
+  controls still use other roles: brick (*Discard session* `ui/SessionScreen.kt:322-326`, *Delete
   note*), ink (*Delete set* `ui/FixSheet.kt:277-281`, *Delete weigh-in*, the log menu's *Discard
   session* `ui/LogScreen.kt:263`, the routine menu's *Delete*), accent (*Discard* in the sign-in
   decision `app/MainActivity.kt:290,303`, *Remove set* `ui/SettingsScreen.kt:344,359`). Boards 00.2
@@ -797,6 +786,14 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | `android-coach-bound-installation-design` | 36, 38 | After sign-out, a bound installation can retain local History and recover pending results, but cannot send anonymous questions. |
   | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; backend reconciliation remains required. |
   | `account-delete-reconciliation` | 48 | Backend platform/auth supplies the account-scoped closure receipt/recovery contract after session revocation; the existing grace-period behavior does not supply it. |
+
+- **11q · Routine editor field and picker geometry (owner: task 18).** Installed Android
+  `ui/RoutineBuilder.kt` still paints the Name field with a filled rounded container; approved
+  [02.3 Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44602)
+  uses the native outlined-field anatomy. Its movement picker nearly fills the native viewport,
+  while approved [02.4 Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44782)
+  leaves the editor toolbar visible. Task 02 aligns the field accent and picker surface only;
+  task 18 owns the remaining editor/picker geometry, and task 03 owns the toolbar.
 
 ### Parity rulings (owner, 2026-10-22)
 

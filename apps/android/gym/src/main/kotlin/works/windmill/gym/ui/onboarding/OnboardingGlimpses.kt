@@ -170,8 +170,8 @@ private class GlimpsePainter(
     val olive = if (dark) Color(0xFF9DAF5C) else WindmillColor.olive500
     val sky = if (dark) Color(0xFF9CBCCA) else Color(0xFF5F8494)
     val gold = if (dark) Color(0xFFE2C274) else Color(0xFFC4972F)
-    val accent = if (dark) gymColors.accent else Color(0xFF137A6C)
-    val onAccent = if (dark) gymColors.onAccent else Color.White
+    val accent = gymColors.accent
+    val onAccent = gymColors.onAccent
 
     fun text(
         content: String, x: Float, y: Float, size: Int, color: Color,

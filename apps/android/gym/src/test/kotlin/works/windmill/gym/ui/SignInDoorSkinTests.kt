@@ -85,7 +85,7 @@ class SignInDoorSkinTests {
         }
         val instrument = listOf(Color(0xFF5FCDB4), Color(0xFF5FCDB4), Color(0xFF5FCDB4),
             Color(0xFF0B1111), Color(0xFF0B1111), Color(0xFF0B1111))
-        val daylight = listOf(Color(0xFF4C4374), Color(0xFF4C4374), Color(0xFF4C4374),
+        val daylight = listOf(Color(0xFF137A6C), Color(0xFF137A6C), Color(0xFF137A6C),
             Color(0xFFEBE7E3), Color(0xFFEBE7E3), Color(0xFFEBE7E3))
         compose.runOnIdle {
             assertEquals(mapOf("outer" to instrument, "nested" to daylight, "sibling" to instrument), seen)

@@ -7,6 +7,9 @@ no Amplitude API key. `Telemetry` is injected through the application, account, 
 workout stores, the SQLite sync runtime, signed-out workout imports, notifications and Compose
 provider; tests default to `Telemetry.None`.
 
+Gym palette selection and onboarding color reuse add no behavioral events or failure boundary.
+Existing screen, action and onboarding events retain their current labels and properties.
+
 ## Configuration
 
 Release assembly requires `ANDROID_SENTRY_DSN`, or `-Pwindmill.sentryDsn`, with a valid HTTPS DSN for

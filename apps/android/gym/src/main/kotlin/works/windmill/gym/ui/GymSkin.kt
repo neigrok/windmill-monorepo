@@ -29,8 +29,6 @@ data class GymColors(
     val line: Color,
     val lineStrong: Color,
     val accent: Color,
-    val accentHover: Color,
-    val accentPressed: Color,
     val onAccent: Color,
     val ink: Color,
     val inkDim: Color,
@@ -40,32 +38,33 @@ data class GymColors(
     val prInk: Color,
     val prSoft: Color,
     val alarmInk: Color,
+    val error: Color,
+    val onError: Color,
     val scrim: Color,
 ) {
     val weightInk = ink
     val targetInk = accent
     val unsyncedInk = inkFaint
-    val onAlarm = Color.White
 }
 
 object GymSkin {
     val Instrument = GymColors(
         canvas = Color(0xFF0B1111), surface = Color(0xFF161C1D), raised = Color(0xFF202627),
         sunken = Color(0xFF060C0C), line = Color(0xFF202627), lineStrong = Color(0xFF2A3133),
-        accent = Color(0xFF5FCDB4), accentHover = Color(0xFF8FE0CD), accentPressed = Color(0xFF3DAE95),
+        accent = Color(0xFF5FCDB4),
         onAccent = Color(0xFF1B1408), ink = Color(0xFFF1F0EB), inkDim = Color(0xFFB6B5AF),
         inkFaint = Color(0xFF727771), setDone = Color(0xFF9AA859),
         accentSoft = Color(0x335FCDB4), prInk = Color(0xFFD9B04C), prSoft = Color(0x26D9B04C),
-        alarmInk = Color(0xFFD08268), scrim = Color(0xB8030606),
+        alarmInk = Color(0xFFD08268), error = Color(0xFFE46962), onError = Color(0xFF410E0B), scrim = Color(0xB8030606),
     )
     val Daylight = GymColors(
         canvas = Color(0xFFEBE7E3), surface = Color(0xFFF8F6F4), raised = Color(0xFFDFDAD5),
         sunken = Color(0xFFDFDAD5), line = Color(0xFFD0CAC5), lineStrong = Color(0xFFB6AFA9),
-        accent = Color(0xFF4C4374), accentHover = Color(0xFF3A3358), accentPressed = Color(0xFF2F2A46),
+        accent = Color(0xFF137A6C),
         onAccent = Color.White, ink = Color(0xFF1A1918), inkDim = Color(0xFF4C4744),
         inkFaint = Color(0xFF625C58), setDone = Color(0xFF7D8C43),
-        accentSoft = Color(0xFFEDEBF3), prInk = Color(0xFFA17822), prSoft = Color(0x24A17822),
-        alarmInk = Color(0xFFA84E35), scrim = Color(0x731A1918),
+        accentSoft = Color(0x1F137A6C), prInk = Color(0xFF6E5217), prSoft = Color(0x24A17822),
+        alarmInk = Color(0xFFA84E35), error = Color(0xFFB3261E), onError = Color.White, scrim = Color(0x731A1918),
     )
 }
 

@@ -44,6 +44,10 @@ that later visual tasks match their Figma boards.
 Supply `--scenarios recipes.json` to replace the default array. Later tasks add board recipes
 without changing the existing screen implementation:
 
+`--scenarios apps/android/tools/capture-recipes/colour-roles.json` captures the new-routine editor,
+movement picker, share offer and live link in both appearances. Optional `after` steps run after a
+recipe's screenshot, allowing transient sheets to close before the next recipe or readiness check.
+
 ```json
 [
   {
@@ -81,7 +85,8 @@ an ANR/fatal exception. `--baseline` records an over-budget baseline without cla
 acceptance. Keep baseline and final APKs, use identical emulator configuration and fixtures, and
 reserve a quiet host window for both measurements.
 
-A ten-second method-sampling trace of the open workout and `dumpsys cpuinfo` accompany the PNGs.
+A ten-second method-sampling trace of the open workout, `dumpsys cpuinfo` and the scanned Android
+runtime log accompany the PNGs. The runtime log is preserved even when the final ANR/fatal check fails.
 `--profile-seconds` accepts 1–60 seconds. Traces contain thread CPU clocks; `dumpsys cpuinfo` can
 include a preceding system interval and should not substitute for trace analysis.
 

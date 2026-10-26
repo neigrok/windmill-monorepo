@@ -60,7 +60,7 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
     onPageSettled: (Int) -> Unit = {}) {
     val dark = LocalWindmillDark.current
     val skin = if (dark) GymSkin.Instrument else GymSkin.Daylight
-    val accent = if (dark) skin.accent else Color(0xFF137A6C)
+    val accent = skin.accent
     val telemetry = LocalTelemetry.current
     val state = if (replay) "replay" else "first_launch"
     val pager = rememberPagerState { 4 }

@@ -458,6 +458,7 @@ def main():
                     filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
                     (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
                     manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
+                    device.steps(scenario.get("after", []))
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")
@@ -496,6 +497,7 @@ def main():
         (args.output / "workout-idle.trace").write_bytes(device.run("exec-out", "cat", trace))
         (args.output / "workout-cpu.txt").write_bytes(device.run("shell", "dumpsys", "cpuinfo"))
         logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
+        (args.output / "android-runtime.log").write_text(logcat)
         manifest["anr"] = "ANR in " + PACKAGE in logcat or "FATAL EXCEPTION" in logcat
         (args.output / "capture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         events = fixture.sql("SELECT COALESCE(json_agg(json_build_object('name',name,'props',props) ORDER BY id),'[]'::json) FROM events;")

@@ -145,3 +145,32 @@ receipt PNG/XML, readbacks, events and APK SHA-256
 `d2420a036179ea65b4d378aa77cebdc0d18db26a8313cff6cc59e462fe5cc0ea`, built from `b4ce8fb3` plus
 the reviewed CI changes. Delayed-read disabled-action behavior is verified by the deterministic
 Compose regression; the native flow verifies normal readiness, persistence and telemetry.
+
+## Task 02 — shared color roles
+
+The gym palette owns native error and on-error roles separately from refusal text. Daylight uses
+verdigris for the app and onboarding, gold-700 for record text and the approved warm record wash.
+Unused hover and pressed accent fields are absent; native state layers belong to the shared-part
+implementation. The routine picker uses the approved surface role and the live-link Revoke action
+uses the accent. All 35 focused palette/account/onboarding/planning/sharing tests pass with zero skips;
+four capture-tool tests pass. Native colour acceptance covers all four recipes in Dark and Daylight.
+The final picker body uses #161C1D / #F8F6F4; the live-link Revoke action uses the accent.
+Remaining Name-field and picker-height differences belong to task 18 (consistency 11q).
+
+The shared palette is the one color source for app chrome, account chrome and the gym onboarding
+accent. This task adds no events or write boundaries. Existing Coach action structure and review
+paths remain under the release scope exclusion.
+
+Task 02 evidence is in `/private/tmp/windmill-android-colour-roles-installed-final`: the final APK,
+its manifest, picker PNG/XML pairs, focused-test XML, palette checks, runtime log and observability
+summary. Its APK SHA-256 is `1154e9bb01ad3f67dd4803129221790f418669ad414cc4ff3a9ebad71cd40928`.
+The manifest links the six unchanged editor/share captures to
+`/private/tmp/windmill-android-colour-roles-final2` and that capture APK. The eight-capture run has
+no ANR or fatal exception, a 1,579 ms ready frame and a nonempty 410,150-byte idle trace; the final
+picker pair also has no ANR or fatal exception. The exact runtime scans are retained locally.
+
+The local event intake contains only allowlisted application labels and no fixture names, emails
+or share addresses. Two successful share-write observations resolve to one idempotent share row;
+all three routine revisions remain 1 after the cancelled editor captures. Palette changes add no
+write, event or failure boundary. The local Sentry collector receives SDK session envelopes; no
+new technical failure is observed. This verifies local intake and SDK transport, not hosted receipt.
