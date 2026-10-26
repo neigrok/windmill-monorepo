@@ -48,13 +48,16 @@ data class WorkoutNotification(
     val counter: String,
     val offer: LogSetOffer?,
     val hidden: Boolean,
+    val sinceSetAtMs: Long,
 ) {
     constructor(key: WorkoutKey, session: Session, movement: String, sets: List<TrainingSet>,
         state: WorkoutState, ready: Boolean) : this(
         key, session.plan?.routine ?: Readout.noRoutine, movement,
         state.rack?.let { "${Readout.weight(it.weightKg)} kg × ${it.reps}" } ?: "Open workout",
-        LiveLines.counter(LiveLines.setCount(sets), state.rack?.exerciseId?.let { session.plan?.entry(it) }),
+        LiveLines.counter(LiveLines.setCount(sets.filter { it.exerciseId == state.rack?.exerciseId }),
+            state.rack?.exerciseId?.let { session.plan?.entry(it) }),
         state.offer.takeIf { ready }, state.hidden,
+        sets.maxOfOrNull { it.completedAtMs } ?: session.startedAtMs,
     )
 }
 

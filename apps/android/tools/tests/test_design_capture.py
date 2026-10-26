@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
 import unittest
+import xml.etree.ElementTree as ET
 
 
 spec = importlib.util.spec_from_file_location("design_capture", Path(__file__).parents[1] / "design_capture.py")
@@ -166,6 +167,50 @@ class DesignCaptureTests(unittest.TestCase):
                     capture.checked_build_config(android, "http://10.0.2.2:8098")
             config.write_text('public static final String WM_API_BASE_URL = "http://10.0.2.2:8098";')
             capture.checked_build_config(android, "http://10.0.2.2:8098")
+
+    def test_profile_waits_for_delayed_complete_bytes_and_refuses_empty_or_partial_files(self):
+        class TraceDevice(capture.Device):
+            def __init__(self, replies):
+                self.replies = iter(replies)
+                self.calls = []
+            def run(self, *arguments, **kwargs):
+                self.calls.append((arguments, kwargs))
+                return next(self.replies, b"")
+        trace = b"*version\n3\n*end\nSLOW-complete-records"
+        device = TraceDevice([b"", b"", trace[:10], trace, trace])
+        self.assertEqual(trace, device.profile("trace", timeout=1, poll_seconds=0))
+        self.assertEqual([(("exec-out", "cat", "trace"), {"check": False})] * 5, device.calls)
+        for pending in (b"", b"*version\n3"):
+            with self.subTest(pending=pending), self.assertRaisesRegex(RuntimeError, "did not finish writing"):
+                TraceDevice([pending] * 50).profile("trace", timeout=.01, poll_seconds=.001)
+
+    def test_notification_settlement_ignores_only_system_chronometer_values(self):
+        def tree(clock, body="30 kg × 8", bounds="[0,0][100,100]", other="02:10"):
+            root = ET.Element("hierarchy")
+            ET.SubElement(root, "node", {"resource-id": "android:id/chronometer", "package": "com.android.systemui",
+                "class": "android.widget.Chronometer", "text": clock, "content-desc": clock, "bounds": "[0,0][40,20]"})
+            ET.SubElement(root, "node", {"text": body, "bounds": bounds})
+            ET.SubElement(root, "node", {"resource-id": "android:id/chronometer", "class": "android.widget.TextView", "text": other})
+            return root
+        class Screens(capture.Device):
+            def __init__(self, trees):
+                self.trees = iter(trees)
+                self.calls = 0
+            def tree(self):
+                self.calls += 1
+                return next(self.trees)
+        for changed in (tree("00:02", body="35 kg × 8"), tree("00:02", bounds="[0,0][101,100]"),
+                        tree("00:02", other="02:11")):
+            later = ET.fromstring(ET.tostring(changed))
+            later[0].set("text", "00:03")
+            device = Screens([tree("00:01"), changed, later])
+            self.assertEqual(ET.tostring(later), ET.tostring(device.settle(notification_clock=True)))
+            self.assertEqual(3, device.calls)
+        raw = tree("00:02")
+        device = Screens([tree("00:01"), raw])
+        self.assertIs(raw, device.settle(notification_clock=True))
+        self.assertEqual("00:02", raw[0].get("text"))
+        self.assertEqual("00:02", raw[0].get("content-desc"))
 
     def test_model_fixture_serves_exact_tool_and_text_streams(self):
         server = capture.ThreadingHTTPServer(("127.0.0.1", 0), capture.ModelFixture)

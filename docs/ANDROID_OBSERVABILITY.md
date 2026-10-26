@@ -127,6 +127,13 @@ Settings Retry enters import reconciliation before its
 the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
 and emits no completed event; cancellation propagates without a failure report.
 
+Notification actions emit one `gym_action` per delivered user action through their shared handler.
+A locked, stale or unavailable offer is `refused`; refreshing the notification or its chronometer
+emits nothing. Accepted notification sets also emit one `gym_set_logged`. Unexpected post, receive
+and capability failures retain `gym.notification.post`, `gym.notification.receive` and
+`gym.notification.capabilities`. Routine names, movement names, values and clock timestamps are
+excluded from both event properties and failure reports.
+
 Every logged set uses the rack acceptance path and emits `gym_set_logged` once. Finish emits
 `gym_session_finished`; both events carry no set values or legacy kind labels. Saved workout
 imports ignore legacy kind fields and retain their existing load, write and recovery failure boundaries.
@@ -173,6 +180,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
+| Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |

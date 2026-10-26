@@ -137,12 +137,19 @@ class MainActivity : ComponentActivity() {
             is WorkoutRoute.Open -> destination.key
             is WorkoutRoute.Log -> destination.command.key
         }
+        if (destination !is WorkoutRoute.Log) {
+            lifecycleScope.launch { runtime.workoutNotifications.perform(destination) }
+            return
+        }
         lifecycleScope.launch { runtime.gym.openWorkout(key) }
-        if (destination !is WorkoutRoute.Log) return
         val keyguard = getSystemService(KeyguardManager::class.java)
-        fun accept() {
-            if (keyguard.isDeviceLocked || isFinishing || isDestroyed) return
-            lifecycleScope.launch { runtime.gym.logSet(destination.command) }
+        var handled = false
+        fun accept(allowed: Boolean = true) {
+            if (handled) return
+            handled = true
+            lifecycleScope.launch {
+                runtime.workoutNotifications.perform(destination, allowed && !isFinishing && !isDestroyed)
+            }
         }
         if (!keyguard.isDeviceLocked) { accept(); return }
         lifecycleScope.launch {
@@ -151,6 +158,8 @@ class MainActivity : ComponentActivity() {
                     if (!isFinishing && !isDestroyed) keyguard.requestDismissKeyguard(this@MainActivity,
                         object : KeyguardManager.KeyguardDismissCallback() {
                             override fun onDismissSucceeded() { accept() }
+                            override fun onDismissCancelled() { accept(false) }
+                            override fun onDismissError() { accept(false) }
                         })
                 }
             }

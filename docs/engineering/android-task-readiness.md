@@ -18,7 +18,7 @@ Tasks **29–35, 41–42 and 44 are postponed at the user's request**. Preserve 
 
 Tasks 28 and 37 remain active for ordinary chat bubbles, composer/chrome, History and chat lifecycle. Task 37's active prerequisites are 04, 05 and 28; task 30's outcome-word changes are deferred. Keep tool-write content in its current presentation while task 35 waits. Task 49 remains active because its chips and retained draft feed chat input rather than presenting tool-action outputs.
 
-U/P additional proposals are deferred from the current release scope and remain unapproved. A/B recovery proposals still require human approval. Z zero-set Finish and D account-deletion recovery are ✅ Ready for dev, human-approved 2026-10-25; D retains its separate backend prerequisite.
+U/P additional proposals are deferred from the current release scope and remain unapproved. A/B recovery proposals still require human approval. Z zero-set Finish and D account-deletion recovery are ✅ Ready for dev, human-approved 2026-10-25; D’s backend receipt/recovery prerequisite is deployed in `ac1e0c75`; Android task 48 remains pending.
 
 ## Task matrix
 
@@ -71,7 +71,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 45 | Ready | [03.5 Hide workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41318). |
 | 46 | Ready | [Shell 16a You](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-1569); signed-in twin is ready. |
 | 47 | Ready | [Shell 16c Sign out](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1053); unconfirmed-change states are ready. |
-| 48 | Design ready; backend receipt required | [Shell 27a Delete account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) through 27g and [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ready. D is human-approved 2026-10-25; backend reconciliation remains required. |
+| 48 | Design and backend prerequisite ready; Android pending | [Shell 27a Delete account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) through 27g and [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ready. D is human-approved 2026-10-25; backend reconciliation is deployed in `ac1e0c75`. Task 48 owns Android integration and acceptance. |
 | 49 | Ready | [01.17 Coach choice](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40111); local retained-draft twin is ready. |
 | 50 | Ready | [02.13 Routine history](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39087). |
 | 51 | Ready | [09.3 Connected log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39148); explanation, empty and signed-out Notes states are ready. |
@@ -90,7 +90,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | P · deferred from release scope, unapproved | `android-coach-partial-drafts-design` | Pending, saved and refused account drafts together; Retry/Reject scoped to unresolved work and durable per-draft receipts. |
 | B · unapproved | `android-coach-bound-installation-design` | Signed-out bound installation with Sign in and retained local History, no anonymous Send; recovery of already-submitted requests. |
 | A · unapproved | Consistency ledger 6t | Anonymous provider refusal, truncated output, invalid/unavailable installation credentials, waiting versus local saving, and truthful Stop waiting copy. Task 38 must retain the originating draft. |
-| D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25. Requires the `account-delete-reconciliation` backend contract before task 48 ships. |
+| D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25. The `account-delete-reconciliation` backend contract is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance. |
 
 The [combined editor Load keyboard](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22388)
 and its [Daylight twin](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22836)

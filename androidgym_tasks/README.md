@@ -39,8 +39,8 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | `android-coach-uncertain-apply-design` · deferred from release scope, unapproved | [34](34-proposal-long-failure-retry.md) | New unknown-outcome Apply/removal state |
 | `android-coach-partial-drafts-design` · deferred from release scope, unapproved | [41](41-coach-drafts-card.md), [42](42-coach-drafts-saved.md) | New signed-in partial-save/recovery states |
 | `android-coach-bound-installation-design` | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Signed-out stance for a bound installation |
-| `android-account-delete-recovery-design` · resolved | [48](48-delete-account.md) | [D1–D5 recovery states](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25; backend receipt prerequisite remains |
-| `account-delete-reconciliation` | [48](48-delete-account.md) | Backend receipt/recovery across session revocation; required before shipping deletion |
+| `android-account-delete-recovery-design` · resolved | [48](48-delete-account.md) | [D1–D5 recovery states](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25; backend receipt/recovery is deployed in `ac1e0c75`; Android task 48 remains pending |
+| `account-delete-reconciliation` · resolved | [48](48-delete-account.md) | Backend receipt/recovery across session revocation is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance |
 
 Existing task-local drawing gaps remain authoritative, including anonymous refusal copy in task 38. This table does not waive them or expand approval to undrawn states.
 

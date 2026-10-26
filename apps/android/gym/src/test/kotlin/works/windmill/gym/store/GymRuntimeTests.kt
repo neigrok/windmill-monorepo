@@ -41,6 +41,41 @@ class GymRuntimeTests {
         movements.reversed().forEach { store.choose(it) }
     }
 
+    @Test fun notificationClockSurvivesMovementChangesFixDeleteAndColdRestore() = runTest {
+        var moment = WorkoutMoment(101_000, 1_000, "boot")
+        val directory = tmp.newFolder()
+        room(directory, WorkoutClock { moment }).use { first ->
+            first.startWorkout("bench-press")
+            val runtime = GymRuntime(first.store, { null }, { true }, StandardTestDispatcher(testScheduler))
+            runtime.restoreLocal()
+            val started = first.store.session!!.startedAtMs
+            assertEquals(started, runtime.notification.value!!.sinceSetAtMs)
+            first.store.logSet(60.0, 8)
+            assertEquals(101_000L, runtime.notification.value!!.sinceSetAtMs)
+            moment = moment.copy(wallMs = 105_000, elapsedMs = 5_000)
+            first.store.choose("barbell-row")
+            first.store.logSet(30.0, 8)
+            val newest = first.store.sets.last()
+            first.store.choose("bench-press")
+            assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
+            assertEquals("Bench Press", runtime.notification.value!!.movement)
+            assertTrue(first.store.fixSet(first.store.session!!.id, newest.id,
+                SetFix(weightKg = 35.0, reps = 6)) is FixOutcome.Corrected)
+            assertEquals(105_000L, runtime.notification.value!!.sinceSetAtMs)
+            val snapshot = first.engine.snapshot()
+            room(directory, WorkoutClock { moment }, snapshot).use { restored ->
+                val cold = GymRuntime(restored.store, { null }, { true }, StandardTestDispatcher(testScheduler))
+                cold.restoreLocal()
+                assertEquals(105_000L, cold.notification.value!!.sinceSetAtMs)
+                restored.store.connect(restored.account())
+                assertEquals(105_000L, cold.notification.value!!.sinceSetAtMs)
+                assertNull(restored.store.deleteSet(restored.store.session!!.id, newest.id))
+                assertEquals(101_000L, cold.notification.value!!.sinceSetAtMs)
+                assertEquals(1, restored.store.sets.size)
+            }
+        }
+    }
+
     @Test
     fun twoConcurrentDeliveriesAndAColdDuplicatePersistOneOfferedSet() = runTest {
         var moment = WorkoutMoment(101_000, 1_000, "boot")

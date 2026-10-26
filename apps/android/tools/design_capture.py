@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
 import xml.etree.ElementTree as ET
 
 
@@ -313,13 +314,58 @@ class Device:
         self.serial = f"emulator-{port}"
         self.touch_bounds = None
         self.touch_point = None
+        self.sdk = sdk
+        self.notification_clock = False
+
+    def prepare_notification_capture(self):
+        jdk = Path(os.environ["JAVA_HOME"]) / "bin"
+        build = self.output / "hierarchy-helper"
+        build.mkdir()
+        sdk = self.sdk / "platforms/android-36/android.jar"
+        source = ROOT / "apps/android/tools/design-capture/CaptureTree.java"
+        command([jdk / "javac", "--release", "8", "-cp", sdk, "-d", build, source])
+        command([jdk / "java", "-cp", self.sdk / "build-tools/36.0.0/lib/d8.jar", "com.android.tools.r8.D8",
+                 "--lib", sdk, "--output", build, build / "works/windmill/capture/CaptureTree.class"])
+        jar = build / "capture-tree.jar"
+        with zipfile.ZipFile(jar, "w") as archive:
+            archive.write(build / "classes.dex", "classes.dex")
+        self.run("push", jar, "/data/local/tmp/capture-tree.jar")
+        self.run("shell", "locksettings", "set-pin", "2468")
+        self.run("shell", "settings", "put", "secure", "lock_screen_allow_private_notifications", "0")
+        self.notification_clock = True
+        self.run("shell", "input", "keyevent", "KEYCODE_SLEEP")
+        self.notification_surface("unlock")
+        self.notification_clock = False
+
+    def notification_surface(self, surface):
+        if surface == "shade":
+            self.run("shell", "cmd", "statusbar", "expand-notifications")
+        elif surface == "home":
+            self.run("shell", "input", "keyevent", "KEYCODE_HOME")
+        elif surface == "lock":
+            self.run("shell", "input", "keyevent", "KEYCODE_SLEEP")
+            self.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        elif surface == "unlock":
+            self.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+            self.find("Device locked")
+            self.run("shell", "input", "swipe", "540", "2100", "540", "500", "500")
+            self.find("com.android.systemui:id/pinEntry")
+            self.run("shell", "input", "text", "2468")
+            self.run("shell", "input", "keyevent", "KEYCODE_ENTER")
+            self.find("Home")
+        else:
+            raise ValueError("Unknown notification capture surface.")
 
     def run(self, *arguments, **kwargs):
         return command([self.adb, "-s", self.serial, *arguments], **kwargs)
 
     def tree(self):
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
-        self.run("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml")
+        if self.notification_clock:
+            self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
+                     "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
+        else:
+            self.run("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml")
         try:
             return ET.fromstring(self.run("exec-out", "cat", "/data/local/tmp/design-capture.xml", check=False))
         except ET.ParseError:
@@ -330,26 +376,31 @@ class Device:
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
-                if value in (node.get("text"), node.get("content-desc")):
+                if value in (node.get("text"), node.get("content-desc"), node.get("resource-id")):
                     return node
             time.sleep(.2)
         (self.output / "failure-ui.xml").write_bytes(ET.tostring(tree))
         (self.output / "failure-ui.png").write_bytes(self.run("exec-out", "screencap", "-p"))
         raise RuntimeError(f"Capture state did not expose {value!r}.")
 
-    def settle(self, *, resend_countdown=False):
+    def settle(self, *, resend_countdown=False, notification_clock=False, timeout=30):
         previous = None
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             tree = self.tree()
-            if resend_countdown:
-                for node in tree.iter("node"):
+            compared = ET.fromstring(ET.tostring(tree))
+            for node in compared.iter("node"):
+                if resend_countdown:
                     for key in ("text", "content-desc"):
                         if re.fullmatch(r"Resend in (?:[1-9]|[12][0-9]|30)s", node.get(key, "")):
                             node.set(key, "Resend countdown")
-            current = ET.tostring(tree)
+                if notification_clock and node.get("resource-id") == "android:id/chronometer" and \
+                        node.get("class") == "android.widget.Chronometer" and node.get("package") == "com.android.systemui":
+                    node.set("text", "<chronometer>")
+                    node.set("content-desc", "<chronometer>")
+            current = ET.tostring(compared)
             if tree.tag != "unavailable" and current == previous:
-                return
+                return tree
             previous = current
         raise RuntimeError("The capture screen did not settle.")
 
@@ -407,12 +458,29 @@ class Device:
             time.sleep(.2)
         raise RuntimeError("Debug fixture sign-in timed out.")
 
+    def profile(self, path, timeout=20, poll_seconds=.2):
+        deadline = time.monotonic() + timeout
+        previous = b""
+        while time.monotonic() < deadline:
+            current = self.run("exec-out", "cat", path, check=False)
+            if current and b"*end\n" in current and current == previous:
+                return current
+            previous = current
+            time.sleep(poll_seconds)
+        raise RuntimeError("Android did not finish writing the CPU profile before the capture deadline.")
+
     def steps(self, steps):
         for step in steps:
             if "tap" in step:
                 self.tap(step["tap"])
             elif "wait" in step:
                 self.find(step["wait"])
+            elif "notification" in step:
+                self.notification_surface(step["notification"])
+            elif "absent" in step:
+                tree = self.tree()
+                if tree.tag == "unavailable" or any(step["absent"] in (node.get("text"), node.get("content-desc")) for node in tree.iter("node")):
+                    raise RuntimeError("Private notification content was present or unreadable.")
             elif "text" in step:
                 self.run("shell", "input", "text", step["text"].replace(" ", "%s"))
             elif "keyboard" in step:
@@ -605,6 +673,8 @@ def main():
         manifest["step"] = "emulator"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
         device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
+        if any(scenario.get("notification_clock") for scenario in scenarios):
+            device.prepare_notification_capture()
         device.run("install", apk)
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
@@ -622,12 +692,17 @@ def main():
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
+                    device.notification_clock = scenario.get("notification_clock", False)
                     try:
                         device.steps(scenario["steps"])
-                        device.settle(resend_countdown=scenario.get("resend_countdown", False))
+                        tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
+                                             notification_clock=device.notification_clock)
                         if model.responses:
                             raise RuntimeError("The capture did not consume its deterministic model responses.")
                         filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
+                        (args.output / filename).with_suffix(".xml").write_bytes(ET.tostring(tree))
+                        if device.notification_clock:
+                            (args.output / filename).with_suffix(".notification.txt").write_bytes(device.run("shell", "dumpsys", "notification", "--noredact"))
                         (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
                         manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename})
                         device.steps(scenario.get("after", []))
@@ -641,6 +716,7 @@ def main():
                     finally:
                         device.release_touch()
         manifest["mailCalls"] = mail.calls
+        device.notification_clock = False
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")
@@ -676,7 +752,7 @@ def main():
         device.run("shell", "am", "profile", "start", "--sampling", "1000", PACKAGE, trace)
         time.sleep(args.profile_seconds)
         device.run("shell", "am", "profile", "stop", PACKAGE)
-        (args.output / "workout-idle.trace").write_bytes(device.run("exec-out", "cat", trace))
+        (args.output / "workout-idle.trace").write_bytes(device.profile(trace))
         (args.output / "workout-cpu.txt").write_bytes(device.run("shell", "dumpsys", "cpuinfo"))
         logcat = device.run("logcat", "-d", "-v", "brief", "ActivityManager:I", "AndroidRuntime:E", "*:S").decode(errors="replace")
         (args.output / "android-runtime.log").write_text(logcat)

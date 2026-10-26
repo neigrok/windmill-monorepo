@@ -294,7 +294,7 @@ class TrainingStore(
         catch (failure: Exception) { reportFailure("gym.workout_controls", failure); refuseWorkout(); return }
         rack = state.rack
         val movement = controls.chosenMovement
-        val rows = controls.sets.filter { it.exerciseId == movement }
+        val rows = controls.sets.filterNot { it.id in withheldIds || it.id in deletedSets }
         workoutFacts.value = WorkoutNotification(WorkoutKey(accountKey, live.id), live,
             movement?.let { Readout.movement(it, catalog) } ?: "Choose a movement", rows, state, ready)
     }

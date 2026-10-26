@@ -1,0 +1,112 @@
+[
+  {
+    "board": "04.2",
+    "name": "ongoing-notification",
+    "account": "fixture",
+    "notification_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 2"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 3"
+      },
+      {
+        "notification": "shade"
+      },
+      {
+        "wait": "Bench Press \u00b7 30 kg \u00d7 8\nset 3 of 3"
+      },
+      {
+        "wait": "Log set"
+      }
+    ]
+  },
+  {
+    "board": "04.3",
+    "name": "live-update-chip",
+    "account": "fixture",
+    "notification_clock": true,
+    "steps": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "notification": "home"
+      },
+      {
+        "wait": "Home"
+      }
+    ]
+  },
+  {
+    "board": "04.4",
+    "name": "lock-screen",
+    "account": "fixture",
+    "notification_clock": true,
+    "steps": [
+      {
+        "notification": "lock"
+      },
+      {
+        "wait": "Push A"
+      },
+      {
+        "absent": "Log set"
+      },
+      {
+        "absent": "Bench Press \u00b7 30 kg \u00d7 8\nset 3 of 3"
+      }
+    ],
+    "after": [
+      {
+        "notification": "unlock"
+      },
+      {
+        "notification": "shade"
+      },
+      {
+        "wait": "Push A"
+      },
+      {
+        "tap": "Push A"
+      },
+      {
+        "wait": "Finish"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "480 kg"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

@@ -7,7 +7,7 @@
 **Today**
 - There is no tile. No `TileService`, Glance widget or app widget exists in `apps/android`.
 - The manifest (`apps/android/app/src/main/AndroidManifest.xml:35-36`) declares only `WorkoutNotificationReceiver` besides the activity.
-- A free workout starts from *Start logging* on Routines; a running workout is reached through the app or the ongoing notification (15).
+- App workouts start from a routine on Routines; a running workout is reached through the app or the ongoing notification (15). Externally started workouts may have no routine.
 
 **Change**
 - Add `notification/WorkoutTileService.kt`, a `TileService`, declared in the manifest with `BIND_QUICK_SETTINGS_TILE` and the `ACTION_QS_TILE` intent filter, icon `gym_nav_log`.

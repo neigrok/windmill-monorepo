@@ -10,10 +10,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.util.UUID
@@ -29,7 +31,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.gym.R
+import works.windmill.gym.ui.GymSkin
 import works.windmill.gym.domain.LogSetCommand
+import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.WorkoutClock
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutMoment
@@ -87,6 +91,7 @@ class WorkoutNotifications(
     val capabilities: StateFlow<WorkoutCapabilities?> = measured.asStateFlow()
     private var collector: Job? = null
     private var rendered: WorkoutNotification? = null
+    private var renderedAccent: Int? = null
     private var channelReady = false
     private var restored = false
 
@@ -134,6 +139,27 @@ class WorkoutNotifications(
         }.invokeOnCompletion { onComplete() }
     }
 
+    suspend fun perform(route: WorkoutRoute, allowed: Boolean = true): Boolean = withContext(Dispatchers.Main.immediate) {
+        val accepted = try {
+            when {
+                !allowed -> false
+                route is WorkoutRoute.Open -> commands.openWorkout(route.key)
+                route is WorkoutRoute.Log && !keyguardManager.isDeviceLocked ->
+                    commands.logSet(route.command) is LogSetAcceptance.Accepted
+                else -> false
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            telemetry.failure("gym.notification.receive", error)
+            false
+        }
+        telemetry.event("gym_action", mapOf("screen" to "notification",
+            "action" to if (route is WorkoutRoute.Log) "log_set" else "open",
+            "outcome" to if (accepted) "ok" else "refused"))
+        accepted
+    }
+
     suspend fun receive(intent: Intent) = withContext(Dispatchers.Main.immediate) {
         val command = decode(intent) ?: return@withContext
         if (intent.component != receiver) return@withContext
@@ -142,7 +168,7 @@ class WorkoutNotifications(
         createChannel()
         when (command) {
             is Command.Log -> {
-                if (!keyguardManager.isDeviceLocked) commands.logSet(command.value)
+                perform(WorkoutRoute.Log(command.value))
             }
             is Command.Hide -> commands.setHidden(command.key, true)
             else -> Unit
@@ -152,12 +178,18 @@ class WorkoutNotifications(
 
     private fun createChannel() {
         if (channelReady) return
-        notificationManager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Workout", NotificationManager.IMPORTANCE_LOW).apply {
-                setSound(null, null)
-                enableVibration(false)
-            },
-        )
+        if (notificationManager.getNotificationChannel(CHANNEL) == null) {
+            val legacy = notificationManager.getNotificationChannel(LEGACY_CHANNEL)
+            val importance = if (legacy?.importance == NotificationManager.IMPORTANCE_NONE)
+                NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_DEFAULT
+            notificationManager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Workout", importance).apply {
+                    setSound(null, null)
+                    enableVibration(false)
+                },
+            )
+        }
+        notificationManager.deleteNotificationChannel(LEGACY_CHANNEL)
         channelReady = true
     }
 
@@ -195,11 +227,26 @@ class WorkoutNotifications(
             measure()
             return
         }
-        if (snapshot == rendered) return
+        val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        val accent = (if (dark) GymSkin.Instrument else GymSkin.Daylight).accent.toArgb()
+        if (snapshot == rendered && accent == renderedAccent) return
         val offer = snapshot.offer?.takeIf { it.key == snapshot.key }?.let { LogSetCommand(it.key, it.id) }
         val action = offer?.let { Command.Log(it) } ?: Command.Open(snapshot.key)
+        val public = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.gym_workout_notification)
+            .setColor(accent)
+            .setContentTitle(snapshot.title)
+            .setWhen(snapshot.sinceSetAtMs)
+            .setUsesChronometer(true)
+            .setShowWhen(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.gym_nav_log)
+            .setSmallIcon(R.drawable.gym_workout_notification)
+            .setColor(accent)
             .setContentTitle(snapshot.title)
             .setContentText("${snapshot.movement} · ${snapshot.rackLine} · ${snapshot.counter}")
             .setStyle(NotificationCompat.BigTextStyle().bigText("${snapshot.movement} · ${snapshot.rackLine}\n${snapshot.counter}"))
@@ -209,7 +256,11 @@ class WorkoutNotifications(
             .setRequestPromotedOngoing(true)
             .setContentIntent(pending(Command.Open(snapshot.key)))
             .setDeleteIntent(pending(Command.Hide(snapshot.key)))
-            .setShowWhen(false)
+            .setWhen(snapshot.sinceSetAtMs)
+            .setUsesChronometer(true)
+            .setShowWhen(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
             .addAction(
                 NotificationCompat.Action.Builder(0, if (offer == null) "Open workout" else "Log set", pending(action))
                     .setAuthenticationRequired(offer != null && Build.VERSION.SDK_INT >= 31).build(),
@@ -219,6 +270,7 @@ class WorkoutNotifications(
             if (rendered?.key != snapshot.key) notificationManager.cancel(CHANNEL, ID)
             notificationManager.notify(CHANNEL, ID, notification)
             rendered = snapshot
+            renderedAccent = accent
         } catch (error: SecurityException) {
             telemetry.failure("gym.notification.post", error)
             rendered = null
@@ -274,7 +326,8 @@ class WorkoutNotifications(
     }
 
     companion object {
-        internal const val CHANNEL = "gym_workout"
+        internal const val CHANNEL = "gym_workout_clock"
+        internal const val LEGACY_CHANNEL = "gym_workout"
         internal const val ID = 1
         internal const val PREFIX = "works.windmill.gym.workout."
     }

@@ -751,14 +751,16 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   say *Turned down* (`domain/Proposal.kt:184-274`, `coach/Thread.kt:53,77,88`). The boards decide on
   the card with a per-field diff and Apply / Reject: 08.2 `1252:27854`, 08.3 `1253:28311`, 08.12–08.14,
   the catalogue 08.15–08.31 (`1254:37242` … `1254:38214`). 10v covers the words on every surface.
-- **11l · Outside the app.** The ongoing notification shows no time (`setShowWhen(false)`, no
-  chronometer; `notification/WorkoutNotifications.kt:189-227`), so the Live Update chip is an icon
-  only, and its channel is `IMPORTANCE_LOW`, hidden on the lock screen. No Quick Settings tile
-  exists; with no workout open the tile opens Routines and never starts one (12b). Boards 04.1
-  `1254:46694` (tile), 04.2 `1254:46754`, 04.3 `1254:46826`, 04.4 `1254:46875`.
-  Owner ruling (2026-10-22): on the lock screen the notification shows only the routine and the
-  clock, never set content — a private notification with a public version (board 04.4; build in
-  task 15).
+- **11l · Outside the app.** The native ongoing notification and promoted Live Update show a
+  chronometer from the last visible workout set, or workout start before the first set. The silent
+  DEFAULT channel preserves a user's existing block. The public lock-screen card contains only
+  the routine and clock, following the owner privacy ruling; set facts and actions appear after
+  unlock. API 37 controls the stock card's launcher icon and system tint despite the requested
+  exercise small icon and GymSkin accent; the promoted chip uses the exercise icon and clock.
+  Reconcile the illustrative 04.2 card with this verified platform rendering without adding a
+  custom notification layout. Boards: 04.2 `1254:46754`, 04.3 `1254:46826`, 04.4 `1254:46875`.
+  Quick Settings tile 04.1 `1254:46694` remains task 16; with no workout open it opens Routines and
+  never starts one (12b).
 - **11m · Native sign-in field states.** Shell Android 15b [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4237)
   and [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-792) draw an empty Code
   field with a floating label, placeholder and unfocused outline. Task 27 specifies stock Compose
@@ -989,8 +991,7 @@ these places.
   *The log*. Code still differs: Android *Log* (tab and
   title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
-  last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`,
-  `domain/WorkoutNotification.kt:54`); the web's *No sessions yet.*, *no
+  last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).
 
 ### Figma reconciliation

@@ -102,9 +102,8 @@ transport and first-party intake, not hosted vendor receipt.
 
 The full-suite XML is archived at `/private/tmp/windmill-android-batch/task01-full7-xml.tar.gz`.
 Comparable performance artifacts are `/tmp/windmill-android-capture-quiet-baseline` and
-`/tmp/windmill-android-capture-quiet-final2`; both preserve their APK and manifest. Future ticking
-logger or notification recipes need layout/body settlement instead of exact accessibility-tree
-identity. Later visual tasks add their own approved board recipes; these captures do not claim
+`/tmp/windmill-android-capture-quiet-final2`; both preserve their APK and manifest. Ticking notification recipes use the bounded SystemUI chronometer settlement described below;
+app logger clocks still need their own layout/body condition. Later visual tasks add their own approved board recipes; these captures do not claim
 those screens already match Figma.
 
 ## CI verification and Finish readiness
@@ -194,3 +193,58 @@ variants complete in 2 minutes 31 seconds. Evidence is preserved in
 This verification change adds no product code or observability boundary. The native Finish,
 persistence and telemetry acceptance recorded above applies to the unchanged runtime. CI uploads
 XML and reports even when tests fail, and the remote job terminates within its configured bound.
+
+
+## Task 15 — notification clocks
+
+The pure workout snapshot carries the latest visible set timestamp across movements, falling back
+to workout start before the first set. The selected movement still controls its counter. The native
+private card, public lock-screen card and promoted Live Update use that same timestamp. Deletion,
+correction and cold restore preserve the domain clock rules. One notification action handler owns
+routing, unlock refusal, failure reporting and once-only action telemetry.
+
+The silent DEFAULT channel migration preserves an explicit legacy block and existing new-channel
+settings. Both transitions are verified through actual API 37 upgrades: enabled legacy LOW becomes
+silent DEFAULT, and blocked NONE remains blocked. A user's subsequent enable persists. The private
+card shows workout facts and one action; the secure public card shows only the title and clock
+with Android private-notification hiding enabled (`lock_screen_allow_private_notifications=0`).
+Public-version rendering follows the user’s lock-screen settings; other privacy settings were not
+exhaustively tested. The API 37 system renders its launcher icon and tint on the stock card, while its promoted chip
+uses the requested exercise icon and clock. Ledger 11l records this platform-controlled difference
+from the illustrative Figma card; no custom notification layout is introduced.
+
+Debug and Release each pass 34 focused notification, domain and runtime checks with no skips,
+failures or errors, and both app variants compile. The complete Android tools suite passes 31 tests,
+including local mail/auth, partial-prefix fixture pushes, native touch helpers, trace flushing and
+narrow clock settlement. The source integrates main's task 27 and task 08 tooling. Evidence is in
+`/private/tmp/windmill-android-task15`, with focused XML archives, per-class counts and tool logs.
+
+The frozen native APK has SHA-256
+`4ffb82f251ecd58b1f032dbe134e5048baf1860742b5c3dfe539f02516df568c`, built from `2d57ca53` plus
+reviewed task 15 source. `final-captures4` contains all six canonical 04.2/04.3/04.4 Dark/Daylight
+PNG, raw XML and notification-dump sets, a completed manifest and a runtime scan with no ANR or
+fatal exception. These captures use the same APK as the accepted `shade-pilot` action, clock and
+migration evidence; the later base integration is covered by the focused compile/test gate.
+
+The action acceptance intake contains exactly one successful notification `log_set`, one successful
+`open`, and two logged-set events. Backend readback retains the two sets on different movements,
+and the notification clock keeps the later set time when returning to the first movement. The
+pilot records one transient `hello` transport result as `unreachable`; the canonical capture run
+records two. Their cause is unproven. Subsequent sync succeeds, and the pilot's backend readback
+confirms both sets. These bounded transport metrics are neither domain refusals nor Sentry Issues.
+The native runtime scans contain no ANR or fatal exception. This evidence verifies first-party
+intake and boundary behavior, not hosted analytics receipt.
+
+Notification recipes build a host-owned shell hierarchy helper because the stock UI dumper waits
+for an idle period that a ticking chronometer does not provide. The helper has a bounded root wait;
+comparison ignores only the exact SystemUI Chronometer's text and description while preserving raw
+XML. Body text, unrelated numbers and bounds must settle. A chip requires visual inspection because
+the active Home accessibility root does not expose it. Unlock steps wait for the actual lock/PIN
+and Home states. All owned emulator, backend and fixture database processes clean up normally.
+Failed capture attempts remain beside the accepted packet and are not counted as acceptance.
+
+The profile reader waits for nonempty complete bytes to remain unchanged across two reads, with a
+bounded failure for empty or partial output. The retained task 01 trace is 396,857 bytes and spans
+10,287.783 ms, with 405.205 ms main-thread CPU in its parsed summary at
+`/private/tmp/windmill-android-batch/task01-native`. This hardens artifact collection without changing
+the recorded cold-ready measurements. Task 15 makes no new performance claim.

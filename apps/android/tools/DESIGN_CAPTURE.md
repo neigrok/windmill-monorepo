@@ -66,14 +66,29 @@ recipe's screenshot, allowing transient sheets to close before the next recipe o
 ]
 ```
 
-`tap` and `wait` match exact accessibility text or description. Other steps are `text`, `key`
+`tap` and `wait` match exact accessibility text, description or resource ID. Other steps are `text`, `key`
 (Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
 `02.7`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which
 normalizes only the bounded `Resend in 1s` through `Resend in 30s` label for that comparison; the
 native timer remains visible in the screenshot.
-Other clock and live-notification recipes need a layout-specific readiness condition.
+
+`--scenarios apps/android/tools/capture-recipes/notification-clock.json` captures the ongoing card,
+status-bar chip and secure public lock screen in both appearances. Its `notification_clock` option
+builds the shell-only `design-capture/CaptureTree.java` helper with the configured JDK, Android 36
+SDK platform and build tools 36.0.0. The helper reads the active accessibility root without waiting
+for a ticking chronometer to become idle; it has a bounded root-acquisition deadline and is never
+packaged in the app. Only the newly owned emulator receives its synthetic PIN and private-content
+lock-screen policy. `notification` steps select `shade`, `home`, `lock` or `unlock`; `absent` checks
+that exact private labels are missing and fails on an unreadable hierarchy.
+
+Notification settlement normalizes only text and description on SystemUI's `android:id/chronometer`
+with class `android.widget.Chronometer`. All body text, other numeric labels, bounds and attributes
+must settle. The raw tree is retained unchanged beside each PNG, along with a notification dump for
+these synthetic fixtures. A status-bar chip is not exposed in the active Home accessibility root;
+its screenshot requires visual review, supported by the saved promoted-notification flags. App
+logger clocks are outside this normalization. The auth resend-countdown option remains separate.
 
 `capture-recipes/sign-in-fields.json` captures 15a with the native Email keyboard and 15b/15c with
 the keyboard hidden, plus focused Code states with the Number keyboard, in both appearances. Use
@@ -117,7 +132,9 @@ reserve a quiet host window for both measurements.
 A ten-second method-sampling trace of the open workout, `dumpsys cpuinfo` and the scanned Android
 runtime log accompany the PNGs. The runtime log is preserved even when the final ANR/fatal check fails.
 `--profile-seconds` accepts 1–60 seconds. Traces contain thread CPU clocks; `dumpsys cpuinfo` can
-include a preceding system interval and should not substitute for trace analysis.
+include a preceding system interval and should not substitute for trace analysis. After profiling
+stops, the rig waits for a nonempty complete trace to remain unchanged across two reads. Empty,
+partial or continuously changing output fails at the bounded deadline instead of being accepted.
 
 `--acceptance-pause-seconds 600` retains the isolated stack after capture for manual acceptance.
 The script prints its device and local database, saves allowlisted events, then stops its processes

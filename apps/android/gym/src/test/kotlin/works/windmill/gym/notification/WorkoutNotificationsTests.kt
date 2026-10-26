@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -12,8 +13,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Looper
+import android.os.Parcel
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.compose.ui.graphics.toArgb
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +44,8 @@ import org.robolectric.annotation.Implements
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowAlarmManager
 import org.robolectric.shadows.ShadowNotificationManager
+import works.windmill.gym.R
+import works.windmill.gym.ui.GymSkin
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.LogSetOffer
@@ -48,6 +53,7 @@ import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.WorkoutKey
 import works.windmill.gym.domain.WorkoutNotification
 import works.windmill.gym.store.WorkoutCommands
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], shadows = [WorkoutNotificationsTests.Posts::class])
@@ -67,8 +73,9 @@ class WorkoutNotificationsTests {
         assertEquals("Push A", card.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("Overhead Press · 30 kg × 8 · Set 1 of 3", card.extras.getString(Notification.EXTRA_TEXT))
         assertEquals("Overhead Press · 30 kg × 8\nSet 1 of 3", card.extras.getString(Notification.EXTRA_BIG_TEXT))
-        assertFalse(card.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
-        assertFalse(card.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
+        assertTrue(card.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+        assertEquals(90_000L, card.`when`)
+        assertTrue(card.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
         assertTrue(card.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertTrue(card.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0)
         assertEquals(0, card.flags and Notification.FLAG_GROUP_SUMMARY)
@@ -172,6 +179,121 @@ class WorkoutNotificationsTests {
         assertEquals(1, f.posts.cards.size)
     }
 
+    @Test fun channelMigrationAndPublicVersionKeepOnlyTheRoutineAndClock() = runTest {
+        val f = Fixture(this)
+        f.manager.createNotificationChannel(NotificationChannel(WorkoutNotifications.LEGACY_CHANNEL,
+            "Workout", NotificationManager.IMPORTANCE_LOW))
+        f.start()
+        val channel = f.manager.getNotificationChannel(WorkoutNotifications.CHANNEL)
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, channel.importance)
+        assertNull(channel.sound)
+        assertFalse(channel.shouldVibrate())
+        assertNull(f.manager.getNotificationChannel(WorkoutNotifications.LEGACY_CHANNEL))
+        assertEquals(listOf(true), f.posts.replacementPresentOnDelete)
+        val card = f.card()
+        assertEquals(Notification.VISIBILITY_PRIVATE, card.visibility)
+        val public = requireNotNull(card.publicVersion)
+        assertEquals(WorkoutNotifications.CHANNEL, public.channelId)
+        assertEquals("Push A", public.extras.getString(Notification.EXTRA_TITLE))
+        assertEquals(card.`when`, public.`when`)
+        assertTrue(public.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+        assertTrue(public.extras.getBoolean(Notification.EXTRA_SHOW_WHEN))
+        assertNull(public.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertNull(public.extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+        assertTrue(public.actions.isNullOrEmpty())
+        assertNull(public.contentIntent)
+        assertNull(public.deleteIntent)
+        assertNull(public.contentView)
+        assertNull(public.bigContentView)
+        f.commands.notification.value = f.commands.notification.value!!.copy(title = "Free workout", sinceSetAtMs = 100_000)
+        runCurrent()
+        assertEquals("Free workout", f.card().extras.getString(Notification.EXTRA_TITLE))
+        assertEquals(100_000L, f.card().`when`)
+        assertEquals(100_000L, f.card().publicVersion.`when`)
+    }
+
+    @Test
+    @Config(qualifiers = "night")
+    fun appearanceUpdatesTheApprovedIconAndAccentWithoutAnotherActionEvent() = runTest {
+        val f = Fixture(this)
+        f.start()
+        val first = f.card()
+        assertEquals(R.drawable.gym_workout_notification, first.smallIcon.resId)
+        assertEquals(R.drawable.gym_workout_notification, first.publicVersion.smallIcon.resId)
+        assertEquals(GymSkin.Instrument.accent.toArgb(), first.color)
+        assertEquals(first.color, first.publicVersion.color)
+        RuntimeEnvironment.setQualifiers("notnight")
+        f.adapter.refreshCapabilities()
+        runCurrent()
+        val daylight = f.card()
+        assertEquals(GymSkin.Daylight.accent.toArgb(), daylight.color)
+        assertEquals(daylight.color, daylight.publicVersion.color)
+        assertEquals(first.extras.getString(Notification.EXTRA_BIG_TEXT), daylight.extras.getString(Notification.EXTRA_BIG_TEXT))
+        assertEquals(first.`when`, daylight.`when`)
+        assertEquals(2, f.posts.cards.size)
+        assertEquals(emptyList<Pair<String, Map<String, String>>>(), f.events)
+    }
+
+    @Test fun aBlockedLegacyChannelStaysBlockedAfterMigration() = runTest {
+        val f = Fixture(this)
+        f.manager.createNotificationChannel(NotificationChannel(WorkoutNotifications.LEGACY_CHANNEL,
+            "Workout", NotificationManager.IMPORTANCE_NONE))
+        f.start()
+        val channel = f.manager.getNotificationChannel(WorkoutNotifications.CHANNEL)
+        assertEquals(NotificationManager.IMPORTANCE_NONE, channel.importance)
+        assertFalse(f.adapter.capabilities.value!!.channelEnabled)
+        assertEquals(emptyList<Notification>(), f.posts.cards)
+        assertNull(f.manager.getNotificationChannel(WorkoutNotifications.LEGACY_CHANNEL))
+        assertEquals(listOf(true), f.posts.replacementPresentOnDelete)
+        assertEquals(emptyList<String>(), f.failures)
+    }
+
+    @Test fun anExistingClockChannelKeepsItsSettingsEvenWhenTheLegacyChannelIsBlocked() = runTest {
+        val f = Fixture(this)
+        val existing = NotificationChannel(WorkoutNotifications.CHANNEL, "My workout", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Chosen notification settings"
+            enableVibration(true)
+            enableLights(true)
+        }
+        val parcel = Parcel.obtain()
+        existing.writeToParcel(parcel, 0)
+        parcel.setDataPosition(0)
+        val expected = NotificationChannel.CREATOR.createFromParcel(parcel)
+        parcel.recycle()
+        f.manager.createNotificationChannel(existing)
+        f.manager.createNotificationChannel(NotificationChannel(WorkoutNotifications.LEGACY_CHANNEL,
+            "Workout", NotificationManager.IMPORTANCE_NONE))
+        f.start()
+        assertEquals(expected, f.manager.getNotificationChannel(WorkoutNotifications.CHANNEL))
+        assertTrue(f.adapter.capabilities.value!!.channelEnabled)
+        assertEquals("Push A", f.card().extras.getString(Notification.EXTRA_TITLE))
+        assertNull(f.manager.getNotificationChannel(WorkoutNotifications.LEGACY_CHANNEL))
+        assertEquals(listOf(true), f.posts.replacementPresentOnDelete)
+        assertEquals(emptyList<String>(), f.failures)
+    }
+
+    @Test fun deliveredActionsReportTheirResultOnceAndRefreshesEmitNothing() = runTest {
+        val f = Fixture(this)
+        f.start()
+        val log = WorkoutRoute.Log(LogSetCommand(f.key, "offer/α 1"))
+        val open = WorkoutRoute.Open(f.key)
+        shadowOf(f.keyguard).setIsDeviceLocked(true)
+        assertFalse(f.adapter.perform(log))
+        shadowOf(f.keyguard).setIsDeviceLocked(false)
+        assertFalse(f.adapter.perform(log, allowed = false))
+        assertTrue(f.adapter.perform(log))
+        assertFalse(f.adapter.perform(log))
+        assertTrue(f.adapter.perform(open))
+        assertFalse(f.adapter.perform(WorkoutRoute.Open(WorkoutKey("other", "session 1"))))
+        f.adapter.refreshCapabilities()
+        runCurrent()
+        assertEquals(listOf("offer/α 1"), f.commands.accepted)
+        assertEquals(listOf("refused", "refused", "ok", "refused", "ok", "refused").mapIndexed { index, outcome ->
+            "gym_action" to mapOf("screen" to "notification", "action" to if (index < 4) "log_set" else "open", "outcome" to outcome)
+        }, f.events)
+        assertTrue(f.failures.isEmpty())
+    }
+
     @Test fun hidePersistsUntilExplicitShowWithoutSchedulingAnAlarm() = runTest {
         val f = Fixture(this)
         f.start()
@@ -179,11 +301,11 @@ class WorkoutNotificationsTests {
         assertEquals(emptyList<Any>(), shadowOf(f.alarms).scheduledAlarms)
         f.adapter.receive(hide)
         assertTrue(f.commands.notification.value!!.hidden)
-        assertNull(f.posts.getNotification("gym_workout", 1))
+        assertNull(f.posts.getNotification(WorkoutNotifications.CHANNEL, 1))
         assertEquals(emptyList<Any>(), shadowOf(f.alarms).scheduledAlarms)
         f.adapter.refreshCapabilities()
         runCurrent()
-        assertNull(f.posts.getNotification("gym_workout", 1))
+        assertNull(f.posts.getNotification(WorkoutNotifications.CHANNEL, 1))
         assertEquals(1, f.posts.cards.size)
         f.commands.setHidden(f.key, false)
         runCurrent()
@@ -204,7 +326,7 @@ class WorkoutNotificationsTests {
         runCurrent()
         assertEquals("Push A", f.card().extras.getString(Notification.EXTRA_TITLE))
         assertTrue(shadowOf(f.alarms).scheduledAlarms.isEmpty())
-        val channel = f.manager.getNotificationChannel("gym_workout")
+        val channel = f.manager.getNotificationChannel(WorkoutNotifications.CHANNEL)
         channel.setSound(null, null)
         f.manager.createNotificationChannel(channel)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
@@ -215,7 +337,7 @@ class WorkoutNotificationsTests {
         f.adapter.refreshCapabilities()
         runCurrent()
         assertFalse(f.adapter.capabilities.value!!.appEnabled)
-        assertNull(f.posts.getNotification("gym_workout", 1))
+        assertNull(f.posts.getNotification(WorkoutNotifications.CHANNEL, 1))
         assertNull(f.adapter.capabilities.value!!.promoted)
         assertEquals(emptyList<String>(), f.commands.accepted)
     }
@@ -305,8 +427,14 @@ class WorkoutNotificationsTests {
         val key = WorkoutKey("seat/α", "session 1")
         val commands = Commands(
             WorkoutNotification(key, "Push A", "Overhead Press", "30 kg × 8", "Set 1 of 3",
-                LogSetOffer(key, "offer/α 1", 4, "overhead-press", 1, 30.0, 8), false),
+                LogSetOffer(key, "offer/α 1", 4, "overhead-press", 1, 30.0, 8), false, 90_000),
         )
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
         val adapter: WorkoutNotifications
 
         init {
@@ -317,9 +445,9 @@ class WorkoutNotificationsTests {
             adapter = newAdapter(test.backgroundScope)
         }
 
-        fun newAdapter(scope: CoroutineScope) = WorkoutNotifications(context, commands, scope, activity, manager, keyguard)
+        fun newAdapter(scope: CoroutineScope) = WorkoutNotifications(context, commands, scope, activity, manager, keyguard, telemetry)
         fun start() { adapter.start(); test.runCurrent() }
-        fun card(): Notification = posts.getNotification("gym_workout", 1)!!
+        fun card(): Notification = posts.getNotification(WorkoutNotifications.CHANNEL, 1)!!
     }
 
     private class Commands(initial: WorkoutNotification) : WorkoutCommands {
@@ -350,6 +478,14 @@ class WorkoutNotificationsTests {
     class Posts : ShadowNotificationManager() {
         val cards = mutableListOf<Notification>()
         val mainThread = mutableListOf<Boolean>()
+        val replacementPresentOnDelete = mutableListOf<Boolean>()
+        @Implementation
+        public override fun deleteNotificationChannel(channelId: String) {
+            if (channelId == WorkoutNotifications.LEGACY_CHANNEL) {
+                replacementPresentOnDelete += getNotificationChannel(WorkoutNotifications.CHANNEL) != null
+            }
+            super.deleteNotificationChannel(channelId)
+        }
         @Implementation
         public override fun notify(tag: String?, id: Int, notification: Notification) {
             cards += notification
