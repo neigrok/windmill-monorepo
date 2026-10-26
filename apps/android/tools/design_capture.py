@@ -28,7 +28,7 @@ PACKAGE = "works.windmill.app"
 SCENARIOS = [
     {"board": "02.7", "name": "empty-routines", "account": "empty", "steps": [{"wait": "No routines yet."}]},
     {"board": "02.1", "name": "routines", "account": "fixture", "steps": [{"tap": "Routines"}, {"wait": "Push A"}]},
-    {"board": "05.1", "name": "log", "account": "fixture", "steps": [{"tap": "Log"}, {"wait": "Back Squat · new best"}]},
+    {"board": "05.1", "name": "log", "account": "fixture", "steps": [{"tap": "The log"}, {"wait": "Back Squat · new best"}]},
     {"board": "08.1", "name": "coach", "account": "fixture", "steps": [{"tap": "Coach"}, {"wait": "Question"}]},
     {"board": "08.1", "name": "coach-answer", "account": "fixture", "responses": [
         [{"type": "text", "text": "Your three training days are ready."}]],

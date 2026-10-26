@@ -254,6 +254,10 @@ Equipment-aware load labels are read-only and add no event. Routine summary and 
 `gym_screen_viewed` with `screen=routine` and `screen=routine_editor`. Loads, movement names and
 equipment labels stay out of navigation properties; rename/storage failures retain their existing boundaries.
 
+Root chrome uses the existing `routines`, `log` and `coach` screen labels; the visible title *The log*
+does not change event properties. Account routes retain their existing navigation and shell events.
+The shared app bar adds no transport, storage or write boundary, and sends no title or account initial.
+
 `gym_proposal_outcome` carries `action` apply or dismiss and `outcome` decided, moved, gone, settled
 or failed; iOS records the same turn-down as `reject`.
 

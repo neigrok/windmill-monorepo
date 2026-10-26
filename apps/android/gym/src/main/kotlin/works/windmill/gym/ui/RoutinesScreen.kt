@@ -19,8 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -59,7 +56,6 @@ import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.design.WindmillSheetWindow
 
-// Planning stays in the top bar; each routine opens its own review.
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
@@ -78,23 +74,10 @@ fun RoutinesScreen(
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
     val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
-    val compactAction = LocalDensity.current.fontScale > 1.3f
 
     GymScreen(
         title = "Routines",
-        actions = {
-            if (compactAction) {
-                IconButton(
-                    onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(Icons.Default.Add, "New routine", tint = skin.accent)
-                }
-            } else {
-                TopAction("New routine") { onBuild(RoutineDraft(position = store.allRoutines.size)) }
-            }
-            YouSeat(seat)
-        },
+        actions = { YouSeat(seat) },
     ) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(

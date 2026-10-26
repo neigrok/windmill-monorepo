@@ -139,7 +139,7 @@ class PlanningRestorationTests {
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 contentView = LocalView.current
-                LoggerScreen(store, {}, {}, {})
+                LoggerScreen(store, {}, {})
             }
             compose.onNode(hasSetTextAction()).performTextReplacement("Carry")
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()

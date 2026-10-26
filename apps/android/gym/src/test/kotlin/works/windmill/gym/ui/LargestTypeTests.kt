@@ -259,8 +259,7 @@ class LargestTypeTests {
                 // The room's own faces, because it is their widths at 1.3 that are being measured.
                 GymMaterial {
                     CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1.3f)) {
-                        LoggerScreen(store = room.store, say = {}, onFinish = {},
-                                     onSettings = {})
+                        LoggerScreen(store = room.store, say = {}, onFinish = {})
                     }
                 }
             }
@@ -305,7 +304,7 @@ class LargestTypeTests {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = fontScale)) {
                     Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
                         LoggerScreen(store = room.store, say = {}, onFinish = {},
-                                     onSettings = {}, transient = transient)
+                                     transient = transient)
                     }
                 }
             }

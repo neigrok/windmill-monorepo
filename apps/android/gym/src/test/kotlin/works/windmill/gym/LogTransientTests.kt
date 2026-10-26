@@ -62,7 +62,7 @@ class LogTransientTests {
                     GymMaterial { GymRoom(room.account(), store) }
                 }
             }
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             val before = compose.onNodeWithText(Bodyweight.chip).getBoundsInRoot()
             compose.runOnIdle { store.withhold(Deletion.Session(one)); store.withhold(Deletion.Session(two)) }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()

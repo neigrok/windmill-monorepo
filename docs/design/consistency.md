@@ -270,8 +270,9 @@ and Android disagree.
   **Hidden** row at the head of The log on iOS 18 (board 03.5). Android draws the same: You holds
   *Notes*, *Connected log*, *About Windmill* (Shell · Android 16a/16b), the workout bar's trailing
   action is *Hide*, and Units go. Android still ships Gym settings (`ui/SettingsScreen.kt:81-129`)
-  with a kg/lb toggle that draws nothing in lb, the workout bar's gear (`ui/LoggerScreen.kt:328-331`),
-  and Coach's ⋮ More with Notes, Connected log, New chat and Account (`coach/AskScreen.kt:142-153`).
+  with a kg/lb toggle that draws nothing in lb,
+  and Coach's ⋮ More with Notes, Connected log, New chat and Account (`coach/AskScreen.kt`).
+  The workout bar has no settings action; its trailing slot awaits task 45's Hide behaviour.
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android shows the subtitle *what you write for Coach* and *Top note wins.*
@@ -1024,8 +1025,8 @@ these places.
   *workout* (never *session*), *movement* (never *exercise*) and *The log* (tab and title); *session*
   stays in code and on the wire. The approved Android Workout uses visual position dots and speaks
   *Movement 3 of 5* through accessibility; the count is not a visible pager label. The tab is
-  *The log*. Code still differs: Android *Log* (tab and
-  title, `GymRoom.kt:153`), *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
+  *The log*, and Android uses it for both its tab and root title. Code still differs: Android
+  *Exercise {i} / {n}* (`domain/LiveSession.kt:134`), *Rename movement*,
   *No sessions yet*, *First session*, *This session*, *Discard session*, *Check my
   last session.* (`LoggerScreen.kt`, `LogScreen.kt`, `AssemblySheet.kt`, `FinishScreen.kt`); the web's *No sessions yet.*, *no
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).

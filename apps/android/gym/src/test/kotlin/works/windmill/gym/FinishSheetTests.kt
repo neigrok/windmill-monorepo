@@ -154,7 +154,7 @@ class FinishSheetTests {
             // And the workout itself is what stands underneath, so dismissing lands on its detail page.
             compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
             // A pushed screen covers the rail, before the sheet and after it.
-            compose.onNodeWithText("Log").assertDoesNotExist()
+            compose.onNodeWithText("The log").assertDoesNotExist()
         }
     }
 
@@ -329,7 +329,7 @@ class FinishSheetTests {
                 assertTrue(server.asked[1].thread.isNotEmpty())
             }
             // The rail is back — the receipt and the workout beneath it are both down — on Coach.
-            compose.onNodeWithText("Log").assertIsDisplayed()
+            compose.onNodeWithText("The log").assertIsDisplayed()
 
             answer.complete(Unit)
             compose.waitUntil(10_000) {

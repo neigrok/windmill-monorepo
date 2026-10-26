@@ -60,7 +60,7 @@ class BodyweightStateTests {
             room.now = System.currentTimeMillis()
             runBlocking { room.select("u1") }
             room.store.observeEngine()
-            compose.setContent { GymMaterial { BodyweightScreen(room.store, "Log", {}, {}) } }
+            compose.setContent { GymMaterial { BodyweightScreen(room.store, "The log", {}, {}) } }
             compose.onNodeWithText("Reading your weigh-ins…").assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.nothingYet).assertDoesNotExist()
             compose.onNodeWithText("90 days").assertDoesNotExist()
@@ -120,7 +120,7 @@ class BodyweightStateTests {
                 val store = remember { room.freshStore(held).also { current = it; instances++ } }
                 DisposableEffect(held) { onDispose { held.cancel() } }
                 LaunchedEffect(store) { store.connect(room.account()) }
-                GymMaterial { BodyweightScreen(store, "Log", {}, {}) }
+                GymMaterial { BodyweightScreen(store, "The log", {}, {}) }
             }
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Bodyweight.listDay(day)).fetchSemanticsNodes().isNotEmpty()

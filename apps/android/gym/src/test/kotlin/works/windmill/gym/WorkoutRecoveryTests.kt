@@ -105,7 +105,7 @@ class WorkoutRecoveryTests {
             }
         }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("Push A")
             compose.onNodeWithText("Push A").performClick()
             awaitText("40 × 8")
@@ -282,7 +282,7 @@ class WorkoutRecoveryTests {
             }
         }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("Push A")
             compose.onNodeWithText("Push A").performClick()
             awaitText("40 × 8")
@@ -337,7 +337,7 @@ class WorkoutRecoveryTests {
             }
         }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("A workout")
             compose.onNodeWithText("A workout").performClick()
             awaitText("40 × 8")
@@ -356,7 +356,7 @@ class WorkoutRecoveryTests {
                 room.pull(server)
                 account = room.account("u2")
             }
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             awaitText("B workout")
             compose.onNodeWithText("B workout").performClick()
             compose.onNodeWithText("A workout").assertDoesNotExist()

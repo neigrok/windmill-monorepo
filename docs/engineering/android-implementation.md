@@ -394,3 +394,35 @@ Structural observation: keeping receipt ownership in the application store preve
 cancelling durable user actions. Exact receipt release also avoids settling an unrelated weight hold.
 Shared engine/application reporting can issue two correlated technical receipts for one storage
 failure; deduplicating those existing boundaries is a separate follow-up.
+
+## Task 03 — room chrome
+
+Root, pushed and workout screens share M3 `TopAppBar`; `GymChrome` groups their approved typography
+with the navigation label style. The account target is present on all roots, including signed-in
+Coach. The visible middle destination is *The log*, while its event label stays `log`. The logger
+has no settings action; its trailing target is reserved for task 45. Coach action content and its
+existing History/More paths are unchanged.
+
+All 35 focused chrome/account/navigation checks and 62 related screen checks pass in Debug,
+with zero skips. The account regression verifies the complete existing screen-event sequence
+through each root and no technical failure. Twelve installed API 37 captures verify the six chrome roles in Dark and Daylight. Task 03 ships
+with task 17's routine FAB so the creation route remains available. The unchanged 11-case
+OnboardingFlowTests run passes seven and fails four at the required *New routine* assertion; those
+assertions remain in place for the combined 03/17 gate. The shared bar adds no state or write boundary.
+
+
+Task 03 native evidence is in `/private/tmp/windmill-android-room-chrome-native`, with APK SHA-256
+`d4c542a3dcb0433d831e5f3ade271ebdecdc049588dd87b9a261b0bf4f92b8af`. Each root's account target
+measures 126 × 126 pixels at density 420 (48 dp). Root account routes return correctly, the editor's
+unchanged Save remains disabled, and both workout runs retain one 30 kg × 8 set. All routine
+revisions remain 1. Intake records exactly two starts, two logged sets and two finishes, no routine
+save, and only allowlisted metadata. All 117 structured write observations succeed. Runtime scans
+contain no app ANR or fatal exception; the local collector receives SDK session envelopes and no
+exception event in the capture window. This verifies local delivery, not hosted vendor receipt.
+
+The five stable chrome recipes use ordinary hierarchy settlement. The archived private runner
+captures the ticking logger only after its controls appear, skipping exact whole-tree settlement
+for that screenshot. It stops intentionally at a pre-profile barrier; no new performance claim is
+made. Existing body layout, task 45's Hide control and the paired task 17 FAB remain outside this
+chrome proof. The simplification pass removes the custom-row bar branch, its switch and the
+logger settings callback while grouping shared type styles beside the bar.

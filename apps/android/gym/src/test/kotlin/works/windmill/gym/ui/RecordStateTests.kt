@@ -32,7 +32,7 @@ class RecordStateTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
-            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "Log", {}) } }
+            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
             compose.onNodeWithText("Nothing logged for this movement yet. The first set you log lands here.").assertIsDisplayed()
             compose.onNodeWithText("Rename").performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement("N".repeat(61))
@@ -51,7 +51,7 @@ class RecordStateTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             val renamed = movement.copy(name = "Paused Bench", aliases = listOf("Bench Press"))
-            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "Log", {}) } }
+            compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
             compose.onNodeWithText("Rename").performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement("Paused Bench")
             compose.onNode(hasText("Rename") and hasAnyAncestor(isDialog())).performClick()

@@ -1,12 +1,10 @@
 package works.windmill.gym.ui
 
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,14 +45,18 @@ import works.windmill.gym.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import works.windmill.platform.LocalShellActions
-import works.windmill.platform.design.WindmillFont
 
 // A screen that reads the account again when the app comes back from elsewhere: ON_RESUME after an
 // ON_STOP, which is the browser a door opened closing over a tool just connected. A dialog or a
@@ -81,6 +83,14 @@ fun ReadsAgainOnReturn(onReturn: () -> Unit) {
     }
 }
 
+internal object GymChrome {
+    private val font = FontFamily(Font(R.font.onboarding_nunito_bold, FontWeight.Bold))
+    val title = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 28.sp)
+    val action = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp)
+    val account = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 20.sp)
+    val tab = TextStyle(fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp)
+}
+
 // The room owns system insets; each screen owns its native title and actions.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,7 +100,7 @@ fun GymScreen(
     onBack: (() -> Unit)? = null,
     backTo: String? = null,
     navigation: (@Composable () -> Unit)? = null,
-    sessionBar: Boolean = false,
+    titleAlignment: TextAlign = TextAlign.Start,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
@@ -101,40 +111,27 @@ fun GymScreen(
         containerColor = skin.canvas,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (sessionBar) {
-                TopAppBar(
-                    title = {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink,
-                            modifier = Modifier.semantics { heading() })
-                    },
-                    navigationIcon = { navigation?.invoke() },
-                    actions = actions,
-                    expandedHeight = 64.dp,
-                    windowInsets = WindowInsets(0, 0, 0, 0),
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas),
-                )
-            } else Row(
-                Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                    .padding(start = if (navigation != null || onBack != null) 12.dp else 20.dp, end = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (navigation != null) navigation()
-                else onBack?.let { back ->
-                    IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = backTo?.let { "Back to $it" } ?: "Back",
-                            tint = skin.ink, modifier = Modifier.size(24.dp))
+            TopAppBar(
+                title = {
+                    Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = GymChrome.title, textAlign = titleAlignment, color = skin.ink,
+                        modifier = Modifier.fillMaxWidth().semantics { heading() })
+                },
+                navigationIcon = {
+                    if (navigation != null) navigation()
+                    else onBack?.let { back ->
+                        IconButton(onClick = back, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = backTo?.let { "Back to $it" } ?: "Back",
+                                tint = skin.ink, modifier = Modifier.size(24.dp))
+                        }
                     }
-                }
-                Text(
-                    title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = WindmillFont.body(24, FontWeight.Bold),
-                    color = skin.ink, modifier = Modifier.weight(1f).semantics { heading() },
-                )
-                actions()
-            }
+                },
+                actions = actions,
+                expandedHeight = 64.dp,
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = skin.canvas),
+            )
         },
         bottomBar = bottomBar,
     ) { inner ->
@@ -180,12 +177,13 @@ fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit) {
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         colors = ButtonDefaults.textButtonColors(
             contentColor = skin.accent,
             disabledContentColor = skin.inkFaint,
         ),
     ) {
-        Text(label, style = WindmillFont.body(13, FontWeight.Bold))
+        Text(label, style = GymChrome.action)
     }
 }
 
@@ -209,7 +207,7 @@ fun YouSeat(initial: String) {
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.size(36.dp).clip(CircleShape).background(skin.raised), contentAlignment = Alignment.Center) {
-            Text(initial.uppercase().ifEmpty { "•" }, style = WindmillFont.body(12, FontWeight.Bold), color = skin.ink)
+            Text(initial.uppercase().ifEmpty { "•" }, style = GymChrome.account, color = skin.ink)
         }
     }
 }

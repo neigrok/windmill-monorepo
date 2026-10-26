@@ -95,7 +95,7 @@ class OnboardingFlowTests {
     @Test
     fun replayBackClosesToYouAndKeepsTheGymNavigation() {
         compose.onNodeWithText("Skip").performClick()
-        compose.onNodeWithText("Log", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("The log", useUnmergedTree = true).performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
         compose.onNodeWithText("About Windmill").performClick()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
@@ -106,7 +106,7 @@ class OnboardingFlowTests {
             dialog.onBackPressedDispatcher.onBackPressed()
         }
         compose.onNodeWithText("You").assertDoesNotExist()
-        compose.onNode(hasText("Log") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNode(hasText("The log") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("New routine").assertDoesNotExist()
     }
 

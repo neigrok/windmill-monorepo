@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -156,7 +157,6 @@ fun LoggerScreen(
     store: TrainingStore,
     say: (String?) -> Unit,
     onFinish: () -> Unit,
-    onSettings: () -> Unit,
     // The transient overlays the ledger without covering the rack.
     transient: SnackbarHostState? = null,
 ) {
@@ -287,18 +287,11 @@ fun LoggerScreen(
     }
 
     val title = store.session?.plan?.routine ?: Readout.noRoutine
-    // Finish rides the top bar: the band below holds one primary and it is Log set, pressed forty
-    // times to Finish's once. The gear is a door to a planning screen, which is what a top corner
-    // may hold.
     GymScreen(
         title = title,
-        sessionBar = true,
+        titleAlignment = TextAlign.Center,
         navigation = { TopAction("Finish", enabled = store.canFinish, onClick = onFinish) },
-        actions = {
-            IconButton(onClick = onSettings) {
-                Icon(painterResource(R.drawable.gym_settings), contentDescription = "Gym settings", tint = skin.inkDim, modifier = Modifier.size(24.dp))
-            }
-        },
+        actions = { Spacer(Modifier.size(48.dp)) },
     ) {
       Column(Modifier.fillMaxSize()
           .scrollable(

@@ -64,7 +64,7 @@ class LoggerMovementWalkTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, say = {}, onFinish = {}, onSettings = {})
+            LoggerScreen(store = room.store, say = {}, onFinish = {})
         }
         return room
     }

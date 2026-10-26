@@ -153,6 +153,7 @@ fun AskScreen(
                     DropdownMenuItem(text = { Text("Account") }, onClick = { menu = false; shell.openYou() })
                 }
             }
+            if (onBack == null) seat?.let { YouSeat(it) }
         },
     ) {
       Column(

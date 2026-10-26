@@ -25,8 +25,8 @@
     "name": "share",
     "account": "fixture",
     "steps": [
-      {"tap": "Log"}, {"wait": "Record · Back Squat 57.5 × 8"}, {"tap": "Record · Back Squat 57.5 × 8"},
-      {"wait": "Back to Log"}, {"swipe": [540, 1900, 540, 600, 400]},
+      {"tap": "The log"}, {"wait": "Record · Back Squat 57.5 × 8"}, {"tap": "Record · Back Squat 57.5 × 8"},
+      {"wait": "Back to The log"}, {"swipe": [540, 1900, 540, 600, 400]},
       {"tap": "Share this workout"}, {"wait": "Get a link"}
     ]
   },
@@ -35,6 +35,6 @@
     "name": "share-live",
     "account": "fixture",
     "steps": [{"tap": "Get a link"}, {"wait": "The link is live"}, {"wait": "Copy link"}],
-    "after": [{"key": "KEYCODE_BACK"}, {"tap": "Back to Log"}, {"tap": "Routines"}, {"wait": "Push A"}]
+    "after": [{"key": "KEYCODE_BACK"}, {"tap": "Back to The log"}, {"tap": "Routines"}, {"wait": "Push A"}]
   }
 ]

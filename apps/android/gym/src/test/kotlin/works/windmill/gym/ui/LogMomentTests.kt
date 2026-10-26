@@ -105,7 +105,7 @@ class LogMomentTests {
             room.store.observeEngine()
             var shown by mutableStateOf(true)
             compose.setContent { GymMaterial { if (shown) GymRoom(room.account(), room.store) } }
-            compose.onNodeWithText("Log").performClick()
+            compose.onNodeWithText("The log").performClick()
             compose.onNodeWithText("Plateau workout").performClick()
             compose.onNodeWithText("Bench Press").performClick()
             compose.onNodeWithText("Rename").assertIsDisplayed()

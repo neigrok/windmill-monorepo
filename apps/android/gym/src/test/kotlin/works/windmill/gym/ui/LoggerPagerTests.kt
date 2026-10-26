@@ -87,7 +87,7 @@ class LoggerPagerTests {
         room.store.observeEngine()
         compose.setContent {
             LoggerScreen(store = room.store, say = {},
-                onFinish = {}, onSettings = {})
+                onFinish = {})
         }
         return room
     }

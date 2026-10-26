@@ -96,6 +96,7 @@ import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymMaterial
+import works.windmill.gym.ui.GymChrome
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.GymSnackbarHost
 import works.windmill.gym.ui.GymNativeType
@@ -149,7 +150,7 @@ class GymModule(private val store: TrainingStore, private val notifications: Wor
 
 internal enum class Tab(val title: String) {
     Routines("Routines"),
-    Log("Log"),
+    Log("The log"),
     Coach("Coach"),
 }
 
@@ -174,8 +175,6 @@ internal fun backMeans(
     away: Int,
     tab: Tab,
 ): BackMeans = when {
-    // The logger's gear pushes settings over the workout; back pops that and the workout is still
-    // there underneath.
     live && away == 0 -> BackMeans.StayInTheWorkout
     building -> BackMeans.LeaveTheDraft
     away > 0 -> BackMeans.PopOnePushedScreen
@@ -973,13 +972,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 // otherwise count the navigation bar twice and leave a gap above the keys.
                 Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
                     when {
-                        // A screen pushed from the logger's gear stands over the workout; the logger is what
-                        // stands while nothing is pushed.
                         live && standing == null -> LoggerScreen(
                             store = store,
                             say = { note = it },
                             onFinish = { close() },
-                            onSettings = { look(Away.Settings) },
                             transient = transient,
                         )
                         // A day being built outranks a tab and nothing else, and it covers the rail.
@@ -1187,7 +1183,7 @@ private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
                     selected = entry == current,
                     onClick = { onPick(entry) },
                     icon = { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) },
-                    label = { Text(entry.title, maxLines = 1, style = WindmillFont.body(12, FontWeight.Bold)) },
+                    label = { Text(entry.title, maxLines = 1, style = GymChrome.tab) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = skin.accent,
                         selectedTextColor = skin.ink,

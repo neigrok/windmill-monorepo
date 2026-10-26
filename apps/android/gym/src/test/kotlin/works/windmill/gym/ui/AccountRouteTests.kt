@@ -47,6 +47,8 @@ import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.design.WindmillMaterial
 import works.windmill.platform.you.YouSheet
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -86,6 +88,46 @@ class AccountRouteTests {
         return AuthStore("https://windmill.works/".toHttpUrl(),
             MemorySessions(if (signedIn) "session-u1" else null, if (signedIn) user else null), client)
             .also { if (restoreNow) runBlocking { it.restore() } }
+    }
+
+    @Test
+    fun everySignedInRootOpensTheAccountAndKeepsTheExistingScreenEventLabels() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val auth = auth(signedIn = true)
+        val store = room(tmp.newFolder(), scope, signedIn = true).store
+        val screens = mutableListOf<Map<String, String>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_screen_viewed") screens += properties
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures += operation
+            }
+        }
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                    AccountRoot(auth, store) { _, _ -> }
+                }
+            }
+            for (tab in listOf("Routines", "The log", "Coach")) {
+                compose.onNode(hasText(tab) and hasClickAction()).performClick()
+                compose.onNodeWithContentDescription("Your account").assertIsDisplayed().performClick()
+                compose.onNodeWithText("You").assertIsDisplayed()
+                compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).performClick()
+                compose.onNodeWithContentDescription("Back to $tab").performClick()
+            }
+            compose.onNodeWithText("History").assertIsDisplayed()
+            compose.onNodeWithContentDescription("More").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(listOf("routines", "settings", "routines", "log", "settings", "log",
+                    "coach", "settings", "coach").map { mapOf("screen" to it) }, screens)
+                assertEquals(emptyList<String>(), failures)
+            }
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test

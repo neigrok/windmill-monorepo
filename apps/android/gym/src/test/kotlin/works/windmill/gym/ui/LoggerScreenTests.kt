@@ -110,7 +110,7 @@ class LoggerScreenTests {
         room.store.observeEngine()
         compose.setContent {
             CompositionLocalProvider(LocalHapticFeedback provides (haptics ?: LocalHapticFeedback.current)) {
-                LoggerScreen(store = room.store, say = say, onFinish = {}, onSettings = {})
+                LoggerScreen(store = room.store, say = say, onFinish = {})
             }
         }
         return room
@@ -142,7 +142,7 @@ class LoggerScreenTests {
                 room.store.refreshEngine()
             }
             val shown = mutableStateOf(room.store)
-            compose.setContent { LoggerScreen(shown.value, say = {}, onFinish = {}, onSettings = {}) }
+            compose.setContent { LoggerScreen(shown.value, say = {}, onFinish = {}) }
 
             compose.onNodeWithText("Free workout").assertIsDisplayed()
             compose.onNodeWithText("What are you lifting?").assertIsDisplayed()
@@ -213,7 +213,7 @@ class LoggerScreenTests {
             var finished: FinishOutcome? = null
             compose.setContent {
                 LoggerScreen(store = room.store, say = { said += it },
-                    onFinish = { scope.launch { finished = room.store.finish() } }, onSettings = {})
+                    onFinish = { scope.launch { finished = room.store.finish() } })
             }
 
             listOf("bench-press", "barbell-row", "overhead-press").forEachIndexed { index, movement ->
@@ -269,7 +269,7 @@ class LoggerScreenTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, say = {}, onFinish = {}, onSettings = {})
+            LoggerScreen(store = room.store, say = {}, onFinish = {})
         }
         return room
     }
@@ -580,7 +580,8 @@ class LoggerScreenTests {
             compose.onNodeWithText("Log set").assertIsDisplayed().assertHasClickAction()
             compose.onAllNodes(hasText("Log set  ·  ", substring = true)).assertCountEquals(0)
             compose.onNodeWithText("Add movement").assertIsDisplayed().assertHasClickAction()
-            compose.onNode(hasContentDescription("Gym settings")).assertIsDisplayed().assertHasClickAction()
+            compose.onNode(hasContentDescription("Gym settings")).assertDoesNotExist()
+            compose.onNodeWithText("Finish").assertIsDisplayed().assertHasClickAction()
             compose.onNode(hasContentDescription("one rep fewer")).assertHasClickAction()
             compose.onNode(hasContentDescription("one rep more")).assertHasClickAction()
             compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed().assertHasClickAction()
