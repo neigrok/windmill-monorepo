@@ -167,11 +167,14 @@ does not change the registry, distribute a phone build, or authorize a productio
    approval and an explicit write/distribution gate. Read-only handling must truthfully retain and
    display Other after cutover. Android's three-choice design does not approve iOS or web pickers.
 3. Verify the signed Android update over public 0.12.1 (schema 6), including retained local work,
-   and prepare its release assets without publishing. Upload the exact iOS version/build through
+   and verify its delivery gate against the schema 7 server: new work remains ready until a fresh
+   hello meets the app's registry minimum. Upload the exact iOS version/build through
    the manual `ios-release.yml` workflow; check its TestFlight processing and beta readiness.
    Separately verify intended tester distribution availability; the status artifact proves neither
    tester access nor installation. Verify the replacement client against the candidate backend and
-   prepare the upgrade destinations before the cutoff.
+   publish the verified Android release with the delivery gate. Verify both upgrade destinations
+   provide the prepared replacements before the cutoff. The new Android app can retain edits on
+   the schema 7 server without sending unsupported intents; iOS cannot originate the new category.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
    '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Dispatch **Deploy to VPS** from `main` with
    that `image_tag`, `expected_old_minimum=4`, `expected_new_minimum=8` and `expected_image_id`.
@@ -180,8 +183,8 @@ does not change the registry, distribute a phone build, or authorize a productio
    the live minimum again before retrying. A genuinely fresh host uses old minimum 0; a missing
    `.env` beside an existing deployment is not treated as bootstrap.
 5. Verify the runtime receipt: schema 8 advertises 8 / minimum 8, while schema 6 and 7 return
-   `426 upgrade-required` at all four sync doors. Publish the verified Android release and confirm
-   both upgrade destinations resolve to the prepared replacements. Cached web and older native
+   `426 upgrade-required` at all four sync doors. Confirm the new Android app's queued work delivers
+   after its fresh schema 8 hello and both upgrade destinations still resolve correctly. Cached web and older native
    clients must retain local work and show their existing update-required surface.
 6. Keep an Other-capable schema 8 / minimum 8 maintenance image available before accepting Other
    writes. After Other exists, rollback only to that compatible image; do not reopen schema 6/7 or

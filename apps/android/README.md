@@ -80,6 +80,14 @@ accepts signed-out training automatically. When both sides hold training, sign-i
 the choice is open requires a fresh decision. Sign-out uses **Keep**, retaining unsent account work
 in its dormant replica and selecting an independent anonymous replica.
 
+Before numbering each nonempty outgoing batch, the runtime makes a fresh authenticated hello and
+requires the server's `schema` to meet the client's registry `minVersion`. An unknown or older
+server leaves ready work unchanged and retries with exponential jitter and a one-second minimum;
+commit, foreground and leave wakeups do not bypass that floor. Cached schema metadata is for reads,
+not delivery authorization. Idle, held-only and dependency-blocked queues make no delivery hello.
+This adds one handshake per push batch. Reads remain available while the server is older; the
+server's own `426 upgrade-required` still stops an older client normally.
+
 Before every sign-in, `WorkoutImports` prepares each signed-out workout for the account. A finished
 workout becomes one durable atomic strict import. An unfinished one becomes a start that refuses
 joining another open workout; its sets follow under their own identities once the account

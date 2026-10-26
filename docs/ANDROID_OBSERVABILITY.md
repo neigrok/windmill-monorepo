@@ -144,6 +144,14 @@ or live frame. Lost network or a refusal ends the run, so the next fault files. 
 therefore files once per outage of its operation.
 Each live socket reports only its first end. Intentional request/socket close and coroutine
 cancellation do not report. Unchanged engine transactions enqueue no success telemetry.
+Before a push batch is numbered, a fresh hello must advertise a server schema at least the client's
+registry minimum. A valid response from an older server is ordinary rollout waiting: ready intents
+retain their identity and content, no durable refusal or update dialog is created, and no Sentry
+issue is reported. The handshake uses the existing `hello` transport observations; real network,
+protocol and unexpected HTTP failures retain their existing bounded reports. The retry floor
+survives commit, foreground, leave and cancellation wakeups. No new product step or event is added;
+the local action's existing event remains the receipt for the user's save.
+
 Runtime-owned workers contain unexpected exceptions at their coroutine boundary and report only
 the static operation/outcome. Engine closure cancels the runtime without reporting a failure;
 coroutine cancellation is rethrown. Synchronous work already running during closure cannot leak

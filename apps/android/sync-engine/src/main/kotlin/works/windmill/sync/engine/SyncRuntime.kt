@@ -34,6 +34,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private val pullerWake = Channel<Unit>(Channel.CONFLATED)
     private val liveWake = Channel<Unit>(Channel.CONFLATED)
     private val wait = SenderWait()
+    private val helloWait = SenderWait()
     private val heldWake = Channel<Unit>(Channel.CONFLATED)
     private val pullWaits = mutableMapOf<ScopeRef, SenderWait>()
     @Volatile private var pullFloor = 0L
@@ -361,8 +362,36 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         val earlier = if (leaving) wait.snapshot() else null
         try {
             val seat = seat() ?: return@withLock false
-            if (signOutHold == seat.account) return@withLock false
-            val request = engine.nextPush(pushLimit) ?: return@withLock false
+            if (signOutHold == seat.account || !helloWait.due(mono())) return@withLock false
+            val queued = engine.lock.withLock {
+                val replica = engine.device.current()
+                val back = engine.heldBack(replica)
+                val entries = replica.entries()
+                entries.any { it.state == "sent" } || entries.filter { it.state == "ready" }
+                    .takeWhile { it !in back || it.intent.command == null }.any { it !in back }
+            }
+            if (!queued) return@withLock false
+            var response: SyncResponse? = null
+            var compatible = false
+            try {
+                response = hello(seat.token).answer
+                if (!current(seat)) return@withLock false
+                compatible = !upgradeRequired && response?.status == 200 && response.body?.get("as") == Json.of(seat.account!!) &&
+                    response.body["schema"]?.long()?.let { it >= engine.registry.minVersion } == true
+            } finally {
+                if (!compatible) {
+                    val now = mono()
+                    helloWait.retry(now, Constants.BACKOFF_BASE_MS)
+                    if (response?.status == 503) helloWait.unavailable(now,
+                        maxOf(Constants.BACKOFF_BASE_MS, response.body?.get("retryAfterMs")?.long() ?: 0), engine::draw)
+                    else helloWait.backoff(now, engine::draw)
+                }
+            }
+            if (!compatible) return@withLock false
+            helloWait.kick(mono())
+            val request = engine.lock.withLock {
+                if (current(seat)) engine.nextPush(pushLimit) else null
+            } ?: return@withLock false
             if (!current(seat)) return@withLock false
             val send = engine.clock.reading()
             val job = currentCoroutineContext()[Job]
