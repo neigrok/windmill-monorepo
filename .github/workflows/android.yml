@@ -38,6 +38,7 @@ defaults:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -52,9 +53,22 @@ jobs:
 
       # The ladder test finds packages/api-contract/gym-ladder.json by walking up from the project
       # directory, so the whole repo must be checked out.
-      - run: ./gradlew build
+      - name: Build and test
+        run: ./gradlew build
+        timeout-minutes: 55
         env:
           ANDROID_SENTRY_DSN: https://ci-placeholder@telemetry.invalid/1
+
+      - name: Upload unit test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: android-unit-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/android/**/build/test-results/**
+            apps/android/**/build/reports/tests/**
+          retention-days: 14
+          if-no-files-found: warn
 
   signing-input:
     if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'

@@ -150,8 +150,8 @@ class TrainingStore(
         }
         workoutFacts.value = null
     }
-    private var workoutReady = false
-    private var localWorkoutAuthorized = true
+    private var workoutReady by mutableStateOf(false)
+    private var localWorkoutAuthorized by mutableStateOf(true)
     private val workoutAuthorized: Boolean get() = workoutReady && pendingConnection == null && localWorkoutAuthorized && workoutAuthority(owner) &&
         controls.engineReplica == training.engine.activeReplica()
 
@@ -474,8 +474,10 @@ class TrainingStore(
     var isFinishing: Boolean by mutableStateOf(false)
         private set
 
+    val canFinish: Boolean get() = workoutAuthorized && session != null && !isFinishing
+
     private var seated: Account? = null
-    private var pendingConnection: Account? = null
+    private var pendingConnection: Account? by mutableStateOf(null)
     private var connecting = false
     // Whose the replica in hand is: the account id, or null for the signed-out seat.
     private var owner: String? = null

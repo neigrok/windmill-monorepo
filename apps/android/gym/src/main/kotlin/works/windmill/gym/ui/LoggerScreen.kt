@@ -294,7 +294,7 @@ fun LoggerScreen(
     GymScreen(
         title = title,
         sessionBar = true,
-        navigation = { TopAction("Finish", enabled = !store.isFinishing, onClick = onFinish) },
+        navigation = { TopAction("Finish", enabled = store.canFinish, onClick = onFinish) },
         actions = {
             IconButton(onClick = onSettings) {
                 Icon(painterResource(R.drawable.gym_settings), contentDescription = "Gym settings", tint = skin.inkDim, modifier = Modifier.size(24.dp))

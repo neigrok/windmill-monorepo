@@ -7,6 +7,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -241,7 +242,9 @@ class SetRowSwipeTests {
 
             compose.runOnIdle { assertNotNull(room.store.keepWithheld()) }
             standing.value = true
-            compose.runOnIdle { }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("82.5 × 5").fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithText("82.5 × 5").assertIsDisplayed()
         } } finally { scope.cancel() }
     }

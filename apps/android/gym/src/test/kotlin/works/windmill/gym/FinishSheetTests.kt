@@ -3,10 +3,12 @@ package works.windmill.gym
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -19,6 +21,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +51,7 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.ui.Finish
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
@@ -100,6 +106,9 @@ class FinishSheetTests {
 
     // One set read from the device is slight.
     private fun finish(title: String = "Ended early.") {
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Finish") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Finish").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
@@ -146,6 +155,81 @@ class FinishSheetTests {
             compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
             // A pushed screen covers the rail, before the sheet and after it.
             compose.onNodeWithText("Log").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun finishWaitsForTheUnchangedAccountReadAndClosesExactlyOnce() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val waiting = ConcurrentLinkedQueue<Runnable>()
+        var holdReads = false
+        val reads = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (holdReads) waiting.add(block) else Dispatchers.Default.dispatch(context, block)
+            }
+        }
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, readDispatcher = reads)
+        try {
+            runBlocking {
+                room.select(null)
+                room.startExternalWorkout()
+                room.store.choose("back-squat")
+                room.store.logSet(100.0, 5)
+            }
+            val live = room.store.session!!
+            val sets = room.store.sets.toList()
+            val account = room.account()
+            compose.setContent { if (showing) GymMaterial { GymRoom(account, room.store) } }
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasText("Finish") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
+            val reconnect = compose.runOnIdle {
+                holdReads = true
+                room.scope.async { room.store.connect(account) }
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { waiting.isNotEmpty() } }
+            compose.runOnIdle {
+                assertEquals(live, room.store.session)
+                assertEquals(false, room.store.canFinish)
+            }
+            val before = room.engine.snapshot()
+            compose.onNodeWithText("Finish").assertIsNotEnabled().performClick()
+            compose.runOnIdle {
+                assertEquals(before, room.engine.snapshot())
+                assertEquals(live, room.store.session)
+                assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_session_finished" })
+                assertEquals(emptyList<String>(), failures)
+                holdReads = false
+                while (true) (waiting.poll() ?: break).run()
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { reconnect.isCompleted } }
+            runBlocking { reconnect.await() }
+            compose.onNodeWithText("Finish").assertIsEnabled()
+            finish()
+            compose.runOnIdle {
+                val closed = room.training.session(live.id)!!
+                assertEquals(sets, closed.sets)
+                assertTrue(closed.session.finishedAtMs != null)
+                assertEquals(null, room.store.session)
+                assertEquals(false, room.store.canFinish)
+                assertEquals(listOf("gym_session_finished" to emptyMap<String, String>()), events.filter { it.first == "gym_session_finished" })
+                assertEquals(emptyList<String>(), failures)
+            }
+            compose.onNodeWithText("Ended early.").assertIsDisplayed()
+            compose.onNodeWithText("500").assertIsDisplayed()
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel()
+            holdReads = false
+            while (true) (waiting.poll() ?: break).run()
+            room.close()
         }
     }
 

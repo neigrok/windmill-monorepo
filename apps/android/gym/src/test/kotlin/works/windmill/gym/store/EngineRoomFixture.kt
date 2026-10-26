@@ -2,6 +2,7 @@ package works.windmill.gym.store
 
 import works.windmill.gym.coach.LocalCoach
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +38,7 @@ internal class EngineRoomFixture(
     private val mintExercise: () -> String = Ids::exercise,
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
+    private val readDispatcher: CoroutineDispatcher? = null,
 ) : AutoCloseable {
     val scope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
     companion object {
@@ -85,7 +87,7 @@ internal class EngineRoomFixture(
         mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
         workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-        readDispatcher = scope.coroutineContext[ContinuationInterceptor] as? TestDispatcher ?: Dispatchers.Default)
+        readDispatcher = readDispatcher ?: scope.coroutineContext[ContinuationInterceptor] as? TestDispatcher ?: Dispatchers.Default)
     fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {

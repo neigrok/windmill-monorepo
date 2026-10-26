@@ -106,3 +106,42 @@ Comparable performance artifacts are `/tmp/windmill-android-capture-quiet-baseli
 logger or notification recipes need layout/body settlement instead of exact accessibility-tree
 identity. Later visual tasks add their own approved board recipes; these captures do not claim
 those screens already match Figma.
+
+## CI verification and Finish readiness
+
+Finish derives its enabled state from observable workout and account readiness, a current session,
+and the in-flight Finish guard. Reconnecting the same account disables the existing action while
+its background read is pending, including when the loaded data is unchanged. A disabled tap makes
+no engine write, finish event or technical failure; after readiness returns, one Finish preserves
+all sets and emits one `gym_session_finished`.
+
+Receipt and restored-row tests await their semantic state. The retry fault is armed at the
+retry-start event, immediately before its transaction, so unrelated observer reads cannot consume
+it. Onboarding tests assert the Routines heading and New routine action, keep their introduction
+and lifecycle assertions, and restore mutated launch intents in `finally`. The existing-data fixture
+constructs only the launch gate instead of starting the Application twice. A deliberate assertion
+after an external intent completes with one expected failure and XML output in 14.782 seconds.
+
+CI bounds the Gradle step to 55 minutes within a 60-minute job and always uploads unit XML and HTML
+reports with 14-day retention. This budget accommodates the verified 31-minute healthy CI run and
+leaves time to upload diagnostics after a step timeout. The focused gym checks pass 36 cases in each variant; onboarding
+passes 35 in each variant, with no skips. All 22 capture and release-tool tests pass.
+
+The local full `./gradlew build` passes in 10 minutes 49 seconds, including lint and APK packaging.
+Gym Debug and Release each pass 1,168 tests with 17 opt-in live-wire skips (1,185 total); app passes
+47, platform 129 and sync-engine 183 in each variant. Domain, layering, model-server, corpus and
+shared replay/property gates also pass. Complete XML and per-task counts are preserved at
+`/private/tmp/windmill-android-batch/ci-full-build-xml.tar.gz` and `ci-full-build-counts.json`;
+`ci-teardown-probe.json` records the bounded deliberate-failure check.
+
+Native acceptance on API 37 starts and finishes two routine workouts, each retaining one 30 kg × 8
+set and a 240 kg receipt. Backend session readbacks match both completed workouts; intake records
+exactly two starts, two logged sets and two finishes with common metadata only. The routine response
+is unchanged after the first workout. No new local collector exception event appears during acceptance.
+Two native Routines captures are retained. The cold probe reaches rendered readiness in 1,930 ms,
+with no ANR/fatal report; the one-second trace is 75,564 bytes. The fixture completes and removes its database and emulator.
+Evidence is in `/private/tmp/windmill-android-batch/ci-native`, including `acceptance-summary.json`,
+receipt PNG/XML, readbacks, events and APK SHA-256
+`d2420a036179ea65b4d378aa77cebdc0d18db26a8313cff6cc59e462fe5cc0ea`, built from `b4ce8fb3` plus
+the reviewed CI changes. Delayed-read disabled-action behavior is verified by the deterministic
+Compose regression; the native flow verifies normal readiness, persistence and telemetry.

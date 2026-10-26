@@ -223,11 +223,16 @@ class SettingsScreenTests {
                 room.store.observeEngine()
                 val original = room.training.imports.refusals().single().sets.single()
                 val standing = room.training.session("session01")!!.sets.single()
+                var failNextRetry = failScheduling
                 val completedCommands = mutableListOf<List<String>>()
                 val failures = mutableListOf<String>()
                 val messages = mutableListOf<String?>()
                 val telemetry = object : Telemetry {
                     override fun event(name: String, properties: Map<String, String>) {
+                        if (failNextRetry && name == "gym_import_recovery" && properties == mapOf("action" to "retry", "state" to "started")) {
+                            failNextRetry = false
+                            room.engine.crashAfterTransactions(2)
+                        }
                         if (name == "gym_import_recovery" && properties == mapOf("action" to "retry", "outcome" to "completed"))
                             completedCommands += room.outbox().map { it.member("intent").member("cmd").member("name").str() }
                     }
@@ -245,7 +250,6 @@ class SettingsScreenTests {
                         assertTrue(room.outbox().isEmpty())
                         assertEquals(listOf("session-finished"), room.training.imports.refusals().map { it.code })
                         if (failScheduling) {
-                            room.engine.crashAfterTransactions(2)
                             compose.onNodeWithText("Retry").performScrollTo().performClick()
                             compose.waitUntil(10_000) { compose.runOnIdle { failures.isNotEmpty() || completedCommands.isNotEmpty() } }
                             assertEquals(listOf("gym_import_retry"), failures)
