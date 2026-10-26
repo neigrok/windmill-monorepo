@@ -6,8 +6,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainCoroutineDispatcher
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.test.TestDispatcher
 import kotlin.coroutines.ContinuationInterceptor
 import org.junit.Assert.*
 import works.windmill.gym.domain.*
@@ -82,12 +82,16 @@ internal class EngineRoomFixture(
     val controlsFile = File(directory, "control.json")
     val store = freshStore()
     // As in the application: the REST doors answer only while an account is signed in.
-    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
-        scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
-        mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
-        undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
-        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-        readDispatcher = readDispatcher ?: scope.coroutineContext[ContinuationInterceptor] as? TestDispatcher ?: Dispatchers.Default)
+    fun freshStore(scope: CoroutineScope = this.scope): TrainingStore {
+        val dispatcher = scope.coroutineContext[ContinuationInterceptor] as? CoroutineDispatcher
+        val reads = readDispatcher ?: (dispatcher as? MainCoroutineDispatcher)?.immediate ?: dispatcher ?: Dispatchers.Default
+        return TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
+            scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
+            mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
+            undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
+            workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
+            readDispatcher = reads)
+    }
     fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {

@@ -174,3 +174,23 @@ or share addresses. Two successful share-write observations resolve to one idemp
 all three routine revisions remain 1 after the cancelled editor captures. Palette changes add no
 write, event or failure boundary. The local Sentry collector receives SDK session envelopes; no
 new technical failure is observed. This verifies local intake and SDK transport, not hosted receipt.
+
+
+## CI fixture scheduling
+
+Engine-room fixtures run ordinary reads on their owned coroutine dispatcher, with immediate Main
+execution for synchronous Robolectric setup. Explicit held and background dispatchers still exercise
+read invalidation, account isolation and delayed same-account Finish readiness. Receipt and restored
+rack interactions await the corresponding enabled action or loaded value. The Coach proposal check
+drains its scheduled program refresh before asserting the complete proposal list.
+
+All 140 focused checks pass in each variant, including the entire Finish, workout recovery,
+training-store, background-read and Settings screen classes. Full gym Debug and Release each pass
+1,169 tests with 17 opt-in live-wire skips (1,186 total), zero failures and zero errors. Both full
+variants complete in 2 minutes 31 seconds. Evidence is preserved in
+`/private/tmp/windmill-android-batch/ci2-focused1-xml.tar.gz`, `ci2-full-gym-xml.tar.gz`,
+`ci2-full-gym-counts.json` and `ci2-full-gym.log`.
+
+This verification change adds no product code or observability boundary. The native Finish,
+persistence and telemetry acceptance recorded above applies to the unchanged runtime. CI uploads
+XML and reports even when tests fail, and the remote job terminates within its configured bound.

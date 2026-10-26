@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -163,6 +164,9 @@ class WorkoutRecoveryTests {
         val restored = StateRestorationTester(compose)
         restored.setContent { if (showing) GymMaterial { GymRoom(account, room.store) } }
         try {
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasText("Finish") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithText("Finish").performClick()
             awaitText("Ended early.")
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
@@ -407,6 +411,9 @@ class WorkoutRecoveryTests {
             }
         }
         try {
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasContentDescription("Weight 20 kg")).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNode(hasContentDescription("Weight 20 kg")).performClick()
             compose.onNodeWithText("9").performClick(); compose.onNodeWithText("2").performClick()
             compose.onNodeWithText("Set weight").performClick()

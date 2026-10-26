@@ -1496,8 +1496,8 @@ class TrainingStoreTests {
             assertEquals(AskOutcome.Answered(AskAnswer(answer = "Done — as a proposal on Push A.",
                 read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("proposal1"))),
                 outcome)
-            assertEquals(listOf("proposal1"), room.store.pendingProposals.map { it.id })
             runCurrent()
+            assertEquals(listOf("proposal1"), room.store.pendingProposals.map { it.id })
         }
     }
 
