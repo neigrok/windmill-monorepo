@@ -267,35 +267,6 @@ class DeployProductionTest(unittest.TestCase):
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
                                  (1, "", "FAIL running server accepts an excluded sync schema\n"))
 
-    def test_workflow_requires_an_image_commit_reachable_from_main_and_uses_its_sentry_release(self):
-        workflow = SCRIPT.parents[2] / ".github/workflows/deploy.yml"
-        text = workflow.read_text()
-        start = text.index('          if [[ ! "$IMAGE_TAG"')
-        end = text.index("          python3 - <<'PY'", start)
-        guard = textwrap.dedent(text[start:end])
-        root = self.bin.parent / "repository"
-        root.mkdir()
-        environment = {**os.environ, "GIT_AUTHOR_NAME": "Deploy test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
-                       "GIT_COMMITTER_NAME": "Deploy test", "GIT_COMMITTER_EMAIL": "test@example.invalid"}
-        def git(*arguments):
-            return subprocess.run(["git", *arguments], cwd=root, env=environment, check=True,
-                                  capture_output=True, text=True).stdout.strip()
-        git("init", "-b", "main")
-        git("commit", "--allow-empty", "-m", "main")
-        main = git("rev-parse", "HEAD")
-        git("update-ref", "refs/remotes/origin/main", main)
-        git("switch", "-c", "unreleased")
-        git("commit", "--allow-empty", "-m", "unreleased")
-        other = git("rev-parse", "HEAD")
-        for image, code, error in (
-                (main, 0, ""), (other, 1, "Refusing deploy: the selected image commit must be reachable from origin/main.\n"),
-                ("latest", 1, "Refusing deploy: image_tag must be a full commit SHA.\n")):
-            result = subprocess.run(["bash", "-euc", guard], cwd=root,
-                                    env={**environment, "IMAGE_TAG": image}, capture_output=True, text=True)
-            self.assertEqual((result.returncode, result.stdout, result.stderr), (code, "", error))
-        release = next(line.strip() for line in text.splitlines() if line.strip().startswith("SENTRY_RELEASE:"))
-        self.assertEqual(release, "SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}")
-
     def test_metadata_generation_matches_every_registry_in_the_compiled_composition(self):
         contract = self.bin.parent / "contract"
         contract.mkdir()
@@ -463,6 +434,49 @@ class DeployProductionTest(unittest.TestCase):
                 for secret in ("PRIVATE_DEPLOY_SECRET", "live-secret", "rendered-secret"):
                     self.assertNotIn(secret, result.stdout + result.stderr)
                 self.assertEqual(list(self.temporary.iterdir()), [])
+
+
+class DeployWorkflowTest(unittest.TestCase):
+    def test_workflow_requires_an_image_commit_reachable_from_main_and_uses_its_sentry_release(self):
+        workflow = SCRIPT.parents[2] / ".github/workflows/deploy.yml"
+        text = workflow.read_text()
+        start = text.index('          if [[ ! "$IMAGE_TAG"')
+        end = text.index("          python3 - <<'PY'", start)
+        guard = textwrap.dedent(text[start:end])
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name) / "repository"
+        root.mkdir()
+        environment = {**os.environ, "GIT_AUTHOR_NAME": "Deploy test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
+                       "GIT_COMMITTER_NAME": "Deploy test", "GIT_COMMITTER_EMAIL": "test@example.invalid"}
+        def git(*arguments):
+            return subprocess.run(["git", *arguments], cwd=root, env=environment, check=True,
+                                  capture_output=True, text=True).stdout.strip()
+        git("init", "-b", "main")
+        git("commit", "--allow-empty", "-m", "main")
+        main = git("rev-parse", "HEAD")
+        git("update-ref", "refs/remotes/origin/main", main)
+        git("switch", "-c", "unreleased")
+        git("commit", "--allow-empty", "-m", "unreleased")
+        other = git("rev-parse", "HEAD")
+        for image, code, error in (
+                (main, 0, ""), (other, 1, "Refusing deploy: the selected image commit must be reachable from origin/main.\n"),
+                ("latest", 1, "Refusing deploy: image_tag must be a full commit SHA.\n")):
+            result = subprocess.run(["bash", "-euc", guard], cwd=root,
+                                    env={**environment, "IMAGE_TAG": image}, capture_output=True, text=True)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (code, "", error))
+        release = next(line.strip() for line in text.splitlines() if line.strip().startswith("SENTRY_RELEASE:"))
+        self.assertEqual(release, "SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}")
+
+    def test_backend_image_context_contains_the_sync_metadata_helper(self):
+        backend = SCRIPT.parents[1]
+        rules = (backend / ".dockerignore").read_text().splitlines()
+        exclusion = rules.index("deploy/*")
+        inclusion = rules.index("!deploy/sync_compatibility.py")
+        self.assertGreater(inclusion, exclusion)
+        self.assertTrue(SCRIPT.with_name("sync_compatibility.py").is_file())
+        self.assertIn("RUN python3 deploy/sync_compatibility.py metadata /contract/sync build/sync-compatibility.json",
+                      (backend / "Dockerfile").read_text())
 
 
 if __name__ == "__main__":

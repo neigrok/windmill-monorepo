@@ -58,6 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Verify deployment workflow and image context
+        run: python3 backend/test/deploy/deploy_production_test.py DeployWorkflowTest -v
       - uses: docker/setup-buildx-action@v4
       - name: Build + test (builder stage)
         uses: docker/build-push-action@v7

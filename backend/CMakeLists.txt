@@ -489,7 +489,7 @@ add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/anonymous_coach_test.py)
 # deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.
 add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py)
+  ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py DeployProductionTest)
 
 # The same server with the sync engine over the probe product (db/probe.sql): the test and dev stack's
 # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.

@@ -13,10 +13,11 @@ cmake-build-*/
 .idea/
 .claude/
 uploads/
-# Only the deployment files ctest reads enter the build.
+# Deployment tests and image metadata generation need these files.
 deploy/*
 !deploy/Caddyfile
 !deploy/deploy-production.sh
+!deploy/sync_compatibility.py
 *.md
 !products/gym/ARCHITECTURE.md
 !products/journal/ARCHITECTURE.md
