@@ -71,8 +71,8 @@ class PlanningSwipePaintTests {
                 contentView = LocalView.current
                 CompositionLocalProvider(LocalWindmillDark provides dark) {
                     GymMaterial {
-                        RoutinesScreen(store, true, emptySet(), "S", {}, {},
-                            { false }, {}, {})
+                        RoutinesScreen(store, emptySet(), "S", {}, {},
+                            { false }, {})
                     }
                 }
             }

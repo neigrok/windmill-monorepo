@@ -1149,7 +1149,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         )
                         else -> RoutinesScreen(
                             store = store,
-                            isSignedIn = account.isSignedIn,
                             lookedAt = lookedAtIds,
                             seat = youInitial,
                             // A routine starts from its plan sheet.
@@ -1157,7 +1156,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onOpenRoutine = { selectedRoutineId = it },
                             onDeleteRoutine = { destroy(it) },
                             onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                            onSignIn = shell.openSignIn,
                         )
                     }
                 }

@@ -682,7 +682,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 
   | Place | Code today | Board | Build work |
   |---|---|---|---|
-  | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion verified in Dark/Daylight; FAB remains 17 |
+  | Routines list | `ui/RoutinesScreen.kt`, shared row, immediate | 02.10 `1253:29196` | deletion and FAB verified in Dark/Daylight |
   | Routine ⋮ Delete | `ui/RoutinesScreen.kt`, shared error-role menu, immediate | 02.12 `1253:29480` | verified in Dark/Daylight |
   | Editor movement | `ui/RoutineBuilder.kt`, shared row, draft-only removal | 02.8 `1252:30621` | swipe verified in Dark/Daylight; editor geometry remains 18 |
   | Target set row | `ui/TargetBlock.kt:264-277`, word ground | 02.11 `1253:29263` | shared row |
@@ -731,9 +731,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   *Dumbbells*, and the Record offers *Rename movement*, name only (`ui/RenameSheet.kt`). The model
   (`domain/Training.kt:38-45`, `loadCount`) is already on main. Boards 02.9 `1253:29027`, 05.6
   `1252:30001`, 05.9 `1253:6349`, 05.10 `1253:6469`, the racks under 11d.
-- **11f · New routine is a FAB (owner ruling, 2026-10-22).** An M3 FAB (+) bottom-end on Routines,
-  16 dp above the navigation bar; the top bar's *New routine* goes (`ui/RoutinesScreen.kt:93-105`). Boards
-  02.1 `1252:27415`, 02.7 `1252:30574`. *Weigh in*: 9q.
+- **11f · New routine is a FAB (owner ruling, 2026-10-22).** Routines uses the shared M3 FAB (+),
+  bottom-end 16 dp above navigation, with its accessible *New routine* label at every text scale.
+  The root bar holds only title/account; the paired 03/17 native check verifies full/empty Dark and
+  Daylight, a 56 dp FAB and a 48 dp account target at standard and 320 dp/200% text.
+  Boards 02.1 `1252:27415`, 02.7 `1252:30574`. *Weigh in*: 9q. The current Coach proposal card and
+  Review destination remain while action appearance changes are deferred at the user's request.
 - **11g · Coach chat in the Google Messages style (owner ruling, 2026-10-22).** Coach and lifter in
   grouped Material bubbles with timestamps, a typing bubble while Coach thinks, the answer streaming
   into its bubble, long Markdown at full width. Today the question is a raised bubble at 90 % width
@@ -851,8 +854,8 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   brings the account back, and from then on it is erased with all its data (`backend/AUTH.md`).
 - **12f · Sign-in is suggested once.** After the first finished workout, signed out, the receipt
   carries one line, *Only on this phone · Keep it*, and never again (03.15: iOS `1283:39725`, Android
-  `1283:42292`). iOS builds it; Android does not, and shows a standing card on Routines
-  (`ui/RoutinesScreen.kt:249-270`), removed from the boards.
+  `1283:42292`). iOS builds it; Android's receipt line remains task 14. Routines has no standing
+  sign-in suggestion.
 - **12g · One message per destructive question, on both phones.** Discard a workout: *Discard this
   workout?* / *This deletes the workout and its 5 sets. You can’t undo this.* / *Cancel* · *Discard*.
   Delete a conversation: *Delete this conversation?* / *You can’t undo this.* / *Cancel* · *Delete*.
@@ -984,7 +987,10 @@ these places.
 - **Narrow tab label.** Routines has a recorded clipping defect at 320dp/200% text in dark mode:
   the visible label loses its final “s”, while the accessible name remains complete. Fix the
   layout without reducing text scale or target size and verify both themes.
-  Tracking: `android-gym-large-text-tab-label`.
+  Task 17 native captures reproduce clipped *Routines* and *The log* labels in both appearances
+  at 320 dp/200% text; the hierarchy retains their complete names. Evidence:
+  `/private/tmp/windmill-android-task17/native2/02.7-no-routines-fab-large-dark.png` and
+  `02.7-no-routines-fab-large-light.png`. Tracking: `android-gym-large-text-tab-label`.
 
 - **Android Display stepper overflow.** [O · Display overflow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1523-6723)
   was human-approved on 2026-10-26. Task 04 implements the approved rule: retain the 88sp inline

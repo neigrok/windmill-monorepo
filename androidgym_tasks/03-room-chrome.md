@@ -11,7 +11,7 @@
 - `GymScreen` uses one native M3 `TopAppBar` for root, pushed and workout screens. The root account target is 48 dp with a 36 dp circle; signed-in Coach keeps its existing History and More controls alongside the seat.
 - The visible middle tab and root title are *The log*. Its existing telemetry label remains `log`.
 - The logger has no settings action. Its trailing 48 dp slot is reserved for task 45's Hide control.
-- All 35 focused chrome/account/navigation checks and 62 related screen checks pass in Debug, with zero skips. The unchanged onboarding flow suite has seven passes and four expected *New routine* assertion failures pending task 17. Twelve installed API 37 chrome captures cover six roles in Dark and Daylight; root account navigation, event intake and runtime checks pass. This task must ship with task 17 so removing the top-bar *New routine* action never removes routine creation from a released app.
+- All 35 focused chrome/account/navigation checks and 62 related screen checks pass in Debug, with zero skips. With task 17's FAB, all 11 onboarding cases and tile/draft/recreation checks pass in the combined full Debug gate. Twelve installed API 37 chrome captures cover six roles in Dark and Daylight; root account navigation, event intake and runtime checks pass. This task ships with task 17 so routine creation remains available in the released app.
 
 **Change**
 - One bar for the room, built on M3 `TopAppBar` in `GymScreen`, in three forms (00.1):

@@ -58,6 +58,11 @@ Undo in both appearances. The editor leaves its draft unsaved; the detail-set ge
 release. The weight recipe accepts Undo after its screenshot. Settled write and background-release
 checks use the same disposable account during the bounded acceptance pause.
 
+`--scenarios apps/android/tools/capture-recipes/routines-list.json` captures full and empty Routines,
+including the fixed New routine FAB, in both appearances and at 320 dp / 200% text. Each recipe
+opens and leaves a new routine draft without saving. The selector matches the FAB's content
+description, so existing editor recipes keep the same New routine target.
+
 `--scenarios apps/android/tools/capture-recipes/native-parts.json` opens a debug-only native-control
 specimen guarded by the same local-origin check. The wide 1460 × 426 board is component-specimen
 evidence; portrait recipes exercise actual phone width, signed Display values and inline refusals.

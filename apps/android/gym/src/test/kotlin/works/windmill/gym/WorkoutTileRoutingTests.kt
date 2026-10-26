@@ -60,16 +60,16 @@ class WorkoutTileRoutingTests {
             }
         }
         try {
-            for (tab in listOf("Log", "Coach")) {
+            for (tab in listOf("The log", "Coach")) {
                 compose.onNode(hasText(tab) and hasClickAction()).performClick()
                 compose.runOnIdle { room.store.requestRoutines() }
-                compose.onNodeWithText("New routine").assertIsDisplayed()
+                compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             }
             compose.runOnIdle { shell.destinations.single { it.id == "settings" }.onOpen() }
             compose.onNodeWithText("Gym settings").assertIsDisplayed()
             compose.runOnIdle { room.store.requestRoutines() }
-            compose.onNodeWithText("New routine").assertIsDisplayed()
-            compose.onNodeWithText("New routine").performClick()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").performClick()
             compose.onNode(hasSetTextAction()).performTextInput("Unfinished routine")
             compose.runOnIdle { room.store.requestRoutines() }
             compose.onNodeWithText("Unfinished routine").assertIsDisplayed()
@@ -112,7 +112,7 @@ class WorkoutTileRoutingTests {
         val restored = StateRestorationTester(compose)
         restored.setContent { if (shown) GymMaterial { GymRoom(account, room.store) } }
         try {
-            compose.onNode(hasText("Log") and hasClickAction()).performClick()
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
             compose.onNodeWithText("Push A").performClick()
             compose.waitUntil(10_000) { compose.onAllNodes(hasText("40 × 8")).fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("40 × 8").performClick()
@@ -148,7 +148,7 @@ class WorkoutTileRoutingTests {
         val restored = StateRestorationTester(compose)
         restored.setContent { if (shown) GymMaterial { GymRoom(account, room.store) } }
         try {
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             compose.runOnIdle { assertEquals(0L, room.store.routinesOpenRequest) }
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()
             restored.emulateSavedInstanceStateRestore()

@@ -111,8 +111,8 @@ class RowSwipeAccessibilityTests {
             val deleted = mutableListOf<String>()
             compose.setContent {
                 RoutinesScreen(
-                    store = room.store, isSignedIn = true, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
-                    onDeleteRoutine = { deleted += it; true }, onReview = {}, onSignIn = {},
+                    store = room.store, lookedAt = emptySet(), seat = "s", onBuild = {}, onOpenRoutine = {},
+                    onDeleteRoutine = { deleted += it; true }, onReview = {},
                 )
             }
 

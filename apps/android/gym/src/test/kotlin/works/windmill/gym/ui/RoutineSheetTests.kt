@@ -69,7 +69,7 @@ class RoutineSheetTests {
                 compose.onNodeWithText("Push Day").performClick()
                 compose.onNodeWithTag("routine-sheet").assertIsDisplayed()
                 compose.onAllNodesWithText("Push Day").assertCountEquals(2)
-                compose.onNodeWithText("New routine").assertExists()
+                compose.onNodeWithContentDescription("New routine").assertExists()
                 compose.onNodeWithText("3 × 8 · 50 kg total").assertIsDisplayed()
                 compose.onNodeWithText("3 × 10 · 40 kg total").assertIsDisplayed()
                 compose.onNodeWithText("History").assertDoesNotExist()

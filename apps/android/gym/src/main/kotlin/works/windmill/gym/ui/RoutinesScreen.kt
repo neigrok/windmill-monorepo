@@ -42,6 +42,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
@@ -52,14 +53,11 @@ import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 import works.windmill.platform.design.WindmillSheetWindow
 
 @Composable
 fun RoutinesScreen(
     store: TrainingStore,
-    isSignedIn: Boolean,
     // Reviews opened and closed with nothing decided: those cards read `still waiting`.
     lookedAt: Set<String>,
     seat: String,
@@ -67,7 +65,6 @@ fun RoutinesScreen(
     onOpenRoutine: (String) -> Unit,
     onDeleteRoutine: suspend (String) -> Boolean,
     onReview: (Proposal) -> Unit,
-    onSignIn: () -> Unit,
 ) {
     val skin = LocalGymColors.current
     val nowMs = System.currentTimeMillis()
@@ -79,14 +76,14 @@ fun RoutinesScreen(
         title = "Routines",
         actions = { YouSeat(seat) },
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = GymLayout.gutter,
-                    end = GymLayout.gutter,
+                    start = 16.dp,
+                    end = 16.dp,
                     top = 8.dp,
-                    bottom = GymLayout.scrollTailBand,
+                    bottom = 88.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -112,48 +109,27 @@ fun RoutinesScreen(
                     }
                 }
 
-                if (!isSignedIn) item("sign-in") { SignInCard(onSignIn) }
-
                 if (empty) {
                     item("empty") {
-                        Text("No routines yet.", style = WindmillFont.body(24, FontWeight.Bold), color = skin.ink,
-                            modifier = Modifier.padding(top = 20.dp))
+                        Text("No routines yet.", style = TextStyle(fontFamily = GymNativeType.sans,
+                            fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 32.sp), color = skin.ink)
                     }
                 } else {
                     items(routines, key = { it.id }) { routine ->
-                        SwipeableRoutineRow(
-                            routine = routine,
-                            standingProposalId = standing?.id,
-                            catalog = store.catalog,
-                            onOpenRoutine = onOpenRoutine,
-                            onDelete = { onDeleteRoutine(routine.id) },
-                            onReview = onReview,
-                        )
+                        val delete: suspend () -> Boolean = { onDeleteRoutine(routine.id) }
+                        DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = delete) {
+                            RoutineRow(routine, standing?.id, store.catalog, onOpenRoutine, delete, onReview)
+                        }
                     }
                 }
             }
+            GymFab("New routine", onClick = { onBuild(RoutineDraft(position = store.allRoutines.size)) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeableRoutineRow(
-    routine: Routine,
-    standingProposalId: String?,
-    catalog: List<Exercise>,
-    onOpenRoutine: (String) -> Unit,
-    onDelete: suspend () -> Boolean,
-    onReview: (Proposal) -> Unit,
-) {
-    DeleteSwipeRow(actionLabel = "Delete ${routine.name}", onDelete = onDelete) {
-        RoutineRow(routine, standingProposalId, catalog, onOpenRoutine, onDelete, onReview)
-    }
-}
-
-// A routine with a proposal wears the accent border. The chip — a dot, a count and its own target
-// onto the diff — is drawn on the routines the standing card is NOT about, so no proposal is
-// rendered twice.
+// The standing card owns its review target; other pending proposals keep a target on their routine.
 @Composable
 private fun RoutineRow(
     routine: Routine,
@@ -170,13 +146,13 @@ private fun RoutineRow(
     Row(Modifier.fillMaxWidth().heightIn(min = 68.dp)
         .background(skin.canvas)
         .clickable(role = Role.Button, onClickLabel = "open ${routine.name}") { onOpenRoutine(routine.id) }
-        .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(routine.name, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+        .padding(start = 12.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(routine.name, style = GymNativeType.button, color = skin.ink)
             Text(routine.entries.sortedBy { it.position }.take(2)
                 .joinToString(" · ") { Readout.movement(it.exerciseId, catalog) },
-                style = WindmillFont.body(13), color = skin.inkDim)
+                style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 13.sp, lineHeight = 18.sp), color = skin.inkDim)
             waiting?.takeIf { it.id != standingProposalId }?.let { ProposalChip { onReview(it) } }
         }
         Box {
@@ -188,30 +164,6 @@ private fun RoutineRow(
                     onClick = { menu = false; scope.launch { onDelete() } })
             }
         }
-    }
-}
-
-@Composable
-private fun SignInCard(onSignIn: () -> Unit) {
-    val skin = LocalGymColors.current
-    Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(skin.raised, RoundedCornerShape(WindmillRadius.lg))
-            .clickable(role = Role.Button, onClickLabel = "sign in", onClick = onSignIn)
-            .padding(GymLayout.cardInset),
-    ) {
-        Text(
-            "Your log is saved on this device.",
-            style = WindmillFont.body(15, FontWeight.SemiBold),
-            color = skin.ink,
-        )
-        Text(
-            "Sign in to add it to your account — it opens on the web too.",
-            style = GymType.numeral(12).copy(lineHeight = 17.sp),
-            color = skin.inkDim,
-        )
     }
 }
 

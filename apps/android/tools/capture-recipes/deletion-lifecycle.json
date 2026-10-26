@@ -155,7 +155,7 @@
     "settle": false,
     "steps": [
       {
-        "tap": "Log"
+        "tap": "The log"
       },
       {
         "wait": "Record · Back Squat 57.5 × 8"
@@ -164,7 +164,7 @@
         "tap": "Record · Back Squat 57.5 × 8"
       },
       {
-        "wait": "Back to Log"
+        "wait": "Back to The log"
       },
       {
         "touch": {
@@ -202,7 +202,7 @@
         }
       },
       {
-        "tap": "Back to Log"
+        "tap": "Back to The log"
       }
     ]
   },

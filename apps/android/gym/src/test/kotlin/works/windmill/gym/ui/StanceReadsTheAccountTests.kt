@@ -5,6 +5,7 @@ import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
@@ -146,14 +147,14 @@ class StanceReadsTheAccountTests {
             runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
             val drafts = mutableListOf<RoutineDraft>()
             compose.setContent {
-                RoutinesScreen(store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
-                    onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {}, onSignIn = {})
+                RoutinesScreen(store = store, lookedAt = emptySet(), seat = "s",
+                    onBuild = { drafts += it }, onOpenRoutine = {}, onDeleteRoutine = { true }, onReview = {})
             }
             val id = store.routines.single().id
             compose.runOnIdle { runBlocking { assertNull(store.delete(Deletion.Routine(id, "Push Day"))) } }
             compose.onNodeWithText("Push Day").assertDoesNotExist()
             compose.onNodeWithText("No routines yet.").assertIsDisplayed()
-            compose.onNodeWithText("New routine").performClick()
+            compose.onNodeWithContentDescription("New routine").performClick()
             compose.runOnIdle {
                 assertEquals(listOf(0), drafts.map { it.position })
                 assertEquals(emptyList<String>(), store.allRoutines.map { it.name })

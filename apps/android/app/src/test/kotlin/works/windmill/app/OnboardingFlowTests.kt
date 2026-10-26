@@ -58,7 +58,7 @@ class OnboardingFlowTests {
         compose.onNodeWithText("Get started").performClick()
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
         compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         compose.onNodeWithContentDescription("Your account").assertIsDisplayed()
     }
 
@@ -66,7 +66,7 @@ class OnboardingFlowTests {
     fun skipOpensGymAndColdActivityEntryDoesNotShowItAgain() {
         compose.onNodeWithText("Skip").performClick()
         compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         compose.runOnIdle {
             assertFalse((compose.activity.application as WindmillApplication).onboardingLaunch
                 .firstLaunch(hasAccount = false, deepLink = false))
@@ -74,7 +74,7 @@ class OnboardingFlowTests {
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
         compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
     }
 
     @Test
@@ -107,7 +107,7 @@ class OnboardingFlowTests {
         }
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.onNode(hasText("The log") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertDoesNotExist()
+        compose.onNodeWithContentDescription("New routine").assertDoesNotExist()
     }
 
     @Test
@@ -189,7 +189,7 @@ class OnboardingFlowTests {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNodeWithText("You").assertDoesNotExist()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         } finally {
             compose.runOnUiThread { compose.activity.intent = originalIntent }
         }
@@ -209,7 +209,7 @@ class OnboardingFlowTests {
             }
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         } finally {
             compose.runOnUiThread { compose.activity.intent = originalIntent }
         }
@@ -269,7 +269,7 @@ class OnboardingEntryTests {
         ActivityScenario.launch<MainActivity>(intent).use {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             assertTrue(prefs.getBoolean("examined", false))
         }
     }
@@ -294,7 +294,7 @@ class OnboardingExistingDataTests {
         compose.runOnUiThread { compose.activity.setContent { Root(runtime, introduction, onIntroductionExit = {}) } }
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
         compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("New routine").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         assertEquals(sets, WorkoutControls(file, deviceOwner = "other").sets(workout.id))
     }
 
@@ -359,7 +359,7 @@ class OnboardingLifecycleTests {
             repeat(2) { compose.onNodeWithText("Next").performClick() }
             compose.onNodeWithText("Get started").performClick()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             assertEquals(listOf(mapOf("state" to "first_launch", "screen" to "gym", "outcome" to "completed")), exits)
         } finally {
             controller.pause().stop().destroy()
@@ -381,7 +381,7 @@ class OnboardingLifecycleTests {
             compose.onNodeWithContentDescription("Page 2 of 4").assertIsDisplayed()
             compose.onNodeWithText("Skip").performClick()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             assertEquals(listOf(mapOf("state" to "first_launch", "screen" to "roadmap", "outcome" to "skipped")), exits)
         } finally {
             keyguard.setIsDeviceLocked(false)
@@ -418,7 +418,7 @@ class OnboardingLifecycleTests {
         try {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         } finally {
             restored.pause().stop().destroy()
         }
@@ -436,7 +436,7 @@ class OnboardingLifecycleTests {
         try {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithText("New routine").assertIsDisplayed()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
         } finally {
             restored.pause().stop().destroy()
         }

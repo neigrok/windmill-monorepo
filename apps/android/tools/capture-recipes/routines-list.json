@@ -1,0 +1,158 @@
+[
+  {
+    "board": "02.7",
+    "name": "no-routines-fab",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "No routines yet."
+      },
+      {
+        "wait": "New routine"
+      },
+      {
+        "wait": "Your account"
+      }
+    ],
+    "after": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "wait": "Save"
+      },
+      {
+        "tap": "Back to the routine you were on"
+      },
+      {
+        "wait": "No routines yet."
+      }
+    ]
+  },
+  {
+    "board": "02.7",
+    "name": "no-routines-fab-large",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "No routines yet."
+      },
+      {
+        "wait": "New routine"
+      },
+      {
+        "wait": "Your account"
+      }
+    ],
+    "after": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "wait": "Save"
+      },
+      {
+        "tap": "Back to the routine you were on"
+      },
+      {
+        "wait": "No routines yet."
+      }
+    ],
+    "viewport": {
+      "width": 320,
+      "height": 800,
+      "density": 160,
+      "fontScale": 2
+    }
+  },
+  {
+    "board": "02.1",
+    "name": "routines",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Push A"
+      },
+      {
+        "wait": "New routine"
+      },
+      {
+        "wait": "Your account"
+      }
+    ],
+    "after": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "wait": "Save"
+      },
+      {
+        "tap": "Back to the routine you were on"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  },
+  {
+    "board": "02.1",
+    "name": "routines-large",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "Legs"
+      },
+      {
+        "wait": "New routine"
+      },
+      {
+        "wait": "Your account"
+      }
+    ],
+    "after": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "wait": "Routine name"
+      },
+      {
+        "wait": "Save"
+      },
+      {
+        "tap": "Back to the routine you were on"
+      },
+      {
+        "wait": "Legs"
+      }
+    ],
+    "viewport": {
+      "width": 320,
+      "height": 800,
+      "density": 160,
+      "fontScale": 2
+    }
+  }
+]

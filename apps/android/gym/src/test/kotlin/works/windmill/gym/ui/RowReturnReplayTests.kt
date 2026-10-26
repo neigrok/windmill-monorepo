@@ -60,7 +60,6 @@ class RowReturnReplayTests {
         compose.setContent {
             RoutinesScreen(
                 store = room.store,
-                isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
                 onBuild = {},
@@ -70,7 +69,6 @@ class RowReturnReplayTests {
                     room.store.delete(Deletion.Routine(id, room.store.routine(id)?.name ?: "?")) == null
                 },
                 onReview = {},
-                onSignIn = {},
             )
         }
     }

@@ -10,37 +10,29 @@
   - `Android / Top app bar` `342:2953`
   - `Android / Swipe row` `337:2217`
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `ui/RoutinesScreen.kt:91-105`: the bar holds the text action *New routine* (a `+` icon button above font scale 1.3), then the account seat.
-- The list (:108-160), in order: refusal notices, unseen removal receipts, the newest pending `ProposalCard` (:128-138), the signed-out `SignInCard`, then routine rows.
-  - `ProposalCard` (`ui/ReviewSheet.kt:498-507`) draws *Proposal · {routine}*, a summary, a count and *Review*, and opens the review sheet.
-  - `SignInCard` (:249-270): *Your log is saved on this device.* / *Sign in to add it to your account — it opens on the web too.*
-  - Empty: *No routines yet.* (:144).
-- *Start logging* is a pinned accent box, 56 dp (:162-177).
+**Implementation status**
+- Routines retains the shared root title/account bar from 03. The shipped shared `GymFab` is the single **New routine** action, at bottom end with 16 dp spacing above navigation. It opens the same routine draft and keeps its accessibility label at every text scale.
+- The list uses 16 dp horizontal content padding and reserves 88 dp below for the 56 dp FAB and its margins. The empty title is Nunito ExtraBold 24 sp / 32 sp, at the approved 8 dp content inset. The signed-out sign-in card and its unused callback are removed.
+- The current Coach proposal card, unseen removal receipts, proposal chips and functioning **Review** destination remain unchanged. The user postponed action appearance changes; the illustrated waiting-proposal row is outside this release. No conversation-backed route or unapproved MCP row is introduced.
+- Shared swipe/menu and immediate deletion from 05 remain intact. The combined Debug gate passes 1,225 gym cases (17 opt-in live-wire skips) and all 48 application cases, including the 11 onboarding cases and tile/draft/recreation checks. All 19 final row/swipe checks pass. Installed API 37 acceptance covers full/empty Dark and Daylight at standard size and 320 dp/200% text, FAB creation, existing proposal Review and the account seat. Tasks 03 and 17 ship together.
+- Native evidence is `/private/tmp/windmill-android-task17/native2`, APK SHA-256 `4419120c0d431303d6ccde76d64626833c7e4a3c9175f7ced5738f6cd05a1d7e`. All eight automated captures retain the 56 dp FAB and 48 dp account target. The same-APK settled `02.7-empty-dark-inset-repeat.png` supplies standard Dark anatomy; the first Dark image retains an unexplained 58 px vertical inset difference. One native routine save reaches the backend and emits one `gym_routine_saved(action=create)` event; the pending proposal and original routine revisions remain unchanged. Account-sheet open has no separate event yet; task 46 owns that shell gap.
 
 **Change**
-- Delete the bar's *New routine* and its large-type `+` (both branches at :93-103). The root bar is title + account seat (03).
-- Add an M3 `FloatingActionButton` with `Icons.Rounded.Add`, content description *New routine*, bottom end, 16 dp above the navigation bar. *Start logging* is gone (13), so the reach band holds only the FAB. It opens the editor as the bar action does today (`onBuild(RoutineDraft(position = …))`).
-  - The list's bottom padding grows so the FAB never covers the last row's ⋮.
-- Replace the in-list `ProposalCard` with one waiting-proposal row at the top of the list:
-  - leading chat icon (`Icons.Outlined.ChatBubbleOutline`), title *Push A · 3 changes* (routine + the store's `changeCount`), supporting line *From Coach · 18:42* (the proposal's `createdAtMs`), trailing chevron
-  - define the navigation payload using `ProposalSource.conversation` and proposal identity. Task 29 owns activation of the row → Coach proposal destination and removal of the old review path after that integration passes. Task 17’s independent FAB/list work does not depend on 29; retain the functioning current destination until 29 lands, so there is no 17 ↔ 29 dependency cycle
-  - a proposal with no conversation (written by a connected agent over MCP) has no approved row/destination. Designer-owned gate `android-gym-mcp-proposal-row-design` must draw and obtain approval for it; retain today’s working review path until then. 29 must not remove that fallback when activating conversation-backed routes.
-  - Unseen removal receipts keep their place above it.
-- Delete the signed-out `SignInCard` (:249-270) and its place in the list. Routines never asks to sign in; the one suggestion is the first receipt's *Only on this phone · Keep it* (14).
-- Empty (02.7): *No routines yet.* and the FAB. No bar action, no card, signed in or out. An empty Gym that first opens on Coach is 39's work.
-- Rows, the ⋮ menu and the swipe use the shared parts from 04 and the immediate delete from 05; nothing else on the row changes.
+- Use the approved shared native FAB (04) with its exact add asset, brand-soft/card fill and **New routine** content description. Keep the root bar title/account-only (03).
+- Remove the Routines sign-in suggestion. The first-workout receipt suggestion belongs to 14.
+- Preserve current proposal appearance, content and review behavior while 29–35 wait. Their future integration must retain a working review fallback for connected-agent proposals until an approved destination exists.
+- Routine rows use the approved 12 dp leading / 0 trailing inset, 8 dp icon gap, 2 dp copy gap, Nunito Bold 16/22 title and Nunito 13/18 supporting text. The 68 dp minimum grows with content. Keep ordering, proposal chips, the shared menu and settled deletion behavior. Scrolling must expose the last row's More target above the FAB at large text.
 
 **Out of scope:**
 - The swipe ground and immediate delete (05), the ⋮ menu item colour (05).
-- The proposal card in the conversation (29).
+- Proposal/change-card appearance and destination redesign (29–35), deferred at user request.
 - The routine summary sheet units (08).
 
 **Done when**
-- Screenshots of 02.1 and 02.7 match in Dark and Daylight; the rig (01) adds `02.1-routines-dark/light` and `02.7-no-routines-fab-dark/light`.
+- Screenshots of the in-scope 02.1 and 02.7 chrome, empty state and FAB match in Dark and Daylight; the existing proposal card remains by user instruction; the rig (01) adds `02.1-routines-dark/light` and `02.7-no-routines-fab-dark/light`.
 - `gym_screen_viewed` still fires `routines`; tapping the FAB still leads to `routine_editor`.
-- After 29’s integration lands, tapping a conversation-backed proposal row reaches that exact conversation/card and fires `gym_screen_viewed` `coach` (or `thread`), never `proposal`. This navigation acceptance belongs to 29, not an added prerequisite of 17.
-- Tests: `ui/RoutinesScreenTests.kt` (FAB present at every font scale, no bar action, no *Start logging*, the proposal row's title and line), `ui/StanceReadsTheAccountTests.kt` (signed out: no sign-in card, full and empty).
+- The existing proposal card's **Review** and secondary routine chip still open their current review destinations with existing events.
+- Tests cover one accessible FAB at default, enlarged and maximum text; no bar action, *Start logging* or sign-in card; last-row menu clearance; proposal review identity; onboarding; and tile navigation with draft/recreation preservation.
 
 **Depends on:** 03, 04, 05, 13.
 

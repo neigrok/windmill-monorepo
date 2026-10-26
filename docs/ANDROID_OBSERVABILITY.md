@@ -258,6 +258,15 @@ Root chrome uses the existing `routines`, `log` and `coach` screen labels; the v
 does not change event properties. Account routes retain their existing navigation and shell events.
 The shared app bar adds no transport, storage or write boundary, and sends no title or account initial.
 
+The Routines FAB retains the existing `routine_editor` screen event and draft-save boundary. It adds
+no component event or failure reporter. Removing the standing sign-in suggestion adds no event.
+Proposal cards/chips retain their current `proposal` review destination and existing outcome events;
+their appearance and destination redesign are deferred. Installed 03/17 acceptance records nine
+`routine_editor` views (eight capture activations and one saved draft), one `proposal` view, and one
+`gym_routine_saved(action=create)`. The pending proposal and existing routine revisions are unchanged.
+Intake properties contain only the existing bounded metadata. The account seat opens and returns
+correctly; the shell currently emits no separate You-open event, which task 46 owns.
+
 `gym_proposal_outcome` carries `action` apply or dismiss and `outcome` decided, moved, gone, settled
 or failed; iOS records the same turn-down as `reject`.
 

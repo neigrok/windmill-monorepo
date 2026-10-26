@@ -406,9 +406,9 @@ existing History/More paths are unchanged.
 All 35 focused chrome/account/navigation checks and 62 related screen checks pass in Debug,
 with zero skips. The account regression verifies the complete existing screen-event sequence
 through each root and no technical failure. Twelve installed API 37 captures verify the six chrome roles in Dark and Daylight. Task 03 ships
-with task 17's routine FAB so the creation route remains available. The unchanged 11-case
-OnboardingFlowTests run passes seven and fails four at the required *New routine* assertion; those
-assertions remain in place for the combined 03/17 gate. The shared bar adds no state or write boundary.
+with task 17's routine FAB so the creation route remains available. All 11 OnboardingFlowTests pass
+with the accessible FAB selector in the combined 03/17 gate, as do the tile/draft/recreation checks.
+The shared bar adds no state or write boundary.
 
 
 Task 03 native evidence is in `/private/tmp/windmill-android-room-chrome-native`, with APK SHA-256
@@ -426,3 +426,48 @@ for that screenshot. It stops intentionally at a pre-profile barrier; no new per
 made. Existing body layout, task 45's Hide control and the paired task 17 FAB remain outside this
 chrome proof. The simplification pass removes the custom-row bar branch, its switch and the
 logger settings callback while grouping shared type styles beside the bar.
+
+## Task 17 · Routines FAB and empty state
+
+The Routines screen uses the shared 56 dp native FAB with a fixed New routine accessibility label,
+16 dp margins and 88 dp list clearance. Content has a 16 dp horizontal inset; routine rows use
+12 dp leading / 0 trailing padding, 8 dp icon and 2 dp copy gaps, and Nunito 16/22 plus 13/18 type.
+Rows retain their 68 dp minimum and grow with content. The empty title follows the approved
+Nunito ExtraBold 24/32 scale and 8 dp content inset. The signed-out suggestion and unused account/sign-in arguments
+are removed. The current proposal card, secondary chip and Review route remain unchanged by user
+instruction; the illustrated waiting-row replacement is deferred. Immediate deletion stays on 05's
+application-owned receipt path. The simplification pass removes the one-caller swipe wrapper.
+
+The paired source is based on main `653d523f` and the held 03 chrome commit. The combined Debug
+gate passes 1,225 gym cases with 17 opt-in LiveWire skips and all 48 application cases, including
+11 onboarding cases. Tests exercise fixed FAB geometry and activation at text scales 1, 1.3, 2 and
+3, the last routine menu above it at 320 dp/200% text, unchanged proposal review identity, and tile
+navigation/draft restoration. Twelve focused checks pass after simplification, and all 19 final
+row/swipe checks pass after the approved spacing/type corrections. All 36 Android tool tests pass.
+XML archives are in `/private/tmp/windmill-android-task17/tests`.
+
+Eight installed API 37 captures verify full/empty Dark and Daylight at standard size and 320 dp/200%
+text. Every hierarchy exposes a 56 dp FAB and 48 dp account target; every recipe opens the editor
+through the FAB. Native creation persists a fourth routine at revision 1 and emits one
+`gym_routine_saved(action=create)`. The existing proposal Review opens its current sheet and stays
+pending; all three original routine revisions remain 1. The account seat opens You and returns.
+The shell has no separate You-open event; task 46 owns that explicit acceptance gap.
+
+Final evidence is `/private/tmp/windmill-android-task17/native2`, APK SHA-256
+`4419120c0d431303d6ccde76d64626833c7e4a3c9175f7ced5738f6cd05a1d7e`. Its manifest pins
+all 34 Android source/recipe paths changed by 03/17. The local intake records nine editor views,
+one proposal view and the single save, with bounded properties only. All 125 structured backend
+write observations succeed. Automated and supplemental runtime scans contain no app ANR or fatal
+exception; the local Sentry collector receives seven SDK session envelopes and no exception event.
+This checks local delivery, not hosted vendor delivery. The incidental cold/profile sample is not
+a performance claim; failed selector attempts are excluded from acceptance. The eight automated
+captures are supplemented by `02.7-empty-dark-inset-repeat.png` for standard Dark anatomy: its
+settled account bounds match Light/full. The original Dark capture is 58 px higher; its cause is
+unproven because the original system-window state was not recorded. The large-text navigation
+label clipping remains tracked by `android-gym-large-text-tab-label`. All owned capture processes
+exit normally, their ports close, and the disposable database is removed.
+
+The recipe keeps New routine as a content-description target; the shared locator already accepts
+either text or content description. Deletion/tile recipes use the visible The log labels from 03.
+No new capture API is needed. Keeping the fixed FAB outside the scroll content makes its reach
+independent of the preserved proposal card's height; the list tail exposes the final row menu.

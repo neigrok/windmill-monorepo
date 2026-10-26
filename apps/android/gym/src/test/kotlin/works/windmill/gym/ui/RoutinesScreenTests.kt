@@ -18,7 +18,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -72,14 +76,12 @@ class RoutinesScreenTests {
         compose.setContent {
             RoutinesScreen(
                 store = room.store,
-                isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
                 onBuild = { drafts += it },
                 onOpenRoutine = { doors += "open:$it" },
                 onDeleteRoutine = { doors += "delete:$it"; true },
                 onReview = { doors += "review" },
-                onSignIn = { doors += "signIn" },
             )
         }
         return room.store
@@ -100,7 +102,7 @@ class RoutinesScreenTests {
     }
 
     @Test
-    fun testRoutinesHasNoFreeStartAndTheNewRoutineActionIsInTheTopBar() {
+    fun testRoutinesHasNoFreeStartAndTheNewRoutineFabOpensTheNextDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val doors = mutableListOf<String>()
@@ -108,7 +110,8 @@ class RoutinesScreenTests {
             home(room, doors, drafts)
 
             compose.onNodeWithText("Start logging").assertDoesNotExist()
-            val newRoutine = compose.onNodeWithText("New routine")
+            compose.onNodeWithText("New routine").assertDoesNotExist()
+            val newRoutine = compose.onNodeWithContentDescription("New routine")
             newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
             newRoutine.performClick()
             compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
@@ -116,6 +119,66 @@ class RoutinesScreenTests {
             compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
             compose.runOnIdle { assertEquals(emptyList<String>(), doors) }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    fun emptySignedOutRoutinesKeepsOneAccessibleFabAtEveryTextScale() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking { room.select(null) }
+            var scale by mutableStateOf(1f)
+            val drafts = mutableListOf<RoutineDraft>()
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) {
+                    GymMaterial {
+                        RoutinesScreen(room.store, emptySet(), "", { drafts += it }, {}, { true }, {})
+                    }
+                }
+            }
+            for (value in listOf(1f, 1.3f, 2f, 3f)) {
+                compose.runOnIdle { scale = value }
+                compose.onNodeWithText("No routines yet.").assertIsDisplayed()
+                compose.onNodeWithText("Your log is saved on this device.").assertDoesNotExist()
+                compose.onNodeWithText("Sign in to add it to your account — it opens on the web too.").assertDoesNotExist()
+                compose.onNodeWithText("New routine").assertDoesNotExist()
+                val fab = compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+                assertEquals(56.dp, fab.getBoundsInRoot().height)
+                fab.performClick()
+            }
+            compose.runOnIdle { assertEquals(List(4) { RoutineDraft(position = 0) }, drafts) }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    fun theLastRoutineMenuScrollsClearOfTheFabAtDoubleText() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking {
+                room.select(null)
+                repeat(12) { index ->
+                    assertTrue(room.store.saveRoutine(RoutineDraft(name = "Routine $index", position = index)
+                        .adding("bench-press")) is GymResult.Ok)
+                }
+            }
+            val drafts = mutableListOf<RoutineDraft>()
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
+                    GymMaterial {
+                        RoutinesScreen(room.store, emptySet(), "", { drafts += it }, {}, { true }, {})
+                    }
+                }
+            }
+            compose.onNode(hasScrollAction()).performScrollToIndex(11)
+            val more = compose.onNodeWithContentDescription("More for Routine 11").assertIsDisplayed()
+            val fab = compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            assertTrue("the last menu is above the fixed FAB", more.getBoundsInRoot().bottom <= fab.getBoundsInRoot().top)
+            more.performClick()
+            compose.onNodeWithText("Delete").assertIsDisplayed()
+            compose.onNodeWithText("Your log is saved on this device.").assertDoesNotExist()
+            compose.runOnIdle { assertEquals(emptyList<RoutineDraft>(), drafts) }
         } } finally { scope.cancel() }
     }
 
@@ -148,7 +211,7 @@ class RoutinesScreenTests {
 
             compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
             compose.runOnIdle {
-                assertEquals("the same act the swipe makes, and the room withholds it",
+                assertEquals("the same settled delete action as the swipe",
                     listOf("delete:$routineId"), doors)
                 assertEquals("nothing else fired", emptyList<RoutineDraft>(), drafts)
             }
@@ -188,14 +251,12 @@ class RoutinesScreenTests {
             compose.setContent {
                 RoutinesScreen(
                     store = store,
-                    isSignedIn = true,
                     lookedAt = emptySet(),
                     seat = "s",
                     onBuild = {},
                     onOpenRoutine = {},
                     onDeleteRoutine = { true },
                     onReview = { reviewed += it.id },
-                    onSignIn = {},
                 )
             }
 
@@ -211,6 +272,8 @@ class RoutinesScreenTests {
                 assertEquals("the one chip left belongs to the routine without the card",
                     listOf("proposal_pull"), reviewed)
             }
+            compose.onNodeWithText("Review").performClick()
+            compose.runOnIdle { assertEquals(listOf("proposal_pull", "proposal_push"), reviewed) }
         } } finally { scope.cancel() }
     }
 
@@ -229,14 +292,12 @@ class RoutinesScreenTests {
             compose.setContent {
                 RoutinesScreen(
                     store = store,
-                    isSignedIn = false,
                     lookedAt = emptySet(),
                     seat = "",
                     onBuild = { doors += "build" },
                     onOpenRoutine = { doors += "open:$it" },
                     onDeleteRoutine = { doors += "delete:$it"; true },
                     onReview = { doors += "review" },
-                    onSignIn = { doors += "signIn" },
                 )
             }
 
