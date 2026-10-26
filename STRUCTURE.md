@@ -78,7 +78,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |
 | `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
-| `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
+| `deploy.yml` | deploy a successful backend main-push SHA or a main-reachable commit SHA; sync minimum changes require an exact manual cutoff acknowledgement |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
 their consumers; web also checks its email README and the verify skill because tests read them.

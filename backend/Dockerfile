@@ -61,6 +61,7 @@ RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contra
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
 # red suite fails the image, and a PR that only builds this stage still gets tested.
 RUN ctest --test-dir build --output-on-failure
+RUN python3 deploy/sync_compatibility.py metadata /contract/sync build/sync-compatibility.json
 
 # Belt and braces: prove the binaries exist before we carry them to the runtime stage.
 RUN test -x build/windmill_server && test -x build/windmill_mcp_http
@@ -94,6 +95,7 @@ COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
 COPY --from=build /src/build/windmill_rotate_sync_epoch /usr/local/bin/windmill_rotate_sync_epoch
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
+COPY --from=build /src/build/sync-compatibility.json /app/sync-compatibility.json
 
 WORKDIR /app
 EXPOSE 8080 8090

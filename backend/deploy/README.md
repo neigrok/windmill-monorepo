@@ -4,8 +4,12 @@ Backend CI publishes the server and embedder images. The deploy workflow runs th
 VPS under `docker compose`. That second workflow runs itself, and refuses to run on
 anything but a SUCCESSFUL `push`-triggered Backend CI/CD on `main` — a red `ctest`, a branch, or a
 pull request all stop at the image. It deploys the sha that passed, never `:latest`, so two pushes in
-a row cannot ship each other's binary. `workflow_dispatch` deploys a chosen tag by hand, which is
-also the rollback: dispatch with the older commit's sha.
+a row cannot ship each other's binary. A manual dispatch runs from `main` and requires a full image
+commit SHA. Both server and migration are pinned to the inspected Docker content ID before promotion.
+Every candidate carries `sync-compatibility.json`, generated from the same composed registries as its
+binary. A missing manifest or unreadable live hello stops deployment before migration, environment
+promotion or container replacement. Any change to the minimum accepted schema needs the manual
+acknowledgement described below; ordinary backend batches cannot make that cutoff.
 
 ```
  push to main ─▶ test (ctest in builder image)
@@ -34,6 +38,7 @@ also the rollback: dispatch with the older commit's sha.
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
+| Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
 
@@ -111,18 +116,22 @@ must be public.
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
   Success also requires the running server's image reference and content ID to match the pulled
-  image, a ready sync schema 6 endpoint, and the PID 1 allowance mode and Coach output cap to match
-  resolved Compose configuration. Readiness is retried up to 30 times; each probe has a timeout.
-  The runtime receipt prints only the verified process environment mode and cap. Credentials and
-  failed command output are never dumped. This proves configuration reached PID 1 and the selected
+  image, a hello advertising that image's exact schema/minimum, and the PID 1 allowance mode and
+  Coach output cap to match resolved Compose configuration. Readiness is retried up to 30 times;
+  each probe has a timeout. The excluded boundary schema and every previously supported schema
+  removed by the cutoff must return `426 upgrade-required` at hello, push, pull and WebSocket
+  upgrade. The runtime receipt names the checks that passed. Credentials and failed command output
+  are never dumped. This proves configuration reached PID 1 and the selected
   image serves HTTP; output-cap enforcement requires a binary that supports that setting.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
 - **Status**: `docker compose ps`.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Both
-  the server and `embedder-<sha>` images must exist. Only the image goes back: the run renders `.env`
+  the server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
+  manifest. Only the image goes back: the run renders `.env`
   and ships `docker-compose.yml`, the Caddyfile and `deploy-production.sh` from the branch it is
-  dispatched on (`main` unless another is chosen), and `migrate` applies the older image's own
-  `db/schema.sql`.
+  dispatched on (`main` only), and `migrate` applies the selected image's own `db/schema.sql`.
+  A lower minimum is a compatibility change too and requires exact manual acknowledgement. That
+  acknowledgement does not make old binaries safe for data written under newer rules.
 - **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
   containing `backend · purge the retired gym and journal cutover copies`. After the purge, use only
   that image or its descendants: earlier image schemas recreate retired cutover storage and their
@@ -141,6 +150,48 @@ must be public.
   The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
   backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
+
+## Coordinated client cutoff
+
+The current registry is schema 7 / minimum 4. The planned explicit gym `other` category requires
+schema 8 / minimum 8 and coordinated Android and iOS replacements. The cutoff remains held until both
+replacement artifacts and their upgrade destinations are prepared and verified. This prerequisite
+does not change the registry, distribute a phone build, or authorize a production cutoff.
+
+1. Ship this guard while the minimum remains 4. Keep that schema 7 / minimum 4 image available for
+   maintenance during preparation. New backend images may build and publish, but their automatic
+   deployment refuses if their minimum differs from the live server.
+2. Prepare the schema 8 backend and compatibility readers on every surface, preserving old stored
+   equipment/count values and pending writes. Web deploys independently and automatically; early
+   web or iOS code must not originate Other against schema 7. New selectors require their own design
+   approval and an explicit write/distribution gate. Read-only handling must truthfully retain and
+   display Other after cutover. Android's three-choice design does not approve iOS or web pickers.
+3. Verify the signed Android update over public 0.12.1 (schema 6), including retained local work,
+   and prepare its release assets without publishing. Upload the exact iOS version/build through
+   the manual `ios-release.yml` workflow; check its TestFlight processing and beta readiness.
+   Separately verify intended tester distribution availability; the status artifact proves neither
+   tester access nor installation. Verify the replacement client against the candidate backend and
+   prepare the upgrade destinations before the cutoff.
+4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Dispatch **Deploy to VPS** from `main` with
+   that `image_tag`, `expected_old_minimum=4`, `expected_new_minimum=8` and `expected_image_id`.
+   Both minimum fields must match the current live response and the candidate manifest exactly;
+   both raises and lowers refuse without this acknowledgement. An interrupted attempt must read
+   the live minimum again before retrying. A genuinely fresh host uses old minimum 0; a missing
+   `.env` beside an existing deployment is not treated as bootstrap.
+5. Verify the runtime receipt: schema 8 advertises 8 / minimum 8, while schema 6 and 7 return
+   `426 upgrade-required` at all four sync doors. Publish the verified Android release and confirm
+   both upgrade destinations resolve to the prepared replacements. Cached web and older native
+   clients must retain local work and show their existing update-required surface.
+6. Keep an Other-capable schema 8 / minimum 8 maintenance image available before accepting Other
+   writes. After Other exists, rollback only to that compatible image; do not reopen schema 6/7 or
+   run a six-value parser/CHECK. Ordinary backend automation resumes when candidate and live
+   minimum match. The image-ID pin covers both the server and the migration job.
+
+The guard queries anonymous hello with a high schema header to read live metadata even during a
+manually acknowledged downgrade. This is a metadata read, not a client capability claim. It neither
+uses account credentials nor changes the running stack. It runs after candidate validation/pull and
+before any candidate migration or promotion.
 
 ## Restore a database backup
 

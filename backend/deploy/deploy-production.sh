@@ -13,7 +13,8 @@ fi
 # Run from ~/windmill. All candidate files are uploaded under separate names so a rejected
 # image/configuration cannot change the live environment or recreate any old container.
 candidate_env=.env.next
-trap 'rm -f "$candidate_env"' EXIT
+verification=$(mktemp -d)
+trap 'rm -f "$candidate_env"; rm -rf "$verification"' EXIT
 prior_pg=
 if [[ -f .env ]]; then
   prior_pg=$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | head -1)
@@ -27,8 +28,9 @@ fi
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
 "${candidate[@]}" pull
+python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
 
-# Only a valid candidate whose images pulled crosses this point. Preserve the initialized DB password.
+# The inspected image and sync minimum are approved before any migration or container changes.
 [[ ! -f .env ]] || cp .env .env.bak
 mv "$candidate_env" .env
 mv docker-compose.next.yml docker-compose.yml
@@ -37,8 +39,6 @@ if cmp -s Caddyfile.next Caddyfile; then
 else
   mv Caddyfile.next Caddyfile
 fi
-verification=$(mktemp -d)
-trap 'rm -f "$candidate_env"; rm -rf "$verification"' EXIT
 # A prior deploy may have promoted the file before recreating Caddy. Inspect the
 # running mount so retrying the same candidate also repairs that interrupted deploy.
 caddy_changed=1
@@ -80,7 +80,6 @@ python3 - <<'PY'
 import json
 import re
 import subprocess
-import time
 
 def capture(arguments):
     result = subprocess.run(arguments, capture_output=True, text=True, timeout=5)
@@ -106,15 +105,6 @@ try:
     intended_id = capture(["docker", "image", "inspect", "--format", "{{.Id}}", server["image"]])
     if actual != {"image": server["image"], "id": intended_id}:
         raise SystemExit("FAIL running server image differs from intended image")
-    for attempt in range(30):
-        ready = subprocess.run(["docker", "compose", "exec", "-T", "server", "curl", "--fail", "--silent",
-            "--max-time", "2", "--output", "/dev/null", "--write-out", "%{http_code}", "-H", "Sync-Schema: 6",
-            "http://127.0.0.1:8080/v1/sync/hello"], capture_output=True, timeout=5)
-        if ready.returncode == 0 and ready.stdout == b"200":
-            break
-        time.sleep(1)
-    else:
-        raise SystemExit("FAIL running server did not become ready for sync schema 6")
     for key, expected in (("AI_ALLOWANCES_ENABLED", mode), ("COACH_MAX_OUTPUT_TOKENS", cap),
                           ("AI_INSTALLATIONS_ENABLED", installations), ("AI_INSTALLATION_PROXY_MODE", proxy)):
         check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
@@ -129,9 +119,7 @@ try:
             raise SystemExit("FAIL running server installation network key is unavailable")
 except Exception:
     raise SystemExit("FAIL server runtime verification could not complete")
-print("PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=" + mode +
-      ", COACH_MAX_OUTPUT_TOKENS=" + cap + ", AI_INSTALLATIONS_ENABLED=" + installations +
-      ", AI_INSTALLATION_PROXY_MODE=" + proxy + ", sync schema=6")
 PY
-rm -f .env.bak rendered.env
-printf 'PASS deployed: environment rendered, DB password preserved, stack running\n'
+python3 "$(dirname "$0")/sync_compatibility.py" verify "$verification/sync.json"
+rm -f .env.bak rendered.env sync-cutover.json
+printf 'PASS deployed: immutable image, sync compatibility, process environment and Caddy verified; DB password preserved\n'
