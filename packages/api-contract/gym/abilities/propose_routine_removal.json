@@ -5,6 +5,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": [
         {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
         {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
@@ -48,7 +49,6 @@
               "position": 2
             }
           ],
-          "createdAt": 1790000000000,
           "id": "tn7Qm2Kx9Lp4Wz8R-6",
           "intent": "remove",
           "name": "Push",
@@ -59,14 +59,11 @@
         },
         "reviewUrl": "https://windmill.works/#/gym/proposals/tn7Qm2Kx9Lp4Wz8R-6"
       },
-      "sha256": "f70a51a1e4ef4442f55253a28739d091715a2d1d04a47dbaf778edb17d6fd533",
+      "sha256": "cb2e765ee2b1d81aba29d646ff13211b0c0a1ed21223c1c81253b9770d3b6074",
       "writes": [
         {
           "f": {
             "agent": "",
-            "baseName": "Push",
-            "baseRevision": 1,
-            "changeCount": 2,
             "changes": [
               {
                 "before": {
@@ -87,8 +84,7 @@
             "intent": "remove",
             "proposedName": "Push",
             "routineId": "rtAAAAAAAAAAAAA1",
-            "summary": "You moved to a full-body split.",
-            "threadId": null
+            "summary": "You moved to a full-body split."
           },
           "id": "tn7Qm2Kx9Lp4Wz8R-6",
           "life": "alive",
@@ -103,6 +99,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": []
     },
     "call": {"input":{"id":"tn7Qm2Kx9Lp4Wz8R-6","routineId":"rtZZZZZZZZZZZZZ1"},"name":"propose_routine_removal"},

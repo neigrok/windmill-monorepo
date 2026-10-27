@@ -46,14 +46,25 @@ Coach is offered (`agent` other than `withheld`), each an array of
 - `given.records` are engine records as a page carries them (`engine.md` §9.1): `{t, id, seq, rc, ru,
   born?, life?, f: {field: [value, stamp]}, v?}`, in the field names of `sync/gym.registry.json`.
   `given.shares` lists workouts holding a live share link, a server record that only the server
-  executor reads.
+  executor reads. `given.appBaseUrl` is the app origin an executor builds links on: every case of
+  `propose_routine_change`, `propose_routine_removal` and `share_session` carries it, and an executor
+  is handed it as an input: `reviewUrl` is `<appBaseUrl>/#/gym/proposals/<id>` and a share's `url`
+  `<appBaseUrl>/#/gym/shared/<token>`. A case whose result links into the app without it fails.
 - `expect` is `{result, sha256, writes}` or `{refused: <code>}`. `sha256` is the SHA-256 of the JCS
-  bytes of `result`. `writes` lists each record the call created, changed or killed, by `t` and `id`,
-  with `life` and its field values, without stamps, `seq`, `rc`, `ru` or serials (INV-2).
+  bytes of `result`. A `result` carries only what every executor knows (INV-3): no `rc`, `ru` or
+  server admission instant (a proposal's `createdAt`, a note's `updatedAt`), and a server-written
+  register only where a replica computes it by rule, as a routine's `revision`.
+- `writes` are the intent's own records (INV-2): each record whose `life` or **client-written**
+  fields the call changed, by `t` and `id`, with `life` and those fields. A field
+  `sync/gym.registry.json` declares `"writer": "server"` never appears (`revision`, `createdDoor`,
+  `createdEntries`, note `updatedAt`, proposal `baseRevision`, `baseName`, `changeCount`, `threadId`,
+  `state`, `supersededBy`, `settledAt`, set `setNumber`), and nor do stamps, `seq`, `rc` or `ru`. A
+  record the server changed only in such fields, as the sibling proposal a new one supersedes, is no
+  write of the call's, and a type with no client-written field (`routineCreation`) is never listed.
 - A refusal's code is the server tool's outcome code: `refused` for a rule's refusal,
   `invalid-arguments` for a malformed input.
 - The server runs every case as Coach does, for the account, with proposals stamped `door: ask` and
-  no thread, and share and review links on `https://windmill.works`.
+  no thread.
 
 Read as a test by `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp` under
 `WM_PG_TEST` (`backend/RUNNING.md` §7): each case seeds its records into the account's gym scope on

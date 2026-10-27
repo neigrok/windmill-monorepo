@@ -5,6 +5,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": [
         {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
         {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
@@ -66,7 +67,6 @@
             },
             {"after":{},"exerciseId":"dip","kind":"added","position":3}
           ],
-          "createdAt": 1790000000000,
           "id": "tn7Qm2Kx9Lp4Wz8R-5",
           "intent": "revise",
           "name": "Push 💪",
@@ -77,14 +77,11 @@
         },
         "reviewUrl": "https://windmill.works/#/gym/proposals/tn7Qm2Kx9Lp4Wz8R-5"
       },
-      "sha256": "716b6ac67707d001970b1f84fb2673949444b18c5c417c8715f46c616717e426",
+      "sha256": "492499500dc3d5b131ace88d14db132248f3c730209de10e113b7c6c6bfc765d",
       "writes": [
         {
           "f": {
             "agent": "",
-            "baseName": "Push",
-            "baseRevision": 1,
-            "changeCount": 3,
             "changes": [
               {
                 "after": {
@@ -111,8 +108,7 @@
             "intent": "revise",
             "proposedName": "Push 💪",
             "routineId": "rtAAAAAAAAAAAAA1",
-            "summary": "Fewer, heavier bench sets.",
-            "threadId": null
+            "summary": "Fewer, heavier bench sets."
           },
           "id": "tn7Qm2Kx9Lp4Wz8R-5",
           "life": "alive",
@@ -127,6 +123,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": [
         {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
         {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
@@ -189,7 +186,6 @@
             },
             {"after":{},"exerciseId":"dip","kind":"added","position":3}
           ],
-          "createdAt": 1790000000000,
           "id": "tn7Qm2Kx9Lp4Wz8R-5",
           "intent": "revise",
           "name": "Push 💪",
@@ -200,54 +196,11 @@
         },
         "reviewUrl": "https://windmill.works/#/gym/proposals/tn7Qm2Kx9Lp4Wz8R-5"
       },
-      "sha256": "716b6ac67707d001970b1f84fb2673949444b18c5c417c8715f46c616717e426",
+      "sha256": "492499500dc3d5b131ace88d14db132248f3c730209de10e113b7c6c6bfc765d",
       "writes": [
         {
           "f": {
             "agent": "",
-            "baseName": "Push",
-            "baseRevision": 1,
-            "changeCount": 1,
-            "changes": [
-              {
-                "after": {
-                  "restSeconds": 180,
-                  "sets": [{"reps":3,"weightKg":62.5},{"reps":3,"weightKg":62.5},{"reps":3,"weightKg":62.5}]
-                },
-                "before": {
-                  "restSeconds": 180,
-                  "sets": [{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]
-                },
-                "exerciseId": "bench-press",
-                "kind": "retargeted"
-              },
-              {
-                "after": {"sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},
-                "before": {"sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},
-                "exerciseId": "lateral-raise",
-                "kind": "kept"
-              }
-            ],
-            "connection": "",
-            "door": "ask",
-            "intent": "revise",
-            "proposedName": "",
-            "routineId": "rtAAAAAAAAAAAAA1",
-            "settledAt": 1790000000000,
-            "state": "superseded",
-            "summary": "Drop the bench to three sets of three.",
-            "supersededBy": "tn7Qm2Kx9Lp4Wz8R-5"
-          },
-          "id": "propAAAAAAAAAAA1",
-          "life": "alive",
-          "t": "proposal"
-        },
-        {
-          "f": {
-            "agent": "",
-            "baseName": "Push",
-            "baseRevision": 1,
-            "changeCount": 3,
             "changes": [
               {
                 "after": {
@@ -274,8 +227,7 @@
             "intent": "revise",
             "proposedName": "Push 💪",
             "routineId": "rtAAAAAAAAAAAAA1",
-            "summary": "Fewer, heavier bench sets.",
-            "threadId": null
+            "summary": "Fewer, heavier bench sets."
           },
           "id": "tn7Qm2Kx9Lp4Wz8R-5",
           "life": "alive",
@@ -290,6 +242,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": [
         {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
         {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
@@ -352,7 +305,6 @@
             },
             {"after":{},"exerciseId":"dip","kind":"added","position":3}
           ],
-          "createdAt": 1789999940000,
           "id": "tn7Qm2Kx9Lp4Wz8R-5",
           "intent": "revise",
           "name": "Push 💪",
@@ -363,7 +315,7 @@
         },
         "reviewUrl": "https://windmill.works/#/gym/proposals/tn7Qm2Kx9Lp4Wz8R-5"
       },
-      "sha256": "a1bd9d17b30beda5aa3fcbb3141bbf0efa491ac3dba9792c9aa873719da3fc4a",
+      "sha256": "492499500dc3d5b131ace88d14db132248f3c730209de10e113b7c6c6bfc765d",
       "writes": []
     }
   },
@@ -373,6 +325,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": [
         {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
         {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
@@ -409,6 +362,7 @@
     "now": 1790000000000,
     "zone": "UTC",
     "given": {
+      "appBaseUrl": "https://windmill.works",
       "records": []
     },
     "call": {

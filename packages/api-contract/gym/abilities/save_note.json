@@ -24,19 +24,17 @@
           "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
           "id": "tn7Qm2Kx9Lp4Wz8R-4",
           "position": 2,
-          "title": "Café q̇ 🏋️‍♀️ goals",
-          "updatedAt": 1790000000000
+          "title": "Café q̇ 🏋️‍♀️ goals"
         },
         "saved": true
       },
-      "sha256": "5b8949a3a43ac02f3e17a337708440e91b47469338f6413f4ff083d008e648c0",
+      "sha256": "eef4c0bfd32e803295df132f8ba722d3450bb808963abb9430690399fa54437e",
       "writes": [
         {
           "f": {
             "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
             "ord": "a2",
-            "title": "Café q̇ 🏋️‍♀️ goals",
-            "updatedAt": 1790000000000
+            "title": "Café q̇ 🏋️‍♀️ goals"
           },
           "id": "tn7Qm2Kx9Lp4Wz8R-4",
           "life": "alive",
@@ -58,17 +56,8 @@
     },
     "call": {"input":{"body":"Blunt.","id":"tn7Qm2Kx9Lp4Wz8R-4","title":"How I want to be talked to"},"name":"save_note"},
     "expect": {
-      "result": {
-        "note": {
-          "body": "Blunt.",
-          "id": "noteBBBBBBBBBBB1",
-          "position": 1,
-          "title": "How I want to be talked to",
-          "updatedAt": 1789136000000
-        },
-        "saved": true
-      },
-      "sha256": "a05f7eeb30cae126a51688351ffa329544c1ab105402c89e50faf503e8a2739d",
+      "result": {"note":{"body":"Blunt.","id":"noteBBBBBBBBBBB1","position":1,"title":"How I want to be talked to"},"saved":true},
+      "sha256": "66ba217f2ec83678c924f15ce91d45a85eb88b8821556e912c80dfc23a48a936",
       "writes": []
     }
   },

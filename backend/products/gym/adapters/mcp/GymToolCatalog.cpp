@@ -290,7 +290,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "Save a useful new user-provided insight for future coaching. Read list_notes first and avoid "
         "repeating existing information. Appends at the bottom of Notes, never edits, deletes or "
         "reorders existing notes. Exact title/body duplicates reuse the existing note. At most ten notes. "
-        "Answers {saved:true,note:{id,position,title,body,updatedAt}} only after durable save. Reusing "
+        "Answers {saved:true,note:{id,position,title,body}} only after durable save. Reusing "
         "the same id and text replays that original receipt without changing or restoring a note the "
         "user later edited or deleted. Report only what the successful receipt proves.", p, {"id", "title", "body"}));
   }

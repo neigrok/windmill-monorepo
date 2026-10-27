@@ -276,13 +276,21 @@ ToolResult lastTime(TrainingService& training, const UserId& caller, const Json:
   return ToolResult::json(out);
 }
 
-// The list and the single read share one wrapper. Pending proposals ride along as heads alone,
-// never their diff rows.
+// A routine's pending proposal rides along as its head alone, never its diff rows, and without the
+// server's receipt time (gym_coach.md INV-3): a replica holds none for a proposal it minted and has not
+// yet seen confirmed.
+Json::Value withoutReceiptTimes(Json::Value routines) {
+  for (Json::Value& routine : routines)
+    if (routine.isMember("pendingProposal")) routine["pendingProposal"].removeMember("createdAt");
+  return routines;
+}
+
+// The list and the single read share one wrapper.
 ToolResult listRoutines(ProgramRepository& program, const UserId& caller, const Json::Value& args) {
   Json::Value out(Json::objectValue);
   const std::vector<ProposalHead> pending = program.proposalHeads(caller, ProposalQuery{std::nullopt, true});
   if (args["routineId"].isNull()) {
-    out["routines"] = toJson(program.routines(caller), pending);
+    out["routines"] = withoutReceiptTimes(toJson(program.routines(caller), pending));
     return ToolResult::json(out);
   }
 
@@ -295,7 +303,7 @@ ToolResult listRoutines(ProgramRepository& program, const UserId& caller, const 
   if (!one)
     return ToolResult::failure("no routine of yours has that id. Call this tool with no routineId "
                                "to list the ones you own.");
-  out["routines"] = toJson(std::vector<Routine>{*one}, pending);
+  out["routines"] = withoutReceiptTimes(toJson(std::vector<Routine>{*one}, pending));
   return ToolResult::json(out);
 }
 
@@ -334,10 +342,16 @@ ToolResult listNotes(NotesRepository& notes, const UserId& caller) {
   return ToolResult::json(out);
 }
 
+// The note as every executor knows it: its rank among the alive notes, never the server's admission time.
 ToolResult noteReceipt(const Note& note) {
+  Json::Value saved(Json::objectValue);
+  saved["id"] = note.id.str();
+  saved["position"] = note.position;
+  saved["title"] = note.title;
+  saved["body"] = note.body;
   Json::Value out(Json::objectValue);
   out["saved"] = true;
-  out["note"] = toJson(note);
+  out["note"] = saved;
   return ToolResult::json(out);
 }
 
@@ -477,10 +491,12 @@ ToolResult createRoutine(ProgramRepository& program, GymWriteDoor& door, const U
   return ToolResult::json(toJson(*outcome.routine));
 }
 
-// No routine in this object at all: a proposal id, its state, the diff, and where a human decides.
+// No routine in this object at all: a proposal id, its state, the diff, and where a human decides. No
+// receipt time either: a replica that minted the proposal cannot know when the server took it (INV-3).
 ToolResult proposalReceipt(const RoutineProposal& proposal, const std::string& appBaseUrl) {
   Json::Value out(Json::objectValue);
   out["proposal"] = toJson(proposal);
+  out["proposal"].removeMember("createdAt");
   out["reviewUrl"] = proposalUrl(appBaseUrl, proposal.head.id);
   if (proposal.head.state == ProposalState::pending)
     out["note"] = "Nothing has changed. " + proposal.baseName +

@@ -2117,9 +2117,7 @@ TEST(gym_save_note_is_append_only_owner_scoped_and_granted_as_a_write) {
   CHECK_EQ(stored("select id from gym_notes"), std::vector<std::string>{"note_hand001"});
   const auto saved = me.call("save_note", input);
   REQUIRE(!saved.isError);
-  Json::Value expected(Json::objectValue);
-  expected["saved"] = true;
-  expected["note"] = toJson(Note{NoteId{"note_save001"}, h.user, "Schedule", "I train on Monday and Thursday.", 1, h.clock.now});
+  const Json::Value expected = parse(R"({"saved":true,"note":{"id":"note_save001","position":1,"title":"Schedule","body":"I train on Monday and Thursday."}})");
   CHECK_EQ(body(saved), expected);
   CHECK_EQ(body(me.call("save_note", input)), expected);
   CHECK(them.call("save_note", input).isError);

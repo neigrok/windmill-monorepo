@@ -45,8 +45,6 @@
       "writes": [
         {
           "f": {
-            "createdDoor": "ask",
-            "createdEntries": 3,
             "entries": [
               {
                 "exerciseId": "bench-press",
@@ -57,39 +55,11 @@
               {"exerciseId":"plank"}
             ],
             "name": "Bench 🏋️‍♀️ Café q̇",
-            "position": 1,
-            "revision": 1
+            "position": 1
           },
           "id": "tn7Qm2Kx9Lp4Wz8R-1",
           "life": "alive",
           "t": "routine"
-        },
-        {
-          "f": {
-            "snapshot": {
-              "entries": [
-                {
-                  "exerciseId": "bench-press",
-                  "position": 1,
-                  "restSeconds": 150,
-                  "sets": [{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]
-                },
-                {
-                  "exerciseId": "lateral-raise",
-                  "position": 2,
-                  "sets": [{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]
-                },
-                {"exerciseId":"plank","position":3}
-              ],
-              "id": "tn7Qm2Kx9Lp4Wz8R-1",
-              "name": "Bench 🏋️‍♀️ Café q̇",
-              "position": 1,
-              "revision": 1
-            }
-          },
-          "id": "tn7Qm2Kx9Lp4Wz8R-1",
-          "life": "alive",
-          "t": "routineCreation"
         }
       ]
     }

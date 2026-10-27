@@ -51,9 +51,11 @@ std::string pretty(const Json::Value& value, const std::string& indent) {
   return out + indent + (value.isObject() ? "}" : "]");
 }
 
-// The store a case starts from, one record to a line.
+// What a case starts from: the app's base URL when its answer links into the app, then the store, one record to a line.
 std::string givenText(const Json::Value& given) {
-  std::string out = "{\n      \"records\": [";
+  std::string out = "{\n";
+  if (given.isMember("appBaseUrl")) out += "      \"appBaseUrl\": " + sync::jcs(given["appBaseUrl"]) + ",\n";
+  out += "      \"records\": [";
   const Json::Value& records = given["records"];
   for (Json::ArrayIndex i = 0; i < records.size(); ++i) out += std::string(i ? "," : "") + "\n        " + sync::jcs(records[i]);
   out += records.empty() ? "]" : "\n      ]";
@@ -77,16 +79,35 @@ std::string fileText(const Json::Value& cases) {
   return out + "]\n";
 }
 
-// The account's gym records as the engine feeds them, keyed by type and id.
-std::map<std::pair<std::string, std::string>, sync::Row> records(const UserId& account) {
+// A record as the intent that wrote it holds it: its life and its client-written fields. A field the registry gives
+// `writer: server` (a revision, an admission or settlement instant, a supersession, a frozen base) is the server's
+// consequence of the write, which no replica writes, so it is never part of one.
+struct Authored {
+  std::string t;
+  Json::Value id;
+  bool alive = false;
+  Json::Value f{Json::objectValue};
+
+  bool operator==(const Authored& other) const { return alive == other.alive && sync::jcs(f) == sync::jcs(other.f); }
+};
+
+// The account's gym records as the engine feeds them, keyed by type and id, each as its writer authored it. A type
+// with no client-written field, a `routineCreation` receipt, is the server's alone and never listed.
+std::map<std::pair<std::string, std::string>, Authored> records(const UserId& account) {
   const auto catalog = sync::productCatalog();
   sync::PgSyncStore store{doortest::pool(), sync::Limits{}.lockTimeoutMs};
   const auto txn = store.begin(sync::TxnMode::snapshot);
   const auto scope = sync::ScopeKey::product(account, "gym");
-  std::map<std::pair<std::string, std::string>, sync::Row> rows;
-  for (const sync::TypeDef* type : catalog->typesIn(scope.registryScope()))
-    for (sync::Row& row : catalog->store(type->name).feed(*txn, scope, sync::FeedQuery{}))
-      rows.emplace(std::pair(row.t, row.id.key()), std::move(row));
+  std::map<std::pair<std::string, std::string>, Authored> rows;
+  for (const sync::TypeDef* type : catalog->typesIn(scope.registryScope())) {
+    if (std::ranges::none_of(type->fields, [](const auto& field) { return field.second.writer == sync::Writer::client; })) continue;
+    for (const sync::Row& row : catalog->store(type->name).feed(*txn, scope, sync::FeedQuery{})) {
+      Authored authored{row.t, row.id.json(), row.alive()};
+      for (const auto& [field, reg] : row.lattice.f)
+        if (const sync::FieldDef* def = type->field(field); def && def->writer == sync::Writer::client) authored.f[field] = reg.value;
+      rows.emplace(std::pair(row.t, row.id.key()), std::move(authored));
+    }
+  }
   return rows;
 }
 
@@ -114,33 +135,32 @@ void seed(const UserId& account, const Json::Value& given) {
   txn->commit();
 }
 
-// INV-2's comparison: each record the call created, changed or killed, by type and id, with its field values and
-// none of its stamps, seqs, receipt times or serials.
-Json::Value writesBetween(const std::map<std::pair<std::string, std::string>, sync::Row>& before,
-                          const std::map<std::pair<std::string, std::string>, sync::Row>& after) {
+// INV-2's comparison: each record whose life or client-written fields the call changed, by type and id, with those
+// fields and none of its stamps, seqs or receipt times. A record the server touched only in its own fields, a sibling
+// proposal it superseded, is no write of the call's.
+Json::Value writesBetween(const std::map<std::pair<std::string, std::string>, Authored>& before,
+                          const std::map<std::pair<std::string, std::string>, Authored>& after) {
   std::set<std::pair<std::string, std::string>> keys;
-  for (const auto& [key, row] : before) keys.insert(key);
-  for (const auto& [key, row] : after) keys.insert(key);
+  for (const auto& [key, record] : before) keys.insert(key);
+  for (const auto& [key, record] : after) keys.insert(key);
   Json::Value writes(Json::arrayValue);
   for (const auto& key : keys) {
     const auto was = before.find(key);
     const auto now = after.find(key);
-    if (was != before.end() && now != after.end() && sync::jcs(was->second.toJson()) == sync::jcs(now->second.toJson())) continue;
-    const sync::Row& row = now != after.end() ? now->second : was->second;
+    if (was != before.end() && now != after.end() && was->second == now->second) continue;
+    const Authored& record = now != after.end() ? now->second : was->second;
     Json::Value write(Json::objectValue);
-    write["t"] = row.t;
-    write["id"] = row.id.json();
-    write["life"] = now != after.end() && now->second.alive() ? "alive" : "dead";
-    if (now != after.end()) {
-      write["f"] = Json::Value(Json::objectValue);
-      for (const auto& [field, reg] : now->second.lattice.f) write["f"][field] = reg.value;
-    }
+    write["t"] = record.t;
+    write["id"] = record.id;
+    write["life"] = now != after.end() && now->second.alive ? "alive" : "dead";
+    if (now != after.end()) write["f"] = now->second.f;
     writes.append(write);
   }
   return writes;
 }
 
-// One case on a fresh gym: the records seeded, the links minted, the clock at `now`, the call made as Coach makes it.
+// One case on a fresh gym: the records seeded, the links minted, the clock at `now`, the call made as Coach makes it,
+// by an executor that builds its links on the case's `appBaseUrl`.
 Json::Value answer(const Json::Value& spec) {
   doortest::Harness h;
   h.clock.now = spec["now"].asUInt64();
@@ -149,10 +169,12 @@ Json::Value answer(const Json::Value& spec) {
     if (!h.training.share(h.user, SessionId{session.asString()})) throw std::runtime_error("no workout to share: " + session.asString());
   const auto before = records(h.user);
 
+  GymTools tools{h.training, h.door, h.repo.catalog, h.repo.program, h.repo.notes, h.repo.bodyweight,
+                 spec["given"].get("appBaseUrl", "").asString()};
   ReadReceipt run;
-  const ToolResult result = h.tools.callTool(spec["call"]["name"].asString(), spec["call"]["input"],
-                                             ToolCaller{h.user, ToolScope::everything()},
-                                             ProposalSource{ProposalDoor::ask, "", "", std::nullopt}, run);
+  const ToolResult result = tools.callTool(spec["call"]["name"].asString(), spec["call"]["input"],
+                                           ToolCaller{h.user, ToolScope::everything()},
+                                           ProposalSource{ProposalDoor::ask, "", "", std::nullopt}, run);
   const Json::Value writes = writesBetween(before, records(h.user));
   Json::Value expect(Json::objectValue);
   if (result.isError) {
@@ -160,6 +182,9 @@ Json::Value answer(const Json::Value& spec) {
     expect["refused"] = toolWriteOutcome(result);
     return expect;
   }
+  // A link is built on the base the case hands every executor, never on one only the server holds.
+  if ((result.payload.isMember("reviewUrl") || result.payload.isMember("url")) && !spec["given"].isMember("appBaseUrl"))
+    throw std::runtime_error("the answer links into the app and the case names no given.appBaseUrl");
   expect["result"] = result.payload;
   expect["sha256"] = sync::sha256(sync::jcs(result.payload)).hex();
   expect["writes"] = writes;
