@@ -1,0 +1,826 @@
+[
+  {
+    "case": "an empty store lists the seeded catalogue",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {"input":{},"name":"list_exercises"},
+    "expect": {
+      "result": {
+        "exercises": [
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "farmers-carry",
+            "loadCount": 2,
+            "name": "Farmers Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "overhead-carry",
+            "loadCount": 2,
+            "name": "Overhead Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "suitcase-carry",
+            "loadCount": 1,
+            "name": "Suitcase Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "ab-wheel-rollout",
+            "name": "Ab Wheel Rollout",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"cable-crunch","name":"Cable Crunch","pattern":"core","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "hanging-leg-raise",
+            "name": "Hanging Leg Raise",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"pallof-press","name":"Pallof Press","pattern":"core","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"plank","name":"Plank","pattern":"core","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "weighted-sit-up",
+            "name": "Weighted Sit Up",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "back-extension",
+            "name": "Back Extension",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"deadlift","name":"Deadlift","pattern":"hinge","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "good-morning",
+            "name": "Good Morning",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"hip-thrust","name":"Hip Thrust","pattern":"hinge","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "kettlebell",
+            "id": "kettlebell-swing",
+            "name": "Kettlebell Swing",
+            "pattern": "hinge",
+            "stepKg": 4
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "romanian-deadlift",
+            "name": "Romanian Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "sumo-deadlift",
+            "name": "Sumo Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "trap-bar-deadlift",
+            "name": "Trap Bar Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "barbell-curl",
+            "name": "Barbell Curl",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"cable-fly","name":"Cable Fly","pattern":"isolation","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-curl",
+            "loadCount": 2,
+            "name": "Dumbbell Curl",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-fly",
+            "loadCount": 2,
+            "name": "Dumbbell Fly",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "hammer-curl",
+            "loadCount": 2,
+            "name": "Hammer Curl",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "hip-abduction",
+            "name": "Hip Abduction",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "lateral-raise",
+            "loadCount": 2,
+            "name": "Lateral Raise",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "leg-extension",
+            "name": "Leg Extension",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "lying-leg-curl",
+            "name": "Lying Leg Curl",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "overhead-triceps-extension",
+            "loadCount": 1,
+            "name": "Overhead Triceps Extension",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "rear-delt-fly",
+            "loadCount": 2,
+            "name": "Rear Delt Fly",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "seated-calf-raise",
+            "name": "Seated Calf Raise",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "skull-crusher",
+            "name": "Skull Crusher",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "standing-calf-raise",
+            "name": "Standing Calf Raise",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "cable",
+            "id": "triceps-pushdown",
+            "name": "Triceps Pushdown",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "wrist-curl",
+            "name": "Wrist Curl",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"bench-press","name":"Bench Press","pattern":"press","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "close-grip-bench-press",
+            "name": "Close Grip Bench Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"bodyweight","id":"dip","name":"Dip","pattern":"press","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-bench-press",
+            "loadCount": 2,
+            "name": "Dumbbell Bench Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-shoulder-press",
+            "loadCount": 2,
+            "name": "Dumbbell Shoulder Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "incline-bench-press",
+            "name": "Incline Bench Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "incline-dumbbell-press",
+            "loadCount": 2,
+            "name": "Incline Dumbbell Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "machine-chest-press",
+            "name": "Machine Chest Press",
+            "pattern": "press",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "machine-shoulder-press",
+            "name": "Machine Shoulder Press",
+            "pattern": "press",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "overhead-press",
+            "name": "Overhead Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"push-press","name":"Push Press","pattern":"press","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"push-up","name":"Push Up","pattern":"press","stepKg":2.5},
+          {"custom":false,"equipment":"barbell","id":"barbell-row","name":"Barbell Row","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "barbell-shrug",
+            "name": "Barbell Shrug",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "chest-supported-row",
+            "name": "Chest Supported Row",
+            "pattern": "pull",
+            "stepKg": 5
+          },
+          {"custom":false,"equipment":"bodyweight","id":"chin-up","name":"Chin Up","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-row",
+            "loadCount": 1,
+            "name": "Dumbbell Row",
+            "pattern": "pull",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"cable","id":"face-pull","name":"Face Pull","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "inverted-row",
+            "name": "Inverted Row",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"lat-pulldown","name":"Lat Pulldown","pattern":"pull","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"muscle-up","name":"Muscle Up","pattern":"pull","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"pull-up","name":"Pull Up","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "cable",
+            "id": "seated-cable-row",
+            "name": "Seated Cable Row",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"back-squat","name":"Back Squat","pattern":"squat","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "bulgarian-split-squat",
+            "loadCount": 2,
+            "name": "Bulgarian Split Squat",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"barbell","id":"front-squat","name":"Front Squat","pattern":"squat","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "goblet-squat",
+            "loadCount": 1,
+            "name": "Goblet Squat",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"machine","id":"hack-squat","name":"Hack Squat","pattern":"squat","stepKg":5},
+          {"custom":false,"equipment":"machine","id":"leg-press","name":"Leg Press","pattern":"squat","stepKg":5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "step-up",
+            "loadCount": 2,
+            "name": "Step Up",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "walking-lunge",
+            "loadCount": 2,
+            "name": "Walking Lunge",
+            "pattern": "squat",
+            "stepKg": 2
+          }
+        ]
+      },
+      "sha256": "a256ca0f9a35da0c1a17e8573a470f6e49f4d96888eed1d69ea70ff16cb1f84c",
+      "writes": []
+    }
+  },
+  {
+    "case": "a custom movement with a fractional step joins the catalogue",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"equipment":["cable","1789136000000:0:r_aaaaaaaaaaaa"],"name":["Bench 🏋️‍♀️ Café q̇","1789136000000:0:r_aaaaaaaaaaaa"],"pattern":["isolation","1789136000000:0:r_aaaaaaaaaaaa"],"stepKg":[1.25,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"exCUSTOMCUSTOM01","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"exercise"}
+      ]
+    },
+    "call": {"input":{},"name":"list_exercises"},
+    "expect": {
+      "result": {
+        "exercises": [
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "farmers-carry",
+            "loadCount": 2,
+            "name": "Farmers Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "overhead-carry",
+            "loadCount": 2,
+            "name": "Overhead Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "suitcase-carry",
+            "loadCount": 1,
+            "name": "Suitcase Carry",
+            "pattern": "carry",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "ab-wheel-rollout",
+            "name": "Ab Wheel Rollout",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"cable-crunch","name":"Cable Crunch","pattern":"core","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "hanging-leg-raise",
+            "name": "Hanging Leg Raise",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"pallof-press","name":"Pallof Press","pattern":"core","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"plank","name":"Plank","pattern":"core","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "weighted-sit-up",
+            "name": "Weighted Sit Up",
+            "pattern": "core",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "back-extension",
+            "name": "Back Extension",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"deadlift","name":"Deadlift","pattern":"hinge","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "good-morning",
+            "name": "Good Morning",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"hip-thrust","name":"Hip Thrust","pattern":"hinge","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "kettlebell",
+            "id": "kettlebell-swing",
+            "name": "Kettlebell Swing",
+            "pattern": "hinge",
+            "stepKg": 4
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "romanian-deadlift",
+            "name": "Romanian Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "sumo-deadlift",
+            "name": "Sumo Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "trap-bar-deadlift",
+            "name": "Trap Bar Deadlift",
+            "pattern": "hinge",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "barbell-curl",
+            "name": "Barbell Curl",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {
+            "custom": true,
+            "equipment": "cable",
+            "id": "exCUSTOMCUSTOM01",
+            "name": "Bench 🏋️‍♀️ Café q̇",
+            "pattern": "isolation",
+            "stepKg": 1.25
+          },
+          {"custom":false,"equipment":"cable","id":"cable-fly","name":"Cable Fly","pattern":"isolation","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-curl",
+            "loadCount": 2,
+            "name": "Dumbbell Curl",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-fly",
+            "loadCount": 2,
+            "name": "Dumbbell Fly",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "hammer-curl",
+            "loadCount": 2,
+            "name": "Hammer Curl",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "hip-abduction",
+            "name": "Hip Abduction",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "lateral-raise",
+            "loadCount": 2,
+            "name": "Lateral Raise",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "leg-extension",
+            "name": "Leg Extension",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "lying-leg-curl",
+            "name": "Lying Leg Curl",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "overhead-triceps-extension",
+            "loadCount": 1,
+            "name": "Overhead Triceps Extension",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "rear-delt-fly",
+            "loadCount": 2,
+            "name": "Rear Delt Fly",
+            "pattern": "isolation",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "seated-calf-raise",
+            "name": "Seated Calf Raise",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "skull-crusher",
+            "name": "Skull Crusher",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "standing-calf-raise",
+            "name": "Standing Calf Raise",
+            "pattern": "isolation",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "cable",
+            "id": "triceps-pushdown",
+            "name": "Triceps Pushdown",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "wrist-curl",
+            "name": "Wrist Curl",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"bench-press","name":"Bench Press","pattern":"press","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "close-grip-bench-press",
+            "name": "Close Grip Bench Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"bodyweight","id":"dip","name":"Dip","pattern":"press","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-bench-press",
+            "loadCount": 2,
+            "name": "Dumbbell Bench Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-shoulder-press",
+            "loadCount": 2,
+            "name": "Dumbbell Shoulder Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "incline-bench-press",
+            "name": "Incline Bench Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "incline-dumbbell-press",
+            "loadCount": 2,
+            "name": "Incline Dumbbell Press",
+            "pattern": "press",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "machine-chest-press",
+            "name": "Machine Chest Press",
+            "pattern": "press",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "machine-shoulder-press",
+            "name": "Machine Shoulder Press",
+            "pattern": "press",
+            "stepKg": 5
+          },
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "overhead-press",
+            "name": "Overhead Press",
+            "pattern": "press",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"push-press","name":"Push Press","pattern":"press","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"push-up","name":"Push Up","pattern":"press","stepKg":2.5},
+          {"custom":false,"equipment":"barbell","id":"barbell-row","name":"Barbell Row","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "barbell",
+            "id": "barbell-shrug",
+            "name": "Barbell Shrug",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {
+            "custom": false,
+            "equipment": "machine",
+            "id": "chest-supported-row",
+            "name": "Chest Supported Row",
+            "pattern": "pull",
+            "stepKg": 5
+          },
+          {"custom":false,"equipment":"bodyweight","id":"chin-up","name":"Chin Up","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "dumbbell-row",
+            "loadCount": 1,
+            "name": "Dumbbell Row",
+            "pattern": "pull",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"cable","id":"face-pull","name":"Face Pull","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "bodyweight",
+            "id": "inverted-row",
+            "name": "Inverted Row",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"cable","id":"lat-pulldown","name":"Lat Pulldown","pattern":"pull","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"muscle-up","name":"Muscle Up","pattern":"pull","stepKg":2.5},
+          {"custom":false,"equipment":"bodyweight","id":"pull-up","name":"Pull Up","pattern":"pull","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "cable",
+            "id": "seated-cable-row",
+            "name": "Seated Cable Row",
+            "pattern": "pull",
+            "stepKg": 2.5
+          },
+          {"custom":false,"equipment":"barbell","id":"back-squat","name":"Back Squat","pattern":"squat","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "bulgarian-split-squat",
+            "loadCount": 2,
+            "name": "Bulgarian Split Squat",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"barbell","id":"front-squat","name":"Front Squat","pattern":"squat","stepKg":2.5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "goblet-squat",
+            "loadCount": 1,
+            "name": "Goblet Squat",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {"custom":false,"equipment":"machine","id":"hack-squat","name":"Hack Squat","pattern":"squat","stepKg":5},
+          {"custom":false,"equipment":"machine","id":"leg-press","name":"Leg Press","pattern":"squat","stepKg":5},
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "step-up",
+            "loadCount": 2,
+            "name": "Step Up",
+            "pattern": "squat",
+            "stepKg": 2
+          },
+          {
+            "custom": false,
+            "equipment": "dumbbell",
+            "id": "walking-lunge",
+            "loadCount": 2,
+            "name": "Walking Lunge",
+            "pattern": "squat",
+            "stepKg": 2
+          }
+        ]
+      },
+      "sha256": "9c2592bc94451bb82b50e0378603a63cccccf0a4cfb817a30b19d5114f1e82da",
+      "writes": []
+    }
+  }
+]

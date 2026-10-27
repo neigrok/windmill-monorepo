@@ -10,6 +10,62 @@ authoritative registry schema, the test-only `probe` product, the reference mode
 and the golden corpus every engine implementation passes for its role. [sync/README.md](sync/README.md)
 has the layout and commands; [sync/corpus/README.md](sync/corpus/README.md) the vector shapes.
 
+## `gym/catalog.json`
+
+The gym ability catalog ([gym_coach.md](../../docs/foundation/mobile/gym_coach.md) §3.1, Appendix C):
+`{"catalog": "catalog/1", "abilities": [...]}`, one entry per ability with `name`, `description`,
+`input`, `result`, `class`, `agent`, `seats`, `phrase` and `ui`.
+
+- `name`, `description` and `input` are byte-equal under JCS to the `name`, `description` and
+  `inputSchema` that `gymToolCatalog()` declares for the tool of that name, so MCP and Coach publish
+  this file's words. Appendix C's `rename_exercise` is the server's `update_exercise`.
+- An entry marked `"declared": false` names an ability the server declares no tool for (`get_record`,
+  `get_preferences`, `share_log`, and the withheld log, note, bodyweight and settings edits). Its `input`
+  and `result` are drawn from the domain; the pin skips it.
+- `result` is the JSON Schema of the payload the server tool answers on success, its `read` tally
+  included. Every object in every `result` and every `input` sets `additionalProperties: false` and
+  lists `required`, except three `input` objects the test pins as open: `create_routine`'s
+  `pendingProposal` and the set items of `create_routine` and `propose_routine_change`. Four tools
+  (`log_sets`, `import_session`, `get_sessions`, `get_last_times`) also publish an MCP `outputSchema`
+  of their own.
+- `class`, `agent` and `seats` follow Appendix C, with `save_note` at `seats: "bound"`. A `read` is a
+  `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
+- `phrase` is the step-line text a Coach client prints for a call, the same words the web and Android
+  phrase tables hold today.
+
+Read as a test by `backend/test/products/gym/adapters/mcp/CatalogContractTest.cpp`, which embeds the
+file into `windmill_gym` at configure time (`catalogText()`). A change to this file or to a tool
+declaration that breaks the pin fails `ctest -R mcp`.
+
+## `gym/abilities/`
+
+The ability conformance corpus (gym_coach.md §3.5): one `<name>.json` for every declared ability
+Coach is offered (`agent` other than `withheld`), each an array of
+`{case, seat, now, zone, given, call: {name, input}, expect}`.
+
+- `given.records` are engine records as a page carries them (`engine.md` §9.1): `{t, id, seq, rc, ru,
+  born?, life?, f: {field: [value, stamp]}, v?}`, in the field names of `sync/gym.registry.json`.
+  `given.shares` lists workouts holding a live share link, a server record that only the server
+  executor reads.
+- `expect` is `{result, sha256, writes}` or `{refused: <code>}`. `sha256` is the SHA-256 of the JCS
+  bytes of `result`. `writes` lists each record the call created, changed or killed, by `t` and `id`,
+  with `life` and its field values, without stamps, `seq`, `rc`, `ru` or serials (INV-2).
+- A refusal's code is the server tool's outcome code: `refused` for a rule's refusal,
+  `invalid-arguments` for a malformed input.
+- The server runs every case as Coach does, for the account, with proposals stamped `door: ask` and
+  no thread, and share and review links on `https://windmill.works`.
+
+Read as a test by `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp` under
+`WM_PG_TEST` (`backend/RUNNING.md` §7): each case seeds its records into the account's gym scope on
+`WM_SYNC_DATABASE_URL`, calls `GymTools`, and compares the answer's JCS bytes and SHA-256. The server
+is the golden source: with `WM_GENERATE_ABILITIES=1` the same run writes each `expect` from the
+server's answer instead of comparing it.
+
+```sh
+WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
+  WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ./backend/build/windmill_mcp_tests
+```
+
 ## `genesis.js`
 
 A locally-born tree's first sync converges with the server's empty tree only while this seed is

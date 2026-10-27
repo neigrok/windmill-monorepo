@@ -1,0 +1,4612 @@
+{
+  "catalog": "catalog/1",
+  "abilities": [
+    {
+      "name": "list_routines",
+      "description": "Your program: each routine with its entries, most recently trained first. An entry's target is its `sets` scheme — one item per set in the order lifted, each naming its own `reps` (omitted means `max`) and `weightKg` (omitted means last time's set of that number), so a ramp reads [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}] and a straight `5 × 5 · 80` is five identical items. An entry with no `sets` is OPEN: the numbers are decided at the rack, and the absence is never an empty array. `revision` is the routine's version; read it and never send it. `pendingProposal` is present ONLY while a change is waiting for the lifter to tap Apply — the newest one, from any connection or from the app's own Coach; its `source` says whose. Read it before you propose anything: a new proposal of yours on that routine replaces the one YOU already have waiting there and leaves another agent's standing.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "routineId": {
+            "description": "Narrow to one routine. Omitted, every routine you own.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "routines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "revision": {
+                  "type": "integer"
+                },
+                "lastTrainedAt": {
+                  "type": "integer"
+                },
+                "entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "position": {
+                        "type": "integer"
+                      },
+                      "exerciseId": {
+                        "type": "string"
+                      },
+                      "sets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "reps": {
+                              "type": "integer"
+                            },
+                            "weightKg": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [],
+                          "additionalProperties": false
+                        }
+                      },
+                      "restSeconds": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "position",
+                      "exerciseId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "pendingProposal": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "routineId": {
+                      "type": "string"
+                    },
+                    "intent": {
+                      "type": "string",
+                      "enum": [
+                        "revise",
+                        "remove"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "applied",
+                        "dismissed",
+                        "superseded"
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "changeCount": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "integer"
+                    },
+                    "settledAt": {
+                      "type": "integer"
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "door": {
+                          "type": "string",
+                          "enum": [
+                            "ask",
+                            "mcp"
+                          ]
+                        },
+                        "connection": {
+                          "type": "string"
+                        },
+                        "agent": {
+                          "type": "string"
+                        },
+                        "thread": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "door"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "routineId",
+                    "intent",
+                    "state",
+                    "summary",
+                    "changeCount",
+                    "createdAt",
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "position",
+                "revision",
+                "entries"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "routines"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your program",
+      "ui": "Routines"
+    },
+    {
+      "name": "list_exercises",
+      "description": "The movement catalog you log against: the seeded movements plus the ones you created. Each row is {id, name, pattern, equipment, stepKg, custom}, plus `loadCount` for dumbbells, and that `id` is the `exerciseId` every set and routine entry names. Takes no arguments.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "exercises": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pattern": {
+                  "type": "string",
+                  "enum": [
+                    "squat",
+                    "hinge",
+                    "press",
+                    "pull",
+                    "carry",
+                    "core",
+                    "isolation"
+                  ]
+                },
+                "equipment": {
+                  "type": "string",
+                  "enum": [
+                    "barbell",
+                    "dumbbell",
+                    "machine",
+                    "cable",
+                    "bodyweight",
+                    "kettlebell"
+                  ]
+                },
+                "loadCount": {
+                  "type": "integer"
+                },
+                "stepKg": {
+                  "type": "number"
+                },
+                "custom": {
+                  "type": "boolean"
+                },
+                "aliases": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "pattern",
+                "equipment",
+                "stepKg",
+                "custom"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "exercises"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your movement list",
+      "ui": "movement picker"
+    },
+    {
+      "name": "list_sessions",
+      "description": "Your training log, newest first — one row per workout: the session, `setCount` (every set it held) beside `workingSetCount` (only the working ones, which are the only sets that count toward anything), `tonnageKg` (the load those working sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley estimate any working set in it earned — the session's own number, not the heaviest set's), `record` (a personal record happened in that workout — best e1RM, most reps at a load, or the heaviest load, judged against the log as it stands now, and false on around 190 rows in 200), and `closedItself` (the four-hour rule ended it rather than a tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two workouts can start in the same millisecond.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "description": "Page from the previous page's LAST row: its `startedAt`.",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "beforeId": {
+            "description": "That same row's `id`. Send it with `before` — an id alone names no row.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "How many workouts (default 20).",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "integer"
+                },
+                "finishedAt": {
+                  "type": "integer"
+                },
+                "routineId": {
+                  "type": "string"
+                },
+                "plan": {
+                  "type": "object",
+                  "properties": {
+                    "routine": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "exerciseId": {
+                            "type": "string"
+                          },
+                          "sets": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "reps": {
+                                  "type": "integer"
+                                },
+                                "weightKg": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [],
+                              "additionalProperties": false
+                            }
+                          },
+                          "restSeconds": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "exerciseId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "routine",
+                    "entries"
+                  ],
+                  "additionalProperties": false
+                },
+                "routineName": {
+                  "type": "string"
+                },
+                "setCount": {
+                  "type": "integer"
+                },
+                "workingSetCount": {
+                  "type": "integer"
+                },
+                "tonnageKg": {
+                  "type": "number"
+                },
+                "exercises": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "topSet": {
+                  "type": "object",
+                  "properties": {
+                    "weightKg": {
+                      "type": "number"
+                    },
+                    "reps": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "weightKg",
+                    "reps"
+                  ],
+                  "additionalProperties": false
+                },
+                "topE1rm": {
+                  "type": "number"
+                },
+                "record": {
+                  "type": "boolean"
+                },
+                "closedItself": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "startedAt",
+                "setCount",
+                "workingSetCount",
+                "tonnageKg",
+                "exercises",
+                "record",
+                "closedItself"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your recent workouts",
+      "ui": "Log, history filters"
+    },
+    {
+      "name": "get_session",
+      "description": "One workout of yours with every set in it, in the order they were logged. A workout started from a routine carries `plan`, the routine frozen at the start: each line's `sets` scheme, one item per set in the order lifted (a ramp reads [{\"reps\":5,\"weightKg\":60},…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With `review: true` the reply also carries the finish readout — duration, working sets, top e1RM, at most one record, and the comparison against the last time you trained that day of the program.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "review": {
+            "description": "Add the finish readout to the reply (default false).",
+            "type": "boolean"
+          },
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "integer"
+              },
+              "finishedAt": {
+                "type": "integer"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "object",
+                "properties": {
+                  "routine": {
+                    "type": "string"
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "exerciseId": {
+                          "type": "string"
+                        },
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "exerciseId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "routine",
+                  "entries"
+                ],
+                "additionalProperties": false
+              },
+              "routineName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "startedAt"
+            ],
+            "additionalProperties": false
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "exerciseId": {
+                  "type": "string"
+                },
+                "setNumber": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "warmup",
+                    "working",
+                    "drop",
+                    "failure"
+                  ]
+                },
+                "rpe": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "completedAt": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "setNumber",
+                "weightKg",
+                "reps",
+                "kind",
+                "note",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "review": {
+            "type": "object",
+            "properties": {
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "durationMs": {
+                    "type": "integer"
+                  },
+                  "workingSets": {
+                    "type": "integer"
+                  },
+                  "topE1rm": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "durationMs",
+                  "workingSets"
+                ],
+                "additionalProperties": false
+              },
+              "slight": {
+                "type": "boolean"
+              },
+              "record": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "e1rm",
+                      "heaviest",
+                      "reps-at-weight"
+                    ]
+                  },
+                  "exerciseId": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  },
+                  "weightKg": {
+                    "type": "number"
+                  },
+                  "reps": {
+                    "type": "integer"
+                  },
+                  "previous": {
+                    "type": "number"
+                  },
+                  "previousAt": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "exerciseId",
+                  "value",
+                  "weightKg",
+                  "reps",
+                  "previous",
+                  "previousAt"
+                ],
+                "additionalProperties": false
+              },
+              "against": {
+                "type": "object",
+                "properties": {
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "routine": {
+                    "type": "string"
+                  },
+                  "startedAt": {
+                    "type": "integer"
+                  },
+                  "movements": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "exerciseId": {
+                          "type": "string"
+                        },
+                        "now": {
+                          "type": "object",
+                          "properties": {
+                            "weightKg": {
+                              "type": "number"
+                            },
+                            "reps": {
+                              "type": "integer"
+                            },
+                            "sets": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "weightKg",
+                            "reps",
+                            "sets"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "before": {
+                          "type": "object",
+                          "properties": {
+                            "weightKg": {
+                              "type": "number"
+                            },
+                            "reps": {
+                              "type": "integer"
+                            },
+                            "sets": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "weightKg",
+                            "reps",
+                            "sets"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "planned": {
+                          "type": "object",
+                          "properties": {
+                            "sets": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "reps": {
+                                    "type": "integer"
+                                  },
+                                  "weightKg": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "exerciseId",
+                        "now"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "startedAt",
+                  "movements"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "stats",
+              "slight"
+            ],
+            "additionalProperties": false
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "session",
+          "sets",
+          "read"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read one workout",
+      "ui": "workout detail"
+    },
+    {
+      "name": "get_sessions",
+      "description": "Read 1..50 exact workouts with their sets, in requested order, plus missingSessionIds. Optionally include review. The complete tools/call result is limited to 262144 serialized bytes; request fewer ids or omit review if refused.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "review": {
+            "description": "Include each workout's review; defaults to false.",
+            "type": "boolean"
+          },
+          "sessionIds": {
+            "description": "1..50 exact ids; results preserve this order and identify missing ids explicitly.",
+            "items": {
+              "description": "Exact id.",
+              "maxLength": 128,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "sessionIds"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": "integer"
+                    },
+                    "finishedAt": {
+                      "type": "integer"
+                    },
+                    "routineId": {
+                      "type": "string"
+                    },
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "routine": {
+                          "type": "string"
+                        },
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exerciseId": {
+                                "type": "string"
+                              },
+                              "sets": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reps": {
+                                      "type": "integer"
+                                    },
+                                    "weightKg": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "restSeconds": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "exerciseId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "routine",
+                        "entries"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "routineName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "startedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "sets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "exerciseId": {
+                        "type": "string"
+                      },
+                      "setNumber": {
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "type": "number"
+                      },
+                      "reps": {
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "warmup",
+                          "working",
+                          "drop",
+                          "failure"
+                        ]
+                      },
+                      "rpe": {
+                        "type": "number"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "completedAt": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "exerciseId",
+                      "setNumber",
+                      "weightKg",
+                      "reps",
+                      "kind",
+                      "note",
+                      "completedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "review": {
+                  "type": "object",
+                  "properties": {
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "durationMs": {
+                          "type": "integer"
+                        },
+                        "workingSets": {
+                          "type": "integer"
+                        },
+                        "topE1rm": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "durationMs",
+                        "workingSets"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "slight": {
+                      "type": "boolean"
+                    },
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "e1rm",
+                            "heaviest",
+                            "reps-at-weight"
+                          ]
+                        },
+                        "exerciseId": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "number"
+                        },
+                        "weightKg": {
+                          "type": "number"
+                        },
+                        "reps": {
+                          "type": "integer"
+                        },
+                        "previous": {
+                          "type": "number"
+                        },
+                        "previousAt": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "exerciseId",
+                        "value",
+                        "weightKg",
+                        "reps",
+                        "previous",
+                        "previousAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "against": {
+                      "type": "object",
+                      "properties": {
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "routine": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "integer"
+                        },
+                        "movements": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exerciseId": {
+                                "type": "string"
+                              },
+                              "now": {
+                                "type": "object",
+                                "properties": {
+                                  "weightKg": {
+                                    "type": "number"
+                                  },
+                                  "reps": {
+                                    "type": "integer"
+                                  },
+                                  "sets": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "weightKg",
+                                  "reps",
+                                  "sets"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "before": {
+                                "type": "object",
+                                "properties": {
+                                  "weightKg": {
+                                    "type": "number"
+                                  },
+                                  "reps": {
+                                    "type": "integer"
+                                  },
+                                  "sets": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "weightKg",
+                                  "reps",
+                                  "sets"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "planned": {
+                                "type": "object",
+                                "properties": {
+                                  "sets": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "reps": {
+                                          "type": "integer"
+                                        },
+                                        "weightKg": {
+                                          "type": "number"
+                                        }
+                                      },
+                                      "required": [],
+                                      "additionalProperties": false
+                                    }
+                                  }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "exerciseId",
+                              "now"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "sessionId",
+                        "startedAt",
+                        "movements"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "stats",
+                    "slight"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "session",
+                "sets"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "missingSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "sessions",
+          "missingSessionIds"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your workouts",
+      "ui": "none"
+    },
+    {
+      "name": "last_time",
+      "description": "What you did the last time you trained one movement: that workout (with its frozen `plan`, whose lines carry their `sets` scheme — a ramp reads [{\"reps\":5,\"weightKg\":60},…,{\"reps\":1,\"weightKg\":100}]), the day of the program it was on, and its sets of that movement — the numbers a logger prefills, set N from last time's set N. A movement you have never trained answers with the movement and nothing else, which is a fact rather than an error.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "exerciseId": {
+            "description": "The movement's id — list_exercises answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exerciseId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "exerciseId": {
+            "type": "string"
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "integer"
+              },
+              "finishedAt": {
+                "type": "integer"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "object",
+                "properties": {
+                  "routine": {
+                    "type": "string"
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "exerciseId": {
+                          "type": "string"
+                        },
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "exerciseId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "routine",
+                  "entries"
+                ],
+                "additionalProperties": false
+              },
+              "routineName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "startedAt"
+            ],
+            "additionalProperties": false
+          },
+          "routine": {
+            "type": "string"
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "exerciseId": {
+                  "type": "string"
+                },
+                "setNumber": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "warmup",
+                    "working",
+                    "drop",
+                    "failure"
+                  ]
+                },
+                "rpe": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "completedAt": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "setNumber",
+                "weightKg",
+                "reps",
+                "kind",
+                "note",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "exerciseId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read the last time you trained a movement",
+      "ui": "logger prefill"
+    },
+    {
+      "name": "get_last_times",
+      "description": "Read the last completed workout for 1..50 exact exercise ids in requested order. trained:false means no completed non-warmup set history; missingExerciseIds names exercises outside the available catalog. The complete result is limited to 262144 serialized bytes; retry with fewer ids if refused.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "exerciseIds": {
+            "description": "1..50 exact ids; results preserve this order and identify missing ids explicitly.",
+            "items": {
+              "description": "Exact id.",
+              "maxLength": 128,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "exerciseIds"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "exercises": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "exerciseId": {
+                  "type": "string"
+                },
+                "trained": {
+                  "type": "boolean"
+                },
+                "session": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "startedAt": {
+                      "type": "integer"
+                    },
+                    "finishedAt": {
+                      "type": "integer"
+                    },
+                    "routineId": {
+                      "type": "string"
+                    },
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "routine": {
+                          "type": "string"
+                        },
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exerciseId": {
+                                "type": "string"
+                              },
+                              "sets": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "reps": {
+                                      "type": "integer"
+                                    },
+                                    "weightKg": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "restSeconds": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "exerciseId"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "routine",
+                        "entries"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "routineName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "startedAt"
+                  ],
+                  "additionalProperties": false
+                },
+                "sets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "exerciseId": {
+                        "type": "string"
+                      },
+                      "setNumber": {
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "type": "number"
+                      },
+                      "reps": {
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "warmup",
+                          "working",
+                          "drop",
+                          "failure"
+                        ]
+                      },
+                      "rpe": {
+                        "type": "number"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "completedAt": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "exerciseId",
+                      "setNumber",
+                      "weightKg",
+                      "reps",
+                      "kind",
+                      "note",
+                      "completedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "exerciseId",
+                "trained"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "missingExerciseIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "exercises",
+          "missingExerciseIds"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read the last time you trained each movement",
+      "ui": "logger prefill"
+    },
+    {
+      "name": "get_stats",
+      "description": "The long view over your FINISHED workouts: sessions and working sets per week (Monday to Monday, UTC — a week you did not train is present and zero), and per movement its line of top working sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is no volume, no score and no streak here — every number is a fact with a direction.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "exerciseId": {
+            "description": "Narrow to one movement's line. Omitted, every movement you have trained.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "weeks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "startedAt": {
+                  "type": "integer"
+                },
+                "sessions": {
+                  "type": "integer"
+                },
+                "workingSets": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "startedAt",
+                "sessions",
+                "workingSets"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "movements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "exerciseId": {
+                  "type": "string"
+                },
+                "lastTrainedAt": {
+                  "type": "integer"
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "type": "number"
+                      },
+                      "reps": {
+                        "type": "integer"
+                      },
+                      "e1rm": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "at",
+                      "weightKg",
+                      "reps"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "bestE1rm": {
+                  "type": "object",
+                  "properties": {
+                    "weightKg": {
+                      "type": "number"
+                    },
+                    "reps": {
+                      "type": "integer"
+                    },
+                    "at": {
+                      "type": "integer"
+                    },
+                    "e1rm": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "weightKg",
+                    "reps",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "heaviest": {
+                  "type": "object",
+                  "properties": {
+                    "weightKg": {
+                      "type": "number"
+                    },
+                    "reps": {
+                      "type": "integer"
+                    },
+                    "at": {
+                      "type": "integer"
+                    },
+                    "e1rm": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "weightKg",
+                    "reps",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "exerciseId",
+                "lastTrainedAt",
+                "points"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "read": {
+            "type": "object",
+            "properties": {
+              "sets": {
+                "type": "integer"
+              },
+              "sessions": {
+                "type": "integer"
+              },
+              "weeks": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sets",
+              "sessions",
+              "weeks"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "weeks",
+          "movements"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your movement history",
+      "ui": "Progress"
+    },
+    {
+      "name": "get_record",
+      "declared": false,
+      "description": "The record of one movement: its best e1RM, heaviest set, record steps and recent days.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "exerciseId": {
+            "type": "string",
+            "description": "The movement's id — list_exercises answers with it."
+          }
+        },
+        "required": [
+          "exerciseId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "exercise": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string",
+                "enum": [
+                  "squat",
+                  "hinge",
+                  "press",
+                  "pull",
+                  "carry",
+                  "core",
+                  "isolation"
+                ]
+              },
+              "equipment": {
+                "type": "string",
+                "enum": [
+                  "barbell",
+                  "dumbbell",
+                  "machine",
+                  "cable",
+                  "bodyweight",
+                  "kettlebell"
+                ]
+              },
+              "loadCount": {
+                "type": "integer"
+              },
+              "stepKg": {
+                "type": "number"
+              },
+              "custom": {
+                "type": "boolean"
+              },
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "pattern",
+              "equipment",
+              "stepKg",
+              "custom"
+            ],
+            "additionalProperties": false
+          },
+          "routineCount": {
+            "type": "integer"
+          },
+          "routines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sessionCount": {
+            "type": "integer"
+          },
+          "bestE1rm": {
+            "type": "object",
+            "properties": {
+              "weightKg": {
+                "type": "number"
+              },
+              "reps": {
+                "type": "integer"
+              },
+              "at": {
+                "type": "integer"
+              },
+              "e1rm": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "weightKg",
+              "reps",
+              "at"
+            ],
+            "additionalProperties": false
+          },
+          "heaviest": {
+            "type": "object",
+            "properties": {
+              "weightKg": {
+                "type": "number"
+              },
+              "reps": {
+                "type": "integer"
+              },
+              "at": {
+                "type": "integer"
+              },
+              "e1rm": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "weightKg",
+              "reps",
+              "at"
+            ],
+            "additionalProperties": false
+          },
+          "e1rmSeries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "e1rm": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "at",
+                "weightKg",
+                "reps",
+                "e1rm"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "e1rm": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "at",
+                "weightKg",
+                "reps",
+                "e1rm"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recentDays": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "integer"
+                },
+                "sets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "exerciseId": {
+                        "type": "string"
+                      },
+                      "setNumber": {
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "type": "number"
+                      },
+                      "reps": {
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "warmup",
+                          "working",
+                          "drop",
+                          "failure"
+                        ]
+                      },
+                      "rpe": {
+                        "type": "number"
+                      },
+                      "note": {
+                        "type": "string"
+                      },
+                      "completedAt": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "exerciseId",
+                      "setNumber",
+                      "weightKg",
+                      "reps",
+                      "kind",
+                      "note",
+                      "completedAt"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "sessionId",
+                "startedAt",
+                "sets"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "exercise",
+          "routineCount",
+          "sessionCount"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read a movement's record",
+      "ui": "movement record"
+    },
+    {
+      "name": "list_notes",
+      "description": "The lifter's standing instructions and useful user-provided insights saved for Coach — at most ten, each a title of up to 60 characters and a body of up to 500 bytes, stored exactly as typed. They are the lifter's own standing instructions to you (how to talk to them, what they are training for, the programme they run), and the order is precedence: the top note wins where two disagree. Follow them. A set's `note` is a record of that set and not one of these. Answers {notes: [{position, title, body}]} and carries no `read` block: a note is not a log row. Takes no arguments.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "position",
+                "title",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your notes",
+      "ui": "Notes"
+    },
+    {
+      "name": "list_bodyweight",
+      "description": "The lifter's weigh-ins, one per local calendar day, oldest first: {entries: [{dateLocal, weightKg}]}. Kilograms, two decimals, and the day is the lifter's own calendar rather than an instant. Narrow with `from` and `to`. Carries no `read` block: a weigh-in is not a log row. There is no tool that writes one, at any level, and there never will be — a bodyweight is a fact only the lifter observed, so an agent writing one would be inventing a number. Say what the series did and never estimate a weight the entries do not give you.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "The first day to include, YYYY-MM-DD, inclusive. Omitted, from the first weigh-in.",
+            "type": "string"
+          },
+          "to": {
+            "description": "The last day to include, YYYY-MM-DD, inclusive. Omitted, to the last weigh-in.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dateLocal": {
+                  "type": "string"
+                },
+                "weightKg": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "dateLocal",
+                "weightKg"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your bodyweight",
+      "ui": "Bodyweight"
+    },
+    {
+      "name": "get_preferences",
+      "declared": false,
+      "description": "The lifter's own dials: units, rest target and confirmation feedback.",
+      "input": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "type": "string",
+            "enum": [
+              "kg",
+              "lb"
+            ]
+          },
+          "restSeconds": {
+            "type": "integer"
+          },
+          "restSound": {
+            "type": "boolean"
+          },
+          "confirmHaptic": {
+            "type": "boolean"
+          },
+          "confirmSound": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "units",
+          "restSound",
+          "confirmHaptic",
+          "confirmSound"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "read your settings",
+      "ui": "Settings"
+    },
+    {
+      "name": "create_routine",
+      "description": "Review the user's goals and collect necessary missing constraints before creating training. Add a NEW day to the program. This one LANDS IMMEDIATELY, and that is the rule rather than an exception: a day that did not exist takes nothing away, the lifter sees it the next time they open Routines, and they can edit or delete it themselves. Changing a day that already stands is NOT this tool's — send that to propose_routine_change, which writes nothing and waits for the lifter's tap. YOU mint `id` and it IS the idempotency key: send the SAME id with the SAME document to replay a lost reply and the stored routine comes back untouched, and send it with a DIFFERENT document and you are refused, because that is a change to a day that already stands and this tool would land it without asking anyone. Each line's target is its `sets` scheme: five identical items for `5 × 5 · 80`, or a ramp [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}]; leave `sets` out to leave the line open.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "description": "The lines of the day, in order — their order IS the routine's order and positions are assigned 1..n from it. At least one, at most 50.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exerciseId": {
+                  "description": "The movement's id — list_exercises answers with it.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "Ignored — the order these arrive in IS the order.",
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "restSeconds": {
+                  "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",
+                  "maximum": 900,
+                  "minimum": 15,
+                  "type": "integer"
+                },
+                "sets": {
+                  "description": "The line's target as a SCHEME: one item per set, in the order lifted, 1 to 20. A straight `5 × 5 · 80` is five identical items; a ramp `60×5 · 80×5 · 90×3 · 100×1 · 80×5` is [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}]. OMIT the whole key to leave the line OPEN — the movement is in the day and the numbers are decided at the rack. An empty array is refused: a zero target is no target.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reps": {
+                        "description": "Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "description": "Load for THIS set in kg, inside ±500. OMIT to mean what they lifted for the set of the same number last time.",
+                        "maximum": 500,
+                        "minimum": -500,
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "exerciseId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "id": {
+            "description": "The id YOU mint for this NEW routine (`rt_` + hex is the house shape).",
+            "type": "string"
+          },
+          "lastTrainedAt": {
+            "description": "Ignored — the log decides when a routine was last trained.",
+            "type": "number"
+          },
+          "name": {
+            "description": "What this day of the program is called.",
+            "maxLength": 240,
+            "type": "string"
+          },
+          "pendingProposal": {
+            "description": "Ignored — a proposal belongs to the routine it was minted against and is never carried onto a new one.",
+            "type": "object"
+          },
+          "position": {
+            "description": "Where it sits in the program, from 0.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "description": "Ignored — the store moves a routine's revision; a client reads it, never sends it.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "position",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "lastTrainedAt": {
+            "type": "integer"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer"
+                },
+                "exerciseId": {
+                  "type": "string"
+                },
+                "sets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "reps": {
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                },
+                "restSeconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "position",
+                "exerciseId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "position",
+          "revision",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "created a routine",
+      "ui": "routine editor"
+    },
+    {
+      "name": "create_exercise",
+      "description": "Add a movement the catalog does not hold. Read list_exercises FIRST: a second row for a movement that already exists forks that lift's history across two ids permanently, and nothing merges them back.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "equipment": {
+            "description": "What it is loaded with. The one classification gym keeps beside pattern.",
+            "enum": [
+              "barbell",
+              "dumbbell",
+              "machine",
+              "cable",
+              "bodyweight",
+              "kettlebell"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "The id YOU mint for this movement (`ex_` + hex is the house shape).",
+            "type": "string"
+          },
+          "name": {
+            "description": "What it is called on screen. Renaming it later keeps every set.",
+            "maxLength": 240,
+            "type": "string"
+          },
+          "pattern": {
+            "description": "The one classification gym keeps.",
+            "enum": [
+              "squat",
+              "hinge",
+              "press",
+              "pull",
+              "carry",
+              "core",
+              "isolation"
+            ],
+            "type": "string"
+          },
+          "stepKg": {
+            "description": "This movement's own increment, stored and served back. NOTHING reads it yet — every logger steps the weight off the load band, not off this. Omit to take the equipment's default.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "pattern",
+          "equipment"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "squat",
+              "hinge",
+              "press",
+              "pull",
+              "carry",
+              "core",
+              "isolation"
+            ]
+          },
+          "equipment": {
+            "type": "string",
+            "enum": [
+              "barbell",
+              "dumbbell",
+              "machine",
+              "cable",
+              "bodyweight",
+              "kettlebell"
+            ]
+          },
+          "loadCount": {
+            "type": "integer"
+          },
+          "stepKg": {
+            "type": "number"
+          },
+          "custom": {
+            "type": "boolean"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "pattern",
+          "equipment",
+          "stepKg",
+          "custom"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "phrase": "created a movement",
+      "ui": "movement editor"
+    },
+    {
+      "name": "save_note",
+      "description": "Save a useful new user-provided insight for future coaching. Read list_notes first and avoid repeating existing information. Appends at the bottom of Notes, never edits, deletes or reorders existing notes. Exact title/body duplicates reuse the existing note. At most ten notes. Answers {saved:true,note:{id,position,title,body,updatedAt}} only after durable save. Reusing the same id and text replays that original receipt without changing or restoring a note the user later edited or deleted. Report only what the successful receipt proves.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "Useful NEW insight explicitly supplied by the user, in their own wording, at most 500 UTF-8 bytes. Do not turn assumptions into facts.",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable id for this note save; reuse it when retrying the same insight.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Concise title, at most 60 characters. Preserve the user's actual meaning.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "body"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean",
+            "const": true
+          },
+          "note": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "position": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "position",
+              "title",
+              "body",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "saved",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "bound",
+      "phrase": "saved a note",
+      "ui": "Notes, new note"
+    },
+    {
+      "name": "share_session",
+      "description": "Mint a link to ONE workout for a person you choose. Answers {url, token, expiresAt}: hand over the URL EXACTLY as given — it opens the workout as a readable page in a browser, and anyone holding it can read that workout and its sets without signing in. Do not build a link from the token yourself. It reaches no other workout and names no account, it expires (30 days), and revoke_share ends it early. Called again while a link is live it answers with that same link rather than a second one.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url",
+          "token",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "bound",
+      "phrase": "shared a workout",
+      "ui": "Share"
+    },
+    {
+      "name": "share_log",
+      "declared": false,
+      "description": "Mint a link to the training log, a snapshot or live, over the whole log or a range.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The id YOU mint for this link."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "live"
+            ]
+          },
+          "from": {
+            "type": "integer",
+            "description": "First instant of the range, epoch ms."
+          },
+          "until": {
+            "type": "integer",
+            "description": "Last instant of the range, epoch ms."
+          }
+        },
+        "required": [
+          "id",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url",
+          "token",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "runs",
+      "seats": "bound",
+      "phrase": "shared your log",
+      "ui": "Share log"
+    },
+    {
+      "name": "propose_routine_change",
+      "description": "Propose a change to a day of the program that already exists. THIS CHANGES NOTHING. It puts a typed, field-level diff in front of the lifter — `sets 5 × 5 · 80 → 5 × 1–5 · 60–100`, `set 4 · 100 × 1 → 102.5 × 1`, `rest 180 → 120`, a line added, a line removed — and their routine keeps reading exactly as it does now until they open it and tap Apply. Nothing on this connection can tap it for them: there is no apply tool at any grant level. When you answer your human, say the routine has not changed and that a proposal is waiting.\nSend the WHOLE document every time — read it with list_routines, change what you mean, and send all the entries back, the ones you are not changing included, because a line you leave out is a line you are proposing to REMOVE. A new proposal replaces whatever you had waiting on that routine, and the replaced one goes into the routine's history rather than disappearing. YOU mint `id` and it IS the idempotency key: send the SAME id with the SAME document to replay a lost reply, never a fresh one, or you supersede your own proposal — and never that id with a DIFFERENT document, which is refused rather than answered with the proposal already standing under it.\nIt cannot reach a logged set, a finished workout's frozen plan, or where the day sits in the week — only what this routine asks for next time. Each line's target is its `sets` scheme, one item per set in the order lifted: a straight `5 × 5 · 80` is five identical items, a ramp is [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}], and a line with no `sets` is open. To move one set of a ramp, send the ramp with that one item changed.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "description": "The lines of the day, in order — their order IS the routine's order and positions are assigned 1..n from it. At least one, at most 50.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exerciseId": {
+                  "description": "The movement's id — list_exercises answers with it.",
+                  "type": "string"
+                },
+                "position": {
+                  "description": "Ignored — the order these arrive in IS the order.",
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "restSeconds": {
+                  "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",
+                  "maximum": 900,
+                  "minimum": 15,
+                  "type": "integer"
+                },
+                "sets": {
+                  "description": "The line's target as a SCHEME: one item per set, in the order lifted, 1 to 20. A straight `5 × 5 · 80` is five identical items; a ramp `60×5 · 80×5 · 90×3 · 100×1 · 80×5` is [{\"reps\":5,\"weightKg\":60},{\"reps\":5,\"weightKg\":80},{\"reps\":3,\"weightKg\":90},{\"reps\":1,\"weightKg\":100},{\"reps\":5,\"weightKg\":80}]. OMIT the whole key to leave the line OPEN — the movement is in the day and the numbers are decided at the rack. An empty array is refused: a zero target is no target.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reps": {
+                        "description": "Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "description": "Load for THIS set in kg, inside ±500. OMIT to mean what they lifted for the set of the same number last time.",
+                        "maximum": 500,
+                        "minimum": -500,
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "exerciseId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "id": {
+            "description": "The id YOU mint for this proposal (`prop_` + hex is the house shape).",
+            "type": "string"
+          },
+          "name": {
+            "description": "Rename the routine as part of this change. Omit to keep its name.",
+            "maxLength": 240,
+            "type": "string"
+          },
+          "routineId": {
+            "description": "The routine's id — list_routines answers with it.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One sentence saying what this changes and why — the line the lifter reads on the card before they open the diff. Omit it and they read the diff alone.",
+            "maxLength": 400,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "routineId",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "proposal": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "intent": {
+                "type": "string",
+                "enum": [
+                  "revise",
+                  "remove"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "applied",
+                  "dismissed",
+                  "superseded"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "changeCount": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "type": "integer"
+              },
+              "settledAt": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "door": {
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "mcp"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "thread": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "door"
+                ],
+                "additionalProperties": false
+              },
+              "baseRevision": {
+                "type": "integer"
+              },
+              "baseName": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "kept",
+                        "added",
+                        "removed",
+                        "retargeted"
+                      ]
+                    },
+                    "exerciseId": {
+                      "type": "string"
+                    },
+                    "before": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "after": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "loggedSets": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "position",
+                    "kind",
+                    "exerciseId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "routineId",
+              "intent",
+              "state",
+              "summary",
+              "changeCount",
+              "createdAt",
+              "source",
+              "baseRevision",
+              "baseName",
+              "name",
+              "changes"
+            ],
+            "additionalProperties": false
+          },
+          "reviewUrl": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal",
+          "reviewUrl",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "proposes",
+      "seats": "any",
+      "phrase": "wrote a proposal for one of your routines",
+      "ui": "routine editor"
+    },
+    {
+      "name": "propose_routine_removal",
+      "description": "Propose taking one whole day out of the program. THIS DELETES NOTHING. It puts that day's lines in front of the lifter as a diff of what would go, and the routine stays exactly where it is until they open it and tap Apply — and nothing on this connection can tap it for them. `gym:delete` buys the right to PROPOSE a destructive change; it does not imply the right to make one. Every workout ever trained under this routine keeps its frozen copy whatever the lifter decides, so nothing here can edit what the log says you did. YOU mint `id` and it IS the idempotency key: the same id names this one proposal for good, so a resend replays it and a different proposal needs a different id.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The id YOU mint for this proposal (`prop_` + hex is the house shape).",
+            "type": "string"
+          },
+          "routineId": {
+            "description": "The routine's id — list_routines answers with it.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One sentence saying why this day should go — the line the lifter reads on the card.",
+            "maxLength": 400,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "routineId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "proposal": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "intent": {
+                "type": "string",
+                "enum": [
+                  "revise",
+                  "remove"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "applied",
+                  "dismissed",
+                  "superseded"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "changeCount": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "type": "integer"
+              },
+              "settledAt": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "door": {
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "mcp"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "thread": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "door"
+                ],
+                "additionalProperties": false
+              },
+              "baseRevision": {
+                "type": "integer"
+              },
+              "baseName": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "kept",
+                        "added",
+                        "removed",
+                        "retargeted"
+                      ]
+                    },
+                    "exerciseId": {
+                      "type": "string"
+                    },
+                    "before": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "after": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "loggedSets": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "position",
+                    "kind",
+                    "exerciseId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "routineId",
+              "intent",
+              "state",
+              "summary",
+              "changeCount",
+              "createdAt",
+              "source",
+              "baseRevision",
+              "baseName",
+              "name",
+              "changes"
+            ],
+            "additionalProperties": false
+          },
+          "reviewUrl": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal",
+          "reviewUrl",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "proposes",
+      "seats": "any",
+      "phrase": "wrote a proposal to remove a routine",
+      "ui": "routine delete"
+    },
+    {
+      "name": "revoke_share",
+      "description": "End a workout link now. The url stops resolving immediately, and a link that was revoked, has expired, or never existed are one answer to whoever holds it.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "revoked": {
+            "type": "boolean",
+            "const": true
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revoked",
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "runs",
+      "seats": "bound",
+      "phrase": "ended a workout link",
+      "ui": "Share"
+    },
+    {
+      "name": "start_session",
+      "description": "Open a workout. YOU mint `id` and it IS the idempotency key for the workout this CREATES: send the same id again and the stored workout comes back — never invent a new id to retry, that mints a second workout. By default this JOINS a session already open (that is how a handoff between devices works), and a join answers with THAT workout under ITS OWN id, leaving yours unspent: log into the id the reply carries, and do not resend this start once that workout has ended — with nothing open, the same id would then create a new one. Send `joinOpenSession: false` to mean \"create exactly this one, which is not now\" — a backfill. A named `routineId` is frozen onto the workout as a copy.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The id YOU mint for this workout (`ses_` + hex is the house shape).",
+            "type": "string"
+          },
+          "joinOpenSession": {
+            "description": "Default true: join whatever session is open instead of failing.",
+            "type": "boolean"
+          },
+          "routineId": {
+            "description": "The day of the program this is. Omitted, the workout is ad-hoc.",
+            "type": "string"
+          },
+          "startedAt": {
+            "description": "When the workout began, epoch ms — a real instant, never one ahead of now (a start in the future is refused).",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          },
+          "finishedAt": {
+            "type": "integer"
+          },
+          "routineId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "routine": {
+                "type": "string"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "exerciseId": {
+                      "type": "string"
+                    },
+                    "sets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reps": {
+                            "type": "integer"
+                          },
+                          "weightKg": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      }
+                    },
+                    "restSeconds": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "exerciseId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "routine",
+              "entries"
+            ],
+            "additionalProperties": false
+          },
+          "routineName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "started a workout",
+      "ui": "Start workout"
+    },
+    {
+      "name": "log_set",
+      "description": "Log one set into an open workout. YOU mint `id` and it IS the idempotency key: resending the same id answers with the stored row and its set number, so a retry can never duplicate a set — never mint a fresh id for a retry. The set number is the server's to assign.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "completedAt": {
+            "description": "When the set was completed, epoch ms.",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "exerciseId": {
+            "description": "The movement's id — list_exercises answers with it.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The id YOU mint for this set (`set_` + hex is the house shape).",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Default working. Warmups, drops and failures count toward nothing.",
+            "enum": [
+              "warmup",
+              "working",
+              "drop",
+              "failure"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "description": "A free note on this set, at most 4000 BYTES of UTF-8 — the log counts bytes, not characters.",
+            "maxLength": 4000,
+            "type": "string"
+          },
+          "reps": {
+            "description": "Reps completed (1–500).",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rpe": {
+            "description": "Rated exertion, 1–10. Omit if it was not rated.",
+            "type": "number"
+          },
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          },
+          "weightKg": {
+            "description": "Load in kg. Negative is legal — that is band-assisted work.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sessionId",
+          "id",
+          "exerciseId",
+          "weightKg",
+          "reps",
+          "completedAt"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "exerciseId": {
+            "type": "string"
+          },
+          "setNumber": {
+            "type": "integer"
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "reps": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "warmup",
+              "working",
+              "drop",
+              "failure"
+            ]
+          },
+          "rpe": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "exerciseId",
+          "setNumber",
+          "weightKg",
+          "reps",
+          "kind",
+          "note",
+          "completedAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "logged a set",
+      "ui": "logger"
+    },
+    {
+      "name": "log_sets",
+      "description": "Log 1..200 ordered performed sets into one workout atomically. Every item is validated; one bad row commits nothing. Exact id/body retries return current status, including deleted rows, without changing them. Reusing an id with different data conflicts. Times must be at or after workout start and no later than now. Use import_session for an already-completed workout.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "maxLength": 64,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "type": "string"
+          },
+          "sets": {
+            "description": "Ordered performed sets with distinct ids. Validate all rows before one transaction; never use a new id to retry.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completedAt": {
+                  "description": "When the set was completed, epoch ms.",
+                  "maximum": 253402300799000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "exerciseId": {
+                  "description": "The movement's id — list_exercises answers with it.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id YOU mint for this set (`set_` + hex is the house shape).",
+                  "maxLength": 64,
+                  "minLength": 8,
+                  "pattern": "^[A-Za-z0-9_-]{8,64}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Default working. Warmups, drops and failures count toward nothing.",
+                  "enum": [
+                    "warmup",
+                    "working",
+                    "drop",
+                    "failure"
+                  ],
+                  "type": "string"
+                },
+                "note": {
+                  "description": "A free note on this set, at most 4000 BYTES of UTF-8 — the log counts bytes, not characters.",
+                  "maxLength": 4000,
+                  "type": "string"
+                },
+                "reps": {
+                  "description": "Reps completed (1–500).",
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "rpe": {
+                  "description": "Exertion from 1 to 10, at most one decimal place.",
+                  "maximum": 10,
+                  "minimum": 1,
+                  "multipleOf": 0.1,
+                  "type": "number"
+                },
+                "weightKg": {
+                  "description": "Load in kg, at most two decimal places.",
+                  "maximum": 500,
+                  "minimum": -500,
+                  "multipleOf": 0.01,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "weightKg",
+                "reps",
+                "completedAt"
+              ],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessionId",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "sessionDeleted": {
+            "type": "boolean"
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "created",
+                    "replayed",
+                    "deleted"
+                  ]
+                },
+                "setNumber": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "applied",
+          "replayed",
+          "sessionDeleted",
+          "sets"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "logged sets",
+      "ui": "backfill"
+    },
+    {
+      "name": "import_session",
+      "description": "Import one already-completed workout and up to 200 performed sets in one transaction. All set times must fall inside its interval, with no future facts. Leaves the live workout alone; refused if it crosses a finished one. An exact id/body retry returns current status without duplicating or restoring corrected/deleted data; a changed request conflicts.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "finishedAt": {
+            "description": "When it ended, at or after startedAt and no later than now.",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Caller-minted id of the completed historical workout.",
+            "maxLength": 64,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "type": "string"
+          },
+          "routineId": {
+            "description": "The routine's id — list_routines answers with it.",
+            "type": "string"
+          },
+          "sets": {
+            "description": "Ordered performed sets with distinct ids. Validate all rows before one transaction; never use a new id to retry.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completedAt": {
+                  "description": "When the set was completed, epoch ms.",
+                  "maximum": 253402300799000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "exerciseId": {
+                  "description": "The movement's id — list_exercises answers with it.",
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The id YOU mint for this set (`set_` + hex is the house shape).",
+                  "maxLength": 64,
+                  "minLength": 8,
+                  "pattern": "^[A-Za-z0-9_-]{8,64}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Default working. Warmups, drops and failures count toward nothing.",
+                  "enum": [
+                    "warmup",
+                    "working",
+                    "drop",
+                    "failure"
+                  ],
+                  "type": "string"
+                },
+                "note": {
+                  "description": "A free note on this set, at most 4000 BYTES of UTF-8 — the log counts bytes, not characters.",
+                  "maxLength": 4000,
+                  "type": "string"
+                },
+                "reps": {
+                  "description": "Reps completed (1–500).",
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "rpe": {
+                  "description": "Exertion from 1 to 10, at most one decimal place.",
+                  "maximum": 10,
+                  "minimum": 1,
+                  "multipleOf": 0.1,
+                  "type": "number"
+                },
+                "weightKg": {
+                  "description": "Load in kg, at most two decimal places.",
+                  "maximum": 500,
+                  "minimum": -500,
+                  "multipleOf": 0.01,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "weightKg",
+                "reps",
+                "completedAt"
+              ],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "minItems": 0,
+            "type": "array"
+          },
+          "startedAt": {
+            "description": "When this workout actually started.",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "finishedAt",
+          "sets"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "sessionDeleted": {
+            "type": "boolean"
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "created",
+                    "replayed",
+                    "deleted"
+                  ]
+                },
+                "setNumber": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "imported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId",
+          "applied",
+          "replayed",
+          "sessionDeleted",
+          "sets",
+          "imported"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "added a past workout",
+      "ui": "backfill"
+    },
+    {
+      "name": "log_bodyweight",
+      "declared": false,
+      "description": "Record the day's weigh-in, whole.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "dateLocal": {
+            "type": "string",
+            "description": "The calendar day, YYYY-MM-DD."
+          },
+          "weightKg": {
+            "type": "number",
+            "description": "Kilograms, two decimals."
+          }
+        },
+        "required": [
+          "dateLocal",
+          "weightKg"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "dateLocal": {
+            "type": "string"
+          },
+          "weightKg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dateLocal",
+          "weightKg"
+        ],
+        "additionalProperties": false
+      },
+      "class": "add",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "logged a weigh-in",
+      "ui": "Bodyweight"
+    },
+    {
+      "name": "finish_session",
+      "description": "Close a workout. A finish is permanent: a workout already finished by a tap answers with the end it already has. A workout the FOUR-HOUR RULE closed (at its last set, because nothing more arrived) still takes this finish as the lifter's word: within four hours of that last set the end moves to it; later than that the end stays at the last set and only the word changes — a tap hours after the bar is not five hours under it.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "finishedAt": {
+            "description": "When the workout ended, epoch ms — at or after it started.",
+            "maximum": 253402300799000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "finishedAt"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer"
+          },
+          "finishedAt": {
+            "type": "integer"
+          },
+          "routineId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "routine": {
+                "type": "string"
+              },
+              "entries": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "exerciseId": {
+                      "type": "string"
+                    },
+                    "sets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reps": {
+                            "type": "integer"
+                          },
+                          "weightKg": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      }
+                    },
+                    "restSeconds": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "exerciseId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "routine",
+              "entries"
+            ],
+            "additionalProperties": false
+          },
+          "routineName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "finished a workout",
+      "ui": "Finish"
+    },
+    {
+      "name": "fix_set",
+      "declared": false,
+      "description": "Change a logged set's load, reps, exertion or note.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "setId": {
+            "type": "string",
+            "description": "The set's id."
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "reps": {
+            "type": "integer"
+          },
+          "rpe": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "exerciseId": {
+            "type": "string"
+          },
+          "setNumber": {
+            "type": "integer"
+          },
+          "weightKg": {
+            "type": "number"
+          },
+          "reps": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "warmup",
+              "working",
+              "drop",
+              "failure"
+            ]
+          },
+          "rpe": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "exerciseId",
+          "setNumber",
+          "weightKg",
+          "reps",
+          "kind",
+          "note",
+          "completedAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "fixed a set",
+      "ui": "set editor"
+    },
+    {
+      "name": "correct_session",
+      "declared": false,
+      "description": "Replace a finished workout's times, name and sets in one correction.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "The workout's id."
+          },
+          "requestId": {
+            "type": "string",
+            "description": "The id YOU mint for this correction."
+          },
+          "startedAt": {
+            "type": "integer"
+          },
+          "finishedAt": {
+            "type": "integer"
+          },
+          "routineName": {
+            "type": "string"
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "exerciseId": {
+                  "type": "string"
+                },
+                "setNumber": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "rpe": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "completedAt": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "setNumber",
+                "weightKg",
+                "reps",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "preserveOtherSets": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId",
+          "requestId",
+          "startedAt",
+          "finishedAt",
+          "sets"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "integer"
+              },
+              "finishedAt": {
+                "type": "integer"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "plan": {
+                "type": "object",
+                "properties": {
+                  "routine": {
+                    "type": "string"
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "exerciseId": {
+                          "type": "string"
+                        },
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "exerciseId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "routine",
+                  "entries"
+                ],
+                "additionalProperties": false
+              },
+              "routineName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "startedAt"
+            ],
+            "additionalProperties": false
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "exerciseId": {
+                  "type": "string"
+                },
+                "setNumber": {
+                  "type": "integer"
+                },
+                "weightKg": {
+                  "type": "number"
+                },
+                "reps": {
+                  "type": "integer"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "warmup",
+                    "working",
+                    "drop",
+                    "failure"
+                  ]
+                },
+                "rpe": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "completedAt": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "exerciseId",
+                "setNumber",
+                "weightKg",
+                "reps",
+                "kind",
+                "note",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "session",
+          "sets"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "corrected a workout",
+      "ui": "workout correction"
+    },
+    {
+      "name": "update_exercise",
+      "description": "Update an existing exercise only when the user asks to rename it or change its equipment/load count. Read list_exercises first and retain its exact exerciseId, so every past set remains attached. Never create a replacement movement for an edit. Omit fields to retain their current values.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "equipment": {
+            "description": "How the entered load is measured: barbell includes the bar; dumbbell is per dumbbell; bodyweight is added load only.",
+            "enum": [
+              "barbell",
+              "dumbbell",
+              "machine",
+              "cable",
+              "bodyweight",
+              "kettlebell"
+            ],
+            "type": "string"
+          },
+          "exerciseId": {
+            "description": "The existing stable movement id from list_exercises. History keeps this id.",
+            "type": "string"
+          },
+          "loadCount": {
+            "description": "Number of dumbbells represented by each repetition, 1 or 2. Ignored for other equipment.",
+            "maximum": 2,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "description": "The new display name, including in past workouts.",
+            "maxLength": 240,
+            "type": "string"
+          },
+          "requestId": {
+            "description": "Optional stable edit identity. Retry the same identity and fields after an interrupted reply; replay never overwrites a later edit.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exerciseId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "squat",
+              "hinge",
+              "press",
+              "pull",
+              "carry",
+              "core",
+              "isolation"
+            ]
+          },
+          "equipment": {
+            "type": "string",
+            "enum": [
+              "barbell",
+              "dumbbell",
+              "machine",
+              "cable",
+              "bodyweight",
+              "kettlebell"
+            ]
+          },
+          "loadCount": {
+            "type": "integer"
+          },
+          "stepKg": {
+            "type": "number"
+          },
+          "custom": {
+            "type": "boolean"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "pattern",
+          "equipment",
+          "stepKg",
+          "custom"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "updated a movement",
+      "ui": "movement editor"
+    },
+    {
+      "name": "edit_note",
+      "declared": false,
+      "description": "Change a note's title or body.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The note's id."
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "title",
+          "body",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "edited a note",
+      "ui": "Notes"
+    },
+    {
+      "name": "reorder_notes",
+      "declared": false,
+      "description": "Move one note to sit below another, or to the top.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The note's id."
+          },
+          "below": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The note it lands below; null is the top."
+          }
+        },
+        "required": [
+          "id",
+          "below"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "integer"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "position",
+                "title",
+                "body"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "reordered your notes",
+      "ui": "Notes"
+    },
+    {
+      "name": "set_preferences",
+      "declared": false,
+      "description": "Change the lifter's own dials.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "type": "string",
+            "enum": [
+              "kg",
+              "lb"
+            ]
+          },
+          "restSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restSound": {
+            "type": "boolean"
+          },
+          "confirmHaptic": {
+            "type": "boolean"
+          },
+          "confirmSound": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "type": "string",
+            "enum": [
+              "kg",
+              "lb"
+            ]
+          },
+          "restSeconds": {
+            "type": "integer"
+          },
+          "restSound": {
+            "type": "boolean"
+          },
+          "confirmHaptic": {
+            "type": "boolean"
+          },
+          "confirmSound": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "units",
+          "restSound",
+          "confirmHaptic",
+          "confirmSound"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "changed your settings",
+      "ui": "Settings"
+    },
+    {
+      "name": "delete_set",
+      "declared": false,
+      "description": "Delete one logged set.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "setId": {
+            "type": "string",
+            "description": "The set's id."
+          }
+        },
+        "required": [
+          "setId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "setId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "setId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "deleted a set",
+      "ui": "set delete"
+    },
+    {
+      "name": "discard_session",
+      "description": "Delete a workout and every set in it. Permanent — nothing keeps a copy and there is no undo. A workout still running is refused: finish it first, so sets still in flight are not destroyed under whoever is logging them.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "description": "The workout's id — list_sessions answers with it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "discarded a workout",
+      "ui": "Discard"
+    },
+    {
+      "name": "delete_note",
+      "declared": false,
+      "description": "Delete one note.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The note's id."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "noteId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "noteId"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "deleted a note",
+      "ui": "Notes"
+    },
+    {
+      "name": "delete_bodyweight",
+      "declared": false,
+      "description": "Delete one day's weigh-in.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "dateLocal": {
+            "type": "string",
+            "description": "The calendar day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "dateLocal"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "dateLocal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "dateLocal"
+        ],
+        "additionalProperties": false
+      },
+      "class": "remove",
+      "agent": "withheld",
+      "seats": "any",
+      "phrase": "deleted a weigh-in",
+      "ui": "Bodyweight"
+    }
+  ]
+}

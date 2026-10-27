@@ -1,0 +1,107 @@
+[
+  {
+    "case": "a new movement lands with a fractional step",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {
+        "equipment": "dumbbell",
+        "id": "tn7Qm2Kx9Lp4Wz8R-2",
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "pattern": "press",
+        "stepKg": 1.25
+      },
+      "name": "create_exercise"
+    },
+    "expect": {
+      "result": {
+        "custom": true,
+        "equipment": "dumbbell",
+        "id": "tn7Qm2Kx9Lp4Wz8R-2",
+        "loadCount": 2,
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "pattern": "press",
+        "stepKg": 1.25
+      },
+      "sha256": "02805a3438cccbfb517ceb45df5f1543ed8c3f8507ad545278f6f2664a1a50bb",
+      "writes": [
+        {
+          "f": {"equipment":"dumbbell","name":"Bench 🏋️‍♀️ Café q̇","pattern":"press","stepKg":1.25},
+          "id": "tn7Qm2Kx9Lp4Wz8R-2",
+          "life": "alive",
+          "t": "exercise"
+        }
+      ]
+    }
+  },
+  {
+    "case": "a movement takes the equipment's step when it names none",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"equipment":"cable","id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Cable fly","pattern":"isolation"},
+      "name": "create_exercise"
+    },
+    "expect": {
+      "result": {
+        "custom": true,
+        "equipment": "cable",
+        "id": "tn7Qm2Kx9Lp4Wz8R-3",
+        "name": "Cable fly",
+        "pattern": "isolation",
+        "stepKg": 2.5
+      },
+      "sha256": "3b0e3185f405ecccc5cdf62c7bae752681885bc3a5e32ebdb469d02055ae4805",
+      "writes": [
+        {
+          "f": {"equipment":"cable","name":"Cable fly","pattern":"isolation","stepKg":2.5},
+          "id": "tn7Qm2Kx9Lp4Wz8R-3",
+          "life": "alive",
+          "t": "exercise"
+        }
+      ]
+    }
+  },
+  {
+    "case": "a replayed create answers the movement it made",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789999940000:0:r_aaaaaaaaaaaa","f":{"equipment":["dumbbell","1789999940000:0:r_aaaaaaaaaaaa"],"name":["Bench 🏋️‍♀️ Café q̇","1789999940000:0:r_aaaaaaaaaaaa"],"pattern":["press","1789999940000:0:r_aaaaaaaaaaaa"],"stepKg":[1.25,"1789999940000:0:r_aaaaaaaaaaaa"]},"id":"tn7Qm2Kx9Lp4Wz8R-2","life":["alive","1789999940000:0:r_aaaaaaaaaaaa"],"rc":1789999940000,"ru":1789999940000,"seq":1,"t":"exercise"}
+      ]
+    },
+    "call": {
+      "input": {
+        "equipment": "dumbbell",
+        "id": "tn7Qm2Kx9Lp4Wz8R-2",
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "pattern": "press",
+        "stepKg": 1.25
+      },
+      "name": "create_exercise"
+    },
+    "expect": {
+      "result": {
+        "custom": true,
+        "equipment": "dumbbell",
+        "id": "tn7Qm2Kx9Lp4Wz8R-2",
+        "loadCount": 2,
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "pattern": "press",
+        "stepKg": 1.25
+      },
+      "sha256": "02805a3438cccbfb517ceb45df5f1543ed8c3f8507ad545278f6f2664a1a50bb",
+      "writes": []
+    }
+  }
+]

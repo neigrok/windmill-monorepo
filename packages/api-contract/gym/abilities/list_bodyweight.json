@@ -1,0 +1,57 @@
+[
+  {
+    "case": "no weigh-ins",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {"input":{},"name":"list_bodyweight"},
+    "expect": {"result":{"entries":[]},"sha256":"d801aa1fb7ddcc330a5e3173372ea6af4a3d08ec58074478e85aa5603e926658","writes":[]}
+  },
+  {
+    "case": "oldest first in kilograms to two decimals",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"f":{"kg":[82.45,"1789136000000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-15","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"weighin"},
+        {"f":{"kg":[83,"1789049600000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789049600000,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-12","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":2,"t":"weighin"},
+        {"f":{"kg":[81.95,"1789740800000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-20","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":3,"t":"weighin"}
+      ]
+    },
+    "call": {"input":{},"name":"list_bodyweight"},
+    "expect": {
+      "result": {
+        "entries": [
+          {"dateLocal":"2026-09-12","weightKg":83},
+          {"dateLocal":"2026-09-15","weightKg":82.45},
+          {"dateLocal":"2026-09-20","weightKg":81.95}
+        ]
+      },
+      "sha256": "34d2068eec194d23b9b7b8ba4b554cd093c0ce861eb30b46982271208b8bcc65",
+      "writes": []
+    }
+  },
+  {
+    "case": "both bounds are inclusive days",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"f":{"kg":[82.45,"1789136000000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-15","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"weighin"},
+        {"f":{"kg":[83,"1789049600000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789049600000,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-12","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":2,"t":"weighin"},
+        {"f":{"kg":[81.95,"1789740800000:0:r_aaaaaaaaaaaa"],"recordedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"2026-09-20","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":3,"t":"weighin"}
+      ]
+    },
+    "call": {"input":{"from":"2026-09-13","to":"2026-09-15"},"name":"list_bodyweight"},
+    "expect": {
+      "result": {"entries":[{"dateLocal":"2026-09-15","weightKg":82.45}]},
+      "sha256": "b0bba60189a8f3f867c6361e286c3e983db7b06324449353be6955d7aaf308fd",
+      "writes": []
+    }
+  }
+]

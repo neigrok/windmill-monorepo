@@ -1,0 +1,69 @@
+[
+  {
+    "case": "no notes",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {"input":{},"name":"list_notes"},
+    "expect": {"result":{"notes":[]},"sha256":"bfce066ba420e00d28312534e1ce05216738af779961c3f303f42a05113ba5b1","writes":[]}
+  },
+  {
+    "case": "notes in precedence order, text kept as stored",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Blunt.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["How I want to be talked to","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteBBBBBBBBBBB1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Café q̇ 🏋️‍♀️","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"}
+      ]
+    },
+    "call": {"input":{},"name":"list_notes"},
+    "expect": {
+      "result": {
+        "notes": [
+          {
+            "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+            "position": 0,
+            "title": "Café q̇ 🏋️‍♀️"
+          },
+          {"body":"Blunt.","position":1,"title":"How I want to be talked to"}
+        ]
+      },
+      "sha256": "d97d8ab7dc2fd6631517a5bdf86f60d62beb5a823bf42c79106cf00a286e344c",
+      "writes": []
+    }
+  },
+  {
+    "case": "two notes on one order key break the tie by id",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Blunt.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["How I want to be talked to","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteBBBBBBBBBBB1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Café q̇ 🏋️‍♀️","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Second on a0.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Also","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA0","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":3,"t":"note"}
+      ]
+    },
+    "call": {"input":{},"name":"list_notes"},
+    "expect": {
+      "result": {
+        "notes": [
+          {"body":"Second on a0.","position":0,"title":"Also"},
+          {
+            "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+            "position": 1,
+            "title": "Café q̇ 🏋️‍♀️"
+          },
+          {"body":"Blunt.","position":2,"title":"How I want to be talked to"}
+        ]
+      },
+      "sha256": "95aac31944c53c4e47853641476a812914a8312bb2a0293add61db0ec0bfc10e",
+      "writes": []
+    }
+  }
+]

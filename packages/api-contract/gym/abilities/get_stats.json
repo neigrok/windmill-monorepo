@@ -1,0 +1,122 @@
+[
+  {
+    "case": "an empty log has no weeks and no movements",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {"input":{},"name":"get_stats"},
+    "expect": {
+      "result": {"movements":[],"weeks":[]},
+      "sha256": "0ef36cac44a799cb7a1627e63edf82b22ce072b415a11563c96b6db74ccd59d2",
+      "writes": []
+    }
+  },
+  {
+    "case": "weeks run Monday to Monday with an untrained week at zero",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
+        {"born":"1789136300000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136300000,"1789136300000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136300000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136300000:0:r_aaaaaaaaaaaa"],"note":["","1789136300000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136300000:0:r_aaaaaaaaaaaa"],"rpe":[7.5,"1789136300000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136300000:0:r_aaaaaaaaaaaa"],"weightKg":[60,"1789136300000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000001","life":["alive","1789136300000:0:r_aaaaaaaaaaaa"],"rc":1789136300000,"ru":1789136300000,"seq":8,"t":"set","v":{"setNumber":1}},
+        {"born":"1789136540000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136540000,"1789136540000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136540000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136540000:0:r_aaaaaaaaaaaa"],"note":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136540000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136540000:0:r_aaaaaaaaaaaa"],"rpe":[8.5,"1789136540000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136540000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789136540000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000002","life":["alive","1789136540000:0:r_aaaaaaaaaaaa"],"rc":1789136540000,"ru":1789136540000,"seq":9,"t":"set","v":{"setNumber":2}},
+        {"born":"1789137200000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789137200000,"1789137200000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789137200000:0:r_aaaaaaaaaaaa"],"kind":["working","1789137200000:0:r_aaaaaaaaaaaa"],"note":["","1789137200000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789137200000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789137200000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789137200000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000003","life":["alive","1789137200000:0:r_aaaaaaaaaaaa"],"rc":1789137200000,"ru":1789137200000,"seq":10,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743800000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesBBBBBBBBBBBB1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":1,"t":"session"},
+        {"born":"1789741100000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741100000,"1789741100000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789741100000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741100000:0:r_aaaaaaaaaaaa"],"note":["","1789741100000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741100000:0:r_aaaaaaaaaaaa"],"sessionId":["sesBBBBBBBBBBBB1","1789741100000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789741100000:0:r_aaaaaaaaaaaa"]},"id":"setB000000000001","life":["alive","1789741100000:0:r_aaaaaaaaaaaa"],"rc":1789741100000,"ru":1789741100000,"seq":2,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743200000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesAAAAAAAAAAAA1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":3,"t":"session"},
+        {"born":"1789741040000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741040000,"1789741040000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789741040000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741040000:0:r_aaaaaaaaaaaa"],"note":["","1789741040000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741040000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741040000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789741040000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000001","life":["alive","1789741040000:0:r_aaaaaaaaaaaa"],"rc":1789741040000,"ru":1789741040000,"seq":4,"t":"set","v":{"setNumber":1}},
+        {"born":"1789741340000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741340000,"1789741340000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789741340000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741340000:0:r_aaaaaaaaaaaa"],"note":["","1789741340000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789741340000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741340000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789741340000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000002","life":["alive","1789741340000:0:r_aaaaaaaaaaaa"],"rc":1789741340000,"ru":1789741340000,"seq":5,"t":"set","v":{"setNumber":1}}
+      ]
+    },
+    "call": {"input":{},"name":"get_stats"},
+    "expect": {
+      "result": {
+        "movements": [
+          {
+            "bestE1rm": {"at":1789740800000,"e1rm":116.7,"reps":5,"weightKg":100},
+            "exerciseId": "back-squat",
+            "heaviest": {"at":1789740800000,"e1rm":116.7,"reps":5,"weightKg":100},
+            "lastTrainedAt": 1789740800000,
+            "points": [{"at":1789740800000,"e1rm":116.7,"reps":5,"weightKg":100}]
+          },
+          {
+            "bestE1rm": {"at":1789136000000,"e1rm":72.9,"reps":5,"weightKg":62.5},
+            "exerciseId": "bench-press",
+            "heaviest": {"at":1789136000000,"e1rm":72.9,"reps":5,"weightKg":62.5},
+            "lastTrainedAt": 1789740800000,
+            "points": [
+              {"at":1789136000000,"e1rm":72.9,"reps":5,"weightKg":62.5},
+              {"at":1789740800000,"e1rm":72.9,"reps":5,"weightKg":62.5}
+            ]
+          },
+          {
+            "bestE1rm": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "exerciseId": "lateral-raise",
+            "heaviest": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "lastTrainedAt": 1789740800000,
+            "points": [
+              {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+              {"at":1789740800000,"e1rm":28.4,"reps":12,"weightKg":20.25}
+            ]
+          }
+        ],
+        "read": {"sessions":0,"sets":0,"weeks":2},
+        "weeks": [
+          {"sessions":1,"startedAt":1788739200000,"workingSets":3},
+          {"sessions":2,"startedAt":1789344000000,"workingSets":3}
+        ]
+      },
+      "sha256": "cba1de116847c1b3299e3e2f97e390f7842926fce5c14da52abcc9a37046dd7c",
+      "writes": []
+    }
+  },
+  {
+    "case": "narrowed to one movement",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
+        {"born":"1789136300000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136300000,"1789136300000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136300000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136300000:0:r_aaaaaaaaaaaa"],"note":["","1789136300000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136300000:0:r_aaaaaaaaaaaa"],"rpe":[7.5,"1789136300000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136300000:0:r_aaaaaaaaaaaa"],"weightKg":[60,"1789136300000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000001","life":["alive","1789136300000:0:r_aaaaaaaaaaaa"],"rc":1789136300000,"ru":1789136300000,"seq":8,"t":"set","v":{"setNumber":1}},
+        {"born":"1789136540000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136540000,"1789136540000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136540000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136540000:0:r_aaaaaaaaaaaa"],"note":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136540000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136540000:0:r_aaaaaaaaaaaa"],"rpe":[8.5,"1789136540000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136540000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789136540000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000002","life":["alive","1789136540000:0:r_aaaaaaaaaaaa"],"rc":1789136540000,"ru":1789136540000,"seq":9,"t":"set","v":{"setNumber":2}},
+        {"born":"1789137200000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789137200000,"1789137200000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789137200000:0:r_aaaaaaaaaaaa"],"kind":["working","1789137200000:0:r_aaaaaaaaaaaa"],"note":["","1789137200000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789137200000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789137200000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789137200000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000003","life":["alive","1789137200000:0:r_aaaaaaaaaaaa"],"rc":1789137200000,"ru":1789137200000,"seq":10,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743800000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesBBBBBBBBBBBB1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":1,"t":"session"},
+        {"born":"1789741100000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741100000,"1789741100000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789741100000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741100000:0:r_aaaaaaaaaaaa"],"note":["","1789741100000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741100000:0:r_aaaaaaaaaaaa"],"sessionId":["sesBBBBBBBBBBBB1","1789741100000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789741100000:0:r_aaaaaaaaaaaa"]},"id":"setB000000000001","life":["alive","1789741100000:0:r_aaaaaaaaaaaa"],"rc":1789741100000,"ru":1789741100000,"seq":2,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743200000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesAAAAAAAAAAAA1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":3,"t":"session"},
+        {"born":"1789741040000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741040000,"1789741040000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789741040000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741040000:0:r_aaaaaaaaaaaa"],"note":["","1789741040000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741040000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741040000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789741040000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000001","life":["alive","1789741040000:0:r_aaaaaaaaaaaa"],"rc":1789741040000,"ru":1789741040000,"seq":4,"t":"set","v":{"setNumber":1}},
+        {"born":"1789741340000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741340000,"1789741340000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789741340000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741340000:0:r_aaaaaaaaaaaa"],"note":["","1789741340000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789741340000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741340000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789741340000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000002","life":["alive","1789741340000:0:r_aaaaaaaaaaaa"],"rc":1789741340000,"ru":1789741340000,"seq":5,"t":"set","v":{"setNumber":1}}
+      ]
+    },
+    "call": {"input":{"exerciseId":"lateral-raise"},"name":"get_stats"},
+    "expect": {
+      "result": {
+        "movements": [
+          {
+            "bestE1rm": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "exerciseId": "lateral-raise",
+            "heaviest": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "lastTrainedAt": 1789740800000,
+            "points": [
+              {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+              {"at":1789740800000,"e1rm":28.4,"reps":12,"weightKg":20.25}
+            ]
+          }
+        ],
+        "read": {"sessions":0,"sets":0,"weeks":2},
+        "weeks": [
+          {"sessions":1,"startedAt":1788739200000,"workingSets":3},
+          {"sessions":2,"startedAt":1789344000000,"workingSets":3}
+        ]
+      },
+      "sha256": "7dcb922aa909022f842cf9a322331707f341013aeda6e78b23a6c9fed032e0a6",
+      "writes": []
+    }
+  }
+]

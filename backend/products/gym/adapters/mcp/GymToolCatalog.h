@@ -3,6 +3,7 @@
 #include "platform/ports/ToolHost.h"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wm::gym {
@@ -28,6 +29,10 @@ inline bool mintsProposal(const std::string& toolName) {
 // Every tool, its sentence, the JSON Schema its arguments are pre-validated against, and the grant
 // level that reaches it.
 std::vector<ToolDeclaration> gymToolCatalog();
+
+// packages/api-contract/gym/catalog.json as this binary embeds it: the catalog of record the declarations
+// above are pinned to.
+std::string_view catalogText();
 
 std::string gymInstructions();
 

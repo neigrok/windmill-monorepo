@@ -1,0 +1,97 @@
+[
+  {
+    "case": "a note lands at the bottom, text kept as sent",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Blunt.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["How I want to be talked to","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteBBBBBBBBBBB1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Café q̇ 🏋️‍♀️","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"}
+      ]
+    },
+    "call": {
+      "input": {
+        "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+        "id": "tn7Qm2Kx9Lp4Wz8R-4",
+        "title": "Café q̇ 🏋️‍♀️ goals"
+      },
+      "name": "save_note"
+    },
+    "expect": {
+      "result": {
+        "note": {
+          "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+          "id": "tn7Qm2Kx9Lp4Wz8R-4",
+          "position": 2,
+          "title": "Café q̇ 🏋️‍♀️ goals",
+          "updatedAt": 1790000000000
+        },
+        "saved": true
+      },
+      "sha256": "5b8949a3a43ac02f3e17a337708440e91b47469338f6413f4ff083d008e648c0",
+      "writes": [
+        {
+          "f": {
+            "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+            "ord": "a2",
+            "title": "Café q̇ 🏋️‍♀️ goals",
+            "updatedAt": 1790000000000
+          },
+          "id": "tn7Qm2Kx9Lp4Wz8R-4",
+          "life": "alive",
+          "t": "note"
+        }
+      ]
+    }
+  },
+  {
+    "case": "an exact duplicate reuses the stored note",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Blunt.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["How I want to be talked to","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteBBBBBBBBBBB1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Café q̇ 🏋️‍♀️","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"}
+      ]
+    },
+    "call": {"input":{"body":"Blunt.","id":"tn7Qm2Kx9Lp4Wz8R-4","title":"How I want to be talked to"},"name":"save_note"},
+    "expect": {
+      "result": {
+        "note": {
+          "body": "Blunt.",
+          "id": "noteBBBBBBBBBBB1",
+          "position": 1,
+          "title": "How I want to be talked to",
+          "updatedAt": 1789136000000
+        },
+        "saved": true
+      },
+      "sha256": "a05f7eeb30cae126a51688351ffa329544c1ab105402c89e50faf503e8a2739d",
+      "writes": []
+    }
+  },
+  {
+    "case": "the eleventh note is refused at the cap",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 0","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000000","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 1","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000001","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a2","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 2","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000002","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":3,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a3","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 3","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000003","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":4,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a4","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 4","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000004","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":5,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a5","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 5","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000005","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":6,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a6","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 6","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000006","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a7","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 7","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000007","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":8,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a8","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 8","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000008","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":9,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Kept.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a9","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Note 9","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteCAP000000009","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":10,"t":"note"}
+      ]
+    },
+    "call": {"input":{"body":"Full.","id":"tn7Qm2Kx9Lp4Wz8R-4","title":"One more"},"name":"save_note"},
+    "expect": {"refused":"refused"}
+  }
+]

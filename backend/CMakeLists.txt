@@ -176,6 +176,8 @@ if(NOT WM_REGISTRY_COUNT EQUAL 2 OR NOT WM_GYM_REGISTRY STREQUAL "gym.registry.j
 endif()
 wm_embed_registry(windmill_gym wm::gym::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_GYM_REGISTRY}")
 wm_embed_registry(windmill_journal wm::journal::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_JOURNAL_REGISTRY}")
+# The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
+wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
 target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal)
@@ -515,7 +517,9 @@ add_executable(windmill_mcp_tests
   test/products/roadmap/adapters/mcp/RoadmapToolsTest.cpp
   test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp
   test/products/roadmap/adapters/mcp/WireCorpusTest.cpp
-  test/products/gym/adapters/mcp/GymToolsTest.cpp)
+  test/products/gym/adapters/mcp/GymToolsTest.cpp
+  test/products/gym/adapters/mcp/CatalogContractTest.cpp
+  test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp)
 # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
 # collides with a roadmap one, which is the difference between a boot failure and a green suite. Its
 # write cases run on the real gym door, which takes the product catalog the server seals.
@@ -524,7 +528,8 @@ target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_produ
 # a fresh transcript; the source path is handed in so the check finds it from any build tree.
 target_compile_definitions(windmill_mcp_tests PRIVATE
   WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
-  WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql")
+  WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
+  WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
 
 # The probe's Postgres adapter and the dev stack's endpoints, on the probe library (never linked into windmill_server).

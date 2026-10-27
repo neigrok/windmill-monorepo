@@ -1,0 +1,83 @@
+[
+  {
+    "case": "trained, untrained and missing in requested order",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789049600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[2,"1789049600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"1789049600000:0:r_aaaaaaaaaaaa"],"name":["Push","1789049600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789049600000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789049600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789049600000:0:r_aaaaaaaaaaaa"],"rc":1789049600000,"ru":1789049600000,"seq":6,"t":"routine"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789136000000:0:r_aaaaaaaaaaaa"],"displayName":["Push","1789136000000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789139300000,"1789136000000:0:r_aaaaaaaaaaaa"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"plan":[{"entries":[{"exerciseId":"bench-press","restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"routine":"Push"},"1789136000000:0:r_aaaaaaaaaaaa"],"routineId":["rtAAAAAAAAAAAAA1","1789136000000:0:r_aaaaaaaaaaaa"],"startedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"sesCCCCCCCCCCCC1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":7,"t":"session"},
+        {"born":"1789136300000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136300000,"1789136300000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136300000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136300000:0:r_aaaaaaaaaaaa"],"note":["","1789136300000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136300000:0:r_aaaaaaaaaaaa"],"rpe":[7.5,"1789136300000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136300000:0:r_aaaaaaaaaaaa"],"weightKg":[60,"1789136300000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000001","life":["alive","1789136300000:0:r_aaaaaaaaaaaa"],"rc":1789136300000,"ru":1789136300000,"seq":8,"t":"set","v":{"setNumber":1}},
+        {"born":"1789136540000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789136540000,"1789136540000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789136540000:0:r_aaaaaaaaaaaa"],"kind":["working","1789136540000:0:r_aaaaaaaaaaaa"],"note":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136540000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789136540000:0:r_aaaaaaaaaaaa"],"rpe":[8.5,"1789136540000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789136540000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789136540000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000002","life":["alive","1789136540000:0:r_aaaaaaaaaaaa"],"rc":1789136540000,"ru":1789136540000,"seq":9,"t":"set","v":{"setNumber":2}},
+        {"born":"1789137200000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789137200000,"1789137200000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789137200000:0:r_aaaaaaaaaaaa"],"kind":["working","1789137200000:0:r_aaaaaaaaaaaa"],"note":["","1789137200000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789137200000:0:r_aaaaaaaaaaaa"],"sessionId":["sesCCCCCCCCCCCC1","1789137200000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789137200000:0:r_aaaaaaaaaaaa"]},"id":"setC000000000003","life":["alive","1789137200000:0:r_aaaaaaaaaaaa"],"rc":1789137200000,"ru":1789137200000,"seq":10,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743800000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesBBBBBBBBBBBB1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":1,"t":"session"},
+        {"born":"1789741100000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741100000,"1789741100000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789741100000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741100000:0:r_aaaaaaaaaaaa"],"note":["","1789741100000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741100000:0:r_aaaaaaaaaaaa"],"sessionId":["sesBBBBBBBBBBBB1","1789741100000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789741100000:0:r_aaaaaaaaaaaa"]},"id":"setB000000000001","life":["alive","1789741100000:0:r_aaaaaaaaaaaa"],"rc":1789741100000,"ru":1789741100000,"seq":2,"t":"set","v":{"setNumber":1}},
+        {"born":"1789740800000:0:r_aaaaaaaaaaaa","f":{"closedBy":["finish","1789740800000:0:r_aaaaaaaaaaaa"],"finishedAt":[1789743200000,"1789740800000:0:r_aaaaaaaaaaaa"],"startedAt":[1789740800000,"1789740800000:0:r_aaaaaaaaaaaa"]},"id":"sesAAAAAAAAAAAA1","life":["alive","1789740800000:0:r_aaaaaaaaaaaa"],"rc":1789740800000,"ru":1789740800000,"seq":3,"t":"session"},
+        {"born":"1789741040000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741040000,"1789741040000:0:r_aaaaaaaaaaaa"],"exerciseId":["bench-press","1789741040000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741040000:0:r_aaaaaaaaaaaa"],"note":["","1789741040000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789741040000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741040000:0:r_aaaaaaaaaaaa"],"weightKg":[62.5,"1789741040000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000001","life":["alive","1789741040000:0:r_aaaaaaaaaaaa"],"rc":1789741040000,"ru":1789741040000,"seq":4,"t":"set","v":{"setNumber":1}},
+        {"born":"1789741340000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789741340000,"1789741340000:0:r_aaaaaaaaaaaa"],"exerciseId":["lateral-raise","1789741340000:0:r_aaaaaaaaaaaa"],"kind":["working","1789741340000:0:r_aaaaaaaaaaaa"],"note":["","1789741340000:0:r_aaaaaaaaaaaa"],"reps":[12,"1789741340000:0:r_aaaaaaaaaaaa"],"sessionId":["sesAAAAAAAAAAAA1","1789741340000:0:r_aaaaaaaaaaaa"],"weightKg":[20.25,"1789741340000:0:r_aaaaaaaaaaaa"]},"id":"setA000000000002","life":["alive","1789741340000:0:r_aaaaaaaaaaaa"],"rc":1789741340000,"ru":1789741340000,"seq":5,"t":"set","v":{"setNumber":1}}
+      ]
+    },
+    "call": {"input":{"exerciseIds":["lateral-raise","deadlift","no-such-movement","back-squat"]},"name":"get_last_times"},
+    "expect": {
+      "result": {
+        "exercises": [
+          {
+            "exerciseId": "lateral-raise",
+            "session": {"finishedAt":1789743200000,"id":"sesAAAAAAAAAAAA1","startedAt":1789740800000},
+            "sets": [
+              {
+                "completedAt": 1789741340000,
+                "exerciseId": "lateral-raise",
+                "id": "setA000000000002",
+                "kind": "working",
+                "note": "",
+                "reps": 12,
+                "setNumber": 1,
+                "weightKg": 20.25
+              }
+            ],
+            "trained": true
+          },
+          {"exerciseId":"deadlift","trained":false},
+          {
+            "exerciseId": "back-squat",
+            "session": {"finishedAt":1789743800000,"id":"sesBBBBBBBBBBBB1","startedAt":1789740800000},
+            "sets": [
+              {
+                "completedAt": 1789741100000,
+                "exerciseId": "back-squat",
+                "id": "setB000000000001",
+                "kind": "working",
+                "note": "",
+                "reps": 5,
+                "setNumber": 1,
+                "weightKg": 100
+              }
+            ],
+            "trained": true
+          }
+        ],
+        "missingExerciseIds": ["no-such-movement"],
+        "read": {"sessions":2,"sets":2,"weeks":1}
+      },
+      "sha256": "e35b5714b8dca4d2b4ab41f51b307dcb2df42def43149a8633b18c298f913056",
+      "writes": []
+    }
+  },
+  {
+    "case": "an empty log trains nothing",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {"input":{"exerciseIds":["back-squat"]},"name":"get_last_times"},
+    "expect": {
+      "result": {"exercises":[{"exerciseId":"back-squat","trained":false}],"missingExerciseIds":[]},
+      "sha256": "889926ea53ec9b1bbfb10cf2b514c084391c15a74dc991ce09ba6220013533ac",
+      "writes": []
+    }
+  }
+]
