@@ -191,6 +191,17 @@ test('diffRows — a reorder the store counted is a row of its own, so the count
   assert.equal(bothRows.filter((row) => row.kind !== 'kept').length, both.changeCount);
 });
 
+test('diffRows — a removal names nothing, so its blank name is no rename row and no reorder', () => {
+  const removal = proposal({
+    intent: 'remove', name: '', changeCount: 3,
+    changes: [
+      { position: 1, kind: 'removed', exerciseId: 'bench-press', before: { sets: straight(5, 5, 82.5) } },
+      { position: 2, kind: 'removed', exerciseId: 'chin-up', before: { sets: [{}, {}, {}] } },
+    ],
+  });
+  assert.deepEqual(diffRows(removal).map((row) => row.kind), ['removed', 'removed']);
+});
+
 test('diffRows — a renamed routine is a row of the diff, counted like any other change', () => {
   const renamed = proposal({ name: 'Push A — heavy', changeCount: 5 });
   const rows = diffRows(renamed);

@@ -272,11 +272,13 @@ export function documentLine(proposal) {
 // order moving.
 export function diffRows(proposal) {
   const rows = [];
-  if (typeof proposal.name === 'string' && typeof proposal.baseName === 'string' && proposal.name !== proposal.baseName) {
+  // A removal carries a blank name, which the store counts as a rename: no row, but it is marked.
+  const renamed = typeof proposal.name === 'string' && typeof proposal.baseName === 'string' && proposal.name !== proposal.baseName;
+  if (renamed && proposal.intent !== 'remove') {
     rows.push({ kind: 'renamed', from: proposal.baseName, to: proposal.name });
   }
   const changes = proposal.changes ?? [];
-  const marked = rows.length + changes.filter((change) => change.kind !== 'kept').length;
+  const marked = (renamed ? 1 : 0) + changes.filter((change) => change.kind !== 'kept').length;
   if (typeof proposal.changeCount === 'number' && proposal.changeCount > marked) {
     rows.push({ kind: 'reordered' });
   }
