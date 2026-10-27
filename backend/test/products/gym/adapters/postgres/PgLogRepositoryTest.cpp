@@ -32,7 +32,14 @@ SetWrite bench(const std::string& id, double weightKg, std::uint64_t completedAt
   return lift(id, "bench-press", weightKg, 8, completedAtMs);
 }
 
-// The reps are what the marks are made of, so a squat states them.
+// A row of the working-set projection (domain/Progress.h): the set, dated by its session's start.
+ProgressSet fact(const std::string& session, std::uint64_t startedAtMs, const std::string& set,
+                 const std::string& exercise, double weightKg, int reps) {
+  return ProgressSet{SessionId{session}, startedAtMs, ExerciseId{exercise},
+                     PerformedFact{SetId{set}, weightKg, reps, std::nullopt}};
+}
+
+// The reps are what every record is judged on, so a squat states them.
 SetWrite squat(const std::string& id, double weightKg, int reps, std::uint64_t completedAtMs,
                SetKind kind = SetKind::working) {
   return lift(id, "back-squat", weightKg, reps, completedAtMs, kind);
@@ -180,7 +187,8 @@ TEST(pg_gym_progress_reads_raw_finished_working_sets_with_owner_and_effort_intac
           {SetId{"set_pg000011"}, 300, 8, std::nullopt}}}));
   CHECK_EQ(statsProgress(history, began + 70'000), (StatsProgress{began + 70'000, {
       {SessionId{"ses_pg000001"}, began, {
-          {ExerciseId{"bench-press"}, 3, expected[0].performed, EstimatedFact{expected[2].performed, 114}},
+          {ExerciseId{"bench-press"}, 3, expected[0].performed,
+           EstimatedFact{expected[2].performed, *expected[2].performed.estimate()}},
           {ExerciseId{"chin-up"}, 1, expected[3].performed, std::nullopt},
           {ExerciseId{"pull-up"}, 1, expected[4].performed, std::nullopt, expected[4].performed}}}}}));
 }
@@ -543,8 +551,8 @@ TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_
   CHECK_EQ(listed[1].tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the assisted set adds none
 }
 
-// One row per distinct WORKING load carrying the best reps at it, heaviest first; a load at or below zero rides along unfiltered.
-TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
+// Every WORKING set, dated by its session, in set-id order; a load at or below zero rides along unfiltered.
+TEST(pg_gym_log_hands_back_every_working_set_of_a_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -561,13 +569,14 @@ TEST(pg_gym_log_hands_back_one_row_per_working_load_with_the_best_reps_at_it) {
   std::vector<SessionSummary> listed = pageOf(h, page(t1 + 100'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
-  // One row per (movement, load) with the best reps at it, dated by the SESSION and not by the set (domain/Review.h).
-  CHECK_EQ(listed[0].workingMarks,
-           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
-                                   PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1},
-                                   PriorMark{ExerciseId{"back-squat"}, -20.0, 12, t1}}));
+  // Dated by the SESSION and not by the set (domain/Progress.h).
+  CHECK_EQ(listed[0].worked, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
+                                                       fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 6),
+                                                       fact("ses_pg000001", t1, "set_pg000004", "back-squat", 95, 10),
+                                                       fact("ses_pg000001", t1, "set_pg000005", "back-squat", 95, 8),
+                                                       fact("ses_pg000001", t1, "set_pg000006", "back-squat", -20, 12)}));
   // And what the application makes of it: the session's number, not its heaviest set's.
-  CHECK_EQ(topE1rmOf(listed[0].workingMarks), e1rm(95.0, 10));
+  CHECK_EQ(topE1rmOf(listed[0].worked), Estimate::of(95.0, 10, std::nullopt)->e1rm);
   CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
 }
 
@@ -902,13 +911,15 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   REQUIRE(reviewed.has_value());
   SessionHistory history = h.repo.log.historyFor(h.user, *reviewed);
 
-  const std::vector<PriorMark> marks{PriorMark{ExerciseId{"back-squat"}, 90, 10, t1 - 2 * week},
-                                     PriorMark{ExerciseId{"back-squat"}, 100, 8, t1 - 2 * week}};
-  CHECK_EQ(history.marks, marks);
+  const std::uint64_t ran = t1 - 2 * week;
+  CHECK_EQ(history.standing, (std::vector<ProgressSet>{fact("ses_pg000001", ran, "set_pg000001", "back-squat", 100, 8),
+                                                       fact("ses_pg000001", ran, "set_pg000002", "back-squat", 100, 8),
+                                                       fact("ses_pg000001", ran, "set_pg000003", "back-squat", 100, 5),
+                                                       fact("ses_pg000001", ran, "set_pg000004", "back-squat", 90, 10)}));
   CHECK_EQ(history.previous, std::optional<Session>());   // no routine, nothing to stand against
   CHECK_EQ(history.previousSets, std::vector<Set>{});
   // Another account reads its own log and no part of this one.
-  CHECK_EQ(h.repo.log.historyFor(h.other, *reviewed).marks, std::vector<PriorMark>{});
+  CHECK_EQ(h.repo.log.historyFor(h.other, *reviewed).standing, std::vector<ProgressSet>{});
 }
 
 TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine) {
@@ -939,10 +950,10 @@ TEST(pg_gym_history_stands_against_the_last_finished_session_of_the_same_routine
   CHECK_EQ(history.previous->plan, std::optional<PlanSnapshot>(pushA()));
   REQUIRE_EQ(history.previousSets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.previousSets[0].weightKg, 95.0);
-  // Each mark dated by the session it was set in, never by the instant a set carried.
-  const std::vector<PriorMark> marks{PriorMark{ExerciseId{"back-squat"}, 95, 5, t1 - 2 * week},
-                                     PriorMark{ExerciseId{"back-squat"}, 100, 5, t1 - week}};
-  CHECK_EQ(history.marks, marks);
+  // Each set dated by the session it was set in, never by the instant a set carried.
+  CHECK_EQ(history.standing,
+           (std::vector<ProgressSet>{fact("ses_pg000001", t1 - 2 * week, "set_pg000001", "back-squat", 95, 5),
+                                     fact("ses_pg000002", t1 - week, "set_pg000002", "back-squat", 100, 5)}));
 }
 
 TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
@@ -1247,8 +1258,8 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"ses_pg000002"}).value().startedAtMs, static_cast<std::uint64_t>(1));
 }
 
-// One point per (movement, session), one mark per (movement, load), and the weekly counts. No Epley in the SQL.
-TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_counts) {
+// Every working set of the finished log, and the weekly counts. No estimate in the SQL.
+TEST(pg_gym_statistics_is_every_working_set_and_the_weekly_counts) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'000;
@@ -1265,14 +1276,10 @@ TEST(pg_gym_statistics_is_the_top_set_per_session_the_marks_and_the_weekly_count
 
   TrainingLog log = h.repo.log.trainingLog(h.user);
 
-  // The heaviest working set, ties to more reps; the warmup counts toward nothing.
-  CHECK_EQ(log.tops, (std::vector<MovementTop>{MovementTop{ExerciseId{"back-squat"}, t1, 110, 2},
-                                               MovementTop{ExerciseId{"back-squat"}, t1 + week, 105, 5}}));
-  // A mark carries the START of the session it was set in, the same instant its point above carries.
-  CHECK_EQ(log.marks, (std::vector<PriorMark>{
-                          PriorMark{ExerciseId{"back-squat"}, 100, 5, t1},
-                          PriorMark{ExerciseId{"back-squat"}, 105, 5, t1 + week},
-                          PriorMark{ExerciseId{"back-squat"}, 110, 2, t1}}));
+  // Each set carries the START of the session it was done in; the warmup counts toward nothing.
+  CHECK_EQ(log.sets, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 100, 5),
+                                               fact("ses_pg000001", t1, "set_pg000002", "back-squat", 110, 2),
+                                               fact("ses_pg000002", t1 + week, "set_pg000004", "back-squat", 105, 5)}));
   // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'`: 1699833600000 is 2023-11-13.
   CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 2},
                                                  TrainingWeek{1'699'833'600'000 + week, 1, 1}}));
@@ -1313,8 +1320,7 @@ TEST(pg_gym_statistics_leaves_the_open_session_and_another_account_out) {
 
   TrainingLog log = h.repo.log.trainingLog(h.user);
 
-  CHECK(log.tops.empty());
-  CHECK(log.marks.empty());
+  CHECK(log.sets.empty());
   CHECK(log.weeks.empty());
 }
 
@@ -1423,16 +1429,16 @@ TEST(pg_gym_log_hands_over_the_marks_standing_before_the_page) {
   const LogPage newest = h.repo.log.log(h.user, page(t1 + 2 * day, 1));
   const LogPage whole = h.repo.log.log(h.user, page(t1 + 2 * day, 50));
 
-  // The squat mark this page has to beat comes back beside it; the BENCH mark does not.
+  // The squat this page has to beat comes back beside it; the BENCH set does not.
   REQUIRE_EQ(newest.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(newest.standing, (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1}}));
+  CHECK_EQ(newest.standing, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 100, 5)}));
   // The whole log on one page: nothing was finished before its oldest row, so nothing stands.
   REQUIRE_EQ(whole.sessions.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(whole.standing, std::vector<PriorMark>{});
+  CHECK_EQ(whole.standing, std::vector<ProgressSet>{});
 }
 
-// The two windows differ on purpose: a page carries the OPEN workout as a row, while the standing marks count FINISHED sessions alone.
-TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_page) {
+// The two windows differ on purpose: a page carries the OPEN workout as a row, while the standing sets count FINISHED sessions alone.
+TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_sets_stand_before_a_page) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'000;
@@ -1451,16 +1457,16 @@ TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_marks_stand_before_a_p
   REQUIRE_EQ(newest.sessions.size(), static_cast<std::size_t>(1));
   CHECK_EQ(newest.sessions[0].session.id, SessionId{"ses_pg000002"});
   CHECK_EQ(newest.sessions[0].session.finishedAtMs, std::optional<std::uint64_t>());
-  CHECK_EQ(newest.standing, (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1}}));
-  // Both rows on one page: the open one's 110 × 5 is a mark of the PAGE and never a standing one.
+  CHECK_EQ(newest.standing, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 100, 5)}));
+  // Both rows on one page: the open one's 110 × 5 is a set of the PAGE and never a standing one.
   REQUIRE_EQ(whole.sessions.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(whole.sessions[0].workingMarks,
-           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 110.0, 5, t1 + day}}));
-  CHECK_EQ(whole.standing, std::vector<PriorMark>{});
+  CHECK_EQ(whole.sessions[0].worked,
+           (std::vector<ProgressSet>{fact("ses_pg000002", t1 + day, "set_pg000002", "back-squat", 110, 5)}));
+  CHECK_EQ(whole.standing, std::vector<ProgressSet>{});
 }
 
-// One ladder per FINISHED session oldest first, the routines naming the movement once each, then the recent days.
-TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_the_recent_days) {
+// The working sets of FINISHED sessions oldest first, the routines naming the movement once each, then the recent days.
+TEST(pg_gym_movement_history_is_its_finished_working_sets_the_routines_and_the_recent_days) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'000;
@@ -1481,13 +1487,10 @@ TEST(pg_gym_movement_history_is_a_ladder_per_finished_session_the_routines_and_t
   CHECK_EQ(history.exercise->id, ExerciseId{"back-squat"});
   // The NAMES the sheet prints, deduplicated: the same movement twice in one day is one day.
   CHECK_EQ(history.routines, std::vector<std::string>{"Legs"});
-  REQUIRE_EQ(history.sessions.size(), static_cast<std::size_t>(1));
-  CHECK_EQ(history.sessions[0].session, SessionId{"ses_pg000001"});
-  CHECK_EQ(history.sessions[0].startedAtMs, t1);   // the SESSION's start, never a set's stamp
-  // The ladder's rows carry that same instant, so the bar, the tile and the record line cannot land on three days.
-  CHECK_EQ(history.sessions[0].loads,
-           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 100.0, 5, t1},
-                                   PriorMark{ExerciseId{"back-squat"}, 95.0, 10, t1}}));
+  // Every set carries the SESSION's start, never its own stamp, so the bar, the tile and the record line cannot land
+  // on three days.
+  CHECK_EQ(history.sets, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
+                                                   fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 10)}));
   REQUIRE_EQ(history.recent.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.recent[0].session, SessionId{"ses_pg000001"});
   CHECK_EQ(history.recent[0].startedAtMs, t1);
@@ -1509,7 +1512,7 @@ TEST(pg_gym_movement_history_of_a_movement_this_account_cannot_see_is_empty) {
   const MovementHistory never = h.repo.log.movementHistory(h.user, ExerciseId{"back-squat"});
   REQUIRE(never.exercise.has_value());
   CHECK(never.routines.empty());
-  CHECK(never.sessions.empty());
+  CHECK(never.sets.empty());
   CHECK(never.recent.empty());
 }
 

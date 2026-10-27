@@ -19,11 +19,11 @@ struct SessionDetail {
   bool operator==(const SessionDetail&) const = default;
 };
 
-// record runs the domain's three record rules over the whole page in one walk against the marks
+// record runs the domain's three record rules over the whole page in one walk against the sets
 // standing before it, and needs to be told which rows are FINISHED. Recomputed on every read and
 // stored nowhere.
-// topE1rm is `topE1rmOf` over the loads the store handed back: the best estimate over every working
-// set, NOT Epley over `summary.topSet`. Absent exactly where Epley is undefined.
+// topE1rm is `topE1rmOf` over the session's working sets: the best estimate any of them earned, NOT the
+// estimate of `summary.topSet`. Absent where none earned one.
 struct LogRow {
   SessionSummary summary;
   std::optional<double> topE1rm;

@@ -55,14 +55,10 @@
             ]
           },
           {
-            "bestE1rm": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
             "exerciseId": "lateral-raise",
-            "heaviest": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "heaviest": {"at":1789136000000,"reps":12,"weightKg":20.25},
             "lastTrainedAt": 1789740800000,
-            "points": [
-              {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
-              {"at":1789740800000,"e1rm":28.4,"reps":12,"weightKg":20.25}
-            ]
+            "points": [{"at":1789136000000,"reps":12,"weightKg":20.25},{"at":1789740800000,"reps":12,"weightKg":20.25}]
           }
         ],
         "read": {"sessions":0,"sets":0,"weeks":2},
@@ -71,7 +67,7 @@
           {"sessions":2,"startedAt":1789344000000,"workingSets":3}
         ]
       },
-      "sha256": "cba1de116847c1b3299e3e2f97e390f7842926fce5c14da52abcc9a37046dd7c",
+      "sha256": "e70595b17b68c82dfcfb60eae3730a208dfbcd3e7d91f5677ea19ab4d50a81ad",
       "writes": []
     }
   },
@@ -99,14 +95,10 @@
       "result": {
         "movements": [
           {
-            "bestE1rm": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
             "exerciseId": "lateral-raise",
-            "heaviest": {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
+            "heaviest": {"at":1789136000000,"reps":12,"weightKg":20.25},
             "lastTrainedAt": 1789740800000,
-            "points": [
-              {"at":1789136000000,"e1rm":28.4,"reps":12,"weightKg":20.25},
-              {"at":1789740800000,"e1rm":28.4,"reps":12,"weightKg":20.25}
-            ]
+            "points": [{"at":1789136000000,"reps":12,"weightKg":20.25},{"at":1789740800000,"reps":12,"weightKg":20.25}]
           }
         ],
         "read": {"sessions":0,"sets":0,"weeks":2},
@@ -115,7 +107,7 @@
           {"sessions":2,"startedAt":1789344000000,"workingSets":3}
         ]
       },
-      "sha256": "7dcb922aa909022f842cf9a322331707f341013aeda6e78b23a6c9fed032e0a6",
+      "sha256": "40b8ae8206b2d78d84516c2a7b98db672b1ad417ff9601fe7d942373a13a9b4a",
       "writes": []
     }
   }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "products/gym/domain/Review.h"
+#include "products/gym/domain/Progress.h"
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
@@ -14,18 +14,6 @@ namespace wm::gym {
 // e1RM is the headline, never volume. Tonnage as a caption clamps a negative load to zero, and a
 // zero tonnage shows nothing rather than `0.0 t`.
 
-// The instant is the SESSION's own start, never a set's `completed_at`. The set is the movement's
-// TOP working set there. The store makes the selection; the domain makes the estimate, and Epley
-// never reaches the database.
-struct MovementTop {
-  ExerciseId exercise;
-  std::uint64_t startedAtMs;
-  double weightKg;
-  int reps;
-
-  bool operator==(const MovementTop&) const = default;
-};
-
 // Weeks run Monday to Monday in UTC; the instant crosses as epoch-ms. A week with no training is
 // present and zero, never missing.
 struct TrainingWeek {
@@ -36,17 +24,17 @@ struct TrainingWeek {
   bool operator==(const TrainingWeek&) const = default;
 };
 
-// `tops` arrive grouped by movement and oldest first within each; `marks` are the per-(movement,
-// load) projection over this account's whole finished log. Only FINISHED sessions feed any of these.
+// `sets` are every working set of this account's FINISHED sessions; the store selects them and the domain makes
+// every estimate. Only finished sessions feed the weeks too.
 struct TrainingLog {
-  std::vector<MovementTop> tops;
-  std::vector<PriorMark> marks;
+  std::vector<ProgressSet> sets;
   std::vector<TrainingWeek> weeks;
 
   bool operator==(const TrainingLog&) const = default;
 };
 
-// `e1rm` is absent exactly where Epley is undefined — at and below zero.
+// A movement's top working set in one session, dated by the SESSION's start; `e1rm` is that set's own estimate,
+// absent where it earned none.
 struct MovementPoint {
   std::uint64_t atMs;
   double weightKg;
@@ -56,8 +44,7 @@ struct MovementPoint {
   bool operator==(const MovementPoint&) const = default;
 };
 
-// A movement's standing best and the set that holds it, read off the marks. atMs is dated by the
-// SESSION the mark was set in.
+// A movement's standing best and the set that holds it, dated by the SESSION it was set in.
 struct Best {
   double weightKg;
   int reps;
@@ -68,7 +55,7 @@ struct Best {
 };
 
 // `bestE1rm` is chosen BY having an estimate, so its own is always there; `heaviest` is chosen by
-// load, so a bodyweight movement's carries none.
+// load, so it carries an estimate only where its set earned one.
 struct MovementProgress {
   ExerciseId exercise;
   std::uint64_t lastTrainedAtMs;
@@ -89,58 +76,5 @@ struct Statistics {
 
 // Stored nowhere.
 Statistics statistics(const TrainingLog& log);
-
-struct PerformedFact {
-  SetId set;
-  double weightKg;
-  int reps;
-  std::optional<double> rpe;
-
-  bool operator==(const PerformedFact&) const = default;
-};
-
-struct EstimatedFact {
-  PerformedFact performed;
-  double e1rm;
-
-  bool operator==(const EstimatedFact&) const = default;
-};
-
-struct MovementSessionFact {
-  ExerciseId exercise;
-  int workingSetCount;
-  PerformedFact heaviest;
-  std::optional<EstimatedFact> estimate;
-  std::optional<PerformedFact> mostReps;
-
-  bool operator==(const MovementSessionFact&) const = default;
-};
-
-struct ProgressSession {
-  SessionId session;
-  std::uint64_t startedAtMs;
-  std::vector<MovementSessionFact> movements;
-
-  bool operator==(const ProgressSession&) const = default;
-};
-
-struct StatsProgress {
-  std::uint64_t asOfMs;
-  std::vector<ProgressSession> sessions;
-
-  bool operator==(const StatsProgress&) const = default;
-};
-
-// Raw working sets of finished sessions, ordered by (startedAtMs, session, exercise, set).
-struct ProgressSet {
-  SessionId session;
-  std::uint64_t startedAtMs;
-  ExerciseId exercise;
-  PerformedFact performed;
-
-  bool operator==(const ProgressSet&) const = default;
-};
-
-StatsProgress statsProgress(const std::vector<ProgressSet>& history, std::uint64_t asOfMs);
 
 }

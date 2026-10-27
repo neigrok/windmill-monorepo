@@ -82,6 +82,30 @@ inline bool scopeConsistent(const UserId& account) {
   return digest == scope->digest && greatest == scope->seq;
 }
 
+// The given records written straight into the account's gym scope, as the engine stores them, with the scope row
+// that holds them: seq the greatest, counters for every capped type, digest the sum of the row hashes (§6.12).
+inline void seed(const UserId& account, const Json::Value& given) {
+  const auto catalog = sync::productCatalog();
+  sync::PgSyncStore store{pool(), sync::Limits{}.lockTimeoutMs};
+  const auto txn = store.begin(sync::TxnMode::write);
+  const auto scope = sync::ScopeKey::product(account, "gym");
+  store.insertScope(*txn, scope, account, std::nullopt);
+  for (const sync::TypeDef* type : catalog->applyOrder())
+    for (const Json::Value& wire : given) {
+      const sync::Row row(wire);
+      if (row.t == type->name) catalog->store(row.t).apply(*txn, scope, {sync::RowWrite{type, row.id, std::nullopt, row, {}}});
+    }
+  sync::ScopeRow stored = *store.scope(*txn, scope, sync::RowLock::update);
+  for (const sync::TypeDef* type : catalog->typesIn(scope.registryScope()))
+    for (const sync::Row& row : catalog->store(type->name).feed(*txn, scope, sync::FeedQuery{})) {
+      stored.digest = stored.digest + sync::rowHash(row.toJson());
+      stored.seq = std::max(stored.seq, row.seq);
+      if (type->cap && row.alive()) ++stored.counters[type->name];
+    }
+  store.saveScope(*txn, stored);
+  txn->commit();
+}
+
 // The gym's Postgres repositories, under the names FakeGym gives its in-memory ones.
 struct Repositories {
   PgLogRepository log{pool()};

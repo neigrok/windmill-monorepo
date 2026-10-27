@@ -18,9 +18,9 @@ const std::uint64_t kWeek = 604'800'000;
 std::uint64_t at(int minutes) { return kStart + static_cast<std::uint64_t>(minutes) * 60'000; }
 
 Set setOf(const std::string& exercise, double weightKg, int reps, std::uint64_t atMs,
-          SetKind kind = SetKind::working) {
+          SetKind kind = SetKind::working, std::optional<double> rpe = std::nullopt) {
   return Set{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{exercise}, 1, weightKg,
-             reps, kind, std::nullopt, "", atMs};
+             reps, kind, rpe, "", atMs};
 }
 
 Set squat(double weightKg, int reps, std::uint64_t atMs, SetKind kind = SetKind::working) {
@@ -31,10 +31,14 @@ Set bench(double weightKg, int reps, std::uint64_t atMs, SetKind kind = SetKind:
   return setOf("bench-press", weightKg, reps, atMs, kind);
 }
 
-PriorMark mark(const std::string& exercise, double weightKg, int reps,
-               std::uint64_t atMs = kStart - kWeek) {
-  return PriorMark{ExerciseId{exercise}, weightKg, reps, atMs};
+// A working set of a finished session that started at `startedAtMs`, standing before today's.
+ProgressSet stood(const std::string& exercise, double weightKg, int reps, std::uint64_t startedAtMs = kStart - kWeek,
+                  std::optional<double> rpe = std::nullopt) {
+  return ProgressSet{SessionId{"ses_" + std::to_string(startedAtMs)}, startedAtMs, ExerciseId{exercise},
+                     PerformedFact{SetId{"set_" + std::to_string(startedAtMs)}, weightKg, reps, rpe}};
 }
+
+double epley(double weightKg, int reps) { return weightKg * (1.0 + reps / 30.0); }
 
 PlanEntry plannedSquat() {
   return PlanEntry{ExerciseId{"back-squat"}, std::vector<SetTarget>(5, SetTarget{5, 105.0}), 180};
@@ -60,22 +64,10 @@ std::vector<Set> fourFives(double weightKg) {
 }
 }
 
-TEST(e1rm_is_epley_rounded_to_the_decimal_the_screen_prints) {
-  CHECK_EQ(e1rm(105, 5), std::optional<double>(122.5));
-  CHECK_EQ(e1rm(100, 5), std::optional<double>(116.7));   // 116.666… — the screen shows one place
-  CHECK_EQ(e1rm(60, 10), std::optional<double>(80.0));
-  CHECK_EQ(e1rm(100, 1), std::optional<double>(103.3));
-}
-
-TEST(e1rm_is_absent_at_and_below_zero_kilos) {
-  CHECK_EQ(e1rm(0, 10), std::optional<double>());
-  CHECK_EQ(e1rm(0, 1), std::optional<double>());
-  CHECK_EQ(e1rm(-20, 8), std::optional<double>());
-}
-
-TEST(top_e1rm_is_absent_when_nothing_in_the_session_was_loaded) {
-  std::vector<Set> sets = {setOf("chin-up", 0, 9, at(5)), setOf("chin-up", 0, 8, at(9)),
-                           setOf("chin-up", 0, 6, at(13)), setOf("chin-up", 0, 6, at(17))};
+TEST(top_e1rm_is_absent_when_no_working_set_earned_an_estimate) {
+  std::vector<Set> sets = {setOf("chin-up", 0, 9, at(5)), setOf("lateral-raise", 20, 12, at(9)),
+                           setOf("bench-press", 80, 5, at(13), SetKind::working, 6.5),
+                           setOf("chin-up", 0, 6, at(17))};
 
   Review result = review(adHoc(), sets, SessionHistory{});
 
@@ -86,7 +78,7 @@ TEST(top_e1rm_is_absent_when_nothing_in_the_session_was_loaded) {
 TEST(a_first_ever_session_earns_no_record) {
   Review result = review(legs(), fourFives(100), SessionHistory{});
 
-  const ReviewStats facts{kHour, 4, 116.7};
+  const ReviewStats facts{kHour, 4, epley(100, 5)};
   CHECK_FALSE(result.slight);
   CHECK_EQ(result.stats, facts);
   CHECK_EQ(result.record, std::optional<PersonalRecord>());
@@ -96,7 +88,7 @@ TEST(a_first_ever_session_earns_no_record) {
 TEST(an_ordinary_session_earns_no_record) {
   // Equalling is not beating.
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 5)};
+  history.standing = {stood("back-squat", 100, 5)};
   history.previous = legs(kStart - kWeek, "ses_00000002");
   history.previousSets = fourFives(100);
 
@@ -109,27 +101,27 @@ TEST(an_ordinary_session_earns_no_record) {
 
 TEST(an_e1rm_record_outranks_a_heaviest_earned_beside_it) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 8), mark("bench-press", 80, 5, kStart - 2 * kWeek)};
+  history.standing = {stood("back-squat", 100, 8), stood("bench-press", 80, 5, kStart - 2 * kWeek)};
   std::vector<Set> sets = {squat(110, 2, at(10)), squat(110, 2, at(14)), bench(82.5, 5, at(30)),
                            bench(82.5, 5, at(34))};
 
   Review result = review(legs(), sets, history);
 
-  const PersonalRecord estimate{RecordKind::e1rm, ExerciseId{"bench-press"}, 96.3, 82.5, 5, 93.3,
-                               kStart - 2 * kWeek};
+  const PersonalRecord estimate{RecordKind::e1rm, ExerciseId{"bench-press"}, epley(82.5, 5), 82.5, 5,
+                                epley(80, 5), kStart - 2 * kWeek};
   REQUIRE(result.record.has_value());
   CHECK_EQ(*result.record, estimate);
 }
 
 TEST(a_heaviest_record_names_the_bar_and_not_the_estimate) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 8)};
+  history.standing = {stood("back-squat", 100, 8)};
   std::vector<Set> sets = {squat(110, 2, at(10)), squat(110, 2, at(14)), squat(110, 2, at(18)),
                            squat(110, 2, at(22))};
 
   Review result = review(legs(), sets, history);
 
-  const ReviewStats facts{kHour, 4, 117.3};
+  const ReviewStats facts{kHour, 4, epley(110, 2)};
   const PersonalRecord bar{RecordKind::heaviest, ExerciseId{"back-squat"}, 110.0, 110.0, 2, 100.0,
                            kStart - kWeek};
   CHECK_EQ(result.stats, facts);
@@ -139,7 +131,7 @@ TEST(a_heaviest_record_names_the_bar_and_not_the_estimate) {
 
 TEST(more_reps_at_a_load_is_the_record_a_bodyweight_movement_earns) {
   SessionHistory history;
-  history.marks = {mark("chin-up", 0, 8)};
+  history.standing = {stood("chin-up", 0, 8)};
   std::vector<Set> sets = {setOf("chin-up", 0, 9, at(5)), setOf("chin-up", 0, 8, at(9)),
                            setOf("chin-up", 0, 6, at(13)), setOf("chin-up", 0, 6, at(17))};
 
@@ -153,7 +145,7 @@ TEST(more_reps_at_a_load_is_the_record_a_bodyweight_movement_earns) {
 
 TEST(a_warmup_a_drop_and_a_failure_earn_nothing) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 5)};
+  history.standing = {stood("back-squat", 100, 5)};
   std::vector<Set> sets = {squat(140, 3, at(4), SetKind::warmup),
                            squat(95, 5, at(10)),
                            squat(95, 5, at(14)),
@@ -164,21 +156,21 @@ TEST(a_warmup_a_drop_and_a_failure_earn_nothing) {
 
   Review result = review(legs(), sets, history);
 
-  const ReviewStats facts{kHour, 4, 110.8};
+  const ReviewStats facts{kHour, 4, epley(95, 5)};
   CHECK_EQ(result.stats, facts);
   CHECK_EQ(result.record, std::optional<PersonalRecord>());
 }
 
 TEST(a_three_working_set_session_is_slight_and_carries_neither_line) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 5)};
+  history.standing = {stood("back-squat", 100, 5)};
   history.previous = legs(kStart - kWeek, "ses_00000002");
   history.previousSets = fourFives(100);
   std::vector<Set> sets = {squat(120, 5, at(4)), squat(120, 5, at(8)), squat(120, 5, at(11))};
 
   Review result = review(legs(), sets, history);
 
-  const ReviewStats facts{kHour, 3, 140.0};
+  const ReviewStats facts{kHour, 3, epley(120, 5)};
   CHECK(result.slight);
   CHECK_EQ(result.stats, facts);
   CHECK_EQ(result.record, std::optional<PersonalRecord>());
@@ -187,7 +179,7 @@ TEST(a_three_working_set_session_is_slight_and_carries_neither_line) {
 
 TEST(a_fourth_working_set_is_where_a_session_starts_speaking) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 5)};
+  history.standing = {stood("back-squat", 100, 5)};
 
   CHECK(review(legs(), {squat(120, 5, at(4)), squat(120, 5, at(8)), squat(120, 5, at(11))}, history)
             .slight);
@@ -266,60 +258,100 @@ TEST(the_span_runs_to_the_finish_and_to_the_last_set_while_the_session_is_open) 
   CHECK_EQ(review(open, {}, SessionHistory{}).stats.durationMs, 0ull);
 }
 
+// A set under RPE 7 earns no estimate, so it can set no e1RM record; the bar it moved is still the heaviest.
+TEST(a_set_under_rpe_seven_earns_no_estimate_record_and_still_counts_as_the_heaviest) {
+  SessionHistory history;
+  history.standing = {stood("back-squat", 100, 5, kStart - kWeek, 8)};
+  std::vector<Set> sets(4, setOf("back-squat", 105, 5, at(10), SetKind::working, 6));
+
+  Review result = review(legs(), sets, history);
+
+  CHECK_EQ(result.stats.topE1rm, std::nullopt);
+  REQUIRE(result.record.has_value());
+  CHECK_EQ(*result.record, (PersonalRecord{RecordKind::heaviest, ExerciseId{"back-squat"}, 105.0, 105.0, 5, 100.0,
+                                           kStart - kWeek}));
+}
+
+// 80 × 5 equals 70 × 10 by the rule, so it beats nothing: the record it earns is the heavier bar.
+TEST(an_equal_estimate_is_no_e1rm_record) {
+  SessionHistory history;
+  history.standing = {stood("bench-press", 70, 10)};
+
+  Review result = review(legs(), std::vector<Set>(4, bench(80, 5, at(10))), history);
+
+  REQUIRE(result.record.has_value());
+  CHECK_EQ(result.record->kind, RecordKind::heaviest);
+}
+
+// The workout is not over, so nothing in it is a record yet; its comparison is still drawn.
+TEST(an_open_session_earns_no_record) {
+  SessionHistory history;
+  history.standing = {stood("back-squat", 100, 5)};
+  history.previous = legs(kStart - kWeek, "ses_00000002");
+  history.previousSets = fourFives(100);
+  Session open = legs();
+  open.finishedAtMs = std::nullopt;
+
+  Review result = review(open, fourFives(110), history);
+
+  CHECK_EQ(result.record, std::optional<PersonalRecord>());
+  CHECK(result.against.has_value());
+}
+
 namespace {
-SessionMarks earned(const std::string& id, std::vector<PriorMark> marks, int workingSets = 4,
-                    bool finished = true) {
-  return SessionMarks{SessionId{id}, std::move(marks), workingSets, finished};
+// A page row of `sets` sets of five at one load, in a session that started at `startedAtMs`.
+WorkedSession earned(const std::string& id, std::uint64_t startedAtMs, double weightKg, int sets = 4,
+                     bool finished = true) {
+  std::vector<ProgressSet> worked;
+  for (int n = 0; n < sets; ++n)
+    worked.push_back(ProgressSet{SessionId{id}, startedAtMs, ExerciseId{"back-squat"},
+                                 PerformedFact{SetId{id + "_" + std::to_string(n)}, weightKg, 5, std::nullopt}});
+  return WorkedSession{SessionId{id}, finished, std::move(worked)};
 }
 }
 
 TEST(the_page_walk_marks_every_session_that_passed_a_mark_and_no_others) {
-  const std::vector<SessionMarks> page{earned("ses_00000001", {mark("back-squat", 100, 5, at(1))}),
-                                       earned("ses_00000002", {mark("back-squat", 102.5, 5, at(2))}),
-                                       earned("ses_00000003", {mark("back-squat", 105, 5, at(3))}),
-                                       earned("ses_00000004", {mark("back-squat", 105, 5, at(4))})};
+  const std::vector<WorkedSession> page{earned("ses_00000001", at(1), 100), earned("ses_00000002", at(2), 102.5),
+                                        earned("ses_00000003", at(3), 105), earned("ses_00000004", at(4), 105)};
 
   const std::vector<SessionId> marked = recordedIn(page, {});
 
   CHECK_EQ(marked, (std::vector<SessionId>{SessionId{"ses_00000002"}, SessionId{"ses_00000003"}}));
 }
 
-TEST(the_page_walk_judges_its_oldest_row_against_the_marks_standing_before_the_page) {
-  const std::vector<SessionMarks> page{earned("ses_00000001", {mark("back-squat", 100, 5, at(1))})};
+TEST(the_page_walk_judges_its_oldest_row_against_the_sets_standing_before_the_page) {
+  const std::vector<WorkedSession> page{earned("ses_00000001", at(1), 100)};
 
   CHECK_EQ(recordedIn(page, {}), std::vector<SessionId>{});
-  CHECK_EQ(recordedIn(page, {mark("back-squat", 95, 5)}),
-           std::vector<SessionId>{SessionId{"ses_00000001"}});
+  CHECK_EQ(recordedIn(page, {stood("back-squat", 95, 5)}), std::vector<SessionId>{SessionId{"ses_00000001"}});
 }
 
 TEST(a_slight_session_earns_no_dot_and_still_moves_the_marks_it_set) {
-  const std::vector<SessionMarks> page{
-      earned("ses_00000001", {mark("back-squat", 105, 5, at(1))}, kSlightWorkingSets - 1),
-      earned("ses_00000002", {mark("back-squat", 105, 5, at(2))})};
+  const std::vector<WorkedSession> page{earned("ses_00000001", at(1), 105, kSlightWorkingSets - 1),
+                                        earned("ses_00000002", at(2), 105)};
 
-  CHECK_EQ(recordedIn(page, {mark("back-squat", 100, 5)}), std::vector<SessionId>{});
+  CHECK_EQ(recordedIn(page, {stood("back-squat", 100, 5)}), std::vector<SessionId>{});
 }
 
 TEST(the_dot_and_the_finish_screens_record_are_the_same_judgement) {
   SessionHistory history;
-  history.marks = {mark("back-squat", 100, 5)};
+  history.standing = {stood("back-squat", 100, 5)};
   const std::vector<Set> sets = fourFives(105);
+  std::vector<ProgressSet> worked;
+  for (const Set& set : sets) worked.push_back(ProgressSet::of(legs(), set));
 
   const Review finish = review(legs(), sets, history);
   const std::vector<SessionId> marked =
-      recordedIn({earned("ses_00000001", marksOf(sets), static_cast<int>(sets.size()))},
-                 history.marks);
+      recordedIn({WorkedSession{SessionId{"ses_00000001"}, true, worked}}, history.standing);
 
   CHECK(finish.record.has_value());
   CHECK_EQ(marked, std::vector<SessionId>{SessionId{"ses_00000001"}});
 }
 
-TEST(an_open_session_on_the_page_is_judged_but_never_stands_under_the_rows_above_it) {
-  const std::vector<SessionMarks> page{
-      earned("ses_00000001", {mark("back-squat", 100, 5, at(1))}),
-      earned("ses_00000002", {mark("back-squat", 110, 5, at(2))}, 4, false),
-      earned("ses_00000003", {mark("back-squat", 105, 5, at(3))})};
+TEST(an_open_session_on_the_page_earns_nothing_and_never_stands_under_the_rows_above_it) {
+  const std::vector<WorkedSession> page{earned("ses_00000001", at(1), 100),
+                                        earned("ses_00000002", at(2), 110, 4, false),
+                                        earned("ses_00000003", at(3), 105)};
 
-  CHECK_EQ(recordedIn(page, {}), (std::vector<SessionId>{SessionId{"ses_00000002"},
-                                                        SessionId{"ses_00000003"}}));
+  CHECK_EQ(recordedIn(page, {}), (std::vector<SessionId>{SessionId{"ses_00000003"}}));
 }

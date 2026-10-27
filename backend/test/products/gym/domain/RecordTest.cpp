@@ -24,14 +24,14 @@ Exercise chinUp() {
                   false};
 }
 
-PriorMark load(double weightKg, int reps, std::uint64_t atMs) {
-  return PriorMark{ExerciseId{"back-squat"}, weightKg, reps, atMs};
+// A working set of the session `session`, which started at `startedAtMs`.
+ProgressSet ran(const std::string& session, std::uint64_t startedAtMs, const std::string& set, double weightKg,
+                int reps, const std::string& exercise = "back-squat") {
+  return ProgressSet{SessionId{session}, startedAtMs, ExerciseId{exercise},
+                     PerformedFact{SetId{set}, weightKg, reps, std::nullopt}};
 }
 
-MovementSession ran(const std::string& id, std::uint64_t startedAtMs,
-                    std::vector<PriorMark> loads) {
-  return MovementSession{SessionId{id}, startedAtMs, std::move(loads)};
-}
+double epley(double weightKg, int reps) { return weightKg * (1.0 + reps / 30.0); }
 
 Set squatSet(const std::string& id, double weightKg, int reps, std::uint64_t completedAtMs) {
   return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"back-squat"}, 1, weightKg, reps,
@@ -56,67 +56,72 @@ TEST(gym_record_of_a_movement_never_lifted_draws_nothing_at_all) {
 TEST(gym_record_plots_the_best_estimate_of_a_session_and_not_its_top_set) {
   const MovementHistory history{
       squat(), {"Push A"},
-      {ran("ses_00000011", kNow - kWeek, {load(100, 5, kNow - kWeek), load(95, 10, kNow - kWeek)})},
+      {ran("ses_00000011", kNow - kWeek, "set_00000001", 100, 5), ran("ses_00000011", kNow - kWeek, "set_00000002", 95, 10)},
       {}};
 
   const MovementRecord page = movementRecord(squat(), history, kNow);
 
   CHECK_EQ(page.sessions, 1);
-  REQUIRE_EQ(page.series.size(), 1u);
-  CHECK_EQ(page.series[0], (RecordPoint{kNow - kWeek, 95, 10, 126.7}));
-  REQUIRE(page.bestE1rm.has_value());
-  CHECK_EQ(*page.bestE1rm, (Best{95, 10, kNow - kWeek, 126.7}));
-  REQUIRE(page.heaviest.has_value());
-  CHECK_EQ(*page.heaviest, (Best{100, 5, kNow - kWeek, 116.7}));
+  CHECK_EQ(page.series, (std::vector<RecordPoint>{{kNow - kWeek, 95, 10, epley(95, 10)}}));
+  CHECK_EQ(page.bestE1rm, (Best{95, 10, kNow - kWeek, epley(95, 10)}));
+  CHECK_EQ(page.heaviest, (Best{100, 5, kNow - kWeek, epley(100, 5)}));
+}
+
+// Past ten reps there is no estimate: twelve reps at a heavier load plot nothing, and the session's point is the set
+// the rule estimates.
+TEST(gym_record_plots_only_the_sets_the_one_e1rm_rule_estimates) {
+  const MovementHistory history{
+      squat(), {},
+      {ran("ses_00000011", kNow - kWeek, "set_00000001", 100, 12), ran("ses_00000011", kNow - kWeek, "set_00000002", 90, 8)},
+      {}};
+
+  const MovementRecord page = movementRecord(squat(), history, kNow);
+
+  CHECK_EQ(page.series, (std::vector<RecordPoint>{{kNow - kWeek, 90, 8, epley(90, 8)}}));
+  CHECK_EQ(page.heaviest, (Best{100, 12, kNow - kWeek, std::nullopt}));
 }
 
 TEST(gym_record_ladder_holds_every_session_that_beat_the_one_standing_and_never_the_first) {
   const MovementHistory history{squat(),
                                 {},
-                                {ran("ses_00000011", kNow - 3 * kWeek, {load(100, 5, kNow - 3 * kWeek)}),
-                                 ran("ses_00000012", kNow - 2 * kWeek, {load(100, 4, kNow - 2 * kWeek)}),
-                                 ran("ses_00000013", kNow - kWeek, {load(102.5, 5, kNow - kWeek)}),
-                                 ran("ses_00000014", kNow, {load(105, 5, kNow)})},
+                                {ran("ses_00000011", kNow - 3 * kWeek, "set_00000001", 100, 5),
+                                 ran("ses_00000012", kNow - 2 * kWeek, "set_00000002", 100, 4),
+                                 ran("ses_00000013", kNow - kWeek, "set_00000003", 102.5, 5),
+                                 ran("ses_00000014", kNow, "set_00000004", 105, 5)},
                                 {}};
 
   const MovementRecord page = movementRecord(squat(), history, kNow);
 
   CHECK_EQ(page.sessions, 4);
-  REQUIRE_EQ(page.records.size(), 2u);
-  CHECK_EQ(page.records[0], (RecordPoint{kNow, 105, 5, 122.5}));
-  CHECK_EQ(page.records[1], (RecordPoint{kNow - kWeek, 102.5, 5, 119.6}));
+  CHECK_EQ(page.records, (std::vector<RecordPoint>{{kNow, 105, 5, epley(105, 5)},
+                                                   {kNow - kWeek, 102.5, 5, epley(102.5, 5)}}));
   CHECK_EQ(page.series.size(), 4u);
-  REQUIRE(page.bestE1rm.has_value());
-  CHECK_EQ(*page.bestE1rm, (Best{105, 5, kNow, 122.5}));
+  CHECK_EQ(page.bestE1rm, (Best{105, 5, kNow, epley(105, 5)}));
 }
 
 TEST(gym_record_windows_the_chart_to_twelve_weeks_and_nothing_else) {
   const MovementHistory history{squat(),
                                 {},
-                                {ran("ses_00000011", kNow - 20 * kWeek, {load(140, 5, kNow - 20 * kWeek)}),
-                                 ran("ses_00000012", kNow - 2 * kWeek, {load(100, 5, kNow - 2 * kWeek)})},
+                                {ran("ses_00000011", kNow - 20 * kWeek, "set_00000001", 140, 5),
+                                 ran("ses_00000012", kNow - 2 * kWeek, "set_00000002", 100, 5)},
                                 {}};
 
   const MovementRecord page = movementRecord(squat(), history, kNow);
 
   CHECK_EQ(page.sessions, 2);
-  REQUIRE_EQ(page.series.size(), 1u);
-  CHECK_EQ(page.series[0], (RecordPoint{kNow - 2 * kWeek, 100, 5, 116.7}));
-  REQUIRE(page.bestE1rm.has_value());
-  CHECK_EQ(*page.bestE1rm, (Best{140, 5, kNow - 20 * kWeek, 163.3}));
+  CHECK_EQ(page.series, (std::vector<RecordPoint>{{kNow - 2 * kWeek, 100, 5, epley(100, 5)}}));
+  CHECK_EQ(page.bestE1rm, (Best{140, 5, kNow - 20 * kWeek, epley(140, 5)}));
   REQUIRE(page.heaviest.has_value());
   CHECK_EQ(page.heaviest->weightKg, 140);
 }
 
-// Epley is undefined at and below zero, so an unloaded movement has no estimate at all.
+// No set at or below zero earns an estimate, so an unloaded movement has no estimate at all.
 TEST(gym_record_of_an_unloaded_movement_draws_the_heaviest_tile_and_no_chart) {
   const MovementHistory history{
       chinUp(),
       {},
-      {MovementSession{SessionId{"ses_00000011"},
-                       kNow - kWeek,
-                       {PriorMark{ExerciseId{"chin-up"}, 0, 10, kNow - kWeek},
-                        PriorMark{ExerciseId{"chin-up"}, -20, 12, kNow - kWeek}}}},
+      {ran("ses_00000011", kNow - kWeek, "set_00000001", 0, 10, "chin-up"),
+       ran("ses_00000011", kNow - kWeek, "set_00000002", -20, 12, "chin-up")},
       {}};
 
   const MovementRecord page = movementRecord(chinUp(), history, kNow);
@@ -125,8 +130,7 @@ TEST(gym_record_of_an_unloaded_movement_draws_the_heaviest_tile_and_no_chart) {
   CHECK_EQ(page.bestE1rm, std::nullopt);
   CHECK(page.series.empty());
   CHECK(page.records.empty());
-  REQUIRE(page.heaviest.has_value());
-  CHECK_EQ(*page.heaviest, (Best{0, 10, kNow - kWeek, std::nullopt}));
+  CHECK_EQ(page.heaviest, (Best{0, 10, kNow - kWeek, std::nullopt}));
 }
 
 TEST(gym_record_hands_the_recent_days_through_as_the_store_grouped_them) {
@@ -135,7 +139,7 @@ TEST(gym_record_hands_the_recent_days_through_as_the_store_grouped_them) {
                           {squatSet("set_00000001", 105, 5, kNow),
                            squatSet("set_00000002", 105, 4, kNow + 1)}};
   const MovementHistory history{
-      squat(), {}, {ran("ses_00000001", kNow, {load(105, 5, kNow)})}, {today}};
+      squat(), {}, {ran("ses_00000001", kNow, "set_00000001", 105, 5)}, {today}};
 
   const MovementRecord page = movementRecord(squat(), history, kNow);
 

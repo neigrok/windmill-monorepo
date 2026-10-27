@@ -294,8 +294,9 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   REQUIRE(first.answer.ok);
   REQUIRE(first.receipt.has_value());
   CHECK_EQ(first.receipt->proposals, (std::vector<std::string>{"prop_removal01"}));
+  // The removal's one line and the name it leaves blank, counted as the admission rule counts any proposal.
   CHECK_EQ(outcomeOf(*h.repo.threads.thread(owner, thread)),
-           (ThreadOutcome{ThreadOutcomeKind::proposed, 1, RoutineId{"rt_pg000001"}, "Push A"}));
+           (ThreadOutcome{ThreadOutcomeKind::proposed, 2, RoutineId{"rt_pg000001"}, "Push A"}));
 
   desk.agent.plan = {{"propose_routine_change", wm::parse(R"({"id":"prop_removal02","routineId":"rt_pg000002",
       "summary":"Try triples.","entries":[{"exerciseId":"bench-press","sets":[{"reps":3,"weightKg":85}]}]})")}};

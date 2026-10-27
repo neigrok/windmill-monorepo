@@ -432,7 +432,7 @@ TEST(pg_gym_mcp_and_coach_can_propose_renaming_and_removing_historical_blank_rou
       const auto storedRemoval = h.repo.program.proposal(h.user, ProposalId{args["id"].asString()});
       REQUIRE(storedRemoval.has_value());
       CHECK_EQ(storedRemoval->baseName, trimmedName(name));
-      CHECK_EQ(storedRemoval->proposedName, trimmedName(name));
+      CHECK_EQ(storedRemoval->proposedName, std::string());   // a removal leaves no name, as a phone mints it
       CHECK_EQ(storedRemoval->head.intent, ProposalIntent::remove);
       CHECK_EQ(storedRemoval->head.state, ProposalState::pending);
       CHECK_EQ(storedRemoval->head.source, source);

@@ -25,9 +25,8 @@ struct TopWorkingSet {
 // tonnageKg is `sum(greatest(weight_kg, 0) * reps * count)` over working sets, where count is the movement's
 // dumbbell count (2 unless it holds one) and 1 for any other equipment (liftedVolume, domain/Training.h) — a
 // negative (band-assisted) load must not subtract. Zero means nothing measurable moved, never "no work".
-// workingMarks: working sets collapsed to one row per (movement, load) carrying the best reps at it,
-// grouped by movement, heaviest first inside each, dated by the SESSION's start. Loads at or below
-// zero ride along unfiltered.
+// worked: the session's working sets as the record rules read them, dated by the SESSION's start. Loads at or
+// below zero ride along unfiltered.
 // closedItself reads `closed_by`; where it is null, a session closed itself when finished_at sits
 // exactly at the last set's instant, or at started_at for a session holding none.
 struct SessionSummary {
@@ -37,18 +36,17 @@ struct SessionSummary {
   double tonnageKg;
   std::vector<std::string> exerciseNames;
   std::optional<TopWorkingSet> topSet;
-  std::vector<PriorMark> workingMarks;   // by movement, heaviest first, best reps at each
+  std::vector<ProgressSet> worked;
   bool closedItself = false;
 
   bool operator==(const SessionSummary&) const = default;
 };
 
-// `standing` is the marks that stood before the OLDEST row on the page, bounded by the page's own
-// movements and by distinct loads, ordered by movement then heaviest load first. An empty page has
-// empty `standing`.
+// `standing` is the working sets of the FINISHED sessions before the OLDEST row on the page, bounded by the page's
+// own movements. An empty page has empty `standing`.
 struct LogPage {
   std::vector<SessionSummary> sessions;   // newest first
-  std::vector<PriorMark> standing;
+  std::vector<ProgressSet> standing;
 
   bool operator==(const LogPage&) const = default;
 };
@@ -156,14 +154,14 @@ struct LogRepository {
   // Ordered by movement id, the key the caller joins it onto its catalog by.
   virtual std::vector<LastSet> lastSets(const UserId& user) = 0;
 
-  // Everything the review rules need that the session does not hold, in one pass: the marks of the
+  // Everything the review rules need that the session does not hold, in one pass: the standing sets of the
   // movements it works, and the earlier session it stands against with its sets.
   virtual SessionHistory historyFor(const UserId& user, const Session& session) = 0;
 
-  // One movement's whole page in one pass; the store hands over orderings only, no e1RM.
+  // One movement's whole page in one pass; the store selects sets and computes no e1RM.
   virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;
 
-  // `tops` come back grouped by movement, oldest first within each group; no e1RM is computed here.
+  // Every working set of the finished log and its weeks; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
 
   virtual std::vector<ProgressSet> progressHistory(const UserId& user) = 0;

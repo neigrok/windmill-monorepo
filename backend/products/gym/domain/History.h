@@ -1,6 +1,6 @@
 #pragma once
 
-#include "products/gym/domain/Statistics.h"
+#include "products/gym/domain/Progress.h"
 #include "products/gym/domain/Training.h"
 
 #include <optional>

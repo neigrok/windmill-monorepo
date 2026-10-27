@@ -1,80 +1,119 @@
 #include "products/gym/domain/Review.h"
 
 #include <algorithm>
-#include <cmath>
 #include <tuple>
 #include <utility>
 
 namespace wm::gym {
 
 namespace {
-// A record plus the two numbers that rank it against the others a session earned; neither reaches
-// the wire. e1rmOfSet is zero for a set with no honest estimate, and a defined e1RM is always above
-// zero, so an unloaded record sorts below a loaded one.
+// A record plus the estimate score of the set that earned it, which ranks it against the others a session earned and
+// never reaches the wire. A set with no estimate scores zero, below every set that has one.
 struct Candidate {
   PersonalRecord record;
-  double e1rmOfSet;
-  std::uint64_t atMs;
+  std::int64_t score;
 };
 
-// The ranking, in one place: kinds in their declared order, then the larger e1RM, then the heavier
-// load, then the earlier set.
+Candidate candidateOf(PersonalRecord record, const PerformedFact& set) {
+  const std::optional<Estimate> estimate = set.estimate();
+  return Candidate{std::move(record), estimate ? estimate->score : 0};
+}
+
+// The ranking, in one place: kinds in their declared order, then the higher score, then the heavier load, then the
+// movement id.
 bool outranks(const Candidate& earned, const Candidate& best) {
   if (earned.record.kind != best.record.kind) return earned.record.kind < best.record.kind;
-  if (earned.e1rmOfSet != best.e1rmOfSet) return earned.e1rmOfSet > best.e1rmOfSet;
-  if (earned.record.weightKg != best.record.weightKg)
-    return earned.record.weightKg > best.record.weightKg;
-  return earned.atMs < best.atMs;
+  if (earned.score != best.score) return earned.score > best.score;
+  if (earned.record.weightKg != best.record.weightKg) return earned.record.weightKg > best.record.weightKg;
+  return earned.record.exercise.str() < best.record.exercise.str();
 }
 
-// The movements this session trained, in the order they were first performed — the order the
-// comparison prints and the record walk breaks its last tie in. Read off the MARKS, which `marksOf`
-// appends in first-seen order.
-std::vector<ExerciseId> movementsOf(const std::vector<PriorMark>& marks) {
+std::vector<ProgressSet> setsOfMovement(const std::vector<ProgressSet>& sets, const ExerciseId& exercise) {
+  std::vector<ProgressSet> out;
+  for (const ProgressSet& set : sets)
+    if (set.exercise == exercise) out.push_back(set);
+  return out;
+}
+
+// The movements in the order they were first performed — the order the comparison prints.
+std::vector<ExerciseId> movementsOf(const std::vector<Set>& sets) {
   std::vector<ExerciseId> out;
-  for (const PriorMark& mark : marks) {
-    bool seen = false;
-    for (const ExerciseId& held : out)
-      if (held == mark.exercise) seen = true;
-    if (!seen) out.push_back(mark.exercise);
-  }
+  for (const Set& set : sets)
+    if (std::ranges::find(out, set.exercise) == out.end()) out.push_back(set.exercise);
   return out;
 }
 
-std::vector<PriorMark> marksOfMovement(const std::vector<PriorMark>& marks,
-                                       const ExerciseId& exercise) {
-  std::vector<PriorMark> out;
-  for (const PriorMark& mark : marks)
-    if (mark.exercise == exercise) out.push_back(mark);
-  return out;
-}
-
-// The heaviest mark, ties broken by more reps and then by the earlier one — TopSet's rule over the
-// projection instead of over the sets.
-std::optional<PriorMark> heaviestMark(const std::vector<PriorMark>& marks) {
-  std::optional<PriorMark> top;
-  for (const PriorMark& mark : marks) {
-    if (top && std::tuple(mark.weightKg, mark.reps, top->atMs) <=
-                   std::tuple(top->weightKg, top->reps, mark.atMs))
+// One session's top set among `sets`: the heaviest, then the most reps, then the lowest set id.
+std::optional<ProgressSet> topOf(const std::vector<ProgressSet>& sets) {
+  std::optional<ProgressSet> top;
+  for (const ProgressSet& set : sets) {
+    const PerformedFact& now = set.performed;
+    if (top && std::tuple(now.weightKg, now.reps, top->performed.set.str()) <=
+                   std::tuple(top->performed.weightKg, top->performed.reps, now.set.str()))
       continue;
-    top = mark;
+    top = set;
   }
   return top;
 }
 
-// One mark folded into a running projection: more reps at a load it already holds replaces it, the
-// same reps hit earlier only re-dates it, and an unseen load is appended.
-void fold(std::vector<PriorMark>& marks, const PriorMark& earned) {
-  for (PriorMark& held : marks) {
-    if (!(held.exercise == earned.exercise) || held.weightKg != earned.weightKg) continue;
-    if (earned.reps > held.reps) {
-      held = earned;
-      return;
-    }
-    if (earned.reps == held.reps && earned.atMs < held.atMs) held.atMs = earned.atMs;
-    return;
+// The mark a load must pass across the standing sessions: the most reps at the heaviest load, the earliest session
+// and then the lowest set id holding it.
+std::optional<ProgressSet> standingTopOf(const std::vector<ProgressSet>& sets) {
+  std::optional<ProgressSet> top;
+  for (const ProgressSet& set : sets) {
+    const PerformedFact& now = set.performed;
+    if (top && std::tuple(now.weightKg, now.reps, top->startedAtMs, top->performed.set.str()) <=
+                   std::tuple(top->performed.weightKg, top->performed.reps, set.startedAtMs, now.set.str()))
+      continue;
+    top = set;
   }
-  marks.push_back(earned);
+  return top;
+}
+
+std::vector<ProgressSet> atLoad(const std::vector<ProgressSet>& sets, double weightKg) {
+  std::vector<ProgressSet> out;
+  for (const ProgressSet& set : sets)
+    if (set.performed.weightKg == weightKg) out.push_back(set);
+  return out;
+}
+
+// The three record rules for one movement. Each needs a mark to have been PASSED, so a first session claims nothing.
+std::vector<Candidate> recordsFor(const ExerciseId& exercise, const std::vector<ProgressSet>& today,
+                                  const std::vector<ProgressSet>& standing) {
+  std::vector<Candidate> earned;
+
+  const std::optional<MovementSeries::Point> now = MovementSeries{progressSessions(today), exercise}.best();
+  const std::optional<MovementSeries::Point> before = MovementSeries{progressSessions(standing), exercise}.best();
+  if (now && before && now->fact.estimate->estimate.score > before->fact.estimate->estimate.score) {
+    const EstimatedFact& set = *now->fact.estimate;
+    earned.push_back(candidateOf(PersonalRecord{RecordKind::e1rm, exercise, set.estimate.e1rm, set.performed.weightKg,
+                                                set.performed.reps, before->fact.estimate->estimate.e1rm,
+                                                before->startedAtMs},
+                                 set.performed));
+  }
+
+  const std::optional<ProgressSet> top = topOf(today);
+  const std::optional<ProgressSet> heaviest = standingTopOf(standing);
+  if (top && heaviest && top->performed.weightKg > heaviest->performed.weightKg)
+    earned.push_back(candidateOf(PersonalRecord{RecordKind::heaviest, exercise, top->performed.weightKg,
+                                                top->performed.weightKg, top->performed.reps,
+                                                heaviest->performed.weightKg, heaviest->startedAtMs},
+                                 top->performed));
+
+  // More reps at a load this lifter has used before, each load of today judged once.
+  std::vector<double> loads;
+  for (const ProgressSet& set : today)
+    if (std::ranges::find(loads, set.performed.weightKg) == loads.end()) loads.push_back(set.performed.weightKg);
+  for (const double load : loads) {
+    const std::optional<ProgressSet> most = topOf(atLoad(today, load));
+    const std::optional<ProgressSet> mark = standingTopOf(atLoad(standing, load));
+    if (!mark || most->performed.reps <= mark->performed.reps) continue;
+    earned.push_back(candidateOf(PersonalRecord{RecordKind::repsAtWeight, exercise,
+                                                static_cast<double>(most->performed.reps), load, most->performed.reps,
+                                                static_cast<double>(mark->performed.reps), mark->startedAtMs},
+                                 most->performed));
+  }
+  return earned;
 }
 
 std::vector<Set> setsOfMovement(const std::vector<Set>& working, const ExerciseId& exercise) {
@@ -117,66 +156,9 @@ std::uint64_t spanOf(const Session& session, const std::vector<Set>& sets) {
   return last - session.startedAtMs;
 }
 
-// The three record rules for one movement, answered from the marks alone, best of them returned.
-// Each needs a mark to have been PASSED, so a first session claims nothing.
-std::optional<Candidate> recordFor(const ExerciseId& exercise, const std::vector<PriorMark>& today,
-                                   const std::vector<PriorMark>& priors) {
-  std::vector<Candidate> earned;
-
-  double priorTopE1rm = 0;
-  std::uint64_t priorTopE1rmAtMs = 0;
-  for (const PriorMark& mark : priors) {
-    std::optional<double> value = e1rm(mark.weightKg, mark.reps);
-    if (!value || *value <= priorTopE1rm) continue;
-    priorTopE1rm = *value;
-    priorTopE1rmAtMs = mark.atMs;
-  }
-  double topE1rm = 0;
-  std::optional<PriorMark> byE1rm;
-  for (const PriorMark& mark : today) {
-    std::optional<double> value = e1rm(mark.weightKg, mark.reps);
-    if (!value || *value <= topE1rm) continue;
-    topE1rm = *value;
-    byE1rm = mark;
-  }
-  if (byE1rm && priorTopE1rm > 0 && topE1rm > priorTopE1rm)
-    earned.push_back(Candidate{PersonalRecord{RecordKind::e1rm, exercise, topE1rm, byE1rm->weightKg,
-                                              byE1rm->reps, priorTopE1rm, priorTopE1rmAtMs},
-                               topE1rm, byE1rm->atMs});
-
-  // The prior stays optional because a load may legally be zero or negative, so no number can stand
-  // in for "no mark".
-  std::optional<PriorMark> priorTopLoad = heaviestMark(priors);
-  std::optional<PriorMark> byLoad = heaviestMark(today);
-  if (byLoad && priorTopLoad && byLoad->weightKg > priorTopLoad->weightKg)
-    earned.push_back(Candidate{
-        PersonalRecord{RecordKind::heaviest, exercise, byLoad->weightKg, byLoad->weightKg,
-                       byLoad->reps, priorTopLoad->weightKg, priorTopLoad->atMs},
-        e1rm(byLoad->weightKg, byLoad->reps).value_or(0), byLoad->atMs});
-
-  // More reps at a load this lifter has used before. One mark exists per (movement, load) on both
-  // sides, so a load is compared exactly once.
-  for (const PriorMark& mark : today)
-    for (const PriorMark& prior : priors) {
-      if (prior.weightKg != mark.weightKg || mark.reps <= prior.reps) continue;
-      earned.push_back(
-          Candidate{PersonalRecord{RecordKind::repsAtWeight, exercise,
-                                   static_cast<double>(mark.reps), mark.weightKg, mark.reps,
-                                   static_cast<double>(prior.reps), prior.atMs},
-                    e1rm(mark.weightKg, mark.reps).value_or(0), mark.atMs});
-    }
-
-  if (earned.empty()) return std::nullopt;
-  Candidate best = earned.front();
-  for (const Candidate& candidate : earned)
-    if (outranks(candidate, best)) best = candidate;
-  return best;
-}
-
 // The comparison exists only for a session that named a routine, and only where there is an earlier
 // one to stand against.
 std::optional<Against> comparisonOf(const Session& session, const std::vector<Set>& working,
-                                    const std::vector<PriorMark>& earned,
                                     const SessionHistory& history) {
   if (!session.routine) return std::nullopt;
   if (!history.previous) return std::nullopt;
@@ -185,7 +167,7 @@ std::optional<Against> comparisonOf(const Session& session, const std::vector<Se
     if (set.kind == SetKind::working) before.push_back(set);
 
   std::vector<AgainstMovement> movements;
-  for (const ExerciseId& movement : movementsOf(earned)) {
+  for (const ExerciseId& movement : movementsOf(working)) {
     // A plan may name one movement twice; the first line is its main work, and the comparison prints
     // one target rather than adding two together.
     std::optional<PlanEntry> planned;
@@ -214,54 +196,38 @@ std::string toString(RecordKind kind) {
   return "e1rm";
 }
 
-std::optional<double> e1rm(double weightKg, int reps) {
-  if (weightKg <= 0) return std::nullopt;
-  return std::round(weightKg * (1.0 + reps / 30.0) * 10.0) / 10.0;
-}
-
-std::vector<PriorMark> marksOf(const std::vector<Set>& sets) {
-  std::vector<PriorMark> marks;
-  for (const Set& set : sets) {
-    if (set.kind != SetKind::working) continue;
-    fold(marks, PriorMark{set.exercise, set.weightKg, set.reps, set.completedAtMs});
-  }
-  return marks;
-}
-
-std::optional<double> topE1rmOf(const std::vector<PriorMark>& marks) {
+std::optional<double> topE1rmOf(const std::vector<ProgressSet>& sets) {
   std::optional<double> top;
-  for (const PriorMark& mark : marks) {
-    std::optional<double> value = e1rm(mark.weightKg, mark.reps);
-    if (!value || (top && *value <= *top)) continue;
-    top = value;
-  }
+  for (const ProgressSet& set : sets)
+    if (const std::optional<Estimate> estimate = set.performed.estimate(); estimate && (!top || estimate->e1rm > *top))
+      top = estimate->e1rm;
   return top;
 }
 
-// At most one record for the whole session: the best of each movement's best, under the same
-// ranking.
-std::optional<PersonalRecord> recordAgainst(const std::vector<PriorMark>& earned,
-                                            const std::vector<PriorMark>& standing) {
+// At most one record for the whole session: the best of each movement's best, under the same ranking.
+std::optional<PersonalRecord> recordAgainst(const std::vector<ProgressSet>& today,
+                                            const std::vector<ProgressSet>& standing) {
+  std::vector<ExerciseId> movements;
+  for (const ProgressSet& set : today)
+    if (std::ranges::find(movements, set.exercise) == movements.end()) movements.push_back(set.exercise);
   std::optional<Candidate> best;
-  for (const ExerciseId& movement : movementsOf(earned)) {
-    std::optional<Candidate> won = recordFor(movement, marksOfMovement(earned, movement),
-                                             marksOfMovement(standing, movement));
-    if (!won) continue;
-    if (!best || outranks(*won, *best)) best = *won;
-  }
+  for (const ExerciseId& movement : movements)
+    for (const Candidate& candidate :
+         recordsFor(movement, setsOfMovement(today, movement), setsOfMovement(standing, movement)))
+      if (!best || outranks(candidate, *best)) best = candidate;
   if (!best) return std::nullopt;
   return best->record;
 }
 
-std::vector<SessionId> recordedIn(const std::vector<SessionMarks>& page,
-                                  const std::vector<PriorMark>& standing) {
-  std::vector<PriorMark> history = standing;
+std::vector<SessionId> recordedIn(const std::vector<WorkedSession>& page,
+                                  const std::vector<ProgressSet>& standing) {
+  std::vector<ProgressSet> history = standing;
   std::vector<SessionId> earned;
-  for (const SessionMarks& session : page) {
-    if (session.workingSets >= kSlightWorkingSets && recordAgainst(session.marks, history))
+  for (const WorkedSession& session : page) {
+    if (!session.finished) continue;   // the workout is not over: it earns nothing, and nothing stands on it yet
+    if (session.sets.size() >= static_cast<std::size_t>(kSlightWorkingSets) && recordAgainst(session.sets, history))
       earned.push_back(session.session);
-    if (!session.finished) continue;   // the workout is not over; nothing after it stands on it yet
-    for (const PriorMark& mark : session.marks) fold(history, mark);
+    history.insert(history.end(), session.sets.begin(), session.sets.end());
   }
   return earned;
 }
@@ -270,14 +236,15 @@ Review review(const Session& session, const std::vector<Set>& sets, const Sessio
   std::vector<Set> working;
   for (const Set& set : sets)
     if (set.kind == SetKind::working) working.push_back(set);
+  std::vector<ProgressSet> today;
+  for (const Set& set : working) today.push_back(ProgressSet::of(session, set));
 
   // The span counts every set, warmups included; everything below counts only working sets.
-  const std::vector<PriorMark> earned = marksOf(working);
-  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(earned)};
-  if (stats.workingSets < kSlightWorkingSets)
-    return Review{stats, true, std::nullopt, std::nullopt};
-  return Review{stats, false, recordAgainst(earned, history.marks),
-                comparisonOf(session, working, earned, history)};
+  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(today)};
+  if (stats.workingSets < kSlightWorkingSets) return Review{stats, true, std::nullopt, std::nullopt};
+  std::optional<PersonalRecord> record;
+  if (session.finishedAtMs) record = recordAgainst(today, history.standing);
+  return Review{stats, false, std::move(record), comparisonOf(session, working, history)};
 }
 
 }

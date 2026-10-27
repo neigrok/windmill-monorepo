@@ -142,12 +142,12 @@ session's set revisions and share, a log share's snapshots, Coach's tables) and 
   second 3. Nothing renumbers after a delete; a correction names every set's number. Admission holds
   the account's scope lock, and there is no unique index on `(session_id, exercise_id, set_number)`:
   the column holds gaps.
-- **Only WORKING sets count toward anything** — volume, marks, records, the counts a screen prints.
+- **Only WORKING sets count toward anything** — volume, estimates, records, the counts a screen prints.
 - **Negative `weight_kg` is legal** and means band-assisted work, which is why every volume sum
   clamps at zero.
 - Canonical unit is **kg, at rest and on the wire**, `numeric` and never float; there is no `lb`
-  column anywhere. The domain carries `double`, and e1RM rounds to the one decimal the screen prints
-  before comparing, so float noise cannot mint a record.
+  column anywhere. The domain carries `double`; an e1RM keeps full precision until the wire states it
+  to a tenth, and two estimates compare by the rule's exact score, so float noise cannot mint a record.
 
 ### 3.3 The plan
 
@@ -322,7 +322,8 @@ routine is deleted.
   with the routine, so reading it back answers `404`; a second apply answers `ok` from its receipt.
 - **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
   proposal reorders: `countedChanges` on the door, `proposalChangeCount` in GymRules, which writes it
-  as `changeCount`. It is what `noChange` is decided off.
+  as `changeCount`. It is what `noChange` is decided off. A removal leaves `proposedName` blank, as both
+  phones mint one (engine A.2 admits the blank there), so the rule counts it as the rename it is.
 - **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, null on an open
   line — beside its rest, with presence flags for the side and each of its fields. The REST read goes
   through `GymJson`'s `setTargetsFrom`, and `kind` tells an absent side from an open line.
@@ -518,27 +519,34 @@ four hours of the last activity, staying at that activity when the tap came late
 
 ### 4.3 The review (`domain/Review.h`)
 
-- **`e1rm` is defined only for a loaded set** (Epley, `weightKg > 0`). A chin-up at 0 kg and a
-  band-assisted pull-up at −20 have no honest estimate. It returns the value rounded to the decimal
-  the screen prints, and every comparison uses that rounded number.
+- **`Estimate::of` (`domain/Progress.h`) is the one e1RM rule** (brand foundations, `GymEstimate` on
+  every phone and the web): a positive load for one to ten reps, unrated or at RPE 7 or more; one rep is
+  the load itself, more is Epley. Everything else has no estimate — a chin-up at 0 kg, a band-assisted
+  pull-up at −20, twelve reps, a set at RPE 6. The value keeps full precision; two estimates compare by
+  `score` (the load in whole cents × 30 for one rep, × (30 + reps) for more), which is exact where the
+  two Epley doubles are not; the wire states each estimate to a tenth with `Estimate::stated`, last.
+  The domain suite claims the `GymEstimate` cases of `packages/api-contract/gym/domain/training-reads.json`,
+  and the adapters suite its progress, review and statistics cases over Postgres
+  (`test/products/gym/application/TrainingReadsCorpusTest.cpp`).
 - **`topE1rmOf` is the one definition of a session's e1RM**, over *every* working set the session held
-  — never Epley over the top set: 3 × 95 × 10 beats 100 × 5. Every surface that prints one comes
+  — never the estimate of the top set: 3 × 95 × 10 beats 100 × 5. Every surface that prints one comes
   through it.
 - **`recordAgainst` is the one implementation of the three record rules**; `recordedIn` walks it
   forward over a page, judging each session against the history as it stood that day and folding a
   session into that history **only if it is finished**.
-- **The record rules:** working sets only; **a mark must have been passed**, so a first session claims
-  nothing and equalling is not beating; at most one record per session, ranked `e1rm` ▸ `heaviest` ▸
-  `repsAtWeight`, and within a kind by the larger e1RM, then the heavier load, then the earlier set.
+- **The record rules:** working sets only, and only for a FINISHED session; **a mark must have been
+  passed**, so a first session claims nothing and equalling is not beating (80 × 5 does not beat 70 × 10:
+  their scores are equal); at most one record per session, ranked `e1rm` ▸ `heaviest` ▸ `repsAtWeight`,
+  and within a kind by the higher score of the set that earned it, then the heavier load, then the
+  movement id. A beaten mark is dated by the start of the earliest session holding it.
   Under `kSlightWorkingSets` (4) working sets a session says nothing beyond its three facts; duration
   is deliberately not in that predicate. The comparison exists only for a session that named a
   routine, is matched on the **top working set** (heaviest, ties to more reps) and never on volume,
   and names the earlier session by the routine name frozen in *that* session's snapshot.
-- **`PriorMark` is a projection, not a history**: one row per (movement, load) carrying the best reps
-  ever done at it. At a fixed load Epley rises with reps, so that row is the best set at that load and
-  all three record rules follow from it — which keeps Epley out of SQL entirely. **A mark is dated by
-  the SESSION it was set in**, never by `completed_at`. `marksOf` is the single exception, because
-  inside one workout set instants are the only ordering there is.
+- **`ProgressSet` is the one projection of working sets**: a set with its session and **that session's
+  start**, never its own `completed_at`. The store selects and orders the rows; every estimate, best and
+  record is derived from them in the domain (`progressSessions`, `MovementSeries`), so no part of the
+  rule is in SQL.
 - `SessionHistory` is a **domain** type although the port returns it: nothing under `domain/` may
   depend on `ports/`.
 
@@ -614,12 +622,12 @@ aggregate boundaries are listed in [Layout](#2-layout).
 - `LastTimeOutcome` exists because `lastTime` has two empty answers — never trained, and no such
   movement — and only the store can tell them apart.
 - `SessionSummary` carries both set counts (`setCount` is every row; `workingSetCount` is what the log
-  screen prints), the clamped `tonnageKg`, the movement names, the session's `topSet`, its
-  `workingMarks` dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the
-  projection over everything FINISHED before the page's oldest row, narrowed to its movements, because
-  a record is judged against the history before its session and page two has history page two cannot
-  see. The application puts `topE1rm` and `record` on the row afterwards: those are RULES, not
-  aggregations, and the store never sees Epley.
+  screen prints), the clamped `tonnageKg`, the movement names, the session's `topSet`, its `worked`
+  sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the working sets
+  of everything FINISHED before the page's oldest row, narrowed to its movements, because a record is
+  judged against the history before its session and page two has history page two cannot see. The
+  application puts `topE1rm` and `record` on the row afterwards: those are RULES, not aggregations, and
+  the store computes no estimate.
 - `historyFor` returns a **domain** value, one read in one transaction, loading the comparison session
   only for a session that named a routine.
 - The **share's DTOs name no account and hold no id at any depth**.
@@ -642,9 +650,9 @@ grouping in first-performed order, assembled client-side from numbered sets.
   Barbell values include the bar. Bodyweight values are added load only; assistance contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
   go, never `0.0 t`.** Weeks are the client's own fold over the page it holds — there is no week
   endpoint — so the oldest loaded week omits its tonnage until more is loaded.
-- **`topE1rm` is `topE1rmOf` over `workingMarks`**, not Epley over `topSet`; absent where Epley is
-  undefined. **The wire's doubles are doubles**: it is rounded to one decimal as a *value*, the JSON
-  text is not, so `20.7` can cross as `20.699999999999999`. Every surface parses and formats; nothing
+- **`topE1rm` is `topE1rmOf` over the row's working sets**, not the estimate of `topSet`; absent where
+  no set earned one. **The wire's doubles are doubles**: it is stated to one decimal as a *value*, the
+  JSON text is not, so `20.7` can cross as `20.699999999999999`. Every surface parses and formats; nothing
   prints the raw token, re-rounds, or re-derives the estimate.
 - `closedItself` reads `closed_by`, falling back where it is NULL to the auto-close signature
   (`finished_at = coalesce(max(completed_at), started_at)`).
@@ -689,38 +697,31 @@ instant is read off the log (`max(started_at)` per routine), not out of a column
 
 **A movement's record** (`movementHistory` + the pure `movementRecord`) — four statements in one
 transaction. The first is the catalog's own predicate: no row means `404 no such movement` and the
-other three never fire. The **ladders** are `DISTINCT ON (session, load)` over the movement's working
-sets in finished sessions, oldest first; the tiles, the twelve weeks of bars and the record ladder are
-computed from them by `topE1rmOf`. Their window is a **lifetime** — only the chart is windowed, by the
-domain. The **recent days** are a separate statement because the ladder collapses a session's sets and
-the page prints them; warmups are excluded. The fourth statement is the days of the program that name
+other three never fire. The **sets** are the movement's working sets in finished sessions; the tiles,
+the twelve weeks of bars and the record ladder are computed from them by `MovementSeries`. Their window
+is a **lifetime** — only the chart is windowed, by the domain. The **recent days** are a separate
+statement because they print every set but a warmup, in set-number order. The fourth statement is the days of the program that name
 the movement, by name, deduplicated and in program order — `routineCount` is that list's length.
-Everything is dated by the session's own start. The record **ladder** is every session whose best
-estimate beat every session before it, newest first, and the first is not on it. Where Epley is
-undefined there is no best-e1RM tile, no chart and no ladder. Every list is **omitted from the wire
+Everything is dated by the session's own start. The record **ladder** is every session whose
+estimate beat every session before it by score, newest first, and the first is not on it. Where no set
+earned an estimate there is no best-e1RM tile, no chart and no ladder. Every list is **omitted from the wire
 when empty**, so an untrained movement answers 200 with two zero counts and nothing else.
 
-**The finish** (`historyFor` + the pure `review`) — one read behind one rule. The read is a projection:
-`DISTINCT ON (exercise_id, weight_kg)` over the working sets of finished sessions that started earlier,
-ordered `reps DESC, started_at ASC`, restricted to the movements this session works, so the mark is
-dated by the earliest session those reps were hit in. **Both of its windows compare the pair
+**The finish** (`historyFor` + the pure `review`) — one read behind one rule. The read is the
+working sets of finished sessions that started earlier, restricted to the movements this session works,
+each dated by its session. **Both of its windows compare the pair
 `(started_at, id)` against the reviewed session's own**, which excludes the session from its own
 history — the review is always read *after* the finish, so without it every set would tie itself and
 the record would vanish on the first read. Nothing is stored; the review is recomputed on every call,
 which keeps it right when a set arrives late from a flush queue, and is why there is no `ReviewService`.
 
 **The statistics engine** (`trainingLog` + the pure `statistics`) — the default
-`GET /v1/gym/stats` response and MCP `get_stats`. Its repository reads three projections in one
-transaction:
+`GET /v1/gym/stats` response and MCP `get_stats`. Its repository reads two things in one transaction:
 
-- The **series** is `DISTINCT ON (exercise_id, started_at, id)` over the working sets of finished
-  sessions, keeping the heaviest with the most reps — `TopSet`'s rule, in SQL because it is an
-  **ordering**; the Epley estimate over it is in the domain because it is a **formula**. Every point is
-  dated by the session's own start.
-- The **marks** are `historyFor`'s projection with both windows removed, and the two standing bests
-  (highest e1RM, heaviest load) are the *prior* halves of the finish's record rules asked with no
-  session to compare against. A best is dated by the session too. The third record rule has no standing
-  form: with nothing to compare against, every mark already is the best reps at its load.
+- The **sets** are every working set of the finished log, the projection the progress read takes. Per
+  movement, a point is each session's heaviest set (ties to more reps, then the lowest set id) with that
+  set's own estimate where it earned one; the best e1RM is the highest-scoring estimate, the heaviest
+  the heaviest point, each keeping the earliest session on a tie and dated by its start.
 - The **weeks** are counted in Postgres, truncated `AT TIME ZONE 'UTC'` rather than in the server's
   zone (`date_trunc` on a `timestamptz` reads the session TimeZone, so the same log would bucket
   differently on a laptop and in CI). `generate_series` fills the run, so a week nobody trained is a
@@ -855,12 +856,12 @@ Absences that carry meaning:
   a first-ever movement — **200 naming the movement and nothing else**, which is what the card draws
   "First time logging this" from. `sets` is never present and empty.
 - The review, the statistics reply and the share travel **one way** and have no parse half. The review
-  omits `topE1rm` when nothing was loaded, `record` on a session that earns none, `before` when the
+  omits `topE1rm` when no set earned an estimate, `record` on a session that earns none, `before` when the
   movement was not trained last time, `planned` when the frozen plan did not name it, `against` for an
   ad-hoc session or one with no earlier match, and `routine` when the session it stands against carries
   no name; `slight` says the session was too short to say anything honest, and then `record` and
-  `against` are both omitted. The statistics reply omits `e1rm` on a point or a best whose load has no
-  honest estimate, and `weeks` is contiguous. The share's body carries no id at any depth:
+  `against` are both omitted. The statistics reply omits `e1rm` on a point or a best whose set earned
+  no estimate, and `weeks` is contiguous. The share's body carries no id at any depth:
 
 ```json
 { "startedAt": 1700000000000, "finishedAt": 1700003600000, "routine": "Legs",

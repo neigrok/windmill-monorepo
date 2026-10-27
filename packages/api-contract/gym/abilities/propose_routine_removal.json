@@ -29,7 +29,7 @@
         "proposal": {
           "baseName": "Push",
           "baseRevision": 1,
-          "changeCount": 2,
+          "changeCount": 3,
           "changes": [
             {
               "before": {
@@ -51,7 +51,7 @@
           ],
           "id": "tn7Qm2Kx9Lp4Wz8R-6",
           "intent": "remove",
-          "name": "Push",
+          "name": "",
           "routineId": "rtAAAAAAAAAAAAA1",
           "source": {"door":"ask"},
           "state": "pending",
@@ -59,7 +59,7 @@
         },
         "reviewUrl": "https://windmill.works/#/gym/proposals/tn7Qm2Kx9Lp4Wz8R-6"
       },
-      "sha256": "cb2e765ee2b1d81aba29d646ff13211b0c0a1ed21223c1c81253b9770d3b6074",
+      "sha256": "a1a5dbf8d78803b0ca0d268f05bf25fee28724ceb6bdf90ccf0a5e6717b607c1",
       "writes": [
         {
           "f": {
@@ -82,7 +82,7 @@
             "connection": "",
             "door": "ask",
             "intent": "remove",
-            "proposedName": "Push",
+            "proposedName": "",
             "routineId": "rtAAAAAAAAAAAAA1",
             "summary": "You moved to a full-body split."
           },

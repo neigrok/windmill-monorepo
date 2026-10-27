@@ -111,30 +111,6 @@ std::map<std::pair<std::string, std::string>, Authored> records(const UserId& ac
   return rows;
 }
 
-// The given records written straight into the account's gym scope, as the engine stores them, with the scope row
-// that holds them: seq the greatest, counters for every capped type, digest the sum of the row hashes (§6.12).
-void seed(const UserId& account, const Json::Value& given) {
-  const auto catalog = sync::productCatalog();
-  sync::PgSyncStore store{doortest::pool(), sync::Limits{}.lockTimeoutMs};
-  const auto txn = store.begin(sync::TxnMode::write);
-  const auto scope = sync::ScopeKey::product(account, "gym");
-  store.insertScope(*txn, scope, account, std::nullopt);
-  for (const sync::TypeDef* type : catalog->applyOrder())
-    for (const Json::Value& wire : given) {
-      const sync::Row row(wire);
-      if (row.t == type->name) catalog->store(row.t).apply(*txn, scope, {sync::RowWrite{type, row.id, std::nullopt, row, {}}});
-    }
-  sync::ScopeRow stored = *store.scope(*txn, scope, sync::RowLock::update);
-  for (const sync::TypeDef* type : catalog->typesIn(scope.registryScope()))
-    for (const sync::Row& row : catalog->store(type->name).feed(*txn, scope, sync::FeedQuery{})) {
-      stored.digest = stored.digest + sync::rowHash(row.toJson());
-      stored.seq = std::max(stored.seq, row.seq);
-      if (type->cap && row.alive()) ++stored.counters[type->name];
-    }
-  store.saveScope(*txn, stored);
-  txn->commit();
-}
-
 // INV-2's comparison: each record whose life or client-written fields the call changed, by type and id, with those
 // fields and none of its stamps, seqs or receipt times. A record the server touched only in its own fields, a sibling
 // proposal it superseded, is no write of the call's.
@@ -164,7 +140,7 @@ Json::Value writesBetween(const std::map<std::pair<std::string, std::string>, Au
 Json::Value answer(const Json::Value& spec) {
   doortest::Harness h;
   h.clock.now = spec["now"].asUInt64();
-  seed(h.user, spec["given"]["records"]);
+  doortest::seed(h.user, spec["given"]["records"]);
   for (const Json::Value& session : spec["given"]["shares"])
     if (!h.training.share(h.user, SessionId{session.asString()})) throw std::runtime_error("no workout to share: " + session.asString());
   const auto before = records(h.user);

@@ -44,17 +44,6 @@ struct CoachAbilitiesTests {
     }
   }
 
-  // The cases no executor answers alike yet, each a gap between the server's rule and canon's that the spec settles for
-  // the phone: the server's `get_stats` estimates every loaded set by unbounded Epley, where the one e1RM rule
-  // (`GymEstimate`, brand foundations) states none past ten reps or under RPE 7; and a removal proposal's `proposedName`
-  // is the routine's name on the server and "" on both phones (`proposals-actions.json`, "removal keeps every base
-  // line as a removed line"), which moves `changeCount` and `name` with it.
-  static let knownGaps = [
-    "gym/abilities/get_stats.json · weeks run Monday to Monday with an untrained week at zero",
-    "gym/abilities/get_stats.json · narrowed to one movement",
-    "gym/abilities/propose_routine_removal.json · a removal mints a proposal and deletes nothing",
-  ]
-
   @Test(arguments: try CoachAbilitiesTests.cases())
   func ability(_ vector: Vector, given: JSON) throws {
     let call = try vector.input.member("call")
@@ -75,9 +64,7 @@ struct CoachAbilitiesTests {
       return
     }
     let expected: JSON = ["result": try expect.member("result"), "sha256": try expect.member("sha256"), "writes": try expect.member("writes")]
-    withKnownIssue("a gap between the server's rule and canon's, named above", {
-      #expect(answered == expected, "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)\n  expect \(expected.jcsText)")
-    }, when: { Self.knownGaps.contains("\(vector.file) · \(vector.name)") })
+    #expect(answered == expected, "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)\n  expect \(expected.jcsText)")
   }
 
   static func form(_ outcome: AbilityOutcome) -> JSON {

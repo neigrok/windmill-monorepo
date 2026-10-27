@@ -85,14 +85,16 @@ ProposalMintOutcome GymDoor::propose(const UserId& user, const ProposalWrite& in
   });
 }
 
-// No document to build: the whole plan leaves, so every line of it is a removed row.
+// No document to build: the whole plan leaves, so every line of it is a removed row, and the routine leaves with no
+// name, as a phone names a removal (engine A.2 admits a blank one there). The count is the admission rule's, which
+// counts that blank against the base name as it counts any rename.
 ProposalMintOutcome GymDoor::proposeRemoval(const UserId& user, const ProposalId& id, const RoutineId& routine,
                                           const std::string& summary, const ProposalSource& source) {
   return mintProposal(user, id, routine, {}, [&](const Routine& base) -> std::optional<RoutineProposal> {
     std::vector<RoutineChange> changes = changesBetween(base.entries, {});
-    const int count = static_cast<int>(changes.size());
+    const int count = countedChanges(base.entries, changes, base.name, "");
     return RoutineProposal{ProposalHead{id, routine, user, ProposalIntent::remove, ProposalState::pending,
-        source, summary, count, clock_.nowMs(), std::nullopt}, base.revision, base.name, base.name, std::move(changes)};
+        source, summary, count, clock_.nowMs(), std::nullopt}, base.revision, base.name, "", std::move(changes)};
   });
 }
 

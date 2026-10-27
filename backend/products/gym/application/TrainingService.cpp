@@ -15,20 +15,19 @@ std::vector<SessionRows> TrainingService::sessions(const UserId& user, const std
 
 // A record is judged against the history BEFORE its session, so the walk runs oldest first over rows
 // the store hands back newest first, reading them backwards rather than re-sorting.
-// A page carries the OPEN session like any other row, but only finished ones fold into the marks.
+// A page carries the OPEN session like any other row, but it earns nothing and folds into nothing.
 std::vector<LogRow> TrainingService::log(const UserId& user, const LogCursor& cursor) {
   door_.closeStale(user);
   LogPage page = log_.log(user, cursor);
 
-  std::vector<SessionMarks> walked;
+  std::vector<WorkedSession> walked;
   for (auto row = page.sessions.rbegin(); row != page.sessions.rend(); ++row)
-    walked.push_back(SessionMarks{row->session.id, row->workingMarks, row->workingSetCount,
-                                  row->session.finishedAtMs.has_value()});
+    walked.push_back(WorkedSession{row->session.id, row->session.finishedAtMs.has_value(), row->worked});
   const std::vector<SessionId> earned = recordedIn(walked, page.standing);
 
   std::vector<LogRow> rows;
   for (SessionSummary& summary : page.sessions) {
-    std::optional<double> estimate = topE1rmOf(summary.workingMarks);
+    std::optional<double> estimate = topE1rmOf(summary.worked);
     bool record = false;
     for (const SessionId& id : earned)
       if (id == summary.session.id) record = true;

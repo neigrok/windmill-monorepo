@@ -243,14 +243,12 @@ public:
       double tonnage = 0;
       std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY the name
       std::optional<TopWorkingSet> top;
-      std::vector<Set> held;
       std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : db.sets) {
         if (!(set.session == session.id)) continue;
         ++count;
         if (std::optional<std::string> name = db.nameOf(user, set.exercise)) names.insert(*name);
         if (!lastSetAtMs || set.completedAtMs > *lastSetAtMs) lastSetAtMs = set.completedAtMs;
-        held.push_back(set);
         if (set.kind != SetKind::working) continue;
         ++working;
         // `greatest(weight_kg, 0) * reps`: an assisted set moved no external weight, so it adds nothing.
@@ -260,9 +258,9 @@ public:
           continue;
         top = TopWorkingSet{set.weightKg, set.reps};
       }
-      // The marks statement, through marksOf and then dated by the SESSION (domain/Review.h).
-      std::vector<PriorMark> marks = ordered(marksOf(held));
-      for (PriorMark& one : marks) one.atMs = session.startedAtMs;
+      // The working-set statement: this session's working sets, dated by the SESSION (domain/Progress.h).
+      std::vector<ProgressSet> worked =
+          factsWhere(user, [&](const Session& ran, const Set&) { return ran.id == session.id; });
       // closed_by when the row carries it, else the four-hour rule's own signature for a legacy row.
       const bool closedItself =
           session.closedBy ? session.closedBy == ClosedBy::stale
@@ -270,31 +268,21 @@ public:
                                  *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
       out.sessions.push_back(SessionSummary{session, count, working, tonnage,
                                             std::vector<std::string>(names.begin(), names.end()),
-                                            top, std::move(marks), closedItself});
+                                            top, std::move(worked), closedItself});
     }
     if (out.sessions.empty()) return out;
 
-    // The standing statement: FINISHED sessions strictly older than the page's last row, on (startedAt, id).
+    // The standing statement: FINISHED sessions strictly older than the page's last row, on (startedAt, id), for
+    // the movements the page works.
     const Session& oldest = out.sessions.back().session;
-    std::vector<Set> before;
-    for (const Set& prior : db.sets) {
-      if (prior.kind != SetKind::working) continue;
+    out.standing = factsWhere(user, [&](const Session& ran, const Set& prior) {
       bool onPage = false;
       for (const SessionSummary& row : out.sessions)
-        for (const PriorMark& mark : row.workingMarks)
-          if (mark.exercise == prior.exercise) onPage = true;
-      if (!onPage) continue;
-      for (const Session& ran : db.sessions) {
-        if (!(ran.id == prior.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
-        if (std::pair(ran.startedAtMs, ran.id.str()) >=
-            std::pair(oldest.startedAtMs, oldest.id.str()))
-          continue;
-        Set dated = prior;
-        dated.completedAtMs = ran.startedAtMs;
-        before.push_back(dated);
-      }
-    }
-    out.standing = ordered(marksOf(before));
+        for (const ProgressSet& set : row.worked)
+          if (set.exercise == prior.exercise) onPage = true;
+      return onPage && ran.finishedAtMs &&
+             std::pair(ran.startedAtMs, ran.id.str()) < std::pair(oldest.startedAtMs, oldest.id.str());
+    });
     return out;
   }
 
@@ -363,39 +351,14 @@ public:
   // Both windows compare the PAIR (startedAt, id), which keeps this session out of its own history.
   SessionHistory historyFor(const UserId& user, const Session& session) override {
     SessionHistory history;
-    std::vector<Set> priorWorking;
-    for (const Set& prior : db.sets) {
-      if (prior.kind != SetKind::working) continue;
-      std::optional<Session> ranIn;
-      for (const Session& ran : db.sessions) {
-        if (!(ran.id == prior.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
-        if (std::pair(ran.startedAtMs, ran.id.str()) <
-            std::pair(session.startedAtMs, session.id.str()))
-          ranIn = ran;
-      }
-      if (!ranIn) continue;
+    history.standing = factsWhere(user, [&](const Session& ran, const Set& prior) {
       bool workedToday = false;
       for (const Set& today : db.sets)
-        if (today.session == session.id && today.exercise == prior.exercise &&
-            today.kind == SetKind::working)
+        if (today.session == session.id && today.exercise == prior.exercise && today.kind == SetKind::working)
           workedToday = true;
-      if (!workedToday) continue;
-      // Carried over stamped with its SESSION's start, so the fold dates a mark by the earliest workout.
-      Set dated = prior;
-      dated.completedAtMs = ranIn->startedAtMs;
-      priorWorking.push_back(dated);
-    }
-    std::sort(priorWorking.begin(), priorWorking.end(), [](const Set& a, const Set& b) {
-      return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
-             std::tuple(b.exercise.str(), b.weightKg, -b.reps, b.completedAtMs);
+      return workedToday && ran.finishedAtMs &&
+             std::pair(ran.startedAtMs, ran.id.str()) < std::pair(session.startedAtMs, session.id.str());
     });
-    for (const Set& prior : priorWorking) {
-      if (!history.marks.empty() && history.marks.back().exercise == prior.exercise &&
-          history.marks.back().weightKg == prior.weightKg)
-        continue;
-      history.marks.push_back(
-          PriorMark{prior.exercise, prior.weightKg, prior.reps, prior.completedAtMs});
-    }
 
     if (!session.routine) return history;   // no routine, no session to stand against
     for (const Session& ran : db.sessions) {
@@ -441,15 +404,9 @@ public:
     std::sort(ran.begin(), ran.end(), [](const Session& a, const Session& b) {
       return std::pair(a.startedAtMs, a.id.str()) < std::pair(b.startedAtMs, b.id.str());
     });
-    for (const Session& session : ran) {
-      std::vector<Set> held;
-      for (const Set& set : setsOf(session.id))
-        if (set.exercise == exercise) held.push_back(set);
-      std::vector<PriorMark> loads = ordered(marksOf(held));
-      if (loads.empty()) continue;
-      for (PriorMark& load : loads) load.atMs = session.startedAtMs;   // the store's dating rule
-      history.sessions.push_back(MovementSession{session.id, session.startedAtMs, std::move(loads)});
-    }
+    history.sets = factsWhere(user, [&](const Session& session, const Set& set) {
+      return session.finishedAtMs && set.exercise == exercise;
+    });
 
     for (auto session = ran.rbegin(); session != ran.rend(); ++session) {
       std::vector<Set> block;
@@ -464,42 +421,11 @@ public:
     return history;
   }
 
-  // The series is DISTINCT ON (movement, session) dated by the SESSION; weeks are contiguous Monday-to-Monday UTC.
+  // Every working set of the finished log, dated by the SESSION; weeks are contiguous Monday-to-Monday UTC.
   TrainingLog trainingLog(const UserId& user) override {
     TrainingLog log;
-    std::vector<std::pair<Session, Set>> lived = workingSetsOfFinished(user);
-
-    std::sort(lived.begin(), lived.end(), [](const auto& a, const auto& b) {
-      return std::tuple(a.second.exercise.str(), a.first.startedAtMs, a.first.id.str(),
-                        -a.second.weightKg, -a.second.reps, a.second.completedAtMs) <
-             std::tuple(b.second.exercise.str(), b.first.startedAtMs, b.first.id.str(),
-                        -b.second.weightKg, -b.second.reps, b.second.completedAtMs);
-    });
-    std::optional<std::pair<std::string, std::string>> lastTop;
-    for (const auto& [ran, set] : lived) {
-      const std::pair<std::string, std::string> key{set.exercise.str(), ran.id.str()};
-      if (lastTop == key) continue;
-      lastTop = key;
-      log.tops.push_back(MovementTop{set.exercise, ran.startedAtMs, set.weightKg, set.reps});
-    }
-
-    std::vector<Set> priors;
-    for (const auto& [ran, set] : lived) {
-      Set dated = set;
-      dated.completedAtMs = ran.startedAtMs;   // a mark is dated by the workout that set it
-      priors.push_back(dated);
-    }
-    std::sort(priors.begin(), priors.end(), [](const Set& a, const Set& b) {
-      return std::tuple(a.exercise.str(), a.weightKg, -a.reps, a.completedAtMs) <
-             std::tuple(b.exercise.str(), b.weightKg, -b.reps, b.completedAtMs);
-    });
-    for (const Set& prior : priors) {
-      if (!log.marks.empty() && log.marks.back().exercise == prior.exercise &&
-          log.marks.back().weightKg == prior.weightKg)
-        continue;
-      log.marks.push_back(
-          PriorMark{prior.exercise, prior.weightKg, prior.reps, prior.completedAtMs});
-    }
+    const std::vector<std::pair<Session, Set>> lived = workingSetsOfFinished(user);
+    log.sets = progressHistory(user);
 
     std::map<std::uint64_t, TrainingWeek> byWeek;
     for (const Session& ran : db.sessions) {
@@ -597,15 +523,7 @@ public:
   }
 
   std::vector<ProgressSet> progressHistory(const UserId& user) override {
-    std::vector<ProgressSet> history;
-    for (const auto& [session, set] : workingSetsOfFinished(user))
-      history.push_back(ProgressSet{session.id, session.startedAtMs, set.exercise,
-                                   PerformedFact{set.id, set.weightKg, set.reps, set.rpe}});
-    std::sort(history.begin(), history.end(), [](const ProgressSet& a, const ProgressSet& b) {
-      return std::tuple(a.startedAtMs, a.session.str(), a.exercise.str(), a.performed.set.str()) <
-             std::tuple(b.startedAtMs, b.session.str(), b.exercise.str(), b.performed.set.str());
-    });
-    return history;
+    return factsWhere(user, [](const Session& session, const Set&) { return session.finishedAtMs.has_value(); });
   }
 
   // The INSERT..SELECT off the caller's own session row; the conflict is on the SESSION, so a live share replays.
@@ -726,12 +644,21 @@ private:
     return lived;
   }
 
-  // The order both DISTINCT ON statements hand marks back in: by movement, heaviest load first.
-  static std::vector<PriorMark> ordered(std::vector<PriorMark> marks) {
-    std::sort(marks.begin(), marks.end(), [](const PriorMark& a, const PriorMark& b) {
-      return std::pair(a.exercise.str(), -a.weightKg) < std::pair(b.exercise.str(), -b.weightKg);
+  // The working-set projection (domain/Progress.h): each working set of this account's sessions that `keep` admits,
+  // dated by its session, in the store's order.
+  template <typename Keep>
+  std::vector<ProgressSet> factsWhere(const UserId& user, Keep keep) const {
+    std::vector<ProgressSet> facts;
+    for (const Set& set : db.sets) {
+      if (set.kind != SetKind::working) continue;
+      for (const Session& ran : db.sessions)
+        if (ran.id == set.session && ran.user == user && keep(ran, set)) facts.push_back(ProgressSet::of(ran, set));
+    }
+    std::sort(facts.begin(), facts.end(), [](const ProgressSet& a, const ProgressSet& b) {
+      return std::tuple(a.startedAtMs, a.session.str(), a.exercise.str(), a.performed.set.str()) <
+             std::tuple(b.startedAtMs, b.session.str(), b.exercise.str(), b.performed.set.str());
     });
-    return marks;
+    return facts;
   }
 };
 

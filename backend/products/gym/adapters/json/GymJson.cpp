@@ -32,7 +32,7 @@ Json::Value bestJson(const Best& best) {
   body["weightKg"] = best.weightKg;
   body["reps"] = best.reps;
   body["at"] = Json::Value::UInt64(best.atMs);
-  if (best.e1rm) body["e1rm"] = *best.e1rm;
+  if (best.e1rm) body["e1rm"] = Estimate::stated(*best.e1rm);
   return body;
 }
 
@@ -42,7 +42,7 @@ Json::Value pointJson(const RecordPoint& point) {
   body["at"] = Json::Value::UInt64(point.atMs);
   body["weightKg"] = point.weightKg;
   body["reps"] = point.reps;
-  body["e1rm"] = point.e1rm;
+  body["e1rm"] = Estimate::stated(point.e1rm);
   return body;
 }
 }
@@ -289,8 +289,7 @@ Json::Value toJson(const std::vector<Set>& sets) {
 }
 
 // tonnageKg is always present and zero is a real answer. topSet is omitted for a session with no
-// working set; topE1rm with it, and also where the heaviest working set was unloaded (Epley is
-// undefined at and below zero).
+// working set, and topE1rm wherever no working set earned an estimate.
 Json::Value toJson(const LogRow& row) {
   Json::Value body = toJson(row.summary.session);
   body["setCount"] = row.summary.setCount;
@@ -305,7 +304,7 @@ Json::Value toJson(const LogRow& row) {
     top["reps"] = row.summary.topSet->reps;
     body["topSet"] = top;
   }
-  if (row.topE1rm) body["topE1rm"] = *row.topE1rm;
+  if (row.topE1rm) body["topE1rm"] = Estimate::stated(*row.topE1rm);
   body["record"] = row.record;
   body["closedItself"] = row.summary.closedItself;
   return body;
@@ -745,7 +744,7 @@ Json::Value toJson(const Review& review) {
   Json::Value stats(Json::objectValue);
   stats["durationMs"] = Json::Value::UInt64(review.stats.durationMs);
   stats["workingSets"] = review.stats.workingSets;
-  if (review.stats.topE1rm) stats["topE1rm"] = *review.stats.topE1rm;
+  if (review.stats.topE1rm) stats["topE1rm"] = Estimate::stated(*review.stats.topE1rm);
   Json::Value body(Json::objectValue);
   body["stats"] = stats;
   body["slight"] = review.slight;
@@ -753,10 +752,11 @@ Json::Value toJson(const Review& review) {
     Json::Value record(Json::objectValue);
     record["kind"] = toString(review.record->kind);
     record["exerciseId"] = review.record->exercise.str();
-    record["value"] = review.record->value;
+    const bool estimate = review.record->kind == RecordKind::e1rm;
+    record["value"] = estimate ? Estimate::stated(review.record->value) : review.record->value;
     record["weightKg"] = review.record->weightKg;
     record["reps"] = review.record->reps;
-    record["previous"] = review.record->previous;
+    record["previous"] = estimate ? Estimate::stated(review.record->previous) : review.record->previous;
     record["previousAt"] = Json::Value::UInt64(review.record->previousAtMs);
     body["record"] = record;
   }
@@ -899,8 +899,8 @@ std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored) {
   return receipt;
 }
 
-// No `e1rm` on a point or a best means that load has no one-rep estimate; an absent `bestE1rm` means
-// no set of that movement ever had one. `weeks` is contiguous: a week with no training is zero.
+// No `e1rm` on a point or a best means that set earned no estimate; an absent `bestE1rm` means
+// no set of that movement ever earned one. `weeks` is contiguous: a week with no training is zero.
 Json::Value toJson(const Statistics& statistics) {
   Json::Value weeks(Json::arrayValue);
   for (const TrainingWeek& week : statistics.weeks) {
@@ -919,7 +919,7 @@ Json::Value toJson(const Statistics& statistics) {
       line["at"] = Json::Value::UInt64(point.atMs);
       line["weightKg"] = point.weightKg;
       line["reps"] = point.reps;
-      if (point.e1rm) line["e1rm"] = *point.e1rm;
+      if (point.e1rm) line["e1rm"] = Estimate::stated(*point.e1rm);
       points.append(line);
     }
     Json::Value line(Json::objectValue);
@@ -957,7 +957,7 @@ Json::Value toJson(const StatsProgress& progress) {
       if (fact.mostReps) movement["mostReps"] = performedJson(*fact.mostReps);
       if (fact.estimate) {
         movement["estimate"] = performedJson(fact.estimate->performed);
-        movement["estimate"]["e1rm"] = fact.estimate->e1rm;
+        movement["estimate"]["e1rm"] = fact.estimate->estimate.e1rm;
       }
       movements.append(movement);
     }
@@ -974,8 +974,8 @@ Json::Value toJson(const StatsProgress& progress) {
 }
 
 // Every list is omitted when empty rather than sent as `[]`; the two counts are always present. A
-// movement whose every set was unloaded carries no `bestE1rm` and no series, since Epley is
-// undefined at and below zero, but still carries its heaviest and its sets.
+// movement none of whose sets earned an estimate carries no `bestE1rm` and no series, but still carries its
+// heaviest and its sets.
 Json::Value toJson(const MovementRecord& record) {
   Json::Value body(Json::objectValue);
   body["exercise"] = toJson(record.exercise);

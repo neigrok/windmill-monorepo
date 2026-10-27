@@ -35,8 +35,9 @@ Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& use
 
 Json::Value toJson(const Session& session);
 // `topE1rm` is the best estimate over every working set; `topSet` is only the heaviest, and no e1RM
-// may be computed from it. `topE1rm` is rounded as a value, so 20.7 can reach a client as
-// 20.699999999999999: clients format and never re-round.
+// may be computed from it. Every estimate on this wire is stated to a tenth (Estimate::stated) and rounded as a
+// value, so 20.7 can reach a client as 20.699999999999999: clients format and never re-round. The progress
+// projection alone carries estimates at full precision.
 Json::Value toJson(const LogRow& row);
 Json::Value toJson(const Set& set);
 Json::Value toJson(const std::vector<Set>& sets);

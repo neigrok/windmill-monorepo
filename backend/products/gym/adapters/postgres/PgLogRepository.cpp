@@ -59,11 +59,40 @@ Set setFrom(const Row& row) {
              instantFrom(row["completed_ms"])};
 }
 
+// The one projection of working sets (domain/Progress.h), read over `gym_sets st JOIN gym_sessions s`: a row per
+// set, dated by its session's start, in the order the progress reads group them. No estimate is computed in SQL.
+constexpr std::string_view kFactColumns =
+    "st.session_id, (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, st.exercise_id, "
+    "st.id AS set_id, st.weight_kg::float8 AS weight_kg, st.reps, st.rpe::float8 AS rpe";
+constexpr std::string_view kFactsFrom = " FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id ";
+constexpr std::string_view kFactOrder =
+    " ORDER BY s.started_at, s.id COLLATE \"C\", st.exercise_id COLLATE \"C\", st.id COLLATE \"C\"";
+
 template <typename Row>
-PriorMark markFrom(const Row& row) {
-  return PriorMark{ExerciseId{row["exercise_id"].template as<std::string>()},
-                   row["weight_kg"].template as<double>(), row["reps"].template as<int>(),
-                   instantFrom(row["at_ms"])};
+ProgressSet factFrom(const Row& row) {
+  std::optional<double> rpe;
+  if (!row["rpe"].is_null()) rpe = row["rpe"].template as<double>();
+  return ProgressSet{SessionId{row["session_id"].template as<std::string>()}, instantFrom(row["started_ms"]),
+                     ExerciseId{row["exercise_id"].template as<std::string>()},
+                     PerformedFact{SetId{row["set_id"].template as<std::string>()},
+                                   row["weight_kg"].template as<double>(), row["reps"].template as<int>(), rpe}};
+}
+
+std::string factsWhere(std::string_view where) {
+  return "SELECT " + std::string(kFactColumns) + std::string(kFactsFrom) + "WHERE " + std::string(where) +
+         std::string(kFactOrder);
+}
+
+// Every working set of this account's finished log.
+std::vector<ProgressSet> finishedFacts(pqxx::work& txn, const UserId& user) {
+  const pqxx::result rows = txn.exec_params(
+      factsWhere("st.user_id = $1::uuid AND s.user_id = $1::uuid AND s.finished_at IS NOT NULL "
+                 "AND st.kind = 'working'"),
+      user.str());
+  std::vector<ProgressSet> facts;
+  facts.reserve(rows.size());
+  for (const auto& row : rows) facts.push_back(factFrom(row));
+  return facts;
 }
 
 struct Tally {
@@ -71,7 +100,7 @@ struct Tally {
   int workingSetCount = 0;
   double tonnageKg = 0;
   std::vector<std::string> exerciseNames;
-  std::vector<PriorMark> workingMarks;
+  std::vector<ProgressSet> worked;
 };
 }
 
@@ -157,10 +186,8 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   // clamped at zero: band-assisted work stores a negative kg.
   // The window compares the pair (started_at, id); an absent tiebreaker passes the empty id, the
   // floor of the text order.
-  // The marks statements are one row per (movement, load) carrying the best reps at it, dated by the
-  // session the mark was set in, never by the set's own completed_at; loads at or below zero are
-  // kept. The fourth is the marks standing before the page, counts finished sessions only, and is
-  // skipped for an empty page.
+  // The working-set statements read the projection of domain/Progress.h; loads at or below zero are kept. The
+  // fourth is the sets standing before the page, counts finished sessions only, and is skipped for an empty page.
   // The top set is a lateral over the session's working sets, heaviest first, ties to more reps.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
   PgLease conn{*pool_};
@@ -195,17 +222,11 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
       "GROUP BY st.session_id, coalesce(n.name, e.name) "
       "ORDER BY st.session_id, coalesce(n.name, e.name)",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
-  pqxx::result ladders = txn.exec_params(
-      "SELECT DISTINCT ON (st.session_id, st.exercise_id, st.weight_kg) "
-      "       st.session_id, st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-      "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
-      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-      "WHERE st.kind = 'working' AND st.session_id IN "
-      "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
-      "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
-      "   ORDER BY started_at DESC, id DESC LIMIT $4) "
-      "ORDER BY st.session_id, st.exercise_id, st.weight_kg DESC, st.reps DESC, "
-      "         st.completed_at ASC",
+  pqxx::result worked = txn.exec_params(
+      factsWhere("st.kind = 'working' AND st.session_id IN "
+                 "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
+                 "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
+                 "   ORDER BY started_at DESC, id DESC LIMIT $4)"),
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
 
   std::map<std::string, Tally> tallyBySession;
@@ -216,8 +237,8 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
     tally.tonnageKg += row["tonnage_kg"].as<double>();
     tally.exerciseNames.push_back(row["name"].as<std::string>());
   }
-  for (const auto& row : ladders)
-    tallyBySession[row["session_id"].as<std::string>()].workingMarks.push_back(markFrom(row));
+  for (const auto& row : worked)
+    tallyBySession[row["session_id"].as<std::string>()].worked.push_back(factFrom(row));
 
   LogPage page;
   for (const auto& row : sessions) {
@@ -234,28 +255,22 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
     page.sessions.push_back(SessionSummary{session, tally->second.setCount,
                                            tally->second.workingSetCount, tally->second.tonnageKg,
                                            tally->second.exerciseNames, top,
-                                           tally->second.workingMarks, closedItself});
+                                           tally->second.worked, closedItself});
   }
   if (page.sessions.empty()) return page;
 
   const Session& oldest = page.sessions.back().session;
   pqxx::result standing = txn.exec_params(
-      "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
-      "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-      "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
-      "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-      "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
-      "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
-      "  AND st.exercise_id IN "
-      "    (SELECT p.exercise_id FROM gym_sets p JOIN gym_sessions ps ON ps.id = p.session_id "
-      "     WHERE ps.user_id = $1::uuid AND p.kind = 'working' "
-      "       AND (ps.started_at, ps.id) >= (to_timestamp($2::bigint / 1000.0), $3) "
-      "       AND (ps.started_at, ps.id) <  (to_timestamp($4::bigint / 1000.0), $5)) "
-      "ORDER BY st.exercise_id, st.weight_kg DESC, st.reps DESC, s.started_at ASC, s.id ASC, "
-      "         st.completed_at ASC",
+      factsWhere("st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+                 "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
+                 "  AND st.exercise_id IN "
+                 "    (SELECT p.exercise_id FROM gym_sets p JOIN gym_sessions ps ON ps.id = p.session_id "
+                 "     WHERE ps.user_id = $1::uuid AND p.kind = 'working' "
+                 "       AND (ps.started_at, ps.id) >= (to_timestamp($2::bigint / 1000.0), $3) "
+                 "       AND (ps.started_at, ps.id) <  (to_timestamp($4::bigint / 1000.0), $5))"),
       user.str(), static_cast<long long>(oldest.startedAtMs), oldest.id.str(),
       static_cast<long long>(cursor.beforeMs), beforeId);
-  for (const auto& row : standing) page.standing.push_back(markFrom(row));
+  for (const auto& row : standing) page.standing.push_back(factFrom(row));
   return page;
 }
 
@@ -347,26 +362,20 @@ std::vector<LastSet> PgLogRepository::lastSets(const UserId& user) {
 
 SessionHistory PgLogRepository::historyFor(const UserId& user, const Session& session) {
   // At most three statements in one transaction; the comparison's two fire only for a session that
-  // named a routine. The marks are one row per (movement, load) carrying the best reps ever done at
-  // it, kept from the earliest session to hit them; the Epley formula stays out of SQL. Both windows
-  // compare the pair (started_at, id) against this session's own, excluding it from its own history.
+  // named a routine. The standing sets are every working set of the movements this session works, from the
+  // finished sessions before it; no estimate is computed in SQL. Both windows compare the pair
+  // (started_at, id) against this session's own, excluding it from its own history.
   SessionHistory history;
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
-    pqxx::result marks = txn.exec_params(
-        "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
-        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
-        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
-        "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
-        "  AND st.exercise_id IN (SELECT exercise_id FROM gym_sets "
-        "                         WHERE session_id = $3 AND kind = 'working') "
-        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, s.started_at ASC, s.id ASC, "
-        "         st.completed_at ASC",
+    pqxx::result standing = txn.exec_params(
+        factsWhere("st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
+                   "  AND (s.started_at, s.id) < (to_timestamp($2::bigint / 1000.0), $3) "
+                   "  AND st.exercise_id IN (SELECT exercise_id FROM gym_sets "
+                   "                         WHERE session_id = $3 AND kind = 'working')"),
         user.str(), static_cast<long long>(session.startedAtMs), session.id.str());
-    for (const auto& row : marks) history.marks.push_back(markFrom(row));
+    for (const auto& row : standing) history.standing.push_back(factFrom(row));
 
     if (session.routine) {
       pqxx::result rows = txn.exec_params(
@@ -394,9 +403,8 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
                                                       const ExerciseId& exercise) {
   // Four statements in one transaction; the first is the catalog's visibility predicate — no row and
   // the other three never fire.
-  // The ladders are `DISTINCT ON (session, load)` over this movement's working sets in finished
-  // sessions, oldest session first and heaviest load first inside each, over a lifetime; the domain
-  // windows the chart. A ladder row is dated by its session.
+  // The sets are this movement's working sets in finished sessions over a lifetime, dated by their session; the
+  // domain makes every estimate and windows the chart.
   // The recent days are the last ten training days, warmups excluded, set by set.
   MovementHistory history;
   {
@@ -418,24 +426,11 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
         user.str(), exercise.str());
     for (const auto& row : held) history.routines.push_back(row["name"].as<std::string>());
 
-    pqxx::result ladders = txn.exec_params(
-        "SELECT DISTINCT ON (s.started_at, s.id, st.weight_kg) "
-        "       s.id AS session_id, (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
-        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
-        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-        "WHERE st.user_id = $1::uuid AND st.exercise_id = $2 AND st.kind = 'working' "
-        "  AND s.finished_at IS NOT NULL "
-        "ORDER BY s.started_at ASC, s.id ASC, st.weight_kg DESC, st.reps DESC, "
-        "         st.completed_at ASC",
+    pqxx::result sets = txn.exec_params(
+        factsWhere("st.user_id = $1::uuid AND st.exercise_id = $2 AND st.kind = 'working' "
+                   "  AND s.finished_at IS NOT NULL"),
         user.str(), exercise.str());
-    for (const auto& row : ladders) {
-      const std::string session = row["session_id"].as<std::string>();
-      if (history.sessions.empty() || history.sessions.back().session.str() != session)
-        history.sessions.push_back(
-            MovementSession{SessionId{session}, instantFrom(row["started_ms"]), {}});
-      history.sessions.back().loads.push_back(markFrom(row));
-    }
+    for (const auto& row : sets) history.sets.push_back(factFrom(row));
 
     pqxx::result recent = txn.exec_params(
         "WITH ran AS ("
@@ -462,9 +457,7 @@ MovementHistory PgLogRepository::movementHistory(const UserId& user,
 }
 
 TrainingLog PgLogRepository::trainingLog(const UserId& user) {
-  // The series is `DISTINCT ON (movement, session)` keeping the heaviest set with the most reps — an
-  // ordering, not a calculation; the Epley estimate over it stays in the domain. Rows come back
-  // grouped by movement, oldest first inside each group, which is the port's contract.
+  // The sets are the finished log's working sets; every estimate over them stays in the domain.
   // Weeks are truncated `AT TIME ZONE 'UTC'`: date_trunc on a timestamptz reads the session's
   // TimeZone setting and would bucket the same log differently on a laptop and in CI.
   // generate_series fills the gaps, so an untrained week is a zero rather than a missing bar.
@@ -472,30 +465,7 @@ TrainingLog PgLogRepository::trainingLog(const UserId& user) {
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
-    pqxx::result tops = txn.exec_params(
-        "SELECT DISTINCT ON (st.exercise_id, s.started_at, s.id) st.exercise_id, "
-        "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
-        "       st.weight_kg::float8 AS weight_kg, st.reps "
-        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
-        "ORDER BY st.exercise_id, s.started_at, s.id, st.weight_kg DESC, st.reps DESC, "
-        "         st.completed_at ASC",
-        user.str());
-    for (const auto& row : tops)
-      log.tops.push_back(MovementTop{ExerciseId{row["exercise_id"].as<std::string>()},
-                                     instantFrom(row["started_ms"]),
-                                     row["weight_kg"].as<double>(), row["reps"].as<int>()});
-
-    pqxx::result marks = txn.exec_params(
-        "SELECT DISTINCT ON (st.exercise_id, st.weight_kg) "
-        "       st.exercise_id, st.weight_kg::float8 AS weight_kg, st.reps, "
-        "       (extract(epoch from s.started_at) * 1000)::bigint AS at_ms "
-        "FROM gym_sets st JOIN gym_sessions s ON s.id = st.session_id "
-        "WHERE st.user_id = $1::uuid AND st.kind = 'working' AND s.finished_at IS NOT NULL "
-        "ORDER BY st.exercise_id, st.weight_kg, st.reps DESC, s.started_at ASC, s.id ASC, "
-        "         st.completed_at ASC",
-        user.str());
-    for (const auto& row : marks) log.marks.push_back(markFrom(row));
+    log.sets = finishedFacts(txn, user);
 
     pqxx::result weeks = txn.exec_params(
         "WITH trained AS ("
@@ -526,25 +496,7 @@ std::vector<ProgressSet> PgLogRepository::progressHistory(const UserId& user) {
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
-    const pqxx::result rows = txn.exec_params(
-        "SELECT s.id AS session_id, "
-        "       (extract(epoch from s.started_at) * 1000)::bigint AS started_ms, "
-        "       st.exercise_id, st.id AS set_id, st.weight_kg::float8 AS weight_kg, "
-        "       st.reps, st.rpe::float8 AS rpe "
-        "FROM gym_sessions s JOIN gym_sets st ON st.session_id = s.id AND st.user_id = s.user_id "
-        "WHERE s.user_id = $1::uuid AND s.finished_at IS NOT NULL AND st.kind = 'working' "
-        "ORDER BY s.started_at, s.id COLLATE \"C\", st.exercise_id COLLATE \"C\", st.id COLLATE \"C\"",
-        user.str());
-    history.reserve(rows.size());
-    for (const auto& row : rows) {
-      std::optional<double> rpe;
-      if (!row["rpe"].is_null()) rpe = row["rpe"].as<double>();
-      history.push_back(ProgressSet{
-          SessionId{row["session_id"].as<std::string>()}, instantFrom(row["started_ms"]),
-          ExerciseId{row["exercise_id"].as<std::string>()},
-          PerformedFact{SetId{row["set_id"].as<std::string>()}, row["weight_kg"].as<double>(),
-                        row["reps"].as<int>(), rpe}});
-    }
+    history = finishedFacts(txn, user);
   }
   return history;
 }

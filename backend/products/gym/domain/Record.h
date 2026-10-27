@@ -1,6 +1,6 @@
 #pragma once
 
-#include "products/gym/domain/Review.h"
+#include "products/gym/domain/Progress.h"
 #include "products/gym/domain/Statistics.h"
 #include "products/gym/domain/Training.h"
 
@@ -12,15 +12,6 @@ namespace wm::gym {
 
 // Everything here counts FINISHED sessions only.
 
-// Dated by the SESSION's own start, never by a set's completed_at, which is the device's wall clock.
-struct MovementSession {
-  SessionId session;
-  std::uint64_t startedAtMs;
-  std::vector<PriorMark> loads;   // heaviest first, best reps at each
-
-  bool operator==(const MovementSession&) const = default;
-};
-
 // Sets arrive in the order they were performed, warmups excluded.
 struct MovementDay {
   SessionId session;
@@ -31,15 +22,15 @@ struct MovementDay {
 };
 
 // An absent `exercise` means this account's catalog holds no such movement, whether it never existed
-// or belongs to someone else. `sessions` is the whole history, oldest first; `recent` is bounded by
-// the store.
-// `sessions` holds the sessions the movement was WORKED in; `recent` holds the days it was trained
+// or belongs to someone else. `sets` are the movement's working sets over the whole history; `recent` is bounded
+// by the store.
+// `sets` come from the sessions the movement was WORKED in; `recent` holds the days it was trained
 // in at all bar a warmup, so a session holding only drops is in the list and not in the count.
 struct MovementHistory {
   std::optional<Exercise> exercise;
-  std::vector<std::string> routines;       // the days that name it, in program order
-  std::vector<MovementSession> sessions;   // oldest first
-  std::vector<MovementDay> recent;         // newest first
+  std::vector<std::string> routines;   // the days that name it, in program order
+  std::vector<ProgressSet> sets;
+  std::vector<MovementDay> recent;     // newest first
 
   bool operator==(const MovementHistory&) const = default;
 };
@@ -64,8 +55,8 @@ struct RecordPoint {
 // Every list is empty rather than short where there is nothing true to say, and the wire omits an
 // empty one entirely.
 // `bestE1rm` and `heaviest` are the standing bests, dated by the session a mark was set in.
-// `bestE1rm` is absent exactly where the series is.
-// `records` is the e1RM ladder, newest first: every session whose best estimate beat every session
+// `bestE1rm` is absent exactly where no session of the movement earned an estimate.
+// `records` is the e1RM ladder, newest first: every session whose estimate beat every session
 // before it. The first is not a record — a mark has to be passed.
 struct MovementRecord {
   Exercise exercise;

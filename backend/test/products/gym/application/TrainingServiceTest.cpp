@@ -19,6 +19,12 @@ namespace {
 
 const std::uint64_t kWeek = 604'800'000;
 
+// The one e1RM rule's estimate of an unrated set (domain/Progress.h), at full precision.
+std::optional<double> e1rm(double weightKg, int reps) { return Estimate::of(weightKg, reps, std::nullopt)->e1rm; }
+
+// A set together with the estimate the rule gives it.
+EstimatedFact estimated(const PerformedFact& set) { return EstimatedFact{set, *set.estimate()}; }
+
 // A row of gym_set_revisions: the version an edit replaced, or the whole set a delete took out of the log.
 struct Kept {
   Set set;
@@ -831,7 +837,7 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
   CHECK_EQ(listed[1].summary.tonnageKg, 500.0);        // the assisted set took nothing away
 }
 
-// The estimate is absent exactly where Epley is undefined: a working set at or below zero.
+// The estimate is absent where no working set earned one: here, a set at zero load and a warmup.
 TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_estimate) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
@@ -861,7 +867,7 @@ TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_est
   CHECK_EQ(listed[1].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{0.0, 9}));
   CHECK_EQ(listed[1].topE1rm, std::optional<double>());
   CHECK_EQ(listed[2].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
-  CHECK_EQ(listed[2].topE1rm, e1rm(100.0, 5));         // 116.7, and the one copy that computes it
+  CHECK_EQ(listed[2].topE1rm, e1rm(100.0, 5));
 }
 
 TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_set) {
@@ -884,13 +890,14 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   REQUIRE(finished.has_value());
   CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
-  CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));         // 126.7, not the top set's 116.7
+  CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));         // not the top set's
   CHECK_EQ(listed[0].topE1rm, finished->stats.topE1rm);
   CHECK(e1rm(95.0, 10) > e1rm(100.0, 5));              // the two really do disagree
 }
 
-// The store hands over one row per LOAD carrying the best reps at it; Epley rises with reps at a fixed load.
-TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_set_would) {
+// The store hands over every working set and the domain estimates only what the one e1RM rule admits: twelve reps at
+// a heavier load earn nothing, and the row's number is the best set at ten reps or fewer.
+TEST(log_reads_every_working_set_and_estimates_only_the_sets_the_rule_admits) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
@@ -901,7 +908,7 @@ TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 95.0, 10,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
   h.door.append(h.user, sid(),
-                    SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 95.0, 8,
+                    SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 110.0, 12,
                              SetKind::working, std::nullopt, "", h.clock.now + 3});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000004"), ExerciseId{"bench-press"}, 60.0, 12,
@@ -911,14 +918,14 @@ TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
-  // Dated by the SESSION's start rather than by the set that hit those reps (domain/Review.h).
-  CHECK_EQ(listed[0].summary.workingMarks,
-           (std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 95.0, 10, h.clock.now}}));
+  // Dated by the SESSION's start rather than by the set (domain/Progress.h).
+  const auto worked = [&](const std::string& id, double weightKg, int reps) {
+    return ProgressSet{sid(), h.clock.now, ExerciseId{"back-squat"}, PerformedFact{setId(id), weightKg, reps, std::nullopt}};
+  };
+  CHECK_EQ(listed[0].summary.worked, (std::vector<ProgressSet>{worked("set_00000001", 95.0, 6),
+                                                               worked("set_00000002", 95.0, 10),
+                                                               worked("set_00000003", 110.0, 12)}));
   CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));
-  CHECK_EQ(topE1rmOf(std::vector<PriorMark>{PriorMark{ExerciseId{"back-squat"}, 95.0, 6, 1},
-                                            PriorMark{ExerciseId{"back-squat"}, 95.0, 10, 2},
-                                            PriorMark{ExerciseId{"back-squat"}, 95.0, 8, 3}}),
-           listed[0].topE1rm);
 }
 
 // closedItself is inferred from the auto-close's signature: finished_at at the last set's instant, or at started_at.
@@ -1467,7 +1474,7 @@ TEST(review_reads_the_marks_of_earlier_sessions_and_never_the_one_it_is_reviewin
   std::optional<Review> again = h.training.review(h.user, sid("ses_00000002"));
 
   // The beaten mark is dated by the SESSION that set it (domain/Review.h).
-  const PersonalRecord estimate{RecordKind::e1rm, ExerciseId{"back-squat"}, 122.5, 105.0, 5, 116.7,
+  const PersonalRecord estimate{RecordKind::e1rm, ExerciseId{"back-squat"}, *e1rm(105, 5), 105.0, 5, *e1rm(100, 5),
                                 h.clock.now - 2 * kWeek};
   REQUIRE(result.has_value());
   REQUIRE(result->record.has_value());
@@ -1488,7 +1495,7 @@ TEST(review_never_takes_a_session_still_running_as_history) {
 
   REQUIRE(result.has_value());
   REQUIRE(result->record.has_value());
-  CHECK_EQ(result->record->previous, 116.7);   // the finished 100 × 5, never the open 200 × 5
+  CHECK_EQ(result->record->previous, *e1rm(100, 5));   // the finished 100 × 5, never the open 200 × 5
   CHECK_EQ(h.repo.log.session(h.user, sid("ses_00000001")),
            std::optional<Session>(Session(sid("ses_00000001"), h.user, h.clock.now - 2 * kWeek)));
 }
@@ -1570,9 +1577,8 @@ TEST(statistics_draws_a_point_per_finished_session_and_leaves_the_open_one_out) 
 
   REQUIRE_EQ(answer.movements.size(), static_cast<std::size_t>(1));
   REQUIRE_EQ(answer.movements[0].points.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(answer.movements[0].points[0],
-           (MovementPoint{h.clock.now - 2 * kWeek, 100, 5, 116.7}));
-  CHECK_EQ(answer.movements[0].points[1], (MovementPoint{h.clock.now - kWeek, 105, 5, 122.5}));
+  CHECK_EQ(answer.movements[0].points[0], (MovementPoint{h.clock.now - 2 * kWeek, 100, 5, e1rm(100, 5)}));
+  CHECK_EQ(answer.movements[0].points[1], (MovementPoint{h.clock.now - kWeek, 105, 5, e1rm(105, 5)}));
   CHECK_EQ(answer.movements[0].lastTrainedAtMs, h.clock.now - kWeek);
 }
 
@@ -1644,13 +1650,13 @@ TEST(progress_reads_corrections_and_deletions_without_cached_or_legacy_estimates
   const ExerciseId exercise{"back-squat"};
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 100, 1, std::nullopt},
-          EstimatedFact{{set, 100, 1, std::nullopt}, 100}}}}}}));
+          estimated({set, 100, 1, std::nullopt})}}}}}));
 
   h.correct(session, "correct_00000001", startedAtMs, startedAtMs + 3'600'000,
             {Set{set, session, exercise, 1, 90, 10, SetKind::working, 7.0, "", startedAtMs + 60'000}});
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 90, 10, 7},
-          EstimatedFact{{set, 90, 10, 7}, 120}}}}}}));
+          estimated({set, 90, 10, 7})}}}}}));
 
   h.correct(session, "correct_00000002", startedAtMs, startedAtMs + 3'600'000,
             {Set{set, session, exercise, 1, 90, 10, SetKind::working, 6.5, "", startedAtMs + 60'000}});
@@ -1672,7 +1678,7 @@ TEST(progress_omits_a_current_workout_until_finish) {
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {sid("ses_00000001"), h.clock.now, {{ExerciseId{"bench-press"}, 1,
           {setId("set_00000001"), 90, 8, std::nullopt},
-          EstimatedFact{{setId("set_00000001"), 90, 8, std::nullopt}, 114}}}}}}));
+          estimated({setId("set_00000001"), 90, 8, std::nullopt})}}}}}));
 }
 
 TEST(share_is_idempotent_on_the_session) {
@@ -1829,7 +1835,7 @@ TEST(the_dot_survives_a_page_edge_because_the_marks_before_the_page_travel_with_
   CHECK(newest[0].record);
 }
 
-// The page carries an OPEN workout as a row; the standing marks count FINISHED sessions alone.
+// The page carries an OPEN workout as a row, which earns nothing; the standing sets count FINISHED sessions alone.
 TEST(a_still_open_workout_on_the_page_never_stands_under_the_row_above_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
@@ -1847,7 +1853,7 @@ TEST(a_still_open_workout_on_the_page_never_stands_under_the_row_above_it) {
   CHECK(listed[0].record);
   CHECK_EQ(listed[1].summary.session.id, sid("ses_00000002"));
   CHECK_EQ(listed[1].summary.session.finishedAtMs, std::optional<std::uint64_t>());
-  CHECK(listed[1].record);
+  CHECK_FALSE(listed[1].record);
   CHECK_FALSE(listed[2].record);
 }
 
