@@ -1,0 +1,36 @@
+{
+  "case": "two-rounds",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_two_rounds_0001",
+    "question": "What did I bench last time?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "list_exercises", "input": {}}
+    ]},
+    {"stop_reason": "tool_use", "content": [
+      {"type": "text", "text": "Found it."},
+      {"type": "tool_use", "id": "toolu_2", "name": "last_time", "input": {"exerciseId": "bench-press"}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "82.5 kg for 8, three times."}]}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_exercises", "input": {}}]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "Found it."}},
+    {"event": "calls", "data": {"batch": 2, "calls": [{"callId": "toolu_2", "name": "last_time", "input": {"exerciseId": "bench-press"}}]}},
+    {"await": "results", "batch": 2},
+    {"event": "text", "data": {"delta": "\n\n82.5 kg for 8, three times."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"exercises": [{"id": "bench-press", "name": "Bench Press"}]}}]},
+    {"batch": 2, "results": [{"callId": "toolu_2", "ok": true, "result": {"trained": true, "sets": [{"weightKg": 82.5, "reps": 8}]}}]}
+  ],
+  "end": {"state": "completed"}
+}

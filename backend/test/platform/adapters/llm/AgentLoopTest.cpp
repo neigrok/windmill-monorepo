@@ -399,3 +399,46 @@ TEST(agent_loop_cancellation_after_a_model_turn_prevents_its_tool_effect) {
   CHECK_EQ(calls, 1);
   CHECK(host.calls.empty());
 }
+
+// A host whose executor is elsewhere answers the round's calls as ONE batch, in order, and the
+// loop hands each answer back under its own tool_use id.
+TEST(a_round_of_tool_calls_reaches_the_host_as_one_batch_in_call_order) {
+  struct BatchHost : FakeToolHost {
+    std::vector<std::vector<ToolCall>> batches;
+    std::vector<ToolResult> callTools(const std::vector<ToolCall>& calls, const ToolCaller&) override {
+      batches.push_back(calls);
+      std::vector<ToolResult> results;
+      for (const ToolCall& call : calls) results.push_back(ToolResult::text("answered " + call.name));
+      return results;
+    }
+  } host;
+  host.catalog.push_back(ToolDeclaration{mcpTool("list_routines", "The program."), "gym", Access::read});
+  host.catalog.push_back(ToolDeclaration{mcpTool("last_time", "Last time."), "gym", Access::read});
+  FakeModel model;
+  Json::Value round = toolUseReply("list_routines", "toolu_1");
+  round["content"].append(toolUseReply("last_time", "toolu_2")["content"][0]);
+  model.replies.push_back(round);
+  model.replies.push_back(textReply("end_turn", "Both read."));
+
+  Recorder rec;
+  const AgentLoopOutcome outcome = driveAgentLoop(spec("what and when?"), host, kCaller, model.asCall(), rec.report());
+
+  CHECK(outcome.ok);
+  CHECK(host.calls.empty());  // callTool was never used one by one
+  REQUIRE_EQ(host.batches.size(), 1u);
+  REQUIRE_EQ(host.batches[0].size(), 2u);
+  CHECK_EQ(host.batches[0][0].id, std::string("toolu_1"));
+  CHECK_EQ(host.batches[0][0].name, std::string("list_routines"));
+  CHECK_EQ(host.batches[0][1].id, std::string("toolu_2"));
+  CHECK_EQ(host.batches[0][1].name, std::string("last_time"));
+  REQUIRE_EQ(model.requests.size(), 2u);
+  const Json::Value& answers = model.requests[1]["messages"][2]["content"];
+  REQUIRE_EQ(answers.size(), 2u);
+  CHECK_EQ(answers[0]["tool_use_id"].asString(), std::string("toolu_1"));
+  CHECK_EQ(answers[0]["content"].asString(), std::string("answered list_routines"));
+  CHECK_EQ(answers[1]["tool_use_id"].asString(), std::string("toolu_2"));
+  CHECK_EQ(answers[1]["content"].asString(), std::string("answered last_time"));
+  REQUIRE_EQ(outcome.steps.size(), 2u);
+  CHECK_EQ(outcome.steps[1].tool, std::string("last_time"));
+  CHECK_EQ(outcome.stopReason, std::string("end_turn"));
+}

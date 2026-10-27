@@ -159,6 +159,7 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
     }
 
     messages.append(assistantMessage(content));
+    outcome.stopReason = stopReason.asString();
 
     if (stopReason.asString() == "end_turn") {
       outcome.text = trim(finalText(content));
@@ -179,21 +180,29 @@ AgentLoopOutcome driveAgentLoop(const AgentLoopSpec& spec, ToolHost& tools, cons
       return outcome;
     }
 
-    // Execute every requested tool, in order, and answer each with a matching tool_result.
-    Json::Value results(Json::arrayValue);
+    // The round's tool_use blocks go to the host as ONE batch, in order, and each comes back as the
+    // matching tool_result.
+    std::vector<ToolCall> calls;
     for (const Json::Value& block : content) {
       if (block["type"].asString() != "tool_use") continue;
-      if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
-      const std::string name = block["name"].asString();
-      const ToolResult result = tools.callTool(name, block["input"], caller);
-      results.append(agentToolResult(block["id"].asString(), result));
-      outcome.steps.push_back(AgentLoopStep{name, result.isError});
+      calls.push_back(ToolCall{block["id"].asString(), block["name"].asString(), block["input"]});
     }
-
-    if (results.empty()) {
+    if (calls.empty()) {
       outcome.error = "the model asked for tools but named none";
       report(spec.where, outcome.error);
       return outcome;
+    }
+    if (spec.continueRun && !spec.continueRun()) { outcome.error = "stopped"; return outcome; }
+    const std::vector<ToolResult> answered = tools.callTools(calls, caller);
+    if (answered.size() != calls.size()) {
+      outcome.error = "the tool host answered a different number of calls than it was sent";
+      report(spec.where, outcome.error);
+      return outcome;
+    }
+    Json::Value results(Json::arrayValue);
+    for (std::size_t index = 0; index < calls.size(); ++index) {
+      results.append(agentToolResult(calls[index].id, answered[index]));
+      outcome.steps.push_back(AgentLoopStep{calls[index].name, answered[index].isError});
     }
     messages.append(userToolResults(results));
   }

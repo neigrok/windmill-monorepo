@@ -94,6 +94,41 @@ AiInstallationAccess AiInstallationApi::resolve(const drogon::HttpRequestPtr& re
   return result;
 }
 
+AiPrincipalAccess AiInstallationApi::principal(const drogon::HttpRequestPtr& request) const {
+  AiPrincipalAccess result;
+  const auto credential = sync::SentCredentials::fromOccurrences(request->headerOccurrences()).resolve(
+      [&](const std::string& token) -> std::optional<UserId> {
+        const auto account = auth_->authenticate(token);
+        if (!account) return std::nullopt;
+        result.account = account;
+        return account->id;
+      });
+  if (credential.fails()) {
+    result.account.reset();
+    result.refusal = "unauthenticated";
+    return result;
+  }
+  if (result.account) return result;
+  bool installationSent = false;
+  for (const auto& [name, value] : request->headerOccurrences())
+    installationSent = installationSent || headerName(name) == "x-windmill-installation";
+  if (!installationSent) {
+    result.refusal = "unauthenticated";
+    return result;
+  }
+  const AiInstallationAccess access = resolve(request, false, true);
+  if (!access.refusal.empty()) {
+    result.refusal = access.refusal;
+    return result;
+  }
+  if (access.installation->boundAccount()) {
+    result.refusal = "device_bound";
+    return result;
+  }
+  result.installation = access.installation;
+  return result;
+}
+
 std::optional<std::string> AiInstallationApi::clientAddress(const drogon::HttpRequestPtr& request) const {
   return aiInstallationClientAddress(request->headerOccurrences(), request->peerAddr().toIp(), proxy_);
 }

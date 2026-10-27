@@ -10,6 +10,7 @@
 #include "products/gym/ports/BodyweightRepository.h"
 #include "products/gym/ports/PreferencesRepository.h"
 #include "products/gym/onboarding/OnboardingService.h"
+#include "products/gym/coach/TurnService.h"
 #include "platform/ai_installations/AiInstallationApi.h"
 
 #include <drogon/HttpAppFramework.h>
@@ -37,6 +38,7 @@ struct GymDeps {
   std::function<void(std::function<void()>)> onShutdown;
   std::shared_ptr<OnboardingService> onboarding;
   std::shared_ptr<AiInstallationApi> installations;
+  std::shared_ptr<coach::TurnService> turns;  // null (or unconfigured) ⇒ no /v1/gym/coach/turns routes exist
   std::shared_ptr<FailureReporter> failures;
 };
 

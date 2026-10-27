@@ -21,6 +21,17 @@ struct AiInstallationAccess {
   std::string refusal;
 };
 
+// Who a hosted-AI route serves: the account behind a session or bearer credential, else the
+// installation behind `X-Windmill-Installation`. An account outranks an installation sent beside it.
+// A refusal is `unauthenticated` (an invalid account credential, or neither credential),
+// `invalid_installation`, `anonymous_ai_unavailable`, or `device_bound` (an installation already
+// bound to an account, which must sign in instead).
+struct AiPrincipalAccess {
+  std::optional<User> account;
+  std::optional<AiInstallationPrincipal> installation;
+  std::string refusal;
+};
+
 class AiInstallationApi {
 public:
   AiInstallationApi(std::shared_ptr<AiInstallations> installations, std::shared_ptr<AuthService> auth,
@@ -28,6 +39,8 @@ public:
                     AiInstallationProxy proxy);
   AiInstallationAccess resolve(const drogon::HttpRequestPtr& request, bool requireAccount = false,
                                bool requireInstallation = true) const;
+  // The seat of a route an account or an installation may open — the Coach turn routes.
+  AiPrincipalAccess principal(const drogon::HttpRequestPtr& request) const;
   std::optional<std::string> clientAddress(const drogon::HttpRequestPtr& request) const;
   void issue(const drogon::HttpRequestPtr& request, std::function<void(const drogon::HttpResponsePtr&)>&& reply);
   void current(const drogon::HttpRequestPtr& request, std::function<void(const drogon::HttpResponsePtr&)>&& reply);

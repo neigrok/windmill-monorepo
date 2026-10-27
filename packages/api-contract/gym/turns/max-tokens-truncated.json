@@ -1,0 +1,21 @@
+{
+  "case": "max-tokens-truncated",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_max_tokens_0001",
+    "question": "Tell me everything about my training.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "max_tokens", "content": [{"type": "text", "text": "You started in March and your bench moved from"}]}
+  ],
+  "events": [
+    {"event": "text", "data": {"delta": "You started in March and your bench moved from"}},
+    {"event": "done", "data": {"state": "completed", "truncated": true}}
+  ],
+  "results": [],
+  "end": {"state": "completed", "truncated": true}
+}

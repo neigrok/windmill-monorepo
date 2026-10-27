@@ -83,8 +83,9 @@ move or rebind, a discard decision, a sign-out; engine §7.10) first ends a runn
 
 **D-11 Installation credential.** An opaque server-issued credential held separately from account
 authentication (§8). Its lifetime allowance belongs to an installation, without a guarantee
-against resets. Current admission is limited to the anonymous onboarding routes; it does not
-grant access to account Coach routes or the broader turn protocol.
+against resets. It admits the anonymous onboarding routes and the turn routes (§6.1) as the
+`anon` seat; it grants no access to account routes, and once bound to an account it admits
+nothing anonymously.
 
 ---
 
@@ -323,8 +324,10 @@ MCP calls pass G-1 to G-3 in the server executor, under the same agent rules (IN
 A turn route authenticates with a session (seat `bound(A)`) or an installation credential (seat `anon`). Every
 request of a turn uses the seat that opened it. A deployment with more than one server process
 MUST route every request of a turn to the process that holds it.
-The turn routes remain specified work; installation credentials currently authorize only
-`POST /v1/gym/coach/onboarding` and its request-scoped recovery read.
+The turn routes are served by `backend/products/gym/coach/` and mounted only where a vendor key
+is configured, as `POST /v1/gym/ask` is. Installation credentials authorize them, beside
+`POST /v1/gym/coach/onboarding` and its request-scoped recovery read; an installation bound to an
+account is refused `device_bound` and signs in instead.
 
 ### §6.2 Open
 
@@ -448,8 +451,9 @@ nor telemetry contain prompts, images, account/device identifiers or raw vendor 
 
 [USD AI allowances](../../../backend/AI_ALLOWANCES.md) describes the implemented backend mode,
 which defaults off in configuration and is enabled in production. Authenticated Claude paths use
-it. Anonymous onboarding has a separate installation boundary; this broader phone-hosted Coach
-protocol remains unimplemented. Account Coach uses operation `ask`.
+it. Anonymous onboarding has a separate installation boundary. Account Coach over `POST /v1/gym/ask`
+uses operation `ask`; a phone turn uses operation `turn` on both seats, reserving each round for
+the account or for the installation.
 
 Claude reservations use local per-request approximate token counts and the full output cap sent to the provider.
 Anonymous onboarding uses one bounded model call with public exercises and no account tools.

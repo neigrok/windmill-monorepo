@@ -1,0 +1,44 @@
+{
+  "case": "one-batch-parallel-calls",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_one_batch_0001",
+    "question": "Add a push day and tell me what I have.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "text", "text": "Let me look and add it."},
+      {"type": "tool_use", "id": "toolu_1", "name": "list_routines", "input": {}},
+      {"type": "tool_use", "id": "toolu_2", "name": "create_routine", "input": {"id": "rt_model_minted", "name": "Push A", "position": 0, "entries": [{"exerciseId": "bench-press"}]}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Push A is in Routines now."}]}
+  ],
+  "events": [
+    {"event": "text", "data": {"delta": "Let me look and add it."}},
+    {"event": "calls", "data": {"batch": 1, "calls": [
+      {"callId": "toolu_1", "name": "list_routines", "input": {}},
+      {"callId": "toolu_2", "name": "create_routine", "input": {"id": "tn_one_batch_0001-1", "name": "Push A", "position": 0, "entries": [{"exerciseId": "bench-press"}]}}
+    ]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "\n\nPush A is in Routines now."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [
+      {"callId": "toolu_1", "ok": true, "result": {"routines": []}},
+      {"callId": "toolu_2", "ok": true, "result": {"id": "tn_one_batch_0001-1", "name": "Push A"}}
+    ]}
+  ],
+  "modelRequests": [
+    {},
+    {"toolResults": [
+      {"callId": "toolu_1", "isError": false, "content": "{\"routines\":[]}"},
+      {"callId": "toolu_2", "isError": false, "content": "{\"id\":\"tn_one_batch_0001-1\",\"name\":\"Push A\"}"}
+    ]}
+  ],
+  "end": {"state": "completed"}
+}

@@ -1,0 +1,26 @@
+{
+  "case": "stop-before-batch",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_stop_before_batch_0001",
+    "question": "Add three new days.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "text", "text": "On it."},
+      {"type": "tool_use", "id": "toolu_1", "name": "create_routine", "input": {"id": "rt_x", "name": "Day 1", "position": 0, "entries": [{"exerciseId": "bench-press"}]}}
+    ]}
+  ],
+  "stop": {"afterModelCall": 1},
+  "events": [
+    {"event": "text", "data": {"delta": "On it."}},
+    {"await": "stop"},
+    {"event": "done", "data": {"state": "stopped"}}
+  ],
+  "results": [],
+  "end": {"state": "stopped"}
+}

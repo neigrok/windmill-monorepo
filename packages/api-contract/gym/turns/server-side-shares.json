@@ -1,0 +1,45 @@
+{
+  "case": "server-side-shares",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_shares_0001",
+    "question": "Share yesterday's workout with my coach.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "list_sessions", "input": {}},
+      {"type": "tool_use", "id": "toolu_2", "name": "share_session", "input": {"sessionId": "ses_00000001"}},
+      {"type": "tool_use", "id": "toolu_3", "name": "list_routines", "input": {}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Here is the link."}]}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [
+      {"callId": "toolu_1", "name": "list_sessions", "input": {}},
+      {"callId": "toolu_3", "name": "list_routines", "input": {}}
+    ]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "Here is the link."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [
+      {"callId": "toolu_1", "ok": true, "result": {"sessions": [{"id": "ses_00000001"}]}},
+      {"callId": "toolu_3", "ok": true, "result": {"routines": []}}
+    ]}
+  ],
+  "serverCalls": [{"name": "share_session", "input": {"sessionId": "ses_00000001"}}],
+  "modelRequests": [
+    {},
+    {"toolResults": [
+      {"callId": "toolu_1", "isError": false, "content": "{\"sessions\":[{\"id\":\"ses_00000001\"}]}"},
+      {"callId": "toolu_2", "isError": false, "content": "{\"url\":\"https://windmill.works/s/share_1\"}"},
+      {"callId": "toolu_3", "isError": false, "content": "{\"routines\":[]}"}
+    ]}
+  ],
+  "end": {"state": "completed"}
+}

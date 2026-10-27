@@ -1,0 +1,21 @@
+{
+  "case": "text-streams",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_text_streams_0001",
+    "question": "How is my squat going?",
+    "history": [{"role": "lifter", "text": "Hi Coach"}, {"role": "coach", "text": "Hi. What would you like to work on?"}],
+    "context": [{"name": "list_notes", "input": {}, "result": {"notes": []}}],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Your squat is moving: 100 kg for 5 last week."}]}
+  ],
+  "events": [
+    {"event": "text", "data": {"delta": "Your squat is moving: 100 kg for 5 last week."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [],
+  "end": {"state": "completed"}
+}

@@ -126,9 +126,9 @@ accepted rows, but no automatic replay to Amplitude runs. Repeated accepted clie
 create duplicate Postgres rows; the stable event ID deduplicates the Amplitude mirror. An unset
 Amplitude key intentionally disables forwarding.
 
-The inventory has 90 HTTP write registrations: REST platform 27, roadmap 13, gym 30 (20 of them
+The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 86 production HTTP operations. MCP has 37 write declarations
+standalone transport duplicates leaves 89 production HTTP operations. MCP has 37 write declarations
 (roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
 (ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have nine production commands
 (gym 7, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
@@ -212,6 +212,9 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/gym/log-shares` (gym; rest) | `gym.POST.v1.gym.log.shares` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/gym/log-shares/{id}` (gym; rest) | `gym.DELETE.v1.gym.log.shares.id` | completion; bounded refusal or result | unexpected |
 | `POST /v1/gym/ask` (gym; rest) | `gym.POST.v1.gym.ask` | completion; bounded refusal or result | unexpected |
+| `POST /v1/gym/coach/turns` (gym; rest) | `gym.coach.turn.open` | completion; bounded refusal before the stream, or the stream | unexpected |
+| `POST /v1/gym/coach/turns/{turnId}/results` (gym; rest) | `gym.coach.turn.results` | completion; bounded refusal or result | unexpected |
+| `POST /v1/gym/coach/turns/{turnId}/stop` (gym; rest) | `gym.coach.turn.stop` | completion; bounded refusal or result | unexpected |
 | `POST /v1/dev/sign-in` (probe; rest) | `probe.POST.v1.dev.sign.in` | completion; bounded refusal or result | unexpected |
 | `POST /v1/dev/sync/epoch` (probe; rest) | `probe.POST.v1.dev.sync.epoch` | completion; bounded refusal or result | unexpected |
 | `POST /mcp (MCP_PATH)` (platform; mcp) | `mcp.transport` | completion; bounded refusal or result | unexpected |
@@ -385,6 +388,9 @@ listed separately because their only server writes are authentication refresh or
 | Anonymous Coach model boundary | `gym.coach.onboarding.model` | expected refusal and provider rate limits are log-only outcomes | transport, truncation or invalid result failures |
 | Anonymous Coach fallback persistence | `gym.coach.onboarding.persist` | bounded terminal persistence failure | unexpected fallback write failures |
 | `GET /v1/gym/coach/onboarding/{requestId}` | `gym.coach.onboarding.read` | HTTP status; no routine or credential data | unexpected result read failures |
+| Phone Coach turn (`products/gym/coach/TurnService.cpp run`) | `coach_turn` structured line | one line per turn: turn id, seat kind (`anon`/`bound`), terminal state, truncation, code, model calls, batches, ability calls by name, refusals by code, question and answer byte counts, duration; never the question, history, context, results, pictures, token or credential | `coach_turn.open` (allowance read unavailable at admission), `coach_turn.loop` (a model loop that failed outside an expected refusal, or threw) |
+| Phone Coach batch (`products/gym/coach/PhoneToolHost.cpp callTools`) | `coach_batch` structured line | one line per batch: turn id, batch number, seat kind, calls sent, server-run calls, refused calls, outcome (`answered`, `timeout`, `stopped`), duration | none: a silent phone ends the turn `interrupted`, an expected outcome |
+| Phone Coach model round | `ai.call.admit`, `ai.call.account` under operation `turn` | the shared admission and settlement rows; a refused round ends the turn with the refusal's code as an `error` frame | unexpected boundary failures, as for every round |
 | Anonymous Coach result expiry | `background.gym-coach-onboarding-retention` | committed expiry writes only | unexpected retention failures |
 | `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |

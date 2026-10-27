@@ -122,6 +122,13 @@ struct ToolRetirement {
 // wire and inside a tend alike, never dropped in silence.
 std::optional<std::string> undeclaredArgument(const ToolDeclaration& tool, const Json::Value& arguments);
 
+// One call of a model round: the id the model gave it, the tool it named and the arguments it sent.
+struct ToolCall {
+  std::string id;
+  std::string name;
+  Json::Value arguments;
+};
+
 // A module declares its whole surface and never its own gate: CompositeToolHost gates above it.
 struct ToolHost {
   virtual ~ToolHost() = default;
@@ -131,6 +138,14 @@ struct ToolHost {
   // Every edit acts as `caller`'s account, within the grant that account's credential carries.
   virtual ToolResult callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) = 0;
+
+  // One model round's calls as one batch, answered in call order. Runs them one after another
+  // through callTool unless the host's executor is elsewhere (a phone) and sends the batch whole.
+  virtual std::vector<ToolResult> callTools(const std::vector<ToolCall>& calls, const ToolCaller& caller) {
+    std::vector<ToolResult> results;
+    for (const ToolCall& call : calls) results.push_back(callTool(call.name, call.arguments, caller));
+    return results;
+  }
 
   virtual std::vector<ToolRetirement> retiredTools() const { return {}; }
 

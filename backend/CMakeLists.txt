@@ -307,11 +307,15 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ReadReceiptTest.cpp
   test/products/gym/domain/NoteTest.cpp
   test/products/gym/domain/BodyweightTest.cpp
-  test/products/gym/application/ThreadServiceTest.cpp)
+  test/products/gym/application/ThreadServiceTest.cpp
+  test/products/gym/coach/AbilityCatalogTest.cpp
+  test/products/gym/coach/TurnGateTest.cpp
+  test/products/gym/coach/TurnServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
-# contract holds.
-target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
+# contract holds; the gym turn exchanges (gym/turns) the same way.
+target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
+  WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns")
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
@@ -465,6 +469,13 @@ target_sources(windmill_gym PRIVATE
   products/gym/adapters/mcp/GymTools.cpp
   products/gym/adapters/mcp/GymToolCatalog.cpp
   products/gym/application/AskService.cpp
+  products/gym/coach/Turn.cpp
+  products/gym/coach/AbilityCatalog.cpp
+  products/gym/coach/TurnGate.cpp
+  products/gym/coach/PhoneToolHost.cpp
+  products/gym/coach/AnthropicCoachModel.cpp
+  products/gym/coach/TurnService.cpp
+  products/gym/coach/TurnApi.cpp
   products/gym/routes.cpp)
 
 # One process serves REST, the collab socket, AND MCP over the same rooms. main.cpp is the
@@ -635,6 +646,7 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/onboarding/PgOnboardingRepositoryTest.cpp
   test/products/gym/onboarding/OnboardingApiTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
+  test/products/gym/coach/TurnApiTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp

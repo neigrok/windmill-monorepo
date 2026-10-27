@@ -1,0 +1,27 @@
+{
+  "case": "allowance-refused-mid-turn",
+  "seat": "anon",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_allowance_0001",
+    "question": "What should I do today?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "list_routines", "input": {}}
+    ]},
+    {"refused": "subject_exhausted"}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_routines", "input": {}}]}},
+    {"await": "results", "batch": 1},
+    {"event": "error", "data": {"code": "subject_exhausted"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}]}
+  ],
+  "end": {"state": "failed", "code": "subject_exhausted"}
+}

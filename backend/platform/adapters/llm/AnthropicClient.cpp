@@ -196,12 +196,13 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string&, const std::string&)> report,
                   std::function<void()> onDenied, std::shared_ptr<AiCallBudget> budget,
-                  std::function<void(const std::string&)> onBudgetDenied, int minOutputTokens) {
+                  std::function<void(const std::string&)> onBudgetDenied, int minOutputTokens,
+                  std::shared_ptr<const AiInstallationPrincipal> installation) {
   auto turn = std::make_shared<int>(0);
   return [inner = std::move(inner), frame = std::move(frame), fuse = std::move(fuse),
           usage = std::move(usage), report = std::move(report), onDenied = std::move(onDenied),
           budget = std::move(budget), onBudgetDenied = std::move(onBudgetDenied),
-          turn, minOutputTokens](const Json::Value& request) -> std::optional<Json::Value> {
+          turn, minOutputTokens, installation = std::move(installation)](const Json::Value& request) -> std::optional<Json::Value> {
     AiSpend spend = frame;
 
     // Asked before the call. allows() raises tripped() itself, so the flag is read first — whoever
@@ -222,7 +223,9 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
     std::optional<AiBudgetReservation> reservation;
     auto outbound = request;
     if (budget) {
-      const auto admission = budget->begin(spend, request, minOutputTokens);
+      const auto admission = installation && !spend.user
+          ? budget->beginInstallation(*installation, spend, request, minOutputTokens)
+          : budget->begin(spend, request, minOutputTokens);
       if (!admission.reservation) {
         if (onBudgetDenied) onBudgetDenied(admission.refusal);
         return std::nullopt;

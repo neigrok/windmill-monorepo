@@ -1,0 +1,62 @@
+{
+  "case": "gate-volume",
+  "seat": "anon",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_gate_volume_0001",
+    "question": "Build me a whole week.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "create_routine", "input": {"id": "rt_1", "name": "Day 1", "position": 0, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_2", "name": "create_routine", "input": {"id": "rt_2", "name": "Day 2", "position": 1, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_3", "name": "create_routine", "input": {"id": "rt_3", "name": "Day 3", "position": 2, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_4", "name": "create_routine", "input": {"id": "rt_4", "name": "Day 4", "position": 3, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_5", "name": "create_routine", "input": {"id": "rt_5", "name": "Day 5", "position": 4, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_6", "name": "create_routine", "input": {"id": "rt_6", "name": "Day 6", "position": 5, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_7", "name": "create_routine", "input": {"id": "rt_7", "name": "Day 7", "position": 6, "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_8", "name": "create_exercise", "input": {"id": "ex_1", "name": "Pause bench", "pattern": "press", "equipment": "barbell"}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Six days are in; a seventh needs another answer."}]}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [
+      {"callId": "toolu_1", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-1", "name": "Day 1", "position": 0, "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_2", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-2", "name": "Day 2", "position": 1, "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_3", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-3", "name": "Day 3", "position": 2, "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_4", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-4", "name": "Day 4", "position": 3, "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_5", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-5", "name": "Day 5", "position": 4, "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_6", "name": "create_routine", "input": {"id": "tn_gate_volume_0001-6", "name": "Day 6", "position": 5, "entries": [{"exerciseId": "bench-press"}]}}
+    ]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "Six days are in; a seventh needs another answer."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [
+      {"callId": "toolu_1", "ok": true, "result": {"id": "tn_gate_volume_0001-1"}},
+      {"callId": "toolu_2", "ok": true, "result": {"id": "tn_gate_volume_0001-2"}},
+      {"callId": "toolu_3", "ok": true, "result": {"id": "tn_gate_volume_0001-3"}},
+      {"callId": "toolu_4", "ok": true, "result": {"id": "tn_gate_volume_0001-4"}},
+      {"callId": "toolu_5", "ok": true, "result": {"id": "tn_gate_volume_0001-5"}},
+      {"callId": "toolu_6", "ok": true, "result": {"id": "tn_gate_volume_0001-6"}}
+    ]}
+  ],
+  "modelRequests": [
+    {},
+    {"toolResults": [
+      {"callId": "toolu_1", "isError": false},
+      {"callId": "toolu_2", "isError": false},
+      {"callId": "toolu_3", "isError": false},
+      {"callId": "toolu_4", "isError": false},
+      {"callId": "toolu_5", "isError": false},
+      {"callId": "toolu_6", "isError": false},
+      {"callId": "toolu_7", "isError": true, "contains": "[coach-turn-volume]"},
+      {"callId": "toolu_8", "isError": true, "contains": "[coach-turn-volume]"}
+    ]}
+  ],
+  "end": {"state": "completed"}
+}

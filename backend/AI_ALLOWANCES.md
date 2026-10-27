@@ -128,8 +128,11 @@ curation. Expected background budget refusals leave work due and report a bounde
 without a Sentry Issue. Roadmap's customer request-count quota is disabled in this mode; its read
 contract names USD and links the shared allowance endpoint.
 
-Anonymous Gym Coach previews use the authenticated installation path described below. Anonymous
-roadmap composition remains `compose-unavailable`; it is not wired to this credential.
+Anonymous Gym Coach previews use the authenticated installation path described below, and so does
+a phone Coach turn opened under an installation credential: every round of a turn (operation
+`turn`) reserves against the installation's lifetime allowance, or against the account's when a
+session opened it. Anonymous roadmap composition remains `compose-unavailable`; it is not wired to
+this credential.
 Journal voice returns `unsupported_ai_pricing`: compressed upload size is not a
 verified audio duration/token bound, and audio/text prices need separate accounting.
 

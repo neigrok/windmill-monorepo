@@ -1,0 +1,43 @@
+{
+  "case": "anon-seat",
+  "seat": "anon",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_anon_seat_0001",
+    "question": "Remember that I train three days a week, and share my log.",
+    "history": [],
+    "context": [{"name": "list_routines", "input": {}, "result": {"routines": []}}],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "save_note", "input": {"id": "note_a", "title": "Days", "body": "Three days a week."}},
+      {"type": "tool_use", "id": "toolu_2", "name": "share_session", "input": {"sessionId": "ses_00000001"}},
+      {"type": "tool_use", "id": "toolu_3", "name": "log_set", "input": {"sessionId": "ses_00000001", "exerciseId": "bench-press", "weightKg": 80, "reps": 5}},
+      {"type": "tool_use", "id": "toolu_4", "name": "create_exercise", "input": {"id": "ex_a", "name": "Pause bench", "pattern": "nope", "equipment": "barbell"}},
+      {"type": "tool_use", "id": "toolu_5", "name": "list_exercises", "input": {}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Sign in and I can keep notes and share."}]}
+  ],
+  "notOffered": ["save_note", "share_session", "share_log", "revoke_share", "log_set", "log_sets", "start_session", "finish_session", "discard_session", "import_session", "update_exercise"],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_5", "name": "list_exercises", "input": {}}]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "Sign in and I can keep notes and share."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [{"callId": "toolu_5", "ok": true, "result": {"exercises": []}}]}
+  ],
+  "modelRequests": [
+    {},
+    {"toolResults": [
+      {"callId": "toolu_1", "isError": true, "contains": "[seat-required]"},
+      {"callId": "toolu_2", "isError": true, "contains": "[seat-required]"},
+      {"callId": "toolu_3", "isError": true, "contains": "[not-offered]"},
+      {"callId": "toolu_4", "isError": true, "contains": "[invalid-input]"},
+      {"callId": "toolu_5", "isError": false}
+    ]}
+  ],
+  "end": {"state": "completed"}
+}

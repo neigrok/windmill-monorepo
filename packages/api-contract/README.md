@@ -91,6 +91,32 @@ Read as a test — each from this file in the repo, never a bundled copy — by:
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
 - `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Ladder.kt`
 
+## `gym/turns/`
+
+Scripted exchanges over the Coach turn wire ([gym_coach.md](../../docs/foundation/mobile/gym_coach.md)
+§3.5, §6, §10.1), one JSON file per case. The backend replays each against its loop with a scripted
+model and the test as the phone (`backend/test/products/gym/coach/TurnServiceTest.cpp`); a phone's
+turn driver replays the same file against a fake server that emits `events` and expects `results`.
+
+| Field | Meaning |
+|---|---|
+| `case` | The file's name. |
+| `seat` | `anon` or `bound`: the seat the open runs under. |
+| `open` | The §6.2 body, verbatim. |
+| `model` | Server side only: the vendor's reply per model call — `{stop_reason, content}`, `null` for a transport failure, `{"refused": code}` for a round the allowance refused. |
+| `events` | The frames the server sends, in order, heartbeats aside. A `done` frame's `allowance` is omitted: it belongs to the environment, and the comparison drops it. `{"await": …}` entries are not frames: they mark where the server waits for the phone — `results` of a `batch`, `stop`, `resume`, or the `timeout` of a silent phone. |
+| `results` | The bodies the phone posts, in order, each on the `calls` frame of its `batch` — or of `on`, when a probe answers another batch on purpose. `expect` is `accepted` (the default, 200), `replay` (204) or `coach-turn-order` (409). |
+| `stop` | `{"afterModelCall": n}`: Stop is requested as soon as the n-th model call returns, before its batch. |
+| `resume` | `{"onBatch": n}`: the phone reconnects on that `calls` frame, before answering, and reads a `snapshot`. |
+| `phone` | `silent`: the phone never answers, and the turn ends `interrupted` after `CALL_RESULT_TIMEOUT`. |
+| `after` | Steps once the turn ended: `{"open": true}` (the same body again) expects `resumed` and the `snapshot` given; `{"open": {field overrides}}` expects `coach-turn-conflict`; `{"resume": turnId}` expects `coach-turn-unknown`; `{"results": body}` expects `replay`. |
+| `modelRequests` | Server side only: per model call, the `toolResults` the request carried, in order — `callId`, `isError`, and the exact `content` or a `contains` fragment. A refusal's content starts with its code in brackets. |
+| `notOffered` | Server side only: names absent from the tool list the first model call sent. |
+| `serverCalls` | Server side only: the calls the server executor ran (ruling R2). |
+| `end` | The terminal `state`, `truncated` where set, and the `code` of a `failed` turn. |
+
+A `failed` turn ends with an `error {code}` frame, every other terminal state with `done {state, truncated?, allowance}`.
+
 ## `gym-history.md`
 
 Filtered workout history, complete scope totals and progress, local month indexes, snapshot/live log

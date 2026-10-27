@@ -1,0 +1,35 @@
+{
+  "case": "conflict-and-order",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_conflict_order_0001",
+    "question": "What routines do I have?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "list_routines", "input": {}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "None yet."}]}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_routines", "input": {}}]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "None yet."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 2, "on": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}], "expect": "coach-turn-order"},
+    {"batch": 1, "results": [{"callId": "toolu_9", "ok": true, "result": {"routines": []}}], "expect": "coach-turn-order"},
+    {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}]},
+    {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": [{"id": "rt_other"}]}}], "expect": "coach-turn-order"}
+  ],
+  "after": [
+    {"open": {"question": "What routines do I have? And my notes?"}, "expect": "coach-turn-conflict"},
+    {"open": true, "expect": "resumed", "snapshot": {"text": "None yet.", "state": "completed"}}
+  ],
+  "end": {"state": "completed"}
+}

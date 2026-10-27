@@ -16,6 +16,18 @@ namespace wm::gym {
 constexpr int kCoachMaxOutputTokens = 2000;
 int coachMaxOutputTokens(const char* configured);
 
+// One model and one effort for every Coach door: Ask, and the phone turn beside it.
+constexpr const char* kCoachModel = "claude-opus-5";
+constexpr const char* kCoachEffort = "medium";
+
+// How the prompt describes create_routine: a draft the lifter saves (Ask with a reviewing client),
+// absent (Ask with an older client), or a routine the call itself lands (a phone turn, where the
+// replica executor runs it). The rest of the prompt is the same bytes in every case.
+enum class CoachRoutineRule { drafts, unavailable, runs };
+
+// The system prompt: byte-stable per rule, so it plus the tool catalog is one cached prefix.
+const std::string& coachSystemPrompt(CoachRoutineRule rule);
+
 // The notes and the newest page of the log, welded to the lifter's first turn in that order, exactly
 // as `list_notes` and `list_sessions` return them. Never in the system prompt: that is the cached
 // prefix, and one interpolated byte would move it on every request.

@@ -9,6 +9,7 @@
 #include "products/gym/adapters/http/ThreadsApi.h"
 #include "products/gym/adapters/http/TrainingApi.h"
 #include "products/gym/onboarding/OnboardingApi.h"
+#include "products/gym/coach/TurnApi.h"
 
 #include "platform/adapters/http/WriteRoutes.h"
 
@@ -299,6 +300,28 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       "/v1/gym/ask",
       [ask](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { ask->ask(req, std::move(cb)); },
       {drogon::Post});
+
+  // The phone Coach's turn wire (docs/foundation/mobile/gym_coach.md §6), mounted under the same
+  // condition as Ask: no vendor key, no turn routes. A session opens a `bound` seat, an installation
+  // credential an `anon` one.
+  if (!deps.turns || !deps.turns->configured() || !deps.installations) return;
+  auto turns = std::make_shared<coach::TurnApi>(deps.turns, deps.installations, deps.failures);
+  if (deps.onShutdown) deps.onShutdown([turns] { turns->shutdown(); });
+  routes.registerWriteHandler("gym.coach.turn.open", "/v1/gym/coach/turns",
+      [turns](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { turns->open(req, std::move(cb)); },
+      {drogon::Post});
+  routes.registerHandler("/v1/gym/coach/turns/{turnId}",
+      [turns](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& turnId) {
+        turns->resume(req, std::move(cb), turnId);
+      }, {drogon::Get});
+  routes.registerWriteHandler("gym.coach.turn.results", "/v1/gym/coach/turns/{turnId}/results",
+      [turns](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& turnId) {
+        turns->results(req, std::move(cb), turnId);
+      }, {drogon::Post});
+  routes.registerWriteHandler("gym.coach.turn.stop", "/v1/gym/coach/turns/{turnId}/stop",
+      [turns](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& turnId) {
+        turns->stop(req, std::move(cb), turnId);
+      }, {drogon::Post});
 }
 
 }

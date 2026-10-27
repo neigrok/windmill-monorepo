@@ -50,6 +50,9 @@ constexpr const char* kRoutineDrafts = R"coach(- create_routine prepares a new r
 constexpr const char* kNoRoutineDrafts = R"coach(- New routines cannot be saved from this version of the app. When the lifter wants a new routine, describe the plan in your answer and tell them they can update the app or build it themselves in Routines. Never claim that a routine was created or saved.
 )coach";
 
+constexpr const char* kRoutineRuns = R"coach(- create_routine adds a NEW day to the lifter's program on their phone, and it lands as soon as the tool answers: the lifter sees it in Routines and can edit or delete it themselves. Read Notes for goals and constraints and list_exercises for actual movement IDs first. At most six additions are allowed per answer. Claim a routine was created only after the tool succeeds, and describe what it holds.
+)coach";
+
 constexpr const char* kPromptTail = R"coach(- save_note saves useful insight the user actually provided. Read list_notes first, avoid duplicate information, and use the user's own wording for their actual constraints. Save at most one concise note per answer, alongside a routine action if needed. It appends at the bottom and never edits, deletes or reorders existing notes. Notes are limited to ten, with a title of at most 60 characters and a body of at most 500 UTF-8 bytes. Claim a save only after the tool succeeds; a replay receipt records the original save and does not imply that a user-deleted note was restored.
 - When the user states a goal or a limit, such as an injury, the days per week they can train or a target, call save_note in that same turn unless Notes already hold it. Then plan around it.
 - propose_routine_change and propose_routine_removal CHANGE NOTHING until the user taps Apply. Name the proposal as a proposal. Read list_routines first and send the WHOLE routine document: an omitted line is a proposed removal.
@@ -64,9 +67,6 @@ Only this account's tools and the supplied recent conversation are available. Do
 
 The app displays the server's factual read receipt; do not invent a read count. Loads are kilograms: barbell values include the bar, dumbbell values are per dumbbell, and bodyweight exercises record added load only. Negative loads represent band-assisted work. Only working sets contribute to the tools' working-set statistics; warmups, drops and failures are distinct kinds. Distinguish observed numbers from proposed training targets, and explain the reason for a recommendation. Never present an estimated bodyweight, RPE, calorie total or one-rep max as a recorded fact.
 )coach";
-
-constexpr const char* kModel = "claude-opus-5";
-constexpr const char* kEffort = "medium";
 
 // Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
@@ -91,6 +91,15 @@ void appendToolRoundText(std::string& transcript, const Json::Value& message) {
 }
 
 }  // namespace
+
+const std::string& coachSystemPrompt(CoachRoutineRule rule) {
+  static const std::string drafts = std::string(kPromptHead) + kRoutineDrafts + kPromptTail;
+  static const std::string unavailable = std::string(kPromptHead) + kNoRoutineDrafts + kPromptTail;
+  static const std::string runs = std::string(kPromptHead) + kRoutineRuns + kPromptTail;
+  if (rule == CoachRoutineRule::drafts) return drafts;
+  if (rule == CoachRoutineRule::runs) return runs;
+  return unavailable;
+}
 
 int coachMaxOutputTokens(const char* configured) {
   if (!configured || !*configured) return kCoachMaxOutputTokens;
@@ -170,16 +179,14 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
     return outcome;
   }
 
-  static const std::string withRoutineDrafts = std::string(kPromptHead) + kRoutineDrafts + kPromptTail;
-  static const std::string withoutRoutineDrafts = std::string(kPromptHead) + kNoRoutineDrafts + kPromptTail;
   const auto offered = tools.declareTools();
   const bool drafts = std::any_of(offered.begin(), offered.end(), [](const auto& tool) { return tool.name() == "create_routine"; });
   AgentLoopSpec spec;
-  spec.model = kModel;
-  spec.effort = kEffort;
+  spec.model = kCoachModel;
+  spec.effort = kCoachEffort;
   spec.maxTokens = maxOutputTokens;
   spec.maxIterations = kMaxIterations;
-  spec.system = drafts ? withRoutineDrafts : withoutRoutineDrafts;
+  spec.system = coachSystemPrompt(drafts ? CoachRoutineRule::drafts : CoachRoutineRule::unavailable);
   spec.messages = askOpeningMessages(turns, agentToolText(notes), agentToolText(opening));
   spec.where = "ask.run";
   spec.continueRun = control.continueRun;
@@ -261,7 +268,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   frame.user = caller.user;
   frame.product = "gym";
   frame.operation = "ask";
-  frame.model = kModel;
+  frame.model = kCoachModel;
   frame.runId = newRunId("ask");
 
   auto answer = driveAsk(turns, caller, tools,

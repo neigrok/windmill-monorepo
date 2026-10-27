@@ -1,0 +1,46 @@
+{
+  "case": "gate-one-proposal-one-note",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_gate_one_0001",
+    "question": "Change both days and remember my knee.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "propose_routine_change", "input": {"id": "prop_a", "routineId": "rt_00000001", "entries": [{"exerciseId": "bench-press"}]}},
+      {"type": "tool_use", "id": "toolu_2", "name": "propose_routine_removal", "input": {"id": "prop_b", "routineId": "rt_00000002"}},
+      {"type": "tool_use", "id": "toolu_3", "name": "save_note", "input": {"id": "note_a", "title": "Knee", "body": "Left knee hurts under 100 kg."}},
+      {"type": "tool_use", "id": "toolu_4", "name": "save_note", "input": {"id": "note_b", "title": "Knee again", "body": "Same knee."}}
+    ]},
+    {"stop_reason": "end_turn", "content": [{"type": "text", "text": "One proposal is waiting and your knee is in Notes."}]}
+  ],
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [
+      {"callId": "toolu_1", "name": "propose_routine_change", "input": {"id": "tn_gate_one_0001-1", "routineId": "rt_00000001", "entries": [{"exerciseId": "bench-press"}]}},
+      {"callId": "toolu_3", "name": "save_note", "input": {"id": "tn_gate_one_0001-2", "title": "Knee", "body": "Left knee hurts under 100 kg."}}
+    ]}},
+    {"await": "results", "batch": 1},
+    {"event": "text", "data": {"delta": "One proposal is waiting and your knee is in Notes."}},
+    {"event": "done", "data": {"state": "completed"}}
+  ],
+  "results": [
+    {"batch": 1, "results": [
+      {"callId": "toolu_1", "ok": true, "result": {"proposal": {"id": "tn_gate_one_0001-1"}}},
+      {"callId": "toolu_3", "ok": true, "result": {"saved": true}}
+    ]}
+  ],
+  "modelRequests": [
+    {},
+    {"toolResults": [
+      {"callId": "toolu_1", "isError": false},
+      {"callId": "toolu_2", "isError": true, "contains": "[one-proposal]"},
+      {"callId": "toolu_3", "isError": false},
+      {"callId": "toolu_4", "isError": true, "contains": "[one-note]"}
+    ]}
+  ],
+  "end": {"state": "completed"}
+}

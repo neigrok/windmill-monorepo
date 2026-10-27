@@ -1,0 +1,20 @@
+{
+  "case": "refusal-declined",
+  "seat": "anon",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_refusal_0001",
+    "question": "Write me a diet that will drop 10 kg this week.",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "refusal", "content": []}
+  ],
+  "events": [
+    {"event": "done", "data": {"state": "declined"}}
+  ],
+  "results": [],
+  "end": {"state": "declined"}
+}

@@ -1,0 +1,28 @@
+{
+  "case": "result-timeout-interrupted",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_timeout_0001",
+    "question": "What routines do I have?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    {"stop_reason": "tool_use", "content": [
+      {"type": "tool_use", "id": "toolu_1", "name": "list_routines", "input": {}}
+    ]}
+  ],
+  "phone": "silent",
+  "events": [
+    {"event": "calls", "data": {"batch": 1, "calls": [{"callId": "toolu_1", "name": "list_routines", "input": {}}]}},
+    {"await": "timeout"},
+    {"event": "done", "data": {"state": "interrupted"}}
+  ],
+  "results": [],
+  "after": [
+    {"results": {"batch": 1, "results": [{"callId": "toolu_1", "ok": true, "result": {"routines": []}}]}, "expect": "replay"}
+  ],
+  "end": {"state": "interrupted"}
+}

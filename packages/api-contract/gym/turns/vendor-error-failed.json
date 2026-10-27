@@ -1,0 +1,20 @@
+{
+  "case": "vendor-error-failed",
+  "seat": "bound",
+  "open": {
+    "catalog": "catalog/1",
+    "turnId": "tn_vendor_error_0001",
+    "question": "How is my deadlift?",
+    "history": [],
+    "context": [],
+    "pictures": []
+  },
+  "model": [
+    null
+  ],
+  "events": [
+    {"event": "error", "data": {"code": "coach-vendor-error"}}
+  ],
+  "results": [],
+  "end": {"state": "failed", "code": "coach-vendor-error"}
+}

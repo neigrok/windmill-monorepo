@@ -9,6 +9,8 @@
 #include "platform/ai_installations/PgAiInstallations.h"
 #include "products/gym/onboarding/PgOnboardingRepository.h"
 #include "products/gym/onboarding/OnboardingService.h"
+#include "products/gym/coach/AnthropicCoachModel.h"
+#include "products/gym/coach/TurnService.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
@@ -672,6 +674,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
+  // The phone Coach's turn wire shares Ask's key, endpoint, fuse, sink and budget; its routes are
+  // mounted under the same condition as Ask's.
+  const std::string coachBaseUrl = std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl;
+  auto gymCoachModel = std::make_shared<gym::coach::AnthropicCoachModel>(anthropicKey ? anthropicKey : "", coachBaseUrl,
+                                                                         sentry, aiFuse, aiSpendSink, aiCallBudget);
+  auto gymTurns = std::make_shared<gym::coach::TurnService>(gymCoachModel, gym::coach::gymAbilityCatalog(), *gymTools,
+                                                            *entitlements, aiInstallations, *systemClock,
+                                                            gym::coachMaxOutputTokens(std::getenv("COACH_MAX_OUTPUT_TOKENS")), sentry);
+  lifetime.onStop([gymTurns] { gymTurns->stop(); }, gymCoachModel, gymTools, entitlements, aiInstallations, systemClock,
+                  sentry, aiFuse, aiSpendSink, aiCallBudget);
+
   std::shared_ptr<gym::OnboardingService> gymOnboarding;
   if (aiInstallations) {
     auto repository = std::make_shared<gym::PgOnboardingRepository>(pool);
@@ -1161,7 +1174,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl,
                        .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); },
-                       .onboarding = gymOnboarding, .installations = aiInstallationApi, .failures = sentry};
+                       .onboarding = gymOnboarding, .installations = aiInstallationApi, .turns = gymTurns, .failures = sentry};
   gym::registerRoutes(app, gymDeps);
 
   const auto& syncRegistry = syncCatalog->registry();

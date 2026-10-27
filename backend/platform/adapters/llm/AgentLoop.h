@@ -58,10 +58,12 @@ struct AgentLoopStep {
 
 // `ok` false always carries an error and never text. `modelTurns` counts the metered vendor round
 // trips this run COMPLETED — a reply came back, so it was billed, whatever the loop made of it.
+// `stopReason` is the newest reply's stop reason, empty while no reply has been read.
 struct AgentLoopOutcome {
   bool ok = false;
   std::string text;
   std::string error;
+  std::string stopReason;
   std::vector<AgentLoopStep> steps;
   int modelTurns = 0;
 };
