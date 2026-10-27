@@ -126,6 +126,12 @@ jobs:
           xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator' \
             -clonedSourcePackagesDirPath "$WM_SOURCE_PACKAGES/SyncProbe" ARCHS=arm64
 
+      # Sources/GymDomain/Coach/Catalog.generated.swift is generated from the gym ability catalog and checked in; a stale
+      # file fails here.
+      - name: Check the generated ability catalog
+        working-directory: apps/ios/Domain
+        run: swift run --explicit-target-dependency-import-check error GymCatalogGen --check
+
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit
         working-directory: apps/ios/Domain

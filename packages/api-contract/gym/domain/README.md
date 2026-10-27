@@ -7,6 +7,12 @@ Swift and Kotlin and does not apply on the web (its row says why); every other f
 R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
+The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
+executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
+given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
+are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
+(`CoachRules.book`) until every gym implementation carries them, so `rules.json` stays the book the three share.
+
 ## Files
 
 | File | Cases |

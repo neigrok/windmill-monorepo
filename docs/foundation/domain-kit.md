@@ -1594,7 +1594,10 @@ public struct ProductCorpus {                                                   
 }
 extension Entity { public init(form: JSON) throws }                                 // {id, fields}
 public enum Contract { public static func vectors(_ path: String) throws -> [Vector] }
-public struct Vector: Sendable { public let file: String, name: String, input: JSON, expect: JSON }
+public struct Vector: Sendable {
+  public let file: String, name: String, input: JSON, expect: JSON
+  public init(file: String, name: String, input: JSON, expect: JSON)   // a runner's own vector over another corpus's shape
+}
 ```
 
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`

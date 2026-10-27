@@ -252,15 +252,24 @@ public struct ProposeRoutine: Action {
     public let moment: Moment
   }
 
+  // What a proposal comes to before it is planned: refused, nothing to propose, or the validated proposal with the plan
+  // that mints it, so an executor composing this action answers with the proposal it wrote.
+  public enum Proposed {
+    case refuse(GymRefusal)
+    case unchanged
+    case proposal(Valid<Proposal>, Plan)
+  }
+
   public let id: ID<Proposal>
   public let routineId: ID<Routine>
-  public let name: String
+  // Nil keeps the routine's own name.
+  public let name: String?
   public let entries: [RoutineEntry]
   public let summary: String
   public let removing: Bool
   public var scope: ScopeRef { Proposal.scope }
 
-  public init(id: ID<Proposal>, routineId: ID<Routine>, name: String, entries: [RoutineEntry], summary: String, removing: Bool = false) {
+  public init(id: ID<Proposal>, routineId: ID<Routine>, name: String?, entries: [RoutineEntry], summary: String, removing: Bool = false) {
     self.id = id; self.routineId = routineId; self.name = name; self.entries = entries; self.summary = summary; self.removing = removing
   }
 
@@ -270,19 +279,27 @@ public struct ProposeRoutine: Action {
   }
 
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Proposal>, GymRefusal> {
+    switch try proposed(over: loaded) {
+    case .refuse(let refusal): .refuse(refusal)
+    case .unchanged: .unchanged(id)
+    case .proposal(_, let plan): .write(plan, id)
+    }
+  }
+
+  public func proposed(over loaded: Loaded) throws(Violation) -> Proposed {
     guard let base = loaded.routine, loaded.routineVisible else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: routineId.ref, path: .predicted))) }
     let proposed = removing ? [] : try RoutineRules.entries.apply(entries, at: "entries")
-    let proposedName = removing ? "" : try RoutineRules.name.apply(name, at: "name")
+    let proposedName = removing ? "" : try RoutineRules.name.apply(name ?? base.name, at: "name")
     if proposed.contains(where: { loaded.catalogue.find($0.exerciseId) == nil }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: id.ref, path: .predicted)))
     }
-    if !removing && base.name.utf8.elementsEqual(proposedName.utf8) && JSON.array(base.entries.map(\.json)) == JSON.array(proposed.map(\.json)) { return .unchanged(id) }
-    let proposal = Proposal(id: id, routineId: base.id, intent: removing ? "remove" : "revise", proposedName: proposedName,
-                            summary: summary, changes: try ProposalRules.changesBetween(base: base.entries, proposed: proposed))
+    if !removing && base.name.utf8.elementsEqual(proposedName.utf8) && JSON.array(base.entries.map(\.json)) == JSON.array(proposed.map(\.json)) { return .unchanged }
+    let proposal = try Valid(Proposal(id: id, routineId: base.id, intent: removing ? "remove" : "revise", proposedName: proposedName,
+                                      summary: summary, changes: try ProposalRules.changesBetween(base: base.entries, proposed: proposed)), at: loaded.moment)
     var plan = Plan()
-    plan.create(try Valid(proposal, at: loaded.moment))
+    plan.create(proposal)
     plan.guardRead(base.id, fields: ["entries", "name"])
-    return .write(plan, id)
+    return .proposal(proposal, plan)
   }
 }
 

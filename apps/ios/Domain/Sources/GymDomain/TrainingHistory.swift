@@ -81,7 +81,8 @@ public struct TrainingHistory {
     } / 100
   }
 
-  func summary(_ value: Session) -> JSON {
+  // A workout as the log lists it: its facts, the names it trained, its top set, and whether it earned a record.
+  public func summary(_ value: Session) -> JSON {
     let sets = log.sets(session: value.id)
     var result = sessionDocument(value).historyFields
     result["setCount"] = JSON(sets.count); result["workingSetCount"] = JSON(sets.count)

@@ -27,7 +27,9 @@ let package = Package(
     .target(name: "DomainKitTesting", dependencies: ["DomainKit", syncCore, syncAPI, syncEngine, syncTesting]),
     .target(name: "JournalDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "GymDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
+    .executableTarget(name: "GymCatalogGen", dependencies: [syncCore]),
     .testTarget(name: "DomainKitTests", dependencies: ["DomainKit", syncCore, syncAPI, syncTesting], exclude: ["Attacks"]),
+    .testTarget(name: "GymCatalogGenTests", dependencies: ["GymCatalogGen", syncCore]),
     .testTarget(
       name: "DomainKitTestingTests",
       dependencies: [

@@ -57,20 +57,22 @@ public struct TrainingSet: Writable, Removable, Equatable {
   public var note: String
   public let completedAt: Instant
   public let setNumber: Int?
+  // What another door stored the set as; the phone logs working sets only and never writes it.
+  public let kind: String
 
   public init(id: ID<TrainingSet>, sessionId: ID<Session>, exerciseId: ID<Exercise>, weightKg: Double,
               reps: Int, rpe: Double? = nil, note: String = "",
-              completedAt: Instant, setNumber: Int? = nil) {
+              completedAt: Instant, setNumber: Int? = nil, kind: String = "working") {
     self.id = id; self.sessionId = sessionId; self.exerciseId = exerciseId; self.weightKg = weightKg
     self.reps = reps; self.rpe = rpe; self.note = note
-    self.completedAt = completedAt; self.setNumber = setNumber
+    self.completedAt = completedAt; self.setNumber = setNumber; self.kind = kind
   }
 
   public init(_ r: Fields) throws(DecodeError) {
     self.init(id: ID(r.id), sessionId: try r.ref("sessionId", Session.self), exerciseId: try r.ref("exerciseId", Exercise.self),
               weightKg: try r.double("weightKg"), reps: try r.int("reps"),
               rpe: try r.optionalDouble("rpe"), note: try r.string("note", default: ""), completedAt: try r.instant("completedAt"),
-              setNumber: r.serial("setNumber"))
+              setNumber: r.serial("setNumber"), kind: try r.string("kind", default: "working"))
   }
 
   public var fields: [String: JSON] {

@@ -48,6 +48,14 @@ public struct Vector: Sendable, CustomStringConvertible {
   public let input: JSON
   public let expect: JSON
 
+  // A vector a runner builds from a corpus of another shape, such as a Coach ability case's `given` records.
+  public init(file: String, name: String, input: JSON, expect: JSON) {
+    self.file = file
+    self.name = name
+    self.input = input
+    self.expect = expect
+  }
+
   public var description: String { "\(file) · \(name)" }
 }
 
