@@ -69,7 +69,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 7, minimum 4), and
+`windmill_gym` embeds `gym.registry.json` (version 8, minimum 4), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -905,10 +905,11 @@ REST surface's; a write through `/v1/sync` is refused with the engine's codes an
 ### 8.4 Writes on the sync engine
 
 A phone or web client writes gym's records through `/v1/sync` (engine §9), and admission runs
-GymRules over every intent, a server door's too. Gym's own refusal codes are the registry's eight:
+GymRules over every intent, a server door's too. Gym's own refusal codes are the registry's nine:
 `session-open`, `session-finished`, `session-overlap` (with the crossing `sessionId`), `bad-instant`,
-`unknown-exercise`, `payload-conflict`, `proposal-settled` (with the `state` it took) and
-`proposal-superseded` (with its `reason`, §3.7); the rest are the engine's (engine §9.6).
+`unknown-exercise`, `payload-conflict`, `proposal-settled` (with the `state` it took),
+`proposal-superseded` (with its `reason`, §3.7) and `message-final` (a write of a final Coach message
+register); the rest are the engine's (engine §9.6).
 
 The server doors are `GymDoor`'s methods. Each builds its intent under the scope lock (§5); what it
 reads there and answers without admitting, and how it names an engine refusal, is this table. A race
@@ -928,6 +929,7 @@ between a door's read and its admission reaches the engine's own refusal.
 | `saveInsight` · `save_note` | its `gym_note_saves` receipt, the caller's with this text → the saved note, else `idTaken`; a note under the id that is another account's or holds other text → `idTaken`; a standing note with this title and body → that note, the id spent, at ten too; the id held or spent → `idTaken`; ten notes → `full`; else a `note` create after the last `ord`, its receipt written before the commit | `cap` → `full`; `id-taken`, `id-spent` → `idTaken` |
 | `closeStale` · every settling read, `start`, `importSession` | before the call: the open session and its sets; none open, or not `isStale` → nothing admitted; else `gym.closeStale` | none mapped |
 | `unlinkThread` · a Coach conversation's delete | the proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
+| `interrupt` · no caller yet; gym Coach §4.5 | the `message` under the id: absent, dead or its `state` not `running` (unset reads as `running`) → nothing admitted; else `state = interrupted` | none mapped |
 
 An engine refusal a door does not map is `GymUnavailable` (`gym-engine-unavailable`); an internal
 one is a failure. The outcomes reach callers in two shapes: `POST /v1/gym/sessions/import` answers on

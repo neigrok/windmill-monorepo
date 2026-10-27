@@ -1564,10 +1564,11 @@ create table if not exists gym_ask_deleted_threads (
 create index if not exists gym_ask_deleted_threads_owner on gym_ask_deleted_threads(user_id);
 create index if not exists gym_ask_attachments_thread on gym_ask_attachments(linked_thread_id);
 
--- Which conversation minted this proposal. Null for every MCP-door proposal and for one whose
--- thread was deleted; both read to a client as nothing to open.
-alter table gym_proposals add column if not exists thread_id text
-  references gym_ask_threads(id) deferrable initially deferred;
+-- Which conversation minted this proposal: a server Coach conversation (gym_ask_threads) or an
+-- engine conversation (gym_threads, engine A.2), so the column references neither. Null for every
+-- MCP-door proposal and for one whose conversation was deleted; both read to a client as nothing to open.
+alter table gym_proposals add column if not exists thread_id text;
+alter table gym_proposals drop constraint if exists gym_proposals_thread_id_fkey;
 create index if not exists gym_proposals_thread on gym_proposals (thread_id);
 
 -- Which proposal took a pending one's slot: the id the SAME door and connection minted next on the
@@ -1764,6 +1765,53 @@ alter table gym_proposals
   add column if not exists base_name_stamp text,
   add column if not exists change_count_stamp text;
 create index if not exists gym_proposals_sync_feed on gym_proposals (user_id, seq);
+
+-- Coach conversations on the engine (gym Coach §9.1): nullable registers with one stamp each, a message's
+-- `text` in `body`, `at` in epoch milliseconds; the deferred thread FK lets a death kill its messages in one admission.
+create table if not exists gym_threads (
+  id          text primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  title       text,
+  seq         bigint,
+  rc          bigint,
+  ru          bigint,
+  born        text,
+  life_stamp  text,
+  title_stamp text
+);
+create index if not exists gym_threads_sync_feed on gym_threads (user_id, seq);
+
+create table if not exists gym_messages (
+  id              text primary key,
+  user_id         uuid not null references users(id) on delete cascade,
+  thread_id       text references gym_threads(id) deferrable initially deferred,
+  role            text,
+  replica         text,
+  body            text,
+  state           text,
+  truncated       boolean,
+  receipt         jsonb,
+  calls           jsonb,
+  pictures        jsonb,
+  at              bigint,
+  seq             bigint,
+  rc              bigint,
+  ru              bigint,
+  born            text,
+  life_stamp      text,
+  thread_id_stamp text,
+  role_stamp      text,
+  replica_stamp   text,
+  text_stamp      text,
+  state_stamp     text,
+  truncated_stamp text,
+  receipt_stamp   text,
+  calls_stamp     text,
+  pictures_stamp  text,
+  at_stamp        text
+);
+create index if not exists gym_messages_sync_feed on gym_messages (user_id, seq);
+create index if not exists gym_messages_thread on gym_messages (thread_id);
 
 alter table gym_routine_entries
   add column if not exists rest_seconds_present boolean not null default false,

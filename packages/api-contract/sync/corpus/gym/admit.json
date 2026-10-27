@@ -155110,6 +155110,1080 @@
     }
   },
   {
+    "name": "a server-origin proposal create names the conversation it was minted in",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/gym": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 8,
+            "counters": {},
+            "digest": "d42f4da33a4ab3947082764903248d8f96284bd5351b34e1cb639494ac3776ad"
+          },
+          "acct:B/gym": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "9cc06525274e11f94812d6f6cbf5ac7c955723dc992297d59679552a2d7476b0"
+          }
+        },
+        "rows": {
+          "acct:A/gym": [
+            {
+              "t": "exercise",
+              "id": "sledpush01",
+              "life": [
+                "alive",
+                "1760000000000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "equipment": [
+                  "machine",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Sled Push",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "pattern": [
+                  "carry",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "stepKg": [
+                  5,
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "message",
+              "id": "lifter000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1760000000006,
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "role": [
+                  "lifter",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "text": [
+                  "How heavy today?",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "threadId": [
+                  "thread000001",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 7,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "message",
+              "id": "turn00000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1760000000006,
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "calls": [
+                  [
+                    {
+                      "name": "list_sessions"
+                    }
+                  ],
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "receipt": [
+                  {
+                    "reads": {
+                      "sessions": [
+                        "session0001"
+                      ]
+                    },
+                    "results": []
+                  },
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "replica": [
+                  "rp_0000000000000000000000000000000a",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "role": [
+                  "coach",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "state": [
+                  "completed",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "text": [
+                  "Add 2.5 kg.",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "threadId": [
+                  "thread000001",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 8,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "proposal",
+              "id": "proposal001",
+              "life": [
+                "alive",
+                "1760000000004:0:srv"
+              ],
+              "born": "1760000000004:0:srv",
+              "f": {
+                "agent": [
+                  "Claude",
+                  "1760000000004:0:srv"
+                ],
+                "baseName": [
+                  "Lower A",
+                  "1760000000004:0:srv"
+                ],
+                "baseRevision": [
+                  1,
+                  "1760000000004:0:srv"
+                ],
+                "changeCount": [
+                  1,
+                  "1760000000004:0:srv"
+                ],
+                "changes": [
+                  [
+                    {
+                      "kind": "retargeted",
+                      "exerciseId": "back-squat",
+                      "before": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 80
+                          }
+                        ],
+                        "restSeconds": 180
+                      },
+                      "after": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 85
+                          }
+                        ],
+                        "restSeconds": 180
+                      }
+                    }
+                  ],
+                  "1760000000004:0:srv"
+                ],
+                "connection": [
+                  "conn-1",
+                  "1760000000004:0:srv"
+                ],
+                "door": [
+                  "mcp",
+                  "1760000000004:0:srv"
+                ],
+                "intent": [
+                  "revise",
+                  "1760000000004:0:srv"
+                ],
+                "proposedName": [
+                  "Lower A",
+                  "1760000000004:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760000000004:0:srv"
+                ],
+                "state": [
+                  "pending",
+                  "1760000000004:0:srv"
+                ],
+                "summary": [
+                  "Heavier squat",
+                  "1760000000004:0:srv"
+                ]
+              },
+              "seq": 5,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "routine",
+              "id": "routine0001",
+              "life": [
+                "alive",
+                "1760000000001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "createdEntries": [
+                  1,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "entries": [
+                  [
+                    {
+                      "exerciseId": "back-squat",
+                      "restSeconds": 180,
+                      "sets": [
+                        {
+                          "reps": 5,
+                          "weightKg": 80
+                        }
+                      ]
+                    }
+                  ],
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Lower A",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "position": [
+                  0,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "revision": [
+                  1,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "session",
+              "id": "session0001",
+              "life": [
+                "alive",
+                "1760000000002:0:srv"
+              ],
+              "born": "1760000000002:0:srv",
+              "f": {
+                "closedBy": [
+                  "finish",
+                  "1760000000002:0:srv"
+                ],
+                "finishedAt": [
+                  1760003600000,
+                  "1760000000002:0:srv"
+                ],
+                "historyRoutineId": [
+                  "routine0001",
+                  "1760000000002:0:srv"
+                ],
+                "plan": [
+                  {
+                    "routine": "Lower A",
+                    "entries": [
+                      {
+                        "exerciseId": "back-squat",
+                        "restSeconds": 180,
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 80
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "1760000000002:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760000000002:0:srv"
+                ],
+                "startedAt": [
+                  1760000000000,
+                  "1760000000002:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "set",
+              "id": "set00000001",
+              "life": [
+                "alive",
+                "1760000000003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "completedAt": [
+                  1760000600000,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "exerciseId": [
+                  "back-squat",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "kind": [
+                  "working",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "note": [
+                  "",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "reps": [
+                  5,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "sessionId": [
+                  "session0001",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "weightKg": [
+                  80,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "setNumber": 1
+              },
+              "seq": 4,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "thread",
+              "id": "thread000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "How heavy today?",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 6,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ],
+          "acct:B/gym": [
+            {
+              "t": "exercise",
+              "id": "beltsquat1",
+              "life": [
+                "alive",
+                "1760000000000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "1760000000000:0:r_bbbbbbbbbbbb",
+              "f": {
+                "equipment": [
+                  "machine",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "name": [
+                  "Belt Squat",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "pattern": [
+                  "squat",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "stepKg": [
+                  5,
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "seeds": {
+            "back-squat": {
+              "name": "Back Squat"
+            },
+            "bench-press": {
+              "name": "Bench Press"
+            },
+            "dip": {
+              "name": "Dip"
+            }
+          },
+          "starts": {
+            "acct:A/gym": {
+              "session0001": "session0001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/gym",
+        "d": [
+          {
+            "t": "proposal",
+            "id": "proposal003",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "routineId": [
+                "routine0001",
+                null
+              ],
+              "intent": [
+                "revise",
+                null
+              ],
+              "proposedName": [
+                "Lower A",
+                null
+              ],
+              "summary": [
+                "Heavier squat",
+                null
+              ],
+              "changes": [
+                [
+                  {
+                    "kind": "retargeted",
+                    "exerciseId": "back-squat",
+                    "before": {
+                      "sets": [
+                        {
+                          "reps": 5,
+                          "weightKg": 80
+                        }
+                      ],
+                      "restSeconds": 180
+                    },
+                    "after": {
+                      "sets": [
+                        {
+                          "reps": 5,
+                          "weightKg": 85
+                        }
+                      ],
+                      "restSeconds": 180
+                    }
+                  }
+                ],
+                null
+              ],
+              "door": [
+                "ask",
+                null
+              ],
+              "connection": [
+                "",
+                null
+              ],
+              "agent": [
+                "",
+                null
+              ],
+              "threadId": [
+                "thread000001",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1760036000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 9
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760036000000,
+          "counter": 1
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/gym": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 9,
+            "counters": {},
+            "digest": "c175695b4847d5b6ae777fbf9cbc3f3deb1e8103c40db88fc86632be30a8fb9f"
+          },
+          "acct:B/gym": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "9cc06525274e11f94812d6f6cbf5ac7c955723dc992297d59679552a2d7476b0"
+          }
+        },
+        "rows": {
+          "acct:A/gym": [
+            {
+              "t": "exercise",
+              "id": "sledpush01",
+              "life": [
+                "alive",
+                "1760000000000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "equipment": [
+                  "machine",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Sled Push",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "pattern": [
+                  "carry",
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ],
+                "stepKg": [
+                  5,
+                  "1760000000000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "message",
+              "id": "lifter000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1760000000006,
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "role": [
+                  "lifter",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "text": [
+                  "How heavy today?",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "threadId": [
+                  "thread000001",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 7,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "message",
+              "id": "turn00000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1760000000006,
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "calls": [
+                  [
+                    {
+                      "name": "list_sessions"
+                    }
+                  ],
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "receipt": [
+                  {
+                    "reads": {
+                      "sessions": [
+                        "session0001"
+                      ]
+                    },
+                    "results": []
+                  },
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "replica": [
+                  "rp_0000000000000000000000000000000a",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "role": [
+                  "coach",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "state": [
+                  "completed",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "text": [
+                  "Add 2.5 kg.",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ],
+                "threadId": [
+                  "thread000001",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 8,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "proposal",
+              "id": "proposal001",
+              "life": [
+                "alive",
+                "1760000000004:0:srv"
+              ],
+              "born": "1760000000004:0:srv",
+              "f": {
+                "agent": [
+                  "Claude",
+                  "1760000000004:0:srv"
+                ],
+                "baseName": [
+                  "Lower A",
+                  "1760000000004:0:srv"
+                ],
+                "baseRevision": [
+                  1,
+                  "1760000000004:0:srv"
+                ],
+                "changeCount": [
+                  1,
+                  "1760000000004:0:srv"
+                ],
+                "changes": [
+                  [
+                    {
+                      "kind": "retargeted",
+                      "exerciseId": "back-squat",
+                      "before": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 80
+                          }
+                        ],
+                        "restSeconds": 180
+                      },
+                      "after": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 85
+                          }
+                        ],
+                        "restSeconds": 180
+                      }
+                    }
+                  ],
+                  "1760000000004:0:srv"
+                ],
+                "connection": [
+                  "conn-1",
+                  "1760000000004:0:srv"
+                ],
+                "door": [
+                  "mcp",
+                  "1760000000004:0:srv"
+                ],
+                "intent": [
+                  "revise",
+                  "1760000000004:0:srv"
+                ],
+                "proposedName": [
+                  "Lower A",
+                  "1760000000004:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760000000004:0:srv"
+                ],
+                "state": [
+                  "pending",
+                  "1760000000004:0:srv"
+                ],
+                "summary": [
+                  "Heavier squat",
+                  "1760000000004:0:srv"
+                ]
+              },
+              "seq": 5,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "proposal",
+              "id": "proposal003",
+              "life": [
+                "alive",
+                "1760036000000:0:srv"
+              ],
+              "born": "1760036000000:0:srv",
+              "f": {
+                "agent": [
+                  "",
+                  "1760036000000:0:srv"
+                ],
+                "baseName": [
+                  "Lower A",
+                  "1760036000000:1:srv"
+                ],
+                "baseRevision": [
+                  1,
+                  "1760036000000:1:srv"
+                ],
+                "changeCount": [
+                  1,
+                  "1760036000000:1:srv"
+                ],
+                "changes": [
+                  [
+                    {
+                      "kind": "retargeted",
+                      "exerciseId": "back-squat",
+                      "before": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 80
+                          }
+                        ],
+                        "restSeconds": 180
+                      },
+                      "after": {
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 85
+                          }
+                        ],
+                        "restSeconds": 180
+                      }
+                    }
+                  ],
+                  "1760036000000:0:srv"
+                ],
+                "connection": [
+                  "",
+                  "1760036000000:0:srv"
+                ],
+                "door": [
+                  "ask",
+                  "1760036000000:0:srv"
+                ],
+                "intent": [
+                  "revise",
+                  "1760036000000:0:srv"
+                ],
+                "proposedName": [
+                  "Lower A",
+                  "1760036000000:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760036000000:0:srv"
+                ],
+                "summary": [
+                  "Heavier squat",
+                  "1760036000000:0:srv"
+                ],
+                "threadId": [
+                  "thread000001",
+                  "1760036000000:0:srv"
+                ]
+              },
+              "seq": 9,
+              "rc": 1760036000000,
+              "ru": 1760036000000
+            },
+            {
+              "t": "routine",
+              "id": "routine0001",
+              "life": [
+                "alive",
+                "1760000000001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "createdEntries": [
+                  1,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "entries": [
+                  [
+                    {
+                      "exerciseId": "back-squat",
+                      "restSeconds": 180,
+                      "sets": [
+                        {
+                          "reps": 5,
+                          "weightKg": 80
+                        }
+                      ]
+                    }
+                  ],
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "name": [
+                  "Lower A",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "position": [
+                  0,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "revision": [
+                  1,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "session",
+              "id": "session0001",
+              "life": [
+                "alive",
+                "1760000000002:0:srv"
+              ],
+              "born": "1760000000002:0:srv",
+              "f": {
+                "closedBy": [
+                  "finish",
+                  "1760000000002:0:srv"
+                ],
+                "finishedAt": [
+                  1760003600000,
+                  "1760000000002:0:srv"
+                ],
+                "historyRoutineId": [
+                  "routine0001",
+                  "1760000000002:0:srv"
+                ],
+                "plan": [
+                  {
+                    "routine": "Lower A",
+                    "entries": [
+                      {
+                        "exerciseId": "back-squat",
+                        "restSeconds": 180,
+                        "sets": [
+                          {
+                            "reps": 5,
+                            "weightKg": 80
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "1760000000002:0:srv"
+                ],
+                "routineId": [
+                  "routine0001",
+                  "1760000000002:0:srv"
+                ],
+                "startedAt": [
+                  1760000000000,
+                  "1760000000002:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "set",
+              "id": "set00000001",
+              "life": [
+                "alive",
+                "1760000000003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "completedAt": [
+                  1760000600000,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "exerciseId": [
+                  "back-squat",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "kind": [
+                  "working",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "note": [
+                  "",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "reps": [
+                  5,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "sessionId": [
+                  "session0001",
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ],
+                "weightKg": [
+                  80,
+                  "1760000000003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "setNumber": 1
+              },
+              "seq": 4,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            },
+            {
+              "t": "thread",
+              "id": "thread000001",
+              "life": [
+                "alive",
+                "1760000000006:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1760000000006:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "How heavy today?",
+                  "1760000000006:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 6,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ],
+          "acct:B/gym": [
+            {
+              "t": "exercise",
+              "id": "beltsquat1",
+              "life": [
+                "alive",
+                "1760000000000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "1760000000000:0:r_bbbbbbbbbbbb",
+              "f": {
+                "equipment": [
+                  "machine",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "name": [
+                  "Belt Squat",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "pattern": [
+                  "squat",
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ],
+                "stepKg": [
+                  5,
+                  "1760000000000:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "seeds": {
+            "back-squat": {
+              "name": "Back Squat"
+            },
+            "bench-press": {
+              "name": "Bench Press"
+            },
+            "dip": {
+              "name": "Dip"
+            }
+          },
+          "starts": {
+            "acct:A/gym": {
+              "session0001": "session0001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "a conversation delete kills its messages and unlinks the proposals naming it",
     "input": {
       "state": {
@@ -155133,7 +156207,7 @@
             "state": "alive",
             "seq": 9,
             "counters": {},
-            "digest": "7bf2563c7f17046e78c74110d561a9ecac787c3bb98b8eced068172d6d93718d"
+            "digest": "7fbda8c5f3b75cc4f502eb168f9df275c843b6942357af4f7af1235aa5ceb530"
           },
           "acct:B/gym": {
             "kind": "product",
@@ -155358,7 +156432,7 @@
               "born": "1760000000004:0:srv",
               "f": {
                 "agent": [
-                  "Claude",
+                  "",
                   "1760000000004:0:srv"
                 ],
                 "baseName": [
@@ -155401,11 +156475,11 @@
                   "1760000000004:0:srv"
                 ],
                 "connection": [
-                  "conn-1",
+                  "",
                   "1760000000004:0:srv"
                 ],
                 "door": [
-                  "mcp",
+                  "ask",
                   "1760000000004:0:srv"
                 ],
                 "intent": [
@@ -155698,7 +156772,7 @@
             "state": "alive",
             "seq": 10,
             "counters": {},
-            "digest": "9d9495bb54cb3a0661ce9e62f04413b5fa673133867455bac4268c88fcd688f5"
+            "digest": "df54557bb155076eb881b945089923002590e13f5078042efbc34b8945b94ff1"
           },
           "acct:B/gym": {
             "kind": "product",
@@ -155836,7 +156910,7 @@
               "born": "1760000000004:0:srv",
               "f": {
                 "agent": [
-                  "Claude",
+                  "",
                   "1760000000004:0:srv"
                 ],
                 "baseName": [
@@ -155879,11 +156953,11 @@
                   "1760000000004:0:srv"
                 ],
                 "connection": [
-                  "conn-1",
+                  "",
                   "1760000000004:0:srv"
                 ],
                 "door": [
-                  "mcp",
+                  "ask",
                   "1760000000004:0:srv"
                 ],
                 "intent": [

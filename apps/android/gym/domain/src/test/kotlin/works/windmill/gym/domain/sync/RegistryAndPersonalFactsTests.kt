@@ -102,6 +102,19 @@ class RegistryAndPersonalFactsTests {
         assertNull(RoutineCreation.decode(Fields(receipt.copy(values = emptyMap()))).snapshot)
     }
 
+    @Test fun generatedGymSchemaPinsTypesCodesDeviceRowsAndCoachDefaults() {
+        val gym = SyncSchema.registry.products.getValue("gym")
+        assertEquals(listOf(Gym.Types.routine, Gym.Types.routineCreation, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set,
+            Gym.Types.note, Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.thread, Gym.Types.message),
+            SyncSchema.registry.types.filter { it.scope == "product:gym" }.map { it.name })
+        assertEquals(listOf(Gym.Codes.payloadConflict, Gym.Codes.sessionFinished, Gym.Codes.sessionOpen, Gym.Codes.sessionOverlap, Gym.Codes.unknownExercise,
+            Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Gym.Codes.messageFinal), gym.member("codes").arr().map(Json::str))
+        assertEquals(listOf("movement", "movementOrder", "offer", "picture", "rack", "runningTurn"), gym.member("device").obj().keys.sorted())
+        assertEquals(listOf("picture"), gym.member("device").obj().filterValues { it["localOnly"] == Json.of(true) }.keys.toList())
+        assertEquals("running", Gym.Defaults.Message.state)
+        assertEquals(Json.of("running"), SyncSchema.registry.type(Gym.Types.message)!!.fields.getValue("state").json["default"])
+    }
+
     @Test fun everyPublicGymReplicaCommandAppliesSpecsPinnedByRuleBook() {
         val public = setOf(Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession, Gym.Commands.finish,
             Gym.Commands.applyProposal, Gym.Commands.dismissProposal)

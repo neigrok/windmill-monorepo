@@ -16,6 +16,8 @@ public enum Gym {
     public static let weighin = "weighin"
     public static let prefs = "prefs"
     public static let proposal = "proposal"
+    public static let thread = "thread"
+    public static let message = "message"
   }
 
   public enum Commands {
@@ -37,6 +39,7 @@ public enum Gym {
     public static let badInstant: RefusalCode = "bad-instant"
     public static let proposalSettled: RefusalCode = "proposal-settled"
     public static let proposalSuperseded: RefusalCode = "proposal-superseded"
+    public static let messageFinal: RefusalCode = "message-final"
   }
 
   public enum Defaults {
@@ -54,6 +57,10 @@ public enum Gym {
 
     public enum Proposal {
       public static let state: String = "pending"
+    }
+
+    public enum Message {
+      public static let state: String = "running"
     }
   }
 
@@ -188,6 +195,7 @@ public enum Gym {
           "bad-instant",
           "proposal-settled",
           "proposal-superseded",
+          "message-final",
         ],
         "device": [
           "movement": [
@@ -202,7 +210,12 @@ public enum Gym {
             "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$",
             "value": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
           ],
+          "picture": ["keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": ["type": "json"]],
           "rack": ["keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": ["type": "json"]],
+          "runningTurn": [
+            "keyPattern": "^runningTurn$",
+            "value": ["pattern": "^[A-Za-z0-9_-]{8,58}$", "type": "string"],
+          ],
         ],
         "surfaces": ["web", "ios", "android"],
       ],
@@ -666,7 +679,88 @@ public enum Gym {
         "seeded": ["ordinalMax": 99999, "seedMax": 58],
         "type": "proposal",
       ],
+      [
+        "deadRows": "spent",
+        "fields": [
+          "title": [
+            "domain": ["type": "string"],
+            "kind": "const",
+            "max": 8000,
+            "min": 1,
+            "unit": "bytes",
+            "writer": "client",
+          ],
+        ],
+        "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+        "idSpace": "global",
+        "identity": "minted",
+        "life": true,
+        "mint": [
+          "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+          "length": 16,
+          "prefix": "",
+        ],
+        "origins": ["replica", "server"],
+        "revivable": false,
+        "scope": "product:gym",
+        "seeded": ["ordinalMax": 99999, "seedMax": 58],
+        "type": "thread",
+      ],
+      [
+        "deadRows": "spent",
+        "fields": [
+          "at": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "const", "writer": "client"],
+          "calls": ["domain": ["type": "json"], "kind": "lww", "max": 32768, "unit": "bytes", "writer": "client"],
+          "pictures": [
+            "domain": [
+              "items": [
+                "properties": [
+                  "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
+                  "localOnly": ["type": "boolean"],
+                  "mediaType": ["max": 255, "min": 1, "type": "string", "unit": "bytes"],
+                ],
+                "required": ["id", "mediaType"],
+                "type": "object",
+              ],
+              "maxItems": 1,
+              "type": "array",
+            ],
+            "kind": "const",
+            "writer": "client",
+          ],
+          "receipt": ["domain": ["type": "json"], "kind": "lww", "max": 16384, "unit": "bytes", "writer": "client"],
+          "replica": [
+            "domain": ["pattern": "^rp_[0-9a-f]{32}$", "type": "string"],
+            "kind": "const",
+            "writer": "client",
+          ],
+          "role": ["domain": ["enum": ["lifter", "coach"], "type": "string"], "kind": "const", "writer": "client"],
+          "state": [
+            "default": "running",
+            "kind": "ranked",
+            "rank": ["completed": 2, "declined": 2, "failed": 2, "interrupted": 1, "running": 0, "stopped": 2],
+            "writer": "client",
+          ],
+          "text": ["domain": ["type": "string"], "kind": "lww", "max": 131072, "unit": "bytes", "writer": "client"],
+          "threadId": ["kind": "const", "parent": true, "ref": "thread", "writer": "client"],
+          "truncated": ["domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
+        ],
+        "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+        "idSpace": "global",
+        "identity": "minted",
+        "life": true,
+        "mint": [
+          "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+          "length": 16,
+          "prefix": "",
+        ],
+        "origins": ["replica", "server"],
+        "revivable": false,
+        "scope": "product:gym",
+        "seeded": ["ordinalMax": 99999, "seedMax": 58],
+        "type": "message",
+      ],
     ],
-    "version": 7,
+    "version": 8,
   ]
 }

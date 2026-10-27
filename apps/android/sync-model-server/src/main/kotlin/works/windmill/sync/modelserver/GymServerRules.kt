@@ -152,7 +152,7 @@ class GymServerRules : ServerRules {
             throw Refusal("invalid")
         }
         val appended = mutableListOf<PlannedDelta>(); val numbered = c.storedRecords("set").toMutableList()
-        val staged = listOf("set", "session", "routine", "routineCreation", "proposal", "exercise", "exerciseName", "note").flatMap(c::records).associateBy { it.key }.toMutableMap()
+        val staged = listOf("set", "session", "routine", "routineCreation", "proposal", "exercise", "exerciseName", "note", "thread", "message").flatMap(c::records).associateBy { it.key }.toMutableMap()
         val newly = changes.filter { it.createdHere }.map { it.key }.toSet(); val checked = mutableSetOf<RecordKey>()
         fun records(type: String) = staged.values.filter { it.key.type == type }.sortedBy { it.key }
         fun append(delta: PlannedDelta) {
@@ -242,6 +242,23 @@ class GymServerRules : ServerRules {
                     if (blankNamed(change, "title")) throw Refusal("invalid")
                     if (created || changed(change, "title") || changed(change, "body")) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("updatedAt" to Json.of(c.serverNow))))
                 }
+                "thread" -> {
+                    if (created && value(row, "title")?.orNull() == null) throw Refusal("invalid")
+                    if (!change.diesHere) continue
+                    records("message").filter { it.isAlive && value(it, "threadId") == row.key.id.json }.forEach { append(PlannedDelta.delete(it.key, it.lattice.born)) }
+                    records("proposal").filter { it.isAlive && value(it, "threadId") == row.key.id.json }.forEach { append(PlannedDelta.update(it.key, it.lattice.born, mapOf("threadId" to Json.Null))) }
+                }
+                "message" -> {
+                    if (!row.isAlive) continue
+                    val written = c.deltas.filter { it.key == row.key }.flatMap { it.fields.keys }.toSet()
+                    if (created && (value(row, "role")?.orNull() == null || value(row, "at")?.orNull() == null)) throw Refusal("invalid")
+                    if (value(row, "role") == Json.of("lifter")) {
+                        if (COACH_REGISTERS.any(written::contains)) throw Refusal("invalid")
+                        if (MeasureUnit.bytes.length((value(row, "text") as? Json.Str)?.value ?: "") > MAX_QUESTION_BYTES) throw Refusal("invalid")
+                    } else if (created && value(row, "replica")?.orNull() == null) throw Refusal("invalid")
+                    val ended = change.before.isAlive && value(before, "state") in WRITER_TERMINAL
+                    if (ended && FINAL_REGISTERS.any(written::contains)) throw Refusal("message-final")
+                }
                 "proposal" -> {
                     if (!created) continue
                     if (c.origin.isReplica && (value(row, "door") != Json.of("ask") || (value(row, "connection") ?: Json.of("")) != Json.of("") || (value(row, "agent") ?: Json.of("")) != Json.of(""))) throw Refusal("invalid")
@@ -310,5 +327,11 @@ class GymServerRules : ServerRules {
         val text = if (year in 0..9999) year.toString().padStart(4, '0') else (if (year < 0) "-" else "+") + kotlin.math.abs(year).toString().padStart(6, '0')
         return (text + "-" + day.monthValue.toString().padStart(2, '0') + "-" + day.dayOfMonth.toString().padStart(2, '0')).take(10)
     }
-    companion object { const val STALE_MS = 14_400_000L }
+    companion object {
+        const val STALE_MS = 14_400_000L
+        const val MAX_QUESTION_BYTES = 8000
+        private val WRITER_TERMINAL = listOf("completed", "declined", "failed", "stopped").map(Json::of)
+        private val COACH_REGISTERS = listOf("replica", "state", "truncated", "receipt", "calls")
+        private val FINAL_REGISTERS = listOf("state", "text", "receipt", "calls")
+    }
 }

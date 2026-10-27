@@ -2,7 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v7/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
+v8/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
 Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
 R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.

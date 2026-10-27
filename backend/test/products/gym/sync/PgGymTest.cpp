@@ -93,7 +93,7 @@ TEST(gym_binding_foreign_keys_defer_to_commit_and_accept_a_set_before_its_sessio
     auto txn = world.store().begin(TxnMode::write);
     auto& sql = sqlOf(*txn);
     const auto constraints = sql.exec("select conname,condeferrable,condeferred,confdeltype::text from pg_constraint where connamespace=current_schema()::regnamespace and conname in "
-                                      "('gym_sets_session_id_fkey','gym_sets_exercise_id_fkey','gym_routine_entries_exercise_id_fkey','gym_proposal_changes_exercise_id_fkey','gym_sessions_routine_id_fkey','gym_proposals_routine_id_fkey','gym_proposals_thread_id_fkey','gym_exercise_names_exercise_id_fkey','gym_exercise_aliases_exercise_id_fkey')");
+                                      "('gym_sets_session_id_fkey','gym_sets_exercise_id_fkey','gym_routine_entries_exercise_id_fkey','gym_proposal_changes_exercise_id_fkey','gym_sessions_routine_id_fkey','gym_proposals_routine_id_fkey','gym_messages_thread_id_fkey','gym_exercise_names_exercise_id_fkey','gym_exercise_aliases_exercise_id_fkey')");
     REQUIRE_EQ(constraints.size(), 9u);
     for (const auto& constraint : constraints) {
       CHECK(constraint["condeferrable"].as<bool>());

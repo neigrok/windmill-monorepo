@@ -554,7 +554,8 @@ function conversations() {
   // Interrupted by another device after the turn began: its state register alone carries the later stamp.
   const INTERRUPTED = { ...RUNNING, f: { ...RUNNING.f, state: ['interrupted', s(T + 7)] } };
   const COMPLETED = coachRow('completed', { text: 'Add 2.5 kg.', receipt: { reads: { sessions: ['session0001'] }, results: [] }, calls: [{ name: 'list_sessions' }] });
-  const LINKED = proposalRow('proposal002', 9, { threadId: 'thread000001' });
+  // The phone Coach's proposal, minted in the conversation: the ask door, no connection or agent.
+  const LINKED = proposalRow('proposal002', 9, { threadId: 'thread000001', door: 'ask', connection: '', agent: '' });
   const conversation = (...rows) => base({ a: [THREAD, LIFTER, ...rows] });
   const coach = (stamp, values) => update('message', 'turn00000001', s(T + 6), stamp, values);
   const ending = { state: 'completed', text: 'Add 2.5 kg.', receipt: { reads: { sessions: ['session0001'] }, results: [] }, calls: [{ name: 'list_sessions' }], truncated: false };
@@ -585,6 +586,8 @@ function conversations() {
     admitted('a server-origin interrupted after the writer ended its turn is refused message-final', { state: conversation(COMPLETED), origin: SERVER_A, intent: gym([coach(null, { state: 'interrupted' })]) }),
     admitted('truncated stays writable after the writer ended its turn', { state: conversation(COMPLETED), intent: gym([coach(s(T + 9), { truncated: true })]) }),
     admitted('a completed Coach message can be deleted', { state: conversation(COMPLETED), intent: gym([{ t: 'message', id: 'turn00000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
+    admitted('a server-origin proposal create names the conversation it was minted in', { state: conversation(COMPLETED), origin: SERVER_A,
+      intent: gym([create('proposal', 'proposal003', null, { routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier squat', changes: CHANGES, door: 'ask', connection: '', agent: '', threadId: 'thread000001' })]) }),
     admitted('a conversation delete kills its messages and unlinks the proposals naming it', { state: conversation(COMPLETED, LINKED), intent: gym([{ t: 'thread', id: 'thread000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
   ];
 }

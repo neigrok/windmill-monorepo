@@ -641,6 +641,7 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/sync/GymProgramDoorTest.cpp
   test/products/gym/sync/GymCatalogDoorTest.cpp
   test/products/gym/sync/GymNotesDoorTest.cpp
+  test/products/gym/sync/GymCoachDoorTest.cpp
   test/products/gym/adapters/postgres/PgLogHistoryTest.cpp
   test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp

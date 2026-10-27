@@ -229,7 +229,7 @@ test('every minted gym type is seeded, its widest seeded id in its pattern', () 
   const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
   const seeded = minted.filter((type) => type.seeded);
   assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal']);
+  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'thread', 'message']);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
   }

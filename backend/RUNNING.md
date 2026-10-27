@@ -119,10 +119,10 @@ cmake --build build-426 --target windmill_server
 ```
 
 Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
-database. A hello at version 8 answers `"schema":8,"minSchema":8`, and the app's version 7 is refused:
+database. A hello at version 9 answers `"schema":9,"minSchema":9`, and the app's version 8 is refused:
 
 ```sh
-curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 7'
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 8'
 # HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
 ```
 
@@ -298,7 +298,7 @@ with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `win
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the gym + journal catalog (schema 7, minimum 4) and both product scopes. On the runner
+suite over the gym + journal catalog (schema 8, minimum 4) and both product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
 deploy does, changes nothing, and that repeated application removes retired cutover storage while
 preserving live rows.

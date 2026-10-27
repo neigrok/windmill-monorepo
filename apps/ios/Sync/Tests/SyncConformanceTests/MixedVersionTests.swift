@@ -76,7 +76,7 @@ struct MixedVersionTests {
     #expect(try device.dump() == pending)
     let greeting = server.hello(credential: .account("A"), at: now + 6)
     #expect(greeting.status == 200)
-    #expect(greeting.body["schema"] == 7)
+    #expect(greeting.body["schema"] == JSON(Self.current.version))
     #expect(greeting.body["minSchema"] == JSON(Self.v4.version))
     try device.hello(.ok(try HelloResponse(json: greeting.body)), timing: .steady(send: now + 6, recv: now + 6))
     if phase != "acked" {

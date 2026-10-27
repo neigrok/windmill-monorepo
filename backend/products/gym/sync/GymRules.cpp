@@ -5,6 +5,7 @@
 #include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <set>
@@ -101,6 +102,15 @@ Json::Value renamed(const Json::Value& aliases, const Json::Value& before, const
 }
 
 std::string stateOf(const Row& proposal) { return value(&proposal, "state").isNull() ? "pending" : value(&proposal, "state").asString(); }
+
+// Gym Coach §9.1: the lifter's text bound, the states a writer ends in, Coach-only registers, and the final ones.
+constexpr std::size_t kMaxQuestionBytes = 8000;
+bool writerEnded(const Row& message) {
+  const Json::Value state = value(&message, "state");
+  return state == "completed" || state == "declined" || state == "failed" || state == "stopped";
+}
+constexpr std::array<const char*, 5> kCoachRegisters{"replica", "state", "truncated", "receipt", "calls"};
+constexpr std::array<const char*, 4> kFinalRegisters{"state", "text", "receipt", "calls"};
 
 std::vector<Delta> staleClose(const GymFacts& facts, Ms now) {
   for (const Row& row : facts.rows) {
@@ -403,6 +413,32 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     if (after.t == "note") {
       if (blankNamed(change, "title")) throw Refusal(code::invalid);
       if (created(change) || changed(change, "title") || changed(change, "body")) append(fields(after, object({{"updatedAt", Json::UInt64(now)}})));
+      continue;
+    }
+    if (after.t == "thread") {
+      if (created(change) && value(&after, "title").isNull()) throw Refusal(code::invalid);
+      if (!died(change)) continue;
+      for (const auto& [key, row] : joined) {
+        if (!row.alive() || value(&row, "threadId") != after.id.json()) continue;
+        if (row.t == "message") append(death(row));
+        if (row.t == "proposal") append(fields(row, object({{"threadId", Json::Value()}})));
+      }
+      continue;
+    }
+    if (after.t == "message") {
+      if (!after.alive()) continue;
+      std::set<std::string> written;
+      for (const Delta& delta : intent.d) {
+        if (delta.t != "message" || delta.id != after.id) continue;
+        for (const auto& [field, reg] : delta.lattice.f) written.insert(field);
+      }
+      if (created(change) && (value(&after, "role").isNull() || value(&after, "at").isNull())) throw Refusal(code::invalid);
+      if (value(&after, "role") == "lifter") {
+        for (const char* field : kCoachRegisters) if (written.contains(field)) throw Refusal(code::invalid);
+        if (value(&after, "text").asString().size() > kMaxQuestionBytes) throw Refusal(code::invalid);
+      } else if (created(change) && value(&after, "replica").isNull()) throw Refusal(code::invalid);
+      if (!change.wasAlive() || !writerEnded(*change.stored)) continue;
+      for (const char* field : kFinalRegisters) if (written.contains(field)) throw Refusal("message-final");
       continue;
     }
     if (after.t != "proposal" || !created(change)) continue;

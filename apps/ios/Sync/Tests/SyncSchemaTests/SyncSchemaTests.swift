@@ -10,7 +10,7 @@ struct SyncSchemaTests {
     let gym = try Corpus.registryFile("gym").asObject()
     let journal = try Corpus.registryFile("journal").asObject()
     let expected: JSON = [
-      "registry": "windmill", "version": 7, "minVersion": 4,
+      "registry": "windmill", "version": 8, "minVersion": 4,
       "products": .object(JSON.Object(uniqueKeysWithValues: try gym.member("products").asObject().members + journal.member("products").asObject().members)),
       "types": .array(try gym.member("types").asArray() + journal.member("types").asArray()),
       "commands": .array(try gym.member("commands").asArray() + journal.member("commands").asArray()),
@@ -23,13 +23,13 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [7, 7, 4])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [8, 8, 4])
   }
 
   @Test func everyTypeAndCommandHasItsName() {
     let types = [
       Gym.Types.routine, Gym.Types.routineCreation, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set, Gym.Types.note,
-      Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Journal.Types.page, Journal.Types.journalState,
+      Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.thread, Gym.Types.message, Journal.Types.page, Journal.Types.journalState,
     ]
     let commands = [
       Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession, Gym.Commands.finish,
@@ -42,13 +42,15 @@ struct SyncSchemaTests {
   @Test func everyRefusalCodeAndDefaultIsTheRegistrys() throws {
     let codes = [
       Gym.Codes.payloadConflict, Gym.Codes.sessionFinished, Gym.Codes.sessionOpen, Gym.Codes.sessionOverlap,
-      Gym.Codes.unknownExercise, Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Journal.Codes.claimConflict,
+      Gym.Codes.unknownExercise, Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Gym.Codes.messageFinal,
+      Journal.Codes.claimConflict,
     ]
     #expect(codes == SyncSchema.registry.products.flatMap(\.codes))
     let defaults: [String: [String: JSON]] = [
       Journal.Types.journalState: ["placeholder": "pending", "privacyLine": "pending", "firstPage": "pending", "scales": "pending"],
       Gym.Types.routine: ["position": JSON(Gym.Defaults.Routine.position)],
       Gym.Types.proposal: ["state": .string(Gym.Defaults.Proposal.state)],
+      Gym.Types.message: ["state": .string(Gym.Defaults.Message.state)],
       Gym.Types.prefs: [
         "units": .string(Gym.Defaults.Prefs.units), "restSeconds": Gym.Defaults.Prefs.restSeconds.map { JSON($0) } ?? .null,
         "restSound": .bool(Gym.Defaults.Prefs.restSound), "confirmHaptic": .bool(Gym.Defaults.Prefs.confirmHaptic),
@@ -72,4 +74,15 @@ struct SyncSchemaTests {
     #expect(SyncSchema.registry.types.filter { $0.scope == .product("journal") && $0.primary }.map(\.name) == [Journal.Types.page])
   }
 
+  @Test func theGymCoachDeviceRowsAreTheRunningTurnAndItsLocalOnlyPictures() throws {
+    let gym = try #require(SyncSchema.registry.product("gym"))
+    #expect(gym.device.map(\.name) == ["movement", "movementOrder", "offer", "picture", "rack", "runningTurn"])
+    #expect(gym.device.filter(\.localOnly).map(\.name) == ["picture"])
+    let runningTurn = try #require(gym.device.first { $0.name == "runningTurn" })
+    #expect(runningTurn.keyPattern.matches("runningTurn"))
+    #expect(!runningTurn.keyPattern.matches("runningTurn:turn00000001"))
+    let picture = try #require(gym.device.first { $0.name == "picture" })
+    #expect(picture.keyPattern.matches("picture:picture00001"))
+    #expect(!picture.keyPattern.matches("picture"))
+  }
 }

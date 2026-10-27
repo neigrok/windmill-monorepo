@@ -294,6 +294,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"gym_routine_creations", "user_id"},
                 {"gym_ask_threads", "user_id"},       // gym
                 {"gym_ask_turns", "user_id"},         // gym
+                {"gym_threads", "user_id"},           // gym
+                {"gym_messages", "user_id"},          // gym
                 {"gym_note_saves", "user_id"},
                 {"gym_notes", "user_id"},             // gym
                 {"gym_bodyweight", "user_id"},        // gym

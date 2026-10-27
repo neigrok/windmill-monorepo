@@ -17,7 +17,7 @@ namespace {
 GymFacts load(GymState& state, SyncTxn& txn, const ScopeKey& scope, SyncReader& read, const Registry& registry) {
   GymFacts facts;
   facts.books = state.load(txn, scope);
-  for (const char* type : {"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal"}) {
+  for (const char* type : {"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "thread", "message"}) {
     if (!registry.type(type)) continue;
     for (Row& row : read.scan(type)) facts.rows.push_back(std::move(row));
   }

@@ -4,6 +4,7 @@
 #include "platform/application/WorkerPool.h"
 #include "platform/application/sync/ServerCall.h"
 #include "products/gym/sync/GymProduct.h"
+#include "products/gym/sync/GymRules.h"
 
 #include "platform/application/WriteObservation.h"
 
@@ -168,6 +169,23 @@ void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
     fields["threadId"] = Json::nullValue;
     for (const auto& row : rows) value["d"].append(delta("proposal", row[0].as<std::string>(), fields));
     return value;
+  });
+  requireOk(result);
+}
+
+void GymDoor::interrupt(const UserId& user, const std::string& messageId) {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+    const sync::RecordId id(messageId);
+    const auto rows = impl_->catalog->store("message").lock(txn, sync::ScopeKey::product(user, "gym"), {id});
+    const auto message = rows.find(id.key());
+    if (message == rows.end()) return std::nullopt;
+    const Json::Value state = engine::value(&message->second, "state");
+    if (!state.isNull() && state != "running") return std::nullopt;
+    Json::Value fields(Json::objectValue);
+    fields["state"] = "interrupted";
+    Json::Value interrupted = intent();
+    interrupted["d"].append(delta("message", messageId, fields));
+    return interrupted;
   });
   requireOk(result);
 }

@@ -232,6 +232,8 @@ INSERT INTO gym_ask_turns (thread_id, position, user_id, from_lifter, text, said
 INSERT INTO gym_ask_generations (id, thread_id, user_id, request_id, payload) VALUES ('erase-generation', 'erase-thread', 'SAM', 'r', '{}');
 INSERT INTO gym_ask_attachments (id, user_id, thread_id, linked_thread_id, media_type, width, height, data) VALUES ('erase-attachment', 'SAM', 'erase-thread', 'erase-thread', 'image/png', 1, 1, '\x00');
 INSERT INTO gym_ask_deleted_threads (id, user_id) VALUES ('erase-deleted-thread', 'SAM');
+INSERT INTO gym_threads (id, user_id, title) VALUES ('erase-conversation', 'SAM', 'T');
+INSERT INTO gym_messages (id, user_id, thread_id, role, body, at) VALUES ('erase-message', 'SAM', 'erase-conversation', 'lifter', 'q', 1);
 INSERT INTO gym_proposals (id, routine_id, user_id, intent, base_revision, base_name, proposed_name, state, door, created_at, thread_id) VALUES ('erase-proposal', 'erase-routine', 'SAM', 'revise', 1, 'Day A', 'Day A', 'pending', 'ask', now(), 'erase-thread');
 INSERT INTO gym_proposal_applies (id, user_id) VALUES ('erase-apply', 'SAM');
 INSERT INTO gym_proposal_changes (proposal_id, position, user_id, kind, exercise_id) VALUES ('erase-proposal', 1, 'SAM', 'kept', 'erase-lift');

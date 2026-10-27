@@ -3,6 +3,12 @@ import SyncCore
 public struct GymServerRules: ServerRules {
   static let staleMs: Int64 = 14_400_000
   static let dayMs: Int64 = 86_400_000
+  // Gym Coach §9.1 and Appendix A: a lifter message's text bound, the states a writer ends a turn in, the registers only
+  // a Coach message carries, and the registers final once the writer has ended its turn.
+  static let maxQuestionBytes = 8000
+  static let writerTerminal: Set<JSON> = ["completed", "declined", "failed", "stopped"]
+  static let coachRegisters: Set<String> = ["replica", "state", "truncated", "receipt", "calls"]
+  static let finalRegisters: Set<String> = ["state", "text", "receipt", "calls"]
 
   public init() {}
 
@@ -277,7 +283,7 @@ public struct GymServerRules: ServerRules {
     }
     var appended: [PlannedDelta] = []
     var numbered = context.storedRecords(ofType: "set")
-    var staged = Dictionary(uniqueKeysWithValues: ["set", "session", "routine", "routineCreation", "proposal", "note", "exercise", "exerciseName"].flatMap {
+    var staged = Dictionary(uniqueKeysWithValues: ["set", "session", "routine", "routineCreation", "proposal", "note", "exercise", "exerciseName", "thread", "message"].flatMap {
       context.records(ofType: $0)
     }.map { ($0.key, $0) })
     let newlyCreated = Set(changes.filter { $0.after.isAlive && !$0.before.isAlive }.map(\.key))
@@ -418,6 +424,27 @@ public struct GymServerRules: ServerRules {
         if created || changed(change, field: "title") || changed(change, field: "body") {
           append(.serverUpdate(row.key, born: row.lattice.born, fields: ["updatedAt": JSON(context.serverNow)]))
         }
+      case "thread":
+        if created, unset(row, "title") { throw Refusal(.invalid) }
+        guard change.diesHere else { continue }
+        for message in records("message") where message.isAlive && value(message, "threadId") == row.key.id.json {
+          append(.serverDelete(message.key, born: message.lattice.born))
+        }
+        for proposal in records("proposal") where proposal.isAlive && value(proposal, "threadId") == row.key.id.json {
+          append(.serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["threadId": .null]))
+        }
+      case "message":
+        guard row.isAlive else { continue }
+        let written = Set(context.deltas.filter { $0.key == row.key }.flatMap(\.fields.keys))
+        if created, unset(row, "role") || unset(row, "at") { throw Refusal(.invalid) }
+        if value(row, "role") == "lifter" {
+          if !written.isDisjoint(with: Self.coachRegisters) { throw Refusal(.invalid) }
+          if (value(row, "text")?.stringValue ?? "").utf8.count > Self.maxQuestionBytes { throw Refusal(.invalid) }
+        } else if created, unset(row, "replica") {
+          throw Refusal(.invalid)
+        }
+        let ended = change.before.isAlive && Self.writerTerminal.contains(value(before, "state") ?? .null)
+        if ended, !written.isDisjoint(with: Self.finalRegisters) { throw refuse("message-final") }
       case "proposal":
         guard created else { continue }
         if context.origin.isReplica {
@@ -527,6 +554,7 @@ public struct GymServerRules: ServerRules {
   }
 
   func isOpen(_ session: Row) -> Bool { session.isAlive && (value(session, "finishedAt") ?? .null).isNull }
+  func unset(_ row: Row, _ field: String) -> Bool { (value(row, field) ?? .null).isNull }
   func proposalState(_ proposal: Row) -> String { value(proposal, "state")?.stringValue ?? "pending" }
   func value(_ row: Row?, _ field: String) -> JSON? { row?.lattice.fields[field]?.value }
   func key(_ type: String, _ id: String) -> RecordKey { RecordKey(type, RecordID(id)) }

@@ -14,10 +14,11 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**Registry contract:** The composed registry has version 7 and minimum version 4, so installed v4,
-v5 and v6 clients remain supported. A.2 specifies gym's metadata, additive corrections and movement
+**Registry contract:** The composed registry has version 8 and minimum version 4, so installed v4,
+v5, v6 and v7 clients remain supported. A.2 specifies gym's metadata, additive corrections and movement
 overrides; a server advertising v6 or newer accepts correction-set `kind` and `preserveOtherSets`, and
-v7 adds the optional `exerciseName` registers `equipment` and `loadCount`. C.8 specifies how the adopted
+v7 adds the optional `exerciseName` registers `equipment` and `loadCount`, and v8 adds the gym Coach's
+`thread` and `message` records with the `runningTurn` and `picture:<id>` device rows (A.2). C.8 specifies how the adopted
 rows took their metadata. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
 field shape is unchanged. Every other product starts from empty stores.
 
@@ -350,6 +351,8 @@ and hash unknown fields and types harmlessly (§7.6). The correction arguments (
 v4 and v5 requests unchanged; clients use each only when the server advertises the version that
 declares it. The v7 registers are optional LWW fields: a writer leaves an unset register absent, and
 a null register is refused `invalid`. v7 keeps minimum v4, and the base `exercise.equipment` stays const.
+The gym Coach's `thread` and `message` types and the `runningTurn` and `picture:<id>` device rows (v8) are
+additive too, so v8 keeps minimum v4.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2633,7 +2636,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 **Scope:** `self/gym`. **Device scope** `device/gym`, with rows keyed per session:
 `movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the chosen
-movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state).
+movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state); and the gym
+Coach's `runningTurn` (the id of the Coach message whose turn this device is running, gym Coach §4.5)
+and `picture:<id>` (a `localOnly` picture held on this phone, gym Coach §9.3).
 **Surfaces:** web, iOS, Android. MCP, the Coach and the import door write as the server (below).
 **Adoption:** production tables are adopted in place (Appendix C).
 
@@ -2656,6 +2661,8 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`. No server-origin door writes a weigh-in. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
 | `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100 of {`kind` ∈ {kept, added, removed, retargeted}, `exerciseId`, `before`, `after`}, each side {`sets`, `restSeconds`} as a routine entry's); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; const server: `baseRevision` 1–2 147 483 647, `baseName` ≤240 bytes, `changeCount` 0–2 147 483 647; lww server: `threadId` (a Coach conversation's id) or null, `state` ranked (pending 0; applied, dismissed, superseded 1; unset reads `pending`), `supersededBy` (the proposal that replaced it), `settledAt` an epoch ms | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. `changes` lists the lines the routine takes on, in order, then the lines it drops; `before` is on kept, removed and retargeted lines, `after` on kept, added and retargeted ones. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset (`invalid`), and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. For a replica create, `check` requires both guards to match the joined routine registers (`invalid` otherwise). For every create, it matches each proposed line to the first unmatched base line of the same exercise; equal sides are `kept`, unequal sides `retargeted`, unmatched proposed lines `added`, then unmatched base lines `removed` in base order. The supplied changes must equal this diff. A revision leaves 1–50 entries, a name that is not blank (below) and no empty set scheme; a removal leaves no proposed entries. A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create supersedes the pending proposal of the same `(routine, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`, written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. R118 freezes `baseRevision`, `baseName` and `changeCount` at creation from the joined routine; later settlement never rewrites them. |
+| `thread` | minted g | terminal, spent | const: `title` 1–8 000 bytes | A Coach conversation ([gym Coach](mobile/gym_coach.md) §9.1): `title` is the first text message verbatim, or `Photo`. A create carries `title` (`invalid` otherwise). Delete kills its messages and writes `threadId = null` on every proposal naming it. Not a primary type. |
+| `message` | minted g | terminal, spent | const: `threadId` `ref<thread>` parent; `role` ∈ {lifter, coach}; `replica` (the writer's replica id, D-3); `pictures` (`maxItems` 1 of {`id`, `mediaType` 1–255 bytes, `localOnly`}); `at` an epoch ms. lww: `text` ≤131 072 bytes; `truncated`; `receipt` ≤16 384 bytes of JCS; `calls` ≤32 768 bytes of JCS. `state` ranked (running 0; interrupted 1; completed, declined, failed, stopped 2; unset reads `running`) | One message of a conversation (gym Coach §9.1): the id of a Coach message is its turn id. A create carries `role` and `at` (`invalid` otherwise). A lifter message carries `threadId`, `role`, `text`, `pictures` and `at` only: a delta writing `replica`, `state`, `truncated`, `receipt` or `calls` on it → `invalid`, and its `text` is at most 8 000 bytes (`MAX_QUESTION_BYTES`; `invalid`). A Coach message's create carries `replica` (`invalid` otherwise). A writer's terminal state beats `interrupted` whatever the stamps (`joinRanked`). Once the stored `state` is a writer's terminal state, a delta writing `state`, `text`, `receipt` or `calls` → `message-final`; `truncated` and a delete stay admitted. The server-origin door `interrupt` writes `state = interrupted` on a `running` Coach message and nothing else (gym Coach §4.5). |
 
 **R118 — metadata and REST parity.** Today's behaviour and design canon bind gym's registry.
 The adopted columns already hold the facts below; the wire carries them as ordinary stamped
@@ -2705,12 +2712,14 @@ and [nullable history count and creation replay](../../backend/products/gym/adap
 `packages/api-contract/gym/domain/training-reads.json` includes the 36 captured read cases; the
 web, Swift and Kotlin domain suites claim them alongside training-rule regressions.
 
-**Coach conversations** (gym Coach §9.1) are not engine records yet: they stay in the gym backend's
-Coach tables, and the phone Coach adds `thread` and `message` to gym's registry, with their binding
-(§2.4). A proposal's `threadId` names such a conversation. Deleting a conversation first admits, as
-the server, `threadId = null` on every proposal that names it. On Android and the web the gym room
-holds a conversation delete for the same window as the **Held** gestures, on the room's own clock
-rather than the engine's.
+**Coach conversations** (gym Coach §9.1) are the engine records `thread` and `message` above, bound
+by the gym binding (§2.4) and stored in `gym_threads` and `gym_messages`. The server Coach's legacy
+conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, and
+web and Android keep writing them until they move to the phone Coach. A proposal's `threadId` is a
+plain string naming either kind of conversation. Deleting a legacy conversation first admits, as the
+server, `threadId = null` on every proposal that names it; a `thread` death does the same by
+consequence. On Android and the web the gym room holds a legacy conversation delete for the same
+window as the **Held** gestures, on the room's own clock rather than the engine's.
 
 **Cross-record checks** read stored records with the intent’s joined records and earlier staged
 consequences over them. Consequences run in intent order. A routine’s death clears `routineId` on
@@ -2858,7 +2867,8 @@ presents replies and translates refusals.
 `gym.correctSession`, a delete of an unfinished session), `session-overlap` (`gym.importSession`,
 `gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the commands; a weigh-in's
 future day), `proposal-settled` and `proposal-superseded` (`gym.applyProposal`,
-`gym.dismissProposal`).
+`gym.dismissProposal`), `message-final` (a write of a Coach message's `state`, `text`, `receipt` or
+`calls` after its writer ended the turn).
 
 ### A.3 Journal
 
