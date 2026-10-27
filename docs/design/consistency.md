@@ -935,6 +935,21 @@ these places.
   distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
   anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
   variant remains excluded while checkout is closed.
+- **6v · Local Coach drafts awaiting owner approval (2026-10-27).** The Gym iOS page holds 🚧
+  boards for the states the local Coach adds (`gym_coach.md`, BUILD.md W4), Dark only until approved:
+  01.19 signed-out answer with its read receipt `1589:39083`; 08.35 step line from catalog phrases
+  `1588:12617`; 08.36 What Coach read as one line per ability `1589:12790`; 08.37 Made a movement
+  `1589:12859`; send refusals 08.38–08.45 (`1588:11903` no connection, `1588:11944` workout open,
+  `1588:11985` coach-replica-syncing, `1588:12026` over 8,000 bytes, `1588:12075` invalid_installation,
+  `1588:12116` device_bound, `1588:12157` free_month_exhausted, `1588:12198` coach-update-required);
+  ends 08.46–08.50 (`1588:12239` truncated, `1588:12300` declined, `1588:12361` failed, `1588:12422`
+  stopped, `1588:12489` interrupted); 08.51 answering on another device `1588:12556`; 08.52 resume
+  from the snapshot `1588:12654`; 08.53 empty History under R5 `1589:12977`. Redraw siblings beside
+  their approved boards: 08.6 as the account-changing state `1589:13033`, 01.5 with the picture line
+  under R8 `1589:39166`, and the 08 section's flow instruction `1589:13082`. Open on the boards: the
+  Added change row holds one field, so 08.37 is drawn on the Changed row with its word overridden;
+  08.41 says characters where the limit is bytes; 08.39's words and 08.42's recovery (sign-in only,
+  no re-issue door) are the owner's to confirm.
 
 ### Native and web differences
 
