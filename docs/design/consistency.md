@@ -550,6 +550,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
   Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
+- **Board vocabulary drifts from the tiers.** The Board proposal pages name the three tiers
+  *Closed · Up next · Done* and the same state *ready*, *blocked* and *locked* in toasts and empty
+  states; canon names them locked · available · complete and the card glyph is a lock. Settle on one
+  word per state (recommended Locked · Ready · Done, [review](roadmap-board-review.md)) before any
+  Board flow is Ready for dev.
+- **Board says node where the product says step.** Both Board pages use *node* in every control
+  (*Search nodes*, *New node*, *Needs 2 nodes*); the shipped roadmap and the L4 vocabulary say
+  *step*. Redraw with *step*; the proposal's validation list must stop naming node terminology as a
+  requirement.
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a
   halo. Choose one treatment and align shader and specimen.
