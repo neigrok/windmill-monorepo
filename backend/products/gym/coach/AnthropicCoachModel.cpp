@@ -20,7 +20,7 @@ ModelCall AnthropicCoachModel::open(const TurnPrincipal& principal, const std::s
   if (principal.account) frame.user = principal.account->id;
   frame.product = "gym";
   frame.operation = "turn";
-  frame.model = kCoachModel;
+  frame.model = seatModel(principal.seat, kCoachMaxOutputTokens).model;
   frame.runId = turnId;
   const std::shared_ptr<const AiInstallationPrincipal> installation =
       principal.installation ? std::make_shared<const AiInstallationPrincipal>(*principal.installation) : nullptr;

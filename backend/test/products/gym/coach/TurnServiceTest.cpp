@@ -1,6 +1,7 @@
 #include "test/products/gym/coach/TurnFixture.h"
 
 #include "platform/adapters/llm/AgentLoop.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 
 #include <filesystem>
@@ -363,4 +364,58 @@ TEST(coach_turn_results_are_read_in_shape_and_within_their_byte_bound) {
   for (const char* body : {R"({"batch":0,"results":[]})", R"({"batch":1})", R"({"batch":1,"results":[{"callId":"a","ok":true}]})",
                            R"({"batch":1,"results":[{"callId":"a","ok":false}]})", R"({"batch":1,"results":[],"more":1})"})
     CHECK_EQ(readTurnResults(parse(body)).code, std::string("coach-bad-request"));
+}
+
+// B-2: an anonymous turn runs on the onboarding model, and its first round — the full prompt and
+// catalog — is admitted by the real estimator and budget under the default $0.05 lifetime
+// allowance; a bound turn keeps the Coach model.
+TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lifetime_allowance) {
+  Harness h;
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
+  const TurnPrincipal anon = h.anon();
+  const TurnAdmission admission = h.service->open(anon, openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_model_0001","question":"What should I train today?","history":[],"context":[{"name":"list_notes","input":{},"result":{"notes":[]}},{"name":"list_sessions","input":{},"result":{"sessions":[]}}],"pictures":[]})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+  REQUIRE_EQ(h.model->requests.size(), 1u);
+  const Json::Value& request = h.model->requests[0];
+  CHECK_EQ(request["model"].asString(), std::string("claude-sonnet-5"));
+  CHECK_EQ(request["output_config"]["effort"].asString(), std::string("low"));
+  CHECK_EQ(request["max_tokens"].asInt(), 2000);
+  CHECK_EQ(request["tools"].size(), gymAbilityCatalog().offered(Seat::anon).size());
+
+  fake::FakeAuthRepository accounts;
+  AiCallBudget budget(h.budgets, h.entitlements, accounts, *h.failures);
+  AiSpend spend;
+  spend.product = "gym";
+  spend.operation = "turn";
+  spend.model = request["model"].asString();
+  spend.runId = "tn_anon_model_0001";
+  CHECK_EQ(h.limits.anonymousLifetimeNanos, 50'000'000LL);
+  const AiCallAdmission admitted = budget.beginInstallation(*anon.installation, spend, request, 1'024);
+  CHECK_EQ(admitted.refusal, std::string(""));
+  REQUIRE(admitted.reservation);
+  REQUIRE(admitted.reservation->outputBudget);
+  CHECK_EQ(admitted.reservation->outputBudget->tokensFor(admitted.reservation->amountNanos).value_or(0), 2000);
+  CHECK(admitted.reservation->amountNanos <= 50'000'000LL);
+  h.service->stop();
+}
+
+TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling) {
+  Harness h;
+  h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_bound_model_001","question":"Hi","history":[],"context":[],"pictures":[]})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  REQUIRE(recorder->waitFor(2));
+  REQUIRE_EQ(h.model->requests.size(), 1u);
+  CHECK_EQ(h.model->requests[0]["model"].asString(), std::string("claude-opus-5"));
+  CHECK_EQ(h.model->requests[0]["output_config"]["effort"].asString(), std::string("medium"));
+  CHECK_EQ(h.model->requests[0]["max_tokens"].asInt(), 2000);
+  CHECK_EQ(h.model->requests[0]["tools"].size(), gymAbilityCatalog().offered(Seat::bound).size());
+  h.service->stop();
 }

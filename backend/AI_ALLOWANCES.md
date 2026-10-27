@@ -54,7 +54,9 @@ the locked budget transaction chooses the largest affordable output cap between 
 configured maximum, reserving the full selected output cost plus the conservative input estimate.
 The 1,024-token floor is Coach policy, not a provider API minimum. Insufficient capacity for that
 floor refuses dispatch. Configuration accepts only decimal integers from 1,024 through 8,000;
-invalid values refuse startup. The model remains Opus 5. A provider response
+invalid values refuse startup. The model is Opus 5 for Ask and for a phone turn on a bound seat; a
+phone turn on an anonymous seat runs on Sonnet 5 with the onboarding effort and a 2,000-token
+ceiling, the only pairing whose round fits the $0.05 lifetime allowance. A provider response
 that reaches the output cap is a failed generation with its incurred usage reconciled and any
 durable routine receipts retained.
 Routine setup offers only its eight relevant history, notes, catalog, routine and clarification
@@ -167,7 +169,8 @@ the hold. A positive remaining balance still does not promise that a particular 
 For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
 exceeding the $0.05 anonymous lifetime allowance.
 Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
-output cap. Signed-in Coach uses Opus 5. Audio requires its own supported accounting.
+output cap, and an anonymous phone turn runs every round on Sonnet 5 the same way. Signed-in Coach,
+Ask and bound phone turns alike, uses Opus 5. Audio requires its own supported accounting.
 
 ## Installation credentials and network admission
 

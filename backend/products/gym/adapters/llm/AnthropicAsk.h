@@ -16,9 +16,15 @@ namespace wm::gym {
 constexpr int kCoachMaxOutputTokens = 2000;
 int coachMaxOutputTokens(const char* configured);
 
-// One model and one effort for every Coach door: Ask, and the phone turn beside it.
+// The Coach model: Ask, and a phone turn on a bound seat.
 constexpr const char* kCoachModel = "claude-opus-5";
 constexpr const char* kCoachEffort = "medium";
+
+// A phone turn on an anonymous seat runs on the anonymous onboarding model, under its effort and
+// output ceiling: a round of the Coach model does not fit the $0.05 lifetime allowance.
+constexpr const char* kCoachAnonymousModel = "claude-sonnet-5";
+constexpr const char* kCoachAnonymousEffort = "low";
+constexpr int kCoachAnonymousMaxOutputTokens = 2000;
 
 // How the prompt describes create_routine: a draft the lifter saves (Ask with a reviewing client),
 // absent (Ask with an older client), or a routine the call itself lands (a phone turn, where the

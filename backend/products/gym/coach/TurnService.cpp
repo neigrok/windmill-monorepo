@@ -216,10 +216,11 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
     const std::vector<ToolDeclaration> offered = host.declareTools();
     const bool routines = std::any_of(offered.begin(), offered.end(),
                                       [](const ToolDeclaration& tool) { return tool.name() == "create_routine"; });
+    const SeatModel chosen = seatModel(principal.seat, maxOutputTokens_);
     AgentLoopSpec spec;
-    spec.model = kCoachModel;
-    spec.effort = kCoachEffort;
-    spec.maxTokens = maxOutputTokens_;
+    spec.model = chosen.model;
+    spec.effort = chosen.effort;
+    spec.maxTokens = chosen.maxOutputTokens;
     spec.maxIterations = kMaxModelCalls;
     spec.system = coachSystemPrompt(routines ? CoachRoutineRule::runs : CoachRoutineRule::unavailable);
     spec.messages.append(openingMessage(turn->open()));

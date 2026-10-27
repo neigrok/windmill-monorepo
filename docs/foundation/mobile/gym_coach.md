@@ -675,8 +675,10 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   bodyweight ([brand foundations](../../design/brand-foundations.md), Gym); MCP runs `start_session`, `log_set`, `log_sets`, `finish_session`,
   `discard_session` and `import_session`. Proposals exist only for routines, so `proposes`
   elsewhere needs a review drawn in canon.
-- **B-2 The model per seat.** Whether `anon` turns use the same model and `max_tokens` as `bound`
-  turns.
+- **B-2 The model per seat.** Decided: an `anon` turn runs on Sonnet 5 under the anonymous
+  onboarding effort and 2,000-token output ceiling, so a round of the full catalog fits the
+  $0.05 lifetime allowance; a `bound` turn runs on the Coach model (Opus 5) under
+  `COACH_MAX_OUTPUT_TOKENS`. Both reserve adaptively down to the 1,024-token floor.
 - **B-3 Reservation estimates.** Evaluate per-request estimates against actual usage across text,
   tools and images. Do not describe approximate admission as a hard spending ceiling. Original
   funding absorbs covered variance; unfunded overrun debt and ambiguous holds remain accounted

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/coach/Turn.h"
 
 #include <functional>
@@ -11,6 +12,20 @@
 // model; the server wires the Anthropic one.
 
 namespace wm::gym::coach {
+
+// B-2: the model a seat's turn runs on. An anonymous seat takes the onboarding model under its
+// effort and output ceiling, so every round fits the lifetime allowance; a bound seat takes the
+// Coach model under the configured ceiling. The reservation stays adaptive down to 1,024 tokens.
+struct SeatModel {
+  std::string model;
+  std::string effort;
+  int maxOutputTokens = 0;
+};
+
+inline SeatModel seatModel(Seat seat, int coachMaxOutputTokens) {
+  if (seat == Seat::anon) return {kCoachAnonymousModel, kCoachAnonymousEffort, kCoachAnonymousMaxOutputTokens};
+  return {kCoachModel, kCoachEffort, coachMaxOutputTokens};
+}
 
 struct CoachModel {
   virtual ~CoachModel() = default;
