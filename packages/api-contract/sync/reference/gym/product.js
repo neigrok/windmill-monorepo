@@ -3,10 +3,17 @@
 import { sameJson } from '../core/jcs.js';
 import { ownValue, setOwn } from '../core/maps.js';
 import { isAlive } from '../core/rows.js';
+import { lengthIn } from '../core/values.js';
 import { Refusal } from '../server/admit.js';
 
 export const STALE_MS = 4 * 3_600_000;
 export const MAX_ALIASES = 5;
+// Gym Coach §9.1 and Appendix A: a lifter message's text bound, the states a writer ends a turn in, the
+// registers only a Coach message carries, and the registers final once the writer has ended its turn.
+export const MAX_QUESTION_BYTES = 8000;
+export const WRITER_TERMINAL = ['completed', 'declined', 'failed', 'stopped'];
+const COACH_REGISTERS = ['replica', 'state', 'truncated', 'receipt', 'calls'];
+const FINAL_REGISTERS = ['state', 'text', 'receipt', 'calls'];
 const DAY_MS = 86_400_000;
 const MAX_SET_NUMBER = 2_147_483_647;
 
@@ -571,6 +578,33 @@ const RULES = {
     if (created(record) || changed(record, 'title') || changed(record, 'body')) {
       append({ t: 'note', id: record.after.id, born: record.after.born, f: { updatedAt: [ctx.serverNow, null] } });
     }
+  },
+
+  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals naming it.
+  thread(ctx, record, { rowsOf, append }) {
+    if (created(record) && !isSet(valueOf(record.after, 'title'))) throw new Refusal('invalid');
+    if (!died(record)) return;
+    for (const message of rowsOf('message')) {
+      if (isAlive(message) && valueOf(message, 'threadId') === record.after.id) append({ t: 'message', id: message.id, born: message.born, life: ['dead', null] });
+    }
+    for (const proposal of rowsOf('proposal')) {
+      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: 'proposal', id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
+    }
+  },
+
+  // A lifter message carries its text alone, within MAX_QUESTION_BYTES; a Coach message names its writer. Once the
+  // writer has ended its turn, its state, text, receipt and calls are final (gym Coach §9.1).
+  message(ctx, record) {
+    const { after } = record;
+    if (!isAlive(after)) return;
+    const written = Object.assign({}, ...ctx.deltas.filter((delta) => delta.t === 'message' && delta.id === after.id).map((delta) => delta.f ?? {}));
+    if (created(record) && (!isSet(valueOf(after, 'role')) || !isSet(valueOf(after, 'at')))) throw new Refusal('invalid');
+    if (valueOf(after, 'role') === 'lifter') {
+      if (COACH_REGISTERS.some((field) => Object.hasOwn(written, field))) throw new Refusal('invalid');
+      if (lengthIn('bytes', valueOf(after, 'text') ?? '') > MAX_QUESTION_BYTES) throw new Refusal('invalid');
+    } else if (created(record) && !isSet(valueOf(after, 'replica'))) throw new Refusal('invalid');
+    const ended = record.original !== undefined && isAlive(record.original) && WRITER_TERMINAL.includes(valueOf(record.original, 'state'));
+    if (ended && FINAL_REGISTERS.some((field) => Object.hasOwn(written, field))) throw new Refusal('message-final');
   },
 
   proposal(ctx, record, { current, rowsOf, append, futureProposals }) {

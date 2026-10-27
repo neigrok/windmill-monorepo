@@ -230,6 +230,15 @@ bases are captured:
 - **Note.** Create or a net title/body value change writes server `updatedAt := serverNow`. Reorder,
   equal-value restamp, losing writes and retries preserve it, although `ru` can move.
 - **Weighin.** An alive put of a day later than the UTC date of `serverNow + 86 400 000` → `bad-instant`.
+- **Thread.** A create without `title` → `invalid`. A death kills the conversation's alive messages and writes
+  `threadId := null` on every alive proposal naming it.
+- **Message.** A create without `role` or `at` → `invalid`. A lifter message (`role: lifter`) carries `threadId`,
+  `role`, `text`, `pictures` and `at` only: a delta writing `replica`, `state`, `truncated`, `receipt` or `calls` on
+  one → `invalid`, and a `text` beyond 8,000 UTF-8 bytes → `invalid`. A Coach message's create carries `replica`
+  (else `invalid`). `state` is ranked (running 0; interrupted 1; completed, declined, failed, stopped 2), so a
+  writer's terminal state beats `interrupted` whatever the stamps. Once the stored `state` is a writer's terminal
+  state, a delta writing `state`, `text`, `receipt` or `calls` → `message-final`; `truncated` and a delete stay
+  admitted.
 - **Proposal.** A replica's create needs `door: ask` and `connection` and `agent` unset or `""` (else
   `invalid`), plus guards on both routine `entries` and `name` at their read stamps; moved stamps →
   `stale`. The check requires those stamps to match the joined routine (`invalid`). Every create
@@ -259,7 +268,7 @@ converge on the current service digest.
 ## The journal product
 
 `reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against a
-composed v7 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
+composed service (version 8, minimum version 4). Ready/sent/acked saves and pending claims survive gym
 writes through MCP/ask doors, client relaunch and a lost claim response; retained typing reconciles
 once, with no epoch change and no gym subscription.
 

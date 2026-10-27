@@ -1,7 +1,7 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "gym",
-  "version": 7,
+  "version": 8,
   "minVersion": 4,
   "products": {
     "gym": {
@@ -13,9 +13,11 @@
         },
         "movement": { "keyPattern": "^movement:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } },
         "offer": { "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
-        "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } }
+        "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
+        "runningTurn": { "keyPattern": "^runningTurn$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,58}$" } },
+        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } }
       },
-      "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant", "proposal-settled", "proposal-superseded"]
+      "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant", "proposal-settled", "proposal-superseded", "message-final"]
     }
   },
   "types": [
@@ -312,6 +314,68 @@
         },
         "supersededBy": { "kind": "lww", "writer": "server", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
         "settledAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0 } }
+      }
+    },
+    {
+      "type": "thread",
+      "scope": "product:gym",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "title": { "kind": "const", "writer": "client", "unit": "bytes", "min": 1, "max": 8000, "domain": { "type": "string" } }
+      }
+    },
+    {
+      "type": "message",
+      "scope": "product:gym",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "threadId": { "kind": "const", "writer": "client", "ref": "thread", "parent": true },
+        "role": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["lifter", "coach"] } },
+        "replica": { "kind": "const", "writer": "client", "domain": { "type": "string", "pattern": "^rp_[0-9a-f]{32}$" } },
+        "text": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 131072, "domain": { "type": "string" } },
+        "state": {
+          "kind": "ranked",
+          "writer": "client",
+          "rank": { "running": 0, "interrupted": 1, "completed": 2, "declined": 2, "failed": 2, "stopped": 2 },
+          "default": "running"
+        },
+        "truncated": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" } },
+        "receipt": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 16384, "domain": { "type": "json" } },
+        "calls": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 32768, "domain": { "type": "json" } },
+        "pictures": {
+          "kind": "const",
+          "writer": "client",
+          "domain": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+                "mediaType": { "type": "string", "unit": "bytes", "min": 1, "max": 255 },
+                "localOnly": { "type": "boolean" }
+              },
+              "required": ["id", "mediaType"]
+            }
+          }
+        },
+        "at": { "kind": "const", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
       }
     }
   ],

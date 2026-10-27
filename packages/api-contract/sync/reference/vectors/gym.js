@@ -542,8 +542,55 @@ function metadata() {
   ];
 }
 
+// M9: Coach conversations (gym Coach §9.1): a turn's records in one intent, the lifter's bounds, the Coach message's
+// writer, the state rank, what is final once the writer has ended, and a conversation's death.
+function conversations() {
+  const THREAD = rec('thread', 'thread000001', { stamp: s(T + 6), seq: 6, f: { title: 'How heavy today?' } });
+  const LIFTER = rec('message', 'lifter000001', { stamp: s(T + 6), seq: 7, f: { threadId: 'thread000001', role: 'lifter', text: 'How heavy today?', at: T + 6 } });
+  const coachRow = (state, extra = {}) => rec('message', 'turn00000001', {
+    stamp: s(T + 6), seq: 8, f: { threadId: 'thread000001', role: 'coach', replica: A.replica, state, at: T + 6, ...extra },
+  });
+  const RUNNING = coachRow('running');
+  // Interrupted by another device after the turn began: its state register alone carries the later stamp.
+  const INTERRUPTED = { ...RUNNING, f: { ...RUNNING.f, state: ['interrupted', s(T + 7)] } };
+  const COMPLETED = coachRow('completed', { text: 'Add 2.5 kg.', receipt: { reads: { sessions: ['session0001'] }, results: [] }, calls: [{ name: 'list_sessions' }] });
+  const LINKED = proposalRow('proposal002', 9, { threadId: 'thread000001' });
+  const conversation = (...rows) => base({ a: [THREAD, LIFTER, ...rows] });
+  const coach = (stamp, values) => update('message', 'turn00000001', s(T + 6), stamp, values);
+  const ending = { state: 'completed', text: 'Add 2.5 kg.', receipt: { reads: { sessions: ['session0001'] }, results: [] }, calls: [{ name: 'list_sessions' }], truncated: false };
+  const turn = (lifter = {}, coachFields = {}) => gym([
+    create('thread', 'thread000001', s(T + 6), { title: 'How heavy today?' }),
+    create('message', 'lifter000001', s(T + 6), { threadId: 'thread000001', role: 'lifter', text: 'How heavy today?', at: T + 6, ...lifter }),
+    create('message', 'turn00000001', s(T + 6), { threadId: 'thread000001', role: 'coach', replica: A.replica, state: 'running', at: T + 6, ...coachFields }),
+  ]);
+  return [
+    admitted('a phone turn creates the conversation, the lifter message and the running Coach message in one intent', { state: base(), intent: turn() }),
+    admitted('a lifter message with a picture is admitted', { state: base(), intent: turn({ pictures: [{ id: 'picture00001', mediaType: 'image/jpeg', localOnly: true }] }) }),
+    admitted('a picture entry without its media type is refused invalid', { state: base(), intent: turn({ pictures: [{ id: 'picture00001' }] }) }),
+    admitted('a lifter message beyond 8,000 bytes is refused invalid', { state: base(), intent: turn({ text: 'é'.repeat(4001) }) }),
+    admitted('a lifter message of 8,000 bytes is admitted', { state: base(), intent: turn({ text: 'é'.repeat(4000) }) }),
+    admitted('a lifter message carrying a Coach register is refused invalid', { state: base(), intent: turn({ state: 'completed' }) }),
+    admitted('a Coach message created without its replica is refused invalid', { state: base(), intent: gym([turn().d[0], turn().d[1], { ...turn().d[2], f: regs(s(T + 6), { threadId: 'thread000001', role: 'coach', state: 'running', at: T + 6 }) }]) }),
+    admitted('a message created without its role is refused invalid', { state: base(), intent: gym([turn().d[0], { ...turn().d[1], f: regs(s(T + 6), { threadId: 'thread000001', text: 'Hi', at: T + 6 }) }]) }),
+    admitted('a message created without its time is refused invalid', { state: base(), intent: gym([turn().d[0], { ...turn().d[1], f: regs(s(T + 6), { threadId: 'thread000001', role: 'lifter', text: 'Hi' }) }]) }),
+    admitted('a message whose conversation is unknown is refused parent-dead', { state: base(), intent: gym([turn().d[1]]) }),
+    admitted('a conversation created without its title is refused invalid', { state: base(), intent: gym([create('thread', 'thread000001', s(T + 6))]) }),
+    admitted('a Coach answer beyond 128 KiB is refused invalid', { state: conversation(RUNNING), intent: gym([coach(s(T + 8), { text: 'a'.repeat(131_073) })]) }),
+    admitted('a receipt beyond 16 KiB of JCS is refused invalid', { state: conversation(RUNNING), intent: gym([coach(s(T + 8), { receipt: { reads: 'r'.repeat(16_400) } })]) }),
+    admitted('the writer ends its turn with its text, receipt, calls and truncation', { state: conversation(RUNNING), intent: gym([coach(s(T + 8), ending)]) }),
+    admitted('a server-origin interrupted lands on a running Coach message', { state: conversation(RUNNING), origin: SERVER_A, intent: gym([coach(null, { state: 'interrupted' })]) }),
+    admitted('a writer terminal write is admitted over interrupted, whatever the stamps', { state: conversation(INTERRUPTED), intent: gym([coach(s(T + 5), ending)]) }),
+    ...[['state', 'interrupted'], ['text', 'Add 5 kg.'], ['receipt', {}], ['calls', []]].map(([field, value]) =>
+      admitted(`a write of ${field} after the writer ended its turn is refused message-final`, { state: conversation(COMPLETED), intent: gym([coach(s(T + 9), { [field]: value })]) })),
+    admitted('a server-origin interrupted after the writer ended its turn is refused message-final', { state: conversation(COMPLETED), origin: SERVER_A, intent: gym([coach(null, { state: 'interrupted' })]) }),
+    admitted('truncated stays writable after the writer ended its turn', { state: conversation(COMPLETED), intent: gym([coach(s(T + 9), { truncated: true })]) }),
+    admitted('a completed Coach message can be deleted', { state: conversation(COMPLETED), intent: gym([{ t: 'message', id: 'turn00000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
+    admitted('a conversation delete kills its messages and unlinks the proposals naming it', { state: conversation(COMPLETED, LINKED), intent: gym([{ t: 'thread', id: 'thread000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
+  ];
+}
+
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata(), ...conversations()],
   };
 }
