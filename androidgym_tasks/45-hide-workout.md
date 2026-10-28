@@ -15,7 +15,7 @@
 - Hide in the workout bar, Hide workout in management and system Back return to the originating tab. A 48 dp minimum `WorkoutBar` stands above the rail on tab roots while hidden; pushed screens and editors omit it. Opening it restores the same logger state.
 - Notification swipe changes only notification off. The management sheet supplies Notification off · Show; Gym settings has no visibility row. Show keeps its static `gym.showWorkout` failure boundary.
 - Notification opening requests retain their originating owner/workout key and are consumed after navigation. Stale requests cannot reopen another owner's workout or replay after activity restoration.
-- Source compilation, the affected controls/runtime/navigation tests and 31 capture parser checks pass. Paired native appearance, event delivery and runtime acceptance remain pending. The Figma flows remain Ready for dev until native acceptance.
+- Source compilation, the affected controls/runtime/navigation tests and 31 capture parser checks pass. Paired native appearance and four-set lifecycle/raw-buffer checks are accepted on `8d844b43` (APK `6d3ad11a…`). The client event policy admits Hide, workout-bar Open and notification Show with only bounded labels; a same-owner update to `6e365786` (APK `4bd6d92e…`) delivers each requested step exactly once to the first-party intake. Retained post-reset runtime and app exit history show no product fatal/ANR; the pre-reset boot log was not separately exported. Native technical failure injection is not claimed. The Figma flows remain Ready for dev until shipment.
 
 **Change**
 - Hide (03.5):

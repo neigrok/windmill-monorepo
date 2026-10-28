@@ -14,7 +14,7 @@
 - `ui/SessionScreen.kt` keeps the routine title, saved plan, detail-set fixes and swipe deletion. Movement headers use the existing equipment glyph and the stored load basis. The shared native error-text button opens the room-owned single confirmation with **Discard workout**.
 - `domain/Training.kt` derives each Android-local comparison effort from every performed set. It retains the scalar top set for comparison predicates and legacy decode, plus serialized rep/load bounds for the displayed range and recreation.
 - `ui/FinishScreen.kt` formats the full effort range for `ReviewRemarks`, whose reader is workout detail. The Finish receipt retains its own approved fact/action presentation.
-- The affected source gate passes 87 gym checks with no failures, errors or skips; app Debug compilation passes. `tools/capture-recipes/workout-detail.json` and `workout-detail-fixture.json` cover the five-set example and paired top/bottom/dialog frames. Native execution and appearance review are pending.
+- The affected source gate passes 87 gym checks with no failures, errors or skips; app Debug compilation passes. `tools/capture-recipes/workout-detail.json` and `workout-detail-fixture.json` cover the five-set example and paired top/bottom/dialog frames. Paired Dark/Daylight detail, bottom actions and five-set confirmation are accepted on frozen source `8d844b43` (APK `6d3ad11a…`). The preserved intake contains session views and discard shown/cancelled/ok steps. Retained post-reset runtime and app exit history show no product fatal/ANR; the pre-reset boot log was not separately exported. The flow remains Ready for dev until shipment.
 
 **Change**
 - The title is the routine; a workout with no routine reads `Readout.noRoutine` (13).

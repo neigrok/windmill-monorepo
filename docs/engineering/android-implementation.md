@@ -915,12 +915,16 @@ forbids the skip. Four checker tests pass, and replaying the CI logs accounts fo
 integration passes plus that one fixture skip and seven shell passes. Supported run `40759270882`
 passes four jobs; its shell failure occurs before the Log action: SpringBoard remains on Home
 with an active workout Island, and the pull-down does not establish Notification Center. The
-cause is unproven; no gesture or product fix is claimed. Final-source run `40764861345` passes
+cause is unproven; no gesture or product fix is claimed. Run `40764861345` on `3bd0ce16` passes
 packages/builds and gym/journal UI. It fails the Coach chunk-coalescing unit assertion and the
 offline local-control readiness check; gym integration is cancelled. The Live Activity case passes
-in that run. Those two failures remain under diagnosis before shared-load shipment.
+in that run. The coalescer fixture now feeds five deltas synchronously through the existing
+MainActor driver seam, awaits its actual flush task and retains exact final text/stopped assertions;
+production's 250 ms interval is unchanged. Its local Coach suite passes 26 expanded runs.
+The offline recording shows late visible Journal controls near the failed assertion, without a
+hierarchy proving enabled/hittable state or network causality. No shell timing or product fix is claimed.
 
-The current-main backend passes all ten targets: domain 2,314/2,342 with 28 deliberate skips,
+The backend composition before main's `9266c9e7` update passes all ten targets: domain 2,314/2,342 with 28 deliberate skips,
 MCP 341, sync 765 and adapters 1,365, with no stopped cases or assertions. Both fresh databases
 are removed. The actual mounted-route matrix passes with local vendor/onboarding switches enabled
 and disabled, including all four turn routes; it checks schema admission separately from the direct
@@ -950,6 +954,23 @@ and sender readiness at their shared boundaries. Native receipt integration uses
 wrapping and unavailable slots. Fault evidence is named by the boundary actually exercised; no
 production injection hook or extra telemetry framework is introduced for acceptance.
 
+The `9266c9e7` composition preserves its bounded phone-result admission, counted/truncated reads,
+seat-change stop, refusal reporting and ordering. Its only manual merge adaptation wraps the
+cap's existing source-volume fixture in `RecordedRead.ids`; nullable/zero assertions stay exact.
+Focused Swift Domain verification passes 23 functions including 170 training-read and 54 Coach
+ability vectors plus 16 shape cases. App verification passes 27 Coach turn runs and the
+individual unavailable-volume source case. These local Xcode 27.1 checks are qualified against
+supported Xcode 26.3; composed run `40777685223` remains pending. Android source is unchanged by
+that upstream merge, and all 36 accepted cohort source hashes match the integrated batch.
+
+Web promotion now checks the live sync interval before mkdir or rsync and retains a complete
+source/schema/file-hash artifact first. The deployment helper passes 33 script checks plus the
+final affected seven-case web class; artifact preparation rejects symlinks before hashing. An
+isolated anonymous hello returns schema 10/minimum 10: the matching client passes and clients
+outside either interval direction hold. This proves the local decision and modeled workflow
+boundary, not production promotion or queued delivery. Main batches can retain the compatible
+served website while replacement mobile distributions and the acknowledged cutoff are prepared.
+
 ## Task 23 · Workout detail and complete comparison efforts
 
 The detail body uses the approved compact head, equipment glyphs, movement spacing and grouped
@@ -970,7 +991,7 @@ compilation. Table-driven vectors cover mixed loads/reps, zero and assistance, p
 saved review/receipt round trips. Stored Cable/Kettlebell and Other equipment retain their load
 semantics. Existing glyph assets are reused at the approved 20 dp header slot; both source PNGs
 are nonempty 96 × 96 assets. The capture recipe targets the approved five-set, 2,455 kg example.
-Native appearance, event delivery and runtime acceptance remain pending.
+Paired Dark/Daylight detail, bottom actions and the five-set confirmation are accepted on frozen source `8d844b43`. The displayed total is 2,455 kg across five sets and three movements; all rows and actions are complete. The preserved first-party intake contains session views and discard shown/cancelled/ok steps. The recipe commits the 80 kg load through IME Done before changing reps, matching the number-entry contract that plain blur cancels an uncommitted edit.
 
 The shared read still has a separate top-set representation: Kotlin
 `gym/domain/…/sync/TrainingHistory.kt`'s local `best`, Swift
@@ -1001,8 +1022,7 @@ The A4 recipe uses an opt-in boolean launcher choice, isolated to one empty-acco
 batch. Other fixture-account scenarios remain composable. It invokes
 the real MAIN/LAUNCHER intent because the ordinary VIEW launch intentionally bypasses first-run
 onboarding. The default rig launch stays VIEW, and no product flag or debug application hook is
-added. The recipe follows the three Next actions and Get started. Paired native appearance,
-reduced-motion capture, first-party page events and runtime acceptance remain pending.
+added. The recipe follows the three Next actions and Get started. Paired A4 normal and reduced-motion/configuration-restored frames are accepted on `8d844b43`; page 4 and the enabled Get started action survive recreation. The four frame/XML pairs and their hashes are retained with the original APK. A named native `onboarding_page_viewed` receipt was not preserved after the failed recipe run dropped its fixture database. Generic intake 202 lines do not establish that event. The eleven app onboarding/event tests cover the unchanged pipeline; this picture adds no step or failure boundary. Ledger 9f records the obsolete table header still present in the Shell drawing.
 
 
 ## Task 45 · Hidden logger and independent notification visibility
@@ -1024,18 +1044,16 @@ A notification opening request retains its originating key and is consumed once 
 navigation. Restoring a room cannot reuse a consumed request to show a logger the lifter hid again;
 a changed owner/workout cannot redirect the old request to a different workout. The scoped source
 gate covers navigation, saved-state restoration, incomplete signed buffers, notification independence,
-legacy-state decode, durable storage failures and stale authority. Native appearance and delivery
-acceptance remain pending. Task 23/52/45 share one reviewed-source native cohort after allocation.
+legacy-state decode, durable storage failures and stale authority. Paired normal management and hidden-workout frames are accepted; at 320 dp/200% text the movement list scrolls and Hide/Notification off/Show remain complete and reachable. On `8d844b43`, both appearances preserve four accepted sets, the originating Log/Coach tab, hidden configuration/cold restoration and a lone-minus buffer across Hide/Open while the stored rack stays 47.5 kg × 6. Actual SystemUI swipes turn off only the notification; Show reposts it, notification Open preserves owner/workout/replica and a consumed opening request does not replay after recreation.
 
 
-The initial affected group passes 82 cases before the final storage-ownership refinement. The
-owner/session controls and runtime group passes 37 cases on the corrected source; the final focused
-boundary repeat passes 8 overlapping cases, including the visible unavailable Hide, with zero
-failures/errors/skips. Thirty-one capture parser checks pass. An adversarial red test reproduced
-an accepted Hide reverting when the engine restored its older rack; keeping logger visibility on
-Held removes that second owner. The green probe confirms the engine fault was actually reported
-as `gym.workout_controls` during cold restoration while the accepted hidden flag remained true.
-The final source has no WorkoutState/sync schema change. No native execution is claimed.
+The owner/session controls and runtime group passes 37 cases; the focused boundary repeat passes eight overlapping cases, including the visible unavailable Hide, with zero failures/errors/skips. Thirty-one capture parser checks pass. The durable-visibility regression confirms an engine fault is reported as `gym.workout_controls` during cold restoration while the accepted hidden flag remains true. Logger visibility is owned by Held, independently of the mirrored rack; the WorkoutState/sync schema is unchanged.
+
+The bounded native packet separates visual/lifecycle source `8d844b43062a09b178a167fd6502d12df3bd005f` (APK `6d3ad11aade6c423f9ec7005a6e9c056072a45c2312112449a34a78fcf2d52c5`) from the policy-only proof on composed source `6e365786d006af224da8378f4b22c763d3c8b3c5` (APK `4bd6d92ea7cd2caabc21187e55b12b38242f4d00c7b0db310483e7752e54e6e0`). The update retains the debug signing certificate, owner and replica. The new-source zero-set mini-workout supplies exactly one Hide, workout-bar Open and notification Show receipt with only the eight common/step properties; the four-set lifecycle proof belongs to the original APK. Its new policy case passes six accepted and thirteen rejected label/content combinations; app Debug compilation and assembly pass.
+
+The preserved intake has 290 events: 274 on the visual source and 16 on the policy source. Thirty metadata-only actions belong to the old policy; none belong to the new source. These are bounded totals including driver setup, correction and navigation, not one-to-one whole-run action accounting. The three new labels each arrive exactly once in their separate source/window proof. First-party storage does not prove vendor forwarding.
+
+Retained post-reset runtime and app exit history contain no product fatal/ANR; the pre-reset boot log was not separately exported. Fifteen envelopes are attributed by Android SDK plus exact release, with no Issues; native `gym.logger_visibility` or `gym.showWorkout` failure arrival is not claimed. The API 37 notification shade initially suppresses all rows with `maxDisplayedNotifications=0`, including unrelated system notifications; its preserved precondition clears after a bounded OS cold restart, and its cause remains unproven. No product change is attributed to that reset. All owned emulator/services and retired AVDs are cleaned; collector 8100 remains untouched. Failed automatic recipe attempts are excluded from the accepted evidence; the native packet retains their qualifications separately.
 
 The real Coach fixture follows Open routine → Start workout → Hide and retains Coach as the
 selected tab. All five Room cases pass after removing the routine-start path’s forced Routines
