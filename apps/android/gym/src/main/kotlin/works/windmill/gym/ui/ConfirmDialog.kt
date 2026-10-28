@@ -64,7 +64,7 @@ fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> U
         onDismissRequest = { if (!busy) onCancel() },
         containerColor = skin.surface,
         title = { Text("Discard this workout?", fontFamily = native, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
-        text = { Text("This deletes the workout and its $setCount sets. You can’t undo this.",
+        text = { Text("This deletes the workout and its $setCount ${if (setCount == 1) "set" else "sets"}. You can’t undo this.",
             fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
         confirmButton = {
             TextButton(onClick = onDiscard, enabled = !busy,

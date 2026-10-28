@@ -96,7 +96,7 @@ class FinishSheetTests {
 
     private fun inRoom(server: FakeGymRest = FakeGymRest(), seat: String? = "u1", telemetry: Telemetry = Telemetry.None, localCoach: LocalCoach? = null, test: (EngineRoomFixture) -> Unit) {
         roomTelemetry = telemetry
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val room = EngineRoomFixture(tmp.newFolder(), scope, rest = server, telemetry = telemetry, localCoach = localCoach)
         try {
             room.store.observeEngine()
@@ -206,13 +206,12 @@ class FinishSheetTests {
 
     @Test
     fun finishWaitsForTheUnchangedAccountReadAndClosesExactlyOnce() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val waiting = ConcurrentLinkedQueue<Runnable>()
         var holdReads = false
         val reads = object : CoroutineDispatcher() {
-            override fun dispatch(context: CoroutineContext, block: Runnable) {
-                if (holdReads) waiting.add(block) else Dispatchers.Default.dispatch(context, block)
-            }
+            override fun isDispatchNeeded(context: CoroutineContext) = holdReads
+            override fun dispatch(context: CoroutineContext, block: Runnable) { waiting.add(block) }
         }
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<String>()
@@ -233,9 +232,8 @@ class FinishSheetTests {
             val sets = room.store.sets.toList()
             val account = room.account()
             compose.setContent { if (showing) GymMaterial { GymRoom(account, room.store) } }
-            compose.waitUntil(10_000) {
-                compose.onAllNodes(hasText("Finish") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
-            }
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.canFinish } }
+            compose.onNodeWithText("Finish").assertIsEnabled()
             val reconnect = compose.runOnIdle {
                 holdReads = true
                 room.scope.async { room.store.connect(account) }
@@ -359,7 +357,7 @@ class FinishSheetTests {
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
             compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
-            compose.waitUntil(10_000) { entered.isCompleted }
+            compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
             compose.runOnIdle {
                 assertEquals(listOf(Ask.openers.first(), "Check my last workout."),
                              server.asked.map { it.question })
@@ -532,7 +530,7 @@ class FinishSheetTests {
             compose.onNodeWithContentDescription("More").performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
-            compose.onNodeWithText("This deletes the workout and its 1 sets. You can’t undo this.").assertIsDisplayed()
+            compose.onNodeWithText("This deletes the workout and its 1 set. You can’t undo this.").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
             compose.runOnIdle { assertEquals(before, room.engine.snapshot()) }
             compose.onNodeWithContentDescription("More").performClick()
