@@ -12,16 +12,13 @@
   - `Android / Button` `210:181` (Text · Tone=Error for the dialog's *Delete*)
   - `Android / Top app bar` `342:2953`
 
-**Approved revision:** Fresh Coach, History with local drafts, restored drafts and a reply pending in another chat are ✅ Ready for dev, approved 2026-10-25: [Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27790), [History](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552), [pending reply](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1442-18583), [restored draft](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1442-18668).
+**Delivery:** Shipped to main in `ba0360c0`, integrated with task 28 in `fac7e530`. Human-approved [History](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28552), [pending reply](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1442-18583), [restored draft](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1442-18668), deletion and read-only source scopes carry **🚀 In production**. Shared drawings qualify postponed action wording and write-receipt visuals.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `ThreadsScreen` (`coach/ThreadsScreen.kt:61`): title *History* (`coach/Thread.kt:156`), pull to refresh (`coach/ThreadsScreen.kt:104`).
-- Rows (`ThreadRow`, `coach/ThreadsScreen.kt:190-205`): the first question, then *{day} · {outcome}* and a chevron. Outcomes: *2 changes → Push*, *1 change turned down*, *created Push*, *2 changes waiting*, *2 changes superseded* (`coach/Thread.kt:83-92`).
-- A pinned accent button *Ask something new* (`coach/ThreadsScreen.kt:143-154`, `coach/Thread.kt:157`). Empty, it reads *Nothing here yet. Every conversation you have with Coach is kept until you delete it.* (`coach/Thread.kt:168`).
-- Swipe end-to-start (`SwipeableThreadRow`, `coach/ThreadsScreen.kt:164-187`) on `RowDeleteGround` (`:180`). The delete is held 9 s: *Conversation deleted.* / *your routine keeps what you applied* + Undo (`store/WithheldDelete.kt:51-57`).
-- What Coach read is the tally line under the answer (`coach/CoachAnswer.kt:167-202`):
-  - *Read 18 sets · 6 weeks · 3 sessions* (`coach/Ask.kt:265-272`), with a *+* / *−* toggle (`coach/CoachAnswer.kt:184`).
-  - Expanded, raw lines such as *Push A · 26 Sep* / *Workout summary · 15 working · 2435kg* (`:187-196`), with no space before *kg* and no rounding (the emulator printed *5050.25kg*), then tool phrases (`:197-199`).
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `coach/ThreadsScreen.kt` draws dated History rows, the compose-icon New chat FAB and confirmed conversation deletion. Local drafts and pending chats merge with server summaries without duplicate rows.
+- `CoachStore.kt` and `LocalCoach.kt` retain owner-scoped text/photo drafts, requests, turns, selected chat and scroll state. Replies and resumed requests remain attached to their originating chat; another account cannot see that archive.
+- `CoachSources.kt` supplies the read-only sources sheet and source navigation. Mixed/write/proposal/draft/unknown receipts retain their existing presentation and wording.
+- [The implementation record](../docs/engineering/android-implementation.md#task-37--coach-archive-history-and-sources) records native navigation, clipboard, photo/owner restoration, restart, confirmed server deletion, content-free events and the controlled draft-storage failure. Anonymous transport/History admission remains task 38; public release acceptance remains pending.
 
 **Change**
 - History (08.4):

@@ -800,3 +800,18 @@ The local first-party intake receives the navigation and ask steps. A controlled
 fault retains the in-memory edit and previous durable draft, then recovers on the next edit and
 restart. It produces exactly one content-free gym.saveDraft Issue at the local collector and one
 matching client_error event. Hosted vendor delivery and release acceptance are not claimed.
+
+
+## Coach batch integration observations
+
+Tasks 37 and 28 are on main as `ba0360c0` and `fac7e530`. Root compared all 75 frozen source paths;
+the sole composed difference is the additional verified NumberStepper paragraph already on main.
+The integration gate passes 1,320 gym cases (1,303 pass and 17 opt-in LiveWire skip), 134 platform,
+48 App and 46 tool cases, with zero failures/errors; Debug assembles. The tool gate uses disposable
+loopback fixtures. Scoped Figma production prefixes preserve explicit exclusions for postponed
+proposal/action visuals. The remaining release scope contains 20 numbered tasks.
+
+The acceptance packet attributes Sentry envelopes by Android SDK/release as well as time; a shared
+collector can receive another backend's probes during native verification. Exact owned resources
+are cleaned while evidence remains available. These checks add no production storage or telemetry
+framework. Both coordinated distributions and their compatibility cutoff remain pending.

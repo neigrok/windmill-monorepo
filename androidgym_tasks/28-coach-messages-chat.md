@@ -12,22 +12,13 @@
   - `Android / Chat timestamp` `337:2762` and `Android / Chat notice` `337:2764` (same section)
   - `Android / Top app bar` `342:2953`, `Android / Menu` `342:2725`, `Android / Keyboard` `337:2403`
 
-**Approved revision:** The fresh-entry/composer and stable-navigation states (08.1, 08.33) are ✅ Ready for dev, approved 2026-10-25. [Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27790) is the canonical entry. The approval does not promote unrelated proposal or onboarding boards.
+**Delivery:** Shipped to main in `fac7e530`, with task 37's lifecycle foundation in `ba0360c0`. The human-approved fresh-entry/composer, Markdown, streaming, Copy and stable-navigation scopes carry **🚀 In production** in Figma. Shared drawings explicitly retain the postponed proposal/action visuals. [Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27790) is the canonical entry.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Top bar (`coach/AskScreen.kt:134-157`):
-  - *History* is a text `TopAction` (:139).
-  - ⋮ *More* opens a `DropdownMenu` on `skin.raised` (:144): *Notes*, *Connected log*, *New chat* (only with a conversation, disabled while asking), *Account* (:145-153).
-  - No account seat: `seat` is passed in (`GymRoom.kt:1179`) and never drawn.
-- The question is a right-aligned `raised` box at 90 % width, radius 20, body 17 (`coach/CoachAnswer.kt:58-65`).
-- The answer is unbubbled prose: paragraph body 19/27, headings 22 / 20 / 19 Bold (`coach/CoachAnswer.kt:302-309`), lists, code and rules (`:258-283`). No tables: `CoachBlock` has Paragraph, Heading, ListItem, Code and Rule only (`coach/CoachMarkdown.kt:5-9`).
-- No timestamps and no grouping. Exchanges sit `WindmillSpace.x4` apart (`coach/AskScreen.kt:166`).
-- Waiting is the text *reading your log…* (`coach/Ask.kt:211`, drawn at `coach/AskScreen.kt:190-192`). The server is polled about once a second and `rememberRevealedText` paces the text (`coach/CoachReveal.kt:70`), but on the emulator the answer lands whole.
-- A tap or long press on any message opens a menu with *Copy* on `raised` (`coach/CoachAnswer.kt:209-231`).
-- *Jump to latest* is a `TextButton` on a `surface` pill (`coach/AskScreen.kt:229-235`).
-- Composer (`coach/CoachComposer.kt:100-131`):
-  - a `surface` pill, radius 28, with *Add photo* (`gym_photo`) inside it and placeholder *Ask about your training* (`coach/Ask.kt:172`)
-  - a 48 dp `raised` circle that always shows *↑*, and *■* while Coach answers (`:115-130`)
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `coach/AskScreen.kt` draws History and the account seat, a stable navigation rail and the canvas composer. Fresh entry preserves previous chats and their pending responses through task 37's archive.
+- `CoachBubble.kt`, `CoachMarkdown.kt` and `CoachReveal.kt` own grouped native bubbles, phone-format timestamps, Markdown tables, typing, paced streaming and Stop. Copy uses the complete received message independently of reveal progress.
+- `CoachComposer.kt` retains native selection/caret state and owner-scoped text/photo drafts. Existing proposal, diff, review and write-receipt appearance remains unchanged.
+- Native acceptance and the simplification observations are in [the message implementation record](../docs/engineering/android-coach-messages.md). Root integration covers 1,320 gym cases (1,303 pass and 17 opt-in LiveWire skip), plus 134 platform, 48 app and 46 tool cases, with zero failures or errors. Public release acceptance remains pending.
 
 **Change**
 - Top app bar (the bar itself is 03): title *Coach*, then the icon button *History* (Material Symbol `history`; the kit draws `schedule`), then the account seat (03). No ⋮ More, as on iOS: delete the menu (`coach/AskScreen.kt:140-154`). *New chat* lives in History (37); Notes and Connected log are reached from You (46); the account is the seat.
