@@ -9,6 +9,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.schema.Gym
 import works.windmill.sync.api.DeviceWrite
 import works.windmill.sync.api.Gesture
 import works.windmill.sync.core.Json
@@ -30,6 +34,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
@@ -45,6 +50,96 @@ import works.windmill.sync.schema.SyncSchema
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class EngineReadTests {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test fun aRestoredReceiptReadCannotCrossAReplicaOrAccountChange() = runTest {
+        val now = 1_800_000_000_000L
+        Engine.memory(SyncSchema.registry, clock = object : EngineClock { override fun now() = now }).use { engine ->
+            val delegate = StandardTestDispatcher(testScheduler)
+            var pause = false
+            val held = ArrayDeque<Pair<CoroutineContext, Runnable>>()
+            val reads = object : CoroutineDispatcher() {
+                override fun dispatch(context: CoroutineContext, block: Runnable) {
+                    if (pause) held.add(context to block) else delegate.dispatch(context, block)
+                }
+            }
+            assertTrue(engine.signIn("first", mapOf("gym" to false)).member("complete").bool())
+            val training = EngineTraining(engine)
+            training.startSession(SessionStart("session1", now - 10_000))
+            training.finishSession("session1", now - 5_000)
+            val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), training, backgroundScope,
+                now = { now }, readDispatcher = reads)
+            store.connect(Account("http://127.0.0.1:8098", User("first", "first@example.com")))
+            assertEquals(GymResult.Ok(training.session("session1")), store.finishedSession("session1"))
+            pause = true
+            val pending = async { store.finishedSession("session1") }
+            runCurrent()
+            assertFalse(held.isEmpty())
+            assertTrue(engine.signOut("keep").member("complete").bool())
+            assertTrue(engine.signIn("other", mapOf("gym" to false)).member("complete").bool())
+            pause = false
+            while (held.isNotEmpty()) {
+                val (context, task) = held.removeFirst()
+                delegate.dispatch(context, task)
+            }
+            runCurrent()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), pending.await())
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), store.finishedSession("session1"))
+            store.connect(Account("http://127.0.0.1:8098", User("other", "other@example.com")))
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), store.finishedSession("session1"))
+        }
+    }
+
+    @Test fun aRestoredReceiptRetriesAfterAnAccountABARoundTripBeforePublication() = runTest {
+        val now = 1_800_000_000_000L
+        Engine.memory(SyncSchema.registry, clock = object : EngineClock { override fun now() = now }).use { engine ->
+            val delegate = StandardTestDispatcher(testScheduler)
+            var afterRead: (() -> Unit)? = null
+            val reads = object : CoroutineDispatcher() {
+                override fun dispatch(context: CoroutineContext, block: Runnable) = delegate.dispatch(context, Runnable {
+                    block.run()
+                    afterRead?.also { afterRead = null }?.invoke()
+                })
+            }
+            assertTrue(engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
+            val training = EngineTraining(engine)
+            training.startSession(SessionStart("session1", now - 10_000))
+            training.finishSession("session1", now - 5_000)
+            val store = TrainingStore(WorkoutControls(File(temporary.root, "controls.json")), training, backgroundScope,
+                now = { now }, readDispatcher = reads)
+            store.connect(Account("http://127.0.0.1:8098", User("alice", "alice@example.com")))
+            val original = training.session("session1")!!
+            assertEquals(GymResult.Ok(original), store.finishedSession("session1"))
+            val replica = engine.activeReplica()
+            afterRead = {
+                assertTrue(engine.signOut("keep").member("complete").bool())
+                assertTrue(engine.signIn("bob", mapOf("gym" to false)).member("complete").bool())
+                assertTrue(engine.signOut("discard").member("complete").bool())
+                assertTrue(engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
+                assertEquals(replica, engine.activeReplica())
+                assertTrue(engine.commit(ScopeRef.product("gym"), Gesture(listOf(Change.delete(
+                    Gym.Types.session, RecordID("session1"))))) is CommitOutcome.Committed)
+            }
+            assertEquals(GymResult.Ok<SessionDetail?>(null), store.finishedSession("session1"))
+            assertNull(afterRead)
+            assertEquals(replica, store.workoutReplica)
+            assertEquals(GymResult.Ok<SessionDetail?>(null), store.finishedSession("session1"))
+        }
+    }
+
+    @Test fun aRestoredReceiptRequiresTheBoundSeatAfterAnonymousReplicaAdoption() = runTest {
+        EngineRoomFixture(temporary.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val session = room.startExternalWorkout()
+            room.training.finishSession(session.id, room.now + 1)
+            val replica = room.engine.activeReplica()
+            assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
+            assertEquals(replica, room.engine.activeReplica())
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), room.store.finishedSession(session.id))
+            room.selected = "alice"
+            room.store.connect(room.account())
+            assertEquals(GymResult.Ok(room.training.session(session.id)), room.store.finishedSession(session.id))
+        }
+    }
 
     @Test fun parsedLogTracksWritesReplicaSelectionAndTheAutoCloseBoundary() = runTest {
         var now = 1_800_000_000_000L

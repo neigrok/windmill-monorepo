@@ -37,7 +37,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 11 | Ready | [03.4 This workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29834). |
 | 12 | Removal | No replacement drawing; delete the heavier-than-plan offer and implicit retargeting. |
 | 13 | Scoped | No replacement drawing for removal of free-workout start/save. Preserve the external no-routine picker; gate N applies only if replacing it. |
-| 14 | Ready | [03.7 Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362), ended-early receipts and [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) are ready. Z is human-approved 2026-10-25. |
+| 14 | Ready | [03.7 Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362), ended-early receipts and [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) are ready. Z is human-approved 2026-10-25. |
 | 15 | Ready | [04.2 Notification](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46754), plus ready Live Update and lock-screen twins. |
 | 16 | Ready | [04.1 Quick Settings tile](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46694). |
 | 17 | Scoped | [02.1 Routines](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27415); retain the existing MCP proposal review route under gate M. |
@@ -83,7 +83,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 |---|---|---|
 | S · resolved | `android-gym-signed-load-input-design` | Native keyboard minus interaction is human-approved on 2026-10-25. Keep existing board sizing and verify negative decimal input in rack, Fix set and combined editor on the target emulator. No added app-level sign control. |
 | E | `android-gym-equipment-variants-design` | Cable/Kettlebell chooser, icon and load-basis states. Existing stored values and current presentation remain valid; four approved creation examples do not narrow saved-record support. |
-| Z · approved | `android-gym-empty-finish-design` | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) is ✅ Ready for dev, human-approved 2026-10-25. No saved-workout or Coach-sharing claim. |
+| Z · approved | `android-gym-empty-finish-design` | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is ✅ Ready for dev, human-approved 2026-10-25. No saved-workout or Coach-sharing claim. |
 | N | `android-gym-no-routine-picker-design` | External/no-routine workout entry only if replacing its existing picker; task 13's routine-start cleanup proceeds. |
 | M | `android-gym-mcp-proposal-row-design` | Review entry and destination for a proposal with no Coach conversation. Keep its functioning review path until a replacement is approved. |
 | U · deferred from release scope, unapproved | `android-coach-uncertain-apply-design` | Awaiting confirmation, Check again and resolved Apply/removal states; no opposing decision while unresolved. Existing failure boards only establish proven no-write failures. |

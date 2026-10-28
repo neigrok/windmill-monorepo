@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -22,20 +24,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.domain.Review
-import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.FinishOutcome
-import works.windmill.gym.store.Withheld
 import works.windmill.sync.core.Json
 
-// D12. The session review screen draws `Discard session`. Without it the log row's long press is the
-// only way an ordinary past workout can be discarded — a gesture as the ONLY path to an action,
-// which gesture law 1 forbids (`docs/design/guidelines/system-architecture.md` §3), and which is the very thing D7 leaned on when it put Discard
-// behind that long press in the first place.
-//
-// The drawn door is the same ACT as the other two: the same nine-second window, the same transient
-// and Undo, nothing on the wire before the clock, and no confirmation (Law 2). The finish screen's
-// slight-session door is untouched.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class SessionDiscardTests {
@@ -51,12 +43,8 @@ class SessionDiscardTests {
         revoke = { error("no link is revoked here") },
     )
 
-    // Four working sets: NOT a `slight` session, which is the only shape the finish screen ever drew
-    // Discard for — this is the ordinary past workout whose only path used to be a long press. Synced,
-    // so the workout is on the account's log and nothing is owed.
     private fun store(scope: CoroutineScope): EngineRoomFixture {
         val room = EngineRoomFixture(tmp.newFolder(), scope)
-        // A minute's workout that has just finished, on the wall clock.
         room.now = System.currentTimeMillis() - 60_000
         val server = EngineRoomFixture.server()
         runBlocking {
@@ -77,11 +65,13 @@ class SessionDiscardTests {
         return room
     }
 
-    // Wired to the act the room performs, so the door is proved against what it actually reaches and
-    // not against a spy that stands in for it.
     private fun screen(room: EngineRoomFixture) {
         val summary = room.store.recent.single()
         compose.setContent {
+            var pending by remember { mutableStateOf(false) }
+            var busy by remember { mutableStateOf(false) }
+            val scope = rememberCoroutineScope()
+            GymMaterial {
             SessionScreen(
                 summary = summary,
                 store = room.store,
@@ -90,8 +80,20 @@ class SessionDiscardTests {
                 onBack = {},
                 say = {},
                 onOpenMovement = {},
-                onDiscard = { room.store.withhold(Deletion.Session(summary.id)) },
+                onDiscard = { pending = true },
             )
+            if (pending) WorkoutDiscardDialog(summary.setCount, busy = busy,
+                onCancel = { pending = false }, onDiscard = {
+                    if (!busy && pending) {
+                        busy = true
+                        scope.launch {
+                            assertEquals(null, room.store.discardWorkout(summary.id))
+                            pending = false
+                            busy = false
+                        }
+                    }
+                })
+            }
         }
     }
 
@@ -109,35 +111,27 @@ class SessionDiscardTests {
         } } finally { scope.cancel() }
     }
 
-    // No confirmation and nothing on the wire: the window and its transient ARE the way back, and a
-    // dialog over an act that has an undo is a tap that buys nothing.
     @Test
-    fun testTheDrawnDiscardWithholdsTheSessionAndAsksTheLogNothing() {
+    fun theSharedDialogCancelsWithoutAWriteAndConfirmsAnImmediateDiscard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { store(scope).use { room ->
             val workout = room.store.recent.single()
             screen(room)
-
+            val before = room.engine.snapshot()
             compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
-
+            compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
+            compose.onNodeWithText("This deletes the workout and its 4 sets. You can’t undo this.").assertIsDisplayed()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.runOnIdle { assertEquals(before, room.engine.snapshot()) }
+            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Discard this workout?").fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {
-                assertEquals("the same window every other door opens", 1, room.store.withheld.size)
-                assertEquals("the same transient, in the same words",
-                    "Session deleted.", Withheld.line(room.store.withheld))
-                assertEquals("and the same Undo", "Undo", Withheld.undo)
-                assertEquals("the row is off the log", emptyList<String>(), room.store.recent.map { it.id })
-                assertEquals("while the workout is still on the account", listOf(workout.id),
-                    room.training.details().map { it.session.id })
-                assertEquals("nothing went on the wire before the clock", emptyList<Json>(), room.outbox())
+                assertEquals(null, runBlocking { room.training.session(workout.id) })
+                assertEquals(emptyList<String>(), room.store.recent.map { it.id })
+                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.withheld)
             }
-            compose.onAllNodesWithText("Discard", substring = true).assertCountEquals(1)
+            compose.onNodeWithText("Undo").assertDoesNotExist()
         } } finally { scope.cancel() }
-    }
-
-    // One constant behind three doors — the finish screen's slight session, the log row's long press
-    // and this one — so three spellings of one act cannot drift apart.
-    @Test
-    fun testTheThreeDoorsSayOneThing() {
-        assertEquals("Discard session", Finish.discard)
     }
 }

@@ -86,9 +86,14 @@ class CoachStore internal constructor(
     val selectedChatId: String?
         get() { restoreArchive(archiveOwner); return selected[archiveOwner] }
 
-    fun freshChat(seed: String = ""): String {
+    fun freshChat(seed: String = "", id: String = Ids.thread()): String {
         val seat = archiveOwner
-        val chat = LocalChat(Ids.thread())
+        restoreArchive(seat)
+        archive[seat to id]?.let {
+            if (selected[seat] != id) select(seat, id)
+            return id
+        }
+        val chat = LocalChat(id)
         keepChat(seat, chat, select = true)
         selected[seat] = chat.id
         if (seed.isNotEmpty()) saveDraft(chat.id, CoachDraft(seed))
@@ -100,15 +105,19 @@ class CoachStore internal constructor(
         val seat = archiveOwner
         restoreArchive(seat)
         val chat = archive[seat to id] ?: LocalChat(id).also { keepChat(seat, it) }
+        select(seat, chat.id)
+        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "ok"))
+        if (draft(id).let { it.text.isNotEmpty() || it.photo != null })
+            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "draft_restored", "outcome" to "ok"))
+    }
+
+    private fun select(seat: String, id: String) {
         try { localCoach?.select(seat, id) }
         catch (failure: Exception) {
             reportFailure("gym.saveConversation", failure)
             archiveFailure = "Your conversation couldn’t be saved. Try again."
         }
-        selected[seat] = chat.id
-        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "ok"))
-        if (draft(id).let { it.text.isNotEmpty() || it.photo != null })
-            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "draft_restored", "outcome" to "ok"))
+        selected[seat] = id
     }
 
     private fun keepChat(seat: String, chat: LocalChat, select: Boolean = false) {
@@ -203,6 +212,10 @@ class CoachStore internal constructor(
             submit(request.thread, request.question, draft(request.thread).photo, requireNotNull(request.requestId), authenticatedOwner)
         }
     }
+
+    fun hasRequest(chatId: String, requestId: String): Boolean =
+        chat(chatId)?.exchanges.orEmpty().any { it.requestId == requestId } ||
+            pendingQuestions().any { it.thread == chatId && it.requestId == requestId }
 
     fun stopChat(id: String) {
         val authenticatedOwner = owner ?: return

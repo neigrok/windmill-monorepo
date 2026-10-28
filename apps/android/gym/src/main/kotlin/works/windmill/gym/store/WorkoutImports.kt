@@ -700,6 +700,12 @@ class WorkoutImports(private val engine: Engine) {
         dismissResolvedNotices()
     }
 
+    fun discardedWorkout(id: String): Boolean = engine.read(scope) { reader ->
+        reader.devices(journalPrefix).values.any { journal -> journal["items"]?.obj().orEmpty().values.any { item ->
+            item["id"] == Json.of(id) && item["kind"] in setOf(Json.of("finished"), Json.of("start")) && item["state"] == Json.of("discarded")
+        } }
+    }
+
     fun discardRefusal(id: String) { engine.commit(scope) { context ->
         val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
             val before = journal["items"]?.obj().orEmpty()

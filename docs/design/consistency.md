@@ -799,7 +799,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   |---|---|---|
   | `android-gym-signed-load-input-design` · resolved | 07, 10, 18 | Native keyboard minus entry is human-approved 2026-10-25; retain approved sizing and verify negative decimal entry. No app-level sign control. |
   | `android-gym-equipment-variants-design` | 08, 19, 20, 21 | Cable/kettlebell menu and icon states; preserve stored equipment and current presentation. |
-  | `android-gym-empty-finish-design` · approved | 14 | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) is ✅ Ready for dev, human-approved 2026-10-25. |
+  | `android-gym-empty-finish-design` · approved | 14 | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is ✅ Ready for dev, human-approved 2026-10-25. |
   | `android-gym-no-routine-picker-design` | 13 | Changes to the existing picker for an externally started workout without a routine. |
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
   | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |

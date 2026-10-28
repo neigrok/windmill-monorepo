@@ -1,0 +1,67 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 80
+            },
+            {
+              "reps": 8,
+              "weightKg": 80
+            },
+            {
+              "reps": 8,
+              "weightKg": 80
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "incline-dumbbell-press",
+          "sets": [
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    },
+    {
+      "name": "Bench reference",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 75
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "routine": 1,
+      "setsPerMovement": 1,
+      "weightKg": 75,
+      "reps": 8,
+      "daysAgo": 19,
+      "minutesAgo": 0
+    }
+  ]
+}

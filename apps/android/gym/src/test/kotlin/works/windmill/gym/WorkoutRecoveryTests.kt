@@ -1,5 +1,8 @@
 package works.windmill.gym
 
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
+
 import androidx.activity.ComponentDialog
 import org.robolectric.shadows.ShadowDialog
 import androidx.compose.runtime.DisposableEffect
@@ -248,11 +251,11 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Finish").performClick()
             awaitText("Ended early.")
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            compose.onNodeWithText("480").assertIsDisplayed()
+            compose.onAllNodesWithText("480 kg").onLast().assertIsDisplayed()
             compose.onNodeWithText("1 × 8 · 60 kg total").assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
-            awaitText("480")
-            compose.onNodeWithText("480").assertIsDisplayed()
+            awaitText("480 kg")
+            compose.onAllNodesWithText("480 kg").onLast().assertIsDisplayed()
             compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
             awaitText("60 × 8")
             compose.onNodeWithText("480 kg").assertIsDisplayed()
@@ -294,7 +297,7 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("Finish").performClick()
         awaitText("Ended early.")
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
-        compose.onNodeWithText("480").assertIsDisplayed()
+        compose.onAllNodesWithText("480 kg").onLast().assertIsDisplayed()
         val beforeRestore = room
         compose.runOnIdle {
             val snapshot = room.engine.snapshot()
@@ -302,8 +305,8 @@ class WorkoutRecoveryTests {
             room = EngineRoomFixture(tmp.root, firstScope, snapshot).apply { now = at; selected = "u1" }
         }
         restored.emulateSavedInstanceStateRestore()
-        awaitText("480")
-        compose.onNodeWithText("480").assertIsDisplayed()
+        awaitText("480 kg")
+        compose.onAllNodesWithText("480 kg").onLast().assertIsDisplayed()
         compose.runOnIdle { runBlocking {
             assertEquals(localId, room.training.session(localId)!!.session.id)
             assertEquals(listOf(setId), room.training.session(localId)!!.sets.map { it.id })

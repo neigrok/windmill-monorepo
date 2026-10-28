@@ -815,3 +815,52 @@ The acceptance packet attributes Sentry envelopes by Android SDK/release as well
 collector can receive another backend's probes during native verification. Exact owned resources
 are cleaned while evidence remains available. These checks add no production storage or telemetry
 framework. Both coordinated distributions and their compatibility cutoff remain pending.
+## Task 14 · Finish receipt and confirmed workout discard
+
+The receipt derives duration, count, equipment-aware volume and performed rows from the committed
+session snapshot. The three facts share one surface, and the receipt height includes its navigation
+inset. Optional review supplies only its personal record. The independent scroll body
+leaves the approved crowned Share and Done actions reachable, while native overflow opens the
+shared Material workout confirmation. The first signed-out receipt carries its phone-local Keep
+line; an empty workout uses the approved terminal over a title-only backdrop and Done returns to Routines.
+
+Keep opens ordinary sign-in. Explicit Share retains one request identity in Activity saved state,
+uses the product-neutral bounded sign-in attempt/result seam, waits for the account-data decision
+and connected account, then opens its owner-scoped chat using the saved attempt identity. The exit
+phase resumes after recreation. Replaying an older queued snapshot reopens that chat without a new
+entry event or another submission of an admitted request. A completed sign-in result
+retains its local user ID; both the final account and store seat must match it. Cancellation and superseding
+sign-in attempts retire that queued intent. Local admission failure leaves the seeded draft and the
+existing failure sentence; it does not schedule a send on a later unrelated sign-in. Another chat's
+running request continues independently.
+
+A restored receipt reads the current owner and replica locally before reconciling saved facts.
+A released local tombstone or retained import’s discarded journal marker proves absence offline;
+an account replica missing its first pull does not. Engine read revisions retry that lookup when local knowledge changes. Proven absence drops
+both receipt and pushed detail and opens the root Log. Cached detail is never evidence that a
+deleted workout still exists.
+
+Confirmed discard runs in the application scope. A prompt-identity guard prevents a stale second
+confirmation from starting another delete; an in-flight store job is shared for the same owner, opening replica, anonymous stance and
+workout. A same-user replica replacement invalidates the old confirmation. Accepted deletion remains accepted if later local publication fails. The receipt/dialog
+then closes onto The log. Expected refusal and unexpected failure retain separate outcomes and the
+static `gym.discard` boundary. An actual local durable-write failure dismisses the
+overlays onto the retained workout detail and its existing failure presentation. Discard requires
+no network response; the guarded removal gateway releases its exact local receipt for later sync.
+The existing engine keeps unpublished bound-workout intents in their causal order; deletion remains
+absent after restart and delivery. A deleted anonymous workout is absent from account adoption. The network-error proposal is
+withdrawn and is not a design prerequisite.
+
+The readiness fixture observes engine revisions before connecting, matching application composition.
+Its initial CI timeout cause remains unproven; the unchanged CI rerun and the complete root gym Debug
+run are green. Focused source checks cover receipt geometry, the empty terminal, phone-marker
+failure, cancellation and confirmed discard, the stable Share return through recreation, and the
+separate Keep action. Additional lifecycle checks freeze old saved state through an Android Parcel,
+restore a fresh engine/store after discard, cancel a Share exit before sign-in, replay completed and
+pending admissions, recover a failed draft write and reject replacement owners. Focused source
+verification passes 156 gym and 10 platform cases with zero failures, errors or skips; app Debug
+compilation passes. Native appearance comparison and local event/failure arrival remain pending.
+
+Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
+Its full-editor proposal shows the unit below a realistic signed load at narrow width and enlarged
+text. Human approval remains pending; that proposed layout is not implemented or marked production.

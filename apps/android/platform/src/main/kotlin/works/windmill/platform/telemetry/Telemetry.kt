@@ -59,7 +59,9 @@ object TelemetryPolicy {
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
                 "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
-                "session" -> mapOf("delete" to setOf("ok", "refused", "failed"), "fix" to setOf("ok", "refused", "failed"))
+                "log" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"))
+                "finish" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "keep" to setOf("ok"), "done" to setOf("ok"))
+                "session" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "delete" to setOf("ok", "refused", "failed"), "fix" to setOf("ok", "refused", "failed"))
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))
                 "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
@@ -73,8 +75,10 @@ object TelemetryPolicy {
                 "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
                 else -> emptyMap()
             }
-            val shown = properties["screen"] == "threads" && properties["action"] == "delete" &&
+            val shown = (properties["screen"] == "threads" && properties["action"] == "delete" ||
+                properties["screen"] in setOf("finish", "session", "log") && properties["action"] == "discard") &&
                 properties["state"] == "shown" && properties["outcome"] == null
+
             val valid = properties["outcome"] in actions[properties["action"]].orEmpty()
             val allowed = if (shown) setOf("screen", "action", "state") else setOf("screen", "action", "outcome")
             return properties(properties.filterKeys { it in commonEventKeys || (valid || shown) && it in allowed })

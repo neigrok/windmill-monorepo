@@ -193,12 +193,14 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
         onDispose { lifecycleOwner.lifecycle.removeObserver(watcher) }
     }
 
+    val signInAttempts = rememberSaveable(saver = works.windmill.platform.SignInAttempts.Saver) { works.windmill.platform.SignInAttempts() }
     var youUp by rememberSaveable { mutableStateOf(false) }
     var signIn by rememberSaveable { mutableStateOf(false) }
     var about by rememberSaveable { mutableStateOf(false) }
     var aboutPage by remember { mutableIntStateOf(0) }
     LaunchedEffect(tileLaunchRevision) {
         if (tileLaunchRevision > 0) {
+            signInAttempts.cancel()
             youUp = false
             signIn = false
         }
@@ -211,7 +213,12 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
         }
     }
     val shell = remember {
-        ShellActions(openYou = { signIn = false; youUp = true }, openSignIn = { signIn = true; youUp = true })
+        ShellActions(
+            openYou = { signInAttempts.cancel(); signIn = false; youUp = true },
+            openSignIn = { signInAttempts.cancel(); signIn = true; youUp = true },
+            openSignInForResult = { id -> signInAttempts.begin(id); signIn = true; youUp = true },
+            signInAttempts = signInAttempts,
+        )
     }
     val gym = remember(runtime) { GymModule(runtime.gym.store, runtime.workoutNotifications) }
     val aboutLabel = stringResource(works.windmill.gym.R.string.onboarding_about)
@@ -256,7 +263,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
                             onPageSettled = { aboutPage = it })
                     }
-                    if (youUp && !about) YouSheet(auth, onDismiss = { youUp = false },
+                    if (youUp && !about) YouSheet(auth, onDismiss = { auth.status.user?.id?.let(signInAttempts::complete) ?: signInAttempts.cancel(); youUp = false },
                         destinations = shell.destinations + YouDestination("about_windmill", aboutLabel) { about = true },
                         startSignIn = signIn)
                     EngineAccountDecision(runtime)
@@ -269,6 +276,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
 @Composable
 private fun EngineAccountDecision(runtime: WindmillApplication) {
     val session = runtime.engineSession
+    val signInAttempts = LocalShellActions.current.signInAttempts
     val sync by session.engine.status.state.collectAsState()
     val uri = LocalUriHandler.current
     val update = LocalClientUpdateDestination.current
@@ -303,6 +311,7 @@ private fun EngineAccountDecision(runtime: WindmillApplication) {
         }
         fun cancelSignIn() {
             if (session.decisionBusy) return
+            signInAttempts.cancel()
             scope.launch { session.cancel() }
         }
         if (confirmingDiscard) AlertDialog(onDismissRequest = ::cancelDiscard,
