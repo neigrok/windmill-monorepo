@@ -601,3 +601,8 @@ deployment-workflow checks and YAML parsing pass; the admission regression compa
 probe headers with the current registries. CI 40659885808 passes the five Postgres targets and
 479 deployment-conformance cases before the obsolete readiness header refuses, so the workflow
 repair changes neither server validation nor the held production cutoff.
+
+Android's generated-schema composition check explicitly expects minimum 9. Its seven-case class
+passes with zero failures/errors/skips. CI 40659886043 passed 1,599 of 1,600 sync-testing cases and
+failed only this obsolete minimum-4 assertion; the long property run completed rather than timing
+out. Deliberate older-client and probe fixtures retain their original versions.
