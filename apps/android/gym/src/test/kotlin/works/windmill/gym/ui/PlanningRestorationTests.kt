@@ -211,10 +211,10 @@ class PlanningRestorationTests {
             }
             compose.onNodeWithText("Chin Up").performClick()
             compose.onNodeWithContentDescription("Sets target").performTextReplacement("")
-            compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled().performClick()
+            compose.onNodeWithContentDescription(bandAssistedSignDescription).assertIsNotEnabled().performClick()
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
-            compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled()
+            compose.onNodeWithContentDescription(bandAssistedSignDescription).assertIsNotEnabled()
             compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
             compose.onNodeWithContentDescription("Set 1 load").assertTextEquals("−10")
             compose.onNodeWithContentDescription("Set 2 load").assertTextEquals("−5")

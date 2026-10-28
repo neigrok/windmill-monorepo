@@ -14,6 +14,17 @@ Shared native controls (`NumberStepper`, `DeleteSwipeRow`, FABs, error buttons a
 product events or persistence boundaries. Their consumers own validation, write failures and
 content-free flow events. Changed/unchanged/refused edit results only control local feedback and
 IME completion; raw number text and refusal content are not sent by the components.
+The rack and Fix set validate native number buffers locally. Expected syntax and range refusals
+produce no issue or event. Accepted rack edits retain the `gym.editRack` unexpected-failure boundary;
+Fix set retains `gym.fixSet`. A successful explicit Log set still emits one `gym_set_logged` and
+no haptic. A failed controls write keeps the existing recovery sentence visible; automatic editor
+cleanup does not report the same failed storage again. Numeric input, selected text and refusal
+sentences never become telemetry properties.
+Task 07's local API 37 probes each deliver one sanitized `gym.editRack` Issue and one
+`client_error`; automatic editor cleanup emits no duplicate. The recovered store accepts another
+step/set and finishes. Five committed sets across four sessions match five log events and four
+start/finish events. Two transient hello/unreachable results recover with cause unproven. This is
+local collector/intake evidence; no hosted delivery claim is made.
 
 ## Deletion actions
 

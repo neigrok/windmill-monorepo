@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -97,9 +98,9 @@ class LoggerPagerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, heavier = true).use { room ->
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
-            compose.onNode(hasContentDescription("one rep more")).performClick()
-            compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Increase Reps")).performClick()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
             val y = compose.onNodeWithText("Bench Press").fetchSemanticsNode().boundsInRoot.center.y -
@@ -122,8 +123,8 @@ class LoggerPagerTests {
                 up()
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsEnabled()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
 
@@ -162,7 +163,7 @@ class LoggerPagerTests {
         try { logger(scope).use { room ->
             val log = compose.onNodeWithText("Log set")
             val button = log.fetchSemanticsNode().boundsInRoot
-            val weight = compose.onNode(hasContentDescription("Weight 82.5 kg"))
+            val weight = compose.onNode((hasContentDescription("Load, kg") and hasText("82.5")))
                 .fetchSemanticsNode().boundsInRoot
 
             log.performTouchInput {
@@ -173,7 +174,7 @@ class LoggerPagerTests {
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
             log.assertIsNotEnabled()
             assertEquals(button, log.fetchSemanticsNode().boundsInRoot)
-            assertEquals(weight, compose.onNode(hasContentDescription("Weight 82.5 kg"))
+            assertEquals(weight, compose.onNode((hasContentDescription("Load, kg") and hasText("82.5")))
                 .fetchSemanticsNode().boundsInRoot)
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.exerciseId)
@@ -215,7 +216,7 @@ class LoggerPagerTests {
                 assertEquals(sets, room.store.sets)
             }
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
-            compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
             compose.onNodeWithText("Log set").assertIsEnabled()
         } } finally { scope.cancel() }
@@ -226,9 +227,9 @@ class LoggerPagerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, benchTarget = SetTarget(5, 20.0), rowTarget = SetTarget(5, 20.0)).use { room ->
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
-            compose.onNode(hasContentDescription("one rep more")).performClick()
-            compose.onNode(hasContentDescription("Weight 22.5 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Increase Reps")).performClick()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("22.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
             val y = compose.onNodeWithText("Bench Press").fetchSemanticsNode().boundsInRoot.center.y -
@@ -245,15 +246,15 @@ class LoggerPagerTests {
                 up()
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode(hasContentDescription("Weight 22.5 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("22.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             compose.onNodeWithText("Bench Press").performTouchInput {
                 swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
-            compose.onNode(hasContentDescription("Weight 20 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("20"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -267,16 +268,16 @@ class LoggerPagerTests {
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
             compose.onNode(hasContentDescription("Set 1, current, target 60 kg, 8 reps")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Weight 60 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 8")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("60"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("8"))).assertIsDisplayed()
             compose.onNode(hasContentDescription("Exercise 2 of 2")).assertIsDisplayed()
 
             compose.onNodeWithText("Barbell Row").performTouchInput {
                 swipeRight(startX = width * 0.1f, endX = width * 0.9f)
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode(hasContentDescription("Weight 82.5 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("82.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -286,7 +287,7 @@ class LoggerPagerTests {
     fun aVerticalStrokeScrollsOnlyTheLedgerAndAHorizontalOneWalks() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
             val head = compose.onNodeWithText("Bench Press").assertIsDisplayed().getBoundsInRoot()
             val initial = ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
             assertTrue("the ledger overflows",

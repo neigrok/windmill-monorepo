@@ -24,12 +24,19 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.unit.width
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextReplacement
@@ -48,6 +55,106 @@ import org.robolectric.annotation.Config
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NumberStepperTests {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun newFocusStartsAfterTheValueAndAccessibilityStepsShareAcceptedFeedback() {
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val feedback = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { sensations += hapticFeedbackType }
+        }
+        compose.setContent {
+            var text by remember { mutableStateOf("-12.5") }
+            CompositionLocalProvider(LocalHapticFeedback provides feedback) {
+                GymMaterial {
+                    NumberStepper(text, { text = it }, "Load", "kg added", onStep = {
+                        text = if (it == NumberStep.Increase) "-11.5" else "-12.5"
+                        NumberEditResult.Changed
+                    }, onCommit = { NumberEditResult.Unchanged }, input = NumberStepperInput.SignedDecimal)
+                }
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg added")
+        field.performClick()
+        assertEquals(TextRange(5), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(1, 4, false) }
+        field.performTextReplacement("-499.99")
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 5, false) }
+        assertEquals(TextRange(2, 5), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        for (name in listOf("Decrease Load", "Increase Load")) {
+            val bounds = compose.onNodeWithContentDescription(name).getBoundsInRoot()
+            assertEquals(48.dp, bounds.width)
+            assertEquals(48.dp, bounds.height)
+        }
+        val actions = field.fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Decrease", "Increase"), actions.map { it.label })
+        compose.runOnIdle { assertTrue(actions.last().action()) }
+        field.assertTextEquals("Load", "kg added", "-11.5")
+        compose.runOnIdle { assertTrue(actions.first().action()) }
+        field.assertTextEquals("Load", "kg added", "-12.5")
+        compose.runOnIdle { assertEquals(List(2) { HapticFeedbackType.TextHandleMove }, sensations) }
+        field.performImeAction()
+        field.performClick()
+        assertEquals(TextRange(5), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+    }
+
+    @Test fun changedNumeralsStayInsideTheirFieldAndFinishBeforeTheFlash() {
+        lateinit var view: View
+        fun picture(): Bitmap = compose.runOnIdle {
+            Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
+        }
+        fun frames(count: Int) = repeat(count) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+        }
+        val text = mutableStateOf("82.5")
+        val target = mutableStateOf("85")
+        val reduced = mutableStateOf(false)
+        compose.setContent {
+            view = LocalView.current
+            GymMaterial {
+                NumberStepper(text.value, { text.value = it }, "Load", "kg", onStep = {
+                    text.value = target.value
+                    NumberEditResult.Changed
+                }, onCommit = { NumberEditResult.Unchanged }, size = NumberStepperSize.Display,
+                    reducedMotion = reduced.value, hapticsEnabled = false)
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        for (reduceMotion in listOf(false, true)) for ((from, to) in listOf("82.5" to "85", "85" to "-102.5", "-102.5" to "85")) {
+            compose.runOnIdle { text.value = from; target.value = to; reduced.value = reduceMotion }
+            compose.mainClock.advanceTimeBy(400)
+            val oldBounds = field.fetchSemanticsNode().boundsInRoot
+            val buttonBounds = listOf("Decrease Load", "Increase Load").map {
+                compose.onNodeWithContentDescription(it).fetchSemanticsNode().boundsInRoot
+            }.toMutableList()
+            val before = picture()
+            compose.mainClock.autoAdvance = false
+            val action = field.fetchSemanticsNode().config[SemanticsActions.CustomActions].last()
+            compose.runOnIdle { assertTrue(action.action()) }
+            frames(7)
+            val bounds = field.fetchSemanticsNode().boundsInRoot
+            buttonBounds += listOf("Decrease Load", "Increase Load").map {
+                compose.onNodeWithContentDescription(it).fetchSemanticsNode().boundsInRoot
+            }
+            val during = picture()
+            for (y in 0 until minOf(before.height, during.height)) for (x in 0 until before.width) {
+                if ((x < minOf(oldBounds.left, bounds.left) || x >= maxOf(oldBounds.right, bounds.right)) &&
+                    buttonBounds.none { x >= it.left && x < it.right && y >= it.top && y < it.bottom })
+                    assertEquals("$from → $to, reduced=$reduceMotion: numeral escaped at $x,$y",
+                        before.getPixel(x, y), during.getPixel(x, y))
+            }
+            frames(7)
+            val changed = picture()
+            frames(2)
+            val settled = picture()
+            assertEquals(changed.width, settled.width)
+            assertEquals(changed.height, settled.height)
+            assertTrue("$from → $to, reduced=$reduceMotion: numeral still moving during the settled flash",
+                changed.sameAs(settled))
+            field.assertTextEquals("Load", "kg", to)
+            compose.mainClock.autoAdvance = true
+            compose.mainClock.advanceTimeBy(400)
+        }
+    }
 
     @Test fun rawInputStaysWithTheOwnerAndOnlyAcceptedCommitsTick() {
         val drafts = mutableListOf<String>()

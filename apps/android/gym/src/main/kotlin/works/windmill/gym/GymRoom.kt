@@ -389,7 +389,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         receipts = receipts + (door to receipts[door].orEmpty() + line)
     }
 
-    val live = store.session != null
+    val liveSession = store.session
+    val live = liveSession != null
     val screen = when {
         reviewing != null -> "proposal"
         finished != null -> "finish"
@@ -612,6 +613,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             when (val ended = store.finish()) {
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
+                    sessionStates.removeState("workout:${ended.detail.session.id}")
                     haptics.finished()
                     away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail))
                     pruneReceipts()
@@ -972,12 +974,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 // otherwise count the navigation bar twice and leave a gap above the keys.
                 Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
                     when {
-                        live && standing == null -> LoggerScreen(
-                            store = store,
-                            say = { note = it },
-                            onFinish = { close() },
-                            transient = transient,
-                        )
+                        liveSession != null && standing == null -> sessionStates.SaveableStateProvider("workout:${liveSession.id}") {
+                            LoggerScreen(
+                                store = store,
+                                say = { note = it },
+                                onFinish = { close() },
+                                transient = transient,
+                            )
+                        }
                         // A day being built outranks a tab and nothing else, and it covers the rail.
                         building != null -> RoutineBuilder(
                             draft = building!!,

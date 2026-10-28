@@ -3,15 +3,8 @@ package works.windmill.gym.ui
 import android.animation.ValueAnimator
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -51,8 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.FirstBaseline
@@ -64,10 +58,13 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
@@ -85,6 +82,26 @@ enum class NumberStepperSize { Regular, Display }
 enum class NumberStepperInput { Count, SignedDecimal }
 enum class NumberStep { Decrease, Increase }
 enum class NumberEditResult { Changed, Unchanged, Refused }
+
+class NumberStepperFeedback(private val tick: () -> Unit) {
+    var revision by mutableIntStateOf(0)
+        private set
+    var direction by mutableStateOf(NumberStep.Increase)
+        private set
+
+    fun accept(result: NumberEditResult, step: NumberStep = NumberStep.Increase, haptics: Boolean = true) {
+        if (result != NumberEditResult.Changed) return
+        direction = step
+        revision += 1
+        if (haptics) tick()
+    }
+}
+
+@Composable
+fun rememberNumberStepperFeedback(): NumberStepperFeedback {
+    val haptics = rememberGymHaptics()
+    return remember(haptics) { NumberStepperFeedback(haptics::ticked) }
+}
 
 private enum class NumberFieldLayout { Inline, UnitBelow, FullWidth }
 
@@ -107,27 +124,47 @@ fun NumberStepper(
     commitEnabled: Boolean = true,
     hapticsEnabled: Boolean = true,
     reducedMotion: Boolean = !ValueAnimator.areAnimatorsEnabled(),
+    feedback: NumberStepperFeedback = rememberNumberStepperFeedback(),
+    onFocusChange: (Boolean) -> Unit = {},
 ) {
     val skin = LocalGymColors.current
-    val haptics = rememberGymHaptics()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    var change by remember { mutableIntStateOf(0) }
+    var hadFocus by remember { mutableStateOf(false) }
+    var editor by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     var flash by remember { mutableStateOf(false) }
-    var direction by remember { mutableStateOf(NumberStep.Increase) }
+    val motion = remember { Animatable(1f) }
     var focusedLayout by remember { mutableStateOf(NumberFieldLayout.Inline) }
-    fun feedback(result: NumberEditResult) {
-        if (result != NumberEditResult.Changed) return
-        flash = true
-        change += 1
-        if (hapticsEnabled) haptics.ticked()
+    SideEffect {
+        if (editor.text != value) editor = editor.copy(text = value,
+            selection = TextRange(editor.selection.start.coerceAtMost(value.length), editor.selection.end.coerceAtMost(value.length)))
     }
-    LaunchedEffect(change) {
-        if (change == 0) return@LaunchedEffect
-        delay(300)
+    LaunchedEffect(focused) {
+        if (focused) editor = editor.copy(selection = TextRange(editor.text.length))
+        if (focused != hadFocus) {
+            hadFocus = focused
+            onFocusChange(focused)
+        }
+    }
+    LaunchedEffect(feedback.revision) {
+        if (feedback.revision == 0) return@LaunchedEffect
+        flash = true
+        val slide = !reducedMotion && !focused
+        if (slide) {
+            motion.snapTo(0f)
+            motion.animateTo(1f, tween(WindmillMotion.fastMs))
+        } else motion.snapTo(1f)
+        delay((300 - if (slide) WindmillMotion.fastMs else 0).toLong())
         flash = false
+    }
+    fun step(change: NumberStep): Boolean {
+        if (!enabled || (change == NumberStep.Decrease && !decreaseEnabled) ||
+            (change == NumberStep.Increase && !increaseEnabled)) return false
+        val result = onStep(change)
+        feedback.accept(result, change, hapticsEnabled)
+        return result != NumberEditResult.Refused
     }
     val inputInterceptor = remember(input) {
         PlatformTextInputInterceptor { request, next ->
@@ -184,13 +221,19 @@ fun NumberStepper(
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {
                 StepperButton(NumberStep.Decrease, label, enabled && decreaseEnabled) {
-                    direction = NumberStep.Decrease
-                    feedback(onStep(NumberStep.Decrease))
+                    step(NumberStep.Decrease)
                 }
                 InterceptPlatformTextInput(inputInterceptor) {
-                    BasicTextField(value, onValueChange, Modifier.semantics {
+                    BasicTextField(editor, { next ->
+                        editor = next
+                        if (next.text != value) onValueChange(next.text)
+                    }, Modifier.semantics {
                         contentDescription = "$label, $unit"
                         refusal?.let { error(it) }
+                        customActions = listOf(
+                            CustomAccessibilityAction("Decrease") { step(NumberStep.Decrease) },
+                            CustomAccessibilityAction("Increase") { step(NumberStep.Increase) },
+                        )
                     }, enabled = enabled, singleLine = true, textStyle = valueStyle,
                         interactionSource = interaction, cursorBrush = SolidColor(skin.accent),
                         keyboardOptions = KeyboardOptions(keyboardType = if (input == NumberStepperInput.Count) KeyboardType.Number else KeyboardType.Decimal,
@@ -198,7 +241,7 @@ fun NumberStepper(
                         keyboardActions = KeyboardActions(onDone = {
                             if (!enabled || !commitEnabled) return@KeyboardActions
                             val result = onCommit()
-                            feedback(result)
+                            feedback.accept(result, haptics = hapticsEnabled)
                             if (result != NumberEditResult.Refused) {
                                 keyboard?.hide()
                                 focusManager.clearFocus()
@@ -217,17 +260,13 @@ fun NumberStepper(
                                     Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp),
                                         color = if (focused || flash) skin.accent else skin.inkDim)
                                     Layout(content = {
-                                        Box {
-                                            Box(Modifier.fillMaxWidth().alpha(if (animateValue && flash) 0f else 1f)) { innerTextField() }
-                                            if (animateValue) {
-                                                AnimatedContent(value, modifier = Modifier.clearAndSetSemantics {}, label = "Number change",
-                                                    transitionSpec = {
-                                                        if (!flash) return@AnimatedContent EnterTransition.None togetherWith ExitTransition.None
-                                                        val sign = if (direction == NumberStep.Increase) 1 else -1
-                                                        (slideInVertically(tween(WindmillMotion.fastMs)) { it / 4 * sign } + fadeIn()) togetherWith
-                                                            (slideOutVertically(tween(WindmillMotion.fastMs)) { -it / 4 * sign } + fadeOut())
-                                                    }) { shown -> Text(shown, Modifier.alpha(if (flash) 1f else 0f), style = valueStyle, maxLines = 1) }
-                                            }
+                                        Box(Modifier.clipToBounds()) {
+                                            Box(Modifier.fillMaxWidth().graphicsLayer {
+                                                val progress = if (animateValue) motion.value else 1f
+                                                alpha = progress
+                                                translationY = (1f - progress) * valueStyle.fontSize.toPx() / 4 *
+                                                    (if (feedback.direction == NumberStep.Increase) 1 else -1)
+                                            }) { innerTextField() }
                                         }
                                         Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1)
                                     }) { children, limits ->
@@ -248,8 +287,7 @@ fun NumberStepper(
                         })
                 }
                 StepperButton(NumberStep.Increase, label, enabled && increaseEnabled) {
-                    direction = NumberStep.Increase
-                    feedback(onStep(NumberStep.Increase))
+                    step(NumberStep.Increase)
                 }
             }) { children, limits ->
                 val decrease = children[0].measure(Constraints.fixed(button, button))
@@ -285,7 +323,7 @@ private fun StepperButton(step: NumberStep, label: String, enabled: Boolean, onC
             if (pressed) RoundedCornerShape(8.dp) else CircleShape))
         CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = ink,
             rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.08f))) {
-            IconButton(onClick, enabled = enabled, interactionSource = interaction,
+            IconButton(onClick, modifier = Modifier.size(48.dp), enabled = enabled, interactionSource = interaction,
                 colors = IconButtonDefaults.iconButtonColors(contentColor = LocalGymColors.current.ink)) {
                 Icon(painterResource(if (step == NumberStep.Decrease) R.drawable.gym_native_remove else R.drawable.gym_native_add),
                     "${if (step == NumberStep.Decrease) "Decrease" else "Increase"} $label", Modifier.size(24.dp))

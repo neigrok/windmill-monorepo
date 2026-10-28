@@ -68,7 +68,7 @@ class TargetSheetSignKeyTests {
         compose.onNodeWithContentDescription(description).fetchSemanticsNode()
             .config[SemanticsProperties.EditableText].text
 
-    private fun signKeys() = compose.onAllNodesWithContentDescription(KeypadEntry.signName)
+    private fun signKeys() = compose.onAllNodesWithContentDescription(bandAssistedSignDescription)
 
     @Test
     fun testTheSignKeyStandsOnEveryLoadFieldOfABodyweightMovementAndOnNoBarbell() {
@@ -134,8 +134,8 @@ class TargetSheetSignKeyTests {
                 .targeting("chin-up", List(3) { SetTarget(8, 20.0) }), "Chin Up")
 
             val sign = signKeys()[0].fetchSemanticsNode()
-            assertEquals(listOf(KeypadEntry.signName), sign.config[SemanticsProperties.ContentDescription])
-            assertEquals(KeypadEntry.signName, sign.config[SemanticsActions.OnClick].label)
+            assertEquals(listOf(bandAssistedSignDescription), sign.config[SemanticsProperties.ContentDescription])
+            assertEquals(bandAssistedSignDescription, sign.config[SemanticsActions.OnClick].label)
         } } finally { scope.cancel() }
     }
 

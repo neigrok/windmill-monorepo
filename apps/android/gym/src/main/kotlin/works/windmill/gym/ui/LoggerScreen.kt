@@ -2,26 +2,21 @@ package works.windmill.gym.ui
 
 import works.windmill.platform.design.WindmillSheetBack
 import works.windmill.platform.design.WindmillSheetWindow
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -34,19 +29,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.ripple.RippleAlpha
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
@@ -54,6 +50,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -78,7 +78,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.layout
@@ -92,9 +91,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.width
@@ -113,20 +110,20 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.Blocker
+import works.windmill.gym.domain.WorkoutChange
+import works.windmill.gym.domain.NumberEntry
+import works.windmill.gym.domain.LoggedSetLimits
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.design.WindmillMotion
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 // A pinned head and a scrolling set ledger above a fixed rack. All loads remain kilograms.
 private sealed class LoggerSheet {
-    data object Weight : LoggerSheet()
-    data object Reps : LoggerSheet()
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Fix(val setId: String) : LoggerSheet()
@@ -134,16 +131,12 @@ private sealed class LoggerSheet {
 
 private val loggerSheetSaver = Saver<LoggerSheet?, String>(
     save = { when (it) {
-        LoggerSheet.Weight -> "weight"
-        LoggerSheet.Reps -> "reps"
         LoggerSheet.Assembly -> "assembly"
         LoggerSheet.Picker -> "picker"
         is LoggerSheet.Fix -> "fix:${it.setId}"
         else -> ""
     } },
     restore = { when {
-        it == "weight" -> LoggerSheet.Weight
-        it == "reps" -> LoggerSheet.Reps
         it == "assembly" -> LoggerSheet.Assembly
         it == "picker" -> LoggerSheet.Picker
         it.startsWith("fix:") -> LoggerSheet.Fix(it.removePrefix("fix:"))
@@ -166,6 +159,10 @@ fun LoggerScreen(
     val reps = store.rack?.reps ?: store.prefill.reps
     val pickerState = rememberMovementPickerState()
     var sheet by rememberSaveable(stateSaver = loggerSheetSaver) { mutableStateOf<LoggerSheet?>(null) }
+    val rackOwner = store.accountKey
+    val rackSession = store.session?.id
+    val rackMovement = store.exerciseId
+    var rackEditing by remember(rackOwner, rackSession, rackMovement) { mutableStateOf(false) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
     var goingTo by remember { mutableStateOf<String?>(null) }
@@ -217,7 +214,7 @@ fun LoggerScreen(
     }
 
     LaunchedEffect(sheet) {
-        store.editWorkout(sheet == LoggerSheet.Weight || sheet == LoggerSheet.Reps || sheet is LoggerSheet.Fix)
+        store.editWorkout(rackEditing || sheet is LoggerSheet.Fix)
     }
 
     LaunchedEffect(Unit) {
@@ -293,11 +290,13 @@ fun LoggerScreen(
         navigation = { TopAction("Finish", enabled = store.canFinish, onClick = onFinish) },
         actions = { Spacer(Modifier.size(48.dp)) },
     ) {
+      BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+      val rackMaxHeight = maxHeight
       Column(Modifier.fillMaxSize()
           .scrollable(
               state = pager,
               orientation = Orientation.Horizontal,
-              enabled = movement != null && order.size > 1 && sheet == null && goingTo == null,
+              enabled = movement != null && order.size > 1 && sheet == null && goingTo == null && !rackEditing,
               reverseDirection = direction == LayoutDirection.Ltr,
               flingBehavior = fling,
               interactionSource = bodyDrag,
@@ -387,14 +386,21 @@ fun LoggerScreen(
                 .onSizeChanged { size -> transientHeight = with(density) { size.height.toDp() } }) }
         }
         Rack(
+            draftKey = "${store.accountKey}:${store.session?.id}:$movement",
+            modifier = Modifier.heightIn(max = rackMaxHeight),
             weightKg = weightKg,
             reps = reps,
             finishing = store.isFinishing || store.workoutFailure != null,
+            failure = store.workoutFailure,
             enabled = ready,
-            onWeight = { store.editRack(it, reps) },
-            onReps = { store.editRack(weightKg, it) },
-            onTypeWeight = { store.editWorkout(true); sheet = LoggerSheet.Weight },
-            onTypeReps = { store.editWorkout(true); sheet = LoggerSheet.Reps },
+            onChange = store::editRack,
+            onEdit = { active ->
+                if (store.accountKey == rackOwner && store.session?.id == rackSession && store.exerciseId == rackMovement &&
+                    rackEditing != active) {
+                    rackEditing = active
+                    store.editWorkout(active || sheet is LoggerSheet.Fix)
+                }
+            },
             onLog = {
                 val offer = store.notification.value?.offer
                 if (offer == null) say(store.workoutFailure ?: "Check the weight and reps before logging.")
@@ -405,6 +411,7 @@ fun LoggerScreen(
                 }
             },
         )
+      }
       }
     }
 
@@ -422,14 +429,6 @@ fun LoggerScreen(
             WindmillSheetWindow()
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
-                LoggerSheet.Weight -> KeypadSheet(
-                    KeypadEntry.Mode.Weight, weightKg,
-                    onCommit = { if (store.editRack(it, reps) is works.windmill.gym.domain.WorkoutChange.Saved) close() },
-                )
-                LoggerSheet.Reps -> KeypadSheet(
-                    KeypadEntry.Mode.Reps, reps.toDouble(),
-                    onCommit = { if (store.editRack(weightKg, it.toInt()) is works.windmill.gym.domain.WorkoutChange.Saved) close() },
-                )
                 LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,
                                                   store.catalog, store.exerciseId, store.stalled),
@@ -772,147 +771,104 @@ private fun PlannedRow(slot: LiveLines.Slot.Planned, columns: LedgerColumns) {
     )
 }
 
-// The reach band: what is pressed forty times and its dials, and nothing else. It never scrolls and
-// never shrinks.
 @Composable
 private fun Rack(
+    draftKey: String,
     weightKg: Double,
     reps: Int,
     finishing: Boolean,
+    failure: String?,
     enabled: Boolean,
-    onWeight: (Double) -> Unit,
-    onReps: (Int) -> Unit,
-    onTypeWeight: () -> Unit,
-    onTypeReps: () -> Unit,
+    onChange: (Double, Int) -> WorkoutChange,
+    onEdit: (Boolean) -> Unit,
     onLog: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val skin = LocalGymColors.current
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg)
+    val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
+    val loadFeedback = rememberNumberStepperFeedback()
     val panel = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    // A raised panel whose teal top edge fades down the corners: the rack is where the set in hand is
-    // edited, and the ledger's current row points down at it.
     val edge = with(LocalDensity.current) { Brush.verticalGradient(listOf(skin.accent, Color.Transparent), endY = 24.dp.toPx()) }
-    Column(Modifier.fillMaxWidth()
-        .clip(panel)
-        .background(skin.surface)
-        .border(1.dp, edge, panel)
+    DisposableEffect(draftKey) { onDispose { if (load.focused || count.focused) onEdit(false) } }
+
+    fun save(loadValue: Double, repsValue: Int, field: NumberDraft): NumberEditResult {
+        if (!enabled || finishing) return NumberEditResult.Refused
+        if (loadValue == load.committed && repsValue.toDouble() == count.committed) {
+            load.accept(loadValue)
+            count.accept(repsValue.toDouble())
+            return NumberEditResult.Unchanged
+        }
+        return when (val result = onChange(loadValue, repsValue)) {
+            WorkoutChange.Saved -> {
+                val changed = load.accept(loadValue) == NumberEditResult.Changed
+                val repsChanged = count.accept(repsValue.toDouble()) == NumberEditResult.Changed
+                if (changed || repsChanged) NumberEditResult.Changed else NumberEditResult.Unchanged
+            }
+            WorkoutChange.Stale -> field.refuse("The workout changed. Check the current set.")
+            is WorkoutChange.Unavailable -> field.refuse(result.reason)
+        }
+    }
+    fun commit(field: NumberDraft): NumberEditResult {
+        val loadValue = load.read() ?: return NumberEditResult.Refused
+        val repsValue = count.read() ?: return NumberEditResult.Refused
+        return save(loadValue, repsValue.toInt(), field)
+    }
+    fun stepLoad(step: NumberStep, big: Boolean): NumberEditResult {
+        val loadValue = load.read() ?: return NumberEditResult.Refused
+        val repsValue = count.read() ?: return NumberEditResult.Refused
+        return save(Ladder.bump(loadValue, if (step == NumberStep.Increase) 1 else -1, big), repsValue.toInt(), load)
+    }
+    Column(modifier.fillMaxWidth().clip(panel).background(skin.surface).border(1.dp, edge, panel)
+        .testTag("Numeric rack").verticalScroll(rememberScrollState())
         .padding(horizontal = GymLayout.gutter, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(Modifier.heightIn(min = 112.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center) {
-            Text("Weight", style = WindmillFont.body(14), color = skin.inkDim,
-                modifier = Modifier.clearAndSetSemantics {})
-            WeightReadout(weightKg, enabled, onTypeWeight)
-        }
-        LadderRow(weightKg, onDial = onWeight, enabled = enabled && !finishing)
-        RepsRow(reps, enabled, onDial = onReps, onType = onTypeReps)
-        LogButton(finishing, enabled, onLog)
-    }
-}
-
-// −102.5 is the widest this readout holds, and it shrinks rather than truncating. The numeral and
-// its unit are one node: the tap raises the rack's own keypad, never the system keyboard.
-@Composable
-private fun WeightReadout(weightKg: Double, enabled: Boolean, onType: () -> Unit) {
-    val skin = LocalGymColors.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(WindmillRadius.md))
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "type a weight", onClick = onType)
-            .semantics(mergeDescendants = true) { contentDescription = "Weight ${Readout.weight(weightKg)} kg" }
-            .padding(horizontal = WindmillSpace.x2),
-        horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        BasicText(
-            Readout.weight(weightKg),
-            maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 40.sp, maxFontSize = 96.sp),
-            style = GymType.weight.copy(fontSize = 96.sp, lineHeight = 92.sp, color = skin.weightInk),
-            modifier = Modifier.weight(1f, fill = false).lineBox(92.sp).alignByBaseline(),
-        )
-        Text("kg", style = WindmillFont.body(18, FontWeight.Bold), color = skin.inkDim,
-             modifier = Modifier.alignByBaseline())
-    }
-}
-
-// Four EQUAL pills whose labels are the golden's, by weight band — never a fixed ±1/±5.
-@Composable
-internal fun LadderRow(weightKg: Double, onDial: (Double) -> Unit, enabled: Boolean = true) {
-    val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
-        Ladder.labels(weightKg).forEachIndexed { index, label ->
-            val big = index == 0 || index == 3
-            val interaction = remember { MutableInteractionSource() }
-            val shape = RoundedCornerShape(16.dp)
-            Box(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 56.dp)
-                    .pressed(interaction)
-                    .clip(shape)
-                    .background(skin.raised)
-                    .clickable(
-                        enabled = enabled,
-                        interactionSource = interaction,
-                        indication = LocalIndication.current,
-                        role = Role.Button,
-                        onClickLabel = "change the weight by $label",
-                    ) {
-                        onDial(Ladder.bump(weightKg, direction = if (index < 2) -1 else 1, big = big))
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, style = WindmillFont.body(16, FontWeight.Bold), color = if (enabled) skin.ink else skin.inkDim, maxLines = 1)
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberStepper(load.text, load::edit, "Load", "kg",
+            onStep = { stepLoad(it, false) }, onCommit = { commit(load) },
+            size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
+            refusal = load.refusal ?: failure, enabled = enabled && !finishing, feedback = loadFeedback,
+            onFocusChange = { load.focus(it); onEdit(load.focused || count.focused) })
+        LadderRow(load.reading.value ?: load.committed, onDial = { step, big -> loadFeedback.accept(stepLoad(step, big), step) },
+            enabled = enabled && !finishing)
+        NumberStepper(count.text, count::edit, "Reps", "reps",
+            onStep = { step ->
+                val loadValue = load.read()
+                val repsValue = count.read()
+                if (loadValue == null || repsValue == null) NumberEditResult.Refused
+                else save(loadValue, Ladder.bumpReps(repsValue.toInt(), if (step == NumberStep.Increase) 1 else -1)
+                    .coerceAtMost(LoggedSetLimits.maxReps), count)
+            }, onCommit = { commit(count) }, refusal = count.refusal, enabled = enabled && !finishing,
+            decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble(),
+            onFocusChange = { count.focus(it); onEdit(load.focused || count.focused) })
+        LogButton(finishing, enabled) {
+            if (commit(if (count.focused) count else load) != NumberEditResult.Refused) {
+                focus.clearFocus()
+                keyboard?.hide()
+                onEdit(false)
+                onLog()
             }
         }
     }
 }
 
-// The number and both adjustments retain separate native touch targets.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RepsRow(reps: Int, enabled: Boolean, onDial: (Int) -> Unit, onType: () -> Unit) {
+internal fun LadderRow(weightKg: Double, onDial: (NumberStep, Boolean) -> Unit, enabled: Boolean = true) {
     val skin = LocalGymColors.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Reps", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.weight(1f))
-        RepCircle(removeGlyph, "one rep fewer", enabled) { onDial(Ladder.bumpReps(reps, direction = -1)) }
-        Box(
-            Modifier
-                .widthIn(min = 72.dp)
-                .clip(RoundedCornerShape(WindmillRadius.md))
-                .clickable(enabled = enabled, role = Role.Button, onClickLabel = "type the reps", onClick = onType)
-                .semantics(mergeDescendants = true) { contentDescription = "Reps $reps" },
-            contentAlignment = Alignment.Center,
-        ) {
-            AnimatedContent(
-                targetState = reps,
-                transitionSpec = { fadeIn(tween(WindmillMotion.fastMs)) togetherWith fadeOut(tween(WindmillMotion.fastMs)) },
-                label = "reps",
-            ) { count ->
-                Text(count.toString(), style = GymType.numeral(36, FontWeight.Bold), color = skin.ink, maxLines = 1,
-                     modifier = Modifier.heightIn(min = 48.dp))
+    CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = skin.ink,
+        rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.12f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WindmillSpace.x2)) {
+            Ladder.labels(weightKg).forEachIndexed { index, label ->
+                FilledTonalButton(
+                    onClick = { onDial(if (index < 2) NumberStep.Decrease else NumberStep.Increase, index == 0 || index == 3) },
+                    enabled = enabled, modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                    contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
+                ) { Text(label, style = WindmillFont.body(16, FontWeight.Bold), maxLines = 1) }
             }
         }
-        RepCircle(Icons.Filled.Add, "one rep more", enabled) { onDial(Ladder.bumpReps(reps, direction = 1)) }
-    }
-}
-
-@Composable
-private fun RepCircle(glyph: ImageVector, said: String, enabled: Boolean, onTap: () -> Unit) {
-    val skin = LocalGymColors.current
-    val interaction = remember { MutableInteractionSource() }
-    FilledIconButton(
-        onClick = onTap,
-        enabled = enabled,
-        interactionSource = interaction,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.size(GymTap.primary).pressed(interaction),
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = skin.raised,
-            contentColor = skin.ink,
-        ),
-    ) {
-        Icon(glyph, contentDescription = said, modifier = Modifier.size(28.dp))
     }
 }
 
@@ -934,41 +890,12 @@ private fun LogButton(finishing: Boolean, enabled: Boolean, onLog: () -> Unit) {
     }
 }
 
-// A display numeral stands in exactly the line box its style names — 72 sp for the weight, 60 for
-// the reps — so the rack's height is arithmetic. The text engine will not do this itself: a
-// `lineHeight` under the face's own 1.17 em is measured at the face's height whatever
-// `LineHeightStyle` asks, so the box is laid out here and the glyphs sit centred in it. Digits have
-// no descenders and the face's headroom is wider than what is cut, so nothing is clipped; the
-// baseline still rides through for `kg`.
-private fun Modifier.lineBox(height: TextUnit): Modifier = layout { measurable, constraints ->
-    val text = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
-    val box = height.roundToPx()
-    layout(text.width, box) { text.placeRelative(0, (box - text.height) / 2) }
-}
-
-// A pressed control settles to 0.96 and back; nothing bounces.
-@Composable
-private fun Modifier.pressed(interaction: MutableInteractionSource): Modifier {
-    val down by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (down) 0.96f else 1f,
-        tween(WindmillMotion.fastMs, easing = WindmillMotion.easeSoft),
-        label = "press",
-    )
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }
-}
-
 // Material paths for the two glyphs outside the core icon artifact.
 private fun glyph(name: String, path: String): ImageVector =
     ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp,
                         viewportWidth = 24f, viewportHeight = 24f)
         .addPath(pathData = PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))
         .build()
-
-private val removeGlyph = glyph("Filled.Remove", "M19 13H5v-2h14v2z")
 
 private val cloudOffGlyph = glyph(
     "Outlined.CloudOff",

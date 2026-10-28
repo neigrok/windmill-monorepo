@@ -130,6 +130,12 @@ inactive tap opens Routines without starting anything. An active tap rechecks th
 before opening it. Routines requests clear read-only pushed navigation and preserve open drafts;
 each request is consumed once, including across activity recreation.
 
+The rack and Fix set keep native number input separate from committed values. IME Done and explicit
+Log set / Save fix validate the current buffer; plain blur or Cancel restores the committed value.
+`NumberEntry` owns signed/comma parsing and performed-set bounds, while `NumberStepper` owns the
+stable editor, accessibility actions and accepted-change feedback. Planned target fields retain
+separate domain rules. Focused number editing owns horizontal drag so it cannot page movements.
+
 App workouts start from a saved routine. Workouts received from another surface without a routine
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach

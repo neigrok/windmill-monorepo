@@ -10,12 +10,12 @@
   - `Android / Number stepper` `337:2514`: Default, Pressed, Changed, Focused
   - `Android / Keyboard` `337:2403`: Decimal
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Tapping the rack's load or reps opens `KeypadSheet` (`ui/KeypadSheet.kt:135`; opened at `ui/LoggerScreen.kt:466`, :470). Fix set opens the same sheet (`ui/FixSheet.kt:104`).
-  - Title *Weight* / *Reps* (`ui/KeypadSheet.kt:148`), keys `1 2 3 / 4 5 6 / 7 8 9 / ± 0 .` (:58) and *⌫* (:60), commit *Set weight* / *Set reps*. No system keyboard.
-  - Refusals: *One decimal point only.*, *That is not a number yet.*, *Over 500 kg — check the number.*, *Whole reps, 1 to {max}.* (:53-56), *Enter a number, or cancel to keep {w}* (:111).
-- The rack's load is a readout with *Weight* above (`ui/LoggerScreen.kt:860`) and *kg* beside (:891), `WeightReadout` (:873). Reps is `RepsRow` (:931) with 56 dp − / + and an `AnimatedContent` fade (:945).
-- Pressing scales to 0.96 (`Modifier.pressed`, :1009-1020). No haptic on any change.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- The rack and Fix set use the shared `ui/NumberStepper.kt`: an editable Display load, regular reps, 48 dp icon buttons and the existing 56 dp ladder. Load requests signed decimal input; reps requests whole-number input. There is no app keypad or extra sign control.
+- `domain/NumberEntry.kt` reads signed and comma-decimal input, checks the ±500 kg bound before half-away hundredth rounding, and retains the existing refusal sentences. Performed reps are whole numbers from 1 to 99; future planned-target consumers keep their own rules.
+- `ui/NumberDraft.kt` retains the raw buffer separately from its committed value. IME Done and explicit Log set / Save fix validate the buffer. Plain blur or Cancel restores the committed value. Invalid input stays visible and blocks submission. A Fix draft survives the temporary empty workout read during activity recreation, and a successful Finish discards that workout's saved UI state. Storage failure retains the existing recovery sentence after the keyboard closes.
+- A new focus places the caret after the current value. Further edits and the approved 04 overflow expansion preserve selection. The field exposes Increase / Decrease accessibility actions; its unit remains in its accessible name.
+- Accepted step or IME changes share one feedback path: a 300 ms accent flash, a clipped 150 ms motion of the existing editor layer, and one light haptic. Unchanged or refused edits do not tick. Explicit Log set stays silent.
 
 **Change**
 - Migrate load and reps to `NumberStepper` (04) on the rack and in Fix set. Replace `KeypadSheet` and its entry state with the approved native-keyboard flow, preserving signed decimal input and its refusal cases.
@@ -37,10 +37,17 @@
 
 **Done when**
 - Screenshots of 03.2, 03.10 and 03.11 match in Dark and Daylight; the rig (01) adds `03.2-load-keyboard-dark/light`, `03.10-rack-pressed-dark/light`, `03.11-rack-changed-dark/light`.
-- TalkBack adjusts both steppers (custom actions *Increase* / *Decrease*) and reads the unit. On the target emulator, verify the native minus key, negative decimal entry, editing and commit in rack, Fix set and combined editor; invalid text never replaces the last committed value. Capture small-height and large-font focus/error states against 09/18.
+- TalkBack adjusts both steppers (custom actions *Increase* / *Decrease*) and reads the unit. On the target emulator, verify the native minus key, negative decimal entry, editing and commit in the rack and Fix set; invalid text never replaces the last committed value. Capture small-height and large-font focus/error states with the approved 04 overflow behavior. Task 18 owns the combined editor integration and its native acceptance; reusable signed/comma/refusal and stepper contracts are covered here.
 - `gym_set_logged` is unchanged. A rack edit the store refuses still reports under `gym.editRack` only when unexpected.
 - Replace keypad-specific tests with equivalent NumberStepper/native sign-entry assertions and retain their refusal cases in domain tests; do not delete coverage before its replacement runs. Update Fix set, logger and haptic tests.
 
 **Depends on:** 04.
 
 **Ledger:** 11d; dogfood `android-gym-target-page`.
+
+**Verified:** API 37 `final3` captures cover all six Dark/Daylight boards. Native accessibility
+Increase/Decrease actions adjust both fields; spoken TalkBack is unverified. Fix draft/error/note
+restoration, 320 × 640 dp at 200% text, action reachability, correction readback and storage recovery
+are verified. Detailed native minus/decimal, reps refusal and Cancel evidence is retained in the
+unchanged `pilot3` entry paths. The [phase log](../docs/engineering/android-implementation.md)
+records exact APK/test provenance, local event/Issue delivery and evidence limits.

@@ -15,6 +15,17 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_transient_frame_delay_is_explicit_and_bounded(self):
+        scenario = {"board": "03.11", "name": "rack-changed", "account": "fixture", "settle": False}
+        for delay in [0, 180, 1000]:
+            capture.validate_scenarios([{**scenario, "frame_delay_ms": delay}])
+        for delay in [-1, 1001, 1.5, True, "180"]:
+            with self.subTest(delay=delay), self.assertRaises(ValueError):
+                capture.validate_scenarios([{**scenario, "frame_delay_ms": delay}])
+        for settle in [True, None]:
+            with self.subTest(settle=settle), self.assertRaises(ValueError):
+                capture.validate_scenarios([{**scenario, "settle": settle, "frame_delay_ms": 180}])
+
     def test_optional_fixture_retains_explicit_targets_and_rejects_other_configuration(self):
         self.assertIsNone(capture.read_fixture(None))
         fixture = {"exercises": [{"id": "ex_cafe0801", "name": "Landmine Press", "pattern": "press", "equipment": "barbell"}],
@@ -230,6 +241,40 @@ class DesignCaptureTests(unittest.TestCase):
         self.assertIs(raw, device.settle(notification_clock=True))
         self.assertEqual("00:02", raw[0].get("text"))
         self.assertEqual("00:02", raw[0].get("content-desc"))
+
+    def test_workout_settlement_preserves_numeric_input_other_packages_and_clock_layout(self):
+        def tree(clock, load="82.5", bounds="[0,0][100,40]", other="Workout time, 0:01"):
+            root = ET.Element("hierarchy")
+            for name in ("Workout time", "Since start", "Since last set"):
+                ET.SubElement(root, "node", {"package": capture.PACKAGE, "content-desc": name + ", " + clock, "bounds": bounds})
+            ET.SubElement(root, "node", {"package": capture.PACKAGE, "content-desc": "Load, kg", "text": load})
+            ET.SubElement(root, "node", {"package": "other.app", "content-desc": other})
+            return root
+        class Screens(capture.Device):
+            def __init__(self, trees):
+                self.trees = iter(trees)
+                self.calls = 0
+            def tree(self):
+                self.calls += 1
+                return next(self.trees)
+        raw = tree("0:02")
+        device = Screens([tree("0:01"), raw])
+        self.assertIs(raw, device.settle(workout_clock=True))
+        self.assertEqual(["Workout time, 0:02", "Since start, 0:02", "Since last set, 0:02"],
+                         [node.get("content-desc") for node in raw[:3]])
+        for changed in (tree("0:02", load="85"), tree("0:02", bounds="[0,0][101,40]"),
+                        tree("0:02", other="Workout time, 0:02"), tree("0:02", other="Weight, 0:02")):
+            later = ET.fromstring(ET.tostring(changed))
+            for node in later[:3]:
+                node.set("content-desc", node.get("content-desc").replace("0:02", "0:03"))
+            device = Screens([tree("0:01"), changed, later])
+            self.assertIs(later, device.settle(workout_clock=True))
+            self.assertEqual(3, device.calls)
+        changed = tree("0:02")
+        changed[0].set("content-desc", "Workout time, invalid")
+        device = Screens([tree("0:01"), changed, changed])
+        self.assertIs(changed, device.settle(workout_clock=True))
+        self.assertEqual(3, device.calls)
 
     def test_quick_settings_expansion_rechecks_the_native_panel_and_bounds_failure(self):
         class Panels(capture.Device):

@@ -71,8 +71,19 @@ optional `fontScale` from 1 to 2. The owned emulator's size, density and text sc
 before subsequent recipes or performance measurements. O recipes cover signed Display overflow at
 phone and 320dp widths, editing from `24` to `-499.99`, and 200% text.
 
+`--fixture apps/android/tools/capture-recipes/number-entry-fixture.json` with
+`--scenarios apps/android/tools/capture-recipes/number-entry.json` captures the actual rack's pressed,
+changed and native-keyboard states in both appearances. These recipes opt into `workout_clock`,
+which uses the same zero-idle shell hierarchy helper as notifications. Settlement compares every
+node and value except exact app-package descriptions `Workout time, …`, `Since start, …` and
+`Since last set, …` whose suffix is a clock. Raw XML retains the timestamps; numeric input, error
+text, geometry and any similar label in another package must still settle. The pressed and 300 ms
+changed states use transient-frame capture; they do not skip the actual user action.
+
+Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
+known animation phase; the manifest records that delay. This does not establish screen readiness.
 Transient recipes may set `settle: false` to capture a native pressed state or the 300 ms change
-flash immediately. These transient captures omit the settling hierarchy read so it cannot outlast
+flash. These transient captures omit the settling hierarchy read so it cannot outlast
 the state being captured; all ordinary captures retain their settled XML. Pointer steps use the
 observed control bounds and release in `finally` as described below.
 

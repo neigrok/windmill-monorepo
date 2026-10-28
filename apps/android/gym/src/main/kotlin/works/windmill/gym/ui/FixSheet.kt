@@ -2,23 +2,18 @@ package works.windmill.gym.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,8 +38,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -55,8 +48,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import works.windmill.gym.domain.NumberEntry
+import works.windmill.gym.domain.LoggedSetLimits
 import works.windmill.gym.domain.Ladder
-import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
@@ -87,30 +81,34 @@ fun FixSheet(
     var reps by rememberSaveable(draftKey) { mutableIntStateOf(set.reps) }
     var rpe by rememberSaveable(draftKey) { mutableStateOf(set.rpe) }
     var note by rememberSaveable(draftKey) { mutableStateOf(set.note) }
-    var padMode by rememberSaveable(draftKey) { mutableStateOf<KeypadEntry.Mode?>(null) }
+    val load = rememberNumberDraft(draftKey, NumberEntry.Field.Load, weightKg)
+    val count = rememberNumberDraft(draftKey, NumberEntry.Field.Reps, reps.toDouble())
+    val loadFeedback = rememberNumberStepperFeedback()
     var effortOpen by rememberSaveable(draftKey) { mutableStateOf(false) }
     var refusal by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
     var busy by remember(draftKey) { mutableStateOf(false) }
     val tooLong = SetEffort.noteOverlong(note)
-    val cancelEntry = remember(draftKey) { { padMode = null } }
-    DisposableEffect(draftKey, padMode) {
-        onEntryCancel(if (padMode == null) null else cancelEntry)
+    val cancelEntry: () -> Unit = remember(load, count, focus, keyboard) { {
+        load.focus(false)
+        count.focus(false)
+        focus.clearFocus()
+        keyboard?.hide()
+    } }
+    val entryOpen = load.focused || count.focused || load.isEdited || count.isEdited
+    DisposableEffect(draftKey, entryOpen) {
+        onEntryCancel(if (entryOpen) cancelEntry else null)
         onDispose { onEntryCancel(null) }
     }
-
+    BackHandler(enabled = entryOpen && !busy, onBack = cancelEntry)
     BackHandler(enabled = busy) {}
-    val mode = padMode
-    if (mode != null) {
-        KeypadSheet(
-            mode = mode,
-            current = if (mode == KeypadEntry.Mode.Weight) weightKg else reps.toDouble(),
-            onCommit = {
-                if (mode == KeypadEntry.Mode.Weight) weightKg = it else reps = it.toInt()
-                padMode = null
-            },
-            onCancel = { padMode = null },
-        )
-        return
+
+    fun acceptLoad(value: Double): NumberEditResult {
+        weightKg = value
+        return load.accept(value)
+    }
+    fun acceptReps(value: Double): NumberEditResult {
+        reps = value.toInt()
+        return count.accept(value)
     }
 
     Column(
@@ -124,63 +122,29 @@ fun FixSheet(
             color = skin.ink, modifier = Modifier.semantics { heading() })
         Text("$movement · Set $setNumber", style = WindmillFont.body(14).copy(lineHeight = 18.sp),
             color = skin.inkDim)
-        Column(Modifier.fillMaxWidth()) {
-            Text("Weight", style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim)
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 72.dp)
-                    .clickable(enabled = !busy, role = Role.Button, onClickLabel = "type a weight") {
-                        focus.clearFocus()
-                        keyboard?.hide()
-                        padMode = KeypadEntry.Mode.Weight
-                    },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BasicText(
-                    Readout.weight(weightKg), maxLines = 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 20.sp, maxFontSize = 52.sp),
-                    style = WindmillFont.display(52, FontWeight.ExtraBold)
-                        .copy(lineHeight = 68.sp, fontFeatureSettings = "tnum", color = skin.weightInk),
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Text("kg", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
-            }
-        }
-        LadderRow(weightKg, onDial = { weightKg = it }, enabled = !busy)
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 64.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Reps", style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim)
-            FilledTonalButton(
-                onClick = { reps = Ladder.bumpReps(reps, direction = -1) }, enabled = !busy && reps > 1,
-                modifier = Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp)
-                    .semantics { contentDescription = "One rep fewer" },
-                contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(WindmillRadius.lg),
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
-            ) { Text("−", style = WindmillFont.body(16, FontWeight.Bold)) }
-            Box(
-                Modifier.weight(1f).heightIn(min = 56.dp)
-                    .clickable(enabled = !busy, role = Role.Button, onClickLabel = "type the reps") {
-                        focus.clearFocus()
-                        keyboard?.hide()
-                        padMode = KeypadEntry.Mode.Reps
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(reps.toString(), style = GymType.numeral(28, FontWeight.Medium).copy(lineHeight = 36.sp),
-                    color = skin.ink)
-            }
-            FilledTonalButton(
-                onClick = { reps = Ladder.bumpReps(reps, direction = 1) },
-                enabled = !busy && reps < KeypadEntry.maxLoggedReps,
-                modifier = Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp)
-                    .semantics { contentDescription = "One rep more" },
-                contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(WindmillRadius.lg),
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
-            ) { Text("+", style = WindmillFont.body(16, FontWeight.Bold)) }
-        }
+        NumberStepper(load.text, load::edit, "Load", "kg",
+            onStep = { step ->
+                load.read()?.let { acceptLoad(Ladder.bump(it, if (step == NumberStep.Increase) 1 else -1, false)) }
+                    ?: NumberEditResult.Refused
+            },
+            onCommit = { load.read()?.let(::acceptLoad) ?: NumberEditResult.Refused },
+            size = NumberStepperSize.Display, input = NumberStepperInput.SignedDecimal,
+            refusal = load.refusal, enabled = !busy, feedback = loadFeedback, onFocusChange = load::focus)
+        LadderRow(load.reading.value ?: load.committed, onDial = { step, big ->
+            val value = load.read()
+            if (value != null) loadFeedback.accept(
+                acceptLoad(Ladder.bump(value, if (step == NumberStep.Increase) 1 else -1, big)), step)
+        }, enabled = !busy)
+        NumberStepper(count.text, count::edit, "Reps", "reps",
+            onStep = { step ->
+                count.read()?.let {
+                    acceptReps(Ladder.bumpReps(it.toInt(), if (step == NumberStep.Increase) 1 else -1)
+                        .coerceAtMost(LoggedSetLimits.maxReps).toDouble())
+                } ?: NumberEditResult.Refused
+            },
+            onCommit = { count.read()?.let(::acceptReps) ?: NumberEditResult.Refused },
+            refusal = count.refusal, enabled = !busy, onFocusChange = count::focus,
+            decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -246,7 +210,13 @@ fun FixSheet(
         Button(
             onClick = {
                 if (busy || tooLong) return@Button
-                val fix = SetFix(set, weightKg = weightKg, reps = reps, rpe = rpe, note = note)
+                val loadValue = load.read() ?: return@Button
+                val repsValue = count.read() ?: return@Button
+                acceptLoad(loadValue)
+                acceptReps(repsValue)
+                focus.clearFocus()
+                keyboard?.hide()
+                val fix = SetFix(set, weightKg = loadValue, reps = repsValue.toInt(), rpe = rpe, note = note)
                 busy = true
                 onBusy(true)
                 refusal = null

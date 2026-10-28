@@ -12,6 +12,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -142,7 +143,7 @@ class LoggerMovementWalkTests {
             val session = room.store.session
             val sets = room.store.sets.toList()
 
-            val weight = compose.onNode(hasContentDescription("Weight ", substring = true)).fetchSemanticsNode().boundsInRoot
+            val weight = compose.onNode(hasContentDescription("Load, kg")).fetchSemanticsNode().boundsInRoot
             compose.onRoot().performTouchInput {
                 swipe(weight.center, weight.center - Offset(width * 0.35f, 0f))
             }
@@ -261,13 +262,14 @@ class LoggerMovementWalkTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
             val reps = room.store.rack!!.reps
-            compose.onNodeWithContentDescription("one rep more").performClick()
+            compose.onNodeWithContentDescription("Increase Reps").performClick()
             compose.runOnIdle { assertEquals(reps + 1, room.store.rack!!.reps) }
-            compose.onNode(hasContentDescription("Weight ", substring = true)).performClick()
-            compose.onNodeWithText("Weight").assertIsDisplayed().performTouchInput {
+            compose.onNode(hasContentDescription("Load, kg")).performClick()
+            compose.onNodeWithContentDescription("Load, kg").assertIsDisplayed().performTouchInput {
                 swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
             }
-            compose.onNodeWithText("Set weight").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Load, kg").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Load, kg").performImeAction()
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.exerciseId)
                 assertEquals(0, room.store.sets.size)

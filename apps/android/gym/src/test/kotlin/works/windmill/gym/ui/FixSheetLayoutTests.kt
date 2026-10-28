@@ -13,6 +13,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -61,23 +63,30 @@ class FixSheetLayoutTests {
     }
 
     @Test
-    fun widestKeypadBufferAndAllKeysFitWithLargeTextOnASmallPhone() {
+    fun signedLoadAndItsRefusalRemainEditableWithLargeTextAndKeyboardHeight() {
+        val saved = mutableListOf<SetFix>()
+        val set = TrainingSet(id = "set_7", exerciseId = "chin-up", setNumber = 7,
+            weightKg = -102.5, reps = 8, completedAtMs = 0)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
-                KeypadSheet(KeypadEntry.Mode.Weight, -102.5, onCommit = {})
+                Box(Modifier.height(340.dp)) {
+                    GymMaterial { FixSheet(set, "Chin Up", 7, null,
+                        onSave = { saved += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {}) }
+                }
             }
         }
-        compose.onNodeWithText("−102.5").performScrollTo().assertIsDisplayed()
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        field.performScrollTo().performClick().performTextReplacement("-499.99")
+        field.assertTextEquals("Load", "kg", "-499.99")
         val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("−102.5").fetchSemanticsNode()
-            .config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        field.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
-        compose.onNodeWithContentDescription(KeypadEntry.deleteName).assertIsDisplayed()
-        for (key in KeypadEntry.keys) {
-            val node = compose.onNodeWithText(key).performScrollTo().assertIsDisplayed()
-            assertTrue(node.getBoundsInRoot().height >= 64.dp)
-        }
-        compose.onNodeWithText("Set weight").performScrollTo().assertIsDisplayed()
-        assertTrue(compose.onNodeWithText("Set weight").getBoundsInRoot().height >= 64.dp)
+        field.performTextReplacement("-500.001")
+        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.onNodeWithText("Over 500 kg — check the number.").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { assertEquals(emptyList<SetFix>(), saved) }
+        field.performScrollTo().performTextReplacement("-499.99")
+        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -499.99)), saved) }
     }
 }

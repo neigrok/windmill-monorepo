@@ -233,7 +233,7 @@ class TrainingStore(
     }
 
     fun editWorkout(open: Boolean): WorkoutChange {
-        if (!workoutAuthorized) return WorkoutChange.Unavailable("The account must be restored first.")
+        if (!workoutAuthorized || !controls.writable) return WorkoutChange.Unavailable(workoutFailure ?: "The account must be restored first.")
         return try {
             controls.control(controls.workout.editor(open))
             refreshWorkout()

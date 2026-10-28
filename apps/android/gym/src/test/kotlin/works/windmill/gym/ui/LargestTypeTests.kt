@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.DpRect
 import org.junit.Assert.assertEquals
@@ -264,7 +266,7 @@ class LargestTypeTests {
                 }
             }
 
-            compose.onNode(hasContentDescription("Weight 60 kg")).assertExists()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("60"))).assertExists()
             val window = compose.onRoot().getBoundsInRoot()
             // A node pushed off the frame reports an EMPTY rect, so `inside` has to mean drawn as well.
             val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
@@ -321,7 +323,7 @@ class LargestTypeTests {
     }
 
     private fun scroller() =
-        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).getBoundsInRoot()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack")).getBoundsInRoot()
 
     private fun inside(inner: DpRect, outer: DpRect) = inner.top >= outer.top && inner.bottom <= outer.bottom
 
@@ -359,7 +361,7 @@ class LargestTypeTests {
         try { loggerOnThePhone(scope, server, fontScale = 1.3f).use { room ->
             logSets(room, server, 5)
 
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
             assertTrue("the ledger overflows",
                 ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
             val current = compose.onNode(hasContentDescription("Set 6, current")).assertIsDisplayed().getBoundsInRoot()
@@ -369,23 +371,21 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 
-    // A free session has nothing planned after the set in hand, only Add movement, the next thing a
-    // lifter may want: every landed set brings the set in hand AND Add movement into view.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun addMovementStaysInViewAsSetsLandInAFreeSingleMovementSession() {
+    fun theCurrentSetStaysInViewAndAddMovementRemainsReachableWithTheDisplayRack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         try { loggerOnThePhone(scope, server, fontScale = 1.3f, walk = listOf("bench-press")).use { room ->
             logSets(room, server, 6)
 
-            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and !hasTestTag("Numeric rack"))
             assertTrue("the ledger overflows",
                 ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
             val region = scroller()
             val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
-            val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
             assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
+            val add = compose.onNodeWithText("Add movement").performScrollTo().assertIsDisplayed().getBoundsInRoot()
             assertTrue("Add movement $add is clipped by the ledger $region", add.height > 0.dp && inside(add, region))
         } } finally { scope.cancel() }
     }

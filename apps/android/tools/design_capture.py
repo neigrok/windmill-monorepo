@@ -61,6 +61,9 @@ def validate_scenarios(scenarios):
         if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
                 not re.fullmatch(r"[a-z0-9-]+", scenario["name"]) or scenario["account"] not in ("empty", "fixture"):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
+        if "frame_delay_ms" in scenario and (type(scenario["frame_delay_ms"]) is not int or
+                not 0 <= scenario["frame_delay_ms"] <= 1000 or scenario.get("settle", True) is not False):
+            raise ValueError("Transient frame delays need settle:false and an integer from 0 to 1000 ms.")
 
 
 def read_fixture(path):
@@ -317,6 +320,7 @@ class Device:
         self.sdk = sdk
         self.notification_clock = False
         self.tile_clock = False
+        self.workout_clock = False
 
     def prepare_hierarchy_capture(self):
         jdk = Path(os.environ["JAVA_HOME"]) / "bin"
@@ -398,7 +402,7 @@ class Device:
 
     def tree(self):
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
-        if self.notification_clock or self.tile_clock:
+        if self.notification_clock or self.tile_clock or self.workout_clock:
             self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
                      "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
         else:
@@ -420,7 +424,7 @@ class Device:
         (self.output / "failure-ui.png").write_bytes(self.run("exec-out", "screencap", "-p"))
         raise RuntimeError(f"Capture state did not expose {value!r}.")
 
-    def settle(self, *, resend_countdown=False, notification_clock=False, tile_clock=False, timeout=30):
+    def settle(self, *, resend_countdown=False, notification_clock=False, tile_clock=False, workout_clock=False, timeout=30):
         previous = None
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -435,6 +439,11 @@ class Device:
                         node.get("class") == "android.widget.Chronometer" and node.get("package") == "com.android.systemui":
                     node.set("text", "<chronometer>")
                     node.set("content-desc", "<chronometer>")
+                if workout_clock and node.get("package") == PACKAGE:
+                    matched = re.fullmatch(r"(Workout time|Since start|Since last set), [0-9]+:[0-9]{2}(?::[0-9]{2})?",
+                                           node.get("content-desc", ""))
+                    if matched:
+                        node.set("content-desc", matched[1] + ", <clock>")
                 if tile_clock and node.get("resource-id") == "com.android.systemui:id/qs_tile_large" and \
                         node.get("package") == "com.android.systemui" and \
                         any(child.get("text") == "Workout" for child in node.iter("node")):
@@ -758,7 +767,7 @@ def main():
         device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
-        elif any(scenario.get("tile_clock") for scenario in scenarios):
+        elif any(scenario.get("tile_clock") or scenario.get("workout_clock") for scenario in scenarios):
             device.prepare_hierarchy_capture()
         device.run("install", apk)
         if any(scenario.get("tile_clock") for scenario in scenarios):
@@ -781,13 +790,14 @@ def main():
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.notification_clock = scenario.get("notification_clock", False)
                     device.tile_clock = scenario.get("tile_clock", False)
+                    device.workout_clock = scenario.get("workout_clock", False)
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
                         device.steps(scenario["steps"])
                         tree = device.settle(resend_countdown=scenario.get("resend_countdown", False),
                                              notification_clock=device.notification_clock,
-                                             tile_clock=device.tile_clock) if scenario.get("settle", True) else None
+                                             tile_clock=device.tile_clock, workout_clock=device.workout_clock) if scenario.get("settle", True) else None
                         if model.responses:
                             raise RuntimeError("The capture did not consume its deterministic model responses.")
                         filename = f"{scenario['board']}-{scenario['name']}-{mode}.png"
@@ -795,9 +805,11 @@ def main():
                             (args.output / filename).with_suffix(".xml").write_bytes(ET.tostring(tree))
                         if device.notification_clock:
                             (args.output / filename).with_suffix(".notification.txt").write_bytes(device.run("shell", "dumpsys", "notification", "--noredact"))
+                        time.sleep(scenario.get("frame_delay_ms", 0) / 1000)
                         (args.output / filename).write_bytes(device.run("exec-out", "screencap", "-p"))
                         manifest["captures"].append({"board": scenario["board"], "mode": mode, "file": filename,
-                            **({"viewport": scenario["viewport"]} if "viewport" in scenario else {})})
+                            **({"viewport": scenario["viewport"]} if "viewport" in scenario else {}),
+                            **({"frameDelayMs": scenario["frame_delay_ms"]} if "frame_delay_ms" in scenario else {})})
                         device.steps(scenario.get("after", []))
                         if completions:
                             sessions_after = int(fixture.sql("SELECT count(*) FROM sessions;"))
@@ -815,6 +827,7 @@ def main():
         manifest["mailCalls"] = mail.calls
         device.notification_clock = False
         device.tile_clock = False
+        device.workout_clock = False
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")

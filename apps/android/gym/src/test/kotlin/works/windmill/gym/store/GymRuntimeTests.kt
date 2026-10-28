@@ -20,6 +20,7 @@ import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.storage.AtomicDocument
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
 import works.windmill.sync.engine.signIn
 
@@ -39,6 +40,43 @@ class GymRuntimeTests {
         val started = store.start(routine.id)
         assertTrue(started.toString(), started is GymResult.Ok)
         movements.reversed().forEach { store.choose(it) }
+    }
+
+    @Test
+    fun aFailedRackWriteKeepsItsSavedValueAndEditorCleanupDoesNotReportAnotherFailure() = runTest {
+        var broken = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry,
+            controlsWrite = { file, bytes ->
+                if (broken) throw IOException("fixture write failure")
+                AtomicDocument.write(file, bytes)
+            }).use { room ->
+            room.startWorkout("bench-press")
+            assertEquals(WorkoutChange.Saved, room.store.editRack(60.0, 5))
+            assertEquals(WorkoutChange.Saved, room.store.editWorkout(true))
+            val before = room.controlsFile.readText()
+            val rack = room.store.rack
+            val replica = room.engine.snapshot()
+            broken = true
+            assertTrue(room.store.editRack(61.0, 5) is WorkoutChange.Unavailable)
+            assertTrue(room.store.editWorkout(false) is WorkoutChange.Unavailable)
+            assertEquals(listOf("gym.editRack"), failures)
+            assertEquals(before, room.controlsFile.readText())
+            assertEquals(replica, room.engine.snapshot())
+            assertEquals(rack, room.store.rack)
+            broken = false
+            val restored = room.freshStore()
+            restored.connect(room.account())
+            assertEquals(rack!!.copy(revision = rack.revision + 1), restored.rack)
+            assertEquals(WorkoutChange.Saved, restored.editWorkout(false))
+            assertEquals(WorkoutChange.Saved, restored.editRack(61.0, 5))
+            assertEquals(61.0, restored.rack!!.weightKg, 0.0)
+            assertEquals(listOf("gym.editRack"), failures)
+        }
     }
 
     @Test fun notificationClockSurvivesMovementChangesFixDeleteAndColdRestore() = runTest {

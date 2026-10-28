@@ -1,0 +1,12 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {"exerciseId": "bench-press", "sets": [{"reps": 8, "weightKg": 82.5}, {"reps": 8, "weightKg": 82.5}, {"reps": 8, "weightKg": 82.5}], "restSeconds": 120},
+        {"exerciseId": "chin-up", "sets": [{"reps": 8, "weightKg": -12.5}, {"reps": 8, "weightKg": -12.5}], "restSeconds": 120}
+      ]
+    }
+  ]
+}

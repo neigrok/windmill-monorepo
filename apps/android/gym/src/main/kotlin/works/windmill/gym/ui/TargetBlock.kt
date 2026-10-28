@@ -67,6 +67,8 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
+internal const val bandAssistedSignDescription = "Flip the sign — band-assisted"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TargetBlock(
@@ -430,10 +432,10 @@ private fun SignKey(enabled: Boolean = true, onFlip: () -> Unit) {
             .sizeIn(minWidth = GymTap.minimum, minHeight = GymTap.minimum)
             .clip(RoundedCornerShape(WindmillRadius.md))
             .background(skin.raised)
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = KeypadEntry.signName, onClick = onFlip)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = bandAssistedSignDescription, onClick = onFlip)
             // The glyph reads as nothing out loud, so the control says what it is — and what a
             // negative load is, since no sentence beside the fields says it.
-            .semantics(mergeDescendants = true) { contentDescription = KeypadEntry.signName },
+            .semantics(mergeDescendants = true) { contentDescription = bandAssistedSignDescription },
         contentAlignment = Alignment.Center,
     ) {
         Text("±", style = WindmillFont.display(20, FontWeight.SemiBold), color = skin.ink)

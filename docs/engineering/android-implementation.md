@@ -471,3 +471,58 @@ The recipe keeps New routine as a content-description target; the shared locator
 either text or content description. Deletion/tile recipes use the visible The log labels from 03.
 No new capture API is needed. Keeping the fixed FAB outside the scroll content makes its reach
 independent of the preserved proposal card's height; the list tail exposes the final row menu.
+
+## Task 07 — native number entry
+
+The rack and Fix set use the shared native number field with separate raw and committed values.
+One pure reader owns signed/comma parsing, refusal order, the ±500 kg pre-rounding bound and
+half-away hundredth rounding; performed reps remain 1–99. Planned-target rules stay separate.
+Explicit Log set and Save fix validate the active buffer before a write. Plain blur and Cancel
+restore the committed value. A new focus places the caret at the end, and later selection survives
+layout expansion. Field accessibility actions share the same Increase/Decrease callback and
+48 dp hit targets as the buttons. Only accepted step/IME changes flash and tick; Log set stays silent.
+
+The simplification pass removes the custom keypad and its duplicate readouts, moves raw-buffer
+lifecycle into one saveable draft, and shares accepted feedback between the native buttons and
+ladder. Valid raw values determine both displayed ladder increments and applied steps; invalid
+buffers refuse without mutation. Reps availability follows the raw reading, including edits away
+from 1 or 99. A focused numeric editor owns horizontal drag; outside focus the movement pager
+retains its existing behavior. Focus effects are cancelled on disposal, so restoration retains an
+unfinished draft and an old owner's editor cannot rewrite new controls.
+
+The integrated Debug gate passes 1,222 cases with 17 opt-in wire skips; 79 affected Release cases
+pass. The later restoration, Finish, runtime and logger gate passes all 50 cases, including delayed
+same-owner reads, account isolation and a failed/recovered controls file. After integrating 03/17,
+those 50 cases pass again. All 38 tool checks and 11 NumberStepper cases pass, including bounded
+paint and settled pixels across shorter/signed overflow transitions and reduced motion.
+XML and build logs are retained under `/private/tmp/android07-number-entry-foundation`.
+
+The logger's saveable state belongs to its account and workout in the room's existing state holder.
+A temporary empty read during activity recreation hides the sheet without discarding its draft;
+a successful Finish removes that workout's saved state. A failed numeric write retains the existing
+recovery sentence after focus leaves. Automatic editor cleanup refuses an already-failed controls
+file without creating another Issue. The numeral animation moves the existing editor layer inside
+its clipped box; it has no duplicate text layer with a different width. The 150 ms slide/fade ends
+before the 300 ms accent flash. Transient recipes record a bounded 180 ms frame delay; ordinary
+screen readiness still uses semantic settlement.
+
+API 37 native evidence is `/private/tmp/windmill-android-task07/final3`, source `e5ed4eb5` plus
+this task, APK SHA-256 `94814fc17a9a88d25947c50a88a39547d736c8a6632fa35ad5873bf9c2e2721a`.
+Six Dark/Daylight captures show pressed, changed and native-keyboard states. Native accessibility
+Increase/Decrease actions adjust both fields and expose their units; spoken TalkBack is unverified.
+Fix retains its invalid raw load, refusal and note across recreation, including 320 × 640 dp at
+200% text. The value, supporting error and Save fix remain reachable above the keyboard by
+scrolling. The correction persists once. Unchanged detailed native minus/decimal, reps-bound,
+Cancel and rack large-text evidence remains in `pilot3` with its own APK provenance.
+
+Two deliberate temporary-file write failures each deliver one sanitized `gym.editRack` Issue and
+one `client_error`, with no automatic `gym.editWorkout` duplicate. Saved control bytes stay intact;
+the visible instruction survives focus loss. A checkpointed recovery restores 85 kg, accepts
+87.5 kg, logs the set and finishes. The final readback has five sets, one correction and four ended
+sessions, with exactly five `gym_set_logged`, four start and four finish events. Two transient
+hello/unreachable results recover; their cause is unproven. An earlier rapid recovery tap sequence
+did not add a set and lacks intermediate state evidence; the bounded repeat establishes recovery.
+No app ANR/fatal appears in the retained runtime log. A transient hierarchy command failed during
+display changes, then succeeded; system Play/GMS warnings remain in the log. No performance or
+hosted-vendor-delivery claim is made. The runner exits normally, owned ports close, and its
+disposable database and private credential file are removed.

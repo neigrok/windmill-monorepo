@@ -21,7 +21,7 @@ object Program {
     const val atLeastOneMovement = "A routine is at least one movement."
 
     // The server's own bounds. These are the PLAN's bands, which `TargetEntry` enforces; a set that
-    // was performed is bounded separately by `KeypadEntry.maxLoggedReps`.
+    // was performed is bounded separately by `LoggedSetLimits.maxReps`.
     const val maxEntries = 50
     const val maxSets = Scheme.maxSets
     const val maxReps = 100
@@ -68,7 +68,7 @@ object Program {
 // means: no sets is an open line, no reps is `max`, no load is `last time`.
 //
 // The bands here are the PLAN's (`Program.maxSets`, `Program.maxReps`): 1 to 20 sets and 1 to 100
-// reps. The logger and the fix sheet enforce `KeypadEntry.maxLoggedReps` instead, because a set that
+// reps. The logger and the fix sheet enforce `LoggedSetLimits.maxReps` instead, because a set that
 // was performed is not a target.
 object TargetEntry {
     val setsBand = 1..Program.maxSets

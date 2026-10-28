@@ -20,6 +20,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -90,32 +92,35 @@ class SheetDismissTests {
     )
 
     @Test
-    fun testTheKeypadsHandleDismissesAndTheTypedNumberIsNeverCommitted() {
+    fun theFixSheetsHandleDismissesWithoutCommittingItsNumericDraft() {
         val dismissed = mutableListOf<String>()
-        val committed = mutableListOf<Double>()
+        val committed = mutableListOf<works.windmill.gym.domain.SetFix>()
+        val set = works.windmill.gym.domain.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
         raised(dismissed) {
-            KeypadSheet(KeypadEntry.Mode.Weight, current = 82.5, onCommit = { committed += it })
+            FixSheet(set, "Bench Press", 1, null, onSave = {
+                committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
+            }, onDelete = {})
         }
-
         nothingDrawnSaysCancelOrClose()
-        compose.onNodeWithText("1").performClick()
-        compose.onNodeWithText("0").performClick()
+        compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("10")
         compose.onNodeWithText("10").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
-        assertEquals("nothing left the pad", emptyList<Double>(), committed)
+        assertEquals(emptyList<works.windmill.gym.domain.SetFix>(), committed)
     }
 
     @Test
-    fun testTheKeypadsScrimDismissesAndTheTypedNumberIsNeverCommitted() {
+    fun theFixSheetsScrimDismissesWithoutCommittingItsNumericDraft() {
         val dismissed = mutableListOf<String>()
-        val committed = mutableListOf<Double>()
+        val committed = mutableListOf<works.windmill.gym.domain.SetFix>()
+        val set = works.windmill.gym.domain.TrainingSet("set", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = 0)
         raised(dismissed) {
-            KeypadSheet(KeypadEntry.Mode.Reps, current = 5.0, onCommit = { committed += it })
+            FixSheet(set, "Bench Press", 1, null, onSave = {
+                committed += it; works.windmill.gym.store.FixOutcome.Corrected(it.corrected(set))
+            }, onDelete = {})
         }
-
-        compose.onNodeWithText("8").performClick()
+        compose.onNodeWithContentDescription("Reps, reps").performClick().performTextReplacement("8")
         dismissFromTheScrim(dismissed)
-        assertEquals(emptyList<Double>(), committed)
+        assertEquals(emptyList<works.windmill.gym.domain.SetFix>(), committed)
     }
 
     @Test

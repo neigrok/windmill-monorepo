@@ -12,6 +12,8 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -21,6 +23,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.height
@@ -50,6 +56,8 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.sync.engine.nextPush
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.storage.AtomicDocument
+import java.io.IOException
 
 // The quiet ledger logger: the words the old screen drew are now said by the controls that own them,
 // and each pin here reads a control by its name. Signed in and synced with the account's log, so a
@@ -114,6 +122,157 @@ class LoggerScreenTests {
             }
         }
         return room
+    }
+
+    @Test
+    fun aFailedNumericWriteKeepsItsRecoverySentenceWithoutLeakingToAnotherStore() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var broken = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val first = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry,
+            controlsWrite = { file, bytes ->
+                if (broken) throw IOException("fixture write failure")
+                AtomicDocument.write(file, bytes)
+            })
+        val other = EngineRoomFixture(tmp.newFolder(), scope)
+        val current = mutableStateOf(first.store)
+        val showing = mutableStateOf(true)
+        val reason = "The workout could not be saved safely. Restart the app to recover it."
+        try {
+            runBlocking {
+                first.select("A")
+                first.startExternalWorkout()
+                first.store.choose("bench-press")
+                first.store.editRack(60.0, 5)
+                other.select("B")
+                other.startExternalWorkout()
+                other.store.choose("bench-press")
+            }
+            compose.setContent { if (showing.value) GymMaterial { LoggerScreen(current.value, {}, {}) } }
+            compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("61")
+            val before = compose.runOnIdle {
+                broken = true
+                first.controlsFile.readText()
+            }
+            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.onNodeWithText(reason).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Load, kg").assertIsNotEnabled()
+            compose.onNodeWithText("Log set").assertIsNotEnabled()
+            compose.runOnIdle {
+                assertEquals(listOf("gym.editRack"), failures)
+                assertEquals(before, first.controlsFile.readText())
+                current.value = other.store
+            }
+            compose.onNodeWithText(reason).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("42")
+            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.runOnIdle {
+                assertEquals(42.0, other.store.rack!!.weightKg, 0.0)
+                assertEquals(60.0, first.store.rack!!.weightKg, 0.0)
+            }
+            val recovery = compose.runOnIdle {
+                broken = false
+                first.scope.async { first.freshStore().also { it.connect(first.account()) } }
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { recovery.isCompleted } }
+            val restored = runBlocking { recovery.await() }
+            compose.runOnIdle { current.value = restored }
+            compose.onNodeWithText(reason).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Load, kg").assertTextEquals("Load", "kg", "60").assertIsEnabled()
+            compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("61")
+            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.runOnIdle {
+                assertEquals(61.0, restored.rack!!.weightKg, 0.0)
+                assertEquals(listOf("gym.editRack"), failures)
+            }
+        } finally {
+            compose.runOnIdle { showing.value = false }
+            compose.waitForIdle()
+            scope.cancel()
+            first.close()
+            other.close()
+        }
+    }
+
+    @Test
+    fun logSetCommitsTheFocusedSignedBufferOnceAndStaysSilent() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val haptic = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { sensations += hapticFeedbackType }
+        }
+        try { logger(scope, haptics = haptic).use { room ->
+            val load = compose.onNodeWithContentDescription("Load, kg")
+            load.performClick().performTextReplacement("-12,5")
+            compose.runOnIdle {
+                assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
+                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+            }
+            compose.onNodeWithText("Log set").performClick()
+            compose.runOnIdle {
+                val saved = room.store.sets.single()
+                assertEquals(saved.copy(weightKg = -12.5, reps = 5, exerciseId = "bench-press", setNumber = null), saved)
+                assertEquals(emptyList<HapticFeedbackType>(), sensations)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun rawRackBandsAndRepsBoundsStayConsistentUntilLogging() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { logger(scope).use { room ->
+            val load = compose.onNodeWithContentDescription("Load, kg")
+            load.performClick().performTextReplacement("10")
+            compose.onNodeWithText("+1").performClick()
+            load.assertTextEquals("Load", "kg", "11")
+            val reps = compose.onNodeWithContentDescription("Reps, reps")
+            reps.performClick().performTextReplacement("99")
+            reps.performImeAction()
+            compose.onNodeWithContentDescription("Increase Reps").assertIsNotEnabled()
+            reps.performClick().performTextReplacement("5")
+            compose.onNodeWithContentDescription("Increase Reps").assertIsEnabled().performClick()
+            reps.assertTextEquals("Reps", "reps", "6")
+            reps.performTextReplacement("1")
+            reps.performImeAction()
+            compose.onNodeWithContentDescription("Decrease Reps").assertIsNotEnabled()
+            reps.performClick().performTextReplacement("5")
+            compose.onNodeWithContentDescription("Decrease Reps").assertIsEnabled().performClick()
+            reps.assertTextEquals("Reps", "reps", "4")
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets) }
+            compose.onNodeWithText("Log set").performClick()
+            compose.runOnIdle {
+                val saved = room.store.sets.single()
+                assertEquals(saved.copy(weightKg = 11.0, reps = 4, exerciseId = "bench-press", setNumber = null), saved)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun invalidLogKeepsTheDraftAndBlurRestoresTheCommittedRack() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { logger(scope).use { room ->
+            val load = compose.onNodeWithContentDescription("Load, kg")
+            load.performClick().performTextReplacement("500.001")
+            compose.onNodeWithText("Log set").performClick()
+            compose.onNodeWithText("Over 500 kg — check the number.").assertExists()
+            load.assertTextEquals("Load", "kg", "500.001")
+            compose.runOnIdle {
+                assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
+                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)
+            }
+            compose.onNodeWithContentDescription("Reps, reps").performClick()
+            load.assertTextEquals("Load", "kg", "20")
+            compose.onNodeWithContentDescription("Reps, reps").performTextReplacement("7")
+            compose.onNodeWithText("Log set").performClick()
+            compose.runOnIdle {
+                val saved = room.store.sets.single()
+                assertEquals(saved.copy(weightKg = 20.0, reps = 7, exerciseId = "bench-press", setNumber = null), saved)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
@@ -339,8 +498,8 @@ class LoggerScreenTests {
     fun lastTimePrefillsTheRackAndDrawsNothingOfItsOwn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, history = true).use {
-            compose.onNode(hasContentDescription("Weight 80 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 6")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("80"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasContentDescription("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasText("80 × 6")).assertCountEquals(0)
@@ -352,8 +511,8 @@ class LoggerScreenTests {
     fun aFailedLastTimeReadLeavesTheRackAtTheBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope, lastTimeDown = true).use {
-            compose.onNode(hasContentDescription("Weight 20 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("20"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
             compose.onAllNodes(hasText("Last time", substring = true)).assertCountEquals(0)
             compose.onAllNodes(hasText("Didn’t load")).assertCountEquals(0)
         } } finally { scope.cancel() }
@@ -372,8 +531,8 @@ class LoggerScreenTests {
             row.assertHasClickAction()
 
             row.performClick()
-            compose.onNodeWithText("Fix set").assertIsDisplayed()
-            compose.onNodeWithText("+").performClick()
+            val modal = compose.onNodeWithText("Fix set").assertIsDisplayed().fetchSemanticsNode().root
+            compose.onNode(hasContentDescription("Increase Reps") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
             compose.onNodeWithText("Save fix").performClick()
             compose.waitForIdle()
 
@@ -447,8 +606,8 @@ class LoggerScreenTests {
     fun theLedgerDrawsEveryRowAndTheRackReadsTheCurrentOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { rack(scope).use {
-            compose.onNode(hasContentDescription("Weight 90 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 3")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("3"))).assertIsDisplayed()
             assertEquals(
                 listOf(
                     "Set 1, logged, 60 kg, 5 reps, on this device" to true,
@@ -466,8 +625,8 @@ class LoggerScreenTests {
 
             compose.onNodeWithText("Log set").performClick()
             compose.waitForIdle()
-            compose.onNode(hasContentDescription("Weight 100 kg")).assertIsDisplayed()
-            compose.onNode(hasContentDescription("Reps 1")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("100"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("1"))).assertIsDisplayed()
             assertEquals(
                 listOf(
                     "Set 1, logged, 60 kg, 5 reps, on this device" to true,
@@ -551,7 +710,7 @@ class LoggerScreenTests {
             assertEquals("four equal pills, and they are $widths", 1, widths.toSet().size)
 
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
-            compose.onNode(hasContentDescription("Weight 22.5 kg")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg") and hasText("22.5"))).assertIsDisplayed()
             Ladder.labels(22.5).forEach { label ->
                 compose.onNode(hasText(label) and hasClickAction()).assertIsDisplayed()
             }
@@ -582,9 +741,9 @@ class LoggerScreenTests {
             compose.onNodeWithText("Add movement").assertIsDisplayed().assertHasClickAction()
             compose.onNode(hasContentDescription("Gym settings")).assertDoesNotExist()
             compose.onNodeWithText("Finish").assertIsDisplayed().assertHasClickAction()
-            compose.onNode(hasContentDescription("one rep fewer")).assertHasClickAction()
-            compose.onNode(hasContentDescription("one rep more")).assertHasClickAction()
-            compose.onNode(hasContentDescription("Reps 5")).assertIsDisplayed().assertHasClickAction()
+            compose.onNode(hasContentDescription("Decrease Reps")).assertHasClickAction()
+            compose.onNode(hasContentDescription("Increase Reps")).assertHasClickAction()
+            compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed().assertHasClickAction()
         } } finally { scope.cancel() }
     }
 }
