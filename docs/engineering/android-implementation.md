@@ -892,85 +892,73 @@ full-width/buttons-below fallback remains unapproved.
 
 ## Shared load and Finish integration observations
 
-Root matches all 32 task-14 paths against its source commit except the composed current-state
-observations, and reviews the shared-load packet plus its isolated estimate, formatting and
-verification corrections. The broad prepared-source Android gate passes 1,345 gym cases with 17 opt-in LiveWire
-skips, 138 platform and 48 App cases, with zero failures/errors; Debug assembles. All ten backend
-targets pass against two fresh isolated databases:
-domain 2,308/2,336 with 28 deliberate role/pattern skips, MCP 341/341, sync 765/765 and adapters
-1,360/1,360, with zero stopped cases or assertions. Both databases are removed.
+The prepared Android batch contains tasks 18, 22, 23, 24, 45 and 52, with one commit per task.
+Its Android tree is `004fc4c3373eaa16a93cbc9944d724d6edd48df4`. Both Debug and Release gym
+suites pass 1,412 cases with 17 opt-in LiveWire skips each; platform passes 140 cases and App
+passes 48, with no failures/errors. Debug assembles. The native task packets name their exact
+source, APK, backend and retained evidence; no native failure injection is inferred from unit tests.
 
-The composed native receipt displays the complete maximum finite exponent, an unavailable-volume
-dash and true zero separately. The current-main composition preserves the new iOS phone-local
-Coach turn driver, carries the generated schema on its four routes and maps the actual upgrade
-refusal to the existing stance. Nullable source facts omit unavailable volume while retaining zero.
-Supported Xcode 26.3 passes its packages, builds and app unit tests. An earlier shell shard passes
-unchanged on rerun, establishing non-reproduction of the failed Live Activity update; the failed
-run's local commit or refusal remains unverified. Its OS trace
-measures 14.44 seconds before intent execution. The test gives that same exact postcondition a
-bounded 30 seconds, preserving one tap, the existing ledger identities and exactly one new set.
+The rebuilt backend includes main `9266c9e7` and finite loads. Nine targets pass against fresh
+isolated databases: domain 2,316/2,344 with 28 deliberate skips, MCP 341/341, sync 765/765 and
+adapters 1,365/1,365, with zero stopped cases or assertions. The epoch crash test needs a barrier
+for the killed client's PostgreSQL session to disappear: a separate MVCC read can see the old row
+while that backend still holds the transaction lock. The test-only barrier preserves the production
+five-second timeout, one retry and exact rollback/one-update assertions; all nine epoch cases pass
+on another fresh database. Both gates remove their databases. The rebuilt server's mounted-route
+matrix also passes all four checks with vendor/onboarding switches enabled and all four disabled,
+including the four turn routes, then removes its database.
 
-UI accounting requires every selected method to start and finish exactly once. Only the named
-finite-load fixture probe may skip, with its exact missing-fixture reason; requesting that fixture
-forbids the skip. Four checker tests pass, and replaying the CI logs accounts for four mandatory
-integration passes plus that one fixture skip and seven shell passes. Supported run `40759270882`
-passes four jobs; its shell failure occurs before the Log action: SpringBoard remains on Home
-with an active workout Island, and the pull-down does not establish Notification Center. The
-cause is unproven; no gesture or product fix is claimed. Run `40764861345` on `3bd0ce16` passes
-packages/builds and gym/journal UI. It fails the Coach chunk-coalescing unit assertion and the
-offline local-control readiness check; gym integration is cancelled. The Live Activity case passes
-in that run. The coalescer fixture now feeds five deltas synchronously through the existing
-MainActor driver seam, awaits its actual flush task and retains exact final text/stopped assertions;
-production's 250 ms interval is unchanged. Its local Coach suite passes 26 expanded runs.
-The offline recording shows late visible Journal controls near the failed assertion, without a
-hierarchy proving enabled/hittable state or network causality. No shell timing or product fix is claimed.
-
-The backend composition before main's `9266c9e7` update passes all ten targets: domain 2,314/2,342 with 28 deliberate skips,
-MCP 341, sync 765 and adapters 1,365, with no stopped cases or assertions. Both fresh databases
-are removed. The actual mounted-route matrix passes with local vendor/onboarding switches enabled
-and disabled, including all four turn routes; it checks schema admission separately from the direct
-handler protocol tests. Source schema 10/minimum 10 does not activate the production compatibility
-cutoff or publish either distribution.
-
-Exact scores still select the strongest estimate. Record admission compares the final stated tenth,
-so two estimates displayed as 116.7 do not create another estimate record; independently earned
+Finite load formatting distinguishes the complete maximum exponent, unavailable volume and true
+zero. Exact scores select the strongest estimate; record admission compares the final stated tenth,
+so two estimates displayed as 116.7 do not create another estimate record. Independently earned
 heaviest records remain valid. Five shared vectors cover ties, genuine improvement and the exact
-prior best. Focused verification passes the Kotlin corpus and four Android review cases, Swift's
+prior best. Focused verification covers the Kotlin corpus and four Android review cases, Swift's
 three training-read tests including 170 vector cases, and 761 web corpus cases plus strict types.
-The Finish observer waits for actual request registration before its exact two-question/chat checks;
-that focused case passes. Task 14 is shipped on main as `ee70d13c` and its ten canonical frames are
-marked in production. The separate Target-summary overlap fix is postponed by the human; its
-proposal remains unapproved and the known 320 dp / 200% overlap is outside this release's scope.
 
-The task-14 main CI run has two Debug Finish fixture timeouts; all 27 Release cases pass. The
-separate follow-up uses the application's immediate Main dispatcher and explicitly pumps Main
-at the controlled read and transport-entry barriers. It preserves the ten-second bounds and
-exact one-close/two-question/distinct-chat assertions. A paired local run passes all 27 cases in
-each variant with overlapping execution and no skips. Its evidence is
-`/private/tmp/android-task14-fixture-variants/summary.json`. The same follow-up corrects the
-existing discard sentence to say `1 set`; it adds no workflow or observability boundary.
+The iOS composition preserves bounded phone-result admission, counted/truncated reads, seat-change
+stop, refusal reporting and ordering. Its volume fixture uses `RecordedRead.ids` with exact nullable
+and zero assertions. Local Xcode 27.1 passes 23 focused Domain functions including 170 training-read,
+54 Coach ability and 16 shape cases, plus 27 App Coach-turn runs and the individual unavailable-volume
+source case. The explicit result-bound fixture compiles on supported Swift 6.2 without changing its
+three-by-sixty input or assertions. The coalescer fixture feeds five deltas synchronously through
+the existing MainActor driver, awaits its actual flush and checks exact final text/stopped state;
+production's 250 ms interval is unchanged.
+
+Supported Xcode 26.3 run `40783195857` passes App unit tests and all three UI shards, including their
+selected-test accounting. Its package job compiles Domain, then fails the exact source pin because
+main's normalization boundary contains both `nfc` and `nfd` while the guard expects only `nfc`.
+The consistency repair retains an exact byte pin and updates its positive/negative fixtures plus
+current documentation; production normalization is unchanged. All 73 source fixtures and the
+real-tree source check pass locally. The 47 whole-world cases retain every expected finding but
+add manifest-name findings when the pinned SwiftSyntax 602 parses the local Swift 6.4 package
+interface; no guard is waived. A fresh supported package/build gate remains required. No release
+build or complete supported run is claimed from the four green jobs.
+
+Task 14 is on main as `ee70d13c`, with ten canonical frames marked in production. Its separate
+fixture repair uses the immediate Main dispatcher and pumps Main at controlled read/transport-entry
+barriers, retaining ten-second bounds and exact one-close/two-question/distinct-chat assertions.
+All 27 cases pass in each variant and remain green in the combined gate. The existing discard
+sentence says `1 set`. The Target-summary overlap fix is human-postponed; proposal `1675:10931`
+remains unapproved, and the known 320 dp / 200% overlap is outside this release's scope.
+
+UI accounting requires each selected method to start and finish exactly once. Only the named
+finite-load fixture probe may skip with its exact missing-fixture reason; requesting the fixture
+forbids that skip. Native fault evidence remains limited to the boundary actually exercised.
+No production injection hook or extra telemetry framework is added for acceptance.
+
+Web promotion checks the live sync interval before mkdir or rsync and retains a complete pinned
+source/schema/file-hash artifact first. The helper passes 33 script checks plus the final seven-case
+web class, including rejection of symlinks before hashing. An actual local anonymous hello at
+schema 10/minimum 10 admits the matching client and holds both mismatch directions. This proves
+the local decision and modeled workflow boundary; production promotion and queued delivery are
+pending. Source schema 10/minimum 10 activates neither the production cutoff nor either mobile
+distribution. The compatible served website stays in place until both replacement distributions,
+the pinned web artifact and the acknowledged cutoff are ready.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
-and sender readiness at their shared boundaries. Native receipt integration uses existing text
-wrapping and unavailable slots. Fault evidence is named by the boundary actually exercised; no
-production injection hook or extra telemetry framework is introduced for acceptance.
-
-The `9266c9e7` composition preserves its bounded phone-result admission, counted/truncated reads,
-seat-change stop, refusal reporting and ordering. Its only manual merge adaptation wraps the
-cap's existing source-volume fixture in `RecordedRead.ids`; nullable/zero assertions stay exact.
-Focused Swift Domain verification passes 23 functions including 170 training-read and 54 Coach
-ability vectors plus 16 shape cases. App verification passes 27 Coach turn runs and the
-individual unavailable-volume source case. These local Xcode 27.1 checks are qualified against
-supported Xcode 26.3; composed run `40777685223` remains pending. Android source is unchanged by
-that upstream merge, and all 36 accepted cohort source hashes match the integrated batch.
-
-Web promotion now checks the live sync interval before mkdir or rsync and retains a complete
-source/schema/file-hash artifact first. The deployment helper passes 33 script checks plus the
-final affected seven-case web class; artifact preparation rejects symlinks before hashing. An
-isolated anonymous hello returns schema 10/minimum 10: the matching client passes and clients
-outside either interval direction hold. This proves the local decision and modeled workflow
-boundary, not production promotion or queued delivery. Main batches can retain the compatible
-served website while replacement mobile distributions and the acknowledged cutoff are prepared.
+and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and
+unavailable slots. Deployment admission and crash-fixture lifetime checks remain at their existing
+boundaries, with no common framework introduced.
 
 ## Task 23 · Workout detail and complete comparison efforts
 
