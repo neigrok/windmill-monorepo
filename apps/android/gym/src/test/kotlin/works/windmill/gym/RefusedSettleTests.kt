@@ -1,6 +1,9 @@
 package works.windmill.gym
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -33,37 +36,17 @@ import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.GymMaterial
+import works.windmill.platform.telemetry.Telemetry
 
-// The one thing the room says about a settle, and it is a failure. A delete that failed must never
-// look like one that worked, so the room owes three things at once when a window closes on a log
-// that says no: the sentence, said once; the row, back where it was; and the way back, retired —
-// because an `Undo` still standing over a delete that never happened is the transient lying about
-// the store behind it.
-//
-// The room said none of them. `clearDeleteRefused()` ran BEFORE `showSnackbar`, which changed the
-// key the effect was running under, and an effect that changes its own key cancels itself: eleven
-// seconds after a refused delete the screen still read `Push Day deleted.` with `Undo`, while the
-// log still held the routine.
-//
-// A conversation is the delete the log can still refuse after its window: it goes over the wire.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class RefusedSettleTests {
-    @get:Rule
-    val compose = createComposeRule()
-
-    @get:Rule
-    val tmp = TemporaryFolder()
-
-    // The room flushes through the engine as it leaves, so the screen goes before the engine closes.
+    @get:Rule val compose = createComposeRule()
+    @get:Rule val tmp = TemporaryFolder()
     private var showing by mutableStateOf(true)
 
-    // The shipped nine seconds, whole. The window's clock runs on the main dispatcher, which counts
-    // down the LOOPER's clock, so nine seconds cost nothing and `idleFor` is what spends them.
-    private val window = Withheld.windowMs
-
     @Test
-    fun testARefusedSettleIsSaidOnceAndTakesTheWayBackDownWithIt() {
+    fun aConfirmedConversationDeleteFailureIsSaidOnceAndRetainsTheRowWithoutUndo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
@@ -74,48 +57,44 @@ class RefusedSettleTests {
                 throw IOException("the log is down")
             }
         }
-        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = log)
+        val failures = mutableListOf<String>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = log, telemetry = telemetry)
         try {
             runBlocking { room.select("u1") }
             val store = room.store
             compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
             compose.waitForIdle()
             compose.onNodeWithText("Coach").performClick()
-            compose.onNodeWithText(Threads.door).performClick()
+            compose.onNode(hasText(Threads.door) or hasContentDescription(Threads.door)).performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty()
             }
-
-            // The swipe's dismiss finishes, then the row goes and the transient arrives — three
-            // recompositions the gesture does not wait for, so the arrival is WAITED FOR rather than
-            // read at a chosen moment.
             compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("Conversation deleted.", substring = true).fetchSemanticsNodes().isNotEmpty()
-            }
-            compose.onNodeWithText("Conversation deleted.", substring = true).assertIsDisplayed()
-            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
-
-            // The window closes, the log is asked, and it says no. The clock is the store's own and it
-            // runs on the main looper, so the looper is what carries the nine seconds here.
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(window + 1))
-            compose.waitForIdle()
-            compose.runOnIdle { assertEquals("the window closed", 0, store.withheld.size) }
-
+            compose.onNodeWithText("Delete this conversation?").assertIsDisplayed()
+            compose.runOnIdle { assertEquals(0, deletes) }
+            compose.onNodeWithText("Delete").performClick()
             val said = "the log didn’t answer — that conversation is still here"
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty()
-            }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty() }
+            compose.onAllNodesWithText(said).assertCountEquals(1)
             compose.onNodeWithText(said).assertIsDisplayed()
-            // The transient's state agrees with the store's: nothing is held, so nothing offers a way
-            // back to it, and the row is on the screen where the lifter left it.
+            compose.onNodeWithText("Delete this conversation?").assertDoesNotExist()
             compose.onNodeWithText("Conversation deleted.", substring = true).assertDoesNotExist()
             compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
             compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(Withheld.windowMs + 1))
+            compose.waitForIdle()
             compose.runOnIdle {
-                assertEquals("asked once, not once every window", 1, deletes)
-                assertEquals("and the conversation is still the lifter's", listOf("thr_1"), store.coach.threads.map { it.id })
+                assertEquals(1, deletes)
+                assertEquals(listOf("thr_1"), store.coach.threads.map { it.id })
+                assertEquals(emptyList<Withheld>(), store.withheld)
+                assertEquals(listOf("gym.deleteThread"), failures)
+                assertEquals(listOf("gym_action" to mapOf("screen" to "threads", "action" to "delete", "outcome" to "failed")),
+                    events.filter { it.first == "gym_action" && it.second["action"] == "delete" })
             }
         } finally {
             compose.runOnIdle { showing = false }

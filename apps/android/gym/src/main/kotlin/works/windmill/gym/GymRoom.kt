@@ -114,7 +114,6 @@ import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.coach.ThreadScreen
 import works.windmill.gym.coach.ThreadsScreen
-import works.windmill.gym.coach.askThreadSaver
 import works.windmill.gym.notification.WorkoutNotifications
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -295,34 +294,24 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var lookedAt by rememberSaveable { mutableStateOf("") }
     // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
     var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
-    // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
-    // the turns and receipts; unanswered submissions also live in the account’s local journal.
-    var conversation by rememberSaveable(stateSaver = remember(telemetry) { askThreadSaver(telemetry) }) {
-        mutableStateOf(emptyList<AskExchange>())
-    }
+    val conversationId = store.coach.selectedChatId.orEmpty()
+    val selectedChat = store.coach.chat(conversationId)
+    val conversation = selectedChat?.exchanges.orEmpty()
+    val asking = store.coach.isAsking(conversationId)
+    val coachUpload = store.coach.upload(conversationId)
+    val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
     // drawn off it.
     var building by rememberSaveable(stateSaver = remember(telemetry) { routineDraftSaver(telemetry) }) {
         mutableStateOf<RoutineDraft?>(null)
     }
-    // Which conversation the next question lands in; minted by this phone, empty until somebody asks.
-    var conversationId by rememberSaveable { mutableStateOf("") }
-    var conversationSeed by rememberSaveable { mutableStateOf("") }
-    // Outlives the screen, because the request does.
-    var asking by remember { mutableStateOf(false) }
     // Which seat the thread above belongs to; empty is the anonymous one. Saved with the thread.
     var seat by rememberSaveable { mutableStateOf(account.user?.id ?: "") }
     // Whether this room has met the lifter. NOT saved: `account.user` is null until /v1/me answers,
     // so the first frame of every launch looks like nobody signed in.
     var seatRead by remember { mutableStateOf(account.user != null) }
     val sessionStates = key(seat) { rememberSaveableStateHolder() }
-    // This deployment has no Coach: a bare 404 from the route. Not remembered past the room's life.
-    var askAbsent by rememberSaveable { mutableStateOf(false) }
-    // An allowance ran out — the day's ten, or the account's 30-day ceiling: the composer is down
-    // until the room is entered again, and the log is the one that says whether it is back. Which
-    // ceiling it was decides what is said and which door leads. Saved: a recreation is not a
-    // re-entry, so it must not hand the composer back mid-cap.
-    var cap by rememberSaveable { mutableStateOf<AskCap?>(null) }
+    val askAbsent = selectedChat?.absent == true
     // The room's one haptic vocabulary, used for the acts the room itself owns: a finish, and a save
     // the room performs on a screen's behalf.
     val haptics = rememberGymHaptics()
@@ -340,6 +329,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // The note is about the screen you are ON, so every move between destinations clears it.
     fun look(at: Away) {
         note = null
+        if (at is Away.Coach) {
+            try { store.coach.freshChat(at.seed) }
+            catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
+        }
         away = away + at
         pruneReceipts()
     }
@@ -463,13 +456,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         // wrong: this effect runs first at composition, when `account.user` is null for everybody.
         val standing = account.user?.id
         if (Ask.handedOver(seat, standing, seatRead) || (standing == null && seat.isNotEmpty())) {
-            conversation = emptyList()
-            conversationSeed = ""
-            asking = false
-            cap = null
-            // The id goes with the words, or the next lifter's question lands in somebody else's
-            // conversation.
-            conversationId = ""
             seat = standing ?: ""
             receipts = emptyMap()
             finished = null
@@ -480,24 +466,13 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             away = emptyList()
         }
         if (standing != null) seatRead = true
-        // The thread is saved and the request is not, so a recreation mid-answer restores a question
-        // with nothing coming.
-        conversation = Ask.settled(conversation)
         store.connect(account)
-        if (conversationId.isEmpty() && standing != null) {
-            try {
-                store.coach.pendingQuestions().lastOrNull()?.let { pending ->
-                    conversationId = pending.thread
-                    val read = store.coach.thread(pending.thread)
-                    conversation = if (read is GymResult.Ok) read.value.exchanges() else emptyList()
-                    if (read !is GymResult.Ok || read.value.generation?.requestId != pending.requestId) {
-                        conversation = conversation + store.coach.pendingExchange(pending)
-                    }
-                    conversation = Ask.settled(conversation)
-                }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
-        }
+        try {
+            if (store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) store.coach.freshChat()
+            store.coach.resumeChats()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure) }
+
     }
 
     // LEAVING KEEPS THE WINDOW. The transient is the room's and follows the lifter through every pop,
@@ -550,7 +525,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.clearDeleteRefused()
     }
 
-    // Legacy workout/conversation windows follow the room; durable weights follow the process.
+    // Workout windows follow the room; durable weights follow the process.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
@@ -650,89 +625,35 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if ((away.lastOrNull() as? Away.Session)?.summary?.id == sessionId) back()
     }
 
-    // Asked from the room, not from the screen that draws it, so the coroutine and the answer outlive
-    // a lifter walking away mid-wait. The door closes on the way IN, or two taps are two spends.
-    var coachJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var coachUpload by remember { mutableStateOf<Float?>(null) }
-    var stopPending by remember { mutableStateOf(false) }
-    fun ask(from: List<AskExchange>, question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
-        if (asking || Ask.needsNew(from) || (!Ask.sendable(question) && (photo == null || question.toByteArray().size > Ask.maxTurnBytes))) return
-        val askingOwner = currentAccount.user?.id
-        val asked = question.trim()
-        // Minted before the send and kept whatever comes back, so a retry continues the same
-        // conversation. Each question also retains its own request ID for retries.
-        val into = conversationId.ifEmpty { Ids.thread().also { conversationId = it } }
-        val previous = conversation.lastOrNull()?.takeIf { it.requestId == requestId }
-        val attachments = previous?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
-        val pending = AskExchange(question = asked, requestId = requestId, generation = previous?.generation, attachments = attachments)
-        try {
-            store.coach.saveDraft(into, CoachDraft(asked, attachments.firstOrNull()))
-            store.coach.saveDraft("new", CoachDraft())
-        } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
-        cap = null
-        asking = true
-        coachUpload = if (attachments.isNotEmpty() && previous?.generation == null) 0f else null
-        conversation = from + pending
-        coachJob = scope.launch {
-            try {
-                val outcome = store.coach.ask(into, asked, requestId, attachments.firstOrNull(), stream = true,
-                    onSnapshot = { snapshot ->
-                        if (askingOwner == currentAccount.user?.id && conversationId == into) {
-                            conversation = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
-                            store.coach.saveDraft(into, CoachDraft())
-                        }
-                    }, onUpload = { coachUpload = it })
-                if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
-                conversation = from + outcome.exchange(pending)
-                if (outcome is AskOutcome.Capped) cap = outcome.cap
-                if (outcome is AskOutcome.Absent) askAbsent = true
-                if (outcome is AskOutcome.Answered) store.coach.saveDraft(into, CoachDraft())
-            } finally {
-                if (askingOwner == currentAccount.user?.id && conversationId == into) { asking = false; coachUpload = null; stopPending = false }
+    fun openCoachChat(id: String, action: String) {
+        store.coach.selectChat(id, action)
+        look(Away.Thread(id))
+    }
+
+    fun openCoachWorkout(id: String) {
+        val owner = store.accountKey
+        scope.launch {
+            when (val read = store.sessionDetail(id)) {
+                is GymResult.Ok -> if (owner == store.accountKey) {
+                    val detail = read.value
+                    look(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail))
+                }
+                is GymResult.Failed -> if (owner == store.accountKey) note = read.why.line("that workout didn’t open")
             }
         }
     }
 
-    fun stopCoach() {
-        if (stopPending) return
-        val last = conversation.lastOrNull() ?: return
-        if (coachUpload != null) {
-            coachJob?.cancel()
-            conversation = conversation.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true)
-            return
-        }
-        val into = conversationId
-        val askingOwner = currentAccount.user?.id
-        stopPending = true
-        scope.launch {
-            try {
-                val snapshot = store.coach.stop(into, last.requestId)
-                if (askingOwner == currentAccount.user?.id && conversationId == into) {
-                    conversation = conversation.dropLast(1) + snapshot.exchange()
-                    if (snapshot.terminal) { store.coach.saveDraft(into, CoachDraft()); coachJob?.cancel(); asking = false }
-                }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (_: Exception) { note = "The stop request didn’t reach Coach. Try again." }
-            finally { stopPending = false }
-        }
+    fun ask(question: String, requestId: String = Ids.thread(), photo: CoachAttachment? = null) {
+        val id = store.coach.selectedChatId ?: try { store.coach.freshChat() }
+            catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
+        if (!store.coach.submit(id, question, photo, requestId)) note = "Your message couldn’t be saved. Try again."
     }
 
-    LaunchedEffect(conversationId, conversation.lastOrNull()?.generation?.id) {
-        val last = conversation.lastOrNull()
-        if (!asking && last?.generation?.status == "running") {
-            ask(conversation.dropLast(1), last.question, last.requestId, last.attachments.firstOrNull())
-        }
-    }
+    fun stopCoach() { store.coach.stopChat(conversationId) }
 
-    // The live thread and its id are let go of; what was asked is on the log.
     fun askSomethingNew(draft: String = "") {
-        if (asking) return
-        try { store.coach.abandon(conversationId.ifEmpty { "new" }) }
-        catch (_: Exception) { note = "Your draft couldn’t be cleared. Try again."; return }
-        conversationSeed = draft
-        conversation = emptyList()
-        conversationId = ""
-        cap = null
+        try { store.coach.freshChat(draft) }
+        catch (_: Exception) { note = "Your draft couldn’t be saved. Try again."; return }
         away = emptyList()
         receipts = emptyMap()
         tab = Tab.Coach
@@ -881,7 +802,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                         return@closeFinish
                                     }
                                     askSomethingNew()
-                                    ask(from = emptyList(), question = FinishCoach.question)
+                                    ask(question = FinishCoach.question)
                                 }
                             }
                         } else {
@@ -957,10 +878,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     current = tab,
                                     onPick = { picked ->
                                         note = null
-                                        // Entering Coach again offers the composer; whether the allowance is
-                                        // back is the log's to say.
-                                        if (picked != tab) cap = null
-                                        tab = picked
+                                        if (picked == Tab.Coach) askSomethingNew()
+                                        else tab = picked
                                     },
                                 )
                             } else {
@@ -1064,20 +983,22 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             thread = conversation,
                             conversationId = conversationId,
                             onOpenRoutine = { selectedRoutineId = it },
+                            onOpenWorkout = ::openCoachWorkout,
+                            onOpenChat = { openCoachChat(it, "reply_open") },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
                             cap = cap,
-                            onAsk = { asked -> ask(conversation, asked) },
-                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onAsk = { asked -> ask(asked) },
+                            onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
                             onStop = ::stopCoach, upload = coachUpload,
                             // Only the newest question is ever asked again: a retry further up would drop
                             // everything asked since.
                             onRetry = {
-                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
+                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },
                             onAskNew = { askSomethingNew() },
-                            seed = conversationSeed.ifEmpty { standing.seed },
+                            seed = "",
                             onNewDraft = { askSomethingNew(it) },
                             onThreads = { look(Away.Threads) },
                             onConnections = { look(Away.Connections) },
@@ -1091,8 +1012,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             store = store,
                             backTo = beneath,
                             onBack = { back() },
-                            onOpen = { look(Away.Thread(it)) },
-                            onDelete = { store.withhold(Deletion.Thread(it)) },
+                            onOpen = { openCoachChat(it, "history_open") },
                             onAskNew = { askSomethingNew() },
                         )
                         standing is Away.Thread -> ThreadScreen(
@@ -1104,6 +1024,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onNotes = { look(Away.Notes) },
                             onConnections = { look(Away.Connections) },
                             onOpenRoutine = { selectedRoutineId = it },
+                            onOpenWorkout = ::openCoachWorkout,
+                            onOpenChat = { openCoachChat(it, "reply_open") },
                             receipts = receipts[Reviewing.thread(standing.threadId)].orEmpty(),
                             lookedAt = lookedAtIds,
                             backTo = beneath,
@@ -1130,18 +1052,20 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             thread = conversation,
                             conversationId = conversationId,
                             onOpenRoutine = { selectedRoutineId = it },
+                            onOpenWorkout = ::openCoachWorkout,
+                            onOpenChat = { openCoachChat(it, "reply_open") },
                             receipts = receipts[Reviewing.coach].orEmpty(),
                             lookedAt = lookedAtIds,
                             asking = asking,
                             cap = cap,
-                            onAsk = { asked -> ask(conversation, asked) },
-                            onPhotoAsk = { asked, photo -> ask(conversation, asked, photo = photo) },
+                            onAsk = { asked -> ask(asked) },
+                            onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
                             onStop = ::stopCoach, upload = coachUpload,
                             onRetry = {
-                                conversation.lastOrNull()?.let { ask(conversation.dropLast(1), it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
+                                conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },
                             onAskNew = { askSomethingNew() },
-                            seed = conversationSeed,
+                            seed = "",
                             onNewDraft = { askSomethingNew(it) },
                             onThreads = { look(Away.Threads) },
                             onConnections = { look(Away.Connections) },

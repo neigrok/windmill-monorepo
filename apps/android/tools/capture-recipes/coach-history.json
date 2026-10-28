@@ -1,0 +1,161 @@
+[
+  {
+    "board": "08.4",
+    "name": "coach-history",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "tool_use",
+          "id": "read_notes",
+          "name": "list_notes",
+          "input": {}
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+        }
+      ],
+      [
+        {
+          "type": "text",
+          "text": "Choose a weight you can lift 8 times with good form."
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Push A still doing anything?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "How heavy should I start squats?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Choose a weight you can lift 8 times with good form."
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "tap": "New chat"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Plan a lighter week"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "wait": "Plan a lighter week"
+      }
+    ]
+  },
+  {
+    "board": "08.5",
+    "name": "coach-what-read",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Is Push A still doing anything?"
+      },
+      {
+        "wait": "Read 1 workout \u00b7 1 week"
+      },
+      {
+        "tap": "Read 1 workout \u00b7 1 week"
+      },
+      {
+        "wait": "What Coach read"
+      },
+      {
+        "wait": "Also read your notes."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      },
+      {
+        "tap": "History"
+      },
+      {
+        "wait": "Plan a lighter week"
+      }
+    ]
+  },
+  {
+    "board": "08.34",
+    "name": "history-delete",
+    "account": "fixture",
+    "steps": [
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Is Push A still doing anything?",
+          "row": true,
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.15,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Delete this conversation?"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "wait": "Is Push A still doing anything?"
+      }
+    ]
+  }
+]

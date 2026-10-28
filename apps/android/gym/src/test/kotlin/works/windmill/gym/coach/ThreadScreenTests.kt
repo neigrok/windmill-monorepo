@@ -6,6 +6,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -79,10 +81,10 @@ class ThreadScreenTests {
         rest.conversations["thread-ordinary"] = AskThread("thread-ordinary", "How was my workout?", askedAtMs = today,
             outcome = ThreadOutcome("read-only"))
         val store = signedIn(scope, rest).store
-        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}, {}) }
+        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}) }
 
-        compose.onNodeWithText("today · Created Push A").assertIsDisplayed()
-        compose.onNodeWithText("today").assertIsDisplayed()
+        compose.onNodeWithText("Created Push A").assertIsDisplayed()
+        compose.onAllNodes(hasText("Today")).assertCountEquals(2)
         compose.onNodeWithText("Read only").assertDoesNotExist()
         compose.onNodeWithText("Your conversations").assertDoesNotExist()
         scope.cancel()
@@ -173,6 +175,27 @@ class ThreadScreenTests {
         compose.onNodeWithText("1 change · still waiting").assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
         compose.runOnIdle { assertEquals(listOf("proposal1"), doors) }
+        scope.cancel()
+    }
+
+    @Test fun legacyHeaderProposalKeepsItsReceiptBesideTheUnchangedReviewCard() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val rest = FakeGymRest()
+        val room = signedIn(scope, rest)
+        val routine = pushDay(room, server)
+        propose(room, server, routine)
+        rest.conversations["thread0001"] = aThread(routine.id).copy(turns = listOf(
+            AskTurn(Ask.fromLifter, "Is my week too light?", requestId = "legacy-request"),
+            AskTurn("coach", "Keep the proposal review here.", requestId = "legacy-request",
+                receipt = AnswerReceipt(1, ReadTally(sessions = 1, weeks = 1), steps = listOf(AskStep("list_sessions")))),
+        ))
+        compose.setContent { ThreadScreen("thread0001", room.store, emptyList(), emptySet(), "Coach", {}, {}, {}) }
+        compose.onNodeWithText("Read 1 week · 1 session").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Read 1 workout · 1 week").assertDoesNotExist()
+        compose.onNodeWithText("Proposal · Push Day").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
+        compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
         scope.cancel()
     }
 

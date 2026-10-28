@@ -141,6 +141,7 @@ struct AskThread {
   std::optional<AskGeneration> generation;
   std::vector<CoachResult> results;
   std::string nextCursor;
+  std::string answerPreview;
 
   bool operator==(const AskThread&) const = default;
 };

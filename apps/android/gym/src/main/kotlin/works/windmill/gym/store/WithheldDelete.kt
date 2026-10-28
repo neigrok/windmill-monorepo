@@ -10,8 +10,6 @@ sealed interface Deletion {
 
     val line: String
 
-    val detail: String? get() = null
-
     val stillThere: String?
 
     data class Set(val sessionId: String, val set: TrainingSet) : Deletion {
@@ -25,13 +23,6 @@ sealed interface Deletion {
         override val subjectId: String get() = routineId
         override val line: String get() = "$name deleted."
         override val stillThere: String get() = "$name is still in your program"
-    }
-
-    data class Thread(val threadId: String) : Recoverable {
-        override val subjectId: String get() = threadId
-        override val line: String get() = "Conversation deleted."
-        override val detail: String get() = "your routine keeps what you applied"
-        override val stillThere: String get() = "that conversation is still here"
     }
 
     data class Session(val sessionId: String) : Recoverable {
@@ -80,6 +71,6 @@ object Withheld {
         if (open == 0) return null
         if (open > 1) return "$open deleted."
         val only = held.last { it.takeable }.deletion
-        return only.detail?.let { "${only.line}\n$it" } ?: only.line
+        return only.line
     }
 }

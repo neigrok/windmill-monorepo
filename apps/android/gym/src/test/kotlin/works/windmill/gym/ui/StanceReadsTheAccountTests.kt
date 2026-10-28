@@ -36,6 +36,7 @@ import works.windmill.gym.coach.Threads
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
@@ -164,44 +165,24 @@ class StanceReadsTheAccountTests {
         } finally { scope.cancel() }
     }
 
-    // The threads room read a list it held ITSELF, refreshed once on the way in — so the stance was
-    // the window's twice over, and a conversation whose window closed came BACK on the next
-    // recomposition, off a snapshot nothing had corrected. The list is the room's now, and the
-    // stance reads the account.
     @Test
     fun theThreadsRoomReadsTheAccountAndADeletedConversationNeverComesBack() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val store = room(scope, server).store
-        compose.setContent {
-            ThreadsScreen(store = store, backTo = "Coach", onBack = {}, onOpen = {},
-                onDelete = {}, onAskNew = {})
-        }
+        compose.setContent { ThreadsScreen(store, "Coach", {}, {}, {}) }
         compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
-        compose.onNodeWithText("Your conversations").assertDoesNotExist()
-
-        compose.runOnIdle { store.withhold(Deletion.Thread("thr_1")) }
-
-        compose.onNodeWithText(Threads.none).assertDoesNotExist()
-        compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
+        val deleted = compose.runOnIdle { scope.async { store.coach.deleteThread("thr_1") } }
+        compose.waitUntil(5_000) { deleted.isCompleted }
+        assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
         compose.runOnIdle {
-            assertEquals("the count captions rows, and there are none to caption",
-                emptyList<AskThread>(), store.coach.threads)
-            assertEquals("while the account still holds the conversation",
-                listOf("thr_1"), store.coach.allThreads.map { it.id })
-        }
-
-        compose.runOnIdle { runBlocking { store.settleWithheld("thr_1") } }
-        compose.runOnIdle {
-            assertTrue("the log took it", "thr_1" !in server.conversations)
-            assertEquals("and the READ lost it with the row", emptyList<AskThread>(), store.coach.allThreads)
+            assertEquals(emptyList<AskThread>(), store.coach.allThreads)
+            assertEquals(emptySet<String>(), server.conversations.keys)
+            assertEquals(emptyList<Any>(), store.withheld)
         }
         compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
-        // The count captions rows, so an emptied account draws its silence and no `0 conversations`
-        // over it.
-        compose.onNodeWithText(Threads.counted(0)).assertDoesNotExist()
         scope.cancel()
     }
 
@@ -244,12 +225,8 @@ class StanceReadsTheAccountTests {
         scope.cancel()
     }
 
-    // The room holds the conversations, and that is a store for the WINDOW to survive — not a cache
-    // to draw from. An outcome is derived by the server from the proposals, so a list this entry
-    // could not re-read would call an applied proposal `waiting`, under a line saying the
-    // conversations are out of reach. A read this entry never landed draws nothing at all.
     @Test
-    fun aThreadsReadThisEntryCouldNotMakeDrawsNoRowsAndNoCount() {
+    fun aFailedHistoryRefreshKeepsOwnerScopedRowsUnderTheFailureLine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
@@ -259,44 +236,34 @@ class StanceReadsTheAccountTests {
 
         compose.setContent {
             ThreadsScreen(store = store, backTo = "Coach", onBack = {}, onOpen = {},
-                onDelete = {}, onAskNew = {})
+                onAskNew = {})
         }
 
         compose.onNodeWithText(Threads.outOfReach).assertIsDisplayed()
-        compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
+        compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
         compose.onNodeWithText("Your conversations").assertDoesNotExist()
-        // A list that could not be read is not an empty one either, so the never-asked stance stays
-        // off as well.
         compose.onNodeWithText(Threads.none).assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals("the room keeps what it last read, and the screen declines to draw it",
+            assertEquals("the owner-scoped archive retains the received conversation",
                 listOf("thr_1"), store.coach.allThreads.map { it.id })
         }
         scope.cancel()
     }
 
-    // The 404 is the log saying the conversation is already gone, and this room answers it as
-    // success — so it owes the same fold as the 200: a read still holding the row would put it back
-    // on screen the moment the window closed.
     @Test
-    fun aSettledThreadDeleteTheLogHasAlreadyForgottenStillLeavesTheRead() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    fun anAlreadyDeletedConversationStillLeavesTheLocalArchive() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val store = room(scope, server).store
         runBlocking { store.coach.readThreads() }
-        server.refuseThreads = WindmillApiException.Refused(
-            404, Refusal(message = "no such conversation"))
-
-        store.withhold(Deletion.Thread("thr_1"))
-        assertEquals("the row is off the screen", emptyList<AskThread>(), store.coach.threads)
-        assertEquals("and still on the account", listOf("thr_1"), store.coach.allThreads.map { it.id })
-
-        val failure = runBlocking { store.settleWithheld("thr_1") }
-
-        assertEquals("a conversation the log has already forgotten is not a refusal", null, failure)
-        assertEquals("and the READ lost it just as it does on the 200",
-            emptyList<AskThread>(), store.coach.allThreads)
+        server.refuseThreads = WindmillApiException.Refused(404, Refusal(message = "no such conversation"))
+        val deleted = scope.async { store.coach.deleteThread("thr_1") }
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertTrue(deleted.isCompleted)
+        assertEquals(GymResult.Ok(Unit), runBlocking { deleted.await() })
+        assertEquals(emptyList<AskThread>(), store.coach.allThreads)
+        assertEquals(emptyList<Any>(), store.withheld)
         scope.cancel()
     }
 

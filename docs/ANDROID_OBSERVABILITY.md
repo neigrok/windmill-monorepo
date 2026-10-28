@@ -72,6 +72,30 @@ fails. It produces no repeated `gym.refreshWorkout` or misattributed `sync_push`
 window includes one `hello/unreachable` metric of unproven cause, without an Issue; later readback
 and the independent recovered edit succeed. Local receipt does not establish vendor delivery.
 
+## Coach archive and navigation
+
+Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
+`action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
+Recreation restores the selected chat without a fresh-entry event. Ask transport retains
+`gym_ask_started`, `gym_ask_outcome` and the `gym.ask` failure boundary.
+
+The existing local Coach document owns archive failures at `gym.saveConversation` and
+`gym.restoreConversation`; draft writes use `gym.saveDraft`, photo preparation uses
+`gym.preparePhoto` and photo storage uses `gym.savePhoto`. A failed archive publication retains
+its cached state and does not relabel a received server answer as a transport failure. Drafts that
+have not reached storage remain recoverable and cannot bypass persistence on Send. Chat identities,
+request identities, drafts, photo names/bytes, answer previews and receipt content are never event
+or failure properties. Cancelled photo uploads retire their pending request atomically while retaining
+the Retry draft. Late photo completion cannot recreate a deleted chat; cleanup retains every photo
+referenced by a live draft, request or archived exchange.
+
+History confirmation emits `gym_action` with `screen=threads`, `action=delete`, `state=shown`.
+Cancel or dismissal emits `outcome=cancelled`; the application-owned confirmed delete emits one
+`outcome=ok|refused|failed`. A successful server receipt precedes removal of retained local metadata;
+404 reconciles as already deleted. Local-only drafts delete without a network call. Technical
+failures retain `gym.deleteThread`; expected refusals emit an outcome without an Issue. Conversation
+deletion has no held window or Undo.
+
 ## Deletion actions
 
 Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
@@ -97,7 +121,7 @@ saves use the domain action's accepted values, so no follow-up read can relabel 
 Background/restart/account release never emits a new user action.
 
 The telemetry policy accepts only these finite screen/action/outcome combinations and the existing
-notification/tile combinations. Names, note text, dates, weights, record/receipt IDs and raw failure
+notification/tile and Coach combinations. Names, note text, dates, weights, record/receipt IDs and raw failure
 messages never enter these events. Installed verification observes one result per settled set/note
 delete, one held action per weight request, two successful Undo actions and one background closure.
 The background check completes before the nine-second deadline, with no held receipt or Undo after
@@ -300,6 +324,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Motion settings | technical failure `onboarding_motion_settings` | static operation; motion falls back to reduced |
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
+| Coach archive navigation | `gym_action` | screen: `coach`; action: `fresh_entry`, `history_open`, `draft_restored`, `reply_open`, `read_sources`; outcome: `ok` |
+| Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Workout navigation | `gym_action` | screen: `workout`; action: `movement_switch`, `open_workout`; outcome: `ok` |

@@ -1,0 +1,37 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 3,
+              "weightKg": 90
+            },
+            {
+              "reps": 3,
+              "weightKg": 90
+            },
+            {
+              "reps": 3,
+              "weightKg": 90
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "routine": 0,
+      "daysAgo": 32,
+      "minutesAgo": 0,
+      "weightKg": 50,
+      "reps": 8,
+      "setsPerMovement": 1
+    }
+  ]
+}

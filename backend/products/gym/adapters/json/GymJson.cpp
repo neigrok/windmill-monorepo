@@ -598,6 +598,7 @@ Json::Value toJson(const AskThread& thread) {
   body["createdAt"] = Json::Value::UInt64(thread.createdAtMs);
   body["askedAt"] = Json::Value::UInt64(thread.askedAtMs);
   body["outcome"] = toJson(outcomeOf(thread));
+  if (!thread.answerPreview.empty()) body["answerPreview"] = thread.answerPreview;
   if (thread.generation) body["generation"] = toJson(*thread.generation);
   if (!thread.nextCursor.empty()) body["nextCursor"] = thread.nextCursor;
   Json::Value proposals(Json::arrayValue);

@@ -34,6 +34,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.key
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.LaunchedEffect
@@ -41,7 +43,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -52,7 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.coroutines.flow.drop
 import works.windmill.gym.R
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Exercise
@@ -61,10 +62,8 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.LocalShellActions
-import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
-import works.windmill.platform.net.WindmillJson
 
 @Composable
 fun AskScreen(
@@ -98,10 +97,27 @@ fun AskScreen(
     onPhotoAsk: ((String, CoachAttachment?) -> Unit)? = null,
     onStop: (() -> Unit)? = null,
     upload: Float? = null,
+    onOpenWorkout: ((String) -> Unit)? = null,
+    onOpenChat: ((String) -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
-    val presentation = rememberCoachPresentation(conversationId, thread)
+    val savedPosition = store.coach.chat(conversationId)
+    val account = store.coach.accountKey
+    val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
+    var sourcesHeight by remember(conversationId) { mutableStateOf(0) }
+    val sourcesSpace = with(LocalDensity.current) { sourcesHeight.toDp() } + if (sourcesHeight > 0) 24.dp else 0.dp
+    DisposableEffect(presentation, account) {
+        onDispose {
+            if (store.coach.accountKey == account) store.coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
+        }
+    }
+    LaunchedEffect(presentation, account) {
+        snapshotFlow { presentation.scroll.isScrollInProgress }.drop(1).collect { scrolling ->
+            if (!scrolling && store.coach.accountKey == account)
+                store.coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
+        }
+    }
     val messageKeys = presentation.keys
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
     val scope = rememberCoroutineScope()
@@ -110,17 +126,16 @@ fun AskScreen(
     val shell = LocalShellActions.current
     var menu by remember { mutableStateOf(false) }
     var draftFailure by remember { mutableStateOf<String?>(null) }
-    fun newChat() {
-        try { store.coach.abandon(conversationId.ifEmpty { "new" }); onAskNew() }
-        catch (_: Exception) { draftFailure = "Your draft couldn’t be cleared. Try again." }
-    }
+    fun newChat() { onAskNew() }
 
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val minted = remember { mutableStateMapOf<String, Proposal>() }
     val missing = remember { mutableStateMapOf<String, Boolean>() }
-    val wanted = (thread.flatMap { it.answer?.proposals.orEmpty() } + proposalIds).distinct()
+    val attachedProposals = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
+    val headerProposals = proposalIds.filterNot { it in attachedProposals }
+    val wanted = (attachedProposals + proposalIds).toList()
     LaunchedEffect(wanted) {
         wanted.forEach { id ->
             if (minted.containsKey(id) || missing.containsKey(id)) return@forEach
@@ -171,10 +186,10 @@ fun AskScreen(
                     .then(presentation.anchoring)
                     .verticalScroll(presentation.scroll)
                     .padding(horizontal = GymLayout.gutter)
-                    .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x2),
+                    .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x2 + sourcesSpace),
             ) {
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
-                (historyFailure ?: draftFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
+                (historyFailure ?: draftFailure ?: store.coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
                 thread.forEachIndexed { index, exchange ->
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
@@ -192,7 +207,7 @@ fun AskScreen(
                                 Text(Ask.waiting, style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
                             }
                             answered?.let { answer ->
-                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking)
+                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesHeight = it }
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
                                     else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
@@ -210,8 +225,7 @@ fun AskScreen(
                         }
                     }
                 }
-                val attached = thread.flatMap { it.answer?.proposals.orEmpty() }.toSet()
-                proposalIds.filterNot { it in attached }.forEach { id ->
+                headerProposals.forEach { id ->
                     (store.settledProposals[id] ?: minted[id])?.let { proposal ->
                         Minted(proposal, store.catalog, nowMs, id in lookedAt) { onReview(proposal) }
                     }
@@ -232,6 +246,15 @@ fun AskScreen(
             }, modifier = Modifier.align(Alignment.BottomCenter).heightIn(min = 48.dp)
                 .background(skin.surface, RoundedCornerShape(24.dp)).padding(horizontal = 12.dp)) {
                 Text("Jump to latest", style = WindmillFont.body(14), color = skin.accent)
+            }
+        }
+        store.coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Reply pending", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
+                    Text(pending.title, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                }
+                TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
         }
         Column(
@@ -359,13 +382,17 @@ private fun Answer(
     threadId: String,
     requestId: String,
     canConfirm: Boolean,
+    onOpenWorkout: ((String) -> Unit)?,
+    hasHeaderProposals: Boolean,
+    onSourcesHeight: (Int) -> Unit,
 ) {
     val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
         val current = answer.confirmedBy(coach.confirmedGeneration(requestId))
         CoachAnswer(current.answer, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
             routineDrafts = current.routineDrafts,
-            onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null)
+            onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null,
+            hasProposals = hasHeaderProposals || current.proposals.isNotEmpty(), onOpenWorkout = onOpenWorkout, onSourcesHeight = onSourcesHeight)
         // Drawn from the LOG's own copy and never from what the model said about it.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
             Minted(proposal, catalog, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
@@ -413,26 +440,3 @@ private fun Trouble(said: String, onRetry: (() -> Unit)?) {
         }
     }
 }
-
-// A real ceiling: a `rememberSaveable` rides in the Bundle crossing to the system, and past the
-// process-wide cap the app dies with TransactionTooLargeException.
-private const val savedThreadBytes = 32_000
-
-// The live thread through an activity recreation, as JSON: the TAIL that fits, and a failed save or
-// restore is EMPTY rather than a crash.
-fun askThreadSaver(telemetry: Telemetry): Saver<List<AskExchange>, String> =
-    Saver(save = { savedThread(it, telemetry) }, restore = { readThread(it, telemetry) })
-
-internal fun savedThread(thread: List<AskExchange>, telemetry: Telemetry = Telemetry.None): String? = runCatching {
-    var kept = thread
-    var written = WindmillJson.encodeToString(ListSerializer(AskExchange.serializer()), kept)
-    while (kept.size > 1 && written.toByteArray(Charsets.UTF_8).size > savedThreadBytes) {
-        kept = kept.drop(1)
-        written = WindmillJson.encodeToString(ListSerializer(AskExchange.serializer()), kept)
-    }
-    written
-}.onFailure { telemetry.failure("gym.saveConversation", it) }.getOrNull()
-
-internal fun readThread(written: String, telemetry: Telemetry = Telemetry.None): List<AskExchange> = runCatching {
-    WindmillJson.decodeFromString(ListSerializer(AskExchange.serializer()), written)
-}.onFailure { telemetry.failure("gym.restoreConversation", it) }.getOrDefault(emptyList())

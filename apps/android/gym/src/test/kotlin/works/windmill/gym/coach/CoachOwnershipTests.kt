@@ -84,7 +84,10 @@ class CoachOwnershipTests {
             val release = java.util.concurrent.CountDownLatch(1)
             val file = File(tmp.root, "coach-final-$recover")
             val disk = LocalCoach(file) { target, text ->
-                if (text == "{}") {
+                val document = works.windmill.platform.net.WindmillJson.parseToJsonElement(text) as kotlinx.serialization.json.JsonObject
+                val pending = (document["pending"] as? kotlinx.serialization.json.JsonObject)?.get("a") as? kotlinx.serialization.json.JsonObject
+                val chats = (document["chats"] as? kotlinx.serialization.json.JsonObject)?.get("a") as? kotlinx.serialization.json.JsonObject
+                if (pending.isNullOrEmpty() && chats?.containsKey("thread-a") == true) {
                     entered.complete(Unit)
                     check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
                 }

@@ -147,6 +147,10 @@ std::vector<AskThread> PgAskThreadRepository::threadPage(const UserId& user, con
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kThreadColumns) +
+          ", (SELECT left(a.text, 240) FROM gym_ask_turns a "
+          "WHERE a.thread_id = t.id AND a.user_id = t.user_id "
+          "AND NOT a.from_lifter AND a.status = 'completed' AND a.text <> '' "
+          "ORDER BY a.position DESC LIMIT 1) AS answer_preview"
           " FROM gym_ask_threads t WHERE t.user_id = $1::uuid"
           " AND ($3::bigint = 0 OR (t.asked_at, t.id) < (to_timestamp($3::bigint / 1000.0), $4))"
           " ORDER BY t.asked_at DESC, t.id DESC LIMIT $2",
@@ -156,6 +160,7 @@ std::vector<AskThread> PgAskThreadRepository::threadPage(const UserId& user, con
   std::string ids;
   for (const auto& row : rows) {
     threads.push_back(threadFrom(row));
+    threads.back().answerPreview = row["answer_preview"].as<std::string>("");
     if (!ids.empty()) ids += ',';
     ids += threads.back().id.str();
   }

@@ -1785,11 +1785,14 @@ class TrainingStoreTests {
         val rest = FakeGymRest()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select(null)
-            val signIn = WriteFailure.Refused("Sign in first.")
-
-            assertEquals(GymResult.Failed(signIn), room.store.coach.readThreads())
-            assertEquals(GymResult.Failed(signIn), room.store.coach.thread("thr_1"))
-            assertEquals(GymResult.Failed(signIn), room.store.coach.deleteThread("thr_1"))
+            assertEquals(GymResult.Ok(emptyList<AskThread>()), room.store.coach.readThreads())
+            assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")), room.store.coach.thread("thr_1"))
+            val id = room.store.coach.freshChat("A phone-only draft")
+            val local = room.store.coach.allThreads.single()
+            assertEquals(GymResult.Ok(listOf(local)), room.store.coach.readThreads())
+            assertEquals(GymResult.Ok(local), room.store.coach.thread(id))
+            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread(id))
+            assertEquals(GymResult.Ok(emptyList<AskThread>()), room.store.coach.readThreads())
             assertEquals(emptyList<String>(), rest.calls)
             runCurrent()
         }

@@ -9,6 +9,11 @@ root installs a privacy-safe exception handler before forwarding. It preserves t
 response and the standalone host's framework error response. Framework, vendor and unknown-source
 log bodies become a fixed diagnostic; only a bounded filename and line number remain.
 
+Coach history's optional `answerPreview` is response content, never a diagnostic property. Its
+owner-scoped bounded read adds no mutation or product event. Unexpected projection failures use the
+existing privacy-safe request exception boundary with the matched `/v1/gym/threads` route; no
+question, answer, thread identity, SQL or raw database exception enters that report.
+
 Each write boundary emits one `write {…}` completion record with static `operation`, bounded
 `product` and `door`, `outcome`, numeric `duration_ms` rounded to 0.01 ms, and an internally generated
 `request_id`. Exactly one successful outer door completion is INFO per request; nested successful

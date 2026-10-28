@@ -435,7 +435,7 @@ class TrainingStore(
         private set
     var refusals: List<RefusedWrite> by mutableStateOf(emptyList())      // writes the log refused
         private set
-    // Weight receipts project engine holds; workout and conversation recovery remains room-owned.
+    // Weight receipts project engine holds; workout recovery remains room-owned.
     var withheld: List<WithheldDelete> by mutableStateOf(emptyList())
         private set
     private val clocks = mutableMapOf<String, Job>()
@@ -1463,7 +1463,7 @@ class TrainingStore(
         }.await()
     }
 
-    // Weigh-ins are durable engine holds; workout and conversation recovery stays room-owned.
+    // Weigh-ins are durable engine holds; workout recovery stays room-owned.
     fun withhold(deletion: Deletion.Recoverable) {
         if (deletion is Deletion.Bodyweight) {
             val seat = owner
@@ -1612,9 +1612,8 @@ class TrainingStore(
         deleteRefused = null
     }
 
-    // Workout and conversation recovery retain their existing settlement paths.
+    // Workout recovery retains its settlement path.
     private suspend fun send(deletion: Deletion.Recoverable): WriteFailure? = when (deletion) {
-        is Deletion.Thread -> (coach.deleteThread(deletion.threadId) as? GymResult.Failed)?.why
         is Deletion.Session -> if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
         is Deletion.Bodyweight -> error("weigh-in deletion requires its engine receipt")
     }

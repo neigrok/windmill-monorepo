@@ -317,6 +317,7 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   CHECK_EQ(detail.referencedProposals, before.referencedProposals);
   CHECK_EQ(detail.minted, (std::vector<ThreadProposal>{before.minted[1]}));
   AskThread summary = detail;
+  summary.answerPreview = detail.turns.back().text;
   summary.turns.clear();
   summary.generation.reset();
   CHECK_EQ(listed[0], summary);
@@ -426,6 +427,7 @@ TEST(pg_coach_history_ignores_malformed_receipts_without_changing_valid_evidence
     REQUIRE_EQ(listed.size(), 2u);
     for (const AskThread& row : listed) {
       AskThread expected = row.id == validThread ? valid : withoutReceipt;
+      expected.answerPreview = row.id == validThread ? "A proposal" : "Answer text stays";
       expected.turns.clear();
       CHECK_EQ(row, expected);
       CHECK_EQ(outcomeOf(row), row.id == validThread
@@ -544,6 +546,86 @@ TEST(pg_coach_cursor_pages_reach_old_threads_and_keep_all_messages_and_owner_sco
   REQUIRE_EQ(all.size(), turns.size());
   for (std::size_t index = 0; index < turns.size(); ++index) turns[index].position = index + 1;
   CHECK_EQ(all, turns);
+}
+
+TEST(pg_coach_history_preview_keeps_240_unicode_characters_of_the_latest_completed_answer) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  const ThreadId thread{"thr_preview01"};
+  repository.openThread(owner, thread, "Question", kNow);
+  repository.appendTurns(owner, thread, {{true, "Question", kNow + 100}, {false, "Older answer", kNow + 100}});
+  const std::string preview = "**Raw**\n" + std::string(230, 'x') + "界💪";
+  AskGeneration completed{"gen_preview01", "req_preview01", "Next question"};
+  completed.atMs = kNow;
+  completed.status = "completed";
+  completed.answer = preview + "é END";
+  repository.saveGeneration(owner, thread, completed);
+  for (const auto& [status, answer] : std::vector<std::pair<std::string, std::string>>{
+           {"completed", ""}, {"stopped", "Partial stopped answer"},
+           {"failed", "Partial failed answer"}, {"running", "Unfinished answer"}}) {
+    AskGeneration generation{"gen_preview_" + status, "req_preview_" + status, "Latest question"};
+    generation.atMs = kNow + 200;
+    generation.status = status;
+    generation.answer = answer;
+    repository.saveGeneration(owner, thread, generation);
+  }
+
+  const auto listed = repository.threads(owner);
+  REQUIRE_EQ(listed.size(), 1u);
+  CHECK_EQ(listed[0].answerPreview, preview);
+  CHECK(listed[0].turns.empty());
+  CHECK_FALSE(listed[0].generation.has_value());
+  const auto body = wm::parse(wm::dump(toJson(listed)));
+  const auto expected = wm::parse(R"({"threads":[{"id":"thr_preview01","title":"Question",
+    "createdAt":1700000000000,"askedAt":1700000000200,
+    "outcome":{"kind":"read-only","changes":0},"proposals":[]}]})");
+  auto expectedWithPreview = expected;
+  expectedWithPreview["threads"][0]["answerPreview"] = preview;
+  CHECK_EQ(body, expectedWithPreview);
+  const auto detail = repository.thread(owner, thread);
+  REQUIRE(detail.has_value());
+  CHECK_EQ(detail->turns[3].text, completed.answer);
+}
+
+TEST(pg_coach_history_preview_is_absent_without_a_completed_answer_and_stays_in_its_owner_page) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAskThreadRepository repository{wm::pgTestPool()};
+  const wm::UserId owner{kUser};
+  repository.openThread(owner, ThreadId{"thr_preview01"}, "Unanswered", kNow);
+  repository.openThread(owner, ThreadId{"thr_preview02"}, "Empty answer", kNow);
+  repository.appendTurns(owner, ThreadId{"thr_preview02"}, {{true, "Question", kNow}, {false, "", kNow}});
+  repository.openThread(owner, ThreadId{"thr_preview03"}, "Answered", kNow);
+  repository.appendTurns(owner, ThreadId{"thr_preview03"}, {{true, "Question", kNow}, {false, " Answer\n", kNow}});
+  repository.openThread(wm::UserId{kOther}, ThreadId{"thr_preview04"}, "Private question", kNow + 1);
+  repository.appendTurns(wm::UserId{kOther}, ThreadId{"thr_preview04"}, {{false, "Private answer", kNow + 1}});
+  {
+    wm::PgLease conn{*wm::pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO gym_ask_turns(thread_id,position,user_id,from_lifter,text,said_at) "
+                    "VALUES ('thr_preview03',3,$1::uuid,false,'Foreign turn',now())", kOther);
+    txn.commit();
+  }
+
+  const auto first = repository.threadPage(owner, ThreadCursor{0, "", 2});
+  REQUIRE_EQ(first.size(), 2u);
+  CHECK_EQ(first[0].id, ThreadId{"thr_preview03"});
+  CHECK_EQ(first[0].answerPreview, std::string(" Answer\n"));
+  CHECK_EQ(first[1].id, ThreadId{"thr_preview02"});
+  CHECK_EQ(first[1].answerPreview, std::string{});
+  CHECK_FALSE(toJson(first[1]).isMember("answerPreview"));
+  const auto second = repository.threadPage(owner, ThreadCursor{first.back().askedAtMs, first.back().id.str(), 2});
+  REQUIRE_EQ(second.size(), 1u);
+  CHECK_EQ(second[0].id, ThreadId{"thr_preview01"});
+  CHECK_EQ(second[0].answerPreview, std::string{});
+  CHECK_FALSE(toJson(second[0]).isMember("answerPreview"));
+  CHECK(repository.threadPage(owner, ThreadCursor{second[0].askedAtMs, second[0].id.str(), 2}).empty());
+  const auto other = repository.threads(wm::UserId{kOther});
+  REQUIRE_EQ(other.size(), 1u);
+  CHECK_EQ(other[0].id, ThreadId{"thr_preview04"});
+  CHECK_EQ(other[0].answerPreview, std::string("Private answer"));
 }
 
 TEST(pg_coach_conversation_lease_is_exclusive_and_deletion_cannot_race_a_tool_effect) {

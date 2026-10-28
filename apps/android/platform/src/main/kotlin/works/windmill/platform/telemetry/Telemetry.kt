@@ -64,14 +64,20 @@ object TelemetryPolicy {
                 "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
+                "coach" -> listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources")
+                    .associateWith { setOf("ok") }
+                "threads" -> mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
                 "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "remove" to setOf("ok", "refused"), "reorder" to setOf("ok"),
                     "picker_open" to setOf("ok"), "picker_cancel" to setOf("ok"), "picker_add" to setOf("ok", "refused"), "fix" to setOf("ok", "refused", "failed"))
                 "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
                 else -> emptyMap()
             }
+            val shown = properties["screen"] == "threads" && properties["action"] == "delete" &&
+                properties["state"] == "shown" && properties["outcome"] == null
             val valid = properties["outcome"] in actions[properties["action"]].orEmpty()
-            return properties(properties.filterKeys { it in commonEventKeys || valid && it in setOf("screen", "action", "outcome") })
+            val allowed = if (shown) setOf("screen", "action", "state") else setOf("screen", "action", "outcome")
+            return properties(properties.filterKeys { it in commonEventKeys || (valid || shown) && it in allowed })
         }
         if (!name.startsWith("onboarding_")) return properties(properties)
         val schema = onboardingEvents[name] ?: return emptyMap()

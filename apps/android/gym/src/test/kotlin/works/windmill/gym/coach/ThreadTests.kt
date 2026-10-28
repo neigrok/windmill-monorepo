@@ -132,7 +132,7 @@ class ThreadTests {
         val months = Threads.months(listOf(thread(id = "thr_aug", askedAtMs = august), undated), august)
 
         assertNull(undated.day(august))
-        assertEquals("4 Aug", thread(id = "thr_aug", askedAtMs = august).day(august + 86_400_000))
+        assertEquals("Yesterday", thread(id = "thr_aug", askedAtMs = august).day(august + 86_400_000))
         assertEquals(listOf("August", null), months.map { it.label })
         assertEquals(listOf(listOf("thr_aug"), listOf("thr_x")), months.map { it.threads.map { held -> held.id } })
         assertEquals("4 changes to Push A · applied",

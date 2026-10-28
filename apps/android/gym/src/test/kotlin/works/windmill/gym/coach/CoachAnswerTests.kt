@@ -44,7 +44,7 @@ class CoachAnswerTests {
         val initial = "Café\n東京"
         val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
         val text = androidx.compose.runtime.mutableStateOf(initial)
-        val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes")))
+        val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes"), AskStep("save_note")))
         compose.setContent { GymMaterial {
             clipboard = LocalClipboardManager.current
             CoachAnswer(text.value, receipt, emptyList(), 0)
@@ -56,6 +56,8 @@ class CoachAnswerTests {
         compose.onNodeWithText("Copy").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(final, clipboard.getText()?.text) }
         compose.onNodeWithText("Read your notes").assertIsDisplayed()
+        compose.onNodeWithText("Saved a note").assertIsDisplayed()
+        compose.onNodeWithText("What Coach read").assertDoesNotExist()
     }
 
     @Test
@@ -110,7 +112,7 @@ class CoachAnswerTests {
     }
 
     @Test
-    fun summariesStayInTheDisclosureWhileTheFullSessionCardIsExplicitlyScoped() {
+    fun readOnlyFactsMoveIntoTheSourcesSheetWithoutInventingWorkoutTotals() {
         val summary = SessionObservation("old", 1000, "list_sessions", "summary", 0, routine = "Old workout", workout = WorkoutObservation(9, 2700.0, 2880000))
         val full = SessionObservation("asked", 2000, "get_session", "session", 3, routine = "My actual workout", workout = WorkoutObservation(2, 960.0, 90000))
         val movement = SessionObservation("movement", 3000, "last_time", "movement", 1, routine = "Movement only", exerciseId = "bench", workout = WorkoutObservation(99, 9999.0))
@@ -118,12 +120,12 @@ class CoachAnswerTests {
             CoachAnswer("Keep these exact words.\n\nNo invented summary.", AnswerReceipt(1, ReadTally(4, 3, 1), observations = listOf(summary, full, movement)), emptyList(), 4000)
         } } }
         compose.onNodeWithText("Keep these exact words.").assertIsDisplayed().assert(hasText("No invented summary."))
-        compose.onNodeWithText("From your log").assertIsDisplayed()
-        compose.onAllNodes(hasText("Working sets")).assertCountEquals(1)
-        compose.onNodeWithText("960 kg").assertIsDisplayed()
-        compose.onNodeWithText("2700 kg").assertDoesNotExist()
-        compose.onNodeWithText("9999 kg").assertDoesNotExist()
-        compose.onNodeWithText("Read 4 sets · 1 week · 3 sessions").performScrollTo().performClick()
+        compose.onNodeWithText("From your log").assertDoesNotExist()
+        compose.onNodeWithText("Working sets").assertDoesNotExist()
+        compose.onNodeWithText("Read 3 workouts · 1 week").performScrollTo().performClick()
+        compose.onNodeWithText("What Coach read").assertIsDisplayed()
+        compose.onNodeWithText("2 working sets · 960 kg", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("9999 kg", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Old workout", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Movement only", substring = true).performScrollTo().assertIsDisplayed()
     }
@@ -137,7 +139,7 @@ class CoachAnswerTests {
         } } }
         compose.onNodeWithText("The model's focal answer stays first.").assertIsDisplayed()
         compose.onNodeWithText("Working sets").assertDoesNotExist()
-        compose.onNodeWithText("Read 15 sets · 1 week · 5 sessions").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Read 5 workouts · 1 week").assertIsDisplayed().performClick()
         compose.onNodeWithText("Workout 5", substring = true).performScrollTo().assertIsDisplayed()
     }
 

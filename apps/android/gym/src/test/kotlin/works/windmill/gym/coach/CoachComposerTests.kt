@@ -102,7 +102,7 @@ class CoachComposerTests {
         assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
-        compose.runOnIdle { store.coach.abandon("thread-a") }
+        compose.runOnIdle { store.coach.saveDraft("thread-a", CoachDraft()) }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         assertEquals(CoachDraft(), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
         scope.cancel()
@@ -203,7 +203,8 @@ class CoachComposerTests {
         assertEquals("Unsaved question", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithContentDescription("Send").performClick()
         assertEquals(emptyList<CoachDraft>(), sent)
-        assertEquals(CoachDraft(), store.coach.draft("thread-a"))
+        assertEquals(CoachDraft("Unsaved question"), store.coach.draft("thread-a"))
+        assertEquals(CoachDraft(), localCoach.draft("user-a", "thread-a"))
 
         compose.runOnIdle { diskAvailable = true }
         field.performTextReplacement("Saved question")

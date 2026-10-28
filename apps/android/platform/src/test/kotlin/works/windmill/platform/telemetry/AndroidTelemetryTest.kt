@@ -61,6 +61,24 @@ class AndroidTelemetryTest {
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels))
     }
 
+    @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources")
+        val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
+            listOf("ok", "refused", "failed", "cancelled").map { mapOf("screen" to "threads", "action" to "delete", "outcome" to it) } +
+            listOf(mapOf("screen" to "threads", "action" to "delete", "state" to "shown"))
+        val content = mapOf("chat_id" to "private", "question" to "private", "photo" to "private",
+            "answerPreview" to "private", "operation" to "private", "status" to "private")
+        allowed.forEach { properties ->
+            assertEquals(properties, TelemetryPolicy.eventProperties("gym_action", properties + content))
+        }
+        for (properties in listOf(
+            mapOf("screen" to "coach", "action" to "private", "outcome" to "ok"),
+            mapOf("screen" to "coach", "action" to "history_open", "outcome" to "private"),
+            mapOf("screen" to "threads", "action" to "delete", "state" to "private"),
+            mapOf("screen" to "private", "action" to "delete", "state" to "shown"),
+        )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", properties + content))
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun realSdkAndFirstPartyTransportDeliverRedactedRepeatedFailures() = runTest {

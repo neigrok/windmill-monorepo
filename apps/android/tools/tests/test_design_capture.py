@@ -51,10 +51,24 @@ class DesignCaptureTests(unittest.TestCase):
             path = Path(directory) / "fixture.json"
             path.write_text(json.dumps(fixture))
             self.assertEqual(fixture, capture.read_fixture(path))
+            for count in [1, 3, 20]:
+                explicit = {**fixture, "history": [{**workout, "setsPerMovement": count}]}
+                path.write_text(json.dumps(explicit))
+                self.assertEqual(explicit, capture.read_fixture(path))
+            pair = {**fixture, "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}, {"exerciseId": "overhead-press"}]}],
+                    "history": [{**workout, "setsPerMovement": 10}]}
+            path.write_text(json.dumps(pair))
+            self.assertEqual(pair, capture.read_fixture(path))
+            for movements, count in [(2, 11), (7, None)]:
+                over = {**fixture, "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}] * movements}],
+                        "history": [workout if count is None else {**workout, "setsPerMovement": count}]}
+                path.write_text(json.dumps(over))
+                with self.subTest(movements=movements, count=count), self.assertRaises(ValueError):
+                    capture.read_fixture(path)
             invalid = [[], [workout] * 41, [{**workout, "extra": 1}]]
             for key, values in {"routine": [-1, 1, 0.5, True], "daysAgo": [-1, 3651, 1.5, True],
                                 "minutesAgo": [-1, 1440, 1.5, True], "weightKg": [-500.01, 500.01, .001, float("nan"), float("inf"), True],
-                                "reps": [0, 501, 1.5, True]}.items():
+                                "reps": [0, 501, 1.5, True], "setsPerMovement": [0, 21, 1.5, True, None, "1"]}.items():
                 invalid.extend([[{**workout, key: value}] for value in values])
             invalid.append([{**workout, "daysAgo": 0, "minutesAgo": 39}])
             for history in invalid:
@@ -85,7 +99,7 @@ class DesignCaptureTests(unittest.TestCase):
         fixture = LocalFixture("http://127.0.0.1:8104", "unused")
         fixture.now = 1800000000000
         program = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}],
-                   "history": [{"routine": 0, "daysAgo": 2, "minutesAgo": 60, "weightKg": -5.25, "reps": 8},
+                   "history": [{"routine": 0, "daysAgo": 2, "minutesAgo": 60, "weightKg": -5.25, "reps": 8, "setsPerMovement": 1},
                                {"routine": 0, "daysAgo": 0, "minutesAgo": 40, "weightKg": 20, "reps": 10}]}
         fixture.seed(program)
         prefix = "capture" + fixture.account.replace("-", "")[:12]
@@ -96,12 +110,23 @@ class DesignCaptureTests(unittest.TestCase):
                              "routineId": "rt_" + prefix + "0", "sets": [
                                  {"id": f"set_{prefix}{index}_0_{number}", "exerciseId": "bench-press",
                                   "weightKg": workout["weightKg"], "reps": workout["reps"],
-                                  "completedAt": started + (number + 1) * 120000} for number in range(3)]})
+                                  "completedAt": started + (number + 1) * 120000} for number in range(workout.get("setsPerMovement", 3))]})
         self.assertEqual(expected, imports)
+        self.assertEqual([1, 3], [len(item["sets"]) for item in imports])
         imports.clear()
         fixture.seed({key: value for key, value in program.items() if key != "history"})
         self.assertEqual([(fixture.now - (28 - index * 2) * 86400000, 30 + index * 2.5, 8)
                           for index in range(12)], [(item["startedAt"], item["sets"][0]["weightKg"], item["sets"][0]["reps"]) for item in imports])
+        self.assertEqual([3] * 12, [len(item["sets"]) for item in imports])
+        imports.clear()
+        maximum = {"routine": 0, "daysAgo": 0, "minutesAgo": 40, "weightKg": 50, "reps": 8, "setsPerMovement": 20}
+        fixture.seed({**program, "history": [maximum]})
+        started = fixture.now - 2400000
+        self.assertEqual([{"id": "ses_" + prefix + "0", "startedAt": started, "finishedAt": fixture.now,
+                           "routineId": "rt_" + prefix + "0", "sets": [
+                               {"id": f"set_{prefix}0_0_{number}", "exerciseId": "bench-press", "weightKg": 50, "reps": 8,
+                                "completedAt": started + (number + 1) * 120000} for number in range(20)]}], imports)
+        self.assertEqual(imports[0]["finishedAt"], imports[0]["sets"][-1]["completedAt"])
 
     def test_default_history_encloses_every_set_in_short_and_long_routines(self):
         calls = []

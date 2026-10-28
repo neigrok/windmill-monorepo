@@ -117,16 +117,24 @@ data class AskThread(
     val turns: List<AskTurn> = emptyList(),
     val nextCursor: String? = null,
     val generation: AskGeneration? = null,
+    val answerPreview: String = "",
 ) {
-    fun day(nowMs: Long): String? =
-        askedAtMs.takeIf { it > 0 }?.let { Readout.briefDay(it, nowMs) }
+    fun day(nowMs: Long): String? {
+        if (askedAtMs <= 0) return null
+        val zone = java.time.ZoneId.systemDefault()
+        val day = java.time.Instant.ofEpochMilli(askedAtMs).atZone(zone).toLocalDate()
+        val today = java.time.Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+        if (day == today) return "Today"
+        if (day == today.minusDays(1)) return "Yesterday"
+        return day.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+    }
 
     fun exchanges(): List<AskExchange> {
         val exchanges = mutableListOf<AskExchange>()
         turns.forEach { turn ->
-            if (turn.fromLifter) exchanges += AskExchange(turn.text, requestId = turn.requestId.orEmpty(), attachments = turn.attachments)
+            if (turn.fromLifter) exchanges += AskExchange(turn.text, requestId = turn.requestId.orEmpty(), attachments = turn.attachments, atMs = turn.atMs, position = turn.position)
             else {
-                val previous = if (exchanges.isNotEmpty() && exchanges.last().answer == null) exchanges.removeAt(exchanges.lastIndex) else AskExchange("")
+                val previous = if (exchanges.isNotEmpty() && exchanges.last().answer == null) exchanges.removeAt(exchanges.lastIndex) else AskExchange("", atMs = turn.atMs, position = turn.position)
                 if (turn.status == "failed" || turn.status == "stopped") {
                     val request = turn.requestId ?: generation?.takeIf { it.id == turn.generationId }?.requestId.orEmpty()
                     exchanges += previous.copy(requestId = request, trouble = if (turn.status == "stopped") Ask.stopped else Ask.interrupted,
@@ -139,7 +147,7 @@ data class AskThread(
         }
         generation?.let { current ->
             val index = exchanges.indexOfFirst { it.requestId == current.requestId }
-            if (index >= 0) exchanges[index] = current.exchange()
+            if (index >= 0) exchanges[index] = current.exchange().copy(atMs = exchanges[index].atMs.takeIf { it > 0 } ?: current.atMs, position = exchanges[index].position)
             else if (turns.none { it.generationId == current.id }) exchanges += current.exchange()
         }
         return exchanges
@@ -154,7 +162,7 @@ data class ThreadMonth(val label: String?, val threads: List<AskThread>)
 
 object Threads {
     const val title = "History"
-    const val open = "Ask something new"
+    const val open = "New chat"
 
     const val door = "History"
 
@@ -165,7 +173,7 @@ object Threads {
         return "$said · yours to delete"
     }
 
-    const val none = "Nothing here yet. Every conversation you have with Coach is kept until you delete it."
+    const val none = "No conversations"
 
     const val outOfReach = "the log didn’t answer — your conversations are out of reach"
 

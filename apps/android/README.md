@@ -140,10 +140,20 @@ App workouts start from a saved routine. Workouts received from another surface 
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
-`coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
-retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and
-routine refresh. `LocalCoach` retains account-scoped drafts, request identities and partial replies;
-retry retains identity and Stop preserves completed work. Every ask declares `routineReview`, and new Coach routines
+`coach/` groups conversation models, storage, photos and screens. `CoachStore` owns chat selection,
+thread reads, retries, streaming and confirmed conversation deletion in the application scope;
+`TrainingStore` composes it with the current account and routine refresh. `LocalCoach` atomically
+retains stable chat identities, selected chat, drafts, prepared photos, turns, request identities,
+confirmations and scroll position. An upload cancellation retires automatic resume and keeps its
+draft for explicit Retry. Request callbacks and Stop replies remain bound to their admitted attempt,
+including a retry with the same request identity. A deliberate Coach entry or New chat creates a fresh identity;
+History, sheets and recreation restore the selected identity. A pending reply stays in its originating
+chat while other chats remain available. Retry retains identity and Stop preserves completed work.
+Signed-out History reads only the stable anonymous owner's local archive and calls no server History
+endpoint. Signed-in archives remain retained and become visible only to that same authenticated owner;
+account and anonymous archives are never silently copied or merged. Read-only receipts use What Coach
+read; replies containing proposals, writes, routine drafts/results or unknown tools retain their
+existing receipt/control presentation and wording. Every ask declares `routineReview`, and new Coach routines
 remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
 server no longer holds or cannot write loses its Save. Confirmation receipts survive relaunch under their account,

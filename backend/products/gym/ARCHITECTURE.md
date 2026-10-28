@@ -1268,6 +1268,11 @@ remain separate. No tool reads the gym's settings.
 - **The title is the first question verbatim**, or `Photo` for an image-only question. It is
   written once at creation; there is no generated title.
 - **No unread count, no badge, no notification, nothing waiting.**
+- **History may carry `answerPreview`.** The owner-scoped page projects the first 240 Unicode code
+  points of its latest nonempty completed answer, ordered by turn position. It preserves the raw
+  text, including Markdown and whitespace, and omits the field when no answer qualifies. Running,
+  stopped and failed answers do not qualify. The list does not load full turns or make a request
+  per conversation; previews never enter logs or telemetry. Outcomes remain independent.
 - **The outcome is derived, never stored** (`outcomeOf`, `domain/Thread.h`). Surviving proposal
   records supply their current decisions. If a supported assistant receipt references a proposal
   whose record is absent, the outcome is `unknown` with zero changes and no routine identity.

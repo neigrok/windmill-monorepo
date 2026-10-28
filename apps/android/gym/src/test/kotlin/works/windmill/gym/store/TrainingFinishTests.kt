@@ -667,33 +667,6 @@ class TrainingFinishTests {
         }
     }
 
-    @Test fun aConversationDeleteTimerCannotPublishItsOldAccountsFailureIntoTheNextSeat() = runTest {
-        val fake = FakeGymRest()
-        fake.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val gate = CompletableDeferred<Unit>()
-        val log = object : GymRest by fake {
-            override suspend fun deleteThread(id: String) {
-                gate.await()
-                throw IOException("offline")
-            }
-        }
-        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = log).use { room ->
-            room.select("a")
-            room.store.withhold(Deletion.Thread("thr_1"))
-            advanceTimeBy(Withheld.windowMs)
-            runCurrent()
-            assertFalse("the delete is on the wire", room.store.withheld.single().takeable)
-            val arrival = launch { room.select("b") }
-            runCurrent()
-            gate.complete(Unit)
-            arrival.join()
-            runCurrent()
-            assertNull(room.store.deleteRefused)
-            assertTrue(room.store.withheld.isEmpty())
-            assertEquals(setOf("thr_1"), fake.conversations.keys)
-        }
-    }
-
     @Test fun aStaleSeedCannotOverwriteAnAcceptedCorrection() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")

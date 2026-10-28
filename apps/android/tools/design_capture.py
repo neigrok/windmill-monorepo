@@ -88,13 +88,19 @@ def read_fixture(path):
         if not isinstance(history, list) or not 1 <= len(history) <= 40:
             raise ValueError("Capture history needs between 1 and 40 workouts.")
         for workout in history:
-            if not isinstance(workout, dict) or set(workout) != {"routine", "daysAgo", "minutesAgo", "weightKg", "reps"}:
+            if not isinstance(workout, dict) or not {"routine", "daysAgo", "minutesAgo", "weightKg", "reps"}.issubset(workout) or \
+                    set(workout) - {"routine", "daysAgo", "minutesAgo", "weightKg", "reps", "setsPerMovement"}:
                 raise ValueError("Capture history needs explicit routine, daysAgo, minutesAgo, weightKg and reps.")
             if type(workout["routine"]) is not int or not 0 <= workout["routine"] < len(fixture["routines"]) or \
                     type(workout["daysAgo"]) is not int or not 0 <= workout["daysAgo"] <= 3650 or \
                     type(workout["minutesAgo"]) is not int or not 0 <= workout["minutesAgo"] < 1440 or \
                     workout["daysAgo"] * 1440 + workout["minutesAgo"] < 40:
                 raise ValueError("Capture history needs an existing routine and a past, bounded 40-minute workout.")
+            sets = workout.get("setsPerMovement", 3)
+            if type(sets) is not int or not 1 <= sets <= 20:
+                raise ValueError("Capture history needs 1 to 20 sets per movement.")
+            if sets * len(fixture["routines"][workout["routine"]]["entries"]) > 20:
+                raise ValueError("Capture custom history must fit all working sets inside its 40-minute workout.")
             kg = workout["weightKg"]
             if type(kg) not in (int, float) or not math.isfinite(kg) or not -500 <= kg <= 500 or \
                     abs(kg * 100 - round(kg * 100)) > 1e-7 or type(workout["reps"]) is not int or not 1 <= workout["reps"] <= 500:
@@ -233,14 +239,15 @@ class Fixture:
                         "weightKg": 30 + index * 2.5, "reps": 8} for index in range(12)]
         for index, workout in enumerate(history):
             routine = workout["routine"]
+            sets_per_movement = workout.get("setsPerMovement", 3)
             started = self.now - workout["daysAgo"] * 86400000 - workout["minutesAgo"] * 60000
             session = "ses_" + prefix + str(index)
             duration = max(2400000, (len(program[routine]["entries"]) * 3 + 1) * 120000) if default_history else 2400000
             self.mcp("gym_import_session", {"id": session, "startedAt": started, "finishedAt": started + duration,
                 "routineId": self.routines[routine], "sets": [
                     {"id": f"set_{prefix}{index}_{movement}_{number}", "exerciseId": entry["exerciseId"],
-                     "weightKg": workout["weightKg"], "reps": workout["reps"], "completedAt": started + (movement * 3 + number + 1) * 120000}
-                    for movement, entry in enumerate(program[routine]["entries"]) for number in range(3)]})
+                     "weightKg": workout["weightKg"], "reps": workout["reps"], "completedAt": started + (movement * sets_per_movement + number + 1) * 120000}
+                    for movement, entry in enumerate(program[routine]["entries"]) for number in range(sets_per_movement)]})
         stamp = f"{self.now}:0:r_capture00000"
         rows = []
         today = datetime.fromtimestamp(self.now / 1000, timezone.utc).date()

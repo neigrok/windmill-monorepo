@@ -8,6 +8,13 @@ The server replays the stored completed reply for the same request without anoth
 
 `GET /v1/gym/threads?limit=50&cursor=<cursor>` returns `{threads, nextCursor}`; `nextCursor` is null when no more rows remain. Pass it unchanged to fetch older conversations. Limits are 1–200. Omitting pagination parameters returns `{threads}`. The order is newest activity first, with thread ID as a stable tie breaker. Resume any row by submitting its ID to `/ask`.
 
+Each list row may carry `answerPreview`: the first 240 Unicode code points of the latest nonempty
+completed assistant answer in turn order. This is raw answer text, including Markdown and
+whitespace, not a generated summary. Running, stopped and failed answers are excluded; an empty
+completed answer does not replace an earlier nonempty one. The field is absent when none qualifies.
+The owner-scoped page projects the bounded text without loading full turns. Existing action and
+proposal outcomes remain authoritative; previews are user content and must never enter telemetry.
+
 `GET /v1/gym/threads/:id?limit=50&before=<cursor>` returns the thread object, with `turns` in chronological order for the latest page, `nextCursor` (null at the beginning), and its latest `generation`, when present. Pass the cursor as `before` to load older messages. Limits are 1–200. Messages include numeric `position` and, for durable generations, `generationId`, `requestId` and `status`. Assistant messages also carry immutable `results` using the shape above, plus optional typed `clarification` and `allowanceRefusal` from their generation. Merge pages by position and prepend older messages. Message page sizes round up to an even count from 2–200 so each page contains complete exchanges. Omitting pagination parameters preserves the complete legacy thread read. Terminal message pairs are persisted atomically, including failed questions and partial or empty failed answers. Retry updates that same pair at the same positions. Running questions live in `generation` until terminal persistence; reconcile them by generation ID when the pair arrives. A failed answer remains marked `failed` even when its text is empty, and its request ID supports safe retry.
 
 Thread outcomes include `created` when the conversation created a routine; `changes` then counts created routines and a sole result carries its routine identity. Full history remains stored. Model context uses the newest successfully completed exchanges, at most 24 messages and 24,000 text bytes, plus the current question and freshly read Notes/log data. Historical receipts, routine results and proposals remain available in stored history even when their text is outside model context. Coach does not claim to have consulted discarded text.

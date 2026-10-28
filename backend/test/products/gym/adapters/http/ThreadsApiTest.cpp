@@ -58,6 +58,32 @@ TEST(gym_threads_lists_the_lifters_own_words_and_what_came_of_each) {
   CHECK_EQ(body.getMemberNames().size(), 1u);
 }
 
+TEST(pg_gym_thread_pages_return_raw_answer_previews_without_turns) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — needs a live Postgres");
+  DoorApis h;
+  h.repo.threads.openThread(h.user, ThreadId{"thr_preview01"}, "Unanswered", h.clock.now);
+  h.repo.threads.openThread(h.user, ThreadId{"thr_preview02"}, "Question", h.clock.now);
+  h.repo.threads.appendTurns(h.user, ThreadId{"thr_preview02"},
+                           {{true, "Question", h.clock.now}, {false, "**Keep** the raw answer. 💪", h.clock.now}});
+  const auto firstRequest = getRequest("/v1/gym/threads", "s-door");
+  firstRequest->setParameter("limit", "1");
+  const auto first = send(h.threadsApi, &ThreadsApi::listThreads, firstRequest);
+  CHECK_EQ(first->getStatusCode(), drogon::k200OK);
+  const auto expectedFirst = parse(R"({"threads":[{"id":"thr_preview02","title":"Question",
+    "createdAt":1700000000000,"askedAt":1700000000000,"outcome":{"kind":"read-only","changes":0},
+    "proposals":[],"answerPreview":"**Keep** the raw answer. 💪"}],"nextCursor":"1700000000000:thr_preview02"})");
+  CHECK_EQ(parse(std::string(first->getBody())), expectedFirst);
+  const auto secondRequest = getRequest("/v1/gym/threads", "s-door");
+  secondRequest->setParameter("limit", "1");
+  secondRequest->setParameter("cursor", "1700000000000:thr_preview02");
+  const auto second = send(h.threadsApi, &ThreadsApi::listThreads, secondRequest);
+  CHECK_EQ(second->getStatusCode(), drogon::k200OK);
+  const auto expectedSecond = parse(R"({"threads":[{"id":"thr_preview01","title":"Unanswered",
+    "createdAt":1700000000000,"askedAt":1700000000000,"outcome":{"kind":"read-only","changes":0},
+    "proposals":[]}],"nextCursor":null})");
+  CHECK_EQ(parse(std::string(second->getBody())), expectedSecond);
+}
+
 TEST(gym_thread_reads_the_whole_conversation_and_another_accounts_is_absent) {
   Harness h;
   const UserId lifter = h.signIn("s-live");

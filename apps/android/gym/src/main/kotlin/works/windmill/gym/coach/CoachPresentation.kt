@@ -15,11 +15,11 @@ import androidx.compose.ui.layout.layout
 // The one owner of the conversation's scroll offset. Every correction lands in the layout phase,
 // after the scroller measured its content and before it places it, so text that grew this frame is
 // in view this frame: nothing animates after it and no frame shows it below the fold.
-internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollState) {
+internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollState, initialFollowEnd: Boolean = true) {
     private var exchanges: List<AskExchange> = emptyList()
     var keys: List<String> = emptyList()
         private set
-    var followEnd by mutableStateOf(true)
+    var followEnd by mutableStateOf(initialFollowEnd)
         private set
     var tolerance = 0
     private var historyPrepended = false
@@ -27,7 +27,7 @@ internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollS
     private var placedMax = 0
     private var placedNewest: String? = null
 
-    init { replace(initial) }
+    init { replace(initial); placedNewest = keys.lastOrNull() }
 
     val awayFromEnd: Boolean get() = scroll.maxValue - scroll.value > tolerance
 
@@ -95,8 +95,8 @@ internal class CoachPresentation(initial: List<AskExchange>, val scroll: ScrollS
 }
 
 @Composable
-internal fun rememberCoachPresentation(conversationId: String, thread: List<AskExchange>): CoachPresentation {
-    val presentation = remember(conversationId) { CoachPresentation(thread, ScrollState(0)) }
+internal fun rememberCoachPresentation(conversationId: String, thread: List<AskExchange>, owner: String = "", scroll: Int = 0, followEnd: Boolean = true): CoachPresentation {
+    val presentation = remember(owner, conversationId) { CoachPresentation(thread, ScrollState(scroll), followEnd) }
     presentation.replace(thread)
     return presentation
 }

@@ -746,3 +746,57 @@ phase event windows, readbacks and the original cleanup-selector failures. The s
 actions are independently verified; those failed selectors are excluded from success claims.
 The final runtime scan reports no ANR/fatal, and normal cleanup removes the disposable database,
 private fixture file and owned emulator/listeners. There is no performance comparison claim.
+
+## Task 37 · Coach archive, History and sources
+
+The existing atomic Coach document retains owner-scoped local chat identities, selected chat,
+text/photo drafts, turns, request identities, confirmations and scroll position. The application
+scope owns requests and confirmed deletion. Fresh entry creates a new identity; History and
+recreation restore the selected identity. Signed-out History reads only the stable anonymous
+owner, with no server History call or silent archive adoption. Activity saved state carries no
+Coach message tail.
+
+Each admitted request has one runtime identity. Snapshot publication, Stop, pending retirement
+and final cleanup check that attempt, including retries with the same request id. Its critical
+section contains synchronous local mutations and retirement only. Cancelled uploads atomically
+retain a Retry draft and retire automatic resume. Photo bytes and their draft reference publish
+under the existing LocalCoach lock; deletion versions prevent late imports recreating a chat.
+Cleanup keeps every photo referenced by a retained draft, request or exchange.
+
+History combines cached server summaries and local chats, keeps the canonical first-question
+headline and uses bounded raw answer previews after existing outcome wording. Older pages merge
+by nonempty request, position or generation identity; distinct legacy turns remain distinct.
+The oldest loaded cursor survives refresh and restart. Read-only facts use the approved sources
+sheet. Typed writes, proposals, routine drafts/results and unknown tools retain their existing
+receipt/control presentation and wording, including legacy proposal headers.
+
+The combined schema-9 gym gate runs 1,320 cases: 1,303 pass and 17 opt-in LiveWire cases skip,
+with zero failures or errors. Platform runs 134 cases and App runs 48, all passing. The final
+History/Thread accessibility change passes 14 focused cases and assembles Debug; the capture
+tools pass 46 cases. Controlled regressions cover queued account switches, origin-bound responses,
+request restart, pagination replay/overlap/recreation, immutable headlines, Stop during a next
+request and same-id Retry, queued snapshot/clear IO, cancelled upload restart, late photo
+preparation/storage and two imported attachments before main publication. Storage faults retain
+recoverable state and one reporting owner. The backend preview projection and its separate live
+verification are recorded in [Coach history preview](coach-history-preview.md).
+
+The History, sources, deletion, Copy and Jump recipes use `coach-history.json` with
+`coach-history-fixture.json`: one
+Push A workout, one working set and 400 kg volume. The optional `setsPerMovement` history value
+is an integer from 1 to 20; each explicit 40-minute workout has at most 20 total sets. Omitted
+counts retain three sets per movement. Capture tooling
+keeps the existing date, routine-index, finite-load and rep guards. The deletion recipe uses the
+shared row-bounds touch target supplied by task 11.
+
+Native API 37 acceptance covers paired History, sources and deletion layouts, local/server History
+merge, exact text/photo restoration through navigation and restart, account archive isolation,
+confirmed server-conversation deletion, and replies returning to their original chat after a new
+chat is selected or the process restarts. The pending-state View chat action opens its origin.
+An actual mixed get_session/list_notes/save_note answer retains the existing workout facts,
+expanded receipt and Saved a note wording. Signed-out native acceptance verifies the current
+access boundary hides account History and composer; anonymous admission remains task 38.
+
+The local first-party intake receives the navigation and ask steps. A controlled native draft-write
+fault retains the in-memory edit and previous durable draft, then recovers on the next edit and
+restart. It produces exactly one content-free gym.saveDraft Issue at the local collector and one
+matching client_error event. Hosted vendor delivery and release acceptance are not claimed.

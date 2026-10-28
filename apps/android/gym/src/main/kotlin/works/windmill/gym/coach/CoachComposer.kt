@@ -56,6 +56,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     val account = store.accountKey
     val hidden by rememberUpdatedState(asking && upload == null)
     val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
+    DisposableEffect(editor) { onDispose { editor.sync(hidden) } }
     LaunchedEffect(editor) {
         snapshotFlow { Triple(editor.field.text.toString(), store.draftVersion, hidden) }
             .collect { editor.sync(hidden) }
@@ -117,7 +118,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
                     .semantics { contentDescription = if (asking && onStop != null) if (upload != null) "Cancel upload" else "Stop response" else "Send" }
                     .clickable(enabled = ready || (asking && onStop != null), role = Role.Button) {
                         if (asking) { onStop?.invoke(); return@clickable }
-                        if (!editor.sync(hidden)) return@clickable
+                        if (!editor.sync(hidden, retry = true)) return@clickable
                         val next = editor.draft
                         if (!canSend(next)) return@clickable
                         focus.clearFocus()
@@ -139,9 +140,10 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
     val field = TextFieldState(if (hidden) "" else draft.text)
     var trouble by mutableStateOf<String?>(null)
 
-    fun sync(hidden: Boolean): Boolean {
+    fun sync(hidden: Boolean, retry: Boolean = false): Boolean {
         if (store.accountKey != account) return false
         val current = store.draft(key)
+        if (retry && !store.draftSaved(key)) return keep(current.copy(text = field.text.toString()))
         val refresh = current.text != draft.text || this.hidden != hidden
         draft = current
         this.hidden = hidden
@@ -150,7 +152,7 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
             if (field.text.toString() != text) field.setTextAndPlaceCursorAtEnd(text)
             return true
         }
-        if (hidden || field.text.toString() == current.text) return true
+        if (hidden || field.text.toString() == current.text) return store.draftSaved(key)
         return keep(current.copy(text = field.text.toString()))
     }
 

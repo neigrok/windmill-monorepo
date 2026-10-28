@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -137,26 +139,25 @@ class RowSwipeAccessibilityTests {
         val rest = FakeGymRest()
         rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         try { store(scope, rest).use { room ->
-            val deleted = mutableListOf<String>()
             compose.setContent {
                 ThreadsScreen(
                     store = room.store, backTo = "Coach", onBack = {}, onOpen = {},
-                    onDelete = { deleted += it }, onAskNew = {},
+                    onAskNew = {},
                 )
             }
 
             val row = compose.onNodeWithText("why is my bench stalled?").fetchSemanticsNode()
             assertEquals("no overflow on this row, so the swipe declares its own alternative",
-                listOf("Delete"), actionsAround(row))
+                listOf("Delete conversation"), actionsAround(row))
 
             compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeRight() }
-            compose.runOnIdle { assertEquals(emptyList<String>(), deleted) }
+            compose.onNodeWithText("Delete this conversation?").assertDoesNotExist()
 
             compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
-            compose.runOnIdle {
-                assertEquals(listOf("thr_1"), deleted)
-                assertTrue("and nothing reached the log", "deleteThread" !in rest.calls)
-            }
+            compose.onNodeWithText("Delete this conversation?").assertIsDisplayed()
+            compose.runOnIdle { assertTrue("confirmation is required", "deleteThread" !in rest.calls) }
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

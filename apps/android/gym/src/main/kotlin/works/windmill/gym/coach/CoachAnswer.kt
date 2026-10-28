@@ -76,6 +76,9 @@ internal fun CoachAnswer(
     onOpenRoutine: ((String) -> Unit)? = null,
     routineDrafts: List<CoachRoutineDraft> = emptyList(),
     onConfirmRoutine: (suspend (CoachRoutineDraft) -> DraftOutcome)? = null,
+    hasProposals: Boolean = false,
+    onOpenWorkout: ((String) -> Unit)? = null,
+    onSourcesHeight: (Int) -> Unit = {},
 ) {
     val skin = LocalGymColors.current
     val evidence = receipt?.takeIf { it.supported }
@@ -139,63 +142,71 @@ internal fun CoachAnswer(
                 onOpenRoutine?.let { open -> CoachAction("Open routine", { open(result.routineId) }) }
             }
         }
-        val focus = evidence?.workouts?.singleOrNull()
-        if (focus != null) Text("From your log", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim)
-        listOfNotNull(focus).forEach { observation ->
-            val workout = requireNotNull(observation.workout)
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp),
-            ) {
-                Text(
-                    "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
-                    style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim,
-                )
-                val facts = listOfNotNull(
-                    "Working sets" to workout.workingSetCount.toString(),
-                    "Volume" to "${Readout.weight(workout.tonnageKg)} kg",
-                    workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
-                )
-                facts.forEach { (label, value) ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-                        Text(label, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim, modifier = Modifier.weight(1f))
-                        Text(value, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+        val readOnly = CoachSources.readOnly(evidence?.steps ?: legacySteps,
+            hasProposals || evidence?.proposals.orEmpty().isNotEmpty(), results.isNotEmpty(), routineDrafts.isNotEmpty())
+        if (readOnly) {
+            (evidence?.read ?: legacyRead)?.let { tally ->
+                CoachReadSources(tally, evidence, evidence?.steps ?: legacySteps, onOpenWorkout, onSourcesHeight)
+            }
+        } else {
+            val focus = evidence?.workouts?.singleOrNull()
+            if (focus != null) Text("From your log", style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim)
+            listOfNotNull(focus).forEach { observation ->
+                val workout = requireNotNull(observation.workout)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp),
+                ) {
+                    Text(
+                        "${observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine} · ${Readout.shortDate(observation.startedAtMs, nowMs)}",
+                        style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim,
+                    )
+                    val facts = listOfNotNull(
+                        "Working sets" to workout.workingSetCount.toString(),
+                        "Volume" to "${Readout.weight(workout.tonnageKg)} kg",
+                        workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
+                    )
+                    facts.forEach { (label, value) ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+                            Text(label, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.inkDim, modifier = Modifier.weight(1f))
+                            Text(value, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
+                        }
                     }
                 }
             }
-        }
-        val tally = evidence?.read ?: legacyRead
-        if (tally != null) {
-            val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
-            val observations = evidence?.observed.orEmpty()
-            val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
-            var expanded by rememberSaveable { mutableStateOf(false) }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
-                        if (!expandable) Modifier else Modifier.semantics {
-                            stateDescription = if (expanded) "expanded" else "collapsed"
-                        }.clickable(role = Role.Button) { expanded = !expanded },
-                    ),
-                ) {
-                    Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim, modifier = Modifier.weight(1f))
-                    if (expandable) Text(if (expanded) "−" else "+", color = skin.inkDim)
-                }
-                if (expanded) {
-                    observations.forEach { fact ->
-                        val about = fact.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine
-                        val scope = when (fact.coverage) {
-                            "movement" -> "${Readout.movement(requireNotNull(fact.exerciseId), catalog)} · ${Readout.setCount(fact.setsRead)} read"
-                            "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
-                            else -> "Workout summary"
-                        }
-                        val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)} working · ${Readout.weight(it.tonnageKg)}kg" }.orEmpty()
-                        Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            val tally = evidence?.read ?: legacyRead
+            if (tally != null) {
+                val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
+                val observations = evidence?.observed.orEmpty()
+                val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
+                var expanded by rememberSaveable { mutableStateOf(false) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).then(
+                            if (!expandable) Modifier else Modifier.semantics {
+                                stateDescription = if (expanded) "expanded" else "collapsed"
+                            }.clickable(role = Role.Button) { expanded = !expanded },
+                        ),
+                    ) {
+                        Text(Ask.receipt(tally).replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim, modifier = Modifier.weight(1f))
+                        if (expandable) Text(if (expanded) "−" else "+", color = skin.inkDim)
                     }
-                    phrases.forEach { phrase ->
-                        Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                    if (expanded) {
+                        observations.forEach { fact ->
+                            val about = fact.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine
+                            val scope = when (fact.coverage) {
+                                "movement" -> "${Readout.movement(requireNotNull(fact.exerciseId), catalog)} · ${Readout.setCount(fact.setsRead)} read"
+                                "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
+                                else -> "Workout summary"
+                            }
+                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)} working · ${Readout.weight(it.tonnageKg)}kg" }.orEmpty()
+                            Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                        }
+                        phrases.forEach { phrase ->
+                            Text(phrase.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                        }
                     }
                 }
             }

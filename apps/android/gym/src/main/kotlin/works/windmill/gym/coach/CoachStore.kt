@@ -1,10 +1,15 @@
 package works.windmill.gym.coach
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -21,6 +26,14 @@ import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
 
+class CoachAdmission internal constructor() {
+    private var admitted = true
+    internal val active: Boolean @Synchronized get() = admitted
+    @Synchronized internal fun retire() { admitted = false }
+    @Synchronized internal fun write(block: () -> Unit) { if (admitted) block() }
+    internal fun check() { if (!active) throw CancellationException("coach-request-ended") }
+}
+
 class CoachStore internal constructor(
     private val accountOwner: () -> String?,
     private val withheldIds: () -> Set<String>,
@@ -30,10 +43,239 @@ class CoachStore internal constructor(
     private val telemetry: Telemetry,
     private val elapsedNanos: () -> Long,
     private val scope: CoroutineScope,
+    private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val owner: String? get() = accountOwner()
-    val accountKey: String get() = Seat.of(owner)
+    private val anonymousOwner by lazy {
+        try { localCoach?.anonymousOwner() ?: "anonymous:" + Ids.thread() }
+        catch (failure: Exception) { telemetry.failure("gym.restoreConversation", failure); "anonymous:" + Ids.thread() }
+    }
+    private val archiveOwner: String get() = owner ?: anonymousOwner
+    val accountKey: String get() = Seat.of(archiveOwner)
     private val conversationWrite = Mutex()
+    private val archive = mutableStateMapOf<Pair<String, String>, LocalChat>()
+    private val selected = mutableStateMapOf<String, String>()
+    private val restoredOwners = mutableSetOf<String>()
+    private val jobs = mutableMapOf<Pair<String, String>, Job>()
+    private val uploads = mutableStateMapOf<Pair<String, String>, Float>()
+    private val busy = mutableStateMapOf<Pair<String, String>, Boolean>()
+    private val admissions = mutableMapOf<Pair<String, String>, CoachAdmission>()
+    private val stopping = mutableMapOf<Pair<String, String>, CoachAdmission>()
+    private val chatVersions = mutableMapOf<Pair<String, String>, Long>()
+    var archiveFailure by mutableStateOf<String?>(null)
+        private set
+
+    private fun restoreArchive(seat: String) {
+        if (seat in restoredOwners) return
+        try {
+            localCoach?.chats(seat).orEmpty().forEach { archive[seat to it.id] = it }
+            localCoach?.selected(seat)?.let { selected[seat] = it }
+            restoredOwners += seat
+        } catch (failure: Exception) {
+            restoredOwners += seat
+            reportFailure("gym.restoreConversation", failure)
+        }
+    }
+
+    fun chat(id: String): LocalChat? {
+        val seat = archiveOwner
+        restoreArchive(seat)
+        return archive[seat to id]
+    }
+
+    val selectedChatId: String?
+        get() { restoreArchive(archiveOwner); return selected[archiveOwner] }
+
+    fun freshChat(seed: String = ""): String {
+        val seat = archiveOwner
+        val chat = LocalChat(Ids.thread())
+        keepChat(seat, chat, select = true)
+        selected[seat] = chat.id
+        if (seed.isNotEmpty()) saveDraft(chat.id, CoachDraft(seed))
+        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "fresh_entry", "outcome" to "ok"))
+        return chat.id
+    }
+
+    fun selectChat(id: String, action: String = "history_open") {
+        val seat = archiveOwner
+        restoreArchive(seat)
+        val chat = archive[seat to id] ?: LocalChat(id).also { keepChat(seat, it) }
+        try { localCoach?.select(seat, id) }
+        catch (failure: Exception) {
+            reportFailure("gym.saveConversation", failure)
+            archiveFailure = "Your conversation couldn’t be saved. Try again."
+        }
+        selected[seat] = chat.id
+        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to action, "outcome" to "ok"))
+        if (draft(id).let { it.text.isNotEmpty() || it.photo != null })
+            telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "draft_restored", "outcome" to "ok"))
+    }
+
+    private fun keepChat(seat: String, chat: LocalChat, select: Boolean = false) {
+        archive[seat to chat.id] = chat
+        try {
+            localCoach?.saveChat(seat, chat, select)
+            archiveFailure = null
+        } catch (failure: Exception) {
+            reportFailure("gym.saveConversation", failure)
+            archiveFailure = "Your conversation couldn’t be saved. Try again."
+        }
+    }
+
+    fun keepPosition(id: String, scroll: Int, followEnd: Boolean) {
+        val chat = chat(id) ?: return
+        if (chat.scroll == scroll && chat.followEnd == followEnd) return
+        keepChat(archiveOwner, chat.copy(scroll = scroll.coerceAtLeast(0), followEnd = followEnd))
+    }
+
+    fun isAsking(id: String): Boolean = busy[archiveOwner to id] == true
+    fun upload(id: String): Float? = uploads[archiveOwner to id]
+    fun pendingChat(except: String): LocalChat? {
+        restoreArchive(archiveOwner)
+        return archive.filterKeys { it.first == archiveOwner && it.second != except }
+            .values.firstOrNull { isAsking(it.id) || it.exchanges.lastOrNull()?.generation?.status == "running" }
+    }
+
+    fun submit(id: String, text: String, photo: CoachAttachment? = null, requestId: String = Ids.thread(),
+        authenticatedOwner: String? = owner,
+    ): Boolean {
+        if (authenticatedOwner == null || authenticatedOwner != owner) return false
+        val seat = authenticatedOwner
+        val chat = chat(id) ?: return false
+        if (owner == null || isAsking(id) || Ask.needsNew(chat.exchanges) ||
+            (!Ask.sendable(text) && (photo == null || text.toByteArray().size > Ask.maxTurnBytes))) return false
+        val prior = chat.exchanges.lastOrNull()?.takeIf { it.requestId == requestId }
+        val from = if (prior != null) chat.exchanges.dropLast(1) else chat.exchanges
+        val attachments = prior?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
+        val pending = AskExchange(text.trim(), requestId = requestId, generation = prior?.generation, attachments = attachments,
+            atMs = prior?.atMs ?: System.currentTimeMillis())
+        try {
+            saveDraft(id, CoachDraft(pending.question, attachments.firstOrNull()))
+            keepChat(seat, chat.copy(exchanges = from + pending, cap = null, updatedAtMs = System.currentTimeMillis()))
+        } catch (_: Exception) { return false }
+        val key = seat to id
+        val admission = CoachAdmission()
+        admissions[key] = admission
+        busy[key] = true
+        if (attachments.isNotEmpty() && prior?.generation == null) uploads[key] = 0f
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val outcome = ask(id, pending.question, requestId, attachments.firstOrNull(), stream = true,
+                    authenticatedOwner = authenticatedOwner, admission = admission,
+                    onSnapshot = { snapshot ->
+                        if (admissions[key] === admission) {
+                            val current = archive[key] ?: chat
+                            archive[key] = current.copy(exchanges = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments }, atMs = pending.atMs, position = prior?.position ?: 0))
+                        }
+                    }, onUpload = { progress ->
+                        if (admissions[key] === admission) {
+                            if (progress == null) uploads.remove(key) else uploads[key] = progress
+                        }
+                    })
+                if (admissions[key] !== admission) return@launch
+                val current = archive[key] ?: chat
+                keepChat(seat, current.copy(exchanges = from + outcome.exchange(pending),
+                    cap = (outcome as? AskOutcome.Capped)?.cap?.name, absent = outcome is AskOutcome.Absent))
+                if (outcome is AskOutcome.Answered && archiveOwner == seat) saveDraft(id, CoachDraft())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.saveConversation", failure) }
+            finally {
+                if (admissions[key] === admission) {
+                    admission.retire()
+                    admissions.remove(key); busy.remove(key); uploads.remove(key); jobs.remove(key)
+                    if (stopping[key] === admission) stopping.remove(key)
+                }
+            }
+        }
+        jobs[key] = job
+        job.start()
+        return true
+    }
+
+    fun resumeChats() {
+        val authenticatedOwner = owner ?: return
+        restoreArchive(archiveOwner)
+        pendingQuestions().forEach { request ->
+            if (isAsking(request.thread)) return@forEach
+            val chat = chat(request.thread) ?: LocalChat(request.thread)
+            if (chat.exchanges.none { it.requestId == request.requestId })
+                keepChat(archiveOwner, chat.copy(exchanges = chat.exchanges + pendingExchange(request)))
+            submit(request.thread, request.question, draft(request.thread).photo, requireNotNull(request.requestId), authenticatedOwner)
+        }
+    }
+
+    fun stopChat(id: String) {
+        val authenticatedOwner = owner ?: return
+        val seat = authenticatedOwner
+        val key = seat to id
+        val admission = admissions[key] ?: return
+        if (stopping[key] === admission) return
+        val chat = chat(id) ?: return
+        val last = chat.exchanges.lastOrNull() ?: return
+        stopping[key] = admission
+        if (uploads[key] != null) {
+            val paused = chat.copy(exchanges = chat.exchanges.dropLast(1) + last.copy(trouble = "Upload cancelled. Retry to send this photo.", again = true))
+            try { admission.write { localCoach?.pauseRequest(seat, paused, last.requestId); admission.retire() } }
+            catch (failure: Exception) {
+                reportFailure("gym.saveConversation", failure)
+                archiveFailure = "Your conversation couldn’t be saved. Try again."
+                stopping.remove(key)
+                return
+            }
+            archive[key] = paused
+            admissions.remove(key)
+            jobs.remove(key)?.cancel()
+            busy.remove(key); uploads.remove(key); stopping.remove(key)
+            return
+        }
+        scope.launch {
+            try {
+                if (owner != authenticatedOwner || admissions[key] !== admission) return@launch
+                val snapshot = stop(id, last.requestId, authenticatedOwner, admission)
+                if (admissions[key] !== admission) return@launch
+                val current = archive[key] ?: return@launch
+                val index = current.exchanges.indexOfLast { it.requestId == last.requestId }
+                if (index < 0) return@launch
+                val exchanges = current.exchanges.toMutableList().apply {
+                    set(index, snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { last.attachments },
+                        atMs = last.atMs, position = last.position))
+                }
+                keepChat(seat, current.copy(exchanges = exchanges))
+                if (snapshot.terminal) {
+                    admission.retire()
+                    admissions.remove(key)
+                    jobs.remove(key)?.cancel()
+                    busy.remove(key); uploads.remove(key)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.ask", failure) }
+            finally { if (stopping[key] === admission) stopping.remove(key) }
+        }
+    }
+
+    private suspend fun retainSnapshot(seat: String, generation: AskGeneration, admission: CoachAdmission? = null) {
+        try { persistRequest(admission) { localCoach?.record(seat, generation) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.saveConversation", failure)
+            archiveFailure = "Your conversation couldn’t be saved. Try again."
+        }
+    }
+
+    private suspend fun clearRequest(seat: String, thread: String, request: String, admission: CoachAdmission? = null) {
+        try { persistRequest(admission) { localCoach?.clear(seat, thread, request) } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.saveConversation", failure)
+            archiveFailure = "Your conversation couldn’t be saved. Try again."
+        }
+    }
+
+    private suspend fun persistRequest(admission: CoachAdmission?, write: () -> Unit) {
+        withContext(storageDispatcher) {
+            if (admission == null) write() else admission.write(write)
+        }
+    }
 
     private fun reportFailure(operation: String, error: Exception) {
         if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
@@ -42,6 +284,7 @@ class CoachStore internal constructor(
 
     internal fun resetThreads() {
         conversations = emptyList()
+        conversationsOwner = null
         confirmations = emptyMap()
         nextThreadCursor = null
     }
@@ -54,9 +297,27 @@ class CoachStore internal constructor(
 
     // Newest first; every screen reads the same list so settled deletes stay removed.
     private var conversations: List<AskThread> by mutableStateOf(emptyList())
+    private var conversationsOwner: String? = null
     // Undo hides rows; the empty stance still counts everything the account holds.
-    val threads: List<AskThread> get() = conversations.filterNot { it.id in withheldIds() }
-    val allThreads: List<AskThread> get() = conversations
+    val threads: List<AskThread> get() = allThreads.filterNot { it.id in withheldIds() }
+    val allThreads: List<AskThread> get() {
+        val seat = archiveOwner
+        restoreArchive(seat)
+        val local = archive.filterKeys { it.first == seat }.values.mapNotNull { chat ->
+            val draft = draft(chat.id)
+            if (chat.history == null && chat.exchanges.isEmpty() && draft.text.isBlank() && draft.photo == null) return@mapNotNull null
+            val summary = chat.history ?: AskThread(chat.id)
+            summary.copy(id = chat.id, title = chat.title.ifEmpty { draft.text.ifEmpty { "Photo" } },
+                createdAtMs = summary.createdAtMs.takeIf { it > 0 } ?: chat.createdAtMs,
+                askedAtMs = maxOf(summary.askedAtMs, chat.updatedAtMs),
+                turns = chat.exchanges.flatMap { exchange -> listOfNotNull(
+                    AskTurn(Ask.fromLifter, exchange.question, requestId = exchange.requestId),
+                    exchange.answer?.let { AskTurn("coach", it.answer, receipt = it.receipt, requestId = exchange.requestId) }) },
+                generation = chat.exchanges.lastOrNull()?.generation,
+                answerPreview = chat.exchanges.lastOrNull { it.answer?.answer?.isNotBlank() == true }?.answer?.answer ?: summary.answerPreview)
+        }
+        return (local + conversations.takeIf { conversationsOwner == seat }.orEmpty()).distinctBy { it.id }.sortedByDescending { it.askedAtMs }
+    }
 
     fun pendingQuestions(): List<AskQuestion> = try {
         owner?.let { localCoach?.pending(it) }.orEmpty()
@@ -69,54 +330,89 @@ class CoachStore internal constructor(
     var draftVersion by mutableStateOf(0)
         private set
 
-    fun draft(key: String): CoachDraft = owner?.let { seat ->
-        localCoach?.draft(seat, key) ?: drafts[seat to key]
-    } ?: CoachDraft()
+    private val unsavedDrafts = mutableSetOf<Pair<String, String>>()
+    fun draft(key: String): CoachDraft = draft(archiveOwner, key)
 
-    fun saveDraft(key: String, draft: CoachDraft) {
-        val seat = owner ?: return
-        if (draft(key) == draft && (drafts[seat to key] ?: CoachDraft()) == draft) return
-        localCoach?.saveDraft(seat, key, draft)
+    private fun draft(seat: String, key: String): CoachDraft {
+        if (seat to key in unsavedDrafts) return drafts[seat to key] ?: CoachDraft()
+        return localCoach?.draft(seat, key) ?: drafts[seat to key] ?: CoachDraft()
+    }
+
+    fun draftSaved(key: String): Boolean = archiveOwner to key !in unsavedDrafts
+
+    fun saveDraft(key: String, draft: CoachDraft) = saveDraft(archiveOwner, key, draft)
+
+    private fun saveDraft(seat: String, key: String, draft: CoachDraft) {
+        if (seat to key !in unsavedDrafts && draft(seat, key) == draft && (drafts[seat to key] ?: CoachDraft()) == draft) return
+        val changed = drafts[seat to key] != draft
         drafts[seat to key] = draft
-        draftVersion++
+        if (changed) draftVersion++
+        try {
+            localCoach?.saveDraft(seat, key, draft)
+            restoreArchive(seat)
+            val chat = archive[seat to key] ?: LocalChat(key)
+            archive[seat to key] = chat.copy(updatedAtMs = System.currentTimeMillis())
+            unsavedDrafts.remove(seat to key)
+        } catch (failure: Exception) { unsavedDrafts += seat to key; reportFailure("gym.saveDraft", failure); throw failure }
     }
 
-    fun abandon(threadId: String) {
-        val seat = owner ?: return
-        localCoach?.clear(seat, threadId)
-        drafts.remove(seat to threadId)
-        draftVersion++
-    }
+    suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) =
+        importPhoto(key) { withContext(storageDispatcher) { CoachPhotos.read(resolver, uri) } }
 
-    suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) {
-        val seat = owner ?: error(signInFirst)
+    internal suspend fun importPhoto(key: String, prepare: suspend () -> Pair<CoachAttachment, ByteArray>) {
+        val seat = archiveOwner
+        val origin = seat to key
+        val version = chatVersions[origin] ?: 0
         val disk = localCoach ?: error("Photo storage is unavailable.")
-        val (photo, bytes) = withContext(Dispatchers.IO) { CoachPhotos.read(resolver, uri) }
-        check(seat == owner) { accountChanged }
-        withContext(Dispatchers.IO) { disk.savePhoto(seat, photo.id, bytes) }
-        if (seat == owner) saveDraft(key, draft(key).copy(photo = photo))
+        val current = chat(key) ?: return
+        keepChat(seat, current)
+        scope.async {
+            val prepared = try { prepare() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.preparePhoto", failure); throw failure }
+            if ((chatVersions[origin] ?: 0) != version || archive[origin] == null) return@async
+            val (photo, bytes) = prepared
+            val attached = try { withContext(storageDispatcher) { disk.attachPhoto(seat, key, photo, bytes) } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (failure is CoachDraftWriteFailure) reportFailure("gym.saveDraft", failure.cause as Exception)
+                else reportFailure("gym.savePhoto", failure)
+                throw failure
+            }
+            if (!attached) return@async
+            if ((chatVersions[origin] ?: 0) != version || archive[origin] == null) {
+                withContext(storageDispatcher) { disk.discardUnusedPhotos(seat) }
+                return@async
+            }
+            saveDraft(seat, key, draft(seat, key).copy(photo = photo))
+        }.await()
     }
 
     suspend fun photo(threadId: String, photo: CoachAttachment): ByteArray {
-        val seat = owner ?: error(signInFirst)
-        val coach = rest() ?: error(signInFirst)
+        val seat = archiveOwner
         val cached = localCoach?.photoFile(seat, photo.id)
-        val bytes = if (cached?.isFile == true) withContext(Dispatchers.IO) { cached.readBytes() }
-            else coach.photo(threadId, photo.id)
-        check(seat == owner) { accountChanged }
+        val bytes = if (cached?.isFile == true) withContext(storageDispatcher) { cached.readBytes() }
+            else (rest() ?: error(signInFirst)).photo(threadId, photo.id)
+        check(seat == archiveOwner) { accountChanged }
         return bytes
     }
 
-    suspend fun stop(threadId: String, requestId: String): AskGeneration {
-        val seat = owner ?: error(signInFirst)
+    suspend fun stop(threadId: String, requestId: String, authenticatedOwner: String? = owner, admission: CoachAdmission? = null): AskGeneration {
+        val seat = authenticatedOwner ?: error(signInFirst)
+        if (seat != owner) throw CancellationException("coach-owner-changed")
         val coach = rest() ?: error(signInFirst)
+        if (seat != owner) throw CancellationException("coach-owner-changed")
+        admission?.check()
         val generation = coach.stop(threadId, requestId)
-        check(seat == owner) { accountChanged }
-        withContext(Dispatchers.IO) { localCoach?.record(seat, generation) }
-        check(seat == owner) { accountChanged }
-        val current = localCoach?.snapshot(seat, requestId) ?: generation
-        if (current.status in listOf("completed", "stopped")) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
-        check(seat == owner) { accountChanged }
+        if (seat != owner) throw CancellationException("coach-owner-changed")
+        admission?.check()
+        retainSnapshot(seat, generation, admission)
+        admission?.check()
+        if (seat != owner) throw CancellationException("coach-owner-changed")
+        val current = listOfNotNull(localCoach?.snapshot(seat, requestId), generation).maxBy { it.revision }
+        if (current.status in listOf("completed", "stopped")) clearRequest(seat, threadId, requestId, admission)
+        admission?.check()
+        if (seat != owner) throw CancellationException("coach-owner-changed")
         return current
     }
 
@@ -154,7 +450,7 @@ class CoachStore internal constructor(
                 telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to "saved"))
                 if (seat != owner) return@withLock DraftOutcome.Failed(accountChanged)
                 try {
-                    withContext(Dispatchers.IO) { localCoach?.confirm(seat, reply) }
+                    withContext(storageDispatcher) { localCoach?.confirm(seat, reply) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -180,6 +476,7 @@ class CoachStore internal constructor(
     suspend fun ask(threadId: String, question: String, requestId: String = Ids.thread(),
         photo: CoachAttachment? = null, stream: Boolean = false,
         onSnapshot: (AskGeneration) -> Unit = {}, onUpload: (Float?) -> Unit = {},
+        authenticatedOwner: String? = owner, admission: CoachAdmission? = null,
     ): AskOutcome {
         val started = elapsedNanos()
         telemetry.event("gym_ask_started")
@@ -206,8 +503,16 @@ class CoachStore internal constructor(
             telemetry.event("gym_ask_outcome", properties)
             return outcome
         }
-        val seat = owner
+        fun cancelled(error: CancellationException): Nothing {
+            telemetry.event("gym_ask_outcome", mapOf("outcome" to "cancelled",
+                "duration_ms" to ((elapsedNanos() - started) / 1_000_000).toString()))
+            throw error
+        }
+        val seat = authenticatedOwner
+        if (seat == null) return complete(AskOutcome.Refused(signInFirst))
+        if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
         val coach = rest() ?: return complete(AskOutcome.Refused(signInFirst))
+        if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
         var snapshot = seat?.let { localCoach?.snapshot(it, requestId) }
         var photoUpload = false
         return try {
@@ -215,15 +520,19 @@ class CoachStore internal constructor(
             val request = saved ?: AskQuestion(thread = threadId, question = question, requestId = requestId,
                 attachmentIds = listOfNotNull(photo?.id))
             require(request.thread == threadId && request.question == question) { "A retry must keep the original message." }
-            if (seat != null) withContext(Dispatchers.IO) { localCoach?.keep(seat, request) }
+            admission?.check()
+            if (seat != null) persistRequest(admission) { localCoach?.keep(seat, request) }
+            admission?.check()
             if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
             if (photo != null && seat != null && snapshot == null) {
                 val file = localCoach?.photoFile(seat, photo.id)
                 if (file?.isFile == true) {
                     photoUpload = true
                     onUpload(0f)
-                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                    coach.uploadPhoto(threadId, photo, bytes) { if (seat == owner) onUpload(it) }
+                    val bytes = withContext(storageDispatcher) { file.readBytes() }
+                    admission?.check()
+                    coach.uploadPhoto(threadId, photo, bytes) { if (seat == owner && admission?.active != false) onUpload(it) }
+                    admission?.check()
                     if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
                     photoUpload = false
                     onUpload(null)
@@ -231,57 +540,67 @@ class CoachStore internal constructor(
             }
             onUpload(null)
             val accept: suspend (AskGeneration) -> Unit = { next ->
-                if (seat == owner && snapshot != next && (snapshot == null || next.revision >= snapshot!!.revision)) {
-                    if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, next) }
+                if (seat == owner && admission?.active != false && snapshot != next && (snapshot == null || next.revision >= snapshot!!.revision)) {
+                    if (seat != null) retainSnapshot(seat, next, admission)
+                    admission?.check()
                     if (seat == owner) {
                         snapshot = next
                         onSnapshot(next)
                     }
                 }
             }
+            admission?.check()
             var answered = if (stream) coach.stream(request, accept) else coach.ask(request)
             answered.generation?.let { accept(it) }
             var pause = 1_000L
             while (answered.generation?.status == "running") {
                 if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
+                admission?.check()
                 delay(pause)
+                admission?.check()
                 if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
                 pause = (pause * 2).coerceAtMost(10_000)
                 answered = if (stream) coach.stream(request, accept) else coach.ask(request)
                 answered.generation?.let { accept(it) }
             }
             if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
+            admission?.check()
             if (answered.proposals.isNotEmpty() || answered.results.isNotEmpty()) onProgramChanged()
             if (answered.generation?.status == "failed") return complete(AskOutcome.Failed(Ask.interrupted, snapshot))
-            if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
+            if (seat != null) clearRequest(seat, threadId, requestId, admission)
+            admission?.check()
             if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
             complete(AskOutcome.Answered(answered))
         } catch (interrupted: CancellationException) {
-            telemetry.event("gym_ask_outcome", mapOf("outcome" to "cancelled",
-                "duration_ms" to ((elapsedNanos() - started) / 1_000_000).toString()))
-            throw interrupted
+            cancelled(interrupted)
         } catch (refusing: Exception) {
-            reportFailure("gym.ask", refusing)
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            val authoritative = try { coach.thread(threadId)?.generation?.takeIf { it.requestId == requestId } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { null }
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            if (authoritative != null && (snapshot == null || authoritative.revision >= snapshot!!.revision)) {
-                snapshot = authoritative
-                if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, authoritative) }
+            try {
+                admission?.check()
+                reportFailure("gym.ask", refusing)
                 if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            }
-            if (snapshot?.status in listOf("completed", "stopped")) {
-                if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
+                val authoritative = try { coach.thread(threadId)?.generation?.takeIf { it.requestId == requestId } }
+                catch (interrupted: CancellationException) { throw interrupted }
+                catch (_: Exception) { null }
                 if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-                return complete(AskOutcome.Answered(requireNotNull(snapshot).response()))
-            }
-            if (photoUpload) return complete(AskOutcome.Failed("Photo didn’t upload. Retry to send this photo.", snapshot), refusing)
-            if (snapshot == null && photo != null && refusing is WindmillApiException.Refused && refusing.refusal.code == "ask-attachment-invalid") {
-                return complete(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."), refusing)
-            }
-            complete(AskOutcome.refusing(refusing, snapshot), refusing)
+                admission?.check()
+                if (authoritative != null && (snapshot == null || authoritative.revision >= snapshot!!.revision)) {
+                    snapshot = authoritative
+                    if (seat != null) retainSnapshot(seat, authoritative, admission)
+                    admission?.check()
+                    if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
+                }
+                if (snapshot?.status in listOf("completed", "stopped")) {
+                    if (seat != null) clearRequest(seat, threadId, requestId, admission)
+                    admission?.check()
+                    if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
+                    return complete(AskOutcome.Answered(requireNotNull(snapshot).response()))
+                }
+                if (photoUpload) return complete(AskOutcome.Failed("Photo didn’t upload. Retry to send this photo.", snapshot), refusing)
+                if (snapshot == null && photo != null && refusing is WindmillApiException.Refused && refusing.refusal.code == "ask-attachment-invalid") {
+                    return complete(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."), refusing)
+                }
+                complete(AskOutcome.refusing(refusing, snapshot), refusing)
+            } catch (interrupted: CancellationException) { cancelled(interrupted) }
         }
     }
 
@@ -291,15 +610,21 @@ class CoachStore internal constructor(
 
     suspend fun readThreads(cursor: String? = null): GymResult<List<AskThread>> {
         val seat = owner
+        if (seat == null) return GymResult.Ok(allThreads)
         val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
         return conversationWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
             try {
                 val page = coach.threads(cursor)
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                conversations = if (cursor == null) page.threads else (conversations + page.threads).distinctBy { it.id }
+                conversations = if (cursor == null || conversationsOwner != seat) page.threads else (conversations + page.threads).distinctBy { it.id }
+                conversationsOwner = seat
+                page.threads.forEach { thread ->
+                    val prior = chat(thread.id) ?: LocalChat(thread.id, createdAtMs = thread.createdAtMs, updatedAtMs = thread.askedAtMs)
+                    keepChat(seat, prior.copy(history = thread.copy(turns = emptyList(), generation = null)))
+                }
                 nextThreadCursor = page.nextCursor
-                GymResult.Ok(conversations)
+                GymResult.Ok(allThreads)
             } catch (interrupted: CancellationException) {
                 throw interrupted
             } catch (refusing: Exception) {
@@ -314,12 +639,35 @@ class CoachStore internal constructor(
     // in words rather than as a null.
     suspend fun thread(id: String, before: String? = null): GymResult<AskThread> {
         val seat = owner
+        val retained = chat(id)
+        if (seat == null || (retained != null && retained.history == null && retained.exchanges.isEmpty() &&
+            draft(id).let { it.text.isNotBlank() || it.photo != null })) {
+            val local = allThreads.firstOrNull { it.id == id }
+                ?: return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+            return GymResult.Ok(local)
+        }
         val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
         return try {
             val read = coach.thread(id, before)
             if (seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
             if (read == null) return GymResult.Failed(WriteFailure.Refused(noSuchThread))
-            if (seat != null && read.generation?.status in listOf("completed", "stopped")) localCoach?.clear(seat, id, requireNotNull(read.generation).requestId)
+            if (before == null && seat != null) {
+                val prior = chat(id) ?: LocalChat(id, createdAtMs = read.createdAtMs, updatedAtMs = read.askedAtMs)
+                val turns = read.exchanges()
+                val retained = withoutOverlaps(prior.exchanges, turns)
+                val older = retained.filter { !it.pending && !it.again }.takeIf { read.nextCursor != null }.orEmpty()
+                val pending = retained.filter { it.pending || it.again }
+                val oldestCursor = if (older.isNotEmpty() && prior.history != null) prior.history.nextCursor else read.nextCursor
+                if (!isAsking(id)) keepChat(seat, prior.copy(exchanges = older + turns + pending,
+                    history = read.copy(turns = emptyList(), generation = null, nextCursor = oldestCursor)))
+            }
+            if (seat != null && !isAsking(id) && read.generation?.status in listOf("completed", "stopped")) {
+                try { localCoach?.clear(seat, id, requireNotNull(read.generation).requestId) }
+                catch (failure: Exception) {
+                    reportFailure("gym.saveConversation", failure)
+                    archiveFailure = "Your conversation couldn’t be saved. Try again."
+                }
+            }
             GymResult.Ok(read)
         } catch (interrupted: CancellationException) {
             throw interrupted
@@ -330,29 +678,77 @@ class CoachStore internal constructor(
         }
     }
 
-    // Deleting a conversation preserves applied routine changes. A 404 answers as success.
-    suspend fun deleteThread(id: String): GymResult<Unit> {
-        val seat = owner
-        val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        return conversationWrite.withLock {
-            if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-            try {
-                coach.deleteThread(id)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                conversations = conversations.filterNot { it.id == id }
-                if (seat != null) localCoach?.clear(seat, id)
-                confirmations = confirmations.filter { (key, value) -> key.first != seat || value.thread != id }
-                GymResult.Ok(Unit)
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                reportFailure("gym.deleteThread", refusing)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                if ((refusing as? WindmillApiException.Refused)?.status != 404) return@withLock GymResult.Failed(WriteFailure(refusing))
-                conversations = conversations.filterNot { it.id == id }
+    suspend fun readOlderChat(id: String, cursor: String): GymResult<Unit> {
+        val seat = archiveOwner
+        val selected = chat(id) ?: return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+        if (selected.history?.nextCursor != cursor) return GymResult.Ok(Unit)
+        return when (val read = thread(id, cursor)) {
+            is GymResult.Failed -> read
+            is GymResult.Ok -> {
+                if (seat != archiveOwner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+                val current = chat(id) ?: return GymResult.Failed(WriteFailure.Refused(noSuchThread))
+                if (current.history?.nextCursor != cursor) return GymResult.Ok(Unit)
+                val older = withoutOverlaps(read.value.copy(generation = null).exchanges(), current.exchanges)
+                keepChat(seat, current.copy(exchanges = older + current.exchanges,
+                    history = (current.history ?: read.value).copy(nextCursor = read.value.nextCursor)))
                 GymResult.Ok(Unit)
             }
         }
+    }
+
+    private fun withoutOverlaps(exchanges: List<AskExchange>, retained: List<AskExchange>): List<AskExchange> {
+        val requests = retained.map { it.requestId }.filter { it.isNotEmpty() }.toSet()
+        val positions = retained.map { it.position }.filter { it > 0 }.toSet()
+        val generations = retained.mapNotNull { it.generation?.id?.takeIf { id -> id.isNotEmpty() } }.toSet()
+        return exchanges.filter { exchange ->
+            (exchange.requestId.isEmpty() || exchange.requestId !in requests) &&
+                (exchange.position <= 0 || exchange.position !in positions) &&
+                (exchange.generation?.id.isNullOrEmpty() || exchange.generation?.id !in generations)
+        }
+    }
+
+    suspend fun deleteThread(id: String): GymResult<Unit> {
+        val seat = archiveOwner
+        val authenticated = owner
+        val chat = chat(id)
+        return scope.async {
+        val result = conversationWrite.withLock {
+            if (seat != archiveOwner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+            try {
+                if (authenticated != null && (chat == null || chat.history != null || chat.exchanges.isNotEmpty())) {
+                    val coach = rest() ?: return@withLock GymResult.Failed(WriteFailure.Refused(signInFirst))
+                    try { coach.deleteThread(id) }
+                    catch (failure: WindmillApiException.Refused) { if (failure.status != 404) throw failure }
+                }
+                if (seat != archiveOwner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                val admission = admissions[seat to id]
+                if (admission == null) localCoach?.clear(seat, id)
+                else admission.write { localCoach?.clear(seat, id); admission.retire() }
+                archive.remove(seat to id)
+                chatVersions[seat to id] = (chatVersions[seat to id] ?: 0) + 1
+                admissions.remove(seat to id)
+                stopping.remove(seat to id)
+                drafts.remove(seat to id)
+                unsavedDrafts.remove(seat to id)
+                if (selected[seat] == id) selected.remove(seat)
+                jobs.remove(seat to id)?.cancel()
+                busy.remove(seat to id)
+                uploads.remove(seat to id)
+                conversations = conversations.filterNot { it.id == id }
+                confirmations = confirmations.filter { (key, value) -> key.first != authenticated || value.thread != id }
+                GymResult.Ok(Unit)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                reportFailure("gym.deleteThread", failure)
+                GymResult.Failed(WriteFailure(failure))
+            }
+        }
+        telemetry.event("gym_action", mapOf("screen" to "threads", "action" to "delete", "outcome" to when (result) {
+            is GymResult.Ok -> "ok"
+            is GymResult.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+        }))
+        result
+        }.await()
     }
 
 }
@@ -416,7 +812,8 @@ sealed interface AskOutcome {
     }
 
     fun exchange(pending: AskExchange): AskExchange = when (this) {
-        is Answered -> answer.generation?.exchange()?.copy(attachments = answer.generation.attachments.ifEmpty { pending.attachments })
+        is Answered -> answer.generation?.exchange()?.copy(attachments = answer.generation.attachments.ifEmpty { pending.attachments },
+            atMs = pending.atMs.takeIf { it > 0 } ?: answer.generation.atMs, position = pending.position)
             ?: pending.copy(answer = answer)
         is Failed -> pending.copy(trouble = said, again = true, generation = generation ?: pending.generation)
         is Refused -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation)

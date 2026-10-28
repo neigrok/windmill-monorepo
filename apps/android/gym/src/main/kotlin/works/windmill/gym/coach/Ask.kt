@@ -95,6 +95,7 @@ data class AskGeneration(
         trouble = when (status) { "failed" -> Ask.interrupted; "stopped" -> Ask.stopped; else -> null },
         again = status == "failed",
         attachments = attachments,
+        atMs = atMs,
     )
 }
 
@@ -162,6 +163,8 @@ data class AskExchange(
     val requestId: String = "",
     val generation: AskGeneration? = null,
     val attachments: List<CoachAttachment> = emptyList(),
+    val atMs: Long = 0,
+    val position: Long = 0,
 ) {
     val pending: Boolean get() = answer == null && trouble == null
 }
