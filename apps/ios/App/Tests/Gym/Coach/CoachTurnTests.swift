@@ -179,6 +179,8 @@ import SyncTesting
     phone.driver.seatChanged(from: replica)
     #expect(phone.driver.running == nil)
     #expect(try messages(phone).first { $0.id == running.turn.coach }?.state == .interrupted)
+    // The server is told to stop once, so its slot is not held for CALL_RESULT_TIMEOUT.
+    try await settle { TurnFixtureProtocol.state.withLock { $0.requests.contains { $0.path == "/v1/gym/coach/turns/\(running.turnId)/stop" } } }
     phone.driver.stop()
   }
 
@@ -225,18 +227,37 @@ import SyncTesting
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline"])
   }
 
-  // A refusal before the stream withdraws the turn: the question returns to the field and no message stays.
+  // A refusal before the stream withdraws the turn: the question returns to the field, and no message or picture row stays.
   @Test func aRefusalBeforeTheStreamWithdrawsTheTurn() async throws {
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    try phone.coach.addPhoto(UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { _ in }.jpegData(compressionQuality: 0.9)!)
+    let photo = try #require(phone.coach.saved.photo)
     TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (429, "subject_exhausted") }
     try await send(phone, "Private question")
     #expect(try messages(phone).isEmpty)
+    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(photo.id)) } == nil)
     try await settle { phone.coach.saved.text == "Private question" }
     #expect(phone.coach.thread == nil && phone.coach.saved.conversation == nil)
     #expect(phone.driver.refusal == .allowance("subject_exhausted") && !phone.coach.canCompose)
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map(\.properties) }.last == ["screen": "coach", "outcome": "capped", "cap": "allowance"])
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+  }
+
+  // A batch the server timed out is refused coach-turn-order (Coach §6.4): the turn ends interrupted with that code on
+  // its event, an expected refusal that reports nothing and names nothing on the band but the interruption.
+  @Test func aBatchTheServerTimedOutEndsInterruptedWithItsCode() async throws {
+    let phone = try await phone(seat: "bound")
+    defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    let events = try Contract.json("gym/turns/result-timeout-interrupted.json").member("events").asArray()
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: events, lostOnResume: false) }
+    try await send(phone, "What routines do I have?")
+    let answer = try #require(try messages(phone).last { $0.role == .coach })
+    #expect(answer.state == .interrupted && answer.calls.map(\.name).last == "list_routines")
+    #expect(phone.driver.refusal == nil && phone.driver.error == CoachCopy.interrupted)
+    let turn = phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_turn" }.map(\.properties) }
+    #expect(turn.map { $0["state"] } == ["interrupted"] && turn.map { $0["code"] } == ["coach-turn-order"])
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } == [])
   }
 
   // The model copy keeps within the model's edge and byte bounds beside the original, and the open request carries it.

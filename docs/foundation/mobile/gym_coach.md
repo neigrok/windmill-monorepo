@@ -246,8 +246,10 @@ The model's reasoning and every assistant content block stay on the server.
 
 1. The server sends one `calls` event per batch: `{batch, calls: [{callId, name, input}]}`.
 2. The phone runs the batch in order through the replica executor. For each call, one local
-   transaction re-validates the input against its schema, commits the call's writes, and records
-   the call on the Coach message: name, minted ids and outcome.
+   transaction re-validates the input against its schema, measures the result's canonical bytes
+   against `TOOL_RESULT_BYTES` before anything commits — a result over it refuses the call
+   `result-too-large`, writes dropped, and the record carries no read or minted id — then commits
+   the call's writes and records the call on the Coach message: name, minted ids and outcome.
 3. The phone posts the batch's results in one request (§6.4).
 4. A batch unanswered for `CALL_RESULT_TIMEOUT` ends the turn `interrupted`.
 5. The shares (`share_session`, `share_log`, `revoke_share`) are server records. In a `bound` turn
@@ -607,6 +609,11 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
   `threadId`.
 - A receipt stores ids only. The room reads names and serials from the records when it draws.
 - The receipt and the step line derive from `calls`, never from the model's text.
+- A call's record holds the identities its read served that no earlier call of the turn holds.
+  When `calls` has no room for them, the record holds their counts alone, `readTruncated: true`;
+  the receipt adds those counts to its identity count and carries `truncated: true`. The call is
+  never refused for `MAX_CALLS_BYTES`; only a call whose bare record does not fit is refused
+  `coach-turn-volume`.
 
 ### §9.3 Pictures
 

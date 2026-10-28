@@ -52,7 +52,7 @@ struct CoachAbilitiesTests {
     let action = RunAbility(request, on: Self.turn, seat: seat, appBaseUrl: try vector.input.member("appBaseUrl").asString())
     let decision = try ProductCorpus(GymRules.book).decision(of: action, vector, result: Self.form, refusal: \.form)
     let answered = try Self.answer(decision, given: given)
-    // Shares are server records: a phone turn's gate runs these on the server executor (BUILD.md R2), and the phone
+    // Shares are server records: a phone turn’s gate runs these on the server executor (Coach §4.3 step 5), and the phone
     // refuses one that reaches it. The server's golden stays the server's.
     if AbilityExecutor.serverRun.contains(request.name) {
       #expect(answered == ["refused": "not-offered", "writes": []], "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
@@ -60,7 +60,10 @@ struct CoachAbilitiesTests {
     }
     let expect = vector.expect
     if let refused = expect["refused"] {
-      #expect(answered == ["refused": refused, "writes": []], "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
+      // The corpus is the server tool's golden; on the phone the gate's G-3 stands before the tool, so an input the schema
+      // refuses answers `invalid-input` where the tool answered `invalid-arguments`.
+      let gated = refused == "invalid-arguments" && JSONSchema(Catalog.ability(named: request.name)!.input).fault(in: request.input) != nil
+      #expect(answered == ["refused": gated ? "invalid-input" : refused, "writes": []], "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
       return
     }
     let expected: JSON = ["result": try expect.member("result"), "sha256": try expect.member("sha256"), "writes": try expect.member("writes")]
@@ -100,6 +103,71 @@ struct CoachAbilitiesTests {
       return try record.member("f").member(field).asArray()[0].asString()
     }
     throw ContractError("no given record \(id.jcsText) to anchor below")
+  }
+
+  // MARK: - INV-1 beyond the corpus
+
+  static func phone() throws -> (Harness, OpenTurn.Turn, AbilityExecutor) {
+    let a = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))
+    let turn = try #require(committed(try a.runner.run(OpenTurn(question: "How heavy today?"))))
+    return (a, turn, AbilityExecutor(runner: a.runner, appBaseUrl: "https://windmill.works"))
+  }
+
+  static func result(_ name: String, _ input: JSON, on turn: OpenTurn.Turn, _ executor: AbilityExecutor, callId: String = "call") throws -> JSON {
+    guard case .result(let jcs, _)? = committed(try executor.run(AbilityRequest(callId: callId, name: name, input: input), on: turn.coach, seat: .bound)) else {
+      throw ContractError("\(name) answered no result")
+    }
+    return try JSON(parsing: jcs)
+  }
+
+  // The server's `ORDER BY started_at DESC, id DESC` decides a same-millisecond tie by the higher id in the Coach reads alone;
+  // the UI's last time keeps the lower, as the training-reads vectors pin it.
+  @Test func aSameMillisecondTieGoesToTheHigherIdAsTheServerOrders() throws {
+    let (a, turn, executor) = try Self.phone()
+    let at = Instant(ms: 1_799_000_000_000)
+    let sessions = ["sesTIE0000000001", "sesTIE0000000002"].map { Session(id: ID(RecordID($0)), startedAt: at, finishedAt: Instant(ms: at.ms + 3_600_000), closedBy: "finish") }
+    let sets = ["setTIE0000000001", "setTIE0000000002"].enumerated().map { n, id in
+      TrainingSet(id: ID(RecordID(id)), sessionId: sessions[n].id, exerciseId: ID("bench-press"), weightKg: 60, reps: 5, completedAt: Instant(ms: at.ms + 60_000), setNumber: 1)
+    }
+    try SeedLog.run(a, sessions: sessions, sets: sets)
+    let last = try Self.result("last_time", ["exerciseId": "bench-press"], on: turn, executor, callId: "call-1")
+    #expect(last["session"]?["id"] == "sesTIE0000000002")
+    #expect(try last.member("sets").asArray().map { $0["id"] } == ["setTIE0000000002"])
+    let lasts = try Self.result("get_last_times", ["exerciseIds": ["bench-press"]], on: turn, executor, callId: "call-2")
+    #expect(try lasts.member("exercises").asArray().map { $0["session"]?["id"] } == ["sesTIE0000000002"])
+    #expect(try a.runner.read(Gym.scope) { try TrainingLog($0).lastTime(for: ID("bench-press")).session?.id } == ID("sesTIE0000000001"))
+  }
+
+  // `list_exercises` lists names as the server's en_US.UTF-8 collation does — letters without case or accents first, then
+  // accents, then lowercase before uppercase — and a name the call gives decomposed is stored composed (§3.3).
+  @Test func theCatalogueListsNamesAsTheServersCollationOrders() throws {
+    let (_, turn, executor) = try Self.phone()
+    let names = ["Zed row", "apple curl", "e\u{0301}clair fly", "Étude press", "Bench", "bench press", "bench", "BENCH", "bénch"]
+    for (n, name) in names.enumerated() {
+      let created = try Self.result("create_exercise", ["id": .string("tn7Qm2Kx9Lp4Wz8R-\(n)"), "name": .string(name), "pattern": "carry", "equipment": "cable"],
+                                    on: turn, executor, callId: "create-\(n)")
+      #expect(created["name"] == .string(name == "e\u{0301}clair fly" ? "éclair fly" : name))
+    }
+    let listed = try Self.result("list_exercises", [:], on: turn, executor)
+    let custom = try listed.member("exercises").asArray().filter { $0["custom"] == true }.map { try $0.member("name").asString() }
+    #expect(custom == ["apple curl", "bench", "Bench", "BENCH", "bénch", "bench press", "éclair fly", "Étude press", "Zed row"])
+  }
+
+  // A note past the server's bounds is malformed input, `invalid-arguments`, as its tool answers; a note out of the schema's
+  // shape is the gate's `invalid-input`; one within both saves.
+  @Test func aNotePastTheServersBoundsIsMalformedInput() throws {
+    let (_, turn, executor) = try Self.phone()
+    let note = { (n: Int, title: String, body: String) throws -> AbilityOutcome? in
+      committed(try executor.run(AbilityRequest(callId: "note-\(n)", name: "save_note", input: ["id": .string("tn7Qm2Kx9Lp4Wz8R-\(n)"), "title": .string(title), "body": .string(body)]),
+                                 on: turn.coach, seat: .bound))
+    }
+    #expect(try note(1, "Bound", String(repeating: "é", count: 250) + "x") == .refused(.invalidArguments))
+    #expect(try note(2, String(repeating: "q\u{0307}", count: 60), "") == .refused(.invalidArguments))
+    #expect(try note(3, " ", "Blunt.") == .refused(.invalidArguments))
+    #expect(committed(try executor.run(AbilityRequest(callId: "note-4", name: "save_note", input: ["id": "tn7Qm2Kx9Lp4Wz8R-4", "title": "No body"]), on: turn.coach, seat: .bound))
+      == .refused(.invalidInput))
+    let saved: JSON = ["saved": true, "note": ["id": "tn7Qm2Kx9Lp4Wz8R-5", "position": 0, "title": "Bound", "body": .string(String(repeating: "é", count: 250))]]
+    #expect(try note(5, "Bound", String(repeating: "é", count: 250)) == .result(jcs: saved.jcs, sha256: SHA256Hex.of(saved.jcs)))
   }
 
   // MARK: - The catalog

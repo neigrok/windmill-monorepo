@@ -90,7 +90,8 @@ struct CoachAnswerText: View {
 }
 
 // What one answer read, as its receipt row and What Coach read say it (Coach §9.2): the workouts its calls served, by
-// identity, the weeks they fall in, and whether it read notes, movement history, or nothing.
+// identity, the weeks they fall in, the rows the calls recorded as counts alone, and whether it read notes, movement
+// history, or nothing.
 struct CoachReading: Identifiable {
   struct Workout: Identifiable {
     let id: String
@@ -100,13 +101,20 @@ struct CoachReading: Identifiable {
   }
   let id = UUID()
   let workouts: [Workout]
+  let counted: ReadTally
   let weeks: Int
   let notes: Bool
   let nothing: Bool
   let stats: Bool
   init(calls: [AbilityCall], gym: GymModel) {
     var served = ReadServed()
-    for call in calls where call.outcome == .ok { served.saw(call.read) }
+    var counted = ReadTally()
+    for call in calls where call.outcome == .ok {
+      switch call.read {
+      case .ids(let read): served.saw(read)
+      case .counts(let tally): counted = counted + tally
+      }
+    }
     let sessions = served.sessions.compactMap { id in gym.sessions.first { $0.id == id } }.sorted { $0.startedAt > $1.startedAt }
     workouts = sessions.map { session in
       let readout = gym.log?.readout(session: session.id)
@@ -114,15 +122,16 @@ struct CoachReading: Identifiable {
       return Workout(id: session.id.description, title: readout?.name ?? session.displayName ?? Readout.noRoutine,
                      meta: ([gym.dates.subtitle(session.startedAt)] + facts).joined(separator: " · "), available: true)
     }
-    weeks = served.weeks.count
+    self.counted = counted
+    weeks = served.weeks.count + counted.weeks
     notes = calls.contains { $0.name == "list_notes" && $0.outcome == .ok }
-    nothing = served.isEmpty
+    nothing = served.isEmpty && counted.isEmpty
     stats = calls.contains { $0.name == "get_stats" && $0.outcome == .ok }
   }
-  var count: String { GymCount.of(workouts.count, "workout") + " · " + GymCount.of(weeks, "week") }
+  var count: String { GymCount.of(workouts.count + counted.sessions, "workout") + " · " + GymCount.of(weeks, "week") }
   // The receipt row: what the sheet lists, else what it read in words with no number; none when it read what no line can say.
   var line: String? {
-    if !workouts.isEmpty { return "Read " + count }
+    if !workouts.isEmpty || counted.sessions > 0 { return "Read " + count }
     if nothing { return "Read nothing from your log" }
     return stats ? "Read your movement history" : nil
   }

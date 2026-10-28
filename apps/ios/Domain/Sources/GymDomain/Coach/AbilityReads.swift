@@ -179,14 +179,14 @@ public struct LogRead: Decider {
       }
       return .unchanged(AbilityAnswer(["sessions": .array(workouts), "missingSessionIds": .array(missing)], served: served))
     case .lastTime(let id):
-      let last = log.lastTime(for: id)
+      let last = LastTime.of(id, among: newestFirst(log), log: log)
       if last.session == nil && log.catalogue.find(id) == nil { return .refuse(gone(id.ref)) }
       return .unchanged(AbilityAnswer(.object(lastTime(last, in: log, served: &served)), served: served))
     case .lastTimes(let ids):
       var movements: [JSON] = []
       var missing: [JSON] = []
       for id in ids {
-        let last = log.lastTime(for: id)
+        let last = LastTime.of(id, among: newestFirst(log), log: log)
         if last.session == nil && log.catalogue.find(id) == nil { missing.append(id.json); continue }
         var line = lastTime(last, in: log, served: &served)
         line["trained"] = .bool(last.session != nil)
@@ -204,6 +204,12 @@ public struct LogRead: Decider {
       if let only { stats["movements"] = .array(movements.filter { $0["exerciseId"] == only.json }) }
       return .unchanged(AbilityAnswer(CoachDocuments.stated(.object(stats)), served: served))
     }
+  }
+
+  // The server's `ORDER BY started_at DESC, id DESC` (INV-1): a same-millisecond tie goes to the higher id, where the
+  // UI's `drawnSessions` lists the lower first and the training-reads vectors pin it so.
+  func newestFirst(_ log: TrainingLog) -> [Session] {
+    log.drawnSessions.sorted { a, b in a.startedAt == b.startedAt ? a.id > b.id : a.startedAt > b.startedAt }
   }
 
   func workout(_ session: Session, review: Bool, in history: TrainingHistory, served: inout ReadServed) -> JSON.Object {
@@ -281,17 +287,20 @@ public struct ProgramRead: Decider {
 
 // MARK: - The catalogue, the notes, the weigh-ins
 
-// `list_exercises`: the catalogue by pattern, then the name the lifter sees.
+// `list_exercises`: the catalogue by pattern, then the name the lifter sees, in the server's order (INV-1): its
+// `ORDER BY pattern, name` runs under the database's `en_US.UTF-8` collation, so names compare by their letters without
+// case or accents first, then by their accents, then lowercase before uppercase (`Collation`); patterns are lowercase
+// ASCII words, the same order either way. What the collation leaves tied, the id breaks.
 public struct CatalogueRead: Decider {
   public init() {}
   public var scope: ScopeRef { Gym.scope }
   public func load(_ read: Reader) throws -> Catalogue { try Catalogue(read) }
 
   public func decide(_ catalogue: Catalogue, ids: IDSource) throws(Violation) -> Decision<AbilityAnswer, GymRefusal> {
-    let before = { (a: String, b: String) in a.utf8.lexicographicallyPrecedes(b.utf8) }
     let exercises = catalogue.exercises.sorted { a, b in
-      if a.pattern != b.pattern { return before(a.pattern, b.pattern) }
-      if a.name != b.name { return before(a.name, b.name) }
+      if a.pattern != b.pattern { return a.pattern.utf8.lexicographicallyPrecedes(b.pattern.utf8) }
+      if Collation.precedes(a.name, b.name) { return true }
+      if Collation.precedes(b.name, a.name) { return false }
       return a.id < b.id
     }
     return .unchanged(AbilityAnswer(["exercises": .array(exercises.map(CoachDocuments.exercise))]))

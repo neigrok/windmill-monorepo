@@ -71,6 +71,25 @@ public enum TextUnit: String, Sendable {
   }
 }
 
+// Names in the order a database's `en_US.UTF-8` collation lists them, the three levels of the Unicode collation
+// algorithm: the letters first, without case or accents, then the accents, then lowercase before uppercase; spaces and
+// punctuation count as the characters they are at every level. Two names equal at all three levels are equal here.
+public enum Collation {
+  public static func precedes(_ a: String, _ b: String) -> Bool {
+    let (left, right) = (DomainKitNFC.nfd(a).unicodeScalars, DomainKitNFC.nfd(b).unicodeScalars)
+    let letters = { (scalars: String.UnicodeScalarView) in
+      scalars.filter { $0.properties.canonicalCombiningClass == .notReordered }.flatMap { $0.properties.lowercaseMapping.unicodeScalars.map(\.value) }
+    }
+    let accents = { (scalars: String.UnicodeScalarView) in scalars.flatMap { $0.properties.lowercaseMapping.unicodeScalars.map(\.value) } }
+    let cases = { (scalars: String.UnicodeScalarView) in scalars.map { $0.properties.isUppercase ? UInt32(1) : UInt32(0) } }
+    for level in [letters, accents, cases] as [(String.UnicodeScalarView) -> [UInt32]] {
+      let (l, r) = (level(left), level(right))
+      if l != r { return l.lexicographicallyPrecedes(r) }
+    }
+    return false
+  }
+}
+
 public struct TextSpec: ValueSpec {
   public let path: String
   let unit: TextUnit
