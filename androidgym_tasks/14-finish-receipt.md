@@ -17,7 +17,7 @@
 - `store/FinishReceipts.kt` records the first anonymous receipt on this phone. Keep opens ordinary sign-in. Share owns a separate saved request identity, waits for its matching sign-in completion and the account-data decision, and submits once through the owner-scoped Coach archive. A cancelled or superseded sign-in retires that Share intent. The saved exit phase resumes after recreation; an old queued snapshot reopens its original chat without duplicating an admitted request or a fresh-entry event.
 - Restored receipts reconcile against the current local replica. Proven absence clears both receipt and workout detail and opens the root Log; an unread account replica waits for its first pull.
 - The approved Z.1 terminal has only its ended-workout copy and Done to Routines.
-- Source and focused tests are in review. Native appearance and local event/failure arrival remain pending. Local durable-write failure dismisses the overlays onto the retained workout detail and its existing failure presentation.
+- Paired installed-app captures, recreated Share admission, offline deletion, cold restart and later server removal pass. Native transport failures and bounded events reach their local collectors. Local durable-write failure retains the detail/error in deterministic tests; an actual native SQLite write failure and its discard Issue remain unverified because the external helper never acquired a lock.
 
 **Change**
 - 03.7, the approved Android receipt:
