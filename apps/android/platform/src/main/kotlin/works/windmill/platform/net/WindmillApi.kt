@@ -88,7 +88,7 @@ class WindmillApi(
         properties.putAll(diagnostics.properties())
         if (error is WindmillApiException.Refused) properties["status"] = error.status.toString()
         telemetry.event("api_request_failed", properties)
-        if (TelemetryPolicy.report(error)) telemetry.failure(operation, error, properties)
+        if (TelemetryPolicy.report(error, operation)) telemetry.failure(operation, error, properties)
     }
 
     suspend fun <Reply> consume(

@@ -139,10 +139,7 @@ class SaveRoutinePlan(val base: Routine, val current: Routine, val isNew: Boolea
             if (before == null) {
                 if (loaded.catalogue.find(next.id) != null)
                     return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.idTaken, next.id.ref, path = Refused.Path.predicted)))
-                plan.create(Valid(next, Exercise, at = loaded.moment))
-                if (next.equipment == "dumbbell" && next.loadCount != 2)
-                    plan.create(Valid(ExerciseName(Id(next.id.record, ExerciseName), null, loadCount = next.loadCount),
-                        ExerciseName, at = loaded.moment), fields = listOf("loadCount"))
+                plan.createRoutineMovement(Valid(next, Exercise, at = loaded.moment), loaded.moment)
                 wrote = true
                 continue
             }
@@ -187,6 +184,14 @@ class SaveRoutinePlan(val base: Routine, val current: Routine, val isNew: Boolea
         if (former != loaded.formerNames) plan.device(Catalogue.formerNamesKey, Json.Obj(former.toList()))
         return if (wrote) Decision.Write(plan, current.id) else Decision.Unchanged(current.id)
     }
+}
+
+fun Plan.createRoutineMovement(value: Valid<Exercise>, moment: Moment) {
+    create(value)
+    val movement = value.value
+    if (movement.equipment == "dumbbell" && movement.loadCount != 2)
+        create(Valid(ExerciseName(Id(movement.id.record, ExerciseName), null, loadCount = movement.loadCount),
+            ExerciseName, at = moment), fields = listOf("loadCount"))
 }
 
 class ReorderRoutines(val order: List<Id<Routine>>) : Action<ReorderRoutines.Loaded, Unit, GymRefusal> {

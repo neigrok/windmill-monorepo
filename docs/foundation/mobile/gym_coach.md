@@ -11,8 +11,9 @@ iOS runs every Coach turn, signed out and signed in, as the tool host over its r
 the web keep the server Coach of [gym-coach-contract.md](../../gym-coach-contract.md): the server
 reads and writes the log itself. Anonymous onboarding (`POST /v1/gym/coach/onboarding`) is a
 separate, narrower route: one installation-authenticated request produces a bounded routine
-document for atomic local import. No client sends it new requests; iOS draws the onboarding answers
-earlier versions kept and imports the routines they drafted. Its installation identity follows §8.
+document for atomic local import. Android's nonvisual onboarding client retains installation access,
+original-chat requests and per-result import receipts; its visible signed-out flow is separate from this foundation.
+iOS draws the onboarding answers earlier versions kept and imports the routines they drafted. Installation identity follows §8.
 
 **Adoption:**
 

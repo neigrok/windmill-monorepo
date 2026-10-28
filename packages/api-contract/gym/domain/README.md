@@ -31,6 +31,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
+| `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
@@ -81,6 +82,7 @@ presentation read: it does not convert loads or volume. Its shared read cases us
 Coach action and review presentation keeps its existing formatter.
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
+`ImportCoachRoutineBatch` takes the captured replica, full result identity, a supplied SHA-256 fingerprint of the normalized payload, a bounded device receipt key, preassigned routine identities and required custom movements. The adapter derives `rack:coachImport` plus 48 lowercase hexadecimal SHA-256 digits from the result identity; its 59-character rack suffix fits the existing device-key grammar. One Plan writes every record and that receipt together. A matching receipt returns the same identities without writes; a full result-identity or fingerprint conflict refuses. Receipt keys are separate per result so Add preserves unrelated account and anonymous receipts. Record-identity adoption rewrites the receipt's routine and movement references while retaining its fingerprint.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
 frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
