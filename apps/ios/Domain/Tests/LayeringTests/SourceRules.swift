@@ -37,7 +37,7 @@ enum SourceRules {
   static let storageModule = "SyncStore"
 
   static let nfcModule = "DomainKitNFC"
-  static let nfcSource = "import Foundation\n\npublic func nfc(_ s: String) -> String { s.precomposedStringWithCanonicalMapping }\n"
+  static let nfcSource = "import Foundation\n\npublic func nfc(_ s: String) -> String { s.precomposedStringWithCanonicalMapping }\n\npublic func nfd(_ s: String) -> String { s.decomposedStringWithCanonicalMapping }\n"
 
   static func findings(in world: World) -> [Finding] {
     let packageModules = world.packageModules

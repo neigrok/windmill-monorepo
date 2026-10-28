@@ -153,7 +153,7 @@ closed by package identity; the checked-in `Package.resolved` pins their revisio
 
 | Swift module | Depends on |
 |---|---|
-| `DomainKitNFC` | — (imports `Foundation`; its whole source is one public function, `nfc(_:)`) |
+| `DomainKitNFC` | — (imports `Foundation`; its whole source is the public normalization functions `nfc(_:)` and `nfd(_:)`) |
 | `DomainKit` | `DomainKitNFC`, `SyncCore`, `SyncAPI` |
 | `DomainKitTesting` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncEngine`, `SyncTesting` |
 | `<P>Domain` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncSchema` |
@@ -239,6 +239,8 @@ faith; configuration crafted to hide from it is out of scope, and review catches
 import Foundation
 
 public func nfc(_ s: String) -> String { s.precomposedStringWithCanonicalMapping }
+
+public func nfd(_ s: String) -> String { s.decomposedStringWithCanonicalMapping }
 ```
 
 **Kotlin.** The layering task reads the compiled classes of kit, domain and engine-API modules, both
