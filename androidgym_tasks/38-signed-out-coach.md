@@ -2,11 +2,11 @@
 
 **Figma:** none. This task builds the plumbing that 39–44 draw on. The signed-out boards are 01.1, 01.4, 01.7, 01.10, 01.14, 01.15, 01.16.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or `backend/`)
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or `backend/`)
 - Signed out, the Coach tab is a sign-in door (`GymRoom.kt:1152-1153`): `AskSignedOutStance` (`coach/AskScreen.kt:267-278`) says *Coach reads your log, so it needs you signed in.* (`coach/Ask.kt:216`) above a **Sign in** button.
-- Android has no installation credential. Nothing in `apps/android` calls `/v1/ai/installations` or `/v1/gym/coach/onboarding`, or sends `X-Windmill-Installation`.
-- One question is at most 1,000 bytes: `Ask.maxTurnBytes = 1000` (`coach/Ask.kt:175`). The signed-in contract accepts 8,000.
-- Photos are re-encoded down to 5 MB and a 4,096 px edge (`coach/CoachPhotos.kt:15-16`). That fits the signed-in upload, but not the onboarding route's 1 MiB inline limit.
+- `platform/ai/AiInstallation.kt` seals a separate installation credential and durable binding intent. `coach/onboarding/` carries installation-authenticated requests, original-chat recovery and atomic routine import. Visible anonymous states remain the responsibility of 39–44.
+- Signed-in questions accept 8,000 UTF-8 bytes through `Ask.maxTurnBytes`. The onboarding client keeps its separate 4,000-byte limit.
+- `CoachPhotos.read` retains its signed-in 5 MiB / 4,096 px defaults and accepts the onboarding client's 1 MiB re-encoding bound.
 - Backend routes are implemented behind two switches:
   - `POST /v1/ai/installations` issues the credential. `GET /v1/ai/installations/current` reads it, and `POST /v1/ai/installations/bind` binds it to an account (`backend/platform/infra/main.cpp:832-836`).
   - `POST /v1/gym/coach/onboarding` and `GET /v1/gym/coach/onboarding/{requestId}` (`backend/products/gym/routes.cpp:33-44`).
@@ -14,7 +14,7 @@
   - The reply carries `requestId`, `resultId`, `status`, `message`, `routines`, `errorCode` and `allowance` (`backend/products/gym/onboarding/OnboardingApi.cpp:24-31`).
   - Both routes run only with `AI_ALLOWANCES_ENABLED=true` and `AI_INSTALLATIONS_ENABLED=true`. Both default to `false` (`backend/AI_ALLOWANCES.md`). With the switch off, new work answers 503 `anonymous_ai_unavailable`.
 
-**Change**
+**Contract**
 - Installation credential lives in `platform/ai/` because it is product-neutral. Issue once with `POST /v1/ai/installations` and `{}`, seal the opaque credential through `SecretVault`, and keep it separate from account sessions.
   - Read and persist the `bound` state returned by issuance/current/bind. Refresh through `GET /v1/ai/installations/current` before presenting anonymous Send when binding is unknown.
   - Send `X-Windmill-Installation` on installation/onboarding operations that require it. Never re-issue over an existing credential. A 401 `invalid_installation` is a refusal, not permission to reset the installation or its lifetime allowance.
@@ -64,7 +64,7 @@
 - Tests:
   - New tests in `apps/android/gym/src/test/kotlin/works/windmill/gym/coach/`: persist before send, same-id recovery, no new id after failure, results returning to their originating chat, atomic import/replay and receipt crash cases, and byte limits keeping drafts. Add domain batch-action/shared-vector cases and engine-adapter transaction fault tests.
   - A credential test beside `apps/android/platform/src/test/kotlin/works/windmill/platform/auth/SecretVaultTest.kt`: sealed, kept on sign-out, bound on sign-in, anonymous → bind → sign-out refusing new anonymous work, another-account binding, and pending GET recovery after binding.
-  - Update `coach/AskTests.kt`: it pins `Ask.signedOut` and the 1,000-byte limit.
+  - Update `coach/AskTests.kt`: it pins `Ask.signedOut` and the signed-in 8,000-byte limit; signed-out requests keep their separate 4,000-byte limit.
 
 **Depends on:** 37 for the durable owner/chat archive. Task 37 has no dependency on this task; ordinary fresh Coach entry can ship without anonymous transport/import.
 

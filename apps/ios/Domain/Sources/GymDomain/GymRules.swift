@@ -10,6 +10,7 @@ public enum GymRules {
     rules: NoteRules.rules + WeighInRules.rules + RoutineRules.rules + ExerciseRules.rules + SetRules.rules + SessionRules.rules + PreferencesRules.rules + ProposalRules.rules +
       ImportSessionCommand.specs.map { .local($0) } + CorrectSessionCommand.specs.map { .local($0) } + [
         .local("routine.order", subject: Routine.type),
+        .local("coach.import", subject: Routine.type),
         .serverDecided("routine.exercise", codes: [Gym.Codes.unknownExercise], subject: Routine.type),
         .serverDecided("proposal.exercise", codes: [Gym.Codes.unknownExercise], subject: Proposal.type),
         .serverDecided("set.session", codes: [Gym.Codes.sessionFinished], subject: TrainingSet.type),

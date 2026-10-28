@@ -15,7 +15,9 @@ object CoachPhotos {
     const val maxBytes = 5 * 1024 * 1024
     const val maxEdge = 4096
 
-    fun read(resolver: ContentResolver, uri: Uri): Pair<CoachAttachment, ByteArray> {
+    fun read(resolver: ContentResolver, uri: Uri, maxBytes: Int = CoachPhotos.maxBytes,
+        maxEdge: Int = CoachPhotos.maxEdge): Pair<CoachAttachment, ByteArray> {
+        require(maxBytes >= 1024 && maxEdge >= 1)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Choose a supported photo." }

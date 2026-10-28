@@ -22,7 +22,7 @@ class CorpusTests {
     val paths = listOf("gym/domain/rules.json", "gym/domain/values.json", "gym/domain/notes-actions.json",
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
-        "gym/domain/recovery-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
+        "gym/domain/recovery-actions.json", "gym/domain/coach-onboarding-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
@@ -94,6 +94,20 @@ class CorpusTests {
             "gym/domain/proposals-actions.json" -> proposals(vector, input!!)
             "gym/domain/training-actions.json" -> training(vector, input!!)
             "gym/domain/recovery-actions.json" -> recovery(vector, input!!)
+            "gym/domain/coach-onboarding-actions.json" -> {
+                val fields = Fields(input!!)
+                val routines = input.member("routines").arr().map { value ->
+                    val routine = Fields(value)
+                    CoachRoutineImport(routine.ref("id", Routine), routine.string("name"), routine.list("entries", RoutineEntry))
+                }
+                val movements = input.member("movements").arr().map { value ->
+                    val movement = Fields(value)
+                    Exercise(movement.ref("id", Exercise), movement.string("name"), movement.string("pattern"),
+                        movement.string("equipment"), movement.double("stepKg"), loadCount = movement.int("loadCount"))
+                }
+                corpus.decision(ImportCoachRoutineBatch(fields.string("replica"), fields.string("resultId"),
+                    fields.string("fingerprint"), fields.string("receiptKey"), routines, movements), vector, { it.json }, ::refusalForm)
+            }
             "gym/domain/training-reads.json" -> corpus.read(vector, Session.scope) { trainingReadsForm(vector, it) }
             "gym/domain/units.json" -> unitsForm(vector.input)
             else -> error("unclaimed gym file ${vector.file}")

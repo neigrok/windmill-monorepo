@@ -6,6 +6,27 @@ import SyncSchema
 import Testing
 
 struct CoachOnboardingTests {
+  @Test(arguments: try Contract.vectors("gym/domain/coach-onboarding-actions.json"))
+  func sharedBatchImport(_ vector: Vector) throws {
+    let input = try vector.input.member("input")
+    let fields = try Fields(input)
+    let routines = try input.member("routines").asArray().map { value in
+      let routine = try Fields(value)
+      return CoachRoutineImport(id: try routine.ref("id", Routine.self), name: try routine.string("name"),
+                                entries: try routine.list("entries", of: RoutineEntry.self))
+    }
+    let movements = try input.member("movements").asArray().map { value in
+      let movement = try Fields(value)
+      return Exercise(id: try movement.ref("id", Exercise.self), name: try movement.string("name"),
+        pattern: try movement.string("pattern"), equipment: try movement.string("equipment"),
+        stepKg: try movement.double("stepKg"), loadCount: try movement.int("loadCount"))
+    }
+    let action = ImportCoachRoutineBatch(replica: try fields.string("replica"), resultId: try fields.string("resultId"),
+      fingerprint: try fields.string("fingerprint"), receiptKey: try fields.string("receiptKey"), routines: routines, movements: movements)
+    let result = try ProductCorpus(GymRules.book).decision(of: action, vector, result: \.json, refusal: \.form)
+    #expect(result == vector.expect, "\(vector)\n  got \(result.jcsText)")
+  }
+
   @Test func allRoutinesAndTheirReplayReceiptCommitTogether() throws {
     let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: nil)
     let replica = try phone.runner.read(Gym.scope) { $0.replica }
