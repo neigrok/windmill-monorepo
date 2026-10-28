@@ -186,10 +186,14 @@ struct CoachConversationTests {
       Session(id: ID(RecordID("ses" + Self.digits(n))), startedAt: Instant(ms: 1_700_000_000_000 + Int64(n) * 7 * 86_400_000),
               finishedAt: Instant(ms: 1_700_003_600_000 + Int64(n) * 7 * 86_400_000), closedBy: "finish")
     }
-    let sets = sessions.enumerated().flatMap { workout, session in
-      (0..<60).map { n in
-        TrainingSet(id: ID(RecordID("set" + Self.digits(workout * 100 + n))), sessionId: session.id, exerciseId: ID("bench-press"), weightKg: 60, reps: 5,
-                    completedAt: Instant(ms: session.startedAt.ms + 60_000 * Int64(n + 1)), setNumber: n + 1)
+    var sets: [TrainingSet] = []
+    let exerciseId = ID<Exercise>("bench-press")
+    for (workout, session) in sessions.enumerated() {
+      for n in 0..<60 {
+        let id = ID<TrainingSet>(RecordID("set" + Self.digits(workout * 100 + n)))
+        let completedAt = Instant(ms: session.startedAt.ms + 60_000 * Int64(n + 1))
+        sets.append(TrainingSet(id: id, sessionId: session.id, exerciseId: exerciseId, weightKg: 60, reps: 5,
+                                completedAt: completedAt, setNumber: n + 1))
       }
     }
     try SeedLog.run(a, sessions: sessions, sets: sets)
