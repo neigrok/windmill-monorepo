@@ -153,6 +153,57 @@ class DomainDebuggerTests(unittest.TestCase):
             self.assertEqual([102, 101], [call.args[0] for call in kill.call_args_list])
             self.assertEqual(["ps", "-axo", "pid=,ppid="], run.call_args.args[0])
 
+    def test_bootstrap_invalid_none_and_exec_stops_continue_until_a_real_stop_or_exit(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        api = SimpleNamespace(eStateStopped=5, eStateCrashed=8, eStateExited=10, eStateDetached=9,
+                              eStopReasonInvalid=0, eStopReasonNone=1, eStopReasonExec=7)
+        for terminal, reason in ((10, 0), (5, 5), (5, 6), (8, 0)):
+            with self.subTest(terminal=terminal, reason=reason):
+                state = {"index": 0}
+                states = [(5, 0), (5, 1), (5, 7), (terminal, reason)]
+                thread = SimpleNamespace(GetStopReason=lambda: states[state["index"]][1])
+                process = SimpleNamespace(GetState=lambda: states[state["index"]][0],
+                                          GetNumThreads=lambda: 1, GetThreadAtIndex=lambda index: thread,
+                                          Continue=Mock())
+                def advance(_):
+                    state["index"] += 1
+                expected = {"outcome": "exited" if terminal == 10 else "stopped", "state": terminal}
+                with patch.object(self.debugger.time, "monotonic", side_effect=range(10)), \
+                     patch.object(self.debugger.time, "sleep", side_effect=advance) as sleep, \
+                     patch.object(self.debugger, "snapshot", return_value=expected) as snapshot:
+                    self.assertEqual(expected, self.debugger.wait_for_result(process, api, 300))
+                self.assertEqual(3, process.Continue.call_count)
+                self.assertEqual([(.1,)] * 3, [call.args for call in sleep.call_args_list])
+                snapshot.assert_called_once_with(process, api)
+
+    def test_bootstrap_stop_does_not_extend_deadline_and_an_early_signal_is_never_continued(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        api = SimpleNamespace(eStateStopped=5, eStateCrashed=8, eStateExited=10, eStateDetached=9,
+                              eStopReasonInvalid=0, eStopReasonNone=1, eStopReasonExec=7)
+        for reason in (0, 5, 6):
+            with self.subTest(reason=reason):
+                thread = SimpleNamespace(GetStopReason=lambda: reason)
+                process = SimpleNamespace(GetState=lambda: 5, GetNumThreads=lambda: 1,
+                                          GetThreadAtIndex=lambda index: thread, Continue=Mock())
+                with patch.object(self.debugger.time, "monotonic", side_effect=[0, 1, 2, 300]), \
+                     patch.object(self.debugger.time, "sleep") as sleep, \
+                     patch.object(self.debugger, "snapshot", return_value={"outcome": "stopped"}) as snapshot:
+                    result = self.debugger.wait_for_result(process, api, 300)
+                if reason == 0:
+                    self.assertEqual({"outcome": "timed_out", "seconds": 300}, result)
+                    self.assertEqual(2, process.Continue.call_count)
+                    self.assertEqual(2, sleep.call_count)
+                    snapshot.assert_not_called()
+                else:
+                    self.assertEqual({"outcome": "stopped"}, result)
+                    process.Continue.assert_not_called()
+                    sleep.assert_not_called()
+                    snapshot.assert_called_once_with(process, api)
+
     def test_unreadable_or_unbounded_process_snapshot_never_guesses_a_child(self):
         from types import SimpleNamespace
 

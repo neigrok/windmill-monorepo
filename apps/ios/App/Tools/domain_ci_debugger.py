@@ -63,6 +63,23 @@ def terminate_children(parent):
         return {"complete": False}
 
 
+def wait_for_result(process, api, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        state = process.GetState()
+        if state in (api.eStateCrashed, api.eStateExited, api.eStateDetached):
+            return snapshot(process, api)
+        if state == api.eStateStopped:
+            count = process.GetNumThreads()
+            reasons = [process.GetThreadAtIndex(index).GetStopReason() for index in range(min(count, 128))]
+            if count > 128 or any(reason not in (api.eStopReasonInvalid, api.eStopReasonNone, api.eStopReasonExec)
+                                  for reason in reasons):
+                return snapshot(process, api)
+            process.Continue()
+        time.sleep(.1)
+    return {"outcome": "timed_out", "seconds": seconds}
+
+
 def capture(debugger, executable, arguments, directory, platform, output, seconds):
     import lldb
 
@@ -84,15 +101,7 @@ def capture(debugger, executable, arguments, directory, platform, output, second
         error = lldb.SBError()
         process = target.Launch(launch, error)
         if error.Success():
-            deadline = time.monotonic() + seconds
-            while time.monotonic() < deadline:
-                state = process.GetState()
-                if state in (lldb.eStateStopped, lldb.eStateCrashed, lldb.eStateExited, lldb.eStateDetached):
-                    result = snapshot(process, lldb)
-                    break
-                time.sleep(.1)
-            else:
-                result = {"outcome": "timed_out", "seconds": seconds}
+            result = wait_for_result(process, lldb, seconds)
         else:
             result["errorCode"] = error.GetError()
     except Exception:
