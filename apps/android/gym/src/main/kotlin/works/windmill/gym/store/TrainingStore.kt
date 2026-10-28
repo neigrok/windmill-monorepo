@@ -133,11 +133,19 @@ class TrainingStore(
     val notification = workoutFacts.asStateFlow()
     var rack: WorkoutRack? by mutableStateOf(null)
         private set
+    private var hiddenLogger by mutableStateOf(false)
+    val loggerHidden: Boolean get() = workoutAuthorized && hiddenLogger
     var workoutFailure: String? by mutableStateOf(null)
         private set
     var workoutOpenRequest by mutableStateOf(0L)
         private set
-    fun requestWorkout() { workoutOpenRequest += 1 }
+    var workoutOpenKey: WorkoutKey? by mutableStateOf(null)
+        private set
+    fun requestWorkout() {
+        workoutOpenKey = notification.value?.key ?: return
+        workoutOpenRequest += 1
+    }
+    fun acknowledgeWorkoutRequest() { workoutOpenRequest = 0; workoutOpenKey = null }
     var routinesOpenRequest by mutableStateOf(0L)
         private set
     fun requestRoutines() { routinesOpenRequest += 1 }
@@ -266,8 +274,9 @@ class TrainingStore(
     }
 
     fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange {
-        if (!workoutAuthorized) return WorkoutChange.Unavailable("The account must be restored first.")
-        if (workoutFacts.value?.key != key) return WorkoutChange.Stale
+        if (!workoutAuthorized || !controls.writable || isFinishing) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (key.ownerKey != accountKey || controls.ownerKey != accountKey || controls.session?.id != key.sessionId ||
+            workoutFacts.value?.key != key) return WorkoutChange.Stale
         return try {
             controls.control(controls.workout.visibility(hidden))
             refreshWorkout()
@@ -278,8 +287,23 @@ class TrainingStore(
         }
     }
 
+    fun setLoggerHidden(key: WorkoutKey, hidden: Boolean): WorkoutChange {
+        if (!workoutAuthorized || !controls.writable || isFinishing) return WorkoutChange.Unavailable("The workout is not ready.")
+        if (key.ownerKey != accountKey || controls.ownerKey != accountKey || controls.session?.id != key.sessionId ||
+            workoutFacts.value?.key != key) return WorkoutChange.Stale
+        return try {
+            controls.loggerVisibility(hidden)
+            hiddenLogger = controls.loggerHidden
+            WorkoutChange.Saved
+        } catch (error: Exception) {
+            reportFailure("gym.logger_visibility", error)
+            WorkoutChange.Unavailable(refuseWorkout())
+        }
+    }
+
     private fun refreshWorkout() {
         if (!workoutReady) return
+        hiddenLogger = controls.loggerHidden
         if (!workoutAuthorized) { workoutFacts.value = null; return }
         val live = controls.session
         if (live == null) {

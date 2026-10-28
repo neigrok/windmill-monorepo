@@ -72,6 +72,30 @@ class AndroidTelemetryTest {
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels))
     }
 
+    @Test fun workoutVisibilityActionsRetainOnlyTheirBoundedSteps() {
+        val common = mapOf("platform" to "android", "app_version" to "test", "build" to "123",
+            "release" to "android-test", "environment" to "verification")
+        val content = mapOf("workout" to "private", "routine" to "private", "elapsed_ms" to "123",
+            "load" to "47.5", "request_id" to "private", "question" to "private", "operation" to "private",
+            "status" to "private", "duration_ms" to "123", "state" to "shown")
+        val doors = listOf("workout" to "hide", "workout" to "show_notification", "workout_bar" to "open")
+        for ((screen, action) in doors) {
+            for (outcome in listOf("ok", "refused")) {
+                val expected = common + mapOf("screen" to screen, "action" to action, "outcome" to outcome)
+                assertEquals(expected, TelemetryPolicy.eventProperties("gym_action", expected + content))
+            }
+            for (outcome in listOf("failed", "cancelled", "private")) {
+                assertEquals(common, TelemetryPolicy.eventProperties("gym_action",
+                    common + content + mapOf("screen" to screen, "action" to action, "outcome" to outcome)))
+            }
+        }
+        for ((screen, action) in listOf("workout_bar" to "hide", "notification" to "show_notification",
+            "coach" to "hide", "workout" to "private")) {
+            assertEquals(common, TelemetryPolicy.eventProperties("gym_action",
+                common + content + mapOf("screen" to screen, "action" to action, "outcome" to "ok")))
+        }
+    }
+
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
         val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +

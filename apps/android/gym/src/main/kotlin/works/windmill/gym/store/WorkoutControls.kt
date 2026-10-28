@@ -63,6 +63,7 @@ class WorkoutControls private constructor(
         val chosenMovement: String? = null,
         val workout: WorkoutState? = null,
         val engineReplica: String? = null,
+        val loggerHidden: Boolean = false,
     )
 
     // The file keeps each seat's controls under `queues`.
@@ -112,6 +113,7 @@ class WorkoutControls private constructor(
                 catch (error: Exception) { telemetry.failure("gym.storage.decode", error); unreadable = true; null }
             },
             engineReplica = storage.one(fields["engineReplica"], String.serializer()),
+            loggerHidden = storage.one(fields["loggerHidden"], Boolean.serializer()) ?: false,
         )
     }
 
@@ -150,6 +152,11 @@ class WorkoutControls private constructor(
     val chosenMovement: String? get() = mine.chosenMovement?.takeIf { it in order }
     val ownerKey: String get() = seat
     val workout: WorkoutState get() = mine.workout ?: WorkoutState()
+    val loggerHidden: Boolean get() = mine.loggerHidden
+    fun loggerVisibility(hidden: Boolean) {
+        check(mine.session != null) { "The workout is no longer open." }
+        keep(mine.copy(loggerHidden = hidden))
+    }
     val writable: Boolean get() = !writeFailed && !unreadable
     val engineReplica: String? get() = mine.engineReplica
 
@@ -162,7 +169,7 @@ class WorkoutControls private constructor(
         keep(mine.copy(session = session, entries = entries,
             order = mine.order.takeIf { sameSession }, chosenMovement = mine.chosenMovement.takeIf { sameSession },
             workout = mine.workout.takeIf { sameSession }?.let { if (mine.engineReplica == replica) it else it.invalidate() },
-            engineReplica = replica))
+            engineReplica = replica, loggerHidden = sameSession && mine.loggerHidden))
     }
 
     fun latestSet(moment: WorkoutMoment): WorkoutEvent? {
@@ -252,7 +259,8 @@ class WorkoutControls private constructor(
     fun hold(session: Session?) {
         val same = mine.session?.id == session?.id
         keep(mine.copy(session = session, order = mine.order.takeIf { same },
-            chosenMovement = mine.chosenMovement.takeIf { same }, workout = mine.workout.takeIf { same }))
+            chosenMovement = mine.chosenMovement.takeIf { same }, workout = mine.workout.takeIf { same },
+            loggerHidden = same && mine.loggerHidden))
     }
 
     val sets: List<TrainingSet>
@@ -282,7 +290,7 @@ class WorkoutControls private constructor(
 
     fun close(sessionId: String) {
         val next = mine.copy(entries = mine.entries.filterValues { it.sessionId != sessionId })
-        keep(if (mine.session?.id == sessionId) next.copy(session = null, order = null, chosenMovement = null, workout = null) else next)
+        keep(if (mine.session?.id == sessionId) next.copy(session = null, order = null, chosenMovement = null, workout = null, loggerHidden = false) else next)
     }
 
     fun flush() {

@@ -1003,3 +1003,40 @@ the real MAIN/LAUNCHER intent because the ordinary VIEW launch intentionally byp
 onboarding. The default rig launch stays VIEW, and no product flag or debug application hook is
 added. The recipe follows the three Next actions and Get started. Paired native appearance,
 reduced-motion capture, first-party page events and runtime acceptance remain pending.
+
+
+## Task 45 · Hidden logger and independent notification visibility
+
+The existing phone controls hold `loggerHidden` under their owner and session. The flag stays outside the engine-mirrored rack snapshot. Notification off keeps
+its serialized `hidden` key and its existing invalidation semantics. Hiding the logger changes no
+rack value, set offer, movement or synced training record. The visible logger determines Back,
+rail ownership and keep-screen-on; the workout's existence still determines its lifecycle.
+
+Hide and Back leave the originating tab selected. A single clickable WorkoutBar uses the existing
+fitness glyph, clock formatter and typography above the rail only at tab roots. The same saveable
+logger provider preserves the rack and raw field state across hidden disposal and restoration.
+The management sheet groups Hide and Notification off · Show under Add movement. Show failures
+return to the existing rack failure presentation and retain `gym.showWorkout` reporting.
+Logger storage failures use static `gym.logger_visibility`. Both visibility doors validate the
+current owner, session, replica authority and writable controls before touching the document.
+
+A notification opening request retains its originating key and is consumed once after accepted
+navigation. Restoring a room cannot reuse a consumed request to show a logger the lifter hid again;
+a changed owner/workout cannot redirect the old request to a different workout. The scoped source
+gate covers navigation, saved-state restoration, incomplete signed buffers, notification independence,
+legacy-state decode, durable storage failures and stale authority. Native appearance and delivery
+acceptance remain pending. Task 23/52/45 share one reviewed-source native cohort after allocation.
+
+
+The initial affected group passes 82 cases before the final storage-ownership refinement. The
+owner/session controls and runtime group passes 37 cases on the corrected source; the final focused
+boundary repeat passes 8 overlapping cases, including the visible unavailable Hide, with zero
+failures/errors/skips. Thirty-one capture parser checks pass. An adversarial red test reproduced
+an accepted Hide reverting when the engine restored its older rack; keeping logger visibility on
+Held removes that second owner. The green probe confirms the engine fault was actually reported
+as `gym.workout_controls` during cold restoration while the accepted hidden flag remained true.
+The final source has no WorkoutState/sync schema change. No native execution is claimed.
+
+The real Coach fixture follows Open routine → Start workout → Hide and retains Coach as the
+selected tab. All five Room cases pass after removing the routine-start path’s forced Routines
+selection. Routines-origin starts remain on their existing tab; no Coach card appearance changes.

@@ -73,7 +73,9 @@ object TelemetryPolicy {
                     .associateWith { setOf("ok") } + mapOf("copy" to setOf("ok", "failed"))
                 "threads" -> mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
-                "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "remove" to setOf("ok", "refused"), "reorder" to setOf("ok"),
+                "workout_bar" -> mapOf("open" to setOf("ok", "refused"))
+                "workout" -> mapOf("hide" to setOf("ok", "refused"), "show_notification" to setOf("ok", "refused"),
+                    "movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "remove" to setOf("ok", "refused"), "reorder" to setOf("ok"),
                     "picker_open" to setOf("ok"), "picker_cancel" to setOf("ok"), "picker_add" to setOf("ok", "refused"), "fix" to setOf("ok", "refused", "failed"))
                 "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
                 else -> emptyMap()

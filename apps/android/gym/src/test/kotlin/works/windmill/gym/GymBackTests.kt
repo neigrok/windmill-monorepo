@@ -10,9 +10,9 @@ import org.junit.Test
 // room actually pushing it.
 class GymBackTests {
     @Test
-    fun testMidWorkoutBackStaysInTheRoomAndNeverLeavesTheApp() {
+    fun testMidWorkoutBackHidesTheLoggerAndNeverLeavesTheApp() {
         val means = backMeans(live = true, building = false, away = 0, tab = Tab.Routines)
-        assertEquals(BackMeans.StayInTheWorkout, means)
+        assertEquals(BackMeans.HideTheWorkout, means)
         assertTrue("a workout claims back, so the platform never backgrounds the app on it",
                    means != BackMeans.LeaveTheApp)
         assertEquals(

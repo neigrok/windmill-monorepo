@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import works.windmill.platform.net.WindmillJson
+import works.windmill.gym.domain.WorkoutChange
+import works.windmill.gym.ui.WorkoutBar
 import works.windmill.gym.domain.SessionDetail
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -165,9 +167,7 @@ internal enum class Tab(val title: String) {
 // decides them itself rather than handing the stack to a navigator. The finish receipt is not among
 // them: it is a sheet, and a sheet answers back by coming down.
 internal enum class BackMeans {
-    // Mid-workout: the logger stays standing. A stroke from the edge with a bar in your hands must
-    // never put the app in the background.
-    StayInTheWorkout,
+    HideTheWorkout,
     // The editor: back is Cancel and it leaves the whole draft.
     LeaveTheDraft,
     PopOnePushedScreen,
@@ -182,7 +182,7 @@ internal fun backMeans(
     away: Int,
     tab: Tab,
 ): BackMeans = when {
-    live && away == 0 -> BackMeans.StayInTheWorkout
+    live && !building && away == 0 -> BackMeans.HideTheWorkout
     building -> BackMeans.LeaveTheDraft
     away > 0 -> BackMeans.PopOnePushedScreen
     tab != Tab.Routines -> BackMeans.ReturnToTheRoutinesTab
@@ -245,7 +245,7 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 // over one of those, not an arm of this. The shell owns the theme control and billing; its account
 // seat rides the trailing slot of each root's own top bar, because a native rail has no fourth seat.
 //
-// A live session takes the whole screen, rail included; a pushed screen covers the rail too.
+// The visible logger takes the whole screen; hidden workouts leave the tab roots available.
 //
 // The application owns the store; this room owns only navigation and transient UI state.
 
@@ -396,8 +396,17 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         receipts = receipts + (door to receipts[door].orEmpty() + line)
     }
 
+    val workout = store.notification.collectAsState().value
     val liveSession = store.session
     val live = liveSession != null
+    val loggerShown = live && !store.loggerHidden
+    fun hideWorkout() {
+        val result = workout?.key?.let { store.setLoggerHidden(it, true) }
+            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "hide",
+            "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
+        if (result is WorkoutChange.Unavailable) note = result.reason
+    }
     val screen = when {
         reviewing != null -> "proposal"
         finished != null -> "finish"
@@ -415,15 +424,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             is Away.NoteEditor -> "note_editor"
             Away.Bodyweight -> "bodyweight"
         }
-        live -> "workout"
+        loggerShown -> "workout"
         else -> tab.name.lowercase()
     }
     LaunchedEffect(screen) { telemetry.event("gym_screen_viewed", mapOf("screen" to screen)) }
 
-    val means = backMeans(live, building != null, away.size, tab)
+    val means = backMeans(loggerShown, building != null, away.size, tab)
     BackHandler(enabled = means != BackMeans.LeaveTheApp) {
         when (means) {
-            BackMeans.StayInTheWorkout, BackMeans.LeaveTheApp -> Unit
+            BackMeans.HideTheWorkout -> hideWorkout()
+            BackMeans.LeaveTheApp -> Unit
             BackMeans.LeaveTheDraft -> building = null
             BackMeans.PopOnePushedScreen -> back()
             BackMeans.ReturnToTheRoutinesTab -> {
@@ -443,11 +453,17 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
     SideEffect { shell.present(destinations) }
 
-    LaunchedEffect(store.workoutOpenRequest) {
-        if (store.workoutOpenRequest > 0 && store.session != null) {
+    LaunchedEffect(store.workoutOpenRequest, workout?.key, store.accountReady) {
+        if (store.workoutOpenRequest <= 0) return@LaunchedEffect
+        val requested = store.workoutOpenKey ?: return@LaunchedEffect
+        if (store.accountReady && workout?.key != requested) {
+            store.acknowledgeWorkoutRequest()
+            return@LaunchedEffect
+        }
+        if (workout?.key == requested && store.setLoggerHidden(requested, false) == WorkoutChange.Saved) {
             away = emptyList()
             selectedRoutineId = null
-            tab = Tab.Routines
+            store.acknowledgeWorkoutRequest()
         }
     }
 
@@ -557,9 +573,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
     }
 
-    // The screen stays on for a live session, and only for one.
+    // The visible logger keeps the screen on.
     val window = (context as? Activity)?.window
-    val running = store.session != null
+    val running = loggerShown
     DisposableEffect(window, running) {
         if (running) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
@@ -581,7 +597,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 }
                 away = emptyList()
                 selectedRoutineId = null
-                tab = Tab.Routines
                 if (notifications != null && Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
                     !notificationPrefs.getBoolean("requested", false)) {
@@ -975,12 +990,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 Away.Notes -> Notes.title
                 is Away.NoteEditor -> Notes.title
                 Away.Bodyweight -> Bodyweight.title
-                null -> if (live) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
+                null -> if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
             }
             val coachRoom = standing is Away.Coach || standing is Away.Thread || standing == null && tab == Tab.Coach
-            val railUp = railStands(live, building != null, away.size, coachRoom)
+            val railUp = railStands(loggerShown, building != null, away.size, coachRoom)
+            val workoutBarUp = liveSession != null && store.loggerHidden && building == null && away.isEmpty() &&
+                selectedRoutineId == null && reviewing == null
             val youInitial = account.user?.email?.take(1) ?: ""
-            val loggerTransient = live && standing == null
+            val loggerTransient = loggerShown && standing == null
             val engineSession = LocalGymEngineSession.current
             val engineStatus = engineSession?.engine?.status?.state?.collectAsState()?.value
             val importRefusals = remember(engineSession, engineStatus, screen) {
@@ -1011,6 +1028,16 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 if (importRefusals.isNotEmpty()) TextButton(
                                     onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
                                 ) { Text("Saved workouts need review (${importRefusals.size})", color = skin.alarmInk) }
+                                if (workoutBarUp) WorkoutBar(
+                                    session = liveSession!!,
+                                    onOpen = {
+                                        val result = workout?.key?.let { store.setLoggerHidden(it, false) }
+                                            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+                                        telemetry.event("gym_action", mapOf("screen" to "workout_bar", "action" to "open",
+                                            "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
+                                        if (result is WorkoutChange.Unavailable) note = result.reason
+                                    },
+                                )
                                 TabRail(
                                     current = if (coachRoom) Tab.Coach else tab,
                                     onPick = { picked ->
@@ -1030,11 +1057,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 // otherwise count the navigation bar twice and leave a gap above the keys.
                 Box(Modifier.fillMaxSize().padding(inner).consumeWindowInsets(inner)) {
                     when {
-                        liveSession != null && standing == null -> sessionStates.SaveableStateProvider("workout:${liveSession.id}") {
+                        loggerShown && liveSession != null && standing == null && building == null -> sessionStates.SaveableStateProvider("workout:${liveSession.id}") {
                             LoggerScreen(
                                 store = store,
                                 say = { note = it },
                                 onFinish = { close() },
+                                onHide = ::hideWorkout,
                                 transient = transient,
                             )
                         }

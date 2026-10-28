@@ -40,6 +40,10 @@ import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
@@ -149,8 +153,10 @@ fun LoggerScreen(
     onFinish: () -> Unit,
     // The transient overlays the ledger without covering the rack.
     transient: SnackbarHostState? = null,
+    onHide: () -> Unit = {},
 ) {
     val skin = LocalGymColors.current
+    val notification = store.notification.collectAsState().value
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
     val weightKg = store.rack?.weightKg ?: store.prefill.weightKg
@@ -307,7 +313,9 @@ fun LoggerScreen(
         title = title,
         titleAlignment = TextAlign.Center,
         navigation = { TopAction("Finish", enabled = store.canFinish, onClick = onFinish) },
-        actions = { Spacer(Modifier.size(48.dp)) },
+        actions = { IconButton(onClick = { sheet = null; onHide() }) {
+            Icon(Icons.Rounded.KeyboardArrowDown, "Hide workout", tint = skin.inkDim)
+        } },
     ) {
       BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
       val rackMaxHeight = maxHeight
@@ -474,6 +482,15 @@ fun LoggerScreen(
                         val accepted = store.drop(it)
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to if (accepted) "ok" else "refused"))
                         accepted
+                    },
+                    onHide = { sheet = null; onHide() },
+                    notificationOff = notification?.hidden == true,
+                    onShowNotification = {
+                        val result = notification?.key?.let { store.showWorkout(it, false) }
+                            ?: WorkoutChange.Unavailable(store.workoutFailure ?: "The workout is not ready.")
+                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "show_notification",
+                            "outcome" to if (result == WorkoutChange.Saved) "ok" else "refused"))
+                        if (result is WorkoutChange.Unavailable) { sheet = null; say(result.reason) }
                     },
                     onAdd = {
                         sheet = LoggerSheet.Picker

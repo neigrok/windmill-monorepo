@@ -46,6 +46,16 @@ Task 09’s local native intake records four starts, four logged sets and four f
 appearance, with two completed movement switches and two management opens per appearance.
 Those canonical windows contain no client errors; this verifies the local intake, not hosted delivery.
 
+The logger's Hide and Back actions emit `gym_action` with `screen=workout`, `action=hide`,
+`outcome=ok|refused`. The return bar emits `screen=workout_bar`, `action=open`, `outcome=ok|refused`.
+The management sheet's notification Show emits `screen=workout`, `action=show_notification`,
+`outcome=ok|refused`. Logger visibility is phone-local and independent of the notification-off state.
+A failed durable logger-visibility write reports under static `gym.logger_visibility`; notification
+Show retains `gym.showWorkout`. Expected stale-owner/workout and unrestored-replica refusals create
+no Issue. Opening requests retain their workout key locally, consume once, and carry no identifiers
+into telemetry. Routine names, elapsed time, rack buffers and values are never event properties.
+Native delivery and appearance acceptance for these actions remain pending.
+
 This workout emits `gym_action` with `screen=workout`: `remove` uses `ok|refused`,
 `picker_open|picker_cancel|reorder` use `ok`, and `picker_add` uses `ok|refused` after the
 selection resolves in the same account and workout. A consumed/cancelled reorder never calls the

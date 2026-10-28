@@ -430,4 +430,33 @@ class WorkoutControlsTests {
         }
         assertEquals(emptyList<TrainingSet>(), controls.sets)
     }
+    @Test fun loggerVisibilityStaysWithItsSeatAndSessionOutsideTheMirroredRack() {
+        val file = controlsFile()
+        file.writeText("""{"queues":{"anon":{"session":{"id":"old","startedAt":1000},"workout":{"hidden":true}}}}""")
+        val controls = WorkoutControls(file)
+        assertFalse(controls.loggerHidden)
+        assertTrue(controls.workout.hidden)
+        controls.loggerVisibility(true)
+        val rack = controls.workout
+        controls.control(rack.copy(hidden = false))
+        assertTrue(controls.loggerHidden)
+        assertFalse(controls.workout.hidden)
+        val restored = WorkoutControls(file)
+        assertTrue(restored.loggerHidden)
+        assertFalse(restored.workout.hidden)
+        restored.project("replica", restored.session, emptyList())
+        assertTrue(restored.loggerHidden)
+        restored.adopt("another")
+        assertFalse(restored.loggerHidden)
+        restored.hold(Session("other", 2000))
+        assertFalse(restored.loggerHidden)
+        restored.adopt(null)
+        assertTrue(restored.loggerHidden)
+        restored.hold(Session("next", 3000))
+        assertFalse(restored.loggerHidden)
+        restored.loggerVisibility(true)
+        restored.close("next")
+        assertFalse(restored.loggerHidden)
+    }
+
 }

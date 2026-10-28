@@ -24,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
-import works.windmill.gym.domain.WorkoutChange
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,7 +91,6 @@ fun SettingsScreen(
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
-    val workout by store.notification.collectAsState()
 
     LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
     ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
@@ -110,13 +108,6 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             UnitsRow(preferences.units) { write(preferences.copy(units = it)) }
-            if (workout?.hidden == true) {
-                SettingsRow("Workout hidden", "Show workout") {
-                    val key = workout?.key ?: return@SettingsRow
-                    val result = store.showWorkout(key, false)
-                    if (result is WorkoutChange.Unavailable) say(result.reason)
-                }
-            }
             store.workoutFailure?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
             HorizontalDivider(color = skin.line)
             SettingsRow(Notes.title, "what you write for Coach", onNotes)

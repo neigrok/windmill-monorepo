@@ -1,0 +1,54 @@
+[
+  {
+    "board": "03.5",
+    "name": "hide-workout",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Hide workout"
+      },
+      {
+        "wait": "Push A, in progress"
+      }
+    ],
+    "after": [
+      {
+        "tap": "The log"
+      },
+      {
+        "wait": "Push A, in progress"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Push A, in progress"
+      },
+      {
+        "tap": "Push A, in progress"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "key": 4
+      },
+      {
+        "wait": "Push A, in progress"
+      },
+      {
+        "tap": "Routines"
+      }
+    ]
+  }
+]

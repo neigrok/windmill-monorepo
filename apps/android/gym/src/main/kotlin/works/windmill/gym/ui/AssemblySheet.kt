@@ -22,6 +22,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,6 +72,9 @@ fun AssemblySheet(
     onReorder: (from: Int, to: Int) -> Unit,
     onDrop: (String) -> Boolean,
     onAdd: () -> Unit,
+    onHide: () -> Unit = {},
+    notificationOff: Boolean = false,
+    onShowNotification: () -> Unit = {},
 ) {
     val skin = LocalGymColors.current
     val list = rememberLazyListState()
@@ -207,6 +214,21 @@ fun AssemblySheet(
         Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(16.dp))
             .background(skin.raised).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
             Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+        }
+        Column {
+            ListItem(
+                headlineContent = { Text("Hide workout", style = WindmillFont.body(17, FontWeight.Bold)) },
+                leadingContent = { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(20.dp)) },
+                colors = ListItemDefaults.colors(containerColor = skin.surface, headlineColor = skin.ink, leadingIconColor = skin.inkDim),
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onHide),
+            )
+            if (notificationOff) ListItem(
+                headlineContent = { Text("Notification off", style = WindmillFont.body(17, FontWeight.Bold)) },
+                leadingContent = { Icon(Icons.Outlined.Notifications, null, Modifier.size(20.dp)) },
+                trailingContent = { TextButton(onClick = onShowNotification) { Text("Show", style = WindmillFont.body(16, FontWeight.Bold), color = skin.accent) } },
+                colors = ListItemDefaults.colors(containerColor = skin.surface, headlineColor = skin.ink, leadingIconColor = skin.inkDim),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

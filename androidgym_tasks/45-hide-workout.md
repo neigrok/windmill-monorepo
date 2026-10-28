@@ -10,9 +10,12 @@
   - `Android / Top app bar` Type=Workout `342:2941`: **Finish**, the routine, ⌄ Hide
 - The iOS build is the model: *Hide workout* in This workout (`apps/ios/App/Sources/Gym/Workout/WorkoutSheets.swift:59`, `hideWorkout` at `Workout/WorkoutState.swift:750`) and the hidden workout's tab-bar accessory (`HiddenWorkoutAccessory`, `apps/ios/App/Sources/Gym/GymRoom.swift:214`).
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- A running workout cannot be left before Finish: back means `StayInTheWorkout` whenever a workout is live (`GymRoom.kt:161-185`, `live` at :398), and the navigation bar stands only when no workout is live (`railStands`, :190-191).
-- Swiping the ongoing notification away fires `Command.Hide` (`notification/WorkoutNotifications.kt:211`), which marks the workout *hidden* (`domain/WorkoutNotification.kt:50,116-117`). Gym settings then shows *Workout hidden* / *Show workout* (`ui/SettingsScreen.kt:113-119`, through `TrainingStore.showWorkout`, `store/TrainingStore.kt:228-238`). The word *hidden* there means the notification, not the workout.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `WorkoutControls.Held.loggerHidden` remembers logger visibility in the existing owner/workout-scoped phone controls. The serialized `hidden` field continues to mean notification off. Rack drafts and set offers stay separate from logger visibility.
+- Hide in the workout bar, Hide workout in management and system Back return to the originating tab. A 48 dp minimum `WorkoutBar` stands above the rail on tab roots while hidden; pushed screens and editors omit it. Opening it restores the same logger state.
+- Notification swipe changes only notification off. The management sheet supplies Notification off · Show; Gym settings has no visibility row. Show keeps its static `gym.showWorkout` failure boundary.
+- Notification opening requests retain their originating owner/workout key and are consumed after navigation. Stale requests cannot reopen another owner's workout or replay after activity restoration.
+- Source compilation, the affected controls/runtime/navigation tests and 31 capture parser checks pass. Paired native appearance, event delivery and runtime acceptance remain pending. The Figma flows remain Ready for dev until native acceptance.
 
 **Change**
 - Hide (03.5):

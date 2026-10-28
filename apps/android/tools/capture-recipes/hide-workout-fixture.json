@@ -1,0 +1,44 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Legs",
+      "entries": [
+        {
+          "exerciseId": "back-squat"
+        },
+        {
+          "exerciseId": "romanian-deadlift"
+        }
+      ]
+    },
+    {
+      "name": "Pull A",
+      "entries": [
+        {
+          "exerciseId": "barbell-row"
+        },
+        {
+          "exerciseId": "pull-up"
+        }
+      ]
+    },
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 75
+            }
+          ]
+        },
+        {
+          "exerciseId": "overhead-press"
+        }
+      ]
+    }
+  ]
+}
