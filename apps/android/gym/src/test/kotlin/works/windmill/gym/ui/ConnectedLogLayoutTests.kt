@@ -45,8 +45,11 @@ class ConnectedLogLayoutTests {
                 compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
                 compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
             }
+            val action = compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
+            assertTrue(action.getBoundsInRoot().height >= 56.dp)
             compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(ConnectedLog.disclosure))
             compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().performClick()
+            compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
             for (text in ConnectedLog.how) {
                 compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
                 val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
@@ -60,8 +63,8 @@ class ConnectedLogLayoutTests {
                     assertTrue(layout.getLineRight(line) - layout.getLineLeft(line) <= layout.size.width + 1)
                 }
             }
-            val action = compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
-            assertTrue(action.getBoundsInRoot().height >= 56.dp)
+            compose.onNodeWithContentDescription("Back to Connected log").performClick()
+            compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
         }
         scope.cancel()
     }

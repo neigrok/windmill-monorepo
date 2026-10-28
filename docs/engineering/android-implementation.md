@@ -1086,3 +1086,37 @@ arrival is claimed. Deterministic tests cover transaction failures, stale data, 
 caller disposal and identity replacement. Every owned native process, database and retired AVD is
 cleaned while retaining non-AVD evidence; collector 8100 is unchanged. The composed Debug APK is
 source-build evidence, not an installed replay or public release.
+
+
+## Task 51 · Connected log and signed-out Notes
+
+Connected log separates the connected root, empty root and pushed disclosure. Connected tools and
+keys open the existing browser settings door. The permission rows and Apply caption sit at the
+empty root or behind How when opened from a connected root. The five disclosure paragraphs stay
+on their own page; Back returns to the same root. The copy names ChatGPT or Claude and includes
+saving notes at the Write level. Tool rows retain their credential kind, scope and since date.
+The existing signed-out Notes implementation has the approved single head and sign-in door; only
+its account sentence adopts the existing Nunito 16 sp/24 sp role. Signed-in production is unchanged.
+
+The read adapter publishes both credential lists together. Owner, active replica and request
+generation reject responses from an earlier connection context, including an owner round trip or
+identity-revision change. Both readers observe cache invalidation independently of the loading
+flag, so a same-owner reconnect that settles within one turn restarts the complete pair. Unknown and failed reads do not claim no connections. Known offline
+reads use the approved internet sentence; missing authenticated transport remains unread. Static
+failure boundaries stay `gym.refreshConnectedLog` and `gym.openConnections`. Existing Room
+`gym_screen_viewed` events retain `screen=connections|notes`; the task adds no event name.
+
+All eight linked frames are Ready for development on fresh inspection. Supporting text uses the
+Nunito 14 sp/20 sp roles, the connected heading is bold and the empty heading regular. Row title/support
+lines have no extra gap; the caption uses 8 dp above and 16 dp below. The forward icon is the
+existing 20 dp asset. The How chevron reuses the existing note chevron at 20 dp: its normalized
+path matches the approved SVG within 0.000034 dp export precision. The shared Chevron remains
+unchanged. Paired native rendered comparison is pending.
+
+The capture recipe composes two ordinary empty-account states with the fixture-account connected
+and disclosure pages. An explicit boolean fixture option seeds a disposable scoped Claude Desktop
+grant and static key, then verifies both read endpoints. The default fixture is unchanged. All 33
+capture-tool tests pass. The composed focused Kotlin gate passes 47 cases with zero failures,
+errors or skips: domain 6, read 3, account routes 8, paired large-text layout 2, screen 10, Notes 15
+and connection settings 3. App Debug compiles. Real fixture execution and native
+appearance/intake/runtime acceptance remain pending their coordinated lease.

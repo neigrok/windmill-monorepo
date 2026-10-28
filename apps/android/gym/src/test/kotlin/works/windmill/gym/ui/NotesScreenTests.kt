@@ -4,6 +4,7 @@ import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getBoundsInRoot
 import works.windmill.platform.telemetry.Telemetry
@@ -13,6 +14,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
@@ -272,6 +274,9 @@ class NotesScreenTests {
                 )
             }
 
+            compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
+            compose.onAllNodesWithText(Notes.honesty).assertCountEquals(1)
+            compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText(Notes.signedOut).assertIsDisplayed()
             compose.onNodeWithText("Sign in").performClick()
             compose.runOnIdle {

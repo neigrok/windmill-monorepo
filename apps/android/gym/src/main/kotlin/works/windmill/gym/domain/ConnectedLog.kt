@@ -7,15 +7,12 @@ import kotlinx.serialization.Serializable
 // and nothing else — the enumeration is the disclosure.
 object ConnectedLog {
     const val title = "Connected log"
-    const val head = "Your log, read by Claude, Cursor or Codex."
+    const val head = "Your log, read by ChatGPT or Claude."
     const val caption = "A routine change waits for your Apply; the rest lands at once."
     const val action = "Connect a tool"
     const val actionSignedOut = "Sign in first"
     const val opensInBrowser = "opens in your browser"
     const val disclosure = "How this works"
-    // The disclosure's state, in the bytes a screen reader hears.
-    const val open = "open"
-    const val closed = "closed"
 
     // The whole of the long form: two levels of disclosure, and this is the second.
     val how = listOf(
@@ -30,8 +27,7 @@ object ConnectedLog {
     const val unnamedGrant = "A connected tool"
     const val unnamedKey = "A static key"
     const val unread = "Couldn’t read your connections."
-    const val unavailable = "Connections unavailable"
-    const val manage = "Manage connections"
+    const val offline = "Connect to the internet to read your connections."
     const val accountWide = "whole account"
     const val apiKey = "API key"
 
@@ -58,7 +54,7 @@ object ConnectedLog {
 // a connected row's meta.
 enum class LogLevel(val label: String, val meta: String) {
     Read("Read", "sets, workouts, routines, records, notes, weigh-ins"),
-    Write("Write", "logs sets · adds routines · shares workouts · proposes changes"),
+    Write("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes"),
     Delete("Delete", "discards a workout · ends a share");
 
     val wire: String get() = label.lowercase()
@@ -120,11 +116,11 @@ data class ConnectedTool(
     }
 }
 
-// `Unknown` is nothing asked yet for the seat in hand and `Refused` is a read that did not come
-// back; both say nothing at all. `None` is a real answer.
+// Unknown and failed reads make no claim about existing credentials; None is an answered empty pair.
 sealed interface ConnectedLogState {
     data object Unknown : ConnectedLogState
     data object Refused : ConnectedLogState
+    data object Offline : ConnectedLogState
     data object None : ConnectedLogState
     data class Connected(val tools: List<ConnectedTool>) : ConnectedLogState
 
@@ -134,7 +130,7 @@ sealed interface ConnectedLogState {
     // The settings row's meta: the state and nothing else.
     val settingsMeta: String
         get() = when (this) {
-            Unknown, Refused -> ConnectedLog.settingsUnknown
+            Unknown, Refused, Offline -> ConnectedLog.settingsUnknown
             None -> ConnectedLog.settingsNone
             is Connected -> tools.singleOrNull()?.let { "${it.name} · ${it.reach.line}" }
                 ?: "${tools.size} tools"

@@ -362,6 +362,8 @@ class TrainingStore(
     // seat: `connect` drops it on arrival and `readConnectedLog` asks only while nothing is held.
     var connectedLog: ConnectedLogState by mutableStateOf(ConnectedLogState.Unknown)
         private set
+    var connectedLogGeneration by mutableStateOf(0L)
+        private set
     // Published from here so the settings screen and the logger read one document.
     var preferences: GymPreferences by mutableStateOf(GymPreferences())
         private set
@@ -616,6 +618,8 @@ class TrainingStore(
             noteRefusals = emptyList()
             coach.resetThreads()
             connectedLog = ConnectedLogState.Unknown
+            connectedRead += 1
+            connectedLogGeneration += 1
         }
         if (connecting) return
         connecting = true
@@ -1162,9 +1166,14 @@ class TrainingStore(
     suspend fun refreshConnectedLog(): ConnectedLogState {
         val request = ++connectedRead
         val seat = owner
+        val replica = training.engine.activeReplica()
         val credentials = rest()
-        if (seat == null || credentials == null) {
+        if (seat == null) {
             connectedLog = ConnectedLogState.None
+            return connectedLog
+        }
+        if (credentials == null) {
+            connectedLog = ConnectedLogState.Refused
             return connectedLog
         }
         val read = try {
@@ -1177,9 +1186,9 @@ class TrainingStore(
             throw interrupted
         } catch (refusing: Exception) {
             reportFailure("gym.refreshConnectedLog", refusing)
-            ConnectedLogState.Refused
+            if (refusing == WindmillApiException.Offline) ConnectedLogState.Offline else ConnectedLogState.Refused
         }
-        if (seat != owner || request != connectedRead) return ConnectedLogState.Refused
+        if (seat != owner || replica != training.engine.activeReplica() || request != connectedRead) return ConnectedLogState.Refused
         connectedLog = read
         return read
     }

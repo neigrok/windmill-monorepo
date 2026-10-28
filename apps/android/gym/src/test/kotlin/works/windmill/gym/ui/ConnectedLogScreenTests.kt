@@ -6,17 +6,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -36,6 +28,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -51,9 +44,9 @@ import works.windmill.gym.net.GymRest
 import kotlinx.coroutines.CompletableDeferred
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
+import works.windmill.platform.Account
 
-// The two-state screen, drawn from the two reads: what a grant reaches as three rows of facts, one
-// caption, one action, one disclosure closed by default — and the connected list where there is one.
+// Both credential reads decide the root state; the separate disclosure keeps the permitted levels.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class ConnectedLogScreenTests {
@@ -70,11 +63,6 @@ class ConnectedLogScreenTests {
         LogLevel.Delete.label, LogLevel.Delete.meta,
         ConnectedLog.caption, ConnectedLog.action, ConnectedLog.disclosure,
     )
-
-    // Word counts the brief's way: a token is a run of letters, digits or an apostrophe, so
-    // `weigh-ins` is two and `·` and `→` are none. The same count `ConnectedLogTests` makes.
-    private fun words(lines: List<String>): Int =
-        lines.sumOf { Regex("[\\p{L}\\p{N}’']+").findAll(it).count() }
 
     private fun ms(date: String): Long =
         LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -113,54 +101,102 @@ class ConnectedLogScreenTests {
         }
     }
 
-    // Nothing connected: the first paint is the brief's arithmetic — 52 words drawn, 110 with the
-    // disclosure open — and every line the brief struck is absent. The one action leaves the app and
-    // its glyph says so, once.
-    @Test
-    fun testNothingConnectedDrawsTheHeadTheThreeRowsTheCaptionAndTheActionAndNothingElse() {
+    @Test fun nothingConnectedShowsTheExactLevelsAndTheBrowserAction() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val opened = mutableListOf<String>()
-        screen(room(scope, FakeGymRest(), signedIn = true).store, signedIn = true, opened)
-
-        assertEquals(52, words(firstPaint))
-        assertEquals(110, words(firstPaint + ConnectedLog.how))
+        screen(room(scope, FakeGymRest(), true).store, true, opened)
         firstPaint.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
-        ConnectedLog.how.forEach { compose.onNodeWithText(it).assertDoesNotExist() }
+        compose.onNodeWithText("Manage connections").assertDoesNotExist()
         compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.manage).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.actionSignedOut).assertDoesNotExist()
-        listOf("free", "Sunday", "Monday", "apply tool", "cannot", "never", "CSV", "export").forEach {
-            compose.onAllNodesWithText(it, substring = true, ignoreCase = true).assertCountEquals(0)
-        }
-        compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
-            .assertCountEquals(1)
-
-        compose.onNode(hasText(ConnectedLog.action) and hasClickAction()).performClick()
+        ConnectedLog.how.forEach { compose.onNodeWithText(it).assertDoesNotExist() }
+        compose.onNodeWithText(ConnectedLog.action).performClick()
         assertEquals(listOf("https://windmill.works/#/connect"), opened)
         scope.cancel()
     }
 
-    // The disclosure is the only long form: closed by default, five lines when open, and the same
-    // tap closes it again. A screen reader hears the state on the row, not a chevron.
-    @Test
-    fun testHowThisWorksOpensInPlaceWithTheFiveLinesAndClosesAgain() {
+    @Test fun emptyDisclosureIsAPushedPageAndBackReturnsToTheLevels() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        screen(room(scope, FakeGymRest(), signedIn = true).store, signedIn = true)
-        fun state(said: String) = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, said)
-
-        compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().assert(state("closed")).performClick()
+        screen(room(scope, FakeGymRest(), true).store, true)
+        compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().performClick()
         ConnectedLog.how.forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
-        compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().assert(state("open")).performClick()
-        ConnectedLog.how.forEach { compose.onNodeWithText(it).assertDoesNotExist() }
-        compose.onNodeWithText(ConnectedLog.disclosure).assert(state("closed"))
+        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
+        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back to Connected log").performClick()
+        compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
         scope.cancel()
     }
 
-    // One read per seat, however many screens ask: settings, the screen pushed over it and the pop
-    // back share the store's one answer. The app coming back from the browser a door opened reads
-    // again, so a tool just connected is here without a pull; a pull forces one; a change of seat
-    // drops the answer and the standing screen asks again.
+    @Test fun connectedCredentialsEachOpenTheBrowserAndLevelsLiveOnThePushedDisclosure() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeGymRest()
+        server.grants += OAuthGrant("c1", "Claude Desktop", ms("2025-12-01"), "gym:read gym:write")
+        server.keys += McpKey("k1", "", ms("2025-07-04"))
+        val opened = mutableListOf<String>()
+        screen(room(scope, server, true).store, true, opened)
+        compose.onNodeWithText(ConnectedLog.connectedHead).assertIsDisplayed()
+        compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
+        compose.onNodeWithText("read · write · since 1 Dec 2025").assertIsDisplayed()
+        compose.onNodeWithText("API key · whole account · since 4 Jul 2025").assertIsDisplayed()
+        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
+        compose.onNodeWithText(ConnectedLog.caption).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        compose.onNodeWithText("Manage connections").assertDoesNotExist()
+        compose.onNodeWithText("Claude Desktop").performClick()
+        compose.onNodeWithText(ConnectedLog.unnamedKey).performClick()
+        assertEquals(List(2) { "https://windmill.works/#/settings" }, opened)
+        compose.onNodeWithText(ConnectedLog.disclosure).performClick()
+        ConnectedLog.how.forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
+        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithText(ConnectedLog.caption).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to Connected log").performClick()
+        compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
+        scope.cancel()
+    }
+
+    @Test fun signedOutInvitesSignInAndNeverOpensTheBrowser() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val opened = mutableListOf<String>(); val signIns = mutableListOf<String>()
+        screen(room(scope, FakeGymRest(), false).store, false, opened, signIns)
+        compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.actionSignedOut).performClick()
+        assertEquals(listOf("you"), signIns)
+        assertEquals(emptyList<String>(), opened)
+        scope.cancel()
+    }
+
+    @Test fun aFailedPairNeverLooksEmptyAndRetryRestoresBothCredentialKinds() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeGymRest()
+        server.grants += OAuthGrant("same", "Scoped", 1L, "gym:read")
+        server.keys += McpKey("same", "Static", 2L)
+        server.refuseKeys = IllegalStateException("fixture unread")
+        val store = room(scope, server, true).store
+        screen(store, true)
+        compose.onNodeWithText(ConnectedLog.unread).assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
+        compose.onNodeWithText("Scoped").assertDoesNotExist()
+        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
+        server.refuseKeys = null
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Scoped").assertIsDisplayed()
+        compose.onNodeWithText("Static").assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
+        scope.cancel()
+    }
+
+    @Test fun knownOfflineUsesItsConnectionSentenceAndKeepsTheRootDoors() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = FakeGymRest().apply { refuseGrants = works.windmill.platform.net.WindmillApiException.Offline }
+        screen(room(scope, server, true).store, true)
+        compose.onNodeWithText(ConnectedLog.offline).assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+        compose.onNodeWithText(ConnectedLog.disclosure).assertIsDisplayed()
+        compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
+        scope.cancel()
+    }
+
     @Test
     fun testTheTwoScreensShareOneReadPerSeatAndOnlyAReturnAPullOrANewSeatReadsAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -221,106 +257,67 @@ class ConnectedLogScreenTests {
         scope.cancel()
     }
 
-    // Signed out the log is device-local and a grant belongs to an account: the label names what
-    // will happen, the tap opens the sign-in door, no glyph and no caption explains it.
-    @Test
-    fun testSignedOutTheActionIsSignInFirstAndOpensTheDoor() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val opened = mutableListOf<String>()
-        val signIns = mutableListOf<String>()
-        screen(room(scope, FakeGymRest(), signedIn = false).store, signedIn = false, opened, signIns)
-
-        compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-        compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
-            .assertCountEquals(0)
-        compose.onNode(hasText(ConnectedLog.actionSignedOut) and hasClickAction()).performClick()
-        assertEquals(listOf("you"), signIns)
-        assertEquals(emptyList<String>(), opened)
-        scope.cancel()
-    }
-
-    // Something connected: the head steps aside for the list, each row's meta is the levels held and
-    // the day it was made, the three level rows stay, and `Manage connections` is a browser door to
-    // the shell's settings.
-    @Test
-    fun testSomethingConnectedListsEachCredentialAndOpensTheShellToManageThem() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeGymRest()
-        server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop",
-            grantedMs = ms(LocalDate.now().year.toString() + "-08-12"), scope = "gym:read gym:write gym:delete")
-        server.grants += OAuthGrant(clientId = "c2", name = "", grantedMs = ms("2025-12-01"), scope = "")
-        server.keys += McpKey(id = "k1", name = "", createdMs = ms("2025-07-04"))
-        val opened = mutableListOf<String>()
-        screen(room(scope, server, signedIn = true).store, signedIn = true, opened)
-
-        compose.onNodeWithText(ConnectedLog.connectedHead).assertIsDisplayed()
-        compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
-        compose.onNodeWithText("read · write · delete · since 12 Aug").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unnamedGrant).assertIsDisplayed()
-        compose.onNodeWithText("whole account · since 1 Dec 2025").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unnamedKey).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("API key · whole account · since 4 Jul 2025").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).performScrollTo().assertIsDisplayed() }
-        compose.onNodeWithText(ConnectedLog.caption).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
-        compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
-            .assertCountEquals(2)
-
-        compose.onNodeWithText(ConnectedLog.manage).performScrollTo().performClick()
-        assertEquals(listOf("https://windmill.works/#/settings"), opened)
-        scope.cancel()
-    }
-
-    // Both reads or neither: one failing draws the unknown row rather than an undercount, and the
-    // invitation still stands under it. A pull that reads both draws the list.
-    @Test
-    fun testARefusedReadDrawsOneUnreadRowAndTheInvitationStillStands() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeGymRest()
-        server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read")
-        server.refuseKeys = IllegalStateException("down")
-        val store = room(scope, server, signedIn = true).store
-        screen(store, signedIn = true)
-
-        compose.onNodeWithText(ConnectedLog.unavailable).assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unread).assertIsDisplayed()
-        compose.onNodeWithText("Claude Desktop").assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.action).assertIsDisplayed()
-
-        server.refuseKeys = null
-        runBlocking { store.readConnectedLog() }
-        compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.unread).assertDoesNotExist()
-        scope.cancel()
-    }
-
-    @Test
-    fun anUnansweredReadHasNoEmptyInvitationOrCredentialCountAndRetryRestoresExactCredentials() {
+    @Test fun anUnansweredPairDoesNotClaimThatNothingIsConnected() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val release = CompletableDeferred<Unit>()
-        var reads = 0
         val server = object : GymRest by FakeGymRest() {
-            override suspend fun grants(): List<OAuthGrant> {
-                reads++
-                if (reads == 1) { release.await(); throw IllegalStateException("unavailable") }
-                return listOf(OAuthGrant("same", "Scoped", 1L, "gym:read"))
-            }
-            override suspend fun mcpKeys() = listOf(McpKey("same", "Static", 2L))
+            override suspend fun grants(): List<OAuthGrant> { release.await(); return listOf(OAuthGrant("grant", "Scoped", 1, "gym:read")) }
+            override suspend fun mcpKeys() = listOf(McpKey("key", "Static", 2))
         }
-        val store = room(scope, server, signedIn = true).store
-        screen(store, signedIn = true)
+        screen(room(scope, server, true).store, true)
         compose.onNodeWithText("Reading your connections…").assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
         compose.onNodeWithText(ConnectedLog.connectedHead).assertDoesNotExist()
+        LogLevel.entries.forEach { compose.onNodeWithText(it.meta).assertDoesNotExist() }
         compose.runOnIdle { release.complete(Unit) }
-        compose.onNodeWithText(ConnectedLog.unavailable).assertIsDisplayed()
-        compose.onNodeWithText("Try again").performClick()
         compose.onNodeWithText("Scoped").assertIsDisplayed()
         compose.onNodeWithText("Static").assertIsDisplayed()
-        compose.runOnIdle { assertEquals(2, reads) }
         scope.cancel()
     }
+    @Test fun sameOwnerReconnectRestartsTheConnectedScreenPairWhenLoadingIsAlreadySettled() =
+        sameOwnerReconnect(settings = false)
+
+    @Test fun sameOwnerReconnectRestartsTheSettingsPairWhenLoadingIsAlreadySettled() =
+        sameOwnerReconnect(settings = true)
+
+    private fun sameOwnerReconnect(settings: Boolean) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val release = CompletableDeferred<Unit>()
+        var grantReads = 0
+        var keyReads = 0
+        val server = object : GymRest by FakeGymRest() {
+            override suspend fun grants(): List<OAuthGrant> {
+                val ordinal = ++grantReads
+                if (ordinal == 1) release.await()
+                return listOf(OAuthGrant("grant", if (ordinal == 1) "Old grant" else "Current grant", 1, "gym:read"))
+            }
+            override suspend fun mcpKeys(): List<McpKey> {
+                keyReads += 1
+                return listOf(McpKey("key", "Static", 2))
+            }
+        }
+        val phone = room(scope, server, true)
+        val store = phone.store
+        try {
+            if (settings) compose.setContent {
+                SettingsScreen(store, true, "Routines", {}, {}, {}, {})
+            } else screen(store, true)
+            compose.runOnIdle {
+                assertEquals(1, grantReads)
+                val original = phone.account()
+                runBlocking { store.connect(Account(original.origin, original.user, identityRevision = original.identityRevision)) }
+                assertFalse(store.isLoading)
+                release.complete(Unit)
+            }
+            compose.waitUntil(5_000) { grantReads == 2 && store.connectedLog.answered }
+            compose.runOnIdle {
+                assertEquals(listOf(2, 2), listOf(grantReads, keyReads))
+                assertEquals(ConnectedLog.state(listOf(OAuthGrant("grant", "Current grant", 1, "gym:read")),
+                    listOf(McpKey("key", "Static", 2))), store.connectedLog)
+            }
+            compose.onNodeWithText(if (settings) "2 tools" else "Current grant").assertIsDisplayed()
+            compose.onNodeWithText("Old grant").assertDoesNotExist()
+        } finally { scope.cancel() }
+    }
+
 }

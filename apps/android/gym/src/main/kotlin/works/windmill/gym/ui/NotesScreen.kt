@@ -97,7 +97,7 @@ fun NotesScreen(
                     Text(Notes.honesty, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.ink)
                     if (isSignedIn) Refusals(store.noteRefusals, store.catalog, store::clearRefusals)
                     when {
-                        !isSignedIn -> Text(Notes.signedOut, style = WindmillFont.body(16), color = skin.inkDim)
+                        !isSignedIn -> Text(Notes.signedOut, style = TextStyle(fontFamily = GymNativeType.sans, fontSize = 16.sp, lineHeight = 24.sp), color = skin.inkDim)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Notes unavailable", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
                             Text(failure!!, style = WindmillFont.body(16), color = skin.inkDim)

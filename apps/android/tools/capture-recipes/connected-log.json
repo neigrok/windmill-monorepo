@@ -1,0 +1,138 @@
+[
+  {
+    "board": "09.5",
+    "name": "connected-log-empty",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Your account"
+      },
+      {
+        "tap": "Gym settings"
+      },
+      {
+        "tap": "Connected log"
+      },
+      {
+        "wait": "Your log, read by ChatGPT or Claude."
+      },
+      {
+        "wait": "Sign in first"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "09.6",
+    "name": "notes-signed-out",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "Your account"
+      },
+      {
+        "tap": "Gym settings"
+      },
+      {
+        "tap": "Notes"
+      },
+      {
+        "wait": "Any agent you connect can read these too."
+      },
+      {
+        "wait": "Notes live with your account, so they need you signed in."
+      },
+      {
+        "wait": "Sign in"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "09.3",
+    "name": "connected-log",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Your account"
+      },
+      {
+        "tap": "Gym settings"
+      },
+      {
+        "tap": "Connected log"
+      },
+      {
+        "wait": "Connected"
+      },
+      {
+        "wait": "Claude Desktop"
+      },
+      {
+        "wait": "A static key"
+      },
+      {
+        "wait": "Connect a tool"
+      }
+    ]
+  },
+  {
+    "board": "09.4",
+    "name": "connected-how",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "How this works"
+      },
+      {
+        "wait": "One URL pasted into your tool. Your browser opens once to approve."
+      },
+      {
+        "wait": "Read"
+      },
+      {
+        "wait": "Write"
+      },
+      {
+        "wait": "Delete"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Claude Desktop"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Push A"
+      }
+    ]
+  }
+]

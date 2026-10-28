@@ -277,13 +277,10 @@ and Android disagree.
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
   09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
   obsolete strings from `ui/NotesScreen.kt` and `domain/Notes.kt`.
-- **9t · Connected log with a connection.** On Android (`ConnectedLogScreen.kt`) the level rows and the caption stay on screen in both states, **How this works** opens in place,
-  and a *Manage connections* row joins once something is connected. On iOS (board 09.3) a connected screen leads with **Connected**, each row opening the shell's connection
-  settings, puts the level rows, the caption and the five lines behind one **How this works** door
-  row, and draws no *Manage connections*; with nothing connected the level rows and caption are on
-  screen and **How this works** is the same door. Owner ruling (2026-10-22): Android follows iOS
-  (boards 09.3–09.5); build work in Android task 51. Neither library has Material's `open_in_new`,
-  so 09.3's browser rows draw `arrow_forward`; the build uses `open_in_new`.
+- **9t · Connected log with a connection.** Android source (`ConnectedLogScreen.kt`) follows the
+  approved connected/empty roots and separate disclosure page in 09.3–09.5. Browser rows use the
+  drawn `arrow_forward`; the How door uses the matching Material chevron. Paired native acceptance
+  remains with task 51 before this source alignment can claim rendered acceptance.
 - **9u · Dates in the person's locale.** iOS formats every Gym and shell date in the person's locale
   through one formatter (*Sep 23*, *Wed, Sep 23*; `GymFormat.swift`); the domain kit's
   `Readout.briefDay` orders *26 Sep* by hand. Rule whether shared readouts follow the locale on

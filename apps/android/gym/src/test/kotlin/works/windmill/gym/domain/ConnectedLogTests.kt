@@ -7,11 +7,6 @@ import org.junit.Test
 
 // Every string the screen draws, pinned byte for byte.
 class ConnectedLogTests {
-    // Word counts off the strings a lifter reads: a token is a run of letters, digits or an
-    // apostrophe, so `weigh-ins` is two and `·` and `→` are none.
-    private fun words(lines: List<String>): Int =
-        lines.sumOf { Regex("[\\p{L}\\p{N}’']+").findAll(it).count() }
-
     private val firstPaint = listOf(
         ConnectedLog.title,
         ConnectedLog.head,
@@ -29,12 +24,12 @@ class ConnectedLogTests {
     @Test
     fun theScreenCarriesTheBriefsStringsByteForByte() {
         assertEquals("Connected log", ConnectedLog.title)
-        assertEquals("Your log, read by Claude, Cursor or Codex.", ConnectedLog.head)
+        assertEquals("Your log, read by ChatGPT or Claude.", ConnectedLog.head)
         assertEquals(listOf("Read", "Write", "Delete"), LogLevel.entries.map { it.label })
         assertEquals(
             listOf(
                 "sets, workouts, routines, records, notes, weigh-ins",
-                "logs sets · adds routines · shares workouts · proposes changes",
+                "logs sets · saves notes · adds routines · shares workouts · proposes changes",
                 "discards a workout · ends a share",
             ),
             LogLevel.entries.map { it.meta },
@@ -58,20 +53,9 @@ class ConnectedLogTests {
         assertEquals("A connected tool", ConnectedLog.unnamedGrant)
         assertEquals("A static key", ConnectedLog.unnamedKey)
         assertEquals("Couldn’t read your connections.", ConnectedLog.unread)
-        assertEquals("Connections unavailable", ConnectedLog.unavailable)
-        assertEquals("Manage connections", ConnectedLog.manage)
+        assertEquals("Connect to the internet to read your connections.", ConnectedLog.offline)
         assertEquals("your AI tools", ConnectedLog.settingsUnknown)
         assertEquals("nothing connected yet", ConnectedLog.settingsNone)
-    }
-
-    // The arithmetic in the brief: 28 words of chrome, 52 with the three level rows drawn, 110 with
-    // the disclosure open.
-    @Test
-    fun theScreenSpendsFiftyTwoWordsOnFirstPaintAndOneHundredAndTenOpen() {
-        assertEquals(28, words(listOf(ConnectedLog.title, ConnectedLog.head, ConnectedLog.caption,
-            ConnectedLog.action, ConnectedLog.disclosure)))
-        assertEquals(52, words(firstPaint))
-        assertEquals(110, words(firstPaint + ConnectedLog.how))
     }
 
     // Everything the brief strikes: the pitch, the price, the desk, the four apply sentences, the
@@ -80,7 +64,7 @@ class ConnectedLogTests {
     fun nothingTheBriefStrikesIsDrawnAndNothingNamesAPriceOrARoom() {
         val everyLine = firstPaint + ConnectedLog.how + listOf(
             ConnectedLog.actionSignedOut, ConnectedLog.opensInBrowser, ConnectedLog.connectedHead,
-            ConnectedLog.unnamedGrant, ConnectedLog.unnamedKey, ConnectedLog.unread, ConnectedLog.manage,
+            ConnectedLog.unnamedGrant, ConnectedLog.unnamedKey, ConnectedLog.unread, ConnectedLog.offline,
             ConnectedLog.settingsUnknown, ConnectedLog.settingsNone,
         )
         val refused = listOf(
@@ -153,8 +137,8 @@ class ConnectedLogTests {
     fun theSettingsRowPrintsTheStateAndNothingElse() {
         assertEquals("your AI tools", ConnectedLogState.Unknown.settingsMeta)
         assertEquals("your AI tools", ConnectedLogState.Refused.settingsMeta)
-        assertEquals(listOf(false, false, true, true), listOf(
-            ConnectedLogState.Unknown, ConnectedLogState.Refused, ConnectedLogState.None,
+        assertEquals(listOf(false, false, false, true, true), listOf(
+            ConnectedLogState.Unknown, ConnectedLogState.Refused, ConnectedLogState.Offline, ConnectedLogState.None,
             ConnectedLogState.Connected(emptyList()),
         ).map { it.answered })
         assertEquals("nothing connected yet", ConnectedLogState.None.settingsMeta)

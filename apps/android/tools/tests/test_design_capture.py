@@ -105,6 +105,19 @@ class DesignCaptureTests(unittest.TestCase):
                 with self.subTest(fixture=invalid), self.assertRaises(ValueError):
                     capture.read_fixture(path)
 
+    def test_connections_fixture_is_an_explicit_boolean_choice(self):
+        fixture = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            for value in (True, False):
+                explicit = {**fixture, "connections": value}
+                path.write_text(json.dumps(explicit))
+                self.assertEqual(explicit, capture.read_fixture(path))
+            for value in ("true", "false", 0, 1, None, []):
+                path.write_text(json.dumps({**fixture, "connections": value}))
+                with self.subTest(connections=value), self.assertRaises(ValueError):
+                    capture.read_fixture(path)
+
     def test_history_rejects_unbounded_dates_indices_and_nonfinite_loads_before_seeding(self):
         workout = {"routine": 0, "daysAgo": 1, "minutesAgo": 0, "weightKg": -5.25, "reps": 8}
         fixture = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}],

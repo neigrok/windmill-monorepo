@@ -97,9 +97,11 @@ def read_fixture(path):
     if path is None:
         return None
     fixture = json.loads(path.read_text())
-    if not isinstance(fixture, dict) or not {"exercises", "routines"}.issubset(fixture) or set(fixture) - {"exercises", "routines", "history"} or \
+    if not isinstance(fixture, dict) or not {"exercises", "routines"}.issubset(fixture) or set(fixture) - {"exercises", "routines", "history", "connections"} or \
             not isinstance(fixture["exercises"], list) or not isinstance(fixture["routines"], list) or not fixture["routines"]:
         raise ValueError("Capture fixtures need exercises and nonempty routines arrays.")
+    if "connections" in fixture and type(fixture["connections"]) is not bool:
+        raise ValueError("Capture connections choice needs a boolean.")
     for exercise in fixture["exercises"]:
         if not isinstance(exercise, dict) or not {"id", "name", "pattern", "equipment"}.issubset(exercise):
             raise ValueError("Capture exercises need explicit identity, name, pattern and equipment.")
@@ -234,8 +236,20 @@ class Fixture:
         digest = hashlib.sha256(self.token.encode()).hexdigest()
         self.sql(f"INSERT INTO users(id,email) VALUES ('{self.account}','{self.email}');\n"
                  f"INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('{digest}','{self.account}',{self.now + 86400000});")
-        _, key = self.request("/v1/mcp-keys", {"name": "Android design capture"}, self.token)
+        connections = replacement.get("connections", False) if replacement is not None else False
+        _, key = self.request("/v1/mcp-keys", {"name": "A static key" if connections else "Android design capture"}, self.token)
         self.mcp_token = key["token"]
+        if connections:
+            client = "capture-" + self.account
+            self.sql(f"INSERT INTO oauth_clients(client_id,redirect_uris,client_name) "
+                     f"VALUES ('{client}',ARRAY['https://example.com/oauth/callback'],'Claude Desktop');\n"
+                     f"INSERT INTO oauth_grants(user_id,client_id,granted_ms,scope) "
+                     f"VALUES ('{self.account}','{client}',{self.now},'gym:read gym:write');")
+            _, grants = self.request("/v1/oauth/grants", token=self.token)
+            _, keys = self.request("/v1/mcp-keys", token=self.token)
+            if len(grants["grants"]) != 1 or len(keys["keys"]) != 1 or \
+                    grants["grants"][0]["name"] != "Claude Desktop" or keys["keys"][0]["name"] != "A static key":
+                raise RuntimeError("Capture connections did not retain both credential kinds.")
         headers, _ = self.request("/mcp", {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
             "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "android-design-capture", "version": "1"}}}, self.mcp_token)
         self.mcp_session = headers["Mcp-Session-Id"]

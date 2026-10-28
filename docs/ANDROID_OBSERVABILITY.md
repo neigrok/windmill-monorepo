@@ -447,6 +447,13 @@ Root chrome uses the existing `routines`, `log` and `coach` screen labels; the v
 does not change event properties. Account routes retain their existing navigation and shell events.
 The shared app bar adds no transport, storage or write boundary, and sends no title or account initial.
 
+Connected log and signed-out Notes retain `gym_screen_viewed` with `screen=connections|notes`.
+Credential reads publish a complete pair for the current owner, replica and request; both readers
+restart on cache invalidation. Unread and offline results make no empty-list claim. Unexpected read failures retain static
+`gym.refreshConnectedLog`; browser-launch failures retain `gym.openConnections`. Expected offline
+and unavailable authentication create no Issue. Tool names, credential identifiers, dates, scope
+strings, URLs and note contents never enter event properties. The pushed disclosure adds no event.
+
 The Routines FAB retains the existing `routine_editor` screen event and draft-save boundary. It adds
 no component event or failure reporter. Removing the standing sign-in suggestion adds no event.
 Proposal cards/chips retain their current `proposal` review destination and existing outcome events;

@@ -1,0 +1,57 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 30
+            },
+            {
+              "reps": 8,
+              "weightKg": 30
+            },
+            {
+              "reps": 8,
+              "weightKg": 30
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 30
+            },
+            {
+              "reps": 8,
+              "weightKg": 30
+            },
+            {
+              "reps": 8,
+              "weightKg": 30
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "routine": 0,
+      "setsPerMovement": 1,
+      "weightKg": 30,
+      "reps": 8,
+      "daysAgo": 19,
+      "minutesAgo": 0
+    }
+  ],
+  "connections": true
+}

@@ -92,7 +92,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val preferences = store.preferences
 
-    LaunchedEffect(store.connectedLog.answered) { store.readConnectedLog() }
+    LaunchedEffect(store, store.accountKey, store.isLoading, store.connectedLogGeneration) {
+        if (!store.isLoading) store.readConnectedLog()
+    }
     ReadsAgainOnReturn { scope.launch { store.refreshConnectedLog() } }
 
     fun write(document: GymPreferences) {
