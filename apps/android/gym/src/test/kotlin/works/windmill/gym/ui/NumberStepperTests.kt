@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.width
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
@@ -185,6 +186,89 @@ class NumberStepperTests {
             assertEquals(listOf("-12.5"), commits)
             assertEquals(listOf(HapticFeedbackType.TextHandleMove), sensations)
         }
+    }
+
+    @Test fun decimalEditsRejectTheWholeInsertionAndKeepSelectionWithoutDraftOrHapticFeedback() {
+        val drafts = mutableListOf<String>()
+        val sensations = mutableListOf<HapticFeedbackType>()
+        val feedback = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { sensations += hapticFeedbackType }
+        }
+        compose.setContent {
+            var value by remember { mutableStateOf("12.5") }
+            CompositionLocalProvider(LocalHapticFeedback provides feedback) {
+                GymMaterial {
+                    NumberStepper(value, { value = it; drafts += it }, "Load", "kg",
+                        onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged },
+                        input = NumberStepperInput.SignedDecimal)
+                }
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        field.performClick().performTextInput(".")
+        field.assertTextEquals("Load", "kg", "12.5")
+        assertEquals(TextRange(4), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
+        field.performTextInput(",")
+        field.assertTextEquals("Load", "kg", "12,5")
+        assertEquals(TextRange(3), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(1, 3, false) }
+        field.performTextReplacement("1,2.3")
+        field.assertTextEquals("Load", "kg", "12,5")
+        assertEquals(TextRange(1, 3), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        compose.runOnIdle {
+            assertEquals(listOf("12,5"), drafts)
+            assertEquals(emptyList<HapticFeedbackType>(), sensations)
+        }
+        field.performTextReplacement("1.25e+305")
+        field.assertTextEquals("Load", "kg", "1.25e+305")
+        field.performTextInput(".")
+        field.assertTextEquals("Load", "kg", "1.25e+305")
+        compose.runOnIdle { assertEquals(listOf("12,5", "1.25e+305"), drafts) }
+    }
+
+    @Test fun restoredMalformedTextAndDeletedExponentMantissasRemainRecoverable() {
+        val drafts = mutableListOf<String>()
+        compose.setContent {
+            var value by remember { mutableStateOf("12...5") }
+            GymMaterial {
+                NumberStepper(value, { value = it; drafts += it }, "Load", "kg",
+                    onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Refused },
+                    input = NumberStepperInput.SignedDecimal)
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        field.performClick().performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
+        field.performTextInput("")
+        field.assertTextEquals("Load", "kg", "12..5")
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
+        field.performTextInput("")
+        field.assertTextEquals("Load", "kg", "12.5")
+        field.performTextReplacement("1.25e+305")
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(0, 4, false) }
+        field.performTextInput("")
+        field.assertTextEquals("Load", "kg", "e+305")
+        field.performImeAction()
+        field.assertIsFocused()
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(0, 1, false) }
+        field.performTextInput("")
+        field.assertTextEquals("Load", "kg", "+305")
+        compose.runOnIdle { assertEquals(listOf("12..5", "12.5", "1.25e+305", "e+305", "+305"), drafts) }
+    }
+
+    @Test fun countFieldsRejectMalformedPasteWithoutChangingTheirOwner() {
+        val drafts = mutableListOf<String>()
+        compose.setContent {
+            var value by remember { mutableStateOf("5") }
+            GymMaterial {
+                NumberStepper(value, { value = it; drafts += it }, "Reps", "reps",
+                    onStep = { NumberEditResult.Unchanged }, onCommit = { NumberEditResult.Unchanged })
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Reps, reps")
+        field.performClick().performTextReplacement("3.5.1")
+        field.assertTextEquals("Reps", "reps", "5")
+        compose.runOnIdle { assertEquals(emptyList<String>(), drafts) }
     }
 
     @Test fun refusedAndUnchangedStepsDoNotTickAndExternalValuesStaySilent() {

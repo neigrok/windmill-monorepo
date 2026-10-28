@@ -83,6 +83,22 @@ enum class NumberStepperInput { Count, SignedDecimal }
 enum class NumberStep { Decrease, Increase }
 enum class NumberEditResult { Changed, Unchanged, Refused }
 
+private val numberStepperBuffer = Regex("[-+−]?(?:(?:[0-9]+(?:[.,][0-9]*)?|[.,][0-9]+)(?:[eE][-+−]?[0-9]*)?|[.,])?")
+
+internal fun numberStepperEdit(current: TextFieldValue, next: TextFieldValue): TextFieldValue {
+    if (next.text == current.text || numberStepperBuffer.matches(next.text.trim())) return next
+    if (next.text.length < current.text.length) {
+        var from = 0
+        for (character in next.text) {
+            val found = current.text.indexOf(character, from)
+            if (found < 0) return current
+            from = found + 1
+        }
+        return next
+    }
+    return current
+}
+
 class NumberStepperFeedback(private val tick: () -> Unit) {
     var revision by mutableIntStateOf(0)
         private set
@@ -225,8 +241,10 @@ fun NumberStepper(
                 }
                 InterceptPlatformTextInput(inputInterceptor) {
                     BasicTextField(editor, { next ->
-                        editor = next
-                        if (next.text != value) onValueChange(next.text)
+                        val previous = editor
+                        val accepted = numberStepperEdit(previous, next)
+                        editor = accepted
+                        if (accepted.text != previous.text) onValueChange(accepted.text)
                     }, Modifier.semantics {
                         contentDescription = "$label, $unit"
                         refusal?.let { error(it) }

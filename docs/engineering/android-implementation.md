@@ -527,6 +527,21 @@ display changes, then succeeded; system Play/GMS warnings remain in the log. No 
 hosted-vendor-delivery claim is made. The runner exits normally, owned ports close, and its
 disposable database and private credential file are removed.
 
+The shared NumberStepper accepts one decimal separator and rejects malformed insertions or pastes
+as a whole. Replacing a selected separator keeps the new caret and composition; rejection keeps
+the complete prior editor state. Sign, leading-separator and exponent buffers remain editable,
+and deletion can repair a restored malformed buffer. Selection-only edits emit no draft callback
+or haptic. The routine editor adopts this primitive in task 18; its legacy TargetField is unchanged.
+
+The independent main integration covers 1,298 gym Debug cases: 1,281 pass, 17 explicit live-wire
+cases skip, and none fail or error. The debug app assembles. Native rack verification proves duplicate
+dot/comma rejection, selected-separator replacement, caret preservation through the next digit and
+the actual keyboard minus key. Its NumberStepper source is byte-identical to the integrated source;
+the bounded proof is `/private/tmp/windmill-android-coach/native-supplement/proof.json`.
+Malformed saved-buffer deletion is covered by deterministic editor tests rather than a native
+saved-state injection. The input filter shares the existing commit parser and introduces no layout,
+sign control or validation message.
+
 
 ## Task 26 · Notes and its editor
 
