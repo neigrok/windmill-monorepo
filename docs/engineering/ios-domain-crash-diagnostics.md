@@ -52,5 +52,9 @@ SwiftParser 602 sources with `-Onone -DDEBUG`: a 274,432-byte actual thread stac
 round-trip the full source and complete its import visitor. Local Swift Testing workers measure
 536,576 bytes. This reproduces stack exhaustion locally; it does not establish the CI compiler's
 exact threshold. The regression inspects the full catalogue from a 256 KiB caller and checks
-forbidden import/token findings appended after it. The complete unchanged Domain CI gate remains
-required to confirm the correction on Xcode 26.3.
+forbidden import/token findings appended after it. The complete unchanged Domain gate passes in
+[iOS CI run 40674555694](https://github.com/neigrok/windmill-monorepo/actions/runs/40674555694)
+on `e3aeb381` with Xcode 26.3. Its public-surface checks, App Tools, Debug/Release builds, App unit
+tests and all three UI shards also pass. The local Xcode 27.1 manual Layering runner retains the
+same 50 baseline toolchain findings before and after the correction; its new small-caller regression
+and complete real-source scan pass.
