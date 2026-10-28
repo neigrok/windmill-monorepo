@@ -170,6 +170,8 @@ object LiveLines {
         val foot = order.lastOrNull()
         val next = order.firstOrNull { id -> sets.none { it.exerciseId == id } }
         return order.map { exerciseId ->
+            val exercise = catalog.firstOrNull { it.id == exerciseId }
+            val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
             val performed = sets.filter { it.exerciseId == exerciseId }
             val done = setCount(performed)
             val entry = plan?.entry(exerciseId)
@@ -186,19 +188,19 @@ object LiveLines {
                     else -> "$done of $planned sets"
                 },
                 line = if (performed.isEmpty()) "no sets yet — logging one starts it" else null,
-                sets = rows(performed, stalled),
+                sets = rows(performed, stalled, unit),
                 isCurrent = exerciseId == current,
                 justAdded = justAdded,
                 canDrop = LiveOrder.droppable(exerciseId, sets, plan),
                 metadata = when {
                     performed.isNotEmpty() -> {
-                        val values = performed.map { Readout.effort(it.weightKg, it.reps) }.distinct()
-                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(performed.map { SetTarget(it.reps, it.weightKg) })
+                        val values = performed.map { "${Readout.weight(it.weightKg)} $unit × ${it.reps}" }.distinct()
+                        val effort = values.singleOrNull() ?: Readout.targetWithUnit(performed.map { SetTarget(it.reps, it.weightKg) }, exercise)
                         val progress = if (planned != null) "$done of $planned sets" else Readout.setCount(performed.size)
                         "$progress · $effort"
                     }
-                    exerciseId == next -> "Up next" + (entry?.sets?.takeIf { it.isNotEmpty() }?.let { " · ${Readout.targetWithUnit(it)}" } ?: "")
-                    entry?.sets?.isNotEmpty() == true -> Readout.targetWithUnit(entry.sets)
+                    exerciseId == next -> "Up next" + (entry?.sets?.takeIf { it.isNotEmpty() }?.let { " · ${Readout.targetWithUnit(it, exercise)}" } ?: "")
+                    entry?.sets?.isNotEmpty() == true -> Readout.targetWithUnit(entry.sets, exercise)
                     else -> "No sets yet"
                 },
             )

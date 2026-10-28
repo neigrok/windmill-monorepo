@@ -24,6 +24,19 @@ class WorkoutNotificationTests {
         assertEquals(empty, WorkoutNotification(key, session, "Bench Press", emptyList(), state, true))
     }
 
+    @Test fun oldLocalControlsRestoreAnEditedRackAndChangedSetCountsRetireOnlyThatDraft() {
+        val old = kotlinx.serialization.json.Json.decodeFromString(WorkoutState.serializer(),
+            """{"rack":{"exerciseId":"bench","weightKg":82.5,"reps":8,"basisSetCount":0,"edited":true,"revision":1}}""")
+        assertEquals(emptyMap<String, WorkoutRack>(), old.editedRacks)
+        val row = old.redial("row", 0, Prefill(20.0, 5)).edit(67.5, 9)
+        val back = row.redial("bench", 0, Prefill(60.0, 5))
+        assertEquals(listOf(82.5, 8, true), back.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
+        val changed = back.redial("bench", 1, Prefill(62.5, 6))
+        assertEquals(listOf(62.5, 6, false), changed.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
+        assertEquals(setOf("row"), changed.editedRacks.keys)
+        assertEquals(67.5, changed.redial("row", 0, Prefill(20.0, 5)).rack!!.weightKg, 0.0)
+    }
+
     @Test fun anExternalWorkoutUsesTheSharedTitleAndItsStartBeforeAnySet() {
         val key = WorkoutKey("owner", "external")
         val session = Session("external", 12_000)

@@ -7,13 +7,11 @@
 - Components (Design System library, Android page): `Android / Swipe row` `337:2217`, `Android / Equipment icon` `337:2025`, `Android / Button` `210:181`.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `AssemblySheet` (`ui/AssemblySheet.kt:68`) opens from the movement name on the rack.
-  - Title *This session* (:118). Subtitle *{N sets} logged · {routine}*, or *· Free session* (:119).
-  - Rows: a reorder handle *Reorder {name}* (:145, always shown, long-press then drag), the name, a meta line, a forward chevron. Meta comes from `domain/LiveSession.kt`: *3 of 5 sets · 80 × 5*, *Up next · 3 × 5 · 80kg* (:197), *No sets yet* (:199), *just added* (:179).
-  - A row with no sets swipes in **both** directions (:164-167) onto `DropGround` (:181-193): the word *Remove* twice in `alarmInk` on `raised`. It drops at once.
-  - TalkBack actions *Move up*, *Move down*, *Remove* (:125-127).
-  - **Add movement**, `raised`, 64 dp (:174).
-- Dropping a movement emits no event.
+- `ui/AssemblySheet.kt` opens **This workout** from the rack name. Its stock M3 ListItems use a 20 dp handle inside a 48 dp interaction target, equipment-aware performed/planned metadata, and the existing forward glyph.
+- Empty unplanned movements use the shared end-to-start-only `DeleteSwipeRow`. Refusals restore the row and show a supporting sentence. A handle owns its gesture before the parent swipe; reorder previews stay local until release, and cancellation restores the original order without saving.
+- Picker Cancel and Back return to This workout. Existing selection returns to the preserved rack. The current custom-create route is retained for task 19.
+- Edited load/reps snapshots live with the workout's existing local controls, keyed by movement and set count. Switching away and back restores that movement's edits. A new set retires only that movement's snapshot; a different workout or owner does not inherit it. Raw editor buffers retain their existing UI saveable keys.
+- Content-free workout actions cover remove, completed reorder, picker open/cancel/add. Local API 37 acceptance covers six canonical, removal-ground and 200% text captures in Dark/Daylight. Picker Cancel, switching and relaunch preserve edited movement loads; released removal and handle reorder match stored controls and each emit one result event.
 
 **Change**
 - Title *This workout*. Subtitle *{N sets} logged · {routine}*: *4 sets logged · Push A*. A workout with no routine (one a connected agent started) ends the subtitle with `Readout.noRoutine` (13).

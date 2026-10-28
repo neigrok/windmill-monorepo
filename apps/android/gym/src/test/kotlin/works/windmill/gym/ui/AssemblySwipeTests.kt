@@ -1,5 +1,14 @@
 package works.windmill.gym.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -16,6 +25,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeLeft
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -46,6 +56,23 @@ class AssemblySwipeTests {
     )
 
     @Test
+    @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
+    fun doubleTextKeepsTheTitleAddActionAndLastRowReachable() {
+        val rows = List(12) { row("Long movement name $it", canDrop = true).copy(metadata = "Up next · 3 × 10 · 24 kg each") }
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
+                AssemblySheet(rows, "Push A", {}, { _, _ -> }, { false }, {})
+            }
+        }
+        compose.onNodeWithText("This workout").assertIsDisplayed()
+        compose.onNodeWithText("Add movement").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Long movement name 11"))
+        compose.onNodeWithText("Long movement name 11").assertIsDisplayed()
+        compose.onNodeWithText("Add movement").assertIsDisplayed()
+    }
+
+    @Test
     fun holdingTheGripAtTheViewportEdgeMovesPastInitiallyVisibleRows() {
         var rows by mutableStateOf(List(18) { row("movement-$it", canDrop = false) })
         compose.setContent {
@@ -61,13 +88,109 @@ class AssemblySwipeTests {
             advanceEventTime(600)
             moveTo(Offset(grip.center.x, viewport.bottom - 10f), delayMillis = 100)
         }
+        compose.waitForIdle()
         compose.mainClock.advanceTimeBy(1_600)
         compose.onRoot().performTouchInput { up() }
         compose.mainClock.autoAdvance = true
         compose.runOnIdle {
-            assertTrue("a held edge reaches rows beyond the first viewport", rows.indexOfFirst { it.id == "movement-0" } >= 10)
+            assertTrue("a held edge reaches rows beyond the first viewport: ${rows.map { it.id }}", rows.indexOfFirst { it.id == "movement-0" } >= 10)
             assertEquals((0..17).map { "movement-$it" }.toSet(), rows.map { it.id }.toSet())
         }
+    }
+
+    @Test
+    fun aHandleSwipeAndCancelledPreviewNeverSaveOrRemoveAMovement() {
+        val initial = List(3) { row("movement-$it", canDrop = true) }
+        var rows by mutableStateOf(initial)
+        val saves = mutableListOf<Pair<Int, Int>>()
+        val removals = mutableListOf<String>()
+        compose.setContent {
+            AssemblySheet(rows, null, {}, { from, to ->
+                saves += from to to
+                rows = rows.toMutableList().apply { add(to, removeAt(from)) }
+            }, { removals += it; true }, {})
+        }
+        val grip = compose.onNodeWithContentDescription("Reorder movement-0", useUnmergedTree = true)
+        grip.performTouchInput { swipeLeft() }
+        assertEquals(initial, rows)
+        assertEquals(emptyList<String>(), removals)
+        val target = compose.onNodeWithContentDescription("Reorder movement-1", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val start = grip.fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        compose.onRoot().performTouchInput {
+            down(start.center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            moveTo(Offset(start.center.x, target.bottom + 10f))
+        }
+        compose.waitUntil(2_000) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithText("movement-1").fetchSemanticsNode().boundsInRoot.top <
+                compose.onNodeWithText("movement-0").fetchSemanticsNode().boundsInRoot.top
+        }
+        assertEquals(initial, rows)
+        compose.onRoot().performTouchInput { cancel() }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertTrue(compose.onNodeWithText("movement-0").fetchSemanticsNode().boundsInRoot.top <
+            compose.onNodeWithText("movement-1").fetchSemanticsNode().boundsInRoot.top)
+        assertEquals(initial, rows)
+        assertEquals(emptyList<Pair<Int, Int>>(), saves)
+        assertEquals(emptyList<String>(), removals)
+    }
+
+    @Test
+    fun anAncestorConsumingTheDragCancelsItsPreviewWithoutSaving() {
+        val rows = List(3) { row("movement-$it", canDrop = true) }
+        var consume = false
+        val saves = mutableListOf<Pair<Int, Int>>()
+        val removals = mutableListOf<String>()
+        compose.setContent {
+            Box(Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (consume) event.changes.forEach { it.consume() }
+                    }
+                }
+            }) { AssemblySheet(rows, null, {}, { from, to -> saves += from to to }, { removals += it; true }, {}) }
+        }
+        val grip = compose.onNodeWithContentDescription("Reorder movement-0", useUnmergedTree = true)
+        val start = grip.fetchSemanticsNode().boundsInRoot
+        val target = compose.onNodeWithContentDescription("Reorder movement-1", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        compose.onRoot().performTouchInput {
+            down(start.center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            moveTo(Offset(start.center.x, target.bottom + 10f))
+        }
+        compose.waitUntil(2_000) {
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithText("movement-1").fetchSemanticsNode().boundsInRoot.top <
+                compose.onNodeWithText("movement-0").fetchSemanticsNode().boundsInRoot.top
+        }
+        consume = true
+        compose.onRoot().performTouchInput { moveTo(Offset(start.center.x, target.bottom + 20f)); up() }
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        assertTrue(compose.onNodeWithText("movement-0").fetchSemanticsNode().boundsInRoot.top <
+            compose.onNodeWithText("movement-1").fetchSemanticsNode().boundsInRoot.top)
+        assertEquals(emptyList<Pair<Int, Int>>(), saves)
+        assertEquals(emptyList<String>(), removals)
+    }
+
+    @Test
+    fun aStartToEndSwipeNeverDropsAndTheEndToStartActionIsNamed() {
+        val removed = mutableListOf<String>()
+        compose.setContent { AssemblySheet(listOf(row("movement", true)), null, {}, { _, _ -> }, { removed += it; true }, {}) }
+        compose.onNodeWithText("movement").performTouchInput { swipeRight() }
+        assertEquals(emptyList<String>(), removed)
+        compose.onNodeWithText("movement").assertIsDisplayed()
+        val labels = compose.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.CustomActions),
+            useUnmergedTree = true).fetchSemanticsNodes().flatMap {
+            it.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].map { action -> action.label }
+        }
+        assertEquals(listOf("Remove movement"), labels)
+        compose.onNodeWithText("Remove").assertDoesNotExist()
     }
 
     @Test
@@ -111,6 +234,7 @@ class AssemblySwipeTests {
 
         assertEquals(listOf("bench-press"), asked)
         compose.onNodeWithText("bench-press").assertIsDisplayed()
+        compose.onNodeWithText("The movement could not be removed. Check the current workout.").assertIsDisplayed()
     }
 
     @Test

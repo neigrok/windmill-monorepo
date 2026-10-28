@@ -688,3 +688,46 @@ One `hello/unreachable` metric has an unproven cause; the window is not network-
 fault and restarting restores the correction; a separate subsequent edit succeeds. The envelope
 has no raw exception value, user, request, message or fixture note. The candidate’s earlier cascade
 and all selector/setup failures remain separate evidence, not successful-action claims.
+
+## Task 11 — This workout and preserved movement drafts
+
+The management sheet uses the approved title, stock M3 ListItems, equipment-aware metadata and
+20 dp handle artwork inside 48 dp touch targets. The shared end-to-start delete row owns the
+Remove movement accessibility action; each row retains Move up/down. A refused removal restores
+the row and shows its supporting sentence. The list reserves room for Add movement at short
+heights and 200% text. Hide workout and Notification off remain task 45.
+
+Handle gestures consume their pointer before the parent swipe. Reordering previews a local order
+with a fixed viewport anchor; release saves once, while cancellation or ancestor consumption
+restores the exact original order without a callback or event. Picker Cancel/Back returns to the
+management sheet, and an accepted choice returns to the same workout. Edited movement racks use
+the existing local controls file: only edited snapshots are saved, only matching movement/set-count
+snapshots restore, and a new set clears its movement's snapshot. Owner/workout reset and old-file
+empty-map decoding keep those values isolated. Raw numeric buffers remain in their existing UI keys.
+
+The simplification pass removes the custom swipe ground, reuses the existing shared unit and
+native row controls, and keeps preview state in the sheet with one release callback. The local
+workout state owns the small edited-rack map; there is no new persistence or sync layer.
+Affected Debug and Release gates each pass 107 cases with no failures/errors/skips. The final
+nine-case gesture/accessibility/large-text geometry gate passes after the bounded-height change.
+Tests cover actual movement switching, picker Cancel and recreation, disk relaunch, new-set
+invalidation, owner/session isolation and legacy decoding. Six real SDK/intake telemetry checks
+and all 42 lightweight Android tool tests pass after composing main’s optional-history support
+with default-history duration and observed-row touch handling. Explicit history validation and
+40-minute custom workouts remain intact. Evidence is under `/private/tmp/windmill-android-task11`.
+
+The final API 37 APK (`33e1dca8cc80e5c13c514310287f8d96f3bce70a752f92455c0b351d3a5b0c8e`)
+provides six accepted 03.4 captures: canonical, removal ground and 320 × 640 dp at 200% text,
+each in Dark and Daylight. The exact approved handle path occupies 13.333 × 5 dp inside its
+20 dp artwork slot; the routine builder’s separate asset is unchanged. Native picker Cancel,
+switch-away/back and process relaunch retain edited loads for two movements. A released removal
+and completed handle drag match stored controls and each produce one `ok` action receipt.
+The held screenshot gesture is cancelled before the large-text capture; that image alone does
+not claim a deletion. Deterministic tests cover cancelled/consumed handle gestures with no save
+or event. Accessibility semantics and native hierarchy are verified, not spoken TalkBack.
+
+`/private/tmp/windmill-android-workout-batch/final1/acceptance-summary.json` retains capture hashes,
+phase event windows, readbacks and the original cleanup-selector failures. The successful native
+actions are independently verified; those failed selectors are excluded from success claims.
+The final runtime scan reports no ANR/fatal, and normal cleanup removes the disposable database,
+private fixture file and owned emulator/listeners. There is no performance comparison claim.

@@ -235,7 +235,7 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
             compose.onNodeWithText("Barbell Row").performClick()
-            compose.onNodeWithText("This session").assertIsDisplayed()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
             assertEquals(listOf(
                 "gym_action" to mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"),
                 "gym_action" to mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"),

@@ -191,6 +191,8 @@ arbitrary tool. Explicit histories retain their validated 40-minute duration. De
 last at least 40 minutes and finish after their final generated set, including long routines.
 Existing catalogue identities/names cannot be replaced by a custom exercise fixture.
 
+A `touch` down may set `row: true` to use the nearest observed clickable ancestor of its text target; otherwise it uses the target’s own bounds. Missing clickable ancestry refuses the capture.
+
 A `touch` step has `phase: "down"`, an accessibility `target`, and optional `at: [x, y]` fractions
 inside that control's observed bounds. `move` uses those same bounds; `up` releases the pointer.
 Every scenario releases an outstanding pointer in `finally`, including capture failures. The normal
@@ -222,3 +224,11 @@ partial or continuously changing output fails at the bounded deadline instead of
 The script prints its device and local database, saves allowlisted events, then stops its processes
 and drops its database. Normal completion, errors, Ctrl-C and SIGTERM run the same cleanup. A
 failed run preserves its manifest, logs and any completed captures for inspection.
+
+`capture-recipes/this-workout.json` uses `this-workout-fixture.json` for the approved 03.4
+four-set management state, an end-to-start removal ground and 320 × 640 dp / 200% text.
+The fixture's performed/planned lines use the shared equipment units; the reserved task 45
+Hide workout and Notification off rows are absent. The held removal ground is cancelled in
+`after` so the large-text capture retains all four rows. Six Dark/Daylight API 37 captures are
+verified; released removal, handle reorder and retained movement drafts have separate native
+action/readback evidence. Capture cleanup waits for the saved workout receipt.

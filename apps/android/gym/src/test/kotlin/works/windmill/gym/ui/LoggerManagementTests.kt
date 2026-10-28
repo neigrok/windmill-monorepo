@@ -1,0 +1,97 @@
+package works.windmill.gym.ui
+
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+class LoggerManagementTests {
+    @get:Rule val compose = createComposeRule()
+    @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun pickerCancelRecreationAndSelectionPreserveTheWorkoutAndEachRackDraft() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val room = EngineRoomFixture(temporary.newFolder(), scope)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        try {
+            runBlocking {
+                room.select("owner")
+                room.pull(EngineRoomFixture.server())
+                room.startExternalWorkout()
+                room.store.choose("bench-press")
+                room.store.logSet(60.0, 5)
+                room.store.editRack(82.5, 8)
+                room.store.choose("barbell-row")
+                room.store.editRack(67.5, 9)
+                room.store.choose("bench-press")
+            }
+            val session = room.store.session
+            val sets = room.store.sets
+            val restoration = StateRestorationTester(compose)
+            restoration.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
+            compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
+            compose.onNodeWithText("Add movement").performClick()
+            compose.onNodeWithText("Cancel").assertIsDisplayed()
+            restoration.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
+            compose.onAllNodes(hasText("Bench Press") and hasClickAction()).onLast().performClick()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
+            compose.runOnIdle {
+                assertEquals(session, room.store.session)
+                assertEquals(sets, room.store.sets)
+                assertEquals("bench-press", room.store.exerciseId)
+                assertEquals(82.5, room.store.rack!!.weightKg, 0.0)
+                assertEquals(8, room.store.rack!!.reps)
+            }
+            compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
+            compose.onNodeWithText("Add movement").performClick()
+            compose.onNodeWithText("Cable Fly").performScrollTo().performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.exerciseId == "cable-fly" } }
+            compose.onNodeWithText("Log set").assertIsDisplayed()
+            compose.onNode(hasText("Cable Fly") and hasClickAction()).performClick()
+            compose.onNodeWithText("Barbell Row").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.exerciseId == "barbell-row" } }
+            compose.runOnIdle {
+                assertEquals(session, room.store.session)
+                assertEquals(sets, room.store.sets)
+                assertEquals(listOf("bench-press", "barbell-row", "cable-fly"), room.store.order)
+                assertEquals(67.5, room.store.rack!!.weightKg, 0.0)
+                assertEquals(9, room.store.rack!!.reps)
+            }
+            assertEquals(listOf("open_workout", "picker_open", "picker_cancel", "open_workout", "picker_open",
+                "movement_switch", "picker_add", "open_workout", "movement_switch").map {
+                "gym_action" to mapOf("screen" to "workout", "action" to it, "outcome" to "ok")
+            }, events)
+        } finally { scope.cancel(); room.close() }
+    }
+}

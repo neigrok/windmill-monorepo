@@ -263,6 +263,27 @@ class LiveLinesTests {
     }
 
     @Test
+    fun assemblyMetadataKeepsEquipmentUnitsForPerformedAndPlannedSets() {
+        val catalog = listOf(Exercise("bar", "Bar", equipment = "barbell"),
+            Exercise("pair", "Pair", equipment = "dumbbell", loadCount = 2),
+            Exercise("one", "One", equipment = "dumbbell", loadCount = 1),
+            Exercise("body", "Body", equipment = "bodyweight"),
+            Exercise("other", "Other", equipment = "other"))
+        val plan = PlanSnapshot("Walk", catalog.map { PlanEntry(it.id, List(3) { SetTarget(10, 24.0) }) })
+        val performed = catalog.map { aSet(it.id, -12.5, 8, 1_000, it.id) }
+        val units = listOf("kg total", "kg each", "kg", "kg added", "kg")
+        val logged = LiveLines.assemblyRows(catalog.map { it.id }, performed, plan, catalog, "pair")
+        assertEquals(units.map { "1 of 3 sets · −12.5 $it × 8" }, logged.map { it.metadata })
+        assertEquals(units, logged.map { it.sets.single().unit })
+        val planned = LiveLines.assemblyRows(catalog.map { it.id }, emptyList(), plan, catalog, "bar")
+        assertEquals(listOf("Up next · 3 × 10 · 24 kg total", "3 × 10 · 24 kg each", "3 × 10 · 24 kg",
+            "3 × 10 · 24 kg added", "3 × 10 · 24 kg"), planned.map { it.metadata })
+        val varied = LiveLines.assemblyRows(listOf("pair"), listOf(aSet("pair", 22.0, 8, 1_000),
+            aSet("pair", 24.0, 10, 2_000)), plan, catalog, "pair")
+        assertEquals("2 of 3 sets · 2 × 8–10 · 22–24 kg each", varied.single().metadata)
+    }
+
+    @Test
     fun testASwipeDropsOnlyAMovementThatIsNeitherLoggedNorPlanned() {
         val sets = listOf(aSet("bench-press", 82.5, 5, at = 1_000))
 

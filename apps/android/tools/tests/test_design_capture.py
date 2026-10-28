@@ -248,6 +248,30 @@ class DesignCaptureTests(unittest.TestCase):
         self.assertIsNone(device.touch_bounds)
         self.assertIsNone(device.touch_point)
 
+    def test_row_touch_uses_only_the_nearest_clickable_ancestor(self):
+        device = capture.Device(Path("/android-sdk"), 5582)
+        tree = capture.ET.fromstring('<node clickable="true" bounds="[0,0][400,800]"><node clickable="true" bounds="[20,80][380,160]"><node clickable="false" text="Cable Fly" bounds="[80,96][180,120]" /></node><node text="Orphan" bounds="[10,10][20,20]" /></node>')
+        device.tree = lambda: tree
+        calls = []
+        device.run = lambda *args, **kwargs: calls.append(args)
+        device.touch({"phase": "down", "target": "Cable Fly", "row": True, "at": [.9, .5]})
+        device.touch({"phase": "move", "at": [.15, .5]})
+        device.release_touch()
+        device.touch({"phase": "down", "target": "Cable Fly", "at": [.9, .5]})
+        device.release_touch()
+        self.assertEqual([
+            ("shell", "input", "motionevent", "DOWN", "344", "120"),
+            ("shell", "input", "motionevent", "MOVE", "74", "120"),
+            ("shell", "input", "motionevent", "UP", "74", "120"),
+            ("shell", "input", "motionevent", "DOWN", "170", "108"),
+            ("shell", "input", "motionevent", "UP", "170", "108"),
+        ], calls)
+        tree.set("clickable", "false")
+        with self.assertRaisesRegex(RuntimeError, "no clickable ancestor"):
+            device.touch({"phase": "down", "target": "Orphan", "row": True})
+        with self.assertRaises(ValueError):
+            device.touch({"phase": "down", "target": "Cable Fly", "row": "true"})
+
     def test_specimen_viewport_is_bounded_and_resets_size_and_density(self):
         device = capture.Device(Path("/android-sdk"), 5582)
         calls = []

@@ -2,68 +2,64 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
-import works.windmill.gym.R
-import kotlin.math.abs
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlin.math.abs
+import works.windmill.gym.R
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillRadius
-import works.windmill.platform.design.WindmillSpace
 
-// Nothing advances a lifter on its own. A drag moves the walk order only (sets are keyed by movement,
-// never by position), and a swipe is offered only on a row with no sets (`LiveOrder.droppable`).
-// The sheet draws no Close: back, the scrim and the drag handle are the platform's, and every walk
-// edit made here has already landed, so putting the sheet down loses nothing.
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssemblySheet(
     rows: List<LiveLines.MovementRow>,
@@ -77,17 +73,24 @@ fun AssemblySheet(
     val list = rememberLazyListState()
     val currentRows by rememberUpdatedState(rows)
     val move by rememberUpdatedState(onReorder)
+    val order = rows.map { it.id }
+    var preview by remember(order) { mutableStateOf<List<String>?>(null) }
+    var dragged by remember(order) { mutableStateOf<String?>(null) }
+    var centre by remember(order) { mutableFloatStateOf(0f) }
+    val drawn = preview?.mapNotNull { id -> rows.firstOrNull { it.id == id } } ?: rows
     val addedFocus = remember { FocusRequester() }
     val added = rows.firstOrNull { it.justAdded }?.id
-    var dragged by remember { mutableStateOf<String?>(null) }
-    var centre by remember { mutableFloatStateOf(0f) }
     val edge = with(LocalDensity.current) { 56.dp.toPx() }
     val speed = with(LocalDensity.current) { 600.dp.toPx() }
     fun place() {
         val id = dragged ?: return
-        val from = currentRows.indexOfFirst { it.id == id }
+        val walk = preview ?: order
+        val from = walk.indexOf(id)
         val to = list.layoutInfo.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - centre) }?.index ?: return
-        if (from >= 0 && from != to) move(from, to)
+        if (from >= 0 && to in walk.indices && from != to) {
+            list.requestScrollToItem(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset)
+            preview = walk.toMutableList().apply { add(to, removeAt(from)) }
+        }
     }
     val direction = when {
         dragged == null -> 0f
@@ -115,81 +118,95 @@ fun AssemblySheet(
     }
     Column(Modifier.fillMaxWidth().background(skin.surface).padding(horizontal = 20.dp)
         .padding(bottom = GymLayout.sheetBottom), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("This session", style = WindmillFont.display(26, FontWeight.ExtraBold), color = skin.ink)
-        Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged" + (routine?.let { " · $it" } ?: " · ${Readout.noRoutine}"),
-            style = WindmillFont.body(14), color = skin.inkDim)
-        LazyColumn(state = list, modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-            itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("This workout", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink)
+            Text("${Readout.setCount(rows.sumOf { it.sets.size })} logged · ${routine ?: Readout.noRoutine}",
+                style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+        }
+        LazyColumn(state = list, modifier = Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 420.dp)) {
+            itemsIndexed(drawn, key = { _, row -> row.id }) { index, row ->
                 val held = dragged == row.id
+                var problem by remember(row.id) { mutableStateOf<String?>(null) }
                 val actions = buildList {
                     if (index > 0) add(CustomAccessibilityAction("Move up") { onReorder(index, index - 1); true })
-                    if (index < rows.lastIndex) add(CustomAccessibilityAction("Move down") { onReorder(index, index + 1); true })
-                    if (row.canDrop) add(CustomAccessibilityAction("Remove") { onDrop(row.id) })
+                    if (index < drawn.lastIndex) add(CustomAccessibilityAction("Move down") { onReorder(index, index + 1); true })
                 }
-                val content: @Composable () -> Unit = {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).zIndex(if (held) 1f else 0f)
-                        .graphicsLayer {
-                            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id }
-                            translationY = if (held && item != null) centre - item.offset - item.size / 2f else 0f
-                        }.background(if (held) skin.raised else skin.surface)
-                        .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
-                        .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
-                        .semantics {
-                            customActions = actions
-                            selected = row.isCurrent
-                            stateDescription = listOfNotNull(if (row.justAdded) "Just added" else null,
-                                if (row.isCurrent) "Current movement" else null).joinToString(", ")
-                        }
-                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.gym_reorder), "Reorder ${row.name}", tint = skin.inkDim,
-                            modifier = Modifier.size(48.dp).pointerInput(row.id) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id }
-                                        if (item != null) { dragged = row.id; centre = item.offset + item.size / 2f }
-                                    },
-                                    onDragCancel = { dragged = null }, onDragEnd = { dragged = null },
-                                    onDrag = { change, delta -> change.consume(); centre += delta.y; place() },
-                                )
+                DeleteSwipeRow(actionLabel = "Remove movement", onDelete = {
+                    val accepted = onDrop(row.id)
+                    problem = if (accepted) null else "The movement could not be removed. Check the current workout."
+                    accepted
+                }, enabled = row.canDrop && dragged == null,
+                    modifier = Modifier.zIndex(if (held) 1f else 0f).graphicsLayer {
+                        val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id }
+                        translationY = if (held && item != null) centre - item.offset - item.size / 2f else 0f
+                    }) {
+                    Box {
+                        ListItem(
+                            headlineContent = { Text(row.name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp)) },
+                            supportingContent = { Text(problem ?: row.metadata, style = WindmillFont.body(14).copy(lineHeight = 20.sp),
+                                color = if (problem == null) skin.inkDim else skin.error,
+                                modifier = Modifier.semantics { if (problem != null) liveRegion = LiveRegionMode.Polite }) },
+                            leadingContent = { Icon(painterResource(R.drawable.gym_list_reorder), null, Modifier.size(20.dp)) },
+                            trailingContent = { Icon(painterResource(R.drawable.gym_forward), null, Modifier.size(20.dp)) },
+                            colors = ListItemDefaults.colors(containerColor = if (held) skin.raised else skin.surface,
+                                headlineColor = skin.ink, supportingColor = skin.inkDim, leadingIconColor = skin.inkDim, trailingIconColor = skin.inkDim),
+                            modifier = Modifier.fillMaxWidth()
+                                .then(if (row.id == added) Modifier.focusRequester(addedFocus) else Modifier)
+                                .clickable(role = Role.Button, onClickLabel = "walk to ${row.name}") { onJump(row.id) }
+                                .semantics {
+                                    customActions = actions
+                                    selected = row.isCurrent
+                                    stateDescription = listOfNotNull(if (row.justAdded) "Just added" else null,
+                                        if (row.isCurrent) "Current movement" else null).joinToString(", ")
+                                },
+                        )
+                        Box(Modifier.align(Alignment.CenterStart).offset(x = 2.dp).size(48.dp)
+                            .semantics { contentDescription = "Reorder ${row.name}" }
+                            .pointerInput(row.id, order) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    if (down.isConsumed) return@awaitEachGesture
+                                    down.consume()
+                                    var started = false
+                                    var cancelled = false
+                                    try {
+                                        do {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            if (change.isConsumed) break
+                                            event.changes.forEach { it.consume() }
+                                            if (!change.pressed) {
+                                                val to = preview?.indexOf(row.id) ?: index
+                                                if (started && !cancelled && to != index && currentRows.map { it.id } == order) move(index, to)
+                                                break
+                                            }
+                                            if (!started && !cancelled) {
+                                                if (change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
+                                                    val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == row.id } ?: break
+                                                    started = true
+                                                    dragged = row.id
+                                                    centre = item.offset + item.size / 2f
+                                                } else if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) cancelled = true
+                                            }
+                                            if (started) {
+                                                centre += change.position.y - change.previousPosition.y
+                                                place()
+                                            }
+                                        } while (true)
+                                    } finally {
+                                        dragged = null
+                                        preview = null
+                                    }
+                                }
                             })
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(row.name, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-                            Text(row.metadata, style = WindmillFont.body(13), color = skin.inkDim)
-                        }
-                        Icon(painterResource(R.drawable.gym_forward), null, tint = skin.inkDim, modifier = Modifier.size(20.dp))
                     }
                 }
-                if (row.canDrop) {
-                    val swipe = rememberRowDismiss(settling = { it != SwipeToDismissBoxValue.Settled }) {
-                        if (!onDrop(row.id)) reset()
-                    }
-                    SwipeToDismissBox(state = swipe, backgroundContent = { DropGround() }, content = { content() })
-                } else content()
-                if (index < rows.lastIndex) HorizontalDivider(color = skin.line)
+                if (index < drawn.lastIndex) HorizontalDivider(color = skin.line)
             }
         }
         Box(Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(16.dp))
             .background(skin.raised).clickable(role = Role.Button, onClick = onAdd), contentAlignment = Alignment.Center) {
             Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
         }
-    }
-}
-
-// What the swipe uncovers: the row is coming off the walk, and nothing about it is logged.
-@Composable
-private fun DropGround() {
-    val skin = LocalGymColors.current
-    Row(
-        Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(WindmillRadius.lg))
-            .background(skin.raised)
-            .padding(horizontal = WindmillSpace.x4),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
-        Text("Remove", style = GymType.numeral(12, FontWeight.Bold), color = skin.alarmInk)
     }
 }

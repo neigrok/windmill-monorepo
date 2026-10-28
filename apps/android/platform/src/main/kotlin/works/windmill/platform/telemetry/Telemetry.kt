@@ -65,7 +65,8 @@ object TelemetryPolicy {
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
-                "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "fix" to setOf("ok", "refused", "failed"))
+                "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "remove" to setOf("ok", "refused"), "reorder" to setOf("ok"),
+                    "picker_open" to setOf("ok"), "picker_cancel" to setOf("ok"), "picker_add" to setOf("ok", "refused"), "fix" to setOf("ok", "refused", "failed"))
                 "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
                 else -> emptyMap()
             }

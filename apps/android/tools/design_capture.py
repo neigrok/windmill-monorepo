@@ -435,12 +435,19 @@ class Device:
         except ET.ParseError:
             return ET.Element("unavailable")
 
-    def find(self, value, timeout=30):
+    def find(self, value, timeout=30, row=False):
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
                 if node.get("visible-to-user") != "false" and value in (node.get("text"), node.get("content-desc"), node.get("resource-id")):
+                    if not row:
+                        return node
+                    parents = {child: parent for parent in tree.iter() for child in parent}
+                    while node is not None and node.get("clickable") != "true":
+                        node = parents.get(node)
+                    if node is None:
+                        raise RuntimeError("Capture row target has no clickable ancestor.")
                     return node
             time.sleep(.2)
         (self.output / "failure-ui.xml").write_bytes(ET.tostring(tree))
@@ -537,7 +544,10 @@ class Device:
         if phase == "down":
             if self.touch_point is not None:
                 raise ValueError("Release the previous touch before starting another.")
-            bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", self.find(value["target"]).get("bounds", ""))
+            if type(value.get("row", False)) is not bool:
+                raise ValueError("Touch row selection must be a boolean.")
+            target = self.find(value["target"], row=True) if value.get("row") else self.find(value["target"])
+            bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", target.get("bounds", ""))
             if not bounds:
                 raise RuntimeError("Capture control has no touch bounds.")
             self.touch_bounds = tuple(map(int, bounds.groups()))

@@ -139,6 +139,8 @@ private val loggerSheetSaver = Saver<LoggerSheet?, String>(
     } },
 )
 
+private data class LoggerMove(val movement: String, val fromPicker: Boolean)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LoggerScreen(
@@ -161,7 +163,7 @@ fun LoggerScreen(
     var rackEditing by remember(rackOwner, rackSession, rackMovement) { mutableStateOf(false) }
     var fixBusy by remember { mutableStateOf(false) }
     var cancelFixEntry by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var goingTo by remember(rackOwner, rackSession) { mutableStateOf<String?>(null) }
+    var goingTo by remember(rackOwner, rackSession) { mutableStateOf<LoggerMove?>(null) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Zero while nothing is showing: an empty host measures no height.
     var transientHeight by remember { mutableStateOf(0.dp) }
@@ -188,10 +190,10 @@ fun LoggerScreen(
         }
     }
 
-    fun move(to: String): Boolean {
+    fun move(to: String, fromPicker: Boolean = false): Boolean {
         if (goingTo != null) return false
         say(null)
-        goingTo = to
+        goingTo = LoggerMove(to, fromPicker)
         if (sheet != null) close()
         return true
     }
@@ -200,15 +202,24 @@ fun LoggerScreen(
         if (sheet != null) return@LaunchedEffect
         val destination = goingTo ?: return@LaunchedEffect
         val previous = store.exerciseId
-        try { store.choose(destination) }
+        try { store.choose(destination.movement) }
         finally {
             if (store.accountKey == rackOwner && store.session?.id == rackSession && goingTo == destination) {
-                if (previous != destination && store.exerciseId == destination) {
+                if (previous != destination.movement && store.exerciseId == destination.movement) {
                     telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
                 }
+                if (destination.fromPicker) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_add",
+                    "outcome" to if (store.exerciseId == destination.movement) "ok" else "refused"))
                 goingTo = null
             }
         }
+    }
+
+    fun cancelPicker() {
+        if (sheet != LoggerSheet.Picker) return
+        sheet = LoggerSheet.Assembly
+        scope.launch { sheetState.show() }
+        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_cancel", "outcome" to "ok"))
     }
 
     val pickerUp = store.exerciseId == null || sheet == LoggerSheet.Picker
@@ -440,9 +451,9 @@ fun LoggerScreen(
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
         ModalBottomSheet(
-            onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
+            onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
             sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = open !is LoggerSheet.Fix),
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = open == LoggerSheet.Assembly),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
@@ -454,18 +465,29 @@ fun LoggerScreen(
                                                   store.catalog, store.exerciseId, store.stalled),
                     routine = store.session?.plan?.routine,
                     onJump = { move(it) },
-                    onReorder = { from, to -> store.reorder(from, to) },
-                    onDrop = { store.drop(it) },
-                    onAdd = { sheet = LoggerSheet.Picker },
+                    onReorder = { from, to ->
+                        val before = store.order
+                        store.reorder(from, to)
+                        if (before != store.order) telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "reorder", "outcome" to "ok"))
+                    },
+                    onDrop = {
+                        val accepted = store.drop(it)
+                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "remove", "outcome" to if (accepted) "ok" else "refused"))
+                        accepted
+                    },
+                    onAdd = {
+                        sheet = LoggerSheet.Picker
+                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_open", "outcome" to "ok"))
+                    },
                 )
-                LoggerSheet.Picker -> MovementPicker(
+                LoggerSheet.Picker -> WindmillSheetBack(onDismiss = { cancelPicker() }) { MovementPicker(
                     catalog = store.catalog,
                     taken = store.order,
                     lastSets = store.lastSets,
                     nowMs = nowMs,
                     sessions = store.recent,
                     title = "Add movement",
-                    onPick = { move(it) },
+                    onPick = { move(it, fromPicker = true) },
                     onCreate = { name, equipment, id -> store.create(name, equipment, id) },
                     state = pickerState,
                     modifier = Modifier
@@ -473,8 +495,8 @@ fun LoggerScreen(
                         .background(skin.surface)
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
-                    onClose = { close() },
-                )
+                    onClose = { cancelPicker() },
+                ) }
                 is LoggerSheet.Fix -> {
                     val set = fixing!!
                     val sessionId = store.session?.id

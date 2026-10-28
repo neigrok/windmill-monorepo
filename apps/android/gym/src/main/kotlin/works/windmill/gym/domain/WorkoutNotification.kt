@@ -85,6 +85,7 @@ data class WorkoutState(
     val bootId: String? = null,
     val started: WorkoutMoment? = null,
     val rack: WorkoutRack? = null,
+    val editedRacks: Map<String, WorkoutRack> = emptyMap(),
     val offer: LogSetOffer? = null,
     val consumed: Set<String> = emptySet(),
     val editorOpen: Boolean = false,
@@ -99,15 +100,22 @@ data class WorkoutState(
         val previous = rack
         if (previous?.exerciseId == movement && previous.basisSetCount == count &&
             (previous.edited || (previous.weightKg == prefill.weightKg && previous.reps == prefill.reps))) return this
+        val saved = if (previous?.edited == true && previous.exerciseId != movement) {
+            editedRacks + (previous.exerciseId to previous)
+        } else editedRacks
+        val draft = saved[movement]?.takeIf { it.exerciseId == movement && it.basisSetCount == count && it.edited }
         val next = invalidate()
-        return next.copy(rack = WorkoutRack(movement, prefill.weightKg, prefill.reps, count, false, next.revision))
+        return next.copy(
+            rack = draft?.copy(revision = next.revision) ?: WorkoutRack(movement, prefill.weightKg, prefill.reps, count, false, next.revision),
+            editedRacks = if (draft == null) saved - movement else saved,
+        )
     }
 
     fun edit(weightKg: Double, reps: Int): WorkoutState {
         val current = rack ?: return this
-        if (current.weightKg == weightKg && current.reps == reps) return copy(rack = current.copy(edited = true))
-        val next = invalidate()
-        return next.copy(rack = current.copy(weightKg = weightKg, reps = reps, edited = true, revision = next.revision))
+        val next = if (current.weightKg == weightKg && current.reps == reps) this else invalidate()
+        val edited = current.copy(weightKg = weightKg, reps = reps, edited = true, revision = next.revision)
+        return next.copy(rack = edited, editedRacks = next.editedRacks + (current.exerciseId to edited))
     }
 
     fun editor(open: Boolean): WorkoutState {
@@ -142,6 +150,9 @@ data class WorkoutState(
 
     fun consume(command: LogSetCommand): WorkoutState {
         require(accepts(command))
-        return invalidate().copy(consumed = consumed + command.offerId)
+        val next = invalidate()
+        val current = requireNotNull(next.rack)
+        return next.copy(consumed = consumed + command.offerId,
+            rack = current.copy(edited = false), editedRacks = editedRacks - current.exerciseId)
     }
 }

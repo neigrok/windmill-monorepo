@@ -387,7 +387,7 @@ class LargestTypeTests {
             assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
             compose.onNodeWithText("Add movement").assertDoesNotExist()
             compose.onNodeWithText("Bench Press").assertIsDisplayed().performClick()
-            compose.onNodeWithText("This session").assertIsDisplayed()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
             val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
             assertTrue("Add movement remains a full management-sheet action", add.height >= 64.dp)
         } } finally { scope.cancel() }

@@ -39,6 +39,18 @@ Task 09’s local native intake records four starts, four logged sets and four f
 appearance, with two completed movement switches and two management opens per appearance.
 Those canonical windows contain no client errors; this verifies the local intake, not hosted delivery.
 
+This workout emits `gym_action` with `screen=workout`: `remove` uses `ok|refused`,
+`picker_open|picker_cancel|reorder` use `ok`, and `picker_add` uses `ok|refused` after the
+selection resolves in the same account and workout. A consumed/cancelled reorder never calls the
+save callback or emits an event. Drop refusal is expected and creates no Issue. Existing controls
+storage and `gym.choose`/`gym.create` boundaries retain their static operation names. Local edited
+rack snapshots add no events; raw buffers, movement identifiers and values never enter properties.
+Task 11’s installed-app management window records one picker cancel, one picker add, one released
+removal and one completed reorder, each `ok`, plus two picker opens, four management opens and
+three completed movement switches. It contains no client errors. Stored controls confirm the
+removed movement is absent and the released order is saved. This is local intake/readback evidence;
+spoken TalkBack and hosted vendor delivery are not claimed.
+
 ## Set correction
 
 Fix set emits `gym_action` with `screen=workout|session`, `action=fix` and

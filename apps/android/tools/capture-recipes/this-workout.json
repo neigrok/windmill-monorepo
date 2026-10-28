@@ -1,0 +1,155 @@
+[
+  {
+    "board": "03.4",
+    "name": "this-workout",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 2, current, target 77.5 kg total, 8 reps"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 3, current, target 80 kg total, 6 reps"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "tap": "Add movement"
+      },
+      {
+        "tap": "Search movements"
+      },
+      {
+        "text": "Cable"
+      },
+      {
+        "tap": "Cable Fly"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Cable Fly"
+      },
+      {
+        "wait": "This workout"
+      },
+      {
+        "wait": "4 sets logged \u00b7 Push A"
+      },
+      {
+        "wait": "Up next \u00b7 3 \u00d7 10 \u00b7 24 kg each"
+      }
+    ]
+  },
+  {
+    "board": "03.4",
+    "name": "this-workout-remove",
+    "account": "fixture",
+    "workout_clock": true,
+    "settle": false,
+    "steps": [
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Cable Fly",
+          "at": [
+            0.9,
+            0.5
+          ],
+          "row": true
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.15,
+            0.5
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.9,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      }
+    ]
+  },
+  {
+    "board": "03.4",
+    "name": "this-workout-large",
+    "account": "fixture",
+    "workout_clock": true,
+    "viewport": {
+      "width": 640,
+      "height": 1280,
+      "density": 320,
+      "fontScale": 2
+    },
+    "steps": [
+      {
+        "wait": "This workout"
+      },
+      {
+        "wait": "Add movement"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Push A \u00b7 Workout saved"
+      }
+    ]
+  }
+]

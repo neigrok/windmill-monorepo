@@ -208,6 +208,48 @@ class WorkoutControlsTests {
     }
 
     @Test
+    fun editedMovementRacksSurviveRelaunchAndResetOnlyWithTheirSetWorkoutOrOwner() {
+        val file = controlsFile()
+        var id = 0
+        val moment = WorkoutMoment(101_000, 1_000, "boot")
+        val controls = WorkoutControls(file)
+        controls.hold(Session("first", 100_000))
+        controls.choose("bench")
+        controls.prepare(null, moment, true) { "set_${++id}" }
+        controls.control(controls.workout.edit(82.5, 8))
+        controls.choose("row")
+        controls.prepare(null, moment, true) { "set_${++id}" }
+        controls.control(controls.workout.edit(67.5, 9))
+        controls.flush()
+
+        val restored = WorkoutControls(file)
+        restored.choose("bench")
+        restored.prepare(null, moment, true) { "set_${++id}" }
+        assertEquals(listOf(82.5, 8, true), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
+        val editedRow = restored.workout.editedRacks.getValue("row")
+        val command = LogSetCommand(WorkoutKey("anon", "first"), restored.workout.offer!!.id)
+        assertTrue(restored.accept(command, moment, null) { "set_${++id}" } is LogSetAcceptance.Accepted)
+        assertEquals(mapOf("row" to editedRow), restored.workout.editedRacks)
+        assertFalse(restored.workout.rack!!.edited)
+        restored.choose("row")
+        restored.prepare(null, moment, true) { "set_${++id}" }
+        assertEquals(listOf(67.5, 9, true), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
+
+        restored.adopt("other")
+        assertNull(restored.workout.rack)
+        assertEquals(emptyMap<String, works.windmill.gym.domain.WorkoutRack>(), restored.workout.editedRacks)
+        restored.adopt(null)
+        assertEquals(editedRow.weightKg, restored.workout.rack!!.weightKg, 0.0)
+        restored.close("first")
+        restored.hold(Session("second", 102_000))
+        restored.choose("row")
+        restored.prepare(null, moment, true) { "set_${++id}" }
+        assertEquals(listOf(20.0, 5, false), restored.workout.rack!!.let { listOf(it.weightKg, it.reps, it.edited) })
+        assertEquals(emptyMap<String, works.windmill.gym.domain.WorkoutRack>(), restored.workout.editedRacks)
+        assertEquals(restored.workout, WorkoutControls(file).workout)
+    }
+
+    @Test
     fun oneOfferCommitsItsSetAndNextRackTogetherAndCannotReturnAfterUndo() {
         val file = controlsFile()
         var writes = 0

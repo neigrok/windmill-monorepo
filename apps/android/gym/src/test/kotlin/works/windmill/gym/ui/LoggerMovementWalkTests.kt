@@ -89,7 +89,7 @@ class LoggerMovementWalkTests {
             compose.onNodeWithText("›").assertDoesNotExist()
             compose.onNodeWithText("Add movement").assertDoesNotExist()
             title("Bench Press").performClick()
-            compose.onNodeWithText("This session").assertIsDisplayed()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
             compose.onNodeWithText("Add movement").assertIsDisplayed().performClick()
             compose.onNodeWithText("Cable Fly").performScrollTo().assertIsDisplayed()
         } } finally { scope.cancel() }

@@ -158,7 +158,7 @@ class SheetDismissTests {
         }
 
         nothingDrawnSaysCancelOrClose()
-        compose.onNodeWithText("This session").assertIsDisplayed()
+        compose.onNodeWithText("This workout").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
     }
 
