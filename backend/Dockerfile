@@ -49,8 +49,7 @@ WORKDIR /src
 COPY . .
 COPY --from=contract sync/*.registry.json sync/composition.json /contract/sync/
 COPY --from=contract sync/corpus /contract/sync/corpus
-COPY --from=contract gym/catalog.json /contract/gym/
-COPY --from=contract gym/abilities /contract/gym/abilities
+COPY --from=contract gym /contract/gym
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, and every
 # test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a red test.

@@ -1405,7 +1405,7 @@ import SyncTesting
   // A History row is the first question over what the conversation came to: the routine and what was proposed for it with
   // the card's settled word, or the routines it created; the phone says Out of date for a waiting proposal it sees outrun.
   @Test func historyRowsNameTheRoutineWhatWasProposedAndHowItSettled() throws {
-    func thread(_ outcome: String) throws -> CoachThread {
+    func thread(_ outcome: String) throws -> Windmill.CoachThread {
       try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"t","title":"Is Push A still doing anything?","askedAt":1000\#(outcome)}"#.utf8))
     }
     let rows = try [
