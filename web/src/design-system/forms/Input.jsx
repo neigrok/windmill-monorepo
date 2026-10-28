@@ -1,16 +1,6 @@
 import React from 'react';
 
-// One field, its label, and the one thing it refuses, drawn under it. `error` is a sentence the
-// caller decided, never a state this component invents.
-//
-// The caption is the field's NAME and nothing else is: the refusal, the unit in `trailing` and any
-// note the caller points at with `describedBy` are its DESCRIPTION, reached through
-// `aria-describedby`. So the box and the refusal sit outside the `<label>`, which reaches the field
-// by `htmlFor` — a label wrapped around all three would read `Weight kg Over 500 kg — check the
-// number.` as the name of the field every time focus landed on it.
-//
-// The focus edge is `--field-focus-edge`, a role a room may answer for itself; the family's answer
-// is the brand's own 400.
+// Name the field through htmlFor; associate units and refusals through aria-describedby.
 export function Input({
   label,
   placeholder,

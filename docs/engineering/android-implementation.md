@@ -475,7 +475,7 @@ independent of the preserved proposal card's height; the list tail exposes the f
 ## Task 07 — native number entry
 
 The rack and Fix set use the shared native number field with separate raw and committed values.
-One pure reader owns signed/comma parsing, refusal order, the ±500 kg pre-rounding bound and
+One pure reader owns signed/comma parsing, refusal order, finite-number checks and
 half-away hundredth rounding; performed reps remain 1–99. Planned-target rules stay separate.
 Explicit Log set and Save fix validate the active buffer before a write. Plain blur and Cancel
 restore the committed value. A new focus places the caret at the end, and later selection survives
