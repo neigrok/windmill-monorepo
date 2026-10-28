@@ -59,7 +59,9 @@ object TelemetryPolicy {
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
                 "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
-                "log" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"))
+                "log" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"),
+                    "open_workout" to setOf("ok"), "open_bodyweight" to setOf("ok"), "open_record" to setOf("ok"),
+                    "share" to setOf("ok", "refused", "failed"))
                 "finish" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "keep" to setOf("ok"), "done" to setOf("ok"))
                 "session" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "delete" to setOf("ok", "refused", "failed"), "fix" to setOf("ok", "refused", "failed"))
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))

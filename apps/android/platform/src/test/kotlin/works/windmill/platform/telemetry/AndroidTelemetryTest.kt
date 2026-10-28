@@ -35,6 +35,8 @@ class AndroidTelemetryTest {
             Triple("finish", "discard", "refused"), Triple("finish", "discard", "failed"),
             Triple("finish", "keep", "ok"), Triple("finish", "done", "ok"),
             Triple("session", "discard", "ok"), Triple("log", "discard", "ok"),
+            Triple("log", "open_workout", "ok"), Triple("log", "open_bodyweight", "ok"), Triple("log", "open_record", "ok"),
+            Triple("log", "share", "ok"), Triple("log", "share", "refused"), Triple("log", "share", "failed"),
             Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"), Triple("note_editor", "delete", "ok"),
             Triple("note_editor", "delete", "refused"), Triple("note_editor", "delete", "failed"),
             Triple("note_editor", "save", "ok"), Triple("note_editor", "save", "refused"), Triple("note_editor", "save", "failed"),

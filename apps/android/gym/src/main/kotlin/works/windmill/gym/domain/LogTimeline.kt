@@ -8,15 +8,25 @@ import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
 sealed interface LogEntry {
-    val atMs: Long
+    val atMs: Long?
     val key: String
+
+    fun day(zone: ZoneId): LocalDate = when (this) {
+        is Weight -> entry.date
+        else -> Instant.ofEpochMilli(atMs!!).atZone(zone).toLocalDate()
+    }
 
     data class Workout(val summary: SessionSummary) : LogEntry {
         override val atMs: Long get() = summary.startedAtMs
         override val key: String get() = "session:${summary.id}"
     }
 
+    data class Weight(val entry: WeighIn, override val atMs: Long?) : LogEntry {
+        override val key: String get() = "weight:${entry.dateLocal}"
+    }
+
     sealed interface Moment : LogEntry {
+        override val atMs: Long
         val priority: Int
 
         data class Best(val best: NewBest) : Moment {
@@ -28,11 +38,6 @@ sealed interface LogEntry {
         data class Month(val month: YearMonth, val weeks: Int, override val atMs: Long) : Moment {
             override val key: String get() = "month:$month"
             override val priority: Int get() = 1
-        }
-
-        data class Weight(val entry: WeighIn, override val atMs: Long) : Moment {
-            override val key: String get() = "weight:${entry.dateLocal}"
-            override val priority: Int get() = 2
         }
     }
 }
@@ -64,15 +69,17 @@ fun logTimeline(
         }
     }
 
-    bodyweight.filter { it.date <= today }.forEach { entry ->
-        moments += LogEntry.Moment.Weight(entry, entry.date.atStartOfDay(zone).toInstant().toEpochMilli())
+    val weights = bodyweight.filter { it.date <= today }.map { entry ->
+        val recorded = entry.recordedAt?.takeIf { it <= nowMs }
+            ?.takeIf { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() == entry.date }
+        LogEntry.Weight(entry, recorded)
     }
-
-    val chosen = moments.groupBy { Instant.ofEpochMilli(it.atMs).atZone(zone).toLocalDate().with(monday) }
-        .values.map { week ->
-            week.minWith(compareBy<LogEntry.Moment> { it.priority }.thenByDescending { it.atMs }.thenBy { it.key })
-        }.filter { oldestDay == null || Instant.ofEpochMilli(it.atMs).atZone(zone).toLocalDate() >= oldestDay }
+    val chosen = moments.groupBy { it.day(zone).with(monday) }.values.map { week ->
+        week.minWith(compareBy<LogEntry.Moment> { it.priority }.thenByDescending { it.atMs }.thenBy { it.key })
+    }.filter { oldestDay == null || it.day(zone) >= oldestDay }
     val workouts = sessions.filter { !it.session.isOpen && it.startedAtMs <= nowMs }.map { LogEntry.Workout(it) }
-    return (workouts + chosen).sortedWith(compareByDescending<LogEntry> { it.atMs }
-        .thenBy { if (it is LogEntry.Workout) 0 else 1 }.thenBy { it.key })
+    // Date-only facts follow timed facts on their selected day; exact ties put workouts first, then markers, then weights.
+    return (workouts + weights + chosen).sortedWith(compareByDescending<LogEntry> { it.day(zone) }
+        .thenByDescending { it.atMs }.thenBy { when (it) { is LogEntry.Workout -> 0; is LogEntry.Moment -> 1; is LogEntry.Weight -> 2 } }
+        .thenBy { it.key })
 }

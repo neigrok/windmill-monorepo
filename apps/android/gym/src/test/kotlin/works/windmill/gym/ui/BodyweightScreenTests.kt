@@ -106,12 +106,12 @@ class BodyweightScreenTests {
             log(store, doors)
 
             compose.onNodeWithText("kg").assertDoesNotExist()
-            compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed()
 
             runBlocking { store.weighIn(today.minusDays(3).toString(), 82.4) }
-            compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
+            compose.onNodeWithText("82.4 kg").assertIsDisplayed()
             compose.onNodeWithText(works.windmill.gym.domain.LogReadout.day(today.minusDays(3), System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
-            compose.onNodeWithText("Weighed in · 82.4 kg").performClick()
+            compose.onNodeWithText("82.4 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }
     }
@@ -124,7 +124,7 @@ class BodyweightScreenTests {
             val store = store(room, server)
             log(store, mutableListOf())
 
-            compose.onNodeWithText(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             compose.onNodeWithText(Bodyweight.unit).assertIsDisplayed()
             compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
             compose.onNodeWithText(Bodyweight.fullDay(today)).assertIsDisplayed()
@@ -137,7 +137,7 @@ class BodyweightScreenTests {
                 room.sync(server)
             }
             assertEquals(listOf(today.toString() to 82.4), onTheLog(room, server))
-            compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
+            compose.onNodeWithText("82.4 kg").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -148,7 +148,7 @@ class BodyweightScreenTests {
             val store = store(room, EngineRoomFixture.server())
             log(store, mutableListOf())
 
-            compose.onNodeWithText(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             val field = compose.onNodeWithContentDescription(weightField)
 
             field.performTextInput("abc")
@@ -182,7 +182,7 @@ class BodyweightScreenTests {
             val doors = mutableListOf<String>()
             log(store, doors)
 
-            compose.onNodeWithText(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             compose.onNodeWithContentDescription(weightField).performTextInput("81")
             compose.onNodeWithText(Bodyweight.save).performClick()
 
@@ -191,9 +191,9 @@ class BodyweightScreenTests {
                 assertEquals(81.0, store.latestWeighIn!!.weightKg, 0.0)
                 assertEquals("the anonymous replica holds it", listOf(store.latestWeighIn!!), room.training.weighins())
             }
-            compose.onNodeWithText("Weighed in · 81 kg").assertIsDisplayed()
+            compose.onNodeWithText("81 kg").assertIsDisplayed()
             compose.onNodeWithText(LogReadout.day(today, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
-            compose.onNodeWithText("Weighed in · 81 kg").performClick()
+            compose.onNodeWithText("81 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }
     }
@@ -418,14 +418,14 @@ class BodyweightScreenTests {
             val doors = mutableListOf<String>()
             log(store, doors)
 
-            compose.onNodeWithText("Weighed in · 82.4 kg").assertIsDisplayed()
+            compose.onNodeWithText("82.4 kg").assertIsDisplayed()
             compose.onNodeWithText(LogReadout.day(past, System.currentTimeMillis(), java.time.ZoneId.systemDefault())).assertIsDisplayed()
-            compose.onNodeWithText("Weighed in · 90 kg").assertDoesNotExist()
+            compose.onNodeWithText("90 kg").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(listOf(pastEntry, futureEntry), store.bodyweight.sortedBy { it.dateLocal })
                 assertEquals(pastEntry, store.latestWeighIn)
             }
-            compose.onNodeWithText("Weighed in · 82.4 kg").performClick()
+            compose.onNodeWithText("82.4 kg").performClick()
             compose.runOnIdle { assertEquals(listOf("bodyweight"), doors) }
         } } finally { scope.cancel() }
     }

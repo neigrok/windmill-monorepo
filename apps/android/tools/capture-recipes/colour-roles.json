@@ -25,7 +25,7 @@
     "name": "share",
     "account": "fixture",
     "steps": [
-      {"tap": "The log"}, {"wait": "Record · Back Squat 57.5 × 8"}, {"tap": "Record · Back Squat 57.5 × 8"},
+      {"tap": "The log"}, {"wait": "Legs"}, {"tap": "Legs"},
       {"wait": "Back to The log"}, {"swipe": [540, 1900, 540, 600, 400]},
       {"tap": "Share this workout"}, {"wait": "Get a link"}
     ]

@@ -88,7 +88,7 @@ class CoachHistoryTests {
             compose.onNodeWithContentDescription("Question").assertTextEquals("Retained local draft")
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
             compose.onNodeWithContentDescription("Question").assertDoesNotExist()
-            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
             compose.onNode(hasText("Coach") and hasClickAction()).performClick()
             assertEquals("", compose.onNodeWithContentDescription("Question").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
             compose.onNodeWithContentDescription("History").performClick()

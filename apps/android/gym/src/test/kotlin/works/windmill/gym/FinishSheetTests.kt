@@ -818,8 +818,8 @@ class FinishSheetTests {
                 runBlocking { cold.select(null) }
                 compose.runOnIdle { presentedStore = cold.store }
                 restoreRoom(beforeDiscard)
-                compose.waitUntil(10_000) { compose.onAllNodesWithText("No sessions yet").fetchSemanticsNodes().isNotEmpty() }
-                compose.onNodeWithText("No sessions yet").assertIsDisplayed()
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("No workouts yet").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithText("No workouts yet").assertIsDisplayed()
                 compose.onNodeWithText("Ended early.").assertDoesNotExist()
                 compose.onNodeWithContentDescription("Back to Routines").assertDoesNotExist()
                 compose.onNodeWithContentDescription("Question").assertDoesNotExist()
@@ -847,8 +847,8 @@ class FinishSheetTests {
                 compose.onNodeWithText("Ended early.").assertIsDisplayed()
                 compose.runOnIdle { assertFalse(cold.training.firstPullComplete) }
                 runBlocking { cold.pull(EngineRoomFixture.server()); cold.store.refreshEngine() }
-                compose.waitUntil(10_000) { compose.onAllNodesWithText("No sessions yet").fetchSemanticsNodes().isNotEmpty() }
-                compose.onNodeWithText("No sessions yet").assertIsDisplayed()
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("No workouts yet").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithText("No workouts yet").assertIsDisplayed()
                 compose.onNodeWithText("Ended early.").assertDoesNotExist()
                 compose.onNodeWithContentDescription("Back to Routines").assertDoesNotExist()
                 compose.onNodeWithText("Routines").assertIsDisplayed()

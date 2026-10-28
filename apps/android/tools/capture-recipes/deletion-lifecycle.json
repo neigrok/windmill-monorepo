@@ -158,10 +158,10 @@
         "tap": "The log"
       },
       {
-        "wait": "Record · Back Squat 57.5 × 8"
+        "wait": "Legs"
       },
       {
-        "tap": "Record · Back Squat 57.5 × 8"
+        "tap": "Legs"
       },
       {
         "wait": "Back to The log"
@@ -213,10 +213,10 @@
     "settle": false,
     "steps": [
       {
-        "wait": "Weighed in · 80 kg"
+        "wait": "80 kg"
       },
       {
-        "tap": "Weighed in · 80 kg"
+        "tap": "80 kg"
       },
       {
         "wait": "Every weigh-in"

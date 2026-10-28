@@ -8,7 +8,7 @@
         "tap": "The log"
       },
       {
-        "tap": "Record · Bench Press 80 × 8"
+        "tap": "Push A"
       },
       {
         "tap": "Bench Press"
@@ -59,10 +59,7 @@
         "tap": "The log"
       },
       {
-        "tap": "Bench Press · new best"
-      },
-      {
-        "tap": "Open record ›"
+        "tap": "Bench Press \u00b7 new best"
       },
       {
         "wait": "Estimated strength"

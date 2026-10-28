@@ -13,19 +13,16 @@
   - `Android / Top app bar` `342:2953`
 - The approved Android flow governs the current chronology and visual separation; do not copy a Bodyweight header from an older layout.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The root is titled *Log* (03 renames it). No head: the list starts with the first month.
-- Workout rows (`SessionRow`, `ui/LogScreen.kt:241-267`):
-  - the second line is the record when the workout set one, *Record · Bench Press 84 × 5*, otherwise the minutes (`domain/LogReadout.kt:30-42`); a record is also woven in as a *new best* moment, so it is said twice;
-  - *On this device* under a row the account has not taken (`ui/LogScreen.kt:258`);
-  - no swipe. A long press gives the haptic and a menu, *Share this workout* / *Discard session* (`Finish.discard`, `ui/FinishScreen.kt:64`); the same two are TalkBack actions. The click label is *Open session* (:249).
-- Moments (`MomentRow`, `ui/LogScreen.kt:178-238`) are outlined rows with a sparkline that expand in place to a chart, *Last 12 weeks · {n} sessions*, the best, the heaviest and *Open record ›*; a weigh-in moment opens Bodyweight. The month moment reads *Trained 4 of 4 weeks* (`domain/LogReadout.kt:56`).
-- *Weigh in* is a full-width `raised` button, 56 dp, pinned under the list (`ui/LogScreen.kt:148-150`, `WeighInChip` at `ui/BodyweightScreen.kt:82-90`).
-- Discard is a held delete, nine seconds behind *Session deleted.* + *Undo*, with no confirmation (`GymRoom.kt:643-647`).
-- Share from the row mints and copies a link, then *Link copied — anyone who has it can read this workout* (`GymRoom.kt:811-826`).
-- *Session* on screen: *Free session* (`domain/Readout.kt:90`), *No sessions yet* (`ui/LogScreen.kt:114`), *Last 12 weeks · {n} sessions* (:222), *First session · {date}* (:273).
-- The door *Saved workouts need review (N)* sits above the navigation bar in alarm ink (`GymRoom.kt:980-982`).
-- Defect: one moment is chosen per week (`domain/LogTimeline.kt:71-74`) and a weigh-in has the lowest priority (`domain/LogTimeline.kt:35`), so later weigh-ins can be missing from the timeline. Read from code, not yet confirmed on the emulator.
+**Current source** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `domain/LogTimeline.kt` keeps every eligible date-keyed weight independently of the decorative weekly selector. Valid same-day timestamps interleave with workouts; unknown, invalid, future-clock and backdated timestamps remain date-only facts.
+- Date-only weights follow timed entries on their selected local day. Exact instant ties put workouts before record markers before weights, then sort by stable identity. Paging only bounds decorative moments.
+- `domain/LogReadout.kt` uses `StatsProgress.newBests`, projected from shared `ProgressRecords`, for both markers and omitted-marker gold dots. Cards show all-set counts, duration and valid clock time without repeating a date or record sentence.
+- `ui/LogScreen.kt` uses dated sections, filled workout cards, separated weight rows and direct record markers. Month summaries are noninteractive; inline expanded charts are removed.
+- Workout swipe and long-press **Discard workout** request task 14's single room confirmation. Weight swipe enters the existing durable nine-foreground-second Undo path. The existing Share action reports its settled outcome.
+- The 56 dp Material 3 Extended FAB sits at bottom end with 88 dp list clearance. Empty copy says **No workouts yet**; a weight-only Log displays its facts. The separate recovery entry remains room-owned for task 25.
+- The presentation model and engine adapter preserve an absent `recordedAt` as null; the correction state's saver retains null across recreation.
+- Read-model, row, sharing, navigation and restoration checks pass. Share coverage includes clipboard failure, mint refusal, retry and delayed A→B/A→B→A replies without capability publication. The composed capture-tool suite passes 31 cases.
+- Installed Dark/Daylight acceptance covers chronology, distinct rows, direct Record, empty Log, confirmation and weight Undo. The 320×640 dp, double-text Log keeps its full long title and valid time readable, and the last row clears the FAB. Confirmed removal reaches the server; bounded first-party events arrive. Native evidence is combined across attributed runs, with fixture/observer qualifications retained in the review packet. No production status is claimed.
 
 **Change**
 - Build one newest-first timeline with every finished workout and every weigh-in as independent entries. Remove the top-level **Bodyweight** card/header. Keep existing training-consistency copy and the separate On this phone recovery entry (25) without turning weight into another root-level section.

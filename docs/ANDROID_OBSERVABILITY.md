@@ -153,6 +153,17 @@ Issues. Unexpected failures retain `gym.saveNote`, `gym.deleteNote` and `gym.reo
 List and editor deletes retain their separate bounded screen labels. A cancelled handle drag
 rolls back its temporary order and emits no `gym_note_moved`.
 
+The Log emits `gym_action` with `screen=log`: `open_workout`, `open_bodyweight` and `open_record`
+have `outcome=ok`; the existing link action emits `share` with `ok|refused|failed` after its result.
+A clipboard failure reports `gym.share`, retains retry and emits no success. Identity replacement
+cancels the opening Share scope and fences late results before clipboard, note or outcome publication;
+an expected owner change emits no Issue.
+Workout swipe/menu requests use the room-owned `discard` confirmation and accepted local outcome.
+Weight swipe uses the same durable bodyweight hold as the correction sheet; a hidden row records
+`delete=held`, never a successful delete. Destination views keep `gym_screen_viewed`.
+Unexpected reads/shares/discards retain `gym.loadLog`, `gym.share` and `gym.discard`; expected
+refusals restore or retain the authoritative row without an Issue. No date, weight, ID or name is sent.
+
 Weight actions use `screen=bodyweight`: `delete` has `held|closed|refused|failed`, `undo` has
 `ok|closed|failed`, and `cancel` has `rewritten`. `held` means a durable engine Undo offer exists;
 `closed` means Undo is unavailable and does not claim a queued or acknowledged delete. A successful
@@ -372,6 +383,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Finish actions | `gym_action` | screen: `finish`; action: `done`, `keep`; outcome: `ok` |
+| Log navigation/share | `gym_action` | screen: `log`; action: `open_workout`, `open_bodyweight`, `open_record`; outcome: `ok`; or action: `share`, outcome: `ok`, `refused`, `failed` |
 | Workout discard | `gym_action` | screen: `finish`, `session`, `log`; action: `discard`; state: `shown`, or outcome: `ok`, `cancelled`, `refused`, `failed` |
 | Workout navigation | `gym_action` | screen: `workout`; action: `movement_switch`, `open_workout`; outcome: `ok` |
 | Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |

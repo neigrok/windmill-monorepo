@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -50,7 +51,7 @@ class LogMomentTests {
     }
 
     @Test
-    fun onlyOneMomentExpandsAndItsChartAndRecordDoorReadTheEventWindow() {
+    fun recordMarkersOpenTheExactRecordDirectlyAndHaveNoDeleteOrExpandAction() {
         val zone = ZoneId.systemDefault()
         fun at(day: String) = LocalDate.parse(day).atTime(18, 0).atZone(zone).toInstant().toEpochMilli()
         val now = at("2026-09-24")
@@ -67,24 +68,17 @@ class LogMomentTests {
             }
             room.store.observeEngine()
             val opened = mutableListOf<Pair<String, String>>()
-            val latestBest = hasText("Bench Press · new best") and hasAnyAncestor(hasTestTag("best:bench-press:${latest.id}"))
+            val latestBest = hasTestTag("best:bench-press:${latest.id}")
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, onOpenMovement = { exercise, session -> opened += exercise to session }, now = { now }) } }
-            compose.onNodeWithText("September").assertIsDisplayed()
-            compose.onNodeWithText("5 sessions · 5 weeks loaded").assertDoesNotExist()
-            compose.onNodeWithText("Trained 4 of the last 4 weeks").assertDoesNotExist()
+            compose.onNodeWithText("Today · 24 Sep").assertIsDisplayed()
             compose.onNode(latestBest).performClick()
-            compose.onNodeWithTag("moment-plot:best:bench-press:${latest.id}").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Workout estimates").assertDoesNotExist()
-            compose.onNodeWithText("Last 12 weeks · 5 workouts").assertIsDisplayed()
-            compose.onNodeWithText("Best e1RM 90 kg · today").assertIsDisplayed()
-            compose.onNodeWithText("Heaviest 90 × 1 · today").assertIsDisplayed()
-            compose.onNodeWithText("Open record ›").performClick()
             assertEquals(listOf("bench-press" to latest.id), opened)
-            compose.onNodeWithText("Barbell Row · new best").performScrollTo().performClick()
-            compose.onNodeWithText("Barbell Row · new best").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
-            compose.onNodeWithText("Workout 4").performScrollTo()
-            compose.onNode(latestBest).assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
-            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            compose.onNodeWithTag("moment-plot:best:bench-press:${latest.id}").assertDoesNotExist()
+            compose.onNodeWithText("Open record ›").assertDoesNotExist()
+            val marker = compose.onNodeWithTag("best:bench-press:${latest.id}").fetchSemanticsNode()
+            assertEquals(null, marker.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.CustomActions))
+            assertEquals(null, marker.config.getOrNull(SemanticsProperties.StateDescription))
+            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -154,18 +148,18 @@ class LogMomentTests {
             room.store.observeEngine()
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { now }) } }
             compose.onNodeWithText("Bench Press · new best").assertDoesNotExist()
-            compose.onNodeWithText("No sessions yet").assertDoesNotExist()
+            compose.onNodeWithText("No workouts yet").assertDoesNotExist()
             compose.onNodeWithText("Load older").assertIsDisplayed().performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.older == Older.End } }
             compose.onNodeWithText("Older workout").assertIsDisplayed()
             compose.onNodeWithText("Bench Press · new best").assertIsDisplayed()
             compose.onNodeWithText("Load older").assertDoesNotExist()
-            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
     @Test
-    fun aCompletedMonthCanScrollAndExpandBesideItsOwnCalendarHeader() {
+    fun aCompletedMonthIsANoninteractiveSummaryInItsDatedSection() {
         val zone = ZoneId.systemDefault()
         fun at(day: String) = LocalDate.parse(day).atTime(18, 0).atZone(zone).toInstant().toEpochMilli()
         val now = at("2026-09-24")
@@ -179,18 +173,12 @@ class LogMomentTests {
             }
             room.store.observeEngine()
             compose.setContent { GymMaterial { LogScreen(room.store, "A", {}, {}, {}, {}, now = { now }) } }
-            compose.onNodeWithText("September").assertIsDisplayed()
-            compose.onNode(hasScrollAction()).performScrollToNode(hasText("July"))
-            compose.onNodeWithText("July").assertIsDisplayed()
-            compose.onNodeWithText("Trained 5 of 5 weeks").performScrollTo().performClick()
-            compose.onNodeWithText("Trained 5 of 5 weeks")
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText("Trained 5 of 5 weeks"))
+            compose.onNodeWithText("Trained 5 of 5 weeks").assertIsDisplayed()
+            compose.onNodeWithText("Trained 5 of 5 weeks").assertHasNoClickAction()
             compose.onNodeWithText("July · full month").assertIsDisplayed()
-            compose.onNodeWithText("A finished workout with sets in every calendar week.").assertIsDisplayed()
-            compose.onNodeWithText("Trained 5 of 5 weeks").performClick()
-            compose.onNodeWithText("Trained 5 of 5 weeks")
-                .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
-            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            compose.onNodeWithText("A finished workout with sets in every calendar week.").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

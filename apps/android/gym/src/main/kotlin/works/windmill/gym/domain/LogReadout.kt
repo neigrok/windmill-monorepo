@@ -2,66 +2,65 @@ package works.windmill.gym.domain
 
 import java.time.Instant
 import java.time.LocalDate
-import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object LogReadout {
-    data class Row(val summary: SessionSummary, val title: String, val facts: String, val date: String,
-        val onThisDeviceOnly: Boolean, val record: Boolean)
-    data class Month(val month: YearMonth, val label: String, val entries: List<LogEntry>)
+    data class Row(val summary: SessionSummary, val title: String, val facts: String, val time: String?, val record: Boolean)
+    data class Day(val date: LocalDate, val label: String, val entries: List<LogEntry>)
     data class Moment(val title: String, val detail: String)
+    data class Weight(val title: String, val detail: String?, val time: String?)
 
-    fun months(entries: List<LogEntry>, nowMs: Long, zone: ZoneId): List<Month> {
-        val year = Instant.ofEpochMilli(nowMs).atZone(zone).year
-        return entries.groupBy { YearMonth.from(Instant.ofEpochMilli(it.atMs).atZone(zone)) }.map { (month, rows) ->
-            Month(month, month.format(DateTimeFormatter.ofPattern(if (month.year == year) "MMMM" else "MMMM uuuu", Locale.ENGLISH)), rows)
-        }
-    }
+    fun days(entries: List<LogEntry>, nowMs: Long, zone: ZoneId): List<Day> =
+        entries.groupBy { it.day(zone) }.map { (date, rows) -> Day(date, day(date, nowMs, zone), rows) }
 
     fun day(date: LocalDate, nowMs: Long, zone: ZoneId): String {
         val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
-        if (date == today) return "Today"
-        if (date == today.minusDays(1)) return "Yesterday"
-        return date.format(DateTimeFormatter.ofPattern("EEE d", Locale.ENGLISH))
-    }
-
-    fun row(summary: SessionSummary, onThisDevice: Boolean, progress: StatsProgress?, catalog: List<Exercise>,
-        nowMs: Long, zone: ZoneId): Row {
-        val record = progress?.sessions?.firstOrNull { it.sessionId == summary.id }?.movements
-            ?.sortedBy { it.exerciseId }?.firstOrNull { fact ->
-                progress.movement(fact.exerciseId).records.any { it.id == summary.id }
-            }
-        val minutes = ((summary.finishedAtMs!! - summary.startedAtMs) / 60_000).coerceAtLeast(0)
-        val facts = record?.estimate?.let { "Record · ${Readout.movement(record.exerciseId, catalog)} ${Readout.effort(it.weightKg, it.reps)}" }
-            ?: if (minutes == 0L) "<1 min" else "$minutes min"
-        return Row(summary, summary.plan?.routine ?: Readout.noRoutine, facts,
-            day(Instant.ofEpochMilli(summary.startedAtMs).atZone(zone).toLocalDate(), nowMs, zone),
-            onThisDevice, record != null)
-    }
-
-    fun moment(moment: LogEntry.Moment, catalog: List<Exercise>, bodyweight: List<WeighIn>, nowMs: Long, zone: ZoneId): Moment {
-        val date = Instant.ofEpochMilli(moment.atMs).atZone(zone).toLocalDate()
-        val monthFormat = DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH)
-        return when (moment) {
-            is LogEntry.Moment.Best -> {
-                val best = moment.best
-                val previousDate = Instant.ofEpochMilli(best.previousStartedAt).atZone(zone).toLocalDate()
-                val since = previousDate.format(DateTimeFormatter.ofPattern(
-                    if (previousDate.year != date.year) "MMMM uuuu" else if (previousDate.month == date.month) "d MMM" else "MMMM", Locale.ENGLISH))
-                Moment("${Readout.movement(best.exerciseId, catalog)} · new best",
-                    "${Readout.estimatedWeight(best.estimate)} kg est · up ${Readout.estimatedWeight(best.gain)} kg since $since")
-            }
-            is LogEntry.Moment.Month -> Moment("Trained ${moment.weeks} of ${moment.weeks} weeks", "${moment.month.format(monthFormat)} · full month")
-            is LogEntry.Moment.Weight -> {
-                val previous = bodyweight.filter { it.date < date.withDayOfMonth(1) }.maxByOrNull { it.date }
-                val change = previous?.let {
-                    val difference = moment.entry.weightKg - it.weightKg
-                    if (difference == 0.0) null else "${Bodyweight.kilograms(kotlin.math.abs(difference))} kg ${if (difference > 0) "up" else "down"} since ${it.date.format(monthFormat)}"
-                }
-                Moment("Weighed in · ${Bodyweight.kilograms(moment.entry.weightKg)} kg", listOfNotNull(day(date, nowMs, zone), change).joinToString(" · "))
-            }
+        val name = when (date) {
+            today -> "Today"
+            today.minusDays(1) -> "Yesterday"
+            else -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.ENGLISH))
         }
+        val calendar = date.format(DateTimeFormatter.ofPattern(if (date.year == today.year) "d MMM" else "d MMM uuuu", Locale.ENGLISH))
+        return "$name · $calendar"
+    }
+
+    fun row(summary: SessionSummary, progress: StatsProgress?, nowMs: Long, zone: ZoneId, selectedMarker: Boolean = false): Row {
+        val record = !selectedMarker && progress?.newBests?.any { it.sessionId == summary.id } == true
+        val minutes = summary.finishedAtMs?.let { ((it - summary.startedAtMs) / 60_000).coerceAtLeast(0) }
+        val duration = when {
+            minutes == null -> "—"
+            minutes == 0L -> "<1 min"
+            minutes < 60 -> "$minutes min"
+            else -> "${minutes / 60} h ${(minutes % 60).toString().padStart(2, '0')} min"
+        }
+        val time = summary.startedAtMs.takeIf { it <= nowMs }
+            ?.let { Instant.ofEpochMilli(it).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)) }
+        return Row(summary, summary.plan?.routine ?: Readout.noRoutine, "${Readout.setCount(summary.setCount)} · $duration", time, record)
+    }
+
+    fun moment(moment: LogEntry.Moment, catalog: List<Exercise>, zone: ZoneId): Moment = when (moment) {
+        is LogEntry.Moment.Best -> {
+            val best = moment.best
+            val date = moment.day(zone)
+            val previousDate = Instant.ofEpochMilli(best.previousStartedAt).atZone(zone).toLocalDate()
+            val since = previousDate.format(DateTimeFormatter.ofPattern(
+                if (previousDate.year != date.year) "MMMM uuuu" else if (previousDate.month == date.month) "d MMM" else "MMMM", Locale.ENGLISH))
+            Moment("${Readout.movement(best.exerciseId, catalog)} · new best",
+                "${Readout.estimatedWeight(best.estimate)} kg est · up ${Readout.estimatedWeight(best.gain)} kg since $since")
+        }
+        is LogEntry.Moment.Month -> Moment("Trained ${moment.weeks} of ${moment.weeks} weeks",
+            "${moment.month.format(DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH))} · full month")
+    }
+
+    fun weight(weight: LogEntry.Weight, entries: List<WeighIn>, zone: ZoneId): Weight {
+        val previous = entries.filter { it.date < weight.entry.date.withDayOfMonth(1) }.maxByOrNull { it.date }
+        val change = previous?.let {
+            val difference = weight.entry.weightKg - it.weightKg
+            if (difference == 0.0) null else "${Bodyweight.kilograms(kotlin.math.abs(difference))} kg ${if (difference > 0) "up" else "down"} since ${it.date.format(DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH))}"
+        }
+        val time = weight.atMs?.let { Instant.ofEpochMilli(it).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)) }
+        return Weight("${Bodyweight.kilograms(weight.entry.weightKg)} kg", change, time)
     }
 }

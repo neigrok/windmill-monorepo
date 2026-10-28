@@ -529,7 +529,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
     }
     fun weighins(from: String? = null, to: String? = null): List<WeighIn> = read { reader ->
-        reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms ?: 0) } }
+        reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms) } }
             .filter { (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }.sortedBy { it.dateLocal }
     }
     suspend fun putBodyweight(dateLocal: String, weightKg: Double,

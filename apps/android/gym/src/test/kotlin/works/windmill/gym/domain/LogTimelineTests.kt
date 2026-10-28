@@ -52,7 +52,7 @@ class LogTimelineTests {
     }
 
     @Test
-    fun oneMomentPerLocalMondayWeekPrefersBestThenMonthThenLatestWeighIn() {
+    fun decorativeRecordAndMonthSelectionNeverSuppressesAnyWeight() {
         val zone = ZoneId.of("UTC")
         fun at(day: String) = LocalDate.parse(day).atTime(18, 0).atZone(zone).toInstant().toEpochMilli()
         fun detail(day: String, kg: Double, reps: Int) = SessionDetail(Session(day, at(day), at(day) + 3_600_000),
@@ -65,13 +65,12 @@ class LogTimelineTests {
         val weight = WeighIn("2026-09-06", 82.4, now)
         val earlier = WeighIn("2026-08-31", 83.0, now)
         val best = NewBest("bench", "2026-09-02", at("2026-09-02"), "2026-08-03", at("2026-08-03"), estimate = 90.0, gain = 10.0)
-        assertEquals(listOf(LogEntry.Moment.Best(best)),
+        assertEquals(listOf(LogEntry.Weight(weight, now), LogEntry.Moment.Best(best), LogEntry.Weight(earlier, null)),
             logTimeline(emptyList(), stats, listOf(weight, earlier), now, zone))
-        assertEquals(listOf(LogEntry.Moment.Month(YearMonth.of(2026, 8), 6,
-            LocalDate.parse("2026-08-31").atStartOfDay(zone).toInstant().toEpochMilli())),
+        assertEquals(listOf(LogEntry.Weight(weight, now), LogEntry.Moment.Month(YearMonth.of(2026, 8), 6,
+            LocalDate.parse("2026-08-31").atStartOfDay(zone).toInstant().toEpochMilli()), LogEntry.Weight(earlier, null)),
             logTimeline(emptyList(), stats.copy(sessions = stats.sessions.filter { it.sessionId != record.session.id }), listOf(weight, earlier), now, zone))
-        assertEquals(listOf(LogEntry.Moment.Weight(weight,
-            LocalDate.parse(weight.dateLocal).atStartOfDay(zone).toInstant().toEpochMilli())),
+        assertEquals(listOf(LogEntry.Weight(weight, now), LogEntry.Weight(earlier, null)),
             logTimeline(emptyList(), null, listOf(earlier, weight), now, zone))
     }
 
@@ -112,7 +111,7 @@ class LogTimelineTests {
         val zone = ZoneId.of("Pacific/Auckland")
         val first = WeighIn("2025-12-31", 82.0, now)
         val second = WeighIn("2026-01-01", 83.0, now)
-        assertEquals(listOf(LogEntry.Moment.Weight(second, second.date.atStartOfDay(zone).toInstant().toEpochMilli())),
+        assertEquals(listOf(LogEntry.Weight(second, null), LogEntry.Weight(first, null)),
             logTimeline(emptyList(), null, listOf(second, first), now, zone))
     }
 
@@ -133,8 +132,9 @@ class LogTimelineTests {
         assertEquals(listOf(winner), logTimeline(emptyList(), stats, emptyList(), at, zone))
         assertEquals(listOf(winner), logTimeline(emptyList(), stats.copy(sessions = stats.sessions.reversed()), emptyList(), at, zone))
         val later = at + 3 * 86_400_000
-        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats,
-            listOf(WeighIn("2026-09-24", 82.0, later)), later, zone, LocalDate.parse("2026-09-23")))
+        val weight = WeighIn("2026-09-24", 82.0, later)
+        assertEquals(listOf(LogEntry.Weight(weight, later)), logTimeline(emptyList(), stats,
+            listOf(weight), later, zone, LocalDate.parse("2026-09-23")))
     }
 
     @Test
@@ -142,7 +142,52 @@ class LogTimelineTests {
         val zone = ZoneId.of("America/New_York")
         val now = Instant.parse("2026-03-09T05:00:00Z").toEpochMilli()
         val entry = WeighIn("2026-03-08", 82.4, now)
-        assertEquals(listOf(LogEntry.Moment.Weight(entry, Instant.parse("2026-03-08T05:00:00Z").toEpochMilli())),
+        assertEquals(listOf(LogEntry.Weight(entry, null)),
             logTimeline(emptyList(), null, listOf(entry, WeighIn("2026-03-10", 90.0, now)), now, zone))
+    }
+    @Test
+    fun timedWeightSitsBetweenWorkoutsWhileAllDateOnlyWeightsRemainOnTheirSelectedDays() {
+        val zone = ZoneId.of("UTC")
+        fun at(day: String, clock: String) = Instant.parse("${day}T${clock}:00Z").toEpochMilli()
+        val now = at("2026-10-22", "20:00")
+        val early = SessionSummary("early", at("2026-10-22", "07:15"), at("2026-10-22", "08:00"))
+        val late = SessionSummary("late", at("2026-10-22", "19:10"), at("2026-10-22", "19:30"))
+        val middle = WeighIn("2026-10-22", 82.4, at("2026-10-22", "12:45"))
+        val missing = WeighIn("2026-10-21", 82.3)
+        val backdated = WeighIn("2026-10-20", 82.2, now)
+        val futureClock = WeighIn("2026-10-19", 82.1, now + 1)
+        val invalidClock = WeighIn("2026-10-18", 82.0, Long.MIN_VALUE)
+        val futureDay = WeighIn("2026-10-23", 82.9, now)
+        val weights = listOf(missing, backdated, futureClock, middle, futureDay, invalidClock)
+        val expected = listOf(LogEntry.Workout(late), LogEntry.Weight(middle, middle.recordedAt), LogEntry.Workout(early),
+            LogEntry.Weight(missing, null), LogEntry.Weight(backdated, null), LogEntry.Weight(futureClock, null), LogEntry.Weight(invalidClock, null))
+        assertEquals(expected, logTimeline(listOf(early, late), null, weights, now, zone))
+        assertEquals(expected, logTimeline(listOf(late, early), null, weights.reversed(), now, zone))
+    }
+
+    @Test
+    fun localDayValidationAndStableTiesDoNotInventAnInstantForDateOnlyFacts() {
+        val at = Instant.parse("2026-10-22T00:30:00Z").toEpochMilli()
+        val now = at + 86_400_000
+        val weight = WeighIn("2026-10-21", 82.4, at)
+        val one = SessionSummary("a", at, at + 1)
+        val two = SessionSummary("b", at, at + 1)
+        assertEquals(listOf(LogEntry.Workout(one), LogEntry.Workout(two), LogEntry.Weight(weight, at)),
+            logTimeline(listOf(two, one), null, listOf(weight), now, ZoneId.of("America/New_York")))
+        assertEquals(listOf(LogEntry.Workout(one), LogEntry.Workout(two), LogEntry.Weight(weight, null)),
+            logTimeline(listOf(two, one), null, listOf(weight), now, ZoneId.of("UTC")))
+        val legacy = WeighIn("2026-10-22", 82.0)
+        assertEquals(listOf(LogEntry.Workout(one), LogEntry.Workout(two), LogEntry.Weight(legacy, null)),
+            logTimeline(listOf(two, one), null, listOf(legacy), now, ZoneId.of("UTC")))
+    }
+    @Test
+    fun epochZeroAndNegativeInstantsAreKnownWhenTheyBelongToTheSelectedDay() {
+        val zone = ZoneId.of("UTC")
+        val epoch = WeighIn("1970-01-01", 82.4, 0)
+        val before = WeighIn("1969-12-31", 82.3, -60_000)
+        assertEquals(listOf(LogEntry.Weight(epoch, 0), LogEntry.Weight(before, -60_000)),
+            logTimeline(emptyList(), null, listOf(before, epoch), 86_400_000, zone))
+        assertEquals(LogReadout.Weight("82.4 kg", null, "00:00"), LogReadout.weight(LogEntry.Weight(epoch, 0), listOf(epoch), zone))
+        assertEquals(LogReadout.Weight("82.3 kg", null, "23:59"), LogReadout.weight(LogEntry.Weight(before, -60_000), listOf(before), zone))
     }
 }

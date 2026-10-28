@@ -1,0 +1,153 @@
+[
+  {
+    "board": "05.1",
+    "name": "log-chronology",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "wait": "80 kg"
+      },
+      {
+        "wait": "Back Squat \u00b7 new best"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "05.1",
+    "name": "log-record",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Back Squat \u00b7 new best"
+      },
+      {
+        "wait": "Estimated strength"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "05.2",
+    "name": "log-workout-discard-confirmation",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Legs",
+          "at": [
+            0.95,
+            0.5
+          ],
+          "row": true
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.05,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Discard this workout?"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "wait": "Legs"
+      }
+    ]
+  },
+  {
+    "board": "05.1",
+    "name": "log-weight-undo",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "80 kg",
+          "at": [
+            0.95,
+            0.5
+          ],
+          "row": true
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.05,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Undo"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Undo"
+      },
+      {
+        "wait": "80 kg"
+      }
+    ]
+  },
+  {
+    "board": "05.12",
+    "name": "log-empty",
+    "account": "empty",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "wait": "No workouts yet"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  }
+]

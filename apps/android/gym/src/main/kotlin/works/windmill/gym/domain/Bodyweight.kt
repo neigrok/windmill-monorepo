@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
 // One whole fact per local date, in kilograms. The newest engine stamp wins; recordedAt is the
 // engine's commit moment, never the tie-breaker between saves.
 @Serializable
-data class WeighIn(val dateLocal: String, val weightKg: Double, val recordedAt: Long) {
+data class WeighIn(val dateLocal: String, val weightKg: Double, val recordedAt: Long? = null) {
     val date: LocalDate get() = LocalDate.parse(dateLocal)
 }
 

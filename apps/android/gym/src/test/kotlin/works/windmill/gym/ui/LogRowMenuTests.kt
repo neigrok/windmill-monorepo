@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
@@ -30,13 +31,6 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.EngineRoomFixture
 
-// D7. Discard is a withheld delete, so the session row's long press carries BOTH acts.
-//
-// The `⋮` that used to carry Discard is gone with it. A gesture earns its place by REMOVING a
-// control (Law 4); adding a drawn button to every row of the log to carry an act the menu can hold
-// is that law backwards. Law 1 is still met without it — the session review screen draws Discard, so
-// the long press is never the only path — and a screen reader reaches both acts through the row's
-// own custom actions, which is what this file checks.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class LogRowMenuTests {
@@ -107,12 +101,12 @@ class LogRowMenuTests {
                 .fetchSemanticsNodes().size
             assertEquals("two acts, and only two", 2, items)
             compose.onNodeWithText("Share this workout").assertIsDisplayed()
-            compose.onNodeWithText("Discard session").assertIsDisplayed()
+            compose.onNodeWithText("Discard workout").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
     @Test
-    fun discardingFromTheMenuGoesThroughTheSameWithheldDeleteAsTheReviewScreens() {
+    fun discardingFromTheMenuRequestsTheRoomConfirmation() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
         try { store(scope).use { room ->
@@ -120,7 +114,7 @@ class LogRowMenuTests {
 
             row().performTouchInput { longClick() }
             compose.waitForIdle()
-            compose.onNodeWithText("Discard session").performClick()
+            compose.onNodeWithText("Discard workout").performClick()
 
             compose.runOnIdle { assertEquals(listOf("discard"), doors) }
         } } finally { scope.cancel() }
@@ -153,9 +147,9 @@ class LogRowMenuTests {
 
             val actions = row().fetchSemanticsNode()
                 .config.getOrNull(SemanticsActions.CustomActions).orEmpty()
-            assertEquals(listOf("Share this workout", "Discard session"), actions.map { it.label })
+            assertEquals(listOf("Share this workout", "Discard workout"), actions.map { it.label })
 
-            compose.runOnIdle { actions.first { it.label == "Discard session" }.action?.invoke() }
+            compose.runOnIdle { actions.first { it.label == "Discard workout" }.action?.invoke() }
             compose.runOnIdle { assertEquals(listOf("discard"), doors) }
         } } finally { scope.cancel() }
     }
@@ -172,6 +166,19 @@ class LogRowMenuTests {
             compose.runOnIdle {
                 assertTrue("a long press may not have taken the tap with it", doors == listOf("open"))
             }
+        } } finally { scope.cancel() }
+    }
+    @Test
+    fun aSwipeRequestsConfirmationAndResetsUntilTheRoomAcceptsRemoval() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val doors = mutableListOf<String>()
+        try { store(scope).use { room ->
+            log(room, doors)
+            row().performTouchInput { swipeLeft() }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(listOf("discard"), doors) }
+            row().assertIsDisplayed().performClick()
+            compose.runOnIdle { assertEquals(listOf("discard", "open"), doors) }
         } } finally { scope.cancel() }
     }
 }

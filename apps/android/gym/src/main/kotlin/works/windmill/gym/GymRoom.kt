@@ -60,6 +60,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
@@ -780,21 +782,44 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val sharing = remember(origin) { WorkoutShareActions(origin, store::share, store::revokeShare) }
             val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
             val clipboard = LocalClipboardManager.current
+            val logShareScope = key(account.identityRevision, store) { rememberCoroutineScope() }
 
             // The log row's long press. The card inside the session mints the same link and says more about
             // it; from the row there is nothing to draw, so the transient carries the whole answer.
             fun shareWorkout(sessionId: String) {
-                scope.launch {
+                val owner = account.user?.id
+                val revision = account.identityRevision
+                val storeSeat = store.accountKey
+                logShareScope.launch {
+                    if (!currentAccount.resolved || owner != currentAccount.user?.id ||
+                        revision != currentAccount.identityRevision || storeSeat != store.accountKey) return@launch
                     note = null
-                    when (val minted = store.share(sessionId)) {
+                    val minted = store.share(sessionId)
+                    currentCoroutineContext().ensureActive()
+                    if (!currentAccount.resolved || owner != currentAccount.user?.id ||
+                        revision != currentAccount.identityRevision || storeSeat != store.accountKey) return@launch
+                    when (minted) {
                         is GymResult.Ok -> {
-                            clipboard.setText(AnnotatedString(WorkoutSharing.link(minted.value, origin)))
+                            try {
+                                clipboard.setText(AnnotatedString(WorkoutSharing.link(minted.value, origin)))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (failure: Exception) {
+                                telemetry.failure("gym.share", failure)
+                                telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share", "outcome" to "failed"))
+                                note = "The link could not be copied. Try Share this workout again."
+                                return@launch
+                            }
+                            telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share", "outcome" to "ok"))
                             transient.showSnackbar(
                                 "Link copied — anyone who has it can read this workout",
                                 duration = SnackbarDuration.Long,
                             )
                         }
-                        is GymResult.Failed -> note = minted.why.line("the link wasn’t made")
+                        is GymResult.Failed -> {
+                            telemetry.event("gym_action", mapOf("screen" to "log", "action" to "share",
+                                "outcome" to if (minted.why is WriteFailure.Refused) "refused" else "failed"))
+                            note = minted.why.line("the link wasn’t made")
+                        }
                     }
                 }
             }

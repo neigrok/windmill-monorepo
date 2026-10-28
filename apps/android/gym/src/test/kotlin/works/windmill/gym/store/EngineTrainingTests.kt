@@ -241,8 +241,8 @@ class EngineTrainingTests {
                 assertTrue("offline finish queues its dependent command", room.store.finish() is FinishOutcome.Closed)
                 room.store.refreshEngine()
                 assertEquals(setOf(opened.id), room.store.deviceOnlySessionIds)
-                assertTrue(LogReadout.row(room.store.recent.single(), opened.id in room.store.deviceOnlySessionIds,
-                    null, room.store.catalog, room.now, java.time.ZoneId.systemDefault()).onThisDeviceOnly)
+                assertEquals(room.store.recent.single().id, LogReadout.row(room.store.recent.single(),
+                    null, room.now, java.time.ZoneId.systemDefault()).summary.id)
                 val server = EngineRoomFixture.server()
                 room.sync(server); room.store.refreshEngine()
                 assertEquals(emptySet<String>(), room.store.deviceOnlySessionIds)
@@ -557,6 +557,18 @@ class EngineTrainingTests {
             assertEquals(listOf("session1", "session2"), gym.progress().sessions.map { it.sessionId })
         }
     }
+    @Test fun weighInProjectionPreservesAnAbsentRecordedTimestampThroughSerialization() {
+        engine().use { engine ->
+            val seeded = engine.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.put(Gym.Types.weighin,
+                RecordID("2026-01-01"), true, mapOf("kg" to Json.of(82.4), "recordedAt" to Json.Null)))))
+            assertTrue(seeded is CommitOutcome.Committed)
+            val weights = EngineTraining(engine).weighins()
+            assertEquals(listOf(WeighIn("2026-01-01", 82.4, null)), weights)
+            val json = works.windmill.platform.net.WindmillJson
+            assertEquals(weights, json.decodeFromString<List<WeighIn>>(json.encodeToString(kotlinx.serialization.builtins.ListSerializer(WeighIn.serializer()), weights)))
+        }
+    }
+
     @Test fun aNoteMoveWritesOnlyItsPositionAndWeighinsSaveAtTheCommitMoment() = runBlocking {
         engine().use { engine ->
             val gym = EngineTraining(engine)

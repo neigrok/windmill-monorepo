@@ -53,7 +53,7 @@ class LogStateTests {
                 GymMaterial { LogScreen(store, "A", {}, {}, {}, {}, now = { room.now }) }
             }
             compose.runOnIdle { room.now = day.plusDays(1).atTime(0, 1).atZone(zone).toInstant().toEpochMilli() }
-            compose.onNodeWithText(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).assertIsDisplayed()
             compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
             compose.onNodeWithText(Bodyweight.save).performClick()
@@ -74,7 +74,7 @@ class LogStateTests {
             compose.runOnIdle {
                 assertEquals(2, instances)
                 assertEquals(listOf(day.plusDays(2).toString() to 82.45), current.bodyweight.map { it.dateLocal to it.weightKg })
-                assertTrue("recorded at the save", current.bodyweight.single().recordedAt in saving..room.now)
+                assertTrue("recorded at the save", current.bodyweight.single().recordedAt!! in saving..room.now)
                 assertEquals("as the replica holds it", room.training.weighins(), current.bodyweight)
             }
         } } finally { scope.cancel() }

@@ -63,15 +63,15 @@ class LogTransientTests {
                 }
             }
             compose.onNode(hasText("The log") and hasClickAction()).performClick()
-            val before = compose.onNodeWithText(Bodyweight.chip).getBoundsInRoot()
+            val before = compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot()
             compose.runOnIdle { store.withhold(Deletion.Session(one)); store.withhold(Deletion.Session(two)) }
             compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
             val snackbar = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion), useUnmergedTree = true)
                 .getBoundsInRoot()
-            val action = compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot()
+            val action = compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed().getBoundsInRoot()
             assertTrue("Weigh in must sit above Undo: $action / $snackbar", action.bottom <= snackbar.top)
             assertTrue(action.height >= 56.dp)
-            compose.onNodeWithText(Bodyweight.chip).performClick()
+            compose.onNodeWithContentDescription(Bodyweight.chip).performClick()
             compose.onNodeWithText(Bodyweight.save).assertIsDisplayed()
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithText(Withheld.undo).performClick()
@@ -80,7 +80,7 @@ class LogTransientTests {
                 assertEquals(listOf(two), store.recent.map { it.id })
                 assertEquals(original, room.training.details())
             }
-            compose.onNodeWithText(Bodyweight.chip).assertIsDisplayed()
+            compose.onNodeWithContentDescription(Bodyweight.chip).assertIsDisplayed()
             compose.onNodeWithText(Withheld.undo).performClick()
             compose.waitForIdle()
             compose.runOnIdle {
@@ -88,7 +88,7 @@ class LogTransientTests {
                 assertEquals(listOf(two, one), store.recent.map { it.id })
                 assertEquals(original, room.training.details())
             }
-            assertEquals(before, compose.onNodeWithText(Bodyweight.chip).getBoundsInRoot())
+            assertEquals(before, compose.onNodeWithContentDescription(Bodyweight.chip).getBoundsInRoot())
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()

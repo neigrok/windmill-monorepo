@@ -81,16 +81,6 @@ import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheetBack
 import works.windmill.platform.design.WindmillSheetWindow
 
-@Composable
-fun WeighInChip(onOpen: () -> Unit) {
-    val skin = LocalGymColors.current
-    Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = skin.raised, contentColor = skin.ink)) {
-        Text(Bodyweight.chip, style = WindmillFont.body(16, FontWeight.Bold))
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WeighInSheet(
@@ -217,9 +207,9 @@ fun WeighInSheet(
 
 const val weightField = "weight in kilograms"
 
-private val weighInSaver = listSaver<WeighIn?, Any>(
+private val weighInSaver = listSaver<WeighIn?, Any?>(
     save = { it?.let { entry -> listOf(entry.dateLocal, entry.weightKg, entry.recordedAt) } ?: emptyList() },
-    restore = { if (it.isEmpty()) null else WeighIn(it[0] as String, it[1] as Double, it[2] as Long) },
+    restore = { if (it.isEmpty()) null else WeighIn(it[0] as String, it[1] as Double, it[2] as Long?) },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -38,7 +38,7 @@ class LogRowLayoutTests {
     @get:Rule val tmp = TemporaryFolder()
 
     @Test
-    fun doubleTextStacksTheDateAndGivesTheRecordTheFullCardWidth() {
+    fun doubleTextKeepsAllSetFactsAndClockReadableUnderTheDatedSection() {
         val now = LocalDate.of(2026, 9, 24).atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
@@ -71,12 +71,12 @@ class LogRowLayoutTests {
                 }
             }
             val title = compose.onNodeWithText("Push A", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
-            val date = compose.onNodeWithText("Yesterday", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
-            val record = compose.onNodeWithText("Record · Bench Press 62.5 × 8", useUnmergedTree = true).assertIsDisplayed()
+            val date = compose.onNodeWithText("12:00", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
+            val record = compose.onNodeWithText("1 set · 1 h 00 min", useUnmergedTree = true).assertIsDisplayed()
             val fact = record.getBoundsInRoot()
             val row = compose.onNode(hasText("Push A") and hasClickAction()).getBoundsInRoot()
-            assertTrue(date.top >= title.bottom)
-            assertTrue(fact.top >= date.bottom)
+            assertTrue(fact.top >= title.bottom)
+            assertTrue(date.top >= fact.bottom)
             assertEquals(title.left.value, date.left.value, 0.5f)
             assertEquals(title.left.value, fact.left.value, 0.5f)
             assertEquals(row.right.value - 16f, fact.right.value, 0.5f)
@@ -85,9 +85,9 @@ class LogRowLayoutTests {
             val layout = layouts.single()
             assertFalse(layout.didOverflowWidth)
             assertFalse(layout.didOverflowHeight)
-            assertTrue("The full-width record needs at most two lines", layout.lineCount <= 2)
-            assertEquals("Record · Bench Press 62.5 × 8", layout.layoutInput.text.text)
-            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            assertTrue("The full-width facts need at most two lines", layout.lineCount <= 2)
+            assertEquals("1 set · 1 h 00 min", layout.layoutInput.text.text)
+            compose.onNodeWithContentDescription("Weigh in").assertIsDisplayed()
             compose.onNode(hasText("Push A") and hasClickAction()).performClick()
             assertEquals("the row opens the one session the log holds", room.store.recent, opened)
         } } finally { scope.cancel() }
