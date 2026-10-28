@@ -220,7 +220,7 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, movem
                 if (movement.hasChart(zone)) DatedPlot(progressSeries(movement, moment.atMs, zone),
                     modifier = Modifier.testTag("moment-plot:${moment.key}"), standingBestId = movement.best?.id)
                 Text("Last 12 weeks · ${Readout.sessionCount(movement.sessions.size)}", style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
-                movement.best?.let { Text("Best e1RM ${Readout.estimatedWeight(it.fact.estimate!!.e1rm)} kg · ${Readout.briefDay(it.startedAt, nowMs)}",
+                movement.best?.let { Text("Best e1RM ${Readout.estimatedWeight(requireNotNull(it.fact.estimate!!.e1rm))} kg · ${Readout.briefDay(it.startedAt, nowMs)}",
                     style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.prInk) }
                 movement.heaviest?.takeIf { it.fact.heaviest.weightKg != 0.0 }?.let { Text("Heaviest ${Readout.effort(it.fact.heaviest.weightKg, it.fact.heaviest.reps)} · ${Readout.briefDay(it.startedAt, nowMs)}",
                     style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }

@@ -373,7 +373,7 @@ internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.wind
             val kg = weights[set.id]?.toDoubleOrNull()
             val repetitions = reps[set.id]?.toIntOrNull()
             val rating = effort[set.id]?.takeIf { it.isNotBlank() }?.toDoubleOrNull()
-            if (at == null || at !in startedAt..(finishedAt ?: Long.MAX_VALUE) || kg == null || !kg.isFinite() || kg !in -500.0..500.0 || repetitions == null || repetitions !in 1..100) {
+            if (at == null || at !in startedAt..(finishedAt ?: Long.MAX_VALUE) || kg == null || !kg.isFinite() || repetitions == null || repetitions !in 1..100) {
                 error = "Check each set’s time, kilograms and repetitions."; return@TextButton
             }
             if ((effort[set.id]?.isNotBlank() == true && (rating == null || !rating.isFinite() || rating !in 6.0..10.0 || rating * 2 % 1 != 0.0)) || notes[set.id].orEmpty().toByteArray().size > 4000) {

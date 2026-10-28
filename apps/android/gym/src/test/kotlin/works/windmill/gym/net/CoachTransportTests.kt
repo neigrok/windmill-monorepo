@@ -19,6 +19,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.gym.domain.*
 import works.windmill.platform.net.WindmillApi
+import works.windmill.sync.schema.SyncSchema
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
@@ -82,6 +83,7 @@ class CoachTransportTests {
             assertEquals(done.response(), result.await())
             assertEquals(listOf(partial, done), seen)
             val request = server.takeRequest()
+            assertEquals(SyncSchema.version.toString(), request.getHeader("Sync-Schema"))
             assertEquals("/v1/gym/ask", request.path)
             assertEquals("Bearer private-bearer", request.getHeader("Authorization"))
             assertEquals("text/event-stream", request.getHeader("Accept"))
@@ -159,6 +161,7 @@ class CoachTransportTests {
             val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }))
             assertEquals(stopped, gym.stop("thread-a", "request-a"))
             val request = server.takeRequest()
+            assertEquals(SyncSchema.version.toString(), request.getHeader("Sync-Schema"))
             assertEquals("POST", request.method)
             assertEquals("/v1/gym/threads/thread-a/generations/request-a/stop", request.path)
             assertEquals("", request.body.readUtf8())
@@ -187,6 +190,7 @@ class CoachTransportTests {
             assertArrayEquals(bytes, put.body.readByteArray())
             assertEquals("image/png", put.getHeader("Content-Type"))
             for (request in listOf(put, get)) {
+                assertEquals(SyncSchema.version.toString(), request.getHeader("Sync-Schema"))
                 assertEquals("/v1/gym/threads/thread-a/attachments/attachment-a", request.path)
                 assertEquals("Bearer private-bearer", request.getHeader("Authorization"))
             }
@@ -217,6 +221,7 @@ class CoachTransportTests {
             val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }, telemetry = telemetry))
             assertEquals(reply, gym.confirmRoutine("thread-a", "request-a", "operation-a"))
             val request = server.takeRequest()
+            assertEquals(SyncSchema.version.toString(), request.getHeader("Sync-Schema"))
             assertEquals("POST", request.method)
             assertEquals("/v1/gym/threads/thread-a/generations/request-a/routines/operation-a/confirm", request.path)
             assertEquals("{}", request.body.readUtf8())

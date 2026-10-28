@@ -905,7 +905,7 @@ import SyncTesting
     workout.paging = false; gym.accountChanging = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
     gym.accountChanging = false; gym.readFailed = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
     gym.readFailed = false
-    for weight in [Double.nan, .infinity, 500.01, -500.01] { workout.weightKg = weight; workout.logSet(); #expect(workout.sets.isEmpty) }
+    for weight in [Double.nan, .infinity, -.infinity] { workout.weightKg = weight; workout.logSet(); #expect(workout.sets.isEmpty) }
     workout.weightKg = 20
     for reps in [0, 100] { workout.reps = reps; workout.logSet(); #expect(workout.sets.isEmpty) }
     #expect(workout.message == "Check the weight and reps before logging.")
@@ -1338,8 +1338,7 @@ import SyncTesting
     let invalid = [
       #"{"sets":0,"reps":5,"weightKg":40}"#, #"{"sets":-1,"reps":5,"weightKg":40}"#,
       #"{"sets":1,"reps":0,"weightKg":40}"#, #"{"sets":1,"reps":501,"weightKg":40}"#,
-      #"{"sets":1,"reps":5,"weightKg":500.01}"#, #"{"sets":1,"reps":5,"weightKg":-500.01}"#,
-      #"{"sets":1,"reps":5,"weightKg":1e20}"#, #"{"sets":1,"reps":5,"weightKg":"Infinity"}"#,
+      #"{"sets":1,"reps":5,"weightKg":"Infinity"}"#,
       #"{"sets":1,"reps":5,"weightKg":"NaN"}"#,
     ]
     let decoder = JSONDecoder()
@@ -1352,8 +1351,7 @@ import SyncTesting
   }
 
   @Test func reviewRejectsInvalidPlannedTargetNumbers() {
-    let invalid = [#"{"reps":0}"#, #"{"reps":101}"#, #"{"weightKg":500.01}"#, #"{"weightKg":-500.01}"#,
-                   #"{"weightKg":1e20}"#, #"{"weightKg":"Infinity"}"#, #"{"weightKg":"NaN"}"#]
+    let invalid = [#"{"reps":0}"#, #"{"reps":101}"#, #"{"weightKg":"Infinity"}"#, #"{"weightKg":"NaN"}"#]
     let decoder = JSONDecoder()
     decoder.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
     for target in invalid {
@@ -1364,9 +1362,8 @@ import SyncTesting
 
   @Test(arguments: ["e1rm", "heaviest", "reps-at-weight", "unknown"])
   func reviewRejectsUnsafeRecordNumbers(kind: String) throws {
-    let invalid: [(String, Any)] = [("value", 9_000.01), ("value", -9_000.01), ("previous", 9_000.01),
-      ("previous", -9_000.01), ("weightKg", 500.01), ("weightKg", -500.01), ("reps", 0), ("reps", 501),
-      ("value", 1e20), ("previous", "Infinity"), ("weightKg", "NaN")]
+    let invalid: [(String, Any)] = [("value", "Infinity"), ("value", "NaN"), ("previous", "-Infinity"),
+      ("weightKg", "Infinity"), ("reps", 0), ("reps", 501), ("previous", "Infinity"), ("weightKg", "NaN")]
     let decoder = JSONDecoder()
     decoder.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
     for (field, value) in invalid {
@@ -1387,6 +1384,21 @@ import SyncTesting
     #expect(movement.before?.reading == "1 × 1 · −500")
     #expect(movement.planned?.scheme == [SetTarget(reps: 1, weightKg: -500), SetTarget(reps: 100, weightKg: 500), SetTarget(), SetTarget(weightKg: 0)])
     #expect(!movement.detail.isEmpty)
+  }
+
+  @Test func reviewPreservesFiniteLargeLoadsAndDerivedMetrics() throws {
+    let maximum = Double.greatestFiniteMagnitude
+    let data = try JSONSerialization.data(withJSONObject: [
+      "record": ["kind": "e1rm", "exerciseId": "one", "value": maximum, "previous": -maximum,
+                 "weightKg": maximum, "reps": 1],
+      "against": ["movements": [["exerciseId": "one", "now": ["sets": 1, "reps": 1, "weightKg": maximum],
+        "planned": ["sets": [["weightKg": 0], ["weightKg": -maximum], [:]]]]]],
+    ])
+    let review = try JSONDecoder().decode(WorkoutReview.self, from: data)
+    let record = try #require(review.record), movement = try #require(review.against?.movements.first)
+    #expect(record.value == maximum && record.previous == -maximum && record.weightKg == maximum)
+    #expect(movement.now.weightKg == maximum)
+    #expect(movement.planned?.scheme == [SetTarget(weightKg: 0), SetTarget(weightKg: -maximum), SetTarget()])
   }
 
   @Test func malformedReviewFailsDecodingAndReviewFailureKeepsSavedSession() async throws {

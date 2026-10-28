@@ -76,7 +76,12 @@ object Finish {
     fun day(atMs: Long): String = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.ENGLISH)
         .format(Instant.ofEpochMilli(atMs).atZone(ZoneId.systemDefault()))
 
-    fun volume(value: Double): String = DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.ENGLISH)).format(value)
+    fun volume(value: Double?): String {
+        if (value == null || !value.isFinite()) return "—"
+        val compact = Readout.weight(value)
+        if (compact.contains('e', ignoreCase = true)) return compact
+        return DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.ENGLISH)).format(value)
+    }
 
     data class Row(val id: String, val movement: String, val detail: String)
 
@@ -143,8 +148,7 @@ object Finish {
         return "${effort(before)} → ${effort(movement.now)}"
     }
 
-    // `{sets} × {reps} · {load}`, the scheme's own formula. Zero is the absence of a load, not a load,
-    // so a bodyweight effort leaves the column out; a band-assisted −20 still reads its own.
+    // `{sets} × {reps} · {load}`: zero added load reads as bodyweight; a band-assisted −20 keeps its load.
     private fun effort(effort: Effort): String {
         val count = "${effort.sets} × ${effort.reps}"
         if (effort.weightKg == 0.0) return count
@@ -280,7 +284,8 @@ fun FinishScreen(
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
                         ReceiptFact(Readout.duration(duration), "Duration", modifier)
                         ReceiptFact(summary.setCount.toString(), "Working sets", modifier)
-                        ReceiptFact(Finish.volume(summary.tonnageKg ?: 0.0), "Volume", modifier, "kg")
+                        val volume = Finish.volume(summary.tonnageKg)
+                        ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }
                     if (LocalDensity.current.fontScale > 1.3f || maxWidth < 270.dp) {
                         Column(Modifier.fillMaxWidth().background(skin.raised, RoundedCornerShape(20.dp))) {

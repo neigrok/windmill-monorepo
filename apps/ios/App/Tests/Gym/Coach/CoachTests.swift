@@ -119,6 +119,22 @@ import SyncTesting
     #expect(!descendants(host.view).contains { $0.isFirstResponder })
   }
 
+  @Test func coachStreamAndPrivateImagesCarryTheGeneratedSchemaAndKeepUpdateRefusal() async throws {
+    for (path, mediaType, stream) in [("/v1/gym/ask", "application/json", true),
+      ("/v1/gym/threads/fixture/attachments/fixture", "image/png", false)] {
+      let (_, rest, telemetry) = try await authed(.http(426, #"{"code":"client-update-required","error":"Update Windmill to keep using Gym."}"#))
+      let onSnapshot: @MainActor @Sendable (CoachSnapshot) throws -> Void = { _ in Issue.record("Refused request delivered a snapshot") }
+      do {
+        _ = try await rest.coachRequest(path, method: "POST", mediaType: mediaType, snapshot: stream ? onSnapshot : nil)
+        Issue.record("Expected update refusal")
+      } catch let failure as GymRESTFailure {
+        #expect(failure.status == 426 && failure.message == "Update Windmill to keep using Gym.")
+      }
+      #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.schema) } == [String(SyncSchema.version)])
+      #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.map(\.name) } == ["api_request_failed"])
+    }
+  }
+
   @Test func largeSnapshotsValidateCredentialsPerEvent() async throws {
     let answer = String(repeating: "private answer ", count: 2_048)
     let stream = try snapshotEvent(status: "running", revision: 1, answer: answer) + snapshotEvent(status: "completed", revision: 2, answer: answer)
@@ -1944,7 +1960,7 @@ nonisolated final class CoachCountingTokenStore: TokenStore {
 
 nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
   enum Reply: Sendable { case http(Int, String, String = "application/json"), partial(String), failure(URLError.Code), stalled }
-  struct Request: Sendable, Equatable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data? }
+  struct Request: Sendable, Equatable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data?; var schema: String? = nil }
   struct State: Sendable { var reply: Reply; var replies: [String: Reply] = [:]; var requests: [Request] = []; var active: CoachTestProtocol?; var activeByPath: [String: CoachTestProtocol] = [:] }
   static let state = Mutex(State(reply: .stalled))
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -1956,7 +1972,7 @@ nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
       while stream.hasBytesAvailable { let count = stream.read(&buffer, maxLength: buffer.count); if count <= 0 { break }; data.append(contentsOf: buffer.prefix(count)) }; body = data
     }
     let reply = Self.state.withLock { state in
-      state.requests.append(Request(path: request.url!.path, method: request.httpMethod!, authorization: request.value(forHTTPHeaderField: "Authorization"), mediaType: request.value(forHTTPHeaderField: "Content-Type"), body: body))
+      state.requests.append(Request(path: request.url!.path, method: request.httpMethod!, authorization: request.value(forHTTPHeaderField: "Authorization"), mediaType: request.value(forHTTPHeaderField: "Content-Type"), body: body, schema: request.value(forHTTPHeaderField: "Sync-Schema")))
       state.active = self; state.activeByPath[request.url!.path] = self; return state.replies[request.url!.path] ?? state.reply
     }
     switch reply {

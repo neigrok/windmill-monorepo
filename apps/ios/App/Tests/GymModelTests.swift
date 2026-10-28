@@ -251,6 +251,7 @@ import SyncTesting
     }
     let token = try #require(try runtime.account().flatMap { runtime.tokens.token(for: $0) })
     #expect(GymWireProtocol.state.withLock { $0.requests.map(\.authorization) } == ["Bearer \(token.value)"])
+    #expect(GymWireProtocol.state.withLock { $0.requests.map(\.schema) } == [String(SyncSchema.version)])
     let entries = telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" } }
     #expect(entries.map(\.name) == ["api_request_failed"])
     #expect(entries[0].properties == ["method": "POST", "route": "/v1/gym", "operation": "gym_rest", "failure_kind": "http", "status": "409"])
@@ -264,6 +265,17 @@ import SyncTesting
     #expect(entries.map(\.name) == (code == .notConnectedToInternet ? ["api_request_failed"] : ["api_request_failed", "client_error"]))
     #expect(entries.first?.properties["failure_kind"] == (code == .notConnectedToInternet ? "offline" : "timeout"))
     #expect(rest.tasks.isEmpty)
+  }
+
+  @Test func restUpdateRequiredKeepsTheServerSentenceAndReportsOnlyTheExpectedEvent() async throws {
+    let telemetry = TelemetryRecorder(), body = #"{"code":"client-update-required","error":"Update Windmill to keep using Gym."}"#
+    let (rest, _) = try await rest(.http(426, body), telemetry: telemetry)
+    do { _ = try await rest.request("/v1/gym/threads"); Issue.record("Expected update refusal") }
+    catch let failure as GymRESTFailure {
+      #expect(failure.status == 426 && failure.body == Data(body.utf8) && failure.message == "Update Windmill to keep using Gym.")
+    }
+    #expect(GymWireProtocol.state.withLock { $0.requests.map(\.schema) } == [String(SyncSchema.version)])
+    #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.map(\.name) } == ["api_request_failed"])
   }
 
   @Test func restReportsHTTP408AsUnexpected() async throws {
@@ -330,14 +342,14 @@ nonisolated final class GymStoreFault: Sendable {
 
 nonisolated final class GymWireProtocol: URLProtocol, @unchecked Sendable {
   enum Reply: Sendable { case http(Int, String), failure(URLError.Code), stalled }
-  struct Request: Sendable { let authorization: String? }
+  struct Request: Sendable { let authorization: String?; let schema: String? }
   struct State: Sendable { var reply: Reply; var requests: [Request] = []; var active: GymWireProtocol? }
   static let state = Mutex(State(reply: .stalled))
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
     let reply = Self.state.withLock { state in
-      state.requests.append(Request(authorization: request.value(forHTTPHeaderField: "Authorization")))
+      state.requests.append(Request(authorization: request.value(forHTTPHeaderField: "Authorization"), schema: request.value(forHTTPHeaderField: "Sync-Schema")))
       state.active = self
       return state.reply
     }

@@ -46,6 +46,13 @@ private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): Li
     List(sets) { SetTarget(reps, weightKg) }
 
 class FinishTests {
+    @Test fun volumeKeepsOrdinaryGroupingAndUsesCompleteFiniteScientificReadouts() {
+        assertEquals(listOf("0", "2,505", "1,234.56", "—", "—"),
+            listOf(0.0, 2505.0, 1234.56, null, Double.POSITIVE_INFINITY).map(Finish::volume))
+        assertEquals("1.7976931348623157e+308", Finish.volume(Double.MAX_VALUE))
+        assertEquals("1e+21", Finish.volume(1e21))
+    }
+
     @Test
     fun noRecordDrawsNoLineAtAll() {
         assertNull(Finish.recordSentence(null, catalog))

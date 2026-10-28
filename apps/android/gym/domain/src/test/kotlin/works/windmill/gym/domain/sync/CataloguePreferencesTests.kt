@@ -125,8 +125,8 @@ class CataloguePreferencesTests {
         assertEquals("Custom press", catalogue.find(exercise.id)!!.name)
         assertEquals("Flat dumbbells", catalogue.find(Id("dumbbell-bench-press", Exercise))!!.name)
         val log = TrainingLog(read)
-        assertEquals(420.0, log.volumeKg(session.id), 0.0)
-        assertEquals(420.0, log.readout(session.id)!!.volumeKg, 0.0)
+        assertEquals(420.0, requireNotNull(log.volumeKg(session.id)), 0.0)
+        assertEquals(420.0, requireNotNull(log.readout(session.id)!!.volumeKg), 0.0)
         assertEquals(16.0 * (1 + 5 / 30.0), log.sets(session.id).first().e1rm!!, 0.0)
         assertEquals(Json.objectOf("sessions" to Json.of(1), "sets" to Json.of(4), "reps" to Json.of(20), "tonnageKg" to Json.of(420)),
             TrainingHistory(read).history().member("summary"))

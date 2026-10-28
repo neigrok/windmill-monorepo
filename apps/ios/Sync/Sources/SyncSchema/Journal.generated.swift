@@ -84,7 +84,7 @@ public enum Journal {
         "serverInternal": false,
       ],
     ],
-    "minVersion": 9,
+    "minVersion": 10,
     "products": [
       "journal": [
         "codes": ["claim-conflict"],
@@ -181,6 +181,6 @@ public enum Journal {
         "type": "journalState",
       ],
     ],
-    "version": 9,
+    "version": 10,
   ]
 }

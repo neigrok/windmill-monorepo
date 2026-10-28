@@ -98,7 +98,7 @@ std::vector<ProgressSet> finishedFacts(pqxx::work& txn, const UserId& user) {
 struct Tally {
   int setCount = 0;
   int workingSetCount = 0;
-  double tonnageKg = 0;
+  std::vector<VolumePart> volume;
   std::vector<std::string> exerciseNames;
   std::vector<ProgressSet> worked;
 };
@@ -181,9 +181,7 @@ std::vector<SessionRows> PgLogRepository::sessions(const UserId& user, const std
 }
 
 LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
-  // Four queries over the same keyset window in one transaction, so no row of a page can lose an
-  // aggregate to a write landing between them. `tonnage_kg` sums the working rows with the load
-  // clamped at zero: band-assisted work stores a negative kg.
+  // Raw working-set facts share the page's transaction and feed the checked domain reducer.
   // The window compares the pair (started_at, id); an absent tiebreaker passes the empty id, the
   // floor of the text order.
   // The working-set statements read the projection of domain/Progress.h; loads at or below zero are kept. The
@@ -201,29 +199,26 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
           "        started_at) END) AS closed_itself "
           "FROM gym_sessions "
           "LEFT JOIN LATERAL (SELECT w.weight_kg, w.reps FROM gym_sets w "
-          "                   WHERE w.session_id = gym_sessions.id AND w.kind = 'working' "
+          "                   WHERE w.session_id = gym_sessions.id AND w.user_id = gym_sessions.user_id AND w.kind = 'working' "
           "                   ORDER BY w.weight_kg DESC, w.reps DESC LIMIT 1) top ON true "
           "WHERE user_id = $1::uuid "
           "AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
           "ORDER BY started_at DESC, id DESC LIMIT $4",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
   pqxx::result tallies = txn.exec_params(
-      "SELECT st.session_id, coalesce(n.name, e.name) AS name, count(*)::int AS set_count, "
-      "  (count(*) FILTER (WHERE st.kind = 'working'))::int AS working_set_count, "
-      "  coalesce(sum(greatest(st.weight_kg, 0) * st.reps * CASE WHEN coalesce(n.equipment,e.equipment)='dumbbell' AND coalesce(n.load_count,e.load_count,0)<>1 THEN 2 ELSE 1 END) "
-      "           FILTER (WHERE st.kind = 'working'), 0)::float8 AS tonnage_kg "
-      "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
-      "                 LEFT JOIN gym_exercise_names n "
-      "                   ON n.exercise_id = e.id AND n.user_id = $1::uuid "
-      "WHERE st.session_id IN "
+      "SELECT st.session_id, st.id, st.weight_kg::float8 AS weight_kg, st.reps, st.kind, "
+      "coalesce(n.name, e.name) AS name, coalesce(n.equipment, e.equipment) AS equipment, "
+      "coalesce(n.load_count, e.load_count, 0) AS load_count, e.id IS NOT NULL AS movement_available "
+      "FROM gym_sets st LEFT JOIN gym_exercises e ON e.id = st.exercise_id "
+      "LEFT JOIN gym_exercise_names n ON n.exercise_id = e.id AND n.user_id = $1::uuid "
+      "WHERE st.user_id = $1::uuid AND st.session_id IN "
       "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
       "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
       "   ORDER BY started_at DESC, id DESC LIMIT $4) "
-      "GROUP BY st.session_id, coalesce(n.name, e.name) "
-      "ORDER BY st.session_id, coalesce(n.name, e.name)",
+      "ORDER BY st.session_id, coalesce(n.name, e.name), st.id COLLATE \"C\"",
       user.str(), static_cast<long long>(cursor.beforeMs), beforeId, cursor.limit);
   pqxx::result worked = txn.exec_params(
-      factsWhere("st.kind = 'working' AND st.session_id IN "
+      factsWhere("st.user_id = $1::uuid AND st.kind = 'working' AND st.session_id IN "
                  "  (SELECT id FROM gym_sessions WHERE user_id = $1::uuid "
                  "   AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
                  "   ORDER BY started_at DESC, id DESC LIMIT $4)"),
@@ -232,10 +227,19 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   std::map<std::string, Tally> tallyBySession;
   for (const auto& row : tallies) {
     Tally& tally = tallyBySession[row["session_id"].as<std::string>()];
-    tally.setCount += row["set_count"].as<int>();
-    tally.workingSetCount += row["working_set_count"].as<int>();
-    tally.tonnageKg += row["tonnage_kg"].as<double>();
-    tally.exerciseNames.push_back(row["name"].as<std::string>());
+    ++tally.setCount;
+    if (!row["name"].is_null()) {
+      const std::string name = row["name"].as<std::string>();
+      if (tally.exerciseNames.empty() || tally.exerciseNames.back() != name) tally.exerciseNames.push_back(name);
+    }
+    if (row["kind"].as<std::string>() != "working") continue;
+    ++tally.workingSetCount;
+    if (!row["movement_available"].as<bool>()) {
+      tally.volume.emplace_back(row["id"].as<std::string>(), std::nullopt, std::nullopt, std::nullopt);
+      continue;
+    }
+    tally.volume.emplace_back(row["id"].as<std::string>(), row["weight_kg"].as<double>(),
+        row["reps"].as<int>(), equipmentFromStored(row["equipment"].as<std::string>()), row["load_count"].as<int>());
   }
   for (const auto& row : worked)
     tallyBySession[row["session_id"].as<std::string>()].worked.push_back(factFrom(row));
@@ -253,7 +257,7 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
       continue;
     }
     page.sessions.push_back(SessionSummary{session, tally->second.setCount,
-                                           tally->second.workingSetCount, tally->second.tonnageKg,
+                                           tally->second.workingSetCount, totalVolume(tally->second.volume),
                                            tally->second.exerciseNames, top,
                                            tally->second.worked, closedItself});
   }

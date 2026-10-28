@@ -264,8 +264,8 @@ async function accountTransport(page) {
       const wall = Date.now(), mono = Math.floor(performance.now());
       return { response, timing: { send: { wall, mono, boot: 'browser' }, recv: { wall, mono, boot: 'browser' } } };
     };
-    window.hello = () => answer({ status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(), schema: 1,
-      minSchema: 1, holdsRecords: { probe: false } } });
+    window.hello = () => answer({ status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: Date.now(), schema: engine.registry.version,
+      minSchema: engine.registry.minVersion, holdsRecords: { probe: false } } });
     engine.transport.request = async (endpoint, request) => {
       sentRequests.push({ endpoint, at: Date.now(), intents: request?.intents });
       if (endpoint === 'hello') return hello();

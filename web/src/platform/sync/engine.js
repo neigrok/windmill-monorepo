@@ -51,6 +51,7 @@ export class BrowserSyncEngine {
     this.leadershipOptions = leadership;
     this.visible = document?.visibilityState !== 'hidden';
     this.online = navigator?.onLine !== false;
+    this.networkGeneration = 0;
     this.listeners = new Set();
     this.eventListeners = new Set();
     this.views = new Map();
@@ -458,7 +459,7 @@ export class BrowserSyncEngine {
   scheduleSender() {
     this.timers.clearTimeout(this.senderTimer);
     if (!this.canSync() || this.sending || this.device.activeReplica.meta.state !== 'bound') return;
-    const delay = Math.max(0, this.wait.until - this.monotonic(), (this.device.activeReplica.meta.pushRetryAt ?? 0) - this.now());
+    const delay = Math.max(0, this.wait.until - this.monotonic(), (this.helloRetryAt ?? 0) - this.monotonic(), (this.device.activeReplica.meta.pushRetryAt ?? 0) - this.now());
     this.senderTimer = this.timers.setTimeout(() => this.send().catch(() => {}), delay);
   }
 
@@ -533,14 +534,47 @@ export class BrowserSyncEngine {
 
   async send({ leave = false } = {}) {
     if (!this.canSync() || this.sending || (!leave && !this.wait.due(this.monotonic()))
-      || (leave && !this.wait.leaveMayPush(this.monotonic()))) return;
+      || (leave && !this.wait.leaveMayPush(this.monotonic())) || (this.helloRetryAt ?? 0) > this.monotonic()) return;
     this.sending = true;
     let request;
     let handle;
+    let checkedHello = false;
     try {
+      const { device: before } = await this.store.read([]);
+      const seat = before.activeReplica;
+      const generation = before.meta.authGeneration;
+      const network = this.networkGeneration;
+      const lifecycle = this.lifecycleGeneration;
+      const epoch = seat.meta.serverEpoch;
+      if (seat.meta.state !== 'bound' || seat.meta.authPaused || this.signOutPaused(before)
+        || !seat.outbox.some((entry) => entry.state === 'ready' || entry.state === 'sent')) return;
+      checkedHello = true;
+      const hello = await this.request('hello');
+      this.validateResponse('hello', hello.response);
+      if (hello.response.body?.minSchema > this.registry.version) { await this.upgrade(); return; }
+      const current = (device) => this.canSync() && network === this.networkGeneration && lifecycle === this.lifecycleGeneration
+        && device.meta.authGeneration === generation && device.activeReplica.storageHandle === seat.storageHandle
+        && device.activeReplica.id === seat.id && device.activeReplica.meta.account === seat.meta.account
+        && device.activeReplica.meta.serverEpoch === epoch
+        && device.activeReplica.meta.state === 'bound' && !device.activeReplica.meta.authPaused && !this.signOutPaused(device);
+      const ready = await this.write(null, (device, ctx) => {
+        if (!current(device)) return false;
+        if (hello.response.status === 200) onHello(device.activeReplica, ctx, hello.response, hello.timing);
+        else if (device.activeReplica.isUnauthenticated(hello.response)) device.activeReplica.meta.authPaused = true;
+        return !device.activeReplica.meta.authPaused && hello.response.status === 200
+          && hello.response.body?.as === seat.meta.account && hello.response.body.schema >= this.registry.minVersion;
+      });
+      if (!ready) {
+        if (!current(this.device)) return;
+        this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
+        this.helloRetryAt = Math.max(this.wait.until, this.monotonic() + this.limits.BACKOFF_BASE_MS,
+          this.monotonic() + Math.max(0, hello.response.status === 503 ? hello.response.body?.retryAfterMs ?? 0 : 0));
+        return;
+      }
+      this.helloRetryAt = null;
       request = await this.write(null, (device, ctx) => {
         handle = device.activeReplica.storageHandle;
-        if (device.activeReplica.meta.authPaused || device.activeReplica.meta.state !== 'bound'
+        if (!current(device) || device.activeReplica.meta.authPaused || device.activeReplica.meta.state !== 'bound'
           || this.signOutPaused(device) || (device.activeReplica.meta.pushRetryAt ?? 0) > this.now() || device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true) return null;
         return nextPush(device.activeReplica, ctx, { ...(this.pushLimit ? { limit: this.pushLimit } : {}),
         });
@@ -590,7 +624,7 @@ export class BrowserSyncEngine {
             session.phase = 'decision';
         }).catch(() => {});
       }
-      if (request) this.scheduleSender();
+      if (request || checkedHello) this.scheduleSender();
     }
   }
 
@@ -1000,6 +1034,7 @@ export class BrowserSyncEngine {
   }
 
   setOnline(online) {
+    if (this.online !== online) this.networkGeneration += 1;
     this.online = online;
     if (online) this.kick();
     else this.stopNetwork();

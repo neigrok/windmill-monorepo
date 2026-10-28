@@ -38,8 +38,21 @@ nonisolated struct CoachRead: Codable, Equatable, Sendable {
 nonisolated struct CoachObservation: Codable, Equatable, Sendable, Identifiable {
   struct Workout: Codable, Equatable, Sendable {
     let workingSetCount: Int
-    let tonnageKg: Double
+    let tonnageKg: Double?
     let durationMs: Int64?
+    enum CodingKeys: String, CodingKey { case workingSetCount, tonnageKg, durationMs }
+    init(workingSetCount: Int, tonnageKg: Double?, durationMs: Int64?) {
+      self.workingSetCount = workingSetCount; self.tonnageKg = tonnageKg; self.durationMs = durationMs
+    }
+    init(from decoder: any Decoder) throws {
+      let fields = try decoder.container(keyedBy: CodingKeys.self)
+      workingSetCount = try fields.decode(Int.self, forKey: .workingSetCount)
+      guard fields.contains(.tonnageKg) else {
+        throw DecodingError.keyNotFound(CodingKeys.tonnageKg, .init(codingPath: fields.codingPath, debugDescription: "Missing metric"))
+      }
+      tonnageKg = try fields.decodeIfPresent(Double.self, forKey: .tonnageKg)
+      durationMs = try fields.decodeIfPresent(Int64.self, forKey: .durationMs)
+    }
   }
   let sessionId: String
   let startedAt: Int64
@@ -58,8 +71,8 @@ nonisolated struct CoachObservation: Codable, Equatable, Sendable, Identifiable 
   }
   // The whole workout's facts, which only a summary or a read of the whole workout knows.
   var whole: Workout? {
-    guard let workout, coverage != "movement", exerciseId == nil, workout.workingSetCount >= 0, workout.tonnageKg.isFinite,
-          workout.tonnageKg >= 0, (workout.durationMs ?? 0) >= 0 else { return nil }
+    guard let workout, coverage != "movement", exerciseId == nil, workout.workingSetCount >= 0,
+          workout.tonnageKg.map({ $0.isFinite && $0 >= 0 }) ?? true, (workout.durationMs ?? 0) >= 0 else { return nil }
     return workout
   }
 }

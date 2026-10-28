@@ -3,7 +3,6 @@
 import { Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Bodyweight, WeighIn } from './bodyweight.js';
 import { Catalogue, Exercise } from './catalogue.js';
 import { Proposal } from './proposals.js';
@@ -11,7 +10,7 @@ import { Note } from './notes.js';
 import { Preferences, PreferencesValue, restSettings } from './preferences.js';
 import { Routine } from './routines.js';
 import { SeedExercises } from './seedExercises.js';
-import { Session, SessionRules, TrainingSet } from './training.js';
+import { EstimateScore, GymVolume, Session, SessionRules, TrainingSet } from './training.js';
 import { GymEstimate, StatsProgress, TrainingLog } from './trainingReads.js';
 
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -22,7 +21,7 @@ import { GymEstimate, StatsProgress, TrainingLog } from './trainingReads.js';
 /** @typedef {{ exerciseId: import('../../../platform/domain-kit/entities.js').RecordID, weightKg: number, reps: number, rpe: number | null,
  * at: number, setId: import('../../../platform/domain-kit/entities.js').RecordID }} Mark */
 /** @typedef {{ marks: Map<number, Mark>, heaviest: Mark | null,
- * estimate: { fact: import('./trainingReads.js').EstimatedFact, at: number } | null }} Standing */
+ * estimate: { fact: import('./trainingReads.js').EstimatedFact, at: number } | null, estimatesComplete: boolean }} Standing */
 /** @typedef {{before?: number, beforeId?: string, limit?: number, from?: number, until?: number, exercise?: string, routine?: string, projection?: string}} HistoryQuery */
 
 /** @param {SessionValue} value @returns {Document} */
@@ -83,7 +82,7 @@ export function proposalDocument(read, value) {
 /** @param {readonly TrainingSetValue[]} sets @param {Catalogue} catalogue */
 function totals(sets, catalogue) {
   return { sets: sets.length, reps: sets.reduce((sum, set) => sum + set.reps, 0),
-    tonnageKg: sets.reduce((sum, set) => sum + Math.max(0, roundHalfAway(set.weightKg * 100)) * set.reps * (catalogue.find(set.exerciseId)?.loadCount ?? 1), 0) / 100 };
+    tonnageKg: GymVolume.of(sets, catalogue) };
 }
 
 /** @param {readonly TrainingSetValue[]} sets */
@@ -158,13 +157,14 @@ export class TrainingHistory {
           const key = jcs(fact.exerciseId.json);
           const today = earned.get(key) ?? new Map();
           /** @type {Standing} */
-          const prior = standing.get(key) ?? { marks: new Map(), heaviest: null, estimate: null };
+          const prior = standing.get(key) ?? { marks: new Map(), heaviest: null, estimate: null, estimatesComplete: true };
           /** @param {string} kind @param {Document} mark @param {number} value @param {number} previous @param {number} previousAt */
           const add = (kind, mark, value, previous, previousAt) => candidates.push({ kind, exerciseId: fact.exerciseId.record,
             value, weightKg: mark.weightKg, reps: mark.reps, previous, previousAt, at: point.startedAt.ms,
-            score: GymEstimate.score(mark.weightKg, mark.reps, mark.rpe ?? null) ?? 0 });
+            score: GymEstimate.score(mark.weightKg, mark.reps, mark.rpe ?? null) ?? EstimateScore.zero });
           const currentEstimate = fact.estimate;
-          if (currentEstimate && prior.estimate && currentEstimate.score > prior.estimate.fact.score) {
+          if (fact.estimatesComplete && prior.estimatesComplete && currentEstimate?.e1rm != null && prior.estimate?.fact.e1rm != null
+            && currentEstimate.score.compare(prior.estimate.fact.score) > 0) {
             add('e1rm', currentEstimate, currentEstimate.e1rm, prior.estimate.fact.e1rm, prior.estimate.at);
           }
           const currentLoad = [...today.values()].reduce((best, mark) => best === null || mark.weightKg > best.weightKg ? mark : best,
@@ -179,14 +179,15 @@ export class TrainingHistory {
           }
           if (currentLoad && (!prior.heaviest || currentLoad.weightKg > prior.heaviest.weightKg
             || (currentLoad.weightKg === prior.heaviest.weightKg && currentLoad.reps > prior.heaviest.reps))) prior.heaviest = currentLoad;
-          if (currentEstimate && (!prior.estimate || currentEstimate.score > prior.estimate.fact.score)) {
+          if (currentEstimate && (!prior.estimate || currentEstimate.score.compare(prior.estimate.fact.score) > 0)) {
             prior.estimate = { fact: currentEstimate, at: point.startedAt.ms };
           }
+          prior.estimatesComplete &&= fact.estimatesComplete;
           standing.set(key, prior);
         }
         /** @type {Record<string, number>} */
         const ranks = { e1rm: 0, heaviest: 1, 'reps-at-weight': 2 };
-        candidates.sort((a, b) => (ranks[a.kind] ?? 0) - (ranks[b.kind] ?? 0) || b.score - a.score
+        candidates.sort((a, b) => (ranks[a.kind] ?? 0) - (ranks[b.kind] ?? 0) || b.score.compare(a.score)
           || b.weightKg - a.weightKg || a.at - b.at || compareText(a.exerciseId, b.exerciseId));
         const first = candidates[0];
         if (!first) records.set(jcs(point.sessionId.json), null);
@@ -209,7 +210,7 @@ export class TrainingHistory {
     const readout = this.log.readout(session.id);
     const topE1rm = readout?.topE1rm;
     const stats = { durationMs: readout?.durationMs ?? Math.max(0, SessionRules.lastActivity(session, held).ms - session.startedAt.ms),
-      workingSets: held.length, ...(topE1rm == null ? {} : { topE1rm }) };
+      workingSets: held.length, topE1rm: topE1rm ?? null };
     /** @type {Document} */
     const review = { stats, slight: stats.workingSets < 4 };
     if (review.slight) return review;
@@ -238,7 +239,7 @@ export class TrainingHistory {
       const topE1rm = this.log.topE1rm(session.id);
       return { ...sessionDocument(session), setCount: held.length, workingSetCount: held.length, tonnageKg: totals(held, this.catalogue).tonnageKg,
         exercises: [...new Set(held.flatMap((set) => { const exercise = this.catalogue.find(set.exerciseId); return exercise ? [exercise.name] : []; }))].sort(compareText),
-        ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), ...(topE1rm === null ? {} : { topE1rm }),
+        ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), topE1rm,
         record: this.log.firstPullComplete && held.length >= 4 && this.recordAgainst(session) !== null,
         closedItself: session.closedBy ? session.closedBy === 'stale' : session.finishedAt?.ms === SessionRules.lastActivity(session, held).ms };
     });

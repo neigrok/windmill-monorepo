@@ -7,6 +7,13 @@ underscores because `/v1/events` accepts snake_case names. Each engine instance 
 injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
+Gym load validation accepts finite normalized values without a fixed kg cap; explicit zero remains
+distinct from an absent target. An unrepresentable derived metric is unavailable data, rendered in
+existing unavailable slots, and creates no technical failure or event. Existing set, target, fix and
+import actions retain their bounded outcome events and storage/transport failure reporters. Fresh
+sender hellos use the existing sync diagnostics. Loads, numeric buffers, metric values and raw
+refusal text never enter telemetry properties.
+
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |

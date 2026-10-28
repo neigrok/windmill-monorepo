@@ -698,17 +698,36 @@ public struct Bounds: Sendable, Hashable {
 // it.
 public struct Quantum: Sendable, Hashable {
   public let step: Double
+  let perUnit: Double
+  let decimalPlaces: Int?
 
   public init?(_ step: Double) {
     guard step.isFinite, step > 0 else { return nil }
-    guard step.rounded() == step || (1 / step).rounded() == 1 / step else { return nil }
+    let reciprocal = 1 / step
+    guard step.rounded() == step || (reciprocal.isFinite && reciprocal.rounded() == reciprocal) else { return nil }
     self.step = step
+    perUnit = step.rounded() == step ? 0 : reciprocal.rounded()
+    var places: Int?
+    var decimalScale = 1.0
+    for count in 0...22 {
+      if perUnit == decimalScale { places = count; break }
+      decimalScale *= 10
+    }
+    decimalPlaces = places
   }
 
   public func rounded(_ value: Double) -> Double {
     if step.rounded() == step { return Quantum.roundHalfAway(value / step) * step }
-    let perUnit = (1 / step).rounded()
-    return Quantum.roundHalfAway(value * perUnit) / perUnit
+    if value.isFinite, let decimalPlaces {
+      let parts = JSON.Number(value)!.description.split(separator: "e")
+      let mantissa = parts[0].split(separator: ".")
+      let fraction = mantissa.count == 2 ? mantissa[1].count : 0
+      let exponent = parts.count == 2 ? Int(parts[1])! : 0
+      if fraction - exponent <= decimalPlaces { return value == 0 ? 0 : value }
+    }
+    let scaled = value * perUnit
+    if value.isFinite, !scaled.isFinite { return value == 0 ? 0 : value }
+    return Quantum.roundHalfAway(scaled) / perUnit
   }
 
   public func holds(_ value: Double) -> Bool {

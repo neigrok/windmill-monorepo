@@ -30,8 +30,10 @@ export class SetTarget {
 
   /** @param {number | null} reps @param {number | null} weightKg */
   static clampingReps(reps = null, weightKg = null) {
-    const bounded = reps === null ? null : Math.min(RoutineRules.targets.reps.max, Math.max(RoutineRules.targets.reps.min, reps));
-    return new SetTarget(bounded, weightKg);
+    if (reps === null) return new SetTarget(null, weightKg);
+    const { min, max } = RoutineRules.targets.reps;
+    precondition(min !== undefined && max !== undefined, 'routine target reps have both count bounds');
+    return new SetTarget(Math.min(max, Math.max(min, reps)), weightKg);
   }
 
   /** @returns {Record<string, Json>} */

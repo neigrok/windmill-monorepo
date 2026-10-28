@@ -16,8 +16,8 @@ namespace wm {
 // frames) writes its own on purpose.
 
 // Every double in a reply Drogon serialises — this file's two, and every `newHttpJsonResponse`
-// elsewhere — carries kJsonDoubleDigits significant digits, the same rule as `dump`, so `82.4`
-// crosses as `82.4` and never as `82.400000000000006`. Drogon fixes its writer on the first body it
+// elsewhere — carries kJsonDoubleDigits significant digits, the same rule as `dump`, so every
+// finite double round-trips exactly. Drogon fixes its writer on the first body it
 // serialises, so this is called once, before the app takes traffic.
 inline void configureJsonReplies(drogon::HttpAppFramework& app) {
   app.setFloatPrecisionInJson(kJsonDoubleDigits, "significant");

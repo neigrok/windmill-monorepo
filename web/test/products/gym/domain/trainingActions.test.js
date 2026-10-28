@@ -7,6 +7,7 @@ import { Refusal } from '../../../../../packages/api-contract/sync/reference/ser
 import { Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
@@ -33,6 +34,27 @@ async function open(t, product = new GymProduct()) {
   phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
   return phone;
 }
+
+test('nonfinite typed drafts leave no partial write or spent identity', async (t) => {
+  const phone = await open(t);
+  committed(await phone.runner.run(StartSession({ id: sessionId, startedAt })));
+  await phone.sync();
+  const before = jcs(phone.engine.device.toJSON());
+  const id = new Id('setfinite1', TrainingSet);
+  for (const weight of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const value = new TrainingSetValue(id, sessionId, exerciseId, weight, 5, finishedAt);
+    const outcome = await phone.runner.run(AppendSet(value));
+    assert.equal(outcome.kind, 'refused');
+    if (outcome.kind !== 'refused') throw new Error('nonfinite load was admitted');
+    assert.deepEqual(refusalForm(outcome.refusal), { invalid: { rule: 'set.weightKg', path: 'weightKg', reason: 'notANumber' } });
+    assert.equal(jcs(phone.engine.device.toJSON()), before);
+    assert.deepEqual(phone.stored(TrainingSet), []);
+  }
+  const valid = new TrainingSetValue(id, sessionId, exerciseId, 80, 5, finishedAt);
+  committed(await phone.runner.run(AppendSet(valid)));
+  await phone.sync();
+  assert.deepEqual(phone.stored(TrainingSet).map((value) => value.id.record), ['setfinite1']);
+});
 
 /** @template T @param {import('../../../../src/platform/domain-kit/actions.js').Outcome<T, GymRefusal>} result */
 function committed(result) {

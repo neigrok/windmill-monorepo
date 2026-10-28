@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { round } from '../../../src/products/gym/logger/ladder.js';
 import {
-  isOpenFields, NOT_A_NUMBER, ONE_DECIMAL, OVER_MAX_LOAD, REPS_BAND, SETS_BAND,
+  isOpenFields, NOT_A_NUMBER, ONE_DECIMAL, REPS_BAND, SETS_BAND,
   targetEntryOf, targetFieldsOf, targetRefusal, withHead, withRow, withSets, withSignFlipped,
 } from '../../../src/products/gym/routines.js';
 
@@ -12,16 +12,16 @@ const row = (reps, weight) => ({ reps, weight });
 
 test('the sheet draws exactly one refusal, computed for the sheet and not one per field', () => {
   // Every field is illegal at once. The sheet says one thing: the topmost.
-  const allWrong = fields({ sets: '99', rows: [row('400', '900')] });
+  const allWrong = fields({ sets: '99', rows: [row('400', '1e999')] });
   assert.deepEqual(targetRefusal(allWrong), { field: 'sets', row: null, message: SETS_BAND });
   // Fix the count and the next one surfaces — still one, never two.
   assert.deepEqual(targetRefusal({ ...allWrong, sets: '1' }), { field: 'reps', row: 0, message: REPS_BAND });
-  assert.deepEqual(targetRefusal(withRow({ ...allWrong, sets: '1' }, 0, 'reps', '5')), { field: 'weight', row: 0, message: OVER_MAX_LOAD });
+  assert.deepEqual(targetRefusal(withRow({ ...allWrong, sets: '1' }, 0, 'reps', '5')), { field: 'weight', row: 0, message: NOT_A_NUMBER });
   assert.equal(targetRefusal(fields({ sets: '1', rows: [row('5', '100')] })), null);
   // The rows carry the fault, each under its own row, the topmost first.
-  const two = fields({ sets: '2', rows: [row('9,9,9', '900'), row('5-', '5-')] });
+  const two = fields({ sets: '2', rows: [row('9,9,9', '1e999'), row('5-', '5-')] });
   assert.deepEqual(targetRefusal(two), { field: 'reps', row: 0, message: ONE_DECIMAL });
-  assert.deepEqual(targetRefusal(withRow(two, 0, 'reps', '5')), { field: 'weight', row: 0, message: OVER_MAX_LOAD });
+  assert.deepEqual(targetRefusal(withRow(two, 0, 'reps', '5')), { field: 'weight', row: 0, message: NOT_A_NUMBER });
   assert.deepEqual(targetRefusal(withRow(withRow(two, 0, 'reps', '5'), 0, 'weight', '')), { field: 'reps', row: 1, message: NOT_A_NUMBER });
   // A ladder with a fault on it is not judged while the count is empty: the commit is the open line.
   assert.equal(targetRefusal(withSets(two, '')), null);

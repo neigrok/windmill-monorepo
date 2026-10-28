@@ -5,6 +5,13 @@ the first-party `POST /v1/events` intake, which stores them in Postgres and forw
 The app contains no Amplitude API key. `SyncEngine.Telemetry` is injected into the app, account coordinator, journal and gym models,
 authentication, HTTP transport, engine, Keychain and protected storage. Tests default to `NoopTelemetry`.
 
+Gym load validation accepts finite normalized values without a fixed kg cap; explicit zero remains
+distinct from an absent target. An unrepresentable derived metric is unavailable data, rendered in
+existing unavailable slots, and creates no technical failure or event. Existing set, target, fix and
+import actions retain their bounded outcome events and storage/transport failure reporters. Fresh
+sender hellos use the existing sync diagnostics. Loads, numeric buffers, metric values and raw
+refusal text never enter telemetry properties.
+
 ## Configuration
 
 Release builds require a valid HTTPS `IOS_SENTRY_DSN` for the dedicated iOS Sentry project. The

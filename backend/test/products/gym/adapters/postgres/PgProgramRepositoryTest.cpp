@@ -8,6 +8,7 @@
 #include <pqxx/pqxx>
 
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -850,4 +851,21 @@ TEST(pg_gym_a_proposal_replay_matches_the_scheme_set_for_set) {
   CHECK(moved.error == ProposalMintError::idReused);
   CHECK_EQ(moved.proposal, std::optional<RoutineProposal>());
   CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"}), std::optional<RoutineProposal>(minted));
+}
+
+
+TEST(pg_gym_routine_targets_round_trip_canonical_signed_unbounded_loads_and_explicit_zero) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  doortest::Harness h;
+  const std::vector<SetTarget> targets{{8, std::nullopt}, {8, 0}, {8, .1}, {8, 501}, {8, -501},
+      {8, std::numeric_limits<double>::max()}, {8, -std::numeric_limits<double>::max()},
+      {8, 35333333333333.34}, {8, 1.005}};
+  const auto day = dayOf(h.user, "routine_loads1", "Loads", {RoutineEntry{1, ExerciseId{"bench-press"}, targets, 120}});
+  const auto created = mcpCreate(h, day);
+  REQUIRE(created.routine);
+  const auto read = h.repo.program.routine(h.user, day.id);
+  REQUIRE(read);
+  REQUIRE_EQ(read->entries.size(), std::size_t{1});
+  CHECK_EQ(read->entries[0].sets, targets);
+  CHECK_EQ(read->entries[0].sets.back().weightKg, std::optional<double>{1});
 }

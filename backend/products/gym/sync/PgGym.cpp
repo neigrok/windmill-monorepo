@@ -94,7 +94,7 @@ Json::Value readAliases(SyncTxn& txn, const ScopeKey& scope, const std::string& 
 }
 
 std::optional<int> integer(const Json::Value& value) { return value.isNull() ? std::nullopt : std::optional(value.asInt()); }
-std::optional<double> number(const Json::Value& value) { return value.isNull() ? std::nullopt : std::optional(value.asDouble()); }
+std::optional<std::string> loadNumber(const Json::Value& value) { return value.isNull() ? std::nullopt : std::optional(jcs(value)); }
 std::optional<std::string> json(const Json::Value& value) { return value.isNull() ? std::nullopt : std::optional(jcs(value)); }
 
 void writeEntries(SyncTxn& txn, const std::string& id, const Json::Value& entries) {
@@ -108,7 +108,7 @@ void writeEntries(SyncTxn& txn, const std::string& id, const Json::Value& entrie
     int index = 0;
     for (const Json::Value& set : entry["sets"]) {
       sql.exec("insert into gym_routine_entry_sets(routine_id,position,set_index,reps,weight_kg,reps_present,weight_kg_present) values($1,$2,$3,$4,$5,$6,$7)",
-               pqxx::params{id, position, ++index, integer(set["reps"]), number(set["weightKg"]), set.isMember("reps"), set.isMember("weightKg")});
+               pqxx::params{id, position, ++index, integer(set["reps"]), loadNumber(set["weightKg"]), set.isMember("reps"), set.isMember("weightKg")});
     }
   }
 }
@@ -329,7 +329,8 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
       parameter(snake(name) + "_stamp", reg == row.lattice.f.end() ? std::optional<std::string>() : std::optional(toString(reg->second.stamp)));
       if (complex(name)) continue;
       if (reg == row.lattice.f.end()) { add(col, fallback(type_.name, name)); continue; }
-      bindValue(params, reg->second.value);
+      if (type_.name == "set" && name == "weightKg") params.append(loadNumber(reg->second.value));
+      else bindValue(params, reg->second.value);
       const std::string p = "$" + std::to_string(++index);
       add(col, instant(type_.name, name) ? "to_timestamp(" + p + "::numeric/1000)" : p + (jsonColumn(field, name) ? "::jsonb" : ""));
     }

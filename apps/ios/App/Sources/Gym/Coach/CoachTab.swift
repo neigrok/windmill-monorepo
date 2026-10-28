@@ -466,7 +466,7 @@ struct CoachSourcesSheet: View {
   // *Push A* over *Sat, Sep 26 · 1 working set · 400 kg*: the day, then the whole workout's facts when the read knew them.
   func workout(_ source: CoachObservation) -> some View {
     let available = gym.sessions.contains { $0.id.record.string == source.sessionId }
-    let facts = source.whole.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.tonnageKg) + " kg"] } ?? []
+    let facts = source.whole.map { [GymCount.of($0.workingSetCount, "working set")] + ($0.tonnageKg.map { [Readout.weight($0) + " kg"] } ?? []) } ?? []
     return Button { dismiss(); openSession?(source.sessionId) } label: {
       GymRow(title: source.routine ?? Readout.noRoutine, meta: ([gym.dates.subtitle(Instant(ms: source.startedAt))] + facts).joined(separator: " · "),
              trailing: available ? .door : nil).contentShape(Rectangle())

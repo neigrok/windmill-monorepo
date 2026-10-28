@@ -14,8 +14,10 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**Registry contract:** The composed registry is version 9 with minimum version 9. Gym's explicit
-`other` equipment value extends a client-validated enum; older clients must upgrade. All legacy
+**Registry contract:** The composed source registry is version 10 with minimum version 10. Gym's
+finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
+last time. Derived volume and estimates are explicit null when unavailable. Older clients must
+upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
@@ -354,7 +356,8 @@ declares it. The v7 registers are optional LWW fields: a writer leaves an unset 
 a null register is refused `invalid`. v7 keeps minimum v4, and the base `exercise.equipment` stays const.
 The gym Coach's `thread` and `message` types and the `runningTurn` and `picture:<id>` device rows (v8) are
 additive too. The explicit `other` equipment value extends a client-enforced enum, so version 9
-requires minimum 9. Existing rows and overrides are not migrated.
+requires minimum 9. Unbounded finite normalized gym loads and nullable derived metrics require
+version 10 / minimum 10. Existing equipment rows and overrides are not migrated.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -1377,8 +1380,13 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A number, at any depth of a field value or of a command argument, is rounded to its domain's
      `quantum` `q`, in IEEE-754 doubles, with
      `roundHalfAway(y) = sign(y) × round(|y|)`: `roundHalfAway(x / q) × q` for an integer `q`, and
-     otherwise `roundHalfAway(x × k) / k` with `k = round(1 / q)`. A number is on its quantum iff
-     this rounding leaves it unchanged; the server admits only such numbers (§6.1 step 2).
+     otherwise `roundHalfAway(x × k) / k` with `k = round(1 / q)`. For a reciprocal quantum whose
+     actual scale is exactly `10^d`, `0 ≤ d ≤ 22`, a canonical JCS decimal with at most `d`
+     fractional places is preserved before rounding. If reciprocal scaling overflows, the finite
+     input is preserved because representable spacing exceeds the quantum. Ordinary finite
+     nondecimal rounding is unchanged. Every result must be finite and negative zero becomes
+     positive zero. A number is on its quantum iff normalization leaves it unchanged; the server
+     admits only such numbers (§6.1 step 2).
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
@@ -2653,12 +2661,12 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 
 | Type | Identity | Life | Fields | Rules |
 |---|---|---|---|---|
-| `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` ±500 quantum 0.01})}); lww server: `revision` 1–2 147 483 647; const server: `createdDoor` ∈ {mcp, ask}, `createdEntries` 0–2 147 483 647 | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. R118: server-authored revision and original entry count; an ask create also writes the independent `routineCreation` snapshot below. |
+| `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` finite quantum 0.01})}); lww server: `revision` 1–2 147 483 647; const server: `createdDoor` ∈ {mcp, ask}, `createdEntries` 0–2 147 483 647 | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. R118: server-authored revision and original entry count; an ask create also writes the independent `routineCreation` snapshot below. |
 | `routineCreation` | keyed string, same id pattern as routine; no ref | none | const server: `snapshot` JSON | R118: exact immutable Coach creation receipt, in `gym_routine_creations`; survives routine/conversation deletion, purged only with its account. Not a primary type. No public writer. |
 | `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell, other}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
 | `exerciseName` | keyed (`ref<exercise>`: a seed, or a custom movement of the account) | none | lww, each optional: `name` 1–240 bytes, `equipment` (the `exercise.equipment` enum), `loadCount` integer 1–2; lww server: `aliases` as an exercise's | The account's name and loading for a movement. Keyed by a seed: `name` unset reads as the seed's own name, a seed renamed back to it holds it, and a change of the displayed name writes `aliases` as an exercise's rename does. Keyed by a custom movement alive in the joined rows, stored or created in the same intent: only `equipment` and `loadCount`; a `name` → `invalid`, since a custom movement's name and aliases live on its `exercise`. Keyed by any other id → `invalid`. A null register → `invalid`. `loadCount` counts only for `dumbbell` equipment. |
 | `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
-| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
+| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` finite quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25); lww server: `updatedAt` epoch ms ≥0 | Cap 10. Editor save guards the fields it writes. Client-derived `position` is the dense rank from 0 of `(ord, id)` among alive notes. R118 `updatedAt` is its content admission time; reorder leaves it alone. |
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`. No server-origin door writes a weigh-in. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |

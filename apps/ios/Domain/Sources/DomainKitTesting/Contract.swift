@@ -94,9 +94,9 @@ extension TextSpec {
 }
 
 extension NumberSpec {
-  // `{path, kind: "number", min, max, integer, quantum?}`, a null or absent quantum none.
+  // `{path, kind: "number", min?, max?, integer, quantum?}`, a null or absent quantum none.
   package init(form: JSON) throws {
-    self.init(try form.member("path").asString(), min: try form.member("min").asDouble(), max: try form.member("max").asDouble(),
+    self.init(try form.member("path").asString(), min: try form["min"]?.asDouble(), max: try form["max"]?.asDouble(),
               integer: try form["integer"]?.asBool() ?? false, quantum: try form["quantum"].flatMap { $0.isNull ? nil : try $0.asDouble() })
   }
 }

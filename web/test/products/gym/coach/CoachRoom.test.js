@@ -682,7 +682,7 @@ test('routine drafts remain reviewable across interruption and Save retries reta
   assert.deepEqual(elementsOf(review).filter((element) => element.type === 'li').map((element) => textOf(element.props.children)), [
     'Flat press1 × 8 · 35.3 lb each · Two dumbbells',
     'Bench press1 × 8 · 70.5 lb total · Barbell',
-    'Pull-up1 × 8 · Bodyweight',
+    'Pull-up1 × 8 · 0 lb added · Bodyweight',
   ]);
   const save = elementsOf(message.tree).find((element) => element.props.onClick && textOf(element.props.children) === 'Save routine');
   await save.props.onClick();

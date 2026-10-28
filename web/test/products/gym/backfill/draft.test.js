@@ -99,7 +99,7 @@ test('a last time that did not answer claims no history: the movement keeps its 
   assert.deepEqual(draft.movements.map((movement) => [movement.exerciseId, movement.neverLifted, movementLine(movement)]), [
     ['bench-press', false, '3 × 8 · 60'],
     ['overhead-press', false, '3 × 8'],
-    ['chin-up', false, '3 × 6–8'],
+    ['chin-up', false, '3 × 6–8 · 0'],
     ['back-squat', false, '3 × – · 100'],
     ['face-pull', false, 'open'],
     ['barbell-row', false, 'open'],
@@ -182,7 +182,7 @@ test('movementLine — the log’s scheme in kilograms, bodyweight without a loa
   assert.deepEqual(draft.movements.map(movementLine), [
     '3 × 8 · 60',
     '3 × 8 · 30–32.5',
-    '3 × 6–8',
+    '3 × 6–8 · 0',
     '3 × 4–5 · 100',
     'open · no last time',
     '2 × 9–10 · 70',
@@ -197,7 +197,7 @@ test('movementLine — the log’s scheme in kilograms, bodyweight without a loa
 
 test('targetLine — the routine’s own scheme, its nulls read as the target sheet reads them', () => {
   const draft = draftFromRoutine(PUSH_A, PUSH_A_LAST);
-  assert.deepEqual(draft.movements.map(targetLine), ['3 × 8 · 60', '3 × 8', '3 × 6–8', '3 × max · 100', 'open', 'open', '1 × 10']);
+  assert.deepEqual(draft.movements.map(targetLine), ['3 × 8 · 60', '3 × 8', '3 × 6–8 · 0', '3 × max · 100', 'open', 'open', '1 × 10']);
 });
 
 test('sets come and go by key — Add set copies the row above, a set leaves by its own key, a movement leaves and comes back', () => {
@@ -255,13 +255,13 @@ test('a number as the row draws it, as it is typed, and as ↑ and ↓ step it',
     'bodyweight', '62.5', '−20', '', '8',
   ]);
   assert.deepEqual(['62,5', '62.5', '', 'abc', '501', '-20', '1e1', '0x10', ' 60 '].map((text) => typedValue(text, 'load')), [
-    62.5, 62.5, null, undefined, undefined, -20, undefined, undefined, 60,
+    62.5, 62.5, null, undefined, 501, -20, undefined, undefined, 60,
   ]);
   assert.deepEqual(['8', '0', '8.5', '100', '', '0x10'].map((text) => typedValue(text, 'reps')), [8, undefined, undefined, undefined, null, undefined]);
   assert.deepEqual([
     steppedValue(60, 'load', 1, 2.5), steppedValue(60, 'load', -1, 5), steppedValue(null, 'load', 1, 2.5),
     steppedValue(0, 'load', -1, null), steppedValue(499, 'load', 1, 2.5),
-  ], [62.5, 55, 2.5, -2.5, 500]);
+  ], [62.5, 55, 2.5, -2.5, 501.5]);
   assert.deepEqual([steppedValue(8, 'reps', 1), steppedValue(1, 'reps', -1), steppedValue(null, 'reps', 1), steppedValue(99, 'reps', 1)], [9, 1, 1, 99]);
 });
 

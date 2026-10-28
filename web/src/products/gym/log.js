@@ -269,6 +269,7 @@ export function durLabel(ms) {
 // grid, and a real U+2212 minus for the band-assisted loads that sit below zero.
 export function fmt(weightKg, unit = weightUnit()) {
   const shown = inDisplayUnit(weightKg, unit);
+  if (!Number.isFinite(shown)) return '—';
   return (shown < 0 ? '−' : '') + String(Math.abs(round(shown)));
 }
 
@@ -302,7 +303,12 @@ const TONNAGE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
 
 export function tonnageLabel(kg, unit = weightUnit()) {
   if (!Number.isFinite(kg) || kg <= 0) return null;
-  return TONNAGE.format(inDisplayUnit(kg, unit));
+  const displayed = inDisplayUnit(kg, unit);
+  return Number.isFinite(displayed) ? TONNAGE.format(displayed) : null;
+}
+
+export function tonnageTotalLabel(kg, unit = weightUnit()) {
+  return kg === 0 ? '0' : tonnageLabel(kg, unit) ?? '—';
 }
 
 // `lastTrainedAt` is the store's aggregate over the log; its absence IS this state.
@@ -330,10 +336,9 @@ export function lastTrainedDayLabel(routine) {
   return shortDayLabel(routine.lastTrainedAt);
 }
 
-// "No target" has two spellings on the wire: the field omitted, and a zero. Zero is the absence of a
-// load, never a load; a band-assisted −20 IS a target.
+// A missing load uses last time; zero is an explicit load and a negative load is assistance.
 export function targetLoadOf(weightKg) {
-  if (weightKg == null || weightKg === 0) return null;
+  if (weightKg == null) return null;
   return round(weightKg);
 }
 
@@ -527,7 +532,7 @@ export function loadBasisLabel(exercise, weightKg = 0, unit = weightUnit()) {
   }
 }
 
-// Zero is the absence of a load: the movement done at bodyweight. A band-assisted −20 prints itself.
+// At zero added load the effort reads as bodyweight. A band-assisted −20 prints itself.
 export function setLoadLabel(set, unit = weightUnit(), basis = null) {
   if (set.weightKg === 0) return `bodyweight × ${set.reps}`;
   return `${fmt(set.weightKg, unit)}${basis ? ` ${basis}` : ''} × ${set.reps}`;

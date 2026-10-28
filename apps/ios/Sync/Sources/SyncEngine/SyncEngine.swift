@@ -58,6 +58,7 @@ public final class SyncEngine: Replica {
     let (hub, changes) = (hub, core.publisher.changes)
     loops.withLock { $0.tasks.append(Task { @MainActor in await hub.run(changes) }) }
     connectivity.onChange { [weak core] _ in
+      core?.connectivityGeneration.withLock { $0 &+= 1 }
       core?.wakes.kickAll()
       core?.publish(\.status)
     }
@@ -99,23 +100,9 @@ public final class SyncEngine: Replica {
   // as a 401 (§9.1: a 401, or a hello served as anyone but the active replica's account) pauses it while `token` is
   // still the account's; and a `minSchema` above the registry's version, or the server's 426, requires an upgrade.
   package func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    guard core.connectivity.isOnline, !Task.isCancelled else { return .unreachable }
-    let send = core.clock.wall.reading()
-    let reply = await core.answered(operation: "sync_hello", method: "GET", abandonOnCancellation: true) { [transport] in
-      await transport.hello(token: token)
-    }.reply
-    guard !Task.isCancelled else { return .unreachable }
-    let timing = Timing(send: send, recv: core.clock.wall.reading())
-    guard case .answered(let answer) = reply else { return reply }
-    if let serverTime = answer.serverTime { _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
-    if let seat = try? core.seat(), answer.isUnauthenticated(for: seat.account) {
-      _ = try? core.pauseAuth(seat.replica, sentUnder: token)
-    }
-    switch answer {
-    case .ok(let hello):
-      if hello.minSchema > core.registry.version { core.requireUpgrade() }
-      if let account = hello.servedAs, let holdings = hello.holdings { holdingsByAccount.withLock { $0[account] = holdings } }
-    case .failed(let failure): if failure.requiresUpgrade { core.requireUpgrade() }
+    let reply = await core.hello(transport: transport, token: token)
+    if case .answered(.ok(let hello)) = reply, let account = hello.servedAs, let holdings = hello.holdings {
+      holdingsByAccount.withLock { $0[account] = holdings }
     }
     return reply
   }
@@ -263,7 +250,9 @@ public final class SyncEngine: Replica {
   // Leaving the app: every held entry is released into the durable queue at once, so Undo is not offered again, and a
   // release kicks the sender (§7.3); the live socket closes and the pull timer stops until the app is back.
   public func leave() throws {
-    core.foreground.store(false, ordering: .relaxed)
+    core.lifecycleGeneration.withLock { generation in
+      if core.isForeground { generation += 1; core.foreground.store(false, ordering: .relaxed) }
+    }
     core.wakes.live.kick()
     if try core.write({ store, _ in try store.releaseAll() }) { core.wakes.sender.kick() }
   }
@@ -277,7 +266,9 @@ public final class SyncEngine: Replica {
 
   // Back in the foreground: the sender goes again, every subscribed scope is pulled, and the live socket reopens.
   public func foreground() {
-    core.foreground.store(true, ordering: .relaxed)
+    core.lifecycleGeneration.withLock { generation in
+      if !core.isForeground { generation += 1; core.foreground.store(true, ordering: .relaxed) }
+    }
     core.pullWants.all()
     core.wakes.kickAll()
   }
@@ -333,6 +324,8 @@ final class EngineCore: Sendable {
   let random: any RandomSource
   let identities: any IdentitySource & Sendable
   let connectivity: any Connectivity
+  let connectivityGeneration = Mutex(0)
+  let lifecycleGeneration = Mutex(0)
   let telemetry: any Telemetry
   // The engine's own sync failures, a request's deadline and the live heartbeat, each filed once per outage.
   let diagnostics: TransportDiagnostics
@@ -507,6 +500,32 @@ final class EngineCore: Sendable {
       return try body(reader)
     }
   }
+
+  func hello(transport: any SyncTransport, token: SessionToken?) async -> Reply<HelloResponse> {
+    guard connectivity.isOnline, !Task.isCancelled else { return .unreachable }
+    let before = try? seat()
+    let send = clock.wall.reading()
+    let reply = await answered(operation: "sync_hello", method: "GET", abandonOnCancellation: true) { [transport] in
+      await transport.hello(token: token)
+    }.reply
+    guard !Task.isCancelled else { return .unreachable }
+    let current = try? seat()
+    guard before?.replica == current?.replica, before?.account == current?.account, before?.state == current?.state else { return .unreachable }
+    if let account = before?.account, tokens.token(for: account) != token { return .unreachable }
+    let timing = Timing(send: send, recv: clock.wall.reading())
+    guard case .answered(let answer) = reply else { return reply }
+    if let serverTime = answer.serverTime { _ = try? write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
+    if let seat = try? seat(), answer.isUnauthenticated(for: seat.account) {
+      _ = try? pauseAuth(seat.replica, sentUnder: token)
+    }
+    switch answer {
+    case .ok(let hello):
+      if hello.minSchema > registry.version { requireUpgrade() }
+    case .failed(let failure): if failure.requiresUpgrade { requireUpgrade() }
+    }
+    return reply
+  }
+
 
   // The active replica's meta.
   func seat() throws -> ReplicaMeta? {

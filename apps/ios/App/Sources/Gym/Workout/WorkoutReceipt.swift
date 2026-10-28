@@ -116,21 +116,21 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     record = try container.decodeIfPresent(Record.self, forKey: .record)
     against = try container.decodeIfPresent(Against.self, forKey: .against)
     if let record {
-      guard record.value.isFinite, abs(record.value) <= 9_000,
-            record.previous.map({ $0.isFinite && abs($0) <= 9_000 }) ?? true,
-            record.weightKg.isFinite, abs(record.weightKg) <= 500, (1...500).contains(record.reps) else {
+      guard record.value.isFinite,
+            record.previous.map({ $0.isFinite }) ?? true,
+            record.weightKg.isFinite, (1...500).contains(record.reps) else {
         throw DecodingError.dataCorruptedError(forKey: .record, in: container, debugDescription: "Invalid record numbers")
       }
     }
     for movement in against?.movements ?? [] {
       for effort in [movement.now, movement.before].compactMap({ $0 }) {
-        guard effort.sets > 0, (1...500).contains(effort.reps), effort.weightKg.isFinite, abs(effort.weightKg) <= 500 else {
+        guard effort.sets > 0, (1...500).contains(effort.reps), effort.weightKg.isFinite else {
           throw DecodingError.dataCorruptedError(forKey: .against, in: container, debugDescription: "Invalid effort numbers")
         }
       }
       for target in movement.planned?.sets ?? [] {
         guard target.reps.map({ (1...100).contains($0) }) ?? true,
-              target.weightKg.map({ $0.isFinite && abs($0) <= 500 }) ?? true else {
+              target.weightKg.map({ $0.isFinite }) ?? true else {
           throw DecodingError.dataCorruptedError(forKey: .against, in: container, debugDescription: "Invalid target numbers")
         }
       }

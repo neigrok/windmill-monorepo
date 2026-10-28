@@ -79,7 +79,7 @@ object ProposalRules {
     class Targets(path: String) {
         val sets = CountSpec("$path.sets", 1, 20)
         val reps = NumberSpec("$path.sets.reps", 1.0, 100.0, integer = true)
-        val weight = NumberSpec("$path.sets.weightKg", -500.0, 500.0, quantum = 0.01)
+        val weight = NumberSpec("$path.sets.weightKg", quantum = 0.01)
         val rest = NumberSpec("$path.restSeconds", 15.0, 900.0, integer = true)
         val specs: List<ValueSpec> get() = listOf(sets, reps, weight, rest)
         fun validate(value: EntryTargets, at: Path): EntryTargets = value.copy(
@@ -87,7 +87,7 @@ object ProposalRules {
                 if (target.reps == 0) throw Violation("proposal.zeroTarget", path + "reps", Violation.Reason.Custom("zeroTarget"))
                 val checkedReps = reps.applyOptional(target.reps, path + "reps")
                 val checkedWeight = weight.applyOptional(target.weightKg, path + "weightKg")
-                if (checkedWeight == 0.0) throw Violation("proposal.zeroTarget", path + "weightKg", Violation.Reason.Custom("zeroTarget"))
+                if (checkedWeight == 0.0 && target.weightKg != 0.0) throw Violation("proposal.zeroTarget", path + "weightKg", Violation.Reason.Custom("zeroTarget"))
                 SetTarget(checkedReps, checkedWeight)
             } }, restSeconds = rest.applyOptional(value.restSeconds, at + "restSeconds"),
         )

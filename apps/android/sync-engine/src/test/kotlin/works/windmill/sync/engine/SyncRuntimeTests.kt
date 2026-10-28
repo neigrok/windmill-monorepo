@@ -173,10 +173,109 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun aLocalEpochChangeDuringHelloRequiresAnotherHelloBeforeNumbering() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.create()
+            val before = fixture.engine.device.current().entries().map { it.json }
+            val next = fixture.engine.device.current().meta["nextN"]
+            val answer = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = answer
+            val sending = async { fixture.runtime.senderStep(leaving = true) }
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            fixture.engine.write(EngineOperation.hello) { it.meta = it.meta.with("serverEpoch" to Json.of("ep-2")) }
+            answer.complete(helloResponse())
+            assertTrue(sending.await())
+            assertEquals(before, fixture.engine.device.current().entries().map { it.json })
+            assertEquals(next, fixture.engine.device.current().meta["nextN"])
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            fixture.transport.helloAnswer = null
+            val retry = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push()
+            val response = ok(push.request).value
+            push.answer.complete(Reply.Answer(response.copy(body = response.body!!.with("epoch" to Json.of("ep-2")))))
+            assertTrue(retry.await())
+            assertEquals(listOf("acked"), fixture.engine.device.current().entries().map { it.state })
+        }
+    }
+
+    @Test fun aNetworkChangeDuringHelloCannotNumberWorkEvenAfterReconnect() = runBlocking {
+        for (reconnect in listOf(false, true)) Fixture().use { fixture ->
+            fixture.create()
+            val before = fixture.engine.device.current().entries().map { it.json }
+            val next = fixture.engine.device.current().meta["nextN"]
+            val answer = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = answer
+            val sending = async { fixture.runtime.senderStep(leaving = true) }
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            fixture.runtime.connectivity(false)
+            if (reconnect) fixture.runtime.connectivity(true)
+            answer.complete(helloResponse())
+            assertFalse(sending.await())
+            assertEquals(before, fixture.engine.device.current().entries().map { it.json })
+            assertEquals(next, fixture.engine.device.current().meta["nextN"])
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            fixture.transport.helloAnswer = null
+            if (!reconnect) fixture.runtime.connectivity(true)
+            val retry = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            assertTrue(retry.await())
+            assertEquals(listOf("acked"), fixture.engine.device.current().entries().map { it.state })
+        }
+    }
+
+    @Test fun leavingDuringHelloRequiresFreshReadinessForTheIntentionalBackgroundFlush() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.runtime.enter()
+            fixture.transport.helloAnswer = CompletableDeferred()
+            fixture.create()
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val before = fixture.engine.device.current().entries().map { it.json }
+            val next = fixture.engine.device.current().meta["nextN"]
+            val earlier = fixture.transport.helloAnswer!!
+            val fresh = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = fresh
+            val leaving = async(start = CoroutineStart.UNDISPATCHED) { fixture.runtime.leave() }
+            // leave changes the lifecycle before waiting for the current sender turn.
+            earlier.complete(helloResponse())
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            assertEquals(before, fixture.engine.device.current().entries().map { it.json })
+            assertEquals(next, fixture.engine.device.current().meta["nextN"])
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            fresh.complete(helloResponse())
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            leaving.await()
+            assertEquals(listOf("acked"), fixture.engine.device.current().entries().map { it.state })
+        }
+    }
+
+    @Test fun senderOnlyRecoveryRetainsAChangedServerEpochUntilTheExistingConflictReplaysWork() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.create()
+            val initial = async { fixture.runtime.senderStep(leaving = true) }
+            val first = fixture.push(); first.answer.complete(ok(first.request)); assertTrue(initial.await())
+            fixture.engine.commit(product, Gesture(listOf(Change.update("card", RecordID("card0001"), mapOf("title" to Json.of("Updated"))))))
+            val sending = async { fixture.runtime.senderStep(leaving = true) }
+            val second = fixture.push()
+            second.answer.complete(Reply.Answer(SyncResponse(409, Json.objectOf("serverTime" to Json.of(5_000),
+                "epoch" to Json.of("ep-2"), "as" to Json.of("A"), "error" to Json.of("gap")))))
+            assertTrue(sending.await())
+            assertEquals(Json.of("ep-2"), fixture.engine.device.current().meta["serverEpoch"])
+            assertEquals(listOf("ready", "ready"), fixture.engine.device.current().entries().map { it.state })
+            val retry = async { fixture.runtime.senderStep(leaving = true) }
+            val replay = fixture.push()
+            val response = ok(replay.request).value
+            replay.answer.complete(Reply.Answer(response.copy(body = response.body!!.with("epoch" to Json.of("ep-2")))))
+            assertTrue(retry.await())
+            assertEquals(listOf("acked", "acked"), fixture.engine.device.current().entries().map { it.state })
+        }
+    }
+
     @Test fun anOlderServerKeepsExactReadyWorkUntilAFreshCompatibleHelloDeliversItOnce() = runBlocking {
-        val client = Registry(registry.json.with("version" to Json.of(8), "minVersion" to Json.of(8)))
+        val client = Registry(registry.json.with("version" to Json.of(10), "minVersion" to Json.of(10)))
         Fixture(registry = client).use { fixture ->
-            fixture.transport.schema = 7
+            fixture.transport.schema = 8
             fixture.create()
             val work = fixture.engine.device.current().entries().single().json
             val next = fixture.engine.device.current().meta.member("nextN")
@@ -186,11 +285,11 @@ class SyncRuntimeTests {
             assertEquals(next, fixture.engine.device.current().meta.member("nextN"))
             assertTrue(fixture.transport.pushes.tryReceive().isFailure)
             assertFalse(fixture.runtime.upgradeRequired)
-            assertEquals(7L, fixture.engine.read(product) { it.serverSchema() })
+            assertEquals(8L, fixture.engine.read(product) { it.serverSchema() })
             repeat(20) { assertFalse(fixture.runtime.senderStep(leaving = true)) }
             fixture.runtime.leave()
             assertTrue(fixture.transport.hellos.tryReceive().isFailure)
-            fixture.transport.schema = 8
+            fixture.transport.schema = 10
             fixture.clock.wall += Constants.BACKOFF_BASE_MS
             val sending = async { fixture.runtime.senderStep(leaving = true) }
             val push = fixture.push()

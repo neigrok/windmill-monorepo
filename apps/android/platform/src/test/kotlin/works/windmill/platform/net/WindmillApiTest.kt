@@ -29,6 +29,25 @@ private data class Wire(val value: String)
 class WindmillApiTest {
     private val server = MockWebServer()
 
+    @Test fun configuredHeadersCoverJsonStreamAndBytesWithoutChangingTheOriginalApi() = runTest {
+        val original = api { "fixture-bearer" }
+        val configured = original.withHeaders(mapOf("Fixture-Schema" to "fixture-version"))
+        server.enqueue(MockResponse().setBody("{\"value\":\"fixture\"}"))
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody("fixture"))
+        server.enqueue(MockResponse().setBody("fixture"))
+        server.enqueue(MockResponse().setBody("{\"value\":\"fixture\"}"))
+        assertEquals(Wire("fixture"), configured.get<Wire>("/v1/fixture"))
+        assertEquals("fixture", configured.consume("POST", "/v1/fixture", accept = "text/event-stream") { it.body!!.string() })
+        assertEquals("fixture", configured.consume("GET", "/v1/fixture", accept = "image/png") { it.body!!.string() })
+        original.get<Wire>("/v1/fixture")
+        repeat(3) {
+            val request = server.takeRequest()
+            assertEquals("fixture-version", request.getHeader("Fixture-Schema"))
+            assertEquals("Bearer fixture-bearer", request.getHeader("Authorization"))
+        }
+        assertNull(server.takeRequest().getHeader("Fixture-Schema"))
+    }
+
     @Test fun onlyTheSyncUpgradeRefusalAsksForAnUpdate() {
         assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.",
             WindmillApiException.Refused(426, Refusal(code = "client-update-required")).line)

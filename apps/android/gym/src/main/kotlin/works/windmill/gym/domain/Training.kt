@@ -168,7 +168,10 @@ data class SessionSummary(
         setCount = sets.size,
         workingSetCount = sets.size,
         // Clamped the server's way: an assisted set adds zero rather than subtracting.
-        tonnageKg = sets.sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
+        tonnageKg = works.windmill.gym.domain.sync.GymVolume.total(sets.map { set ->
+            works.windmill.gym.domain.sync.VolumePart(set.id, set.weightKg, set.reps,
+                catalog.firstOrNull { it.id == set.exerciseId }?.loadCount)
+        }),
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
@@ -638,8 +641,7 @@ object Ids {
 }
 
 object LoggedSetLimits {
-    const val maxWeightKg = 500
     const val maxReps = 99
     fun permits(weightKg: Double, reps: Int): Boolean =
-        weightKg.isFinite() && kotlin.math.abs(weightKg) <= maxWeightKg && reps in 1..maxReps
+        weightKg.isFinite() && reps in 1..maxReps
 }

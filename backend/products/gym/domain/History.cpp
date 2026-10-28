@@ -1,6 +1,7 @@
 #include "products/gym/domain/History.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace wm::gym {
 
@@ -14,12 +15,15 @@ void HistoryQuery::validate() const {
 
 HistoryTotals HistoryWorkout::totals(const std::optional<std::string>& exercise) const {
   HistoryTotals total{1, 0, 0, 0};
+  std::vector<VolumePart> parts;
   for (const HistorySet& set : sets) {
     if (!set.working || (exercise && set.exerciseId != *exercise)) continue;
     ++total.sets;
     total.reps += set.reps;
-    total.tonnageKg += liftedVolume(set.weightKg, set.reps, set.equipment, set.loadCount);
+    if (set.movementAvailable) parts.emplace_back(set.id, set.weightKg, set.reps, set.equipment, set.loadCount);
+    else parts.emplace_back(set.id, set.weightKg, set.reps, std::nullopt);
   }
+  total.tonnageKg = totalVolume(std::move(parts));
   return total;
 }
 

@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
 import unittest
+import io
 from unittest.mock import patch
 
 
@@ -16,6 +17,18 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_gym_requests_carry_the_source_schema_and_mcp_stays_dynamic(self):
+        fixture = capture.Fixture("http://127.0.0.1:8120", "unused")
+        schema = str(json.loads((capture.ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"])
+        for path in ["/v1/gym/exercises", "/v1/gym/threads/fixture/attachments/fixture", "/mcp"]:
+            response = io.BytesIO(b"{}")
+            response.headers = {}
+            with patch.object(fixture.client, "open", return_value=response) as send:
+                fixture.request(path, token="fixture")
+                request = send.call_args.args[0]
+                self.assertEqual(request.get_header("Sync-schema"), schema if path.startswith("/v1/gym/") else None)
+                self.assertEqual(request.get_header("Authorization"), "Bearer fixture")
+
     def test_transient_frame_delay_is_explicit_and_bounded(self):
         scenario = {"board": "03.11", "name": "rack-changed", "account": "fixture", "settle": False}
         for delay in [0, 180, 1000]:
@@ -89,7 +102,7 @@ class DesignCaptureTests(unittest.TestCase):
                     capture.read_fixture(path)
             invalid = [[], [workout] * 41, [{**workout, "extra": 1}]]
             for key, values in {"routine": [-1, 1, 0.5, True], "daysAgo": [-1, 3651, 1.5, True],
-                                "minutesAgo": [-1, 1440, 1.5, True], "weightKg": [-500.01, 500.01, .001, float("nan"), float("inf"), True],
+                                "minutesAgo": [-1, 1440, 1.5, True], "weightKg": [.001, .30000000000000004, 10 ** 400, float("nan"), float("inf"), True],
                                 "reps": [0, 501, 1.5, True], "setsPerMovement": [0, 21, 1.5, True, None, "1"]}.items():
                 invalid.extend([[{**workout, key: value}] for value in values])
             invalid.append([{**workout, "daysAgo": 0, "minutesAgo": 39}])
@@ -97,6 +110,16 @@ class DesignCaptureTests(unittest.TestCase):
                 path.write_text(json.dumps({**fixture, "history": history}))
                 with self.subTest(history=history), self.assertRaises(ValueError):
                     capture.read_fixture(path)
+
+    def test_history_retains_zero_signed_and_maximum_finite_loads(self):
+        for kg in [0, -0.0, 501, -501, 500.01, -500.01, 1.7976931348623157e308, -1.7976931348623157e308]:
+            fixture = {"exercises": [], "routines": [{"name": "Fixture", "entries": [{"exerciseId": "bench-press"}]}],
+                       "history": [{"routine": 0, "daysAgo": 1, "minutesAgo": 0, "weightKg": kg, "reps": 8}]}
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "fixture.json"
+                path.write_text(json.dumps(fixture, allow_nan=False))
+                with self.subTest(kg=kg):
+                    self.assertEqual(fixture, capture.read_fixture(path))
 
     def test_history_imports_exact_past_workouts_through_the_supported_mcp_door(self):
         imports = []

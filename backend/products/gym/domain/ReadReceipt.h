@@ -34,11 +34,11 @@ struct AskStep {
 
 struct WorkoutObservation {
   int workingSetCount = 0;
-  double tonnageKg = 0;
+  std::optional<double> tonnageKg = 0;
   std::optional<std::uint64_t> durationMs;
 
   WorkoutObservation() = default;
-  WorkoutObservation(const Session& session, int workingSetCount, double tonnageKg);
+  WorkoutObservation(const Session& session, int workingSetCount, std::optional<double> tonnageKg);
   WorkoutObservation(const Session& session, const std::vector<Set>& sets, const std::vector<Exercise>& catalog);
   bool operator==(const WorkoutObservation&) const = default;
 };

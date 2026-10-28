@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "gym",
-  "version": 9,
-  "minVersion": 9,
+  "version": 10,
+  "minVersion": 10,
   "products": {
     "gym": {
       "surfaces": ["web", "ios", "android"],
@@ -55,7 +55,7 @@
                     "type": "object",
                     "properties": {
                       "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
-                      "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
+                      "weightKg": { "type": "number", "quantum": 0.01 }
                     }
                   }
                 }
@@ -172,7 +172,7 @@
         "sessionId": { "kind": "const", "writer": "client", "ref": "session", "parent": true },
         "exerciseId": { "kind": "const", "writer": "client", "ref": "exercise" },
         "setNumber": { "kind": "serial", "writer": "server", "serialNext": ["sessionId", "exerciseId"] },
-        "weightKg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 } },
+        "weightKg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "quantum": 0.01 } },
         "reps": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 1, "max": 500 } },
         "kind": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] } },
         "rpe": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 } },
@@ -273,7 +273,7 @@
                         "type": "object",
                         "properties": {
                           "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
-                          "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
+                          "weightKg": { "type": "number", "quantum": 0.01 }
                         }
                       }
                     },
@@ -290,7 +290,7 @@
                         "type": "object",
                         "properties": {
                           "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
-                          "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
+                          "weightKg": { "type": "number", "quantum": 0.01 }
                         }
                       }
                     },
@@ -413,7 +413,7 @@
               "properties": {
                 "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
                 "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-                "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 },
+                "weightKg": { "type": "number", "quantum": 0.01 },
                 "reps": { "type": "number", "integer": true, "min": 1, "max": 500 },
                 "kind": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] },
                 "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 },
@@ -450,7 +450,7 @@
                 "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
                 "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
                 "setNumber": { "type": "number", "integer": true, "min": 1, "max": 2147483647 },
-                "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 },
+                "weightKg": { "type": "number", "quantum": 0.01 },
                 "reps": { "type": "number", "integer": true, "min": 1, "max": 500 },
                 "kind": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] },
                 "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 },

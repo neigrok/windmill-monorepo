@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
 import { gymApi } from '../../../src/products/gym/gymApi.js';
+import { registry } from '../../../src/platform/sync/schema.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -12,6 +13,7 @@ function serve(...answers) {
   let turn = 0;
   global.fetch = async (url, options) => {
     calls.push({ url, options });
+    assert.equal(options.headers['Sync-Schema'], String(registry.version));
     const answer = answers[Math.min(turn, answers.length - 1)];
     turn += 1;
     return answer;
@@ -246,4 +248,44 @@ test('Coach generation status and failed action results survive the transport bo
     assert.deepEqual(error.generation, { ...generation, status: 'failed', results });
     return true;
   });
+});
+
+
+test('private photo bytes and public JSON carry the generated schema and preserve upgrade refusals', async () => {
+  const blob = new Blob(['fixture'], { type: 'image/png' });
+  serve({ ok: true, status: 200, blob: async () => blob });
+  assert.equal(await gymApi.coachPhoto('fixture-thread', 'fixture-photo'), blob);
+  assert.equal(calls[0].options.headers['Sync-Schema'], String(registry.version));
+  for (const read of [() => gymApi.sharedSession('fixture'), () => gymApi.sharedLog('fixture'),
+    () => gymApi.coachPhoto('fixture-thread', 'fixture-photo'), () => gymApi.askStream('fixture', '', 'fixture')]) {
+    serve(refusal(426, 'Update Windmill to keep using Gym.', 'client-update-required'));
+    await assert.rejects(read, (error) => error.status === 426 && error.code === 'client-update-required' &&
+      error.message === 'Update Windmill to keep using Gym.');
+  }
+});
+
+test('photo XHR carries the generated schema and preserves update-required before resolving metadata', async (t) => {
+  const original = global.XMLHttpRequest;
+  t.after(() => { global.XMLHttpRequest = original; });
+  let sent;
+  class Upload {
+    upload = {};
+    headers = {};
+    open(method, url) { this.method = method; this.url = url; }
+    setRequestHeader(name, value) { this.headers[name] = value; }
+    send(blob) { sent = { method: this.method, url: this.url, headers: this.headers, credentials: this.withCredentials, blob }; this.onload(); }
+  }
+  const blob = new Blob(['fixture'], { type: 'image/png' });
+  for (const status of [200, 426]) {
+    global.XMLHttpRequest = class extends Upload {
+      status = status;
+      responseText = JSON.stringify(status === 200 ? { attachment: { id: 'fixture-photo' } } :
+        { code: 'client-update-required', error: 'Update Windmill to keep using Gym.' });
+    };
+    const result = gymApi.uploadCoachPhoto('fixture-thread', 'fixture-photo', blob);
+    if (status === 200) assert.deepEqual(await result, { id: 'fixture-photo' });
+    else await assert.rejects(result, (error) => error.status === 426 && error.code === 'client-update-required');
+    assert.deepEqual(sent, { method: 'PUT', url: `${API_BASE}/v1/gym/threads/fixture-thread/attachments/fixture-photo`,
+      headers: { 'content-type': 'image/png', 'Sync-Schema': String(registry.version) }, credentials: true, blob });
+  }
 });

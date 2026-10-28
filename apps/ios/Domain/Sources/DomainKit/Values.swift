@@ -142,12 +142,12 @@ public struct TextSpec: ValueSpec {
 
 public struct NumberSpec: ValueSpec {
   public let path: String
-  let min: Double
-  let max: Double
+  let min: Double?
+  let max: Double?
   let integer: Bool
   let quantum: Quantum?
 
-  public init(_ path: String, min: Double, max: Double, integer: Bool = false, quantum: Double? = nil) {
+  public init(_ path: String, min: Double? = nil, max: Double? = nil, integer: Bool = false, quantum: Double? = nil) {
     precondition(!(integer && quantum != nil), "the number spec \(path) is integer or has a quantum, never both")
     self.path = path
     self.min = min
@@ -160,7 +160,9 @@ public struct NumberSpec: ValueSpec {
   }
 
   public var json: JSON {
-    var object: JSON.Object = ["path": .string(path), "kind": "number", "min": .of(min), "max": .of(max), "integer": .bool(integer)]
+    var object: JSON.Object = ["path": .string(path), "kind": "number", "integer": .bool(integer)]
+    object["min"] = min.map { .of($0) }
+    object["max"] = max.map { .of($0) }
     object["quantum"] = quantum.map { .of($0.step) }
     return .object(object)
   }
@@ -170,8 +172,9 @@ public struct NumberSpec: ValueSpec {
     guard x.isFinite else { throw violation(.notANumber, at: path) }
     if integer && x.rounded(.towardZero) != x { throw violation(.notInteger, at: path) }
     let rounded = quantum.map { $0.rounded(x) } ?? x
-    if rounded < min { throw violation(.below(min: min), at: path) }
-    if rounded > max { throw violation(.above(max: max), at: path) }
+    guard rounded.isFinite else { throw violation(.notANumber, at: path) }
+    if let min, rounded < min { throw violation(.below(min: min), at: path) }
+    if let max, rounded > max { throw violation(.above(max: max), at: path) }
     return rounded
   }
 

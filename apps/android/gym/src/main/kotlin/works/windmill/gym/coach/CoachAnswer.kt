@@ -156,7 +156,7 @@ internal fun CoachAnswer(
                     )
                     val facts = listOfNotNull(
                         "Working sets" to workout.workingSetCount.toString(),
-                        "Volume" to "${Readout.weight(workout.tonnageKg)} kg",
+                        "Volume" to (workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"),
                         workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
                     )
                     facts.forEach { (label, value) ->
@@ -194,7 +194,8 @@ internal fun CoachAnswer(
                                 "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
                                 else -> "Workout summary"
                             }
-                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)} working · ${Readout.weight(it.tonnageKg)}kg" }.orEmpty()
+                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)} working" +
+                                (it.tonnageKg?.let { kg -> " · ${Readout.weight(kg)}kg" } ?: "") }.orEmpty()
                             Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
                         }
                         phrases.forEach { phrase ->

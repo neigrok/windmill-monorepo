@@ -36,13 +36,14 @@ struct HistorySet {
   bool working;
   Equipment equipment = Equipment::barbell;
   int loadCount = 0;
+  bool movementAvailable = true;
 };
 
 struct HistoryTotals {
   int sessions = 0;
   int sets = 0;
   int reps = 0;
-  double tonnageKg = 0;
+  std::optional<double> tonnageKg = 0;
 };
 
 struct HistoryWorkout {

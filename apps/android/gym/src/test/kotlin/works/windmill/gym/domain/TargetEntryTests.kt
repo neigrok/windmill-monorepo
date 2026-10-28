@@ -70,29 +70,29 @@ class TargetEntryTests {
     fun testTheSixRefusalsAreSaidInTheirOwnWordsUnderTheRowThatCarriesThem() {
         assertEquals(Reading.Refused(0, Field.Weight, "One decimal point only."), straight("3", "5", "82.5.0"))
         assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."), straight("3", "5", "eighty"))
-        assertEquals(Reading.Refused(0, Field.Weight, "Over 500 kg — check the number."), straight("3", "5", "501"))
+        assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."), straight("3", "5", "1e999"))
         assertEquals(Reading.Refused(0, Field.Reps, "Whole reps, 1 to 100."), straight("3", "101"))
         assertEquals("the count's refusals stand under the head", Reading.Refused(null, Field.Sets, "Sets, 1 to 20."), straight("21"))
         assertEquals(Reading.Refused(null, Field.Sets, "A zero target is no target — clear the field instead."), straight("0"))
-        assertEquals("a typed zero is refused in every field",
+        assertEquals("a typed zero count is refused",
                      Reading.Refused(0, Field.Reps, "A zero target is no target — clear the field instead."), straight("3", "0"))
-        assertEquals(Reading.Refused(0, Field.Weight, "A zero target is no target — clear the field instead."), straight("3", "5", "0"))
+        assertEquals(Reading.Scheme(List(3) { SetTarget(5, 0.0) }), straight("3", "5", "0"))
     }
 
     @Test
     fun testOneRefusalAtATimeTopmostFirstAndRepsBeforeLoadWithinARow() {
         assertEquals("the count outranks every row",
                      Reading.Refused(null, Field.Sets, "Sets, 1 to 20."),
-                     TargetEntry.reading("21", listOf(TypedSet("101", "501"))))
+                     TargetEntry.reading("21", listOf(TypedSet("101", "1e999"))))
         assertEquals("a row's reps before its load",
                      Reading.Refused(0, Field.Reps, "Whole reps, 1 to 100."),
-                     TargetEntry.reading("1", listOf(TypedSet("101", "501"))))
-        assertEquals(Reading.Refused(0, Field.Weight, "Over 500 kg — check the number."),
-                     TargetEntry.reading("1", listOf(TypedSet("5", "501"))))
+                     TargetEntry.reading("1", listOf(TypedSet("101", "1e999"))))
+        assertEquals(Reading.Refused(0, Field.Weight, "That is not a number yet."),
+                     TargetEntry.reading("1", listOf(TypedSet("5", "1e999"))))
         assertEquals("row 3's fault is said under row 3, and row 4's waits its turn",
-                     Reading.Refused(2, Field.Weight, "Over 500 kg — check the number."),
+                     Reading.Refused(2, Field.Weight, "That is not a number yet."),
                      TargetEntry.reading("4", listOf(TypedSet("5", "60"), TypedSet("5", "80"),
-                                                     TypedSet("3", "900"), TypedSet("abc", "100"))))
+                                                     TypedSet("3", "1e999"), TypedSet("abc", "100"))))
         assertEquals(Reading.Refused(3, Field.Reps, "That is not a number yet."),
                      TargetEntry.reading("4", listOf(TypedSet("5", "60"), TypedSet("5", "80"),
                                                      TypedSet("3", "90"), TypedSet("abc", "100"))))
@@ -208,7 +208,7 @@ class TargetEntryTests {
         assertEquals("5 sets", TargetEntry.commit(TargetEntry.reading("5", lowerARamp)))
         assertEquals("1 × 5 · 100", TargetEntry.commit(Reading.Scheme(listOf(SetTarget(5, 100.0)))))
         assertEquals("no tail while something is refused", null,
-                     TargetEntry.commit(Reading.Refused(0, Field.Weight, TargetEntry.overWeight)))
+                     TargetEntry.commit(Reading.Refused(0, Field.Weight, TargetEntry.notANumber)))
         assertEquals("Set · 5 × 5 · 80", TargetEntry.commitLabel(Reading.Scheme(List(5) { SetTarget(5, 80.0) })))
         assertEquals("Set · open", TargetEntry.commitLabel(Reading.Open))
         assertEquals("Set", TargetEntry.commitLabel(Reading.Refused(null, Field.Sets, TargetEntry.outsideSets)))
@@ -250,7 +250,7 @@ class TargetEntryTests {
 
         assertTrue("the count's is always the head's",
                    TargetEntry.inTheHead(Reading.Refused(null, Field.Sets, TargetEntry.outsideSets), lowerARamp))
-        val loadTyped = TargetEntry.withWeight(lowerARamp, "501")
+        val loadTyped = TargetEntry.withWeight(lowerARamp, "1e999")
         assertTrue(TargetEntry.inTheHead(TargetEntry.reading("5", loadTyped) as Reading.Refused, loadTyped))
     }
 

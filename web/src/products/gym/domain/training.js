@@ -1,9 +1,10 @@
 // @ts-check
 
-import { DecodeError, EntityType, Id } from '../../../platform/domain-kit/entities.js';
+import { DecodeError, EntityType, Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
-import { NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
-import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
+import { NumberSpec, Path, TextSpec, Violation, precondition } from '../../../platform/domain-kit/values.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
 import { PlanSnapshot, Routine } from './routines.js';
 
@@ -65,21 +66,106 @@ export const Session = new EntityType({
   },
 });
 
+export class EstimateScore {
+  static zero = new EstimateScore(0, 1);
+
+  /** @param {number} weightKg @param {number} reps */
+  constructor(weightKg, reps) {
+    precondition(Number.isFinite(weightKg) && weightKg >= 0 && Number.isInteger(reps) && reps >= 1 && reps <= 10, 'invalid estimate score');
+    const [mantissa, power = '0'] = jcs(roundToQuantum(weightKg, 0.01)).split('e');
+    const point = mantissa.indexOf('.');
+    let exponent = Number(power) + 2 - (point < 0 ? 0 : mantissa.length - point - 1);
+    const digits = mantissa.replace('.', '').replace(/^0+/, '') || '0';
+    let product = '';
+    let carry = 0;
+    const factor = reps === 1 ? 30 : 30 + reps;
+    for (let index = digits.length - 1; index >= 0; index--) {
+      const number = Number(digits[index]) * factor + carry;
+      product = String(number % 10) + product;
+      carry = Math.floor(number / 10);
+    }
+    if (carry > 0) product = String(carry) + product;
+    while (product.length > 1 && product.endsWith('0')) { product = product.slice(0, -1); exponent++; }
+    this.digits = product;
+    this.exponent = product === '0' ? 0 : exponent;
+    Object.freeze(this);
+  }
+
+  /** @param {EstimateScore} other @returns {number} */
+  compare(other) {
+    if (this.digits === '0' || other.digits === '0') return Number(this.digits !== '0') - Number(other.digits !== '0');
+    const length = this.digits.length + this.exponent;
+    const otherLength = other.digits.length + other.exponent;
+    if (length !== otherLength) return length < otherLength ? -1 : 1;
+    for (let index = 0; index < Math.max(this.digits.length, other.digits.length); index++) {
+      const left = this.digits[index] ?? '0', right = other.digits[index] ?? '0';
+      if (left !== right) return left < right ? -1 : 1;
+    }
+    return 0;
+  }
+}
+
 export const GymEstimate = Object.freeze({
   /** @param {number} weightKg @param {number} reps @param {number | null} rpe */
+  qualifies(weightKg, reps, rpe) {
+    return Number.isFinite(weightKg) && weightKg > 0 && Number.isInteger(reps) && reps >= 1 && reps <= 10
+      && (rpe === null || Number.isFinite(rpe) && rpe >= 7);
+  },
+  /** @param {number} weightKg @param {number} reps @param {number | null} rpe */
   value(weightKg, reps, rpe = null) {
-    if (!Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1 || reps > 10
-      || (rpe !== null && (!Number.isFinite(rpe) || rpe < 7))) return null;
-    return reps === 1 ? weightKg : weightKg * (1 + reps / 30);
+    if (!GymEstimate.qualifies(weightKg, reps, rpe)) return null;
+    const value = reps === 1 ? weightKg : weightKg * (1 + reps / 30);
+    return Number.isFinite(value) ? value : null;
   },
   /** @param {number} weightKg @param {number} reps @param {number | null} rpe */
   score(weightKg, reps, rpe = null) {
-    if (GymEstimate.value(weightKg, reps, rpe) === null) return null;
-    return roundHalfAway(weightKg * 100) * (reps === 1 ? 30 : 30 + reps);
+    if (!GymEstimate.qualifies(weightKg, reps, rpe)) return null;
+    return new EstimateScore(weightKg, reps);
   },
   // An estimate as the log states it, to a tenth of a kilogram.
   /** @param {number} e1rm */
   stated(e1rm) { return roundToQuantum(e1rm, 0.1); },
+  /** @param {readonly TrainingSetValue[]} sets */
+  top(sets) {
+    const eligible = sets.filter((set) => GymEstimate.qualifies(set.weightKg, set.reps, set.rpe));
+    if (eligible.some((set) => set.e1rm === null)) return null;
+    const estimates = eligible.flatMap((set) => set.e1rm === null ? [] : [set.e1rm]);
+    return estimates.length === 0 ? null : Math.max(...estimates);
+  },
+});
+
+export class VolumePart {
+  /** @param {string} id @param {number | null} weightKg @param {number | null} reps @param {number | null} loadCount */
+  constructor(id, weightKg, reps, loadCount) {
+    this.id = id;
+    /** @type {number | null} */
+    this.kg = null;
+    if (weightKg === null || !Number.isFinite(weightKg) || reps === null || !Number.isInteger(reps) || reps <= 0
+      || loadCount === null || !Number.isInteger(loadCount) || loadCount <= 0) { Object.freeze(this); return; }
+    const lifted = Math.max(weightKg, 0) * reps;
+    if (!Number.isFinite(lifted)) { Object.freeze(this); return; }
+    const volume = lifted * loadCount;
+    this.kg = Number.isFinite(volume) ? volume : null;
+    Object.freeze(this);
+  }
+}
+
+export const GymVolume = Object.freeze({
+  /** @param {readonly VolumePart[]} parts @returns {number | null} */
+  total(parts) {
+    let total = 0;
+    for (const part of [...parts].sort((a, b) => compareText(a.id, b.id))) {
+      if (part.kg === null) return null;
+      total += part.kg;
+      if (!Number.isFinite(total)) return null;
+    }
+    return total;
+  },
+  /** @param {readonly TrainingSetValue[]} sets @param {import('./catalogue.js').Catalogue} catalogue */
+  of(sets, catalogue) {
+    return GymVolume.total(sets.map((set) => new VolumePart(jcs(set.id.json), set.weightKg, set.reps,
+      catalogue.find(set.exerciseId)?.loadCount ?? null)));
+  },
 });
 
 export class TrainingSetValue {
@@ -112,9 +198,9 @@ export class TrainingSetValue {
       rpe: this.rpe, note: this.note, completedAt: this.completedAt.ms };
   }
 
-  get volumeKg() { return Math.max(0, this.weightKg) * this.reps; }
+  get volumeKg() { return new VolumePart(jcs(this.id.json), this.weightKg, this.reps, 1).kg; }
   /** @param {ExerciseValue | null} exercise */
-  volumeFor(exercise) { return this.volumeKg * (exercise?.loadCount ?? 1); }
+  volumeFor(exercise) { return new VolumePart(jcs(this.id.json), this.weightKg, this.reps, exercise?.loadCount ?? null).kg; }
   get e1rm() { return GymEstimate.value(this.weightKg, this.reps, this.rpe); }
 }
 
@@ -138,7 +224,7 @@ export const TrainingSet = new EntityType({
 });
 
 export const SetRules = Object.freeze({
-  weightKg: new NumberSpec('set.weightKg', { min: -500, max: 500, quantum: 0.01 }),
+  weightKg: new NumberSpec('set.weightKg', { quantum: 0.01 }),
   reps: new NumberSpec('set.reps', { min: 1, max: 500, integer: true }),
   rpe: new NumberSpec('set.rpe', { min: 1, max: 10, quantum: 0.1 }),
   note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),

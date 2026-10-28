@@ -14,6 +14,14 @@ import SyncTesting
 @testable import Windmill
 
 @MainActor final class WorkoutRenderingTests: XCTestCase {
+  struct LoadWheelProbe: View {
+    @State var load: Double
+    let changed: (Double) -> Void
+    var body: some View {
+      SetWheels(weightKg: $load, reps: .constant(5), basis: MovementEquipment("other"))
+        .onChange(of: load) { _, value in changed(value) }
+    }
+  }
   var models: [GymModel] = []
   override func tearDown() async throws {
     try await Task.sleep(for: .milliseconds(150))
@@ -213,6 +221,66 @@ import SyncTesting
       .map { WorkoutRack.spokenWeight(100, basis: $0) }, ["Weight, 100 kg total", "Weight, 100 kg each", "Weight, 100 kg", "Weight, 100 kg added"])
     XCTAssertEqual([WorkoutRack.spokenLog(100, reps: 5), WorkoutRack.spokenLog(67.5, reps: 1)],
                    ["Log set, 100 kilograms, 5 reps", "Log set, 67.5 kilograms, 1 rep"])
+  }
+
+  func testNativeLoadWheelsOpenUnchangedAcrossZeroAndFiniteExtremes() async throws {
+    func pickers(_ view: UIView) -> [UIPickerView] {
+      if let picker = view as? UIPickerView { return [picker] }
+      return view.subviews.flatMap(pickers)
+    }
+    for load in [501, -501, 0, Double.greatestFiniteMagnitude, -Double.greatestFiniteMagnitude] {
+      let basis = MovementEquipment("other")
+      var selectedLoad = load
+      let window = try host(LoadWheelProbe(load: load, changed: { selectedLoad = $0 }), appearance: .light)
+      try await Task.sleep(for: .milliseconds(150))
+      window.layoutIfNeeded()
+      let native = pickers(window)
+      XCTAssertEqual(native.count, 2)
+      let picker = try XCTUnwrap(native.first)
+      let values = SetWheels.loads(around: load, basis: basis)
+      XCTAssertEqual(picker.numberOfRows(inComponent: 0), values.count)
+      XCTAssertLessThanOrEqual(values.count, 123)
+      let selected = picker.selectedRow(inComponent: 0)
+      XCTAssertTrue(values.indices.contains(selected))
+      if values.indices.contains(selected) { XCTAssertEqual(values[selected], load) }
+      if values.count > 30 {
+        let edge = values.count - 5, target = values[edge]
+        picker.selectRow(edge, inComponent: 0, animated: false)
+        picker.delegate?.pickerView?(picker, didSelectRow: edge, inComponent: 0)
+        try await Task.sleep(for: .milliseconds(150))
+        window.layoutIfNeeded()
+        XCTAssertEqual(selectedLoad, target)
+        let recentered = SetWheels.loads(around: target, basis: basis)
+        XCTAssertEqual(picker.numberOfRows(inComponent: 0), recentered.count)
+        let current = picker.selectedRow(inComponent: 0)
+        XCTAssertTrue(recentered.indices.contains(current))
+        if recentered.indices.contains(current) { XCTAssertEqual(recentered[current], target) }
+        XCTAssertGreaterThanOrEqual(current, 15)
+        XCTAssertLessThan(current, recentered.count - 15)
+      }
+      window.isHidden = true; window.rootViewController = nil
+    }
+  }
+
+  func testUnavailableEstimateNeverRendersAnIneligibilityClaim() async throws {
+    for unavailable in [false, true] {
+      let helpers = TrainingLogUITests(), (_, gym) = helpers.fixture()
+      _ = try helpers.session(gym, daysAgo: 100)
+      _ = try helpers.session(gym, daysAgo: 1, kg: unavailable ? .greatestFiniteMagnitude : 60, reps: unavailable ? 2 : 11)
+      let log = try XCTUnwrap(gym.log), exercise = SeedExercises.all.first!.id
+      let progress = log.progress.movement(exercise)
+      let view = MovementRecordScreen(gym: gym, exerciseID: exercise, selected: nil)
+      let window = try host(List { view.strength(progress, log: log, dates: gym.dates) }.modifier(GymPage()), appearance: .light)
+      try await Task.sleep(for: .milliseconds(250)); window.layoutIfNeeded()
+      let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate; request.recognitionLanguages = ["en-US"]
+      try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+      let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+      XCTAssertTrue(text.contains("12 weeks"))
+      XCTAssertEqual(text.contains("no eligible estimate"), !unavailable)
+      window.isHidden = true; window.rootViewController = nil
+    }
   }
 
   func testLargeNumeralsAtLargeAndLargestText() async throws {

@@ -61,6 +61,7 @@ public:
 private:
   double step_;
   double stepsPerUnit_;  // k for a step 1/k; 0 for an integer step
+  std::optional<int> decimalPlaces_;
 };
 
 enum class Unit { chars, bytes };

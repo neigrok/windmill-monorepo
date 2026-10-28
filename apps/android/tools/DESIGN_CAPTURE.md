@@ -102,7 +102,7 @@ and 200% text refusal captures in both appearances; its after-steps discard thes
 `--scenarios apps/android/tools/capture-recipes/record.json` captures the Record overflow and a
 retained point opened from a Log new-best moment in both appearances. Optional fixture `history`
 contains 1–40 explicit workouts: zero-based `routine`, integer `daysAgo` (0–3650), integer
-`minutesAgo` (0–1439), `weightKg` (−500–500 in hundredths), and integer `reps` (1–500). Each workout
+`minutesAgo` (0–1439), finite `weightKg` in hundredths, and integer `reps` (1–500). Each workout
 lasts 40 minutes and must finish by the fixture clock. The supported `gym_import_session` door
 writes three working sets per movement unless an explicit workout supplies `setsPerMovement`
 (1–20). Custom history permits at most 20 total working sets per workout, preserving its 40-minute

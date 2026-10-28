@@ -356,3 +356,86 @@ TEST(pg_gym_history_month_facets_include_empty_workouts_in_the_requested_local_z
   try { h.repo.log.history(h.user, query); } catch (const InvalidTraining&) { refused = true; }
   CHECK(refused);
 }
+
+
+TEST(pg_gym_history_volume_folds_the_full_scope_independently_of_page_and_progress) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto now = h.clock.now;
+  started(h, h.user, "ses_flat001", now - 10000);
+  auto large = bench("set_flat001", 1e16, now - 9000); large.reps = 1;
+  logged(h, h.user, "ses_flat001", large);
+  finished(h, h.user, "ses_flat001", now - 8000);
+  started(h, h.user, "ses_flat002", now - 7000);
+  auto small = bench("set_flat003", 1, now - 6000); small.reps = 1;
+  logged(h, h.user, "ses_flat002", small);
+  small.id = SetId{"set_flat002"}; small.completedAtMs += 1;
+  logged(h, h.user, "ses_flat002", small);
+  finished(h, h.user, "ses_flat002", now - 5000);
+  for (const bool progress : {false, true}) {
+    HistoryQuery query; query.limit = 1; query.includeProgress = progress; query.asOfMs = now;
+    const auto page = h.repo.log.history(h.user, query);
+    REQUIRE_EQ(page.sessions.size(), std::size_t{1});
+    CHECK_EQ(page.summary.sessions, 2);
+    CHECK_EQ(page.summary.sets, 3);
+    CHECK_EQ(page.summary.tonnageKg, std::optional<double>{1e16});
+    CHECK_EQ(page.sessions[0].totals().tonnageKg, std::optional<double>{2});
+    query.fromMs = now - 7000;
+    CHECK_EQ(h.repo.log.history(h.user, query).summary.tonnageKg, std::optional<double>{2});
+  }
+}
+
+TEST(pg_gym_snapshot_missing_movement_keeps_the_required_unavailable_contributor) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto now = h.clock.now;
+  started(h, h.user, "ses_missing1", now - 10000);
+  logged(h, h.user, "ses_missing1", bench("set_missing1", 60, now - 9000));
+  finished(h, h.user, "ses_missing1", now - 8000);
+  const LogShare share{"share_missing1", h.user, "missing-movement-fixture", LogShareMode::snapshot,
+      false, 0, kMaxInstantMs, now, now + 100000};
+  REQUIRE(h.repo.log.createLogShare(share));
+  {
+    PgLease lease{*pool()}; pqxx::work txn{*lease};
+    txn.exec("update gym_log_share_sessions set workout=jsonb_set(workout,'{sets,0,movementAvailable}','false') where share_id=$1",
+        pqxx::params{share.id});
+    txn.commit();
+  }
+  const auto read = h.repo.log.sharedHistory(share.token, HistoryQuery{}, now);
+  REQUIRE(read);
+  CHECK_FALSE(read->page.summary.tonnageKg);
+  REQUIRE_EQ(read->page.sessions.size(), std::size_t{1});
+  CHECK_FALSE(read->page.sessions[0].totals().tonnageKg);
+  CHECK_EQ(read->page.summary.sets, 1);
+  CHECK_EQ(read->page.sessions[0].sets.size(), std::size_t{1});
+}
+
+TEST(pg_gym_snapshot_unavailable_raw_numbers_fail_even_when_the_workout_is_off_page) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto now = h.clock.now;
+  for (int i = 0; i < 2; ++i) {
+    const auto session = "ses_rawmissing" + std::to_string(i);
+    const auto start = now - 10000 + i * 4000;
+    started(h, h.user, session, start);
+    logged(h, h.user, session, bench("set_rawmissing" + std::to_string(i), 60, start + 1000));
+    finished(h, h.user, session, start + 2000);
+  }
+  const LogShare share{"share_rawmissing", h.user, "missing-raw-fixture", LogShareMode::snapshot,
+      false, 0, kMaxInstantMs, now, now + 100000};
+  REQUIRE(h.repo.log.createLogShare(share));
+  {
+    PgLease lease{*pool()}; pqxx::work txn{*lease};
+    txn.exec("update gym_log_share_sessions set workout=workout #- '{sets,0,weightKg}' where share_id=$1 and id=$2",
+        pqxx::params{share.id, "ses_rawmissing0"});
+    txn.commit();
+  }
+  HistoryQuery query; query.limit = 1;
+  bool rejected = false;
+  try { h.repo.log.sharedHistory(share.token, query, now); }
+  catch (const std::runtime_error& error) {
+    rejected = true;
+    CHECK_EQ(std::string(error.what()), std::string("stored history set has unavailable numeric facts"));
+  }
+  CHECK(rejected);
+}

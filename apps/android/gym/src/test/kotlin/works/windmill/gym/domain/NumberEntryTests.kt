@@ -39,14 +39,10 @@ class NumberEntryTests {
         }
     }
 
-    @Test fun loadBoundsAreCheckedBeforeRoundingAndIncludeBothEndpoints() {
-        for (text in listOf("500.001", "-500.001", "5000", "-5000")) {
-            assertEquals(text, NumberEntry.Reading(null, "Over 500 kg — check the number."),
-                NumberEntry.read(text, NumberEntry.Field.Load, keeping = -102.5))
-        }
-        for (value in listOf(-500.0, 500.0)) {
+    @Test fun finiteLoadsHaveNoPolicyCapAndCanonicalReadoutsRoundTrip() {
+        for (value in listOf(-5000.0, 5000.0, 35333333333333.34, Double.MAX_VALUE, -Double.MAX_VALUE)) {
             assertEquals(NumberEntry.Reading(value, "kg"),
-                NumberEntry.read(value.toString(), NumberEntry.Field.Load, keeping = 0.0))
+                NumberEntry.read(Readout.weight(value), NumberEntry.Field.Load, keeping = 0.0))
         }
     }
 
