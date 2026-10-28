@@ -160,9 +160,8 @@ class WorkoutRecoveryTests {
         val waiting = ConcurrentLinkedQueue<Runnable>()
         var holdReads = false
         val reads = object : CoroutineDispatcher() {
-            override fun dispatch(context: CoroutineContext, block: Runnable) {
-                if (holdReads) waiting.add(block) else Dispatchers.Default.dispatch(context, block)
-            }
+            override fun isDispatchNeeded(context: CoroutineContext): Boolean = holdReads
+            override fun dispatch(context: CoroutineContext, block: Runnable) { waiting.add(block) }
         }
         val room = EngineRoomFixture(tmp.newFolder(), scope, readDispatcher = reads).apply { now = past }
         var showing by mutableStateOf(true)
@@ -177,11 +176,19 @@ class WorkoutRecoveryTests {
             val live = room.store.session!!
             val original = room.store.sets.single()
             val load = hasContentDescription("Load, kg") and hasAnyAncestor(isDialog())
+            holdReads = true
             restored.setContent {
                 if (showing) {
                     val account = remember { room.account() }
                     GymMaterial { GymRoom(account, room.store) }
                 }
+            }
+            compose.waitUntil(10_000) { waiting.isNotEmpty() }
+            compose.runOnIdle {
+                assertFalse(room.store.canFinish)
+                assertEquals(null, room.store.session)
+                holdReads = false
+                while (true) (waiting.poll() ?: break).run()
             }
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.canFinish } }
             compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).fetchSemanticsNodes().isNotEmpty() }

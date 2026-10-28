@@ -574,3 +574,17 @@ and performance are not claimed by this phase. The standard Dark captures retain
 Notes row/field geometry, colors and static assets are reviewed against canon. The owned runner
 exits normally; emulator/backend/model ports close, the disposable database is removed and private
 credentials are deleted.
+
+## Native CI diagnostics
+
+The workout recreation fixture controls both initial and reconnect reads explicitly. It asserts the
+temporary empty state before releasing reads on the test-owned dispatcher; the exact case passes
+in Debug and Release after Notes integration. Six telemetry policy cases also pass. Production
+dispatchers and timeouts remain unchanged.
+
+The iOS Domain job retains a bounded test-log tail and up to three fresh Domain crash stacks only
+when its original test command fails. The collector excludes unrelated, stale, oversized and
+symlink reports, and exports an allowlist of stack and symbolication fields. All 46 App Tools
+checks pass with Xcode 27.1, including three collector privacy/bounds fixtures; workflow YAML and
+whitespace checks pass. CI uses Xcode 26.3. Its signal-10 failure has no established cause or local
+reproduction; the diagnostic upload does not change test execution or assert a repair.

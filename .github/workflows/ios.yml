@@ -134,8 +134,82 @@ jobs:
 
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit
+        id: domain_tests
         working-directory: apps/ios/Domain
-        run: swift test --explicit-target-dependency-import-check error
+        run: |
+          touch "$RUNNER_TEMP/domain-tests-start"
+          set -o pipefail
+          swift test --explicit-target-dependency-import-check error 2>&1 | tee "$RUNNER_TEMP/domain-tests.log"
+
+      - name: Collect failed Domain test diagnostics
+        if: ${{ failure() && steps.domain_tests.outcome == 'failure' }}
+        timeout-minutes: 2
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import time
+
+          temporary = Path(os.environ["RUNNER_TEMP"])
+          output = temporary / "domain-test-diagnostics"
+          output.mkdir(exist_ok=True)
+          started = (temporary / "domain-tests-start").stat().st_mtime
+          limit = 8 * 1024 * 1024
+          log = temporary / "domain-tests.log"
+          if log.is_file():
+              with log.open("rb") as handle:
+                  handle.seek(max(0, log.stat().st_size - limit))
+                  (output / "domain-tests.log").write_bytes(handle.read(limit))
+          reports = Path.home() / "Library/Logs/DiagnosticReports"
+          selected = []
+          keys = ("procName", "procPath", "procLaunch", "captureTime", "cpuType", "osVersion",
+                  "exception", "termination", "faultingThread", "threads", "usedImages")
+          for attempt in range(5):
+              candidates = [path for pattern in ("WindmillDomainPackageTests-*.ips", "xctest-*.ips")
+                            for path in reports.glob(pattern) if not path.is_symlink() and path.is_file()]
+              for path in sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[:30]:
+                  try:
+                      if path.stat().st_mtime < started or path.stat().st_size > limit:
+                          continue
+                      metadata, payload = path.read_text().split("\n", 1)
+                      metadata = json.loads(metadata)
+                      if not isinstance(metadata, dict) or str(metadata.get("bug_type")) != "309":
+                          continue
+                      report = json.loads(payload)
+                      if not isinstance(report, dict):
+                          continue
+                      process = report.get("procName")
+                      domain = process == "WindmillDomainPackageTests" or (process == "xctest" and any(
+                          isinstance(image, dict) and "/WindmillDomainPackageTests.xctest/" in image.get("path", "")
+                          for image in report.get("usedImages", [])))
+                      if not domain:
+                          continue
+                      encoded = (json.dumps({key: report[key] for key in keys if key in report}, indent=2) + "\n").encode()
+                      if len(encoded) > limit:
+                          continue
+                      target = output / f"domain-crash-{len(selected) + 1}.json"
+                      target.write_bytes(encoded)
+                      selected.append(target.name)
+                      if len(selected) == 3:
+                          break
+                  except (OSError, ValueError, TypeError):
+                      continue
+              if selected or attempt == 4:
+                  break
+              time.sleep(4)
+          summary = {"reports": selected, "maximumReportBytes": limit, "maximumLogBytes": limit}
+          (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(f"Collected {len(selected)} Domain test crash report(s); log tail is limited to {limit} bytes.")
+          PY
+
+      - name: Retain failed Domain test diagnostics
+        if: ${{ failure() && steps.domain_tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-domain-test-diagnostics-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/domain-test-diagnostics
+          retention-days: 3
 
       - name: Test the engine's public test surface from outside the engine package
         working-directory: apps/ios/SyncTestingSurface
