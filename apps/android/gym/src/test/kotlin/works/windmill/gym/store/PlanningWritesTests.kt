@@ -18,7 +18,7 @@ class PlanningWritesTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
             assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push", creationId = "routine_a")
-                .adding("bench-press", List(3) { SetTarget(8, 60.0) })) is GymResult.Ok)
+                .adding("bench-press", List(3) { SetTarget(8, 60.0) }).capturingMovements(other.store.catalog)) is GymResult.Ok)
             other.sync(server)
             EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
                 room.select("a"); room.pull(server); room.store.refreshEngine()
@@ -32,7 +32,7 @@ class PlanningWritesTests {
                 assertEquals("Push elsewhere", advanced.name)
                 assertFalse(draft.changed)
                 val changed = draft.named("My push")
-                assertEquals(GymResult.Failed(WriteFailure.Refused("That routine changed. Open it again.")),
+                assertEquals(GymResult.Failed(WriteFailure.Refused("That changed. Open it again.")),
                     room.store.saveRoutine(changed))
                 assertEquals("nothing went out", emptyList<works.windmill.sync.core.Json>(), room.outbox())
                 assertEquals(listOf(advanced), room.training.program())

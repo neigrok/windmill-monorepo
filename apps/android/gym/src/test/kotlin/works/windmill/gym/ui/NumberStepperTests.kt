@@ -427,6 +427,56 @@ class NumberStepperTests {
         assertEquals(inlineHeight, field.fetchSemanticsNode().boundsInRoot.height)
     }
 
+    @Test fun regularLoadMovesItsUnitBelowWithoutShrinkingOrMovingSideControls() {
+        var commits = 0
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(2f, 2f)) {
+                GymMaterial {
+                    var text by remember { mutableStateOf("-12.5") }
+                    Column {
+                        NumberStepper(text, { text = it }, "Load", "kg added",
+                            onStep = { NumberEditResult.Unchanged }, onCommit = { commits++; NumberEditResult.Unchanged },
+                            modifier = Modifier.width(288.dp), input = NumberStepperInput.SignedDecimal)
+                        NumberStepper("8", {}, "Reps", "reps", onStep = { NumberEditResult.Unchanged },
+                            onCommit = { NumberEditResult.Unchanged })
+                    }
+                }
+            }
+        }
+        val field = compose.onNodeWithContentDescription("Load, kg added")
+        val original = field.fetchSemanticsNode().boundsInRoot
+        field.performClick()
+        for (value in listOf("-12.5", "0", "82.4", "82,4", "-1.7976931348623157e+308")) {
+            field.performTextReplacement(value)
+            val layouts = mutableListOf<TextLayoutResult>()
+            field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val valueLayout = layouts.single()
+            assertEquals(20.sp, valueLayout.layoutInput.style.fontSize)
+            val bounds = field.fetchSemanticsNode().boundsInRoot
+            assertEquals(original, bounds)
+            val unit = compose.onNodeWithText("kg added", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val label = compose.onNodeWithText("Load", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue(unit.top >= label.bottom + valueLayout.size.height)
+            for (name in listOf("Decrease Load", "Increase Load")) {
+                val button = compose.onNodeWithContentDescription(name).fetchSemanticsNode().boundsInRoot
+                assertTrue(button.center.y > bounds.top && button.center.y < bounds.bottom)
+                assertTrue(button.right <= bounds.left || button.left >= bounds.right)
+            }
+            for (caret in listOf(0, value.length)) {
+                field.performSemanticsAction(SemanticsActions.SetSelection) { it(caret, caret, false) }
+                assertEquals(TextRange(caret), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            }
+        }
+        field.performTextReplacement("82.5")
+        field.performSemanticsAction(SemanticsActions.SetSelection) { it(2, 3, false) }
+        field.performTextInput(",")
+        field.assertTextEquals("Load", "kg added", "82,5")
+        field.performImeAction()
+        assertEquals(1, commits)
+        compose.onNodeWithContentDescription("Reps, reps").performClick()
+        field.assertIsNotFocused()
+    }
+
     @Test fun arbitraryRawOverflowRetainsTheValueAndFontFloorForConsumerValidation() {
         compose.setContent {
             var text by remember { mutableStateOf("24") }

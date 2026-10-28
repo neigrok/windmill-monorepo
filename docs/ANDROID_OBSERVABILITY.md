@@ -418,6 +418,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Notes editor | `gym_action` | screen: `note_editor`; action: `save`, `delete`; outcome: `ok`, `refused`, `failed` |
 | Notes list | `gym_action` | screen: `notes`; action: `delete`; outcome: `ok`, `refused`, `failed` |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
+| Routine movement form | `gym_action` | screen: `movement_form`; action: `open`, `cancel`; outcome: `ok`; or action: `stage`; outcome: `ok`, `refused` |
+| Outer routine Save | `gym_action` | screen: `routine_editor`; action: `save`; outcome: `ok`, `refused`, `failed` |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action, state, outcome |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
@@ -428,6 +430,18 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 Equipment-aware load labels are read-only and add no event. Routine summary and editor retain
 `gym_screen_viewed` with `screen=routine` and `screen=routine_editor`. Loads, movement names and
 equipment labels stay out of navigation properties; rename/storage failures retain their existing boundaries.
+
+Movement Add/Done stages the outer draft and emits no created or saved event. The outer Save emits
+`gym_routine_saved` only after the one `SaveRoutinePlan` succeeds. Expected refusals are outcomes;
+unexpected save failures report under `gym.saveRoutine`. Draft persistence retains
+`gym.saveRoutineDraft` and `gym.restoreRoutineDraft`. Form events contain no names, targets,
+equipment, identities or input buffers.
+
+Task 18's final local Save window receives 22 bounded intake events: five `gym_action` steps
+(`open`, `stage`, `open`, `stage`, `save`) and exactly one `gym_routine_saved`. SQL and schema-10 GET
+readbacks prove the single accepted outer Save. Staging and Cancel have separate unchanged-state
+evidence. This success window injects no unexpected native failure and establishes no native
+save-failure Issue delivery; deterministic adapter/store tests pin the static failure boundary.
 
 Root chrome uses the existing `routines`, `log` and `coach` screen labels; the visible title *The log*
 does not change event properties. Account routes retain their existing navigation and shell events.

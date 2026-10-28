@@ -1,0 +1,25 @@
+[
+  {
+    "board": "02.6", "name": "combined-movement", "account": "fixture",
+    "steps": [
+      {"tap": "Routines"}, {"tap": "Push A"}, {"tap": "Edit routine"},
+      {"tap": "Bench Press"}, {"wait": "Edit movement"}, {"wait": "Equipment"}, {"wait": "Done"}
+    ]
+  },
+  {
+    "board": "02.11", "name": "combined-per-set", "account": "fixture",
+    "steps": [{"tap": "Vary by set"}, {"wait": "Each set"}, {"wait": "Movement name"}],
+    "after": [{"tap": "Cancel"}, {"wait": "Edit routine"}]
+  },
+  {
+    "board": "02.12", "name": "combined-load-keyboard", "account": "fixture",
+    "steps": [{"tap": "Landmine Press"}, {"keyboard": "show"}, {"tap": "Load, kg"}, {"wait": "Done"}],
+    "after": [{"keyboard": "hide"}, {"tap": "Increase Load"}, {"tap": "Cancel"}]
+  },
+  {
+    "board": "02.14", "name": "movement-unsaved", "account": "fixture",
+    "steps": [{"wait": "Discard changes?"}],
+    "after": [{"tap": "Discard"}, {"wait": "Edit routine"}, {"key": "KEYCODE_BACK"}, {"wait": "Start workout"},
+      {"key": "KEYCODE_BACK"}, {"wait": "Routines"}]
+  }
+]

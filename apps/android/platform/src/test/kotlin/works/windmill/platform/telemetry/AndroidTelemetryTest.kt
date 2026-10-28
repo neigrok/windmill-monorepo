@@ -29,6 +29,19 @@ import works.windmill.platform.net.WindmillJson
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidTelemetryTest {
+    @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
+        val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused")
+            .map { (action, outcome) -> mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome) } +
+            listOf("ok", "refused", "failed").map { mapOf("screen" to "routine_editor", "action" to "save", "outcome" to it) }
+        val content = mapOf("name" to "private", "targets" to "private", "equipment" to "private", "exercise_id" to "private")
+        for (labels in allowed) assertEquals(labels, TelemetryPolicy.eventProperties("gym_action", labels + content))
+        for (labels in listOf(
+            mapOf("screen" to "movement_form", "action" to "create", "outcome" to "ok"),
+            mapOf("screen" to "movement_form", "action" to "stage", "outcome" to "private"),
+            mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "staged"),
+        )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels + content))
+    }
+
     @Test fun deletionActionsKeepOnlyTheirBoundedLabelsAndPreserveNotificationAndTileEvents() {
         val valid = listOf(
             Triple("finish", "discard", "ok"), Triple("finish", "discard", "cancelled"),

@@ -66,6 +66,8 @@ object TelemetryPolicy {
                 "session" -> mapOf("discard" to setOf("ok", "cancelled", "refused", "failed"), "delete" to setOf("ok", "refused", "failed"), "fix" to setOf("ok", "refused", "failed"))
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))
                 "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
+                "routine_editor" -> mapOf("save" to setOf("ok", "refused", "failed"))
+                "movement_form" -> mapOf("open" to setOf("ok"), "stage" to setOf("ok", "refused"), "cancel" to setOf("ok"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"),
                     "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"))

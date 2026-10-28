@@ -136,6 +136,13 @@ Log set / Save fix validate the current buffer; plain blur or Cancel restores th
 stable editor, accessibility actions and accepted-change feedback. Planned target fields retain
 separate domain rules. Focused number editing owns horizontal drag so it cannot page movements.
 
+The routine movement form edits Name, Equipment and Targets together. Add/Done stages the outer
+routine draft; only its Save writes the existing `SaveRoutinePlan`. Drafts retain opening movement
+metadata, raw legacy equipment/count, rest intervals and stable creation identities. The store owns
+an admitted save through caller disposal; the room checks its owner, identity revision, replica and
+save attempt before closing the editor. A signed Regular load moves its unit below when the inline
+content would clip, retaining the chosen text size, side controls and native horizontal editing.
+
 App workouts start from a saved routine. Workouts received from another surface without a routine
 retain their movement picker and read as **Free workout**. Receipts do not create routines.
 The bundled movement catalogue uses backend seed identities. Only Coach

@@ -83,7 +83,7 @@ class LoggerPagerTests {
                     .adding("bench-press")
                     .adding("barbell-row")
                     .targeting("bench-press", List(8) { benchTarget })
-                    .targeting("barbell-row", List(3) { rowTarget })
+                    .targeting("barbell-row", List(3) { rowTarget }).capturingMovements(room.store.catalog)
             ) as GymResult.Ok).value
             room.store.start(routine.id)
             room.store.choose("bench-press")

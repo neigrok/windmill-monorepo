@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -83,27 +84,52 @@ class TargetSheetLadderTests {
         return { draft }
     }
 
-    private fun typed(description: String): String =
-        compose.onNodeWithContentDescription(description).fetchSemanticsNode()
-            .config[SemanticsProperties.EditableText].text
+    private fun uniform() {
+        if (compose.onAllNodesWithContentDescription("Sets, sets").fetchSemanticsNodes().isEmpty())
+            compose.onNodeWithText("Vary by set").performScrollTo().performClick()
+    }
+
+    private fun rows() {
+        val count = compose.onAllNodesWithContentDescription("Sets, sets").fetchSemanticsNodes().singleOrNull()
+        if (count != null && count.config[SemanticsProperties.EditableText].text.isNotBlank())
+            compose.onNodeWithText("Vary by set").performScrollTo().performClick()
+    }
+
+    private fun headField(description: String): SemanticsNodeInteraction {
+        uniform()
+        return compose.onNodeWithContentDescription(description).performScrollTo()
+    }
+
+    private fun typed(description: String): String {
+        val label = when (description) {
+            "Sets target" -> "Sets, sets"
+            "Reps target" -> "Reps, reps"
+            "Weight target" -> "Load, kg total"
+            else -> description
+        }
+        val wasRows = compose.onAllNodesWithContentDescription("Set 1 reps").fetchSemanticsNodes().isNotEmpty()
+        val value = if (label != description) headField(label).fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+            else compose.onNodeWithContentDescription(label).fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        if (label != description && wasRows) rows()
+        return value
+    }
 
     private fun head(): List<String> = listOf(typed("Sets target"), typed("Reps target"), typed("Weight target"))
 
-    private fun ladder(): List<Pair<String, String>> =
-        generateSequence(1) { it + 1 }
+    private fun ladder(): List<Pair<String, String>> {
+        rows()
+        return generateSequence(1) { it + 1 }
             .takeWhile { compose.onAllNodesWithContentDescription("Set $it reps").fetchSemanticsNodes().isNotEmpty() }
-            .map { typed("Set $it reps") to typed("Set $it load") }
-            .toList()
+            .map { typed("Set $it reps") to typed("Set $it load") }.toList()
+    }
 
-    // `Set · {tail}` with a reading, `Set` alone while something is refused.
-    private fun commit() = compose.onNode(SemanticsMatcher("the commit") { node ->
-        node.config.contains(SemanticsActions.OnClick) && node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Set" || it.text.startsWith("Set · ") } == true
-    })
+    private fun commit() = compose.onNodeWithText("Done")
 
     private fun yOf(description: String): Float =
         compose.onNodeWithContentDescription(description).fetchSemanticsNode().positionInRoot.y
 
     private fun deleteAction(row: Int): () -> Boolean {
+        rows()
         val rows = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions), useUnmergedTree = true)
             .fetchSemanticsNodes()
             .filter { node -> node.config[SemanticsActions.CustomActions].any { it.label == TargetEntry.delete } }
@@ -117,11 +143,12 @@ class TargetSheetLadderTests {
             editor(room, lowerA, "Back Squat")
 
             assertEquals(listOf("5", "", ""), head())
-            compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(2)
+            compose.onNodeWithText("5 sets · varies").assertIsDisplayed()
             assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-            compose.onNodeWithText("1 of 2 · Lower A").assertIsDisplayed()
+            assertEquals("Back Squat", typed("Movement name"))
+            compose.onNodeWithText("Equipment").assertExists()
             commit().assertIsEnabled()
-            compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
+            compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -134,7 +161,7 @@ class TargetSheetLadderTests {
             assertEquals(listOf("3", "8", "60"), head())
             compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(0)
             assertEquals(List(3) { "8" to "60" }, ladder())
-            compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
+            compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -145,9 +172,9 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("6")
+            headField("Sets, sets").performTextReplacement("6")
             assertEquals(ramp.map { "${it.reps}" to "${it.weightKg!!.toInt()}" } + ("5" to "80"), ladder())
-            compose.onNodeWithText("Set · 6 sets").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle {
                 assertEquals(ramp + SetTarget(5, 80.0), draft().entry("back-squat")!!.sets)
             }
@@ -161,7 +188,7 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
+            headField("Reps, reps").performTextReplacement("8")
             assertEquals(listOf("8" to "60", "8" to "80", "8" to "90", "8" to "100", "8" to "80"), ladder())
             assertEquals(listOf("5", "8", ""), head())
             commit().performClick()
@@ -179,18 +206,18 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextClearance()
-            compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
-            compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()
+            headField("Sets, sets").performTextClearance()
+            headField("Reps, reps").assertIsNotEnabled()
+            headField("Load, kg total").assertIsNotEnabled()
             assertEquals(emptyList<Pair<String, String>>(), ladder())
             compose.onNodeWithText(TargetEntry.setBySet).assertDoesNotExist()
-            compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
-            compose.onNodeWithText("Set · open").assertIsDisplayed()
+            compose.onAllNodesWithText("open", useUnmergedTree = true).assertCountEquals(3)
+            compose.onNodeWithText("Done").assertIsDisplayed()
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5")
-            compose.onNodeWithText(TargetEntry.openLine).assertDoesNotExist()
+            headField("Sets, sets").performTextReplacement("5")
+            compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
             assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-            compose.onNodeWithText("Set · 5 sets").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle { assertEquals(ramp, draft().entry("back-squat")!!.sets) }
         } } finally { scope.cancel() }
     }
@@ -202,8 +229,8 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextClearance()
-            compose.onNodeWithText("Set · open").performClick()
+            headField("Sets, sets").performTextClearance()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle {
                 assertEquals(emptyList<SetTarget>(), draft().entry("back-squat")!!.sets)
                 assertTrue(draft().entry("back-squat")!!.isOpen)
@@ -258,7 +285,7 @@ class TargetSheetLadderTests {
             compose.onNodeWithText(TargetEntry.matchSetOne).performClick()
             assertEquals(List(5) { "5" to "60" }, ladder())
             assertEquals(listOf("5", "5", "60"), head())
-            compose.onNodeWithText("Set · 5 × 5 · 60").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle { assertEquals(List(5) { SetTarget(5, 60.0) }, draft().entry("back-squat")!!.sets) }
         } } finally { scope.cancel() }
     }
@@ -288,7 +315,7 @@ class TargetSheetLadderTests {
             // Twenty rows outrun the sheet: Add set is the body's last row, under the scroll.
             compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
             compose.onNodeWithText(TargetEntry.outsideSets).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("Set · 20 × 8 · 60").assertIsDisplayed()
+            compose.onNodeWithText("Done").assertIsDisplayed()
 
             // The next keystroke anywhere on the sheet clears it.
             compose.onNodeWithContentDescription("Set 1 reps").performScrollTo().performTextReplacement("9")
@@ -304,20 +331,20 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("1")
+            headField("Sets, sets").performTextReplacement("1")
             assertEquals(listOf("5" to "60"), ladder())
             assertEquals(listOf("1", "5", "60"), head())
-            compose.onNodeWithText("Set · 1 × 5 · 60").assertIsDisplayed()
+            compose.onNodeWithText("Done").assertIsDisplayed()
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("12")
+            headField("Sets, sets").performTextReplacement("12")
             assertEquals(
                 listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80") + List(7) { "5" to "80" },
                 ladder(),
             )
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            headField("Sets, sets").performTextReplacement("3")
             assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
-            compose.onNodeWithText("Set · 3 sets").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle { assertEquals(ramp.take(3), draft().entry("back-squat")!!.sets) }
         } } finally { scope.cancel() }
     }
@@ -329,7 +356,7 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
+            headField("Sets, sets").performTextReplacement("2")
             assertEquals(listOf("5" to "60", "5" to "80"), ladder())
             compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
             assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
@@ -350,12 +377,12 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            headField("Sets, sets").performTextReplacement("3")
             val delete = deleteAction(2)
             compose.runOnIdle { delete() }
             assertEquals(listOf("5" to "60", "3" to "90"), ladder())
             assertEquals("2", typed("Sets target"))
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("4")
+            headField("Sets, sets").performTextReplacement("4")
             assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
         } } finally { scope.cancel() }
     }
@@ -368,20 +395,19 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, lowerA, "Back Squat")
 
-            compose.onNodeWithContentDescription("Reps target").performTextReplacement("101")
+            headField("Reps, reps").performTextReplacement("101")
             val said = compose.onNodeWithText(TargetEntry.outsideReps).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
-            assertTrue("under the head", said > yOf("Reps target"))
-            assertTrue("and above row 1", said < yOf("Set 1 reps"))
-            compose.onNodeWithContentDescription("Reps target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
-            compose.onNodeWithContentDescription("Set 1 reps").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
+            assertTrue("under the head", said > yOf("Reps, reps"))
+            headField("Reps, reps").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
+            compose.onNodeWithContentDescription("Set 1 reps").assertDoesNotExist()
             commit().assertIsNotEnabled()
             commit().assertIsDisplayed()
 
-            compose.onNodeWithContentDescription("Weight target").performTextReplacement("1e999")
-            compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
+            headField("Load, kg total").performTextReplacement("1e999")
+            headField("Reps, reps").performTextReplacement("8")
             val load = compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
-            assertTrue(load > yOf("Weight target") && load < yOf("Set 1 load"))
-            compose.onNodeWithContentDescription("Weight target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
+            assertTrue(load > yOf("Load, kg total"))
+            headField("Load, kg total").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
         } } finally { scope.cancel() }
     }
 
@@ -396,7 +422,7 @@ class TargetSheetLadderTests {
             compose.runOnIdle { delete() }
             assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
             assertEquals(listOf("4", "", ""), head())
-            compose.onNodeWithText("Set · 4 sets").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle {
                 assertEquals(listOf(SetTarget(5, 60.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)),
                              draft().entry("back-squat")!!.sets)
@@ -416,8 +442,8 @@ class TargetSheetLadderTests {
             compose.runOnIdle { delete() }
             assertEquals(listOf("", "", ""), head())
             assertEquals(emptyList<Pair<String, String>>(), ladder())
-            compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
-            compose.onNodeWithText("Set · open").assertIsDisplayed()
+            compose.onAllNodesWithText("open", useUnmergedTree = true).assertCountEquals(2)
+            compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -452,13 +478,15 @@ class TargetSheetLadderTests {
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             editor(room, lowerA, "Back Squat")
 
+            uniform()
             compose.onNodeWithContentDescription("Increase Sets").assertExists()
             compose.onNodeWithContentDescription("Decrease Reps").assertExists()
-            compose.onNodeWithContentDescription("Increase kg").assertExists()
+            compose.onNodeWithContentDescription("Increase Load").assertExists()
             compose.onNodeWithText("Vary by set").assertExists()
             compose.onNodeWithText("Ramp up").assertExists()
+            rows()
             compose.onNodeWithContentDescription("Set 5 load").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
+            compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
     @Test
@@ -466,14 +494,14 @@ class TargetSheetLadderTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val draft = editor(room, pushA, "Bench Press")
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5.0")
+            headField("Sets, sets").performTextReplacement("5.0")
             assertEquals(List(5) { "8" to "60" }, ladder())
             compose.onNodeWithContentDescription("Set 5 load").performScrollTo().performTextReplacement("85")
-            compose.onNodeWithContentDescription("Sets target").performScrollTo().performTextReplacement("3")
-            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5,")
+            headField("Sets, sets").performScrollTo().performTextReplacement("3")
+            headField("Sets, sets").performTextReplacement("5,")
             assertEquals(List(4) { "8" to "60" } + ("8" to "85"), ladder())
             compose.onNodeWithContentDescription("Set 5 reps").performScrollTo().performTextReplacement("5")
-            compose.onNodeWithText("Set · 5 sets").performClick()
+            compose.onNodeWithText("Done").performClick()
             compose.runOnIdle {
                 assertEquals(List(4) { SetTarget(8, 60.0) } + SetTarget(5, 85.0),
                     draft().entry("bench-press")!!.sets)

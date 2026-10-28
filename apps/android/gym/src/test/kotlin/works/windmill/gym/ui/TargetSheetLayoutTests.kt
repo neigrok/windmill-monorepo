@@ -56,7 +56,7 @@ class TargetSheetLayoutTests {
             compose.onNodeWithText("Back Squat").performClick()
 
             val addSet = compose.onNodeWithText(TargetEntry.addSet).performScrollTo().assertIsDisplayed().fetchSemanticsNode()
-            val commit = compose.onNodeWithText("Set · 5 sets").assertIsDisplayed().fetchSemanticsNode()
+            val commit = compose.onNodeWithText("Done").assertIsDisplayed().fetchSemanticsNode()
             val fifthRow = compose.onNodeWithContentDescription("Set 5 load").assertIsDisplayed().fetchSemanticsNode()
             val window = addSet.root!!.semanticsOwner.rootSemanticsNode.size.height.toFloat()
 
@@ -66,7 +66,7 @@ class TargetSheetLayoutTests {
             assertTrue("the commit under Add set", commit.boundsInRoot.top >= addSet.boundsInRoot.bottom)
             assertTrue("and inside the window", commit.boundsInRoot.bottom <= window)
 
-            val body = compose.onNodeWithTag("target-sheet-body").fetchSemanticsNode()
+            val body = compose.onNodeWithTag("movement-form-body").fetchSemanticsNode()
             val reach = body.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)!!
             assertTrue("the ladder can scroll under the pinned commit", reach.maxValue() > 0f)
         } } finally { scope.cancel() }

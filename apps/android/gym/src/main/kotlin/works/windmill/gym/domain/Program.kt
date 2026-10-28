@@ -267,10 +267,7 @@ object TargetEntry {
 
     private data class Read(val whole: Int? = null, val kg: Double? = null, val said: String? = null)
 
-    // The same six steps as `load`, in the same order, so a field that counts refuses for the same
-    // reasons a field that weighs does: a comma is a decimal point, a second point is its own fault,
-    // what will not parse is not a number, a typed zero is no target, and a number that is real but
-    // not whole is refused BY ITS BAND — the band's sentence is the one that says `Whole`.
+    // Sets and reps require a positive whole count within their own band.
     private fun whole(typed: String, band: IntRange, outside: String): Read {
         val raw = typed.trim().replace("−", "-")
         if (raw.isEmpty()) return Read()
@@ -298,6 +295,23 @@ object TargetEntry {
     }
 }
 
+@Serializable
+data class RoutineMovement(val base: Exercise?, val current: Exercise) {
+    init { require(base == null || base.id == current.id) }
+
+    val changed: Boolean get() = base == null || current.name.trim() != base.name ||
+        current.equipment != base.equipment || current.loadCount != base.loadCount
+
+    fun named(name: String): RoutineMovement = copy(current = current.copy(name = Program.capped(name)))
+
+    fun equipped(choice: String): RoutineMovement {
+        require(choice in listOf("barbell", "dumbbell", "other"))
+        val originalChoice = base?.let { works.windmill.gym.domain.sync.ExerciseRules.loadingChoice(it.equipment, it.loadCount) }
+        if (choice == originalChoice) return copy(current = current.copy(equipment = base!!.equipment, loadCount = base.loadCount))
+        return copy(current = current.copy(equipment = choice, loadCount = if (choice == "dumbbell") 2 else 1))
+    }
+}
+
 // `id` absent is a routine that does not exist yet; present, this is an edit that saves the routine whole.
 @Serializable
 data class RoutineDraft(
@@ -307,11 +321,12 @@ data class RoutineDraft(
     val entries: List<RoutineEntry> = emptyList(),
     val original: RoutineWrite? = null,
     val creationId: String? = null,
+    val movements: List<RoutineMovement> = emptyList(),
 ) {
     val savable: Boolean get() = Program.named(name) != null && entries.isNotEmpty()
 
     val changed: Boolean get() = original == null ||
-        Program.named(name) != original.name || position != original.position || write != original.entries
+        Program.named(name) != original.name || position != original.position || write != original.entries || movements.any { it.changed }
 
     val full: Boolean get() = entries.size >= Program.maxEntries
 
@@ -323,7 +338,8 @@ data class RoutineDraft(
     }
 
     fun removing(exerciseId: String): RoutineDraft =
-        copy(entries = renumbered(entries.filterNot { it.exerciseId == exerciseId }))
+        copy(entries = renumbered(entries.filterNot { it.exerciseId == exerciseId }),
+            movements = movements.filterNot { it.current.id == exerciseId })
 
     // Zero-based, both ends clamped to the rows that exist, the same arithmetic as the web's
     // `reorderEntries`: the line leaves `from` and lands at `to`, and every position is renumbered.
@@ -344,6 +360,26 @@ data class RoutineDraft(
     fun opening(exerciseId: String): RoutineDraft =
         mapping(exerciseId) { it.copy(sets = emptyList()) }
 
+    fun movement(exerciseId: String, catalogue: List<Exercise>): RoutineMovement? =
+        movements.firstOrNull { it.current.id == exerciseId }
+            ?: catalogue.firstOrNull { it.id == exerciseId }?.let { RoutineMovement(it, it) }
+
+    fun capturingMovements(catalogue: List<Exercise>): RoutineDraft = copy(movements = entries.mapNotNull { entry ->
+        movement(entry.exerciseId, catalogue)
+    })
+
+    fun staging(movement: RoutineMovement, reading: TargetEntry.Reading): RoutineDraft {
+        val targets = when (reading) {
+            TargetEntry.Reading.Open -> emptyList()
+            is TargetEntry.Reading.Scheme -> reading.sets
+            is TargetEntry.Reading.Refused -> return this
+        }
+        val staged = if (entry(movement.current.id) == null) adding(movement.current.id, targets)
+            else targeting(movement.current.id, targets)
+        if (staged.entry(movement.current.id) == null) return this
+        return staged.copy(movements = staged.movements.filterNot { it.current.id == movement.current.id } + movement)
+    }
+
     fun entry(exerciseId: String): RoutineEntry? = entries.firstOrNull { it.exerciseId == exerciseId }
 
     // One-based; a movement no longer in the day answers null.
@@ -353,7 +389,7 @@ data class RoutineDraft(
     // Every routine write is a WHOLE document, and a line's position is its place in the day.
     val write: List<RoutineEntryWrite>
         get() = entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.sets)
+            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
         }
 
     private fun mapping(exerciseId: String, move: (RoutineEntry) -> RoutineEntry): RoutineDraft =
@@ -363,12 +399,12 @@ data class RoutineDraft(
         entries.mapIndexed { index, entry -> entry.copy(position = index + 1) }
 
     companion object {
-        fun of(routine: Routine): RoutineDraft = RoutineDraft(
+        fun of(routine: Routine, catalogue: List<Exercise> = emptyList()): RoutineDraft = RoutineDraft(
             id = routine.id,
             name = routine.name,
             position = routine.position,
             entries = routine.entries.sortedBy { it.position },
             original = RoutineWrite(routine, routine.revision),
-        )
+        ).capturingMovements(catalogue)
     }
 }

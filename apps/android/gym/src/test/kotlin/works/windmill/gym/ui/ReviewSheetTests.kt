@@ -107,7 +107,7 @@ class ReviewSheetTests {
     private fun routineFor(room: EngineRoomFixture, server: ModelServer, name: String, changes: List<ProposalChange>): Routine = runBlocking {
         val draft = changes.filter { it.kind != ChangeKind.Added }
             .fold(RoutineDraft(name = name)) { draft, change -> draft.adding(change.exerciseId, change.before!!.sets) }
-        (room.store.saveRoutine(draft) as GymResult.Ok).value.also { room.sync(server) }
+        (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value.also { room.sync(server) }
     }
 
     // Coach, or a connected agent, writes the proposal on the server, and this phone pulls it.

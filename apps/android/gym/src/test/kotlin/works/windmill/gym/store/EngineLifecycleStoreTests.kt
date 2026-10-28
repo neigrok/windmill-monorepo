@@ -76,7 +76,7 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account())
             val routine = (room.store.saveRoutine(RoutineDraft(name = "Push Day", creationId = "routine1")
-                .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 100.0)))) as GymResult.Ok).value
+                .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 100.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             val first = (room.store.start(routine.id) as GymResult.Ok).value
             room.store.choose("bench-press"); room.store.logSet(100.0, 5); room.store.logSet(102.5, 3)
             clockMs += 60_000; room.store.finish()

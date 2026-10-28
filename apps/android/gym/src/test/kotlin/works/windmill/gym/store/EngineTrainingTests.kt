@@ -440,7 +440,7 @@ class EngineTrainingTests {
             val saved = gym.replaceRoutine("routine1", RoutineWrite("routine1", "Reordered", 0, listOf(
                 RoutineEntryWrite("back-squat"), RoutineEntryWrite("bench-press", listOf(SetTarget(6, 80.0))), RoutineEntryWrite("chin-up", listOf(SetTarget(10))),
             )))
-            assertEquals(listOf(RoutineEntry(1, "back-squat"), RoutineEntry(2, "bench-press", listOf(SetTarget(6, 80.0))), RoutineEntry(3, "chin-up", listOf(SetTarget(10)))), saved.entries)
+            assertEquals(listOf(RoutineEntry(1, "back-squat", restSeconds = 120), RoutineEntry(2, "bench-press", listOf(SetTarget(6, 80.0)), restSeconds = 90), RoutineEntry(3, "chin-up", listOf(SetTarget(10)))), saved.entries)
             engine.read(works.windmill.sync.core.ScopeRef(Gym.scope)) { reader ->
                 val entries = reader.drawn(Gym.Types.routine, RecordID("routine1"))!!.values.getValue("entries").arr()
                 assertEquals(Json.of(120), entries[0]["restSeconds"])

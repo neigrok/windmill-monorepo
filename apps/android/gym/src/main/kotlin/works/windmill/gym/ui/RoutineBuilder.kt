@@ -1,6 +1,7 @@
 package works.windmill.gym.ui
 
 import works.windmill.platform.design.WindmillSheetWindow
+import works.windmill.platform.design.WindmillSheetBack
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +31,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -90,12 +94,15 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
+import works.windmill.gym.domain.RoutineMovement
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.net.WindmillJson
@@ -116,7 +123,18 @@ fun routineDraftSaver(telemetry: Telemetry): Saver<RoutineDraft?, String> = Save
 @Serializable
 internal sealed interface BuilderSheet {
     @Serializable
-    data class Target(val exerciseId: String, val scheme: TargetEntry.Draft) : BuilderSheet
+    data class Target(
+        val exerciseId: String,
+        val scheme: TargetEntry.Draft,
+        val movement: RoutineMovement? = null,
+        val opening: RoutineMovement? = movement,
+        val initialScheme: TargetEntry.Draft = scheme,
+        val adding: Boolean = false,
+        val creating: Boolean = false,
+        val discarding: Boolean = false,
+    ) : BuilderSheet {
+        val dirty: Boolean get() = movement != opening || scheme.rows != initialScheme.rows || scheme.sets != initialScheme.sets
+    }
     @Serializable
     data object Picker : BuilderSheet
 }
@@ -153,24 +171,51 @@ fun RoutineBuilder(
     val scope = rememberCoroutineScope()
     var sheet by rememberSaveable(stateSaver = builderSheetSaver) { mutableStateOf<BuilderSheet?>(null) }
     val pickerState = rememberMovementPickerState()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val telemetry = LocalTelemetry.current
+    var closing by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value ->
+        val form = sheet as? BuilderSheet.Target
+        if (value == SheetValue.Hidden && !closing && form?.dirty == true) {
+            sheet = form.copy(discarding = true)
+            false
+        } else true
+    })
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
 
-    // Compose fires no dismiss callback on a programmatic close, so nothing waits for one.
     fun close() {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { sheet = null }
+        closing = true
+        scope.launch {
+            try { sheetState.hide(); sheet = null }
+            finally { closing = false }
+        }
+    }
+    fun leaveForm() {
+        val form = sheet as? BuilderSheet.Target
+        telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "cancel", "outcome" to "ok"))
+        if (form?.adding == true) {
+            sheet = BuilderSheet.Picker
+            scope.launch { if (sheet == BuilderSheet.Picker) sheetState.show() }
+        } else close()
+    }
+    fun requestClose() {
+        val form = sheet as? BuilderSheet.Target
+        if (form?.dirty == true) sheet = form.copy(discarding = true)
+        else if (form != null) leaveForm() else close()
     }
 
-    // A sheet is its own window, and Material pads that window by whatever keyboard is up when it
-    // opens. The keyboard belongs to the screen underneath — the name field opens with it up — so
-    // a sheet raised over it painted its fields a keyboard's height higher than the same sheet
-    // raised a moment later with the keyboard down. The screen gives its keyboard up as the sheet
-    // rises, and the sheet's first paint is the same every time.
     LaunchedEffect((sheet as? BuilderSheet.Target)?.exerciseId, sheet == BuilderSheet.Picker) {
         if (sheet == null) return@LaunchedEffect
         focusManager.clearFocus()
         keyboard?.hide()
+        val form = sheet as? BuilderSheet.Target ?: return@LaunchedEffect
+        telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"))
+        if (form.movement == null) {
+            draft.movement(form.exerciseId, store.catalog)?.let { movement ->
+                sheet = form.copy(movement = movement, opening = movement,
+                    initialScheme = TargetEntry.Draft(draft.entry(form.exerciseId)?.sets.orEmpty()))
+            }
+        }
     }
 
     val editing = draft.id != null
@@ -179,86 +224,87 @@ fun RoutineBuilder(
         if (saving) { focusManager.clearFocus(); keyboard?.hide() }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        BuildStep(
-            draft = draft,
-            store = store,
-            editing = editing,
-            editable = !saving,
-            // C19: while a target sheet stands over the list, the SHEET owns the open line's
-            // sentence and the list's copy stands down — one state says it once, never a blessing
-            // behind a scrim beside a refusal in front of it.
-            savable = draft.savable && draft.changed && !saving,
-            onDraft = { if (!saving) onDraft(it) },
-            onOpenTarget = { id ->
-                sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()))
-            },
-            onRemove = { onDraft(draft.removing(it)) },
-            onAdd = { sheet = BuilderSheet.Picker },
-            onSave = onSave,
-            onCancel = { if (!saving) onClose() },
-        )
-    }
+    BuildStep(
+        draft = draft, store = store, editing = editing, editable = !saving,
+        savable = draft.savable && draft.changed && !saving,
+        onDraft = { if (!saving) onDraft(it) },
+        onOpenTarget = { id ->
+            val movement = draft.movement(id, store.catalog)
+            if (movement == null) say("That movement is no longer on the log.")
+            else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
+        },
+        onRemove = { onDraft(draft.removing(it)) }, onAdd = { sheet = BuilderSheet.Picker },
+        onSave = onSave, onCancel = { if (!saving) onClose() },
+    )
 
     val open = sheet
     if (open != null) {
-        ModalBottomSheet(
-            onDismissRequest = { close() },
-            sheetState = sheetState,
-            containerColor = skin.surface,
-            scrimColor = skin.scrim,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        ) {
+        ModalBottomSheet(onDismissRequest = ::requestClose, sheetState = sheetState,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+            containerColor = skin.surface, scrimColor = skin.scrim,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = {
+                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                }
+            }) {
             WindmillSheetWindow()
-            // Back with the keyboard up puts the keyboard down and nothing else: read and hidden
-            // inside the sheet's own window, ahead of the sheet's own back.
-            val sheetKeyboard = LocalSoftwareKeyboardController.current
-            BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
-
-            when (open) {
-                is BuilderSheet.Target -> TargetSheet(
-                    draft = draft,
-                    state = open,
-                    onState = { sheet = it },
-                    store = store,
-                    onCancel = { close() },
-                    onSet = { reading ->
-                        when (reading) {
-                            TargetEntry.Reading.Open -> onDraft(draft.opening(open.exerciseId))
-                            is TargetEntry.Reading.Scheme -> onDraft(
-                                draft.targeting(open.exerciseId, reading.sets)
-                            )
-                            is TargetEntry.Reading.Refused -> return@TargetSheet
-                        }
-                        close()
-                    },
-                )
-                BuilderSheet.Picker -> MovementPicker(
-                    catalog = store.catalog,
-                    taken = draft.entries.map { it.exerciseId },
-                    lastSets = null,
-                    nowMs = 0,
-                    sessions = store.recent,
-                    title = "Add movement",
-                    onPick = {
-                        onDraft(draft.adding(it))
-                        close()
-                    },
-                    onCreate = { name, equipment, id -> store.create(name, equipment, id) },
-                    onCreateTarget = { exercise, targets ->
-                        onDraft(draft.adding(exercise.id, targets))
-                        close()
-                    },
-                    state = pickerState,
-                    modifier = Modifier
-                        .heightIn(max = pickerMaxHeight())
-                        .padding(horizontal = GymLayout.gutter)
-                        .padding(bottom = GymLayout.sheetBottom),
-                    onClose = { close() },
-                )
+            WindmillSheetBack(onDismiss = ::requestClose) {
+                val sheetKeyboard = LocalSoftwareKeyboardController.current
+                BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+                when (open) {
+                    is BuilderSheet.Target -> {
+                        val movement = open.movement ?: draft.movement(open.exerciseId, store.catalog)
+                        if (movement != null) MovementForm(movement, open.scheme,
+                            title = when { open.creating -> "Create movement"; open.adding -> "Add movement"; else -> "Edit movement" },
+                            commitLabel = if (open.adding) "Add" else "Done",
+                            onMovement = { changed ->
+                                val latest = sheet as? BuilderSheet.Target
+                                if (latest != null) sheet = latest.copy(movement = changed, opening = latest.opening ?: movement)
+                            },
+                            onScheme = { changed ->
+                                val latest = sheet as? BuilderSheet.Target
+                                if (latest != null) sheet = latest.copy(scheme = changed)
+                            }, onCancel = ::requestClose,
+                            onCommit = commit@ {
+                                if (closing || saving) return@commit
+                                val latest = sheet as? BuilderSheet.Target
+                                val edited = latest?.movement ?: movement
+                                val reading = latest?.scheme?.reading ?: open.scheme.reading
+                                val valid = Program.nameProblem(edited.current.name) == null && reading !is TargetEntry.Reading.Refused
+                                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "stage",
+                                    "outcome" to if (valid) "ok" else "refused"))
+                                if (valid) {
+                                    focusManager.clearFocus(); keyboard?.hide()
+                                    onDraft(draft.staging(edited, reading))
+                                    close()
+                                }
+                            }, creating = open.creating, busy = closing)
+                    }
+                    BuilderSheet.Picker -> MovementPicker(
+                        catalog = store.catalog, taken = draft.entries.map { it.exerciseId }, lastSets = null,
+                        nowMs = 0, sessions = store.recent, title = "Add movement",
+                        onPick = { id ->
+                            val movement = draft.movement(id, store.catalog)
+                            if (movement == null) say("That movement is no longer on the log.")
+                            else sheet = BuilderSheet.Target(id, TargetEntry.Draft(emptyList<works.windmill.gym.domain.SetTarget>()), movement, adding = true)
+                        }, onCreate = null,
+                        onCreateDraft = { exercise, scheme ->
+                            sheet = BuilderSheet.Target(exercise.id, scheme, RoutineMovement(null, exercise), adding = true, creating = true)
+                        }, state = pickerState,
+                        modifier = Modifier.heightIn(max = pickerMaxHeight()).padding(horizontal = GymLayout.gutter)
+                            .padding(bottom = GymLayout.sheetBottom), onClose = ::close,
+                    )
+                }
             }
         }
     }
+    val form = open as? BuilderSheet.Target
+    if (form?.discarding == true) AlertDialog(onDismissRequest = { sheet = form.copy(discarding = false) },
+        title = { Text("Discard changes?") }, text = { Text("Changes to this movement won’t be kept.") },
+        confirmButton = { TextButton(onClick = ::leaveForm) { Text("Discard", color = skin.error) } },
+        dismissButton = { TextButton(onClick = { sheet = form.copy(discarding = false) }) { Text("Cancel") } },
+        containerColor = skin.surface)
 }
 
 @Composable
@@ -386,14 +432,15 @@ private fun BuildStep(
                     modifier = Modifier.padding(bottom = 8.dp))
                 ordered.forEachIndexed { index, entry ->
                     key(entry.exerciseId) {
-                        val name = Readout.movement(entry.exerciseId, store.catalog)
+                        val movement = draft.movement(entry.exerciseId, store.catalog)?.current
+                        val name = movement?.name ?: Readout.movement(entry.exerciseId, store.catalog)
                         DeleteSwipeRow(actionLabel = "Remove movement", enabled = editable,
                             onDelete = { onRemove(entry.exerciseId); true }) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 72.dp)
                                 .onGloballyPositioned { positions[entry.exerciseId] = it.positionInRoot().y + it.size.height / 2f + scroll.value }
                                 .shadow(if (dragged == entry.exerciseId) 6.dp else 0.dp, RoundedCornerShape(12.dp), clip = false)
                                 .background(if (dragged == entry.exerciseId) skin.raised else skin.canvas, RoundedCornerShape(12.dp))
-                                .clickable(enabled = editable, role = Role.Button, onClickLabel = "set this movement’s target") { onOpenTarget(entry.exerciseId) }
+                                .clickable(enabled = editable, role = Role.Button, onClickLabel = "edit this movement") { onOpenTarget(entry.exerciseId) }
                                 .semantics { customActions = if (!editable) emptyList() else buildList {
                                     if (index > 0) add(CustomAccessibilityAction("Move up") { move(index, index - 1); true })
                                     if (index < ordered.lastIndex) add(CustomAccessibilityAction("Move down") { move(index, index + 1); true })
@@ -422,7 +469,7 @@ private fun BuildStep(
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(name, style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                                    Text(Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId }), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
+                                    Text(Readout.targetWithUnit(entry.sets, movement), style = WindmillFont.body(15).copy(lineHeight = 21.sp), color = skin.inkDim)
                                 }
                             }
                         }
@@ -437,49 +484,6 @@ private fun BuildStep(
             }
             Text(said, style = WindmillFont.body(13), color = skin.inkDim,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        }
-    }
-}
-
-@Composable
-private fun TargetSheet(
-    draft: RoutineDraft,
-    state: BuilderSheet.Target,
-    onState: (BuilderSheet.Target) -> Unit,
-    store: TrainingStore,
-    onCancel: () -> Unit,
-    onSet: (TargetEntry.Reading) -> Unit,
-) {
-    val skin = LocalGymColors.current
-    val reading = state.scheme.reading
-    val valid = reading !is TargetEntry.Reading.Refused
-    Column(Modifier.fillMaxWidth().heightIn(max = pickerMaxHeight()).imePadding().background(skin.surface)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(Readout.movement(state.exerciseId, store.catalog), style = WindmillFont.body(22, FontWeight.Bold), color = skin.ink)
-                draft.placeOf(state.exerciseId)?.let {
-                    Text("$it of ${draft.entries.size} · ${draft.name}", style = WindmillFont.body(14), color = skin.inkDim)
-                }
-            }
-            TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Cancel", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-            }
-        }
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-            .testTag("target-sheet-body").padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 24.dp)) {
-            TargetBlock(state.scheme, { onState(state.copy(scheme = it)) },
-                bandAssisted = store.catalog.firstOrNull { it.id == state.exerciseId }?.equipment == "bodyweight")
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)
-                .heightIn(min = 56.dp).clip(RoundedCornerShape(WindmillRadius.lg))
-                .background(if (valid) skin.accent else skin.raised)
-                .clickable(enabled = valid, role = Role.Button) { onSet(reading) },
-        ) {
-            Text(TargetEntry.commitLabel(reading), style = WindmillFont.body(16, FontWeight.Bold),
-                color = if (valid) skin.onAccent else skin.inkDim)
         }
     }
 }

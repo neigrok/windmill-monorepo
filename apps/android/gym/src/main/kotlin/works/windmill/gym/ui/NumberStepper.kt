@@ -141,6 +141,7 @@ fun NumberStepper(
     hapticsEnabled: Boolean = true,
     reducedMotion: Boolean = !ValueAnimator.areAnimatorsEnabled(),
     feedback: NumberStepperFeedback = rememberNumberStepperFeedback(),
+    placeholder: String = "",
     onFocusChange: (Boolean) -> Unit = {},
 ) {
     val skin = LocalGymColors.current
@@ -192,6 +193,7 @@ fun NumberStepper(
             })
         }
     }
+    val measuredValue = value.ifEmpty { placeholder }
     val display = size == NumberStepperSize.Display
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
@@ -215,10 +217,13 @@ fun NumberStepper(
             val unitGap = with(density) { (if (display) 8.dp else 6.dp).roundToPx() }
             val sideWidth = (constraints.maxWidth - button * 2 - gap * 2 - padding).coerceAtLeast(0)
             val unitWidth = textMeasurer.measure(unit, unitStyle).size.width
-            val baseWidth = textMeasurer.measure(value, baseStyle).size.width
-            val minimumWidth = if (display) textMeasurer.measure(value, baseStyle.copy(fontSize = 32.sp)).size.width else 0
+            val baseWidth = textMeasurer.measure(measuredValue, baseStyle).size.width
+            val minimumWidth = if (display) textMeasurer.measure(measuredValue, baseStyle.copy(fontSize = 32.sp)).size.width else 0
             val requiredLayout = when {
-                !display || baseWidth + gap + unitGap + unitWidth <= sideWidth -> NumberFieldLayout.Inline
+                !display && (input != NumberStepperInput.SignedDecimal ||
+                    baseWidth + gap + unitGap + unitWidth <= sideWidth) -> NumberFieldLayout.Inline
+                !display -> NumberFieldLayout.UnitBelow
+                baseWidth + gap + unitGap + unitWidth <= sideWidth -> NumberFieldLayout.Inline
                 minimumWidth + gap <= sideWidth && unitWidth <= sideWidth -> NumberFieldLayout.UnitBelow
                 else -> NumberFieldLayout.FullWidth
             }
@@ -228,12 +233,12 @@ fun NumberStepper(
                 (constraints.maxWidth - padding).coerceAtLeast(0) else sideWidth
             val numeralSize = if (display && fieldLayout != NumberFieldLayout.Inline) {
                 (88 downTo 32).firstOrNull { candidate ->
-                    textMeasurer.measure(value, baseStyle.copy(fontSize = candidate.sp)).size.width + gap <= contentWidth
+                    textMeasurer.measure(measuredValue, baseStyle.copy(fontSize = candidate.sp)).size.width + gap <= contentWidth
                 } ?: 32
             } else if (display) 88 else 20
             val valueStyle = baseStyle.copy(fontSize = numeralSize.sp,
                 lineHeight = (numeralSize + 4).sp)
-            val numeralWidth = textMeasurer.measure(value, valueStyle).size.width
+            val numeralWidth = textMeasurer.measure(measuredValue, valueStyle).size.width
             val animateValue = !focused && !reducedMotion && numeralWidth + gap <= contentWidth
             Layout(content = {
                 StepperButton(NumberStep.Decrease, label, enabled && decreaseEnabled) {
@@ -267,7 +272,7 @@ fun NumberStepper(
                         }),
                         decorationBox = { innerTextField ->
                             Box(Modifier.heightIn(min = when {
-                                fieldLayout != NumberFieldLayout.Inline -> 156.dp
+                                display && fieldLayout != NumberFieldLayout.Inline -> 156.dp
                                 display -> 120.dp
                                 else -> 56.dp
                             }).background(fill, fieldShape)) {
@@ -284,7 +289,10 @@ fun NumberStepper(
                                                 alpha = progress
                                                 translationY = (1f - progress) * valueStyle.fontSize.toPx() / 4 *
                                                     (if (feedback.direction == NumberStep.Increase) 1 else -1)
-                                            }) { innerTextField() }
+                                            }) {
+                                                if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = valueStyle, color = skin.inkDim)
+                                                innerTextField()
+                                            }
                                         }
                                         Text(unit, color = if (flash) skin.accent else skin.inkDim, style = unitStyle, maxLines = 1)
                                     }) { children, limits ->

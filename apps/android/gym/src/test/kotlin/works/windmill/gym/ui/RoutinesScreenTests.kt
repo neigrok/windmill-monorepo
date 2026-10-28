@@ -236,8 +236,8 @@ class RoutinesScreenTests {
             val server = EngineRoomFixture.server()
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
-                assertTrue(other.store.saveRoutine(routine("routine_push", "Push Day", position = 0)) is GymResult.Ok)
-                assertTrue(other.store.saveRoutine(routine("routine_pull", "Pull Day", position = 1)) is GymResult.Ok)
+                assertTrue(other.store.saveRoutine(routine("routine_push", "Push Day", position = 0).capturingMovements(other.store.catalog)) is GymResult.Ok)
+                assertTrue(other.store.saveRoutine(routine("routine_pull", "Pull Day", position = 1).capturingMovements(other.store.catalog)) is GymResult.Ok)
                 other.sync(server)
                 propose(other, "proposal_pull", "routine_pull", "Pull Day")
                 other.sync(server)
@@ -364,7 +364,7 @@ class RoutinesScreenTests {
                     entries = listOf(
                         RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0))),
                         RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
-                    ))) is GymResult.Ok)
+                    )).capturingMovements(other.store.catalog)) is GymResult.Ok)
                 other.sync(server)
             } }
             runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
@@ -382,7 +382,7 @@ class RoutinesScreenTests {
             compose.onNodeWithText("Start workout").assertIsDisplayed()
             compose.onNodeWithText("Edit routine").assertIsDisplayed().performClick()
             compose.runOnIdle {
-                assertEquals(listOf(RoutineDraft.of(room.training.program().single { it.id == "routine_compact" })), edited)
+                assertEquals(listOf(RoutineDraft.of(room.training.program().single { it.id == "routine_compact" }, room.store.catalog)), edited)
             }
         } } finally { scope.cancel() }
     }

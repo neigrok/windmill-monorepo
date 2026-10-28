@@ -186,7 +186,7 @@ class LargestTypeTests {
             val routine = runBlocking {
                 val saved = (room.store.saveRoutine(presses.fold(RoutineDraft(name = "Push Day")) { draft, press ->
                     draft.adding(press).targeting(press, List(3) { SetTarget(5) })
-                }) as GymResult.Ok).value
+                }.capturingMovements(room.store.catalog)) as GymResult.Ok).value
                 room.sync(server)
                 saved
             }

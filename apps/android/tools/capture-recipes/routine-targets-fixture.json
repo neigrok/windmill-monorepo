@@ -1,0 +1,14 @@
+{
+  "exercises": [
+    {"id": "ex_landmine", "name": "Landmine Press", "pattern": "press", "equipment": "other", "stepKg": 2.5}
+  ],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {"exerciseId": "bench-press", "sets": [{"reps": 8, "weightKg": 75}, {"reps": 8, "weightKg": 75}, {"reps": 8, "weightKg": 75}], "restSeconds": 120},
+        {"exerciseId": "ex_landmine", "sets": [{"reps": 8, "weightKg": -12.5}, {"reps": 8, "weightKg": -12.5}], "restSeconds": 90}
+      ]
+    }
+  ]
+}

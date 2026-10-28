@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -133,18 +134,21 @@ class RoutineEditorTests {
     }
 
     @Test
-    fun testTheEditorPrintsOpenPerRowAndLeavesTheSentenceToTheTargetSheet() {
+    fun testTheEditorAndCombinedFormKeepOpenTargetsWithoutExtraHints() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking { room.select(null) }
             editor(room, RoutineDraft(name = "Push Day").adding("bench-press").adding("squat")
                 .targeting("squat", List(3) { SetTarget(5, 60.0) }))
 
             compose.onNodeWithText("open").assertIsDisplayed()
             compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
 
-            compose.onNodeWithText("bench-press").performClick()
-            compose.onAllNodesWithText("You decide the numbers at the rack.").assertCountEquals(1)
-            compose.onNodeWithText("You decide the numbers at the rack.").assertIsDisplayed()
+            compose.onNodeWithText("Bench Press").performClick()
+            compose.onNodeWithText("You decide the numbers at the rack.").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Movement name").assertExists()
+            compose.onNodeWithContentDescription("Equipment").assertExists()
+            compose.onNodeWithText("Done").assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

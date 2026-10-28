@@ -154,7 +154,7 @@ implementation. The routine picker uses the approved surface role and the live-l
 uses the accent. All 35 focused palette/account/onboarding/planning/sharing tests pass with zero skips;
 four capture-tool tests pass. Native colour acceptance covers all four recipes in Dark and Daylight.
 The final picker body uses #161C1D / #F8F6F4; the live-link Revoke action uses the accent.
-Remaining Name-field and picker-height differences belong to task 18 (consistency 11q).
+The combined Name/Equipment/Targets form and retained picker return are recorded under task 18.
 
 The shared palette is the one color source for app chrome, account chrome and the gym onboarding
 accent. This task adds no events or write boundaries. Existing Coach action structure and review
@@ -531,7 +531,8 @@ The shared NumberStepper accepts one decimal separator and rejects malformed ins
 as a whole. Replacing a selected separator keeps the new caret and composition; rejection keeps
 the complete prior editor state. Sign, leading-separator and exponent buffers remain editable,
 and deletion can repair a restored malformed buffer. Selection-only edits emit no draft callback
-or haptic. The routine editor adopts this primitive in task 18; its legacy TargetField is unchanged.
+or haptic. The routine editor reuses the same edit grammar for uniform and per-set numeric fields,
+retaining native selection and composition.
 
 The independent main integration covers 1,298 gym Debug cases: 1,281 pass, 17 explicit live-wire
 cases skip, and none fail or error. The debug app assembles. Native rack verification proves duplicate
@@ -886,8 +887,8 @@ owned rig is stopped, its retired AVD removed and all acceptance evidence retain
 Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
 The human-approved [02.19 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
 is Ready for dev on the canonical Android page. It keeps a realistic signed load visible at narrow
-width and enlarged text. Implementation belongs to task 18; the older full-width/buttons-below
-fallback remains unapproved.
+width and enlarged text. Task 18 implements and verifies that exact focused Load scope; the older
+full-width/buttons-below fallback remains unapproved.
 
 ## Shared load and Finish integration observations
 
@@ -1058,3 +1059,42 @@ Retained post-reset runtime and app exit history contain no product fatal/ANR; t
 The real Coach fixture follows Open routine → Start workout → Hide and retains Coach as the
 selected tab. All five Room cases pass after removing the routine-start path’s forced Routines
 selection. Routines-origin starts remain on their existing tab; no Coach card appearance changes.
+
+## Task 18 · combined movement staging and one routine Save
+
+The routine movement form edits Name, the plain three-category Equipment control and uniform or
+per-set Targets in one route. Add/Done stages the complete value without a catalogue write; the
+outer Save submits one `SaveRoutinePlan` with stable identities, opening/current routine and
+metadata, rest and legacy raw counts. Store admission owns the save lifetime. Caller publication
+pins owner, identity revision, replica and exact attempt, releasing only that attempt's busy state.
+The same numeric edit grammar handles per-set selection/composition and duplicate separators.
+
+The composed Android gate runs 1,429 gym cases in each of Debug and Release: 1,412 pass and 17
+explicit opt-in LiveWire cases skip per variant, with zero failures/errors. Platform Debug passes
+140 and App Debug 48; Debug assembles. The Android input tree is
+`004fc4c3373eaa16a93cbc9944d724d6edd48df4`. Source composition retains the current Log, Bodyweight,
+Finish, onboarding, hidden-workout and cap admission behavior. The shared engine/domain stress
+suite is not a new claim of this task's allocated gate.
+
+Native evidence uses the original 45-path freeze
+`e734f850ea1d1b554157d0145a214ae0930cdda30a0b3d196eaa335725e5d794`, APK
+`5f3a797dbcf37be65421b952a21dbd9c114be395cc1d39d005802c114020c972` and local schema-10 backend
+`eee2ff237b8a8ab6056cd5337a7505fcf2d46a7b1b246ae7eed72f1a85b8d514`. Accepted partial Dark/Daylight
+captures cover normal, per-set, keyboard and unsaved states. At 320dp/200%, focused `−12.5` and
+valid `0` remain readable with identical bounds, the unit below, native minus and pinned Done.
+Whole-buffer comma-decimal replacement and duplicate rejection are established; native partial
+selection is not. The broader Target-summary layout remains unchanged and postponed.
+
+A staged custom movement followed by outer Cancel retains the full SQL baseline. The remaining
+Save-only proof retains all post-Save artifacts before assertions: all six SQL tables match the
+baseline before Save, then one sync result commits two 501kg/8-rep targets, three explicit
+0kg/10-rep targets, rest 90, metadata and the former-name alias. SQL and authenticated GET agree;
+raw Dumbbells count is `NULL` and GET resolves 2. The untouched movement compares exactly.
+Twenty-two bounded intake events include five form/Save steps and one `gym_routine_saved`.
+
+Native success, Cancel and appearance/input receipts are separate parts of the same frozen cohort;
+setup, hierarchy and observer failures remain qualified. No native technical save failure or Issue
+arrival is claimed. Deterministic tests cover transaction failures, stale data, delayed admission,
+caller disposal and identity replacement. Every owned native process, database and retired AVD is
+cleaned while retaining non-AVD evidence; collector 8100 is unchanged. The composed Debug APK is
+source-build evidence, not an installed replay or public release.

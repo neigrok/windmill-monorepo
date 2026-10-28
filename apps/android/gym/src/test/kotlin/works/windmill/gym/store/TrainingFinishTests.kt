@@ -705,8 +705,8 @@ class TrainingFinishTests {
             room.select("a")
             val draft = RoutineDraft(name = "Push A", creationId = "rt_editor").adding("bench-press")
                 .targeting("bench-press", listOf(SetTarget(8, 60.0)))
-            val first = room.store.saveRoutine(draft)
-            val retried = room.store.saveRoutine(draft)
+            val first = room.store.saveRoutine(draft.capturingMovements(room.store.catalog))
+            val retried = room.store.saveRoutine(draft.capturingMovements(room.store.catalog))
             assertEquals(first, retried)
             assertEquals(listOf("rt_editor"), room.training.program().map { it.id })
             assertEquals(listOf("rt_editor"), room.store.allRoutines.map { it.id })
@@ -720,8 +720,8 @@ class TrainingFinishTests {
             room.select("a")
             val draft = RoutineDraft(name = "Push A", creationId = "rt_editor").adding("bench-press")
                 .targeting("bench-press", listOf(SetTarget(8, 60.0)))
-            val kept = room.store.saveRoutine(draft) as GymResult.Ok
-            val retry = room.store.saveRoutine(draft.named("Push B"))
+            val kept = room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok
+            val retry = room.store.saveRoutine(draft.named("Push B").capturingMovements(room.store.catalog))
             assertEquals(GymResult.Failed(WriteFailure.Refused(
                 "this save already holds different details — reopen the saved routine to edit it")), retry)
             assertEquals(listOf(kept.value), room.training.program())

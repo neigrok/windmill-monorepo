@@ -5,6 +5,7 @@
 **Figma:**
 - 02.6 Combined movement editor: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
 - 02.11 Combined movement editor, Vary by set expanded on the same route: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
+- 02.19 Regular Load unit below at 320dp/200%: [Approved frame](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960), ✅ Ready for dev, human-approved 2026-10-28. Keep 20sp value and 16sp unit bases, side controls, native minus and pinned Done. Expansion stays while focused through valid zero; longer text retains native horizontal editing. The older full-width/buttons-below proposal is unapproved.
 - Components (Design System library, Android page):
   - `Android / Number stepper` `337:2514`
   - `Android / Keyboard` `337:2403` (Number and Decimal)
@@ -13,12 +14,12 @@
 
 **Shared equipment control:** [Canonical Android section](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), ✅ Ready for dev, human-approved 2026-10-26. The combined uniform/per-set, add, keyboard, invalid, unsaved and Load-focus drawings on the canonical Android page use this approved shared control. The existing Name/Equipment/Targets composition and staged Add/Done routes remain unchanged.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `ui/RoutineBuilder.kt` still opens a target-only sheet; `ui/TargetBlock.kt` owns uniform/per-set targets and the existing bodyweight sign action. Name and equipment are outside that edit.
-- Routine-picker creation calls `store.create` before adding to its local draft (`ui/RoutineBuilder.kt`, `ui/MovementPicker.kt`). Cancelling the outer routine can therefore leave a created movement behind.
-- The sync domain already provides `RoutineMovementChange` and `SaveRoutinePlan` in `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/Routines.kt`. It combines routine entries, new/custom movement metadata and overrides in one Plan, with stale guards and aliases. `TrainingStore.saveRoutine` still uses the older create/replace-routine adapter; wire the existing action rather than rebuilding it.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/RoutineBuilder.kt` opens `MovementForm` for uniform/per-set targets, name and equipment. Routine creation stages stable movement identities in the owning draft.
+- `TrainingStore.saveRoutine` admits one store-owned save and calls the existing domain `SaveRoutinePlan` through `EngineTraining`. It writes routine entries, new movement metadata, overrides and aliases together with the domain stale/visibility guards.
+- `GymRoom` pins the caller owner, identity revision, replica and exact save attempt. An invalidated result cannot close a newer form or leave its own busy flag stuck. The admitted store-owned save survives caller disposal.
 
-**Change**
+**Contract**
 - Replace the target-only destination with the approved combined movement form: **Name**, **Equipment**, then **Targets**. Opening an existing routine movement edits all of these on one route. There is no separate Targets route, navigation hop or target-only commit.
 - Implement the shared Name/Equipment fields here using the approved combined form and 04’s native primitives;19 reuses this form for its creation contexts and is not a prerequisite of 18. **Sets** and **Reps** use Number input; **Load** uses Decimal, with equipment-aware units from 08. Preserve blank/open/varies semantics and the domain’s validation; zero is not a substitute for an unset target.
 - Signed Other and legacy bodyweight load entry uses the native keyboard’s minus key as specified in 07. Verify negative decimal entry and commit on the target emulator and retain the approved sizing. Preserve raw legacy equipment/count on unchanged or name-only edits; selecting a different category uses the explicit schema 10 value. No legacy data migration is part of this form.
@@ -38,6 +39,12 @@
 - Exercise stale routine/metadata/equipment/target edits, unseen/deleted movement refusal, failed Save, repeated Save and recreation. Assert unchanged replica state on refusal and full retained draft content, not just a success label.
 - Preserve the existing SaveRoutinePlan/shared vectors; add adapter/draft UI tests for the new wiring. Update the relevant `RoutineEditor`, target/per-set, create-movement, planning-write and sign-entry tests to the combined route.
 - `gym_routine_saved` fires only at successful outer Save. Content-free `gym_action` tracks movement-form open/stage/cancel and outer-save refusal/failure with bounded labels; staging must not emit a created/saved event. Unexpected adapter/write failures report under static `gym.saveRoutine`; draft persistence retains `gym.saveRoutineDraft`. Record labels in `docs/ANDROID_OBSERVABILITY.md`, without names, targets, IDs or field text.
+
+**Verification**
+- The composed Android gate passes gym Debug and Release separately: each has 1,429 cases, 1,412 passes and 17 explicit opt-in LiveWire skips, with no failures or errors. Platform Debug passes 140 cases, App Debug passes 48, and Debug assembles.
+- Accepted native captures cover the normal, per-set, keyboard and unsaved forms in Dark and Daylight. The approved 02.19 scope proves readable `−12.5` and valid `0` with unchanged focused bounds at 320dp/200%, whole-buffer comma-decimal replacement and duplicate-separator rejection. Native partial selection remains unestablished. The broader Target-summary overlap is postponed and excluded; no whole-form 200% acceptance is claimed.
+- Local schema-10 acceptance proves all six routine/catalogue SQL tables unchanged before outer Save, then one new sync result with exact 501/zero target arrays, rest, metadata and the former-name alias through SQL and authenticated GET. Dumbbells retains raw SQL `NULL` and reads as the effective count 2. A separate staged-creation Cancel preserves the full baseline.
+- The final Save run delivers 22 bounded intake events, including five form/Save steps and one `gym_routine_saved`. Accepted partial capture runs, Cancel and final Save have separate receipts on the same frozen source/APK. Setup and observer failures are qualified rather than counted as whole-run passes. Technical save-failure reporting is covered at the deterministic adapter/store boundary; no native failure Issue was injected or claimed.
 
 **Depends on:** 04, 07, 08.
 

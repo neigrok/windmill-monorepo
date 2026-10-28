@@ -240,7 +240,7 @@ fun RoutineSheet(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Start workout", style = WindmillFont.body(16, FontWeight.Bold))
                     }
-                    TextButton(onClick = { onBuild(RoutineDraft.of(routine)) }, enabled = !starting,
+                    TextButton(onClick = { onBuild(RoutineDraft.of(routine, store.catalog)) }, enabled = !starting,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text("Edit routine", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }

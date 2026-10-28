@@ -364,7 +364,7 @@ class LoggerScreenTests {
                 val saved = (room.store.saveRoutine(RoutineDraft(name = "Push and pull")
                     .adding("bench-press").targeting("bench-press", listOf(SetTarget(5, 60.0)))
                     .adding("barbell-row").targeting("barbell-row", listOf(SetTarget(5, 40.0)))
-                    .adding("overhead-press").targeting("overhead-press", listOf(SetTarget(5, 20.0)))) as GymResult.Ok).value
+                    .adding("overhead-press").targeting("overhead-press", listOf(SetTarget(5, 20.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
                 room.store.start(saved.id)
                 room.store.choose("bench-press")
                 room.training.routine(saved.id)!!
@@ -423,7 +423,7 @@ class LoggerScreenTests {
                 RoutineDraft(name = "Lower A")
                     .adding("back-squat")
                     .targeting("back-squat", listOf(
-                        SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)))
+                        SetTarget(5, 60.0), SetTarget(5, 80.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0))).capturingMovements(room.store.catalog)
             ) as GymResult.Ok).value
             room.store.start(lowerA.id)
             room.store.choose("back-squat")

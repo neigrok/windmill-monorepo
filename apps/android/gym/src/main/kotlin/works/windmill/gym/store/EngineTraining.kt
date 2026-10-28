@@ -402,6 +402,95 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         }
         read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) }!!.ui()
     }
+    data class RoutinePlanSaved(val routine: Routine, val movements: List<Exercise>)
+    private data class RoutinePlanLoad(val action: SaveRoutinePlan, val loaded: SaveRoutinePlan.Loaded,
+        val edits: List<RoutineMovementChange>, val routineIdentityKnown: Boolean)
+
+    suspend fun saveRoutinePlan(draft: RoutineDraft, expectedReplica: String, expectedAnonymous: Boolean): RoutinePlanSaved {
+        val identity = draft.id ?: requireNotNull(draft.creationId)
+        val write = RoutineWrite(identity, draft.name, draft.position, draft.write)
+        val base = (draft.original ?: write).engine(null)
+        val current = write.engine(base)
+        val result = apply(object : Action<RoutinePlanLoad?, RoutinePlanSaved?, GymRefusal> {
+            override val scope = EngineRoutine.scope
+            override val refusals = GymRefusal
+            override fun load(read: Reader): RoutinePlanLoad? {
+                if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                val catalogue = Catalogue(read)
+                val edits = draft.entries.map { entry ->
+                    val staged = draft.movements.firstOrNull { it.current.id == entry.exerciseId }
+                    val existing = catalogue.find(Id(entry.exerciseId, EngineExercise))
+                    if (staged == null) {
+                        val nextTargets = current.entries.first { it.exerciseId.text == entry.exerciseId }.sets
+                        val openingTargets = draft.original?.entries?.firstOrNull { it.exerciseId == entry.exerciseId }?.sets
+                            ?.takeIf { it.isNotEmpty() }?.map { EngineTarget(it.reps, it.weightKg) }
+                        if (nextTargets != openingTargets)
+                            throw TrainingRefused("stale", "Reopen this routine to review its movement targets before saving.")
+                        val value = existing ?: throw missing("That movement is no longer on the log.")
+                        RoutineMovementChange(value, value)
+                    } else RoutineMovementChange(staged.base?.engine(), staged.current.engine())
+                }
+                val action = SaveRoutinePlan(base, current, draft.id == null, edits)
+                return RoutinePlanLoad(action, action.load(read), edits,
+                    read.repository(EngineRoutine).record(current.id, ViewMode.stored) != null)
+            }
+            override fun decide(loaded: RoutinePlanLoad?, ids: IDSource): Decision<RoutinePlanSaved?, GymRefusal> {
+                if (loaded == null) return Decision.Unchanged(null)
+                val normalized = Valid(current, EngineRoutine, at = loaded.loaded.moment).value
+                val standing = loaded.loaded.routine
+                val normalizedEdits = loaded.edits.map { it.copy(current = Valid(it.current, EngineExercise, at = loaded.loaded.moment).value) }
+                if (draft.id == null && loaded.routineIdentityKnown && standing == null)
+                    return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, current.id.ref, path = Refused.Path.predicted)))
+                val action = if (draft.id == null && standing != null) {
+                    val sameMovements = normalizedEdits.all { edit ->
+                        val stored = loaded.loaded.catalogue.find(edit.current.id) ?: return@all false
+                        val next = edit.current
+                        val before = edit.base
+                        if (before == null) stored.fields() == next.fields() && stored.loadCount == next.loadCount
+                        else (next.name == before.name || next.name == stored.name) &&
+                            (next.equipment == before.equipment || next.equipment == stored.equipment) &&
+                            (next.loadCount == before.loadCount || next.loadCount == stored.loadCount)
+                    }
+                    if (standing.fields() != normalized.fields() || !sameMovements)
+                        throw TrainingRefused("id-taken", "this save already holds different details — reopen the saved routine to edit it")
+                    SaveRoutinePlan(current, current, false, normalizedEdits.map { edit ->
+                        if (edit.base == null) edit.copy(base = loaded.loaded.catalogue.find(edit.current.id)) else edit
+                    })
+                } else loaded.action
+                val decision = action.decide(loaded.loaded, ids)
+                if (decision is Decision.Refuse) return decision
+                val accepted = if (standing == null) normalized else standing.copy(
+                    name = if (current.name != base.name) normalized.name else standing.name,
+                    position = if (current.position != base.position) normalized.position else standing.position,
+                    entries = if (current.entries != base.entries) normalized.entries else standing.entries,
+                )
+                val movements = normalizedEdits.map { edit ->
+                    val next = edit.current
+                    val stored = loaded.loaded.catalogue.find(next.id)
+                    val before = edit.base
+                    if (stored == null) next.ui() else if (before == null) stored.ui() else {
+                        val name = if (next.name != before.name) next.name else stored.name
+                        stored.copy(name = name,
+                            equipment = if (next.equipment != before.equipment) next.equipment else stored.equipment,
+                            loadCount = if (next.loadCount != before.loadCount) next.loadCount else stored.loadCount,
+                            aliases = if (name != stored.name) ExerciseRules.renamedAliases(stored.name, name, stored.aliases) else stored.aliases,
+                        ).ui()
+                    }
+                }
+                val saved = RoutinePlanSaved(accepted.ui(), movements)
+                return when (decision) {
+                    is Decision.Write -> Decision.Write(decision.plan, saved)
+                    is Decision.Unchanged -> Decision.Unchanged(saved)
+                    is Decision.Refuse -> error("a refused routine plan has no accepted snapshot")
+                }
+            }
+        })
+        return result ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
+    }
+
+    private fun Exercise.engine() = EngineExercise(Id(id, EngineExercise), name, pattern, equipment,
+        stepKg ?: ExerciseRules.defaultStepKg(equipment), aliases, loadCount)
+
     suspend fun deleteRoutine(id: String, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {
         remove(deleteRoutine(Id(id, EngineRoutine)), expectedReplica, expectedAnonymous, release = true)
     }
@@ -752,10 +841,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         plan?.let { PlanSnapshot(name ?: it.routine, it.entries.map { entry -> PlanEntry(entry.exerciseId.text, entry.sets.orEmpty().map { set -> SetTarget(set.reps, set.weightKg) }) }) })
     private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, rpe, note, completedAt.ms)
     private fun EngineRoutine.ui(last: Long? = null, proposal: Proposal? = null) = Routine(id.text, name, position, last,
-        entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId.text, entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) }, revision ?: 1, proposal)
+        entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId.text, entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }, entry.restSeconds) }, revision ?: 1, proposal)
     private fun RoutineWrite.engine(old: EngineRoutine?) = EngineRoutine(Id(id, EngineRoutine), name, position,
         entries.map { entry -> EngineEntry(Id(entry.exerciseId, EngineExercise), entry.sets.takeIf { it.isNotEmpty() }?.map { EngineTarget(it.reps, it.weightKg) },
-            old?.entries?.firstOrNull { it.exerciseId.text == entry.exerciseId }?.restSeconds) }, old?.revision)
+            entry.restSeconds ?: old?.entries?.firstOrNull { it.exerciseId.text == entry.exerciseId }?.restSeconds) }, old?.revision)
     private fun proposalCreatedAt(proposal: EngineProposal, reader: Reader): Long = reader.repository(EngineProposal).record(proposal.id, ViewMode.drawn)?.let { it.rc ?: it.born?.ms } ?: 0
     private fun EngineProposal.ui(reader: Reader): Proposal = Proposal(id.text, routineId.text, ProposalIntent.parse(intent), ProposalState.parse(state), summary,
         changeCount ?: changes.count { it.kind != "kept" }, proposalCreatedAt(this, reader), settledAt?.ms, ProposalSource(door, connection, agent, threadId), baseRevision, baseName.orEmpty(), proposedName,

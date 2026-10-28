@@ -992,41 +992,47 @@ class TrainingStore(
         return job.await()
     }
 
-    // One day of the program, written WHOLE. A routine with an id is an edit, which moves the
-    // revision and supersedes every proposal pending on it; without one it is a create and the id is
-    // minted here. Savable while incomplete but not while EMPTY.
-    suspend fun saveRoutine(draft: RoutineDraft): GymResult<Routine> {
-        if (Program.nameProblem(draft.name) == Program.nameTooLong) return GymResult.Failed(WriteFailure.Refused(Program.nameTooLong))
-        val name = Program.named(draft.name)
-            ?: return GymResult.Failed(WriteFailure.Refused("a routine needs a name"))
-        if (draft.entries.isEmpty()) {
-            return GymResult.Failed(WriteFailure.Refused("a routine needs at least one movement"))
-        }
-        val standing = draft.id
-        val creationId = draft.creationId ?: mintRoutine()
-        if (standing != null && draft.original?.expectedRevision == null) {
-            return GymResult.Failed(WriteFailure.Refused("reopen this routine before saving — its original revision is missing"))
-        }
+    suspend fun saveRoutine(draft: RoutineDraft, expectedAccountKey: String = accountKey,
+        expectedReplica: String? = editReplica): GymResult<Routine> {
         val seat = owner
-        val write = RoutineWrite(standing ?: creationId, name, draft.position, draft.write,
-            expectedRevision = draft.original?.expectedRevision)
-        return try {
-            val saved = if (standing == null) training.createRoutine(write)
-                else training.replaceRoutine(standing, write)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
-            routines = if (standing == null) program.filterNot { it.id == saved.id } + saved
-                else program.map { if (it.id == saved.id) saved else it }
-            if (standing == null && RoutineWrite(saved) != write) return GymResult.Failed(WriteFailure.Refused(
-                "this save already holds different details — reopen the saved routine to edit it"))
-            telemetry.event("gym_routine_saved", mapOf("action" to if (standing == null) "create" else "update"))
-            GymResult.Ok(saved)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.saveRoutine", refusing)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
-            GymResult.Failed(WriteFailure(refusing))
-        }
+        val replica = expectedReplica
+        return scope.async(start = CoroutineStart.UNDISPATCHED) {
+            val result = try {
+                if (Program.nameProblem(draft.name) == Program.nameTooLong) throw TrainingRefused("invalid", Program.nameTooLong)
+                if (Program.named(draft.name) == null) throw TrainingRefused("invalid", "a routine needs a name")
+                if (draft.entries.isEmpty()) throw TrainingRefused("invalid", "a routine needs at least one movement")
+                if (draft.id != null && draft.original?.expectedRevision == null)
+                    throw TrainingRefused("stale", "reopen this routine before saving — its original revision is missing")
+                if (expectedAccountKey != accountKey || seat != owner || replica == null || replica != controls.engineReplica)
+                    throw TrainingRefused("account-changed", accountChanged)
+                val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = mintRoutine()) else draft
+                GymResult.Ok(training.saveRoutinePlan(prepared, replica, seat == null))
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (failure: Exception) {
+                reportFailure("gym.saveRoutine", failure)
+                GymResult.Failed(WriteFailure(failure))
+            }
+            val outcome = when (result) {
+                is GymResult.Ok -> "ok"
+                is GymResult.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+            }
+            telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "save", "outcome" to outcome))
+            when (result) {
+                is GymResult.Failed -> result
+                is GymResult.Ok -> {
+                    val accepted = result.value
+                    telemetry.event("gym_routine_saved", mapOf("action" to if (draft.id == null) "create" else "update"))
+                    if (seat == owner && replica == controls.engineReplica && replica == training.engine.activeReplica() &&
+                        training.anonymous == (seat == null)) {
+                        routines = program.filterNot { it.id == accepted.routine.id } + accepted.routine
+                        catalog = (catalog.filterNot { existing -> accepted.movements.any { it.id == existing.id } } + accepted.movements)
+                            .sortedWith(compareBy({ it.pattern }, { it.name }, { it.id }))
+                    }
+                    GymResult.Ok(accepted.routine)
+                }
+            }
+        }.await()
     }
 
     // The sessions that named it keep every set and their frozen plan: a snapshot is a copy, not a

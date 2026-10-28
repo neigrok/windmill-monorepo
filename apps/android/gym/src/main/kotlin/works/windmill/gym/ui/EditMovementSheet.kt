@@ -40,41 +40,11 @@ fun EditMovementSheet(
     val problem = Program.nameProblem(name)
     val changed = Program.renamed(base.name, name) != null || equipment != base.equipment ||
         equipment == "dumbbell" && loadCount != base.loadCount
-    var menu by remember { mutableStateOf(false) }
-    val choice = ExerciseRules.loadingChoice(equipment, loadCount)
-    val labels = mapOf("barbell" to "Barbell", "dumbbell" to "Dumbbells", "other" to "Other")
     Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 20.dp).padding(top = 16.dp)) {
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Edit movement", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = skin.ink)
-            MaterialTheme(typography = MaterialTheme.typography.copy(
-                bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
-                bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
-            )) {
-                OutlinedTextField(name, onValueChange = onName, enabled = !saving, label = { Text("Name") },
-                    singleLine = true, isError = problem != null,
-                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "Movement name" })
-                ExposedDropdownMenuBox(expanded = menu && !saving, onExpandedChange = { if (!saving) menu = it }) {
-                    OutlinedTextField(labels.getValue(choice), onValueChange = {}, enabled = !saving, readOnly = true,
-                        label = { Text("Equipment") },
-                        leadingIcon = if (choice == "other") null else { { EquipmentIcon(choice, Modifier.size(24.dp)) } },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
-                            .heightIn(min = 56.dp).semantics { contentDescription = "Equipment" })
-                    ExposedDropdownMenu(expanded = menu && !saving, onDismissRequest = { menu = false }, containerColor = skin.surface,
-                        shape = RoundedCornerShape(16.dp)) {
-                        labels.keys.forEach { value ->
-                            DropdownMenuItem(text = { Text(labels.getValue(value), style = WindmillFont.body(14)) },
-                                leadingIcon = { Box(Modifier.size(20.dp)) { EquipmentIcon(value, Modifier.size(20.dp)) } },
-                                trailingIcon = if (choice == value) {
-                                    { Icon(painterResource(R.drawable.gym_equipment_selected), contentDescription = "Selected", modifier = Modifier.size(20.dp)) }
-                                } else null,
-                                onClick = { menu = false; onEquipment(value) }, modifier = Modifier.heightIn(min = 48.dp))
-                        }
-                    }
-                }
-            }
+            MovementFields(name, equipment, loadCount, onName, onEquipment, enabled = !saving, problem = problem)
             (refused ?: problem)?.let { sentence ->
                 Text(sentence, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.error,
                     modifier = Modifier.semantics { error(sentence) })
@@ -84,6 +54,51 @@ fun EditMovementSheet(
             modifier = Modifier.padding(top = 16.dp, bottom = 16.dp).fillMaxWidth().heightIn(min = 56.dp),
             shape = RoundedCornerShape(16.dp)) {
             Text(if (saving) "Saving…" else "Save", style = WindmillFont.body(16, FontWeight.Bold))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MovementFields(
+    name: String,
+    equipment: String,
+    loadCount: Int,
+    onName: (String) -> Unit,
+    onEquipment: (String) -> Unit,
+    enabled: Boolean = true,
+    problem: String? = null,
+) {
+    val skin = LocalGymColors.current
+    var menu by remember { mutableStateOf(false) }
+    val choice = ExerciseRules.loadingChoice(equipment, loadCount)
+    val labels = mapOf("barbell" to "Barbell", "dumbbell" to "Dumbbells", "other" to "Other")
+    MaterialTheme(typography = MaterialTheme.typography.copy(
+        bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
+        bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
+    )) {
+        OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text("Name") },
+            singleLine = true, isError = problem != null,
+            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { contentDescription = "Movement name" })
+        ExposedDropdownMenuBox(expanded = menu && enabled, onExpandedChange = { if (enabled) menu = it }) {
+            OutlinedTextField(labels.getValue(choice), onValueChange = {}, enabled = enabled, readOnly = true,
+                label = { Text("Equipment") },
+                leadingIcon = if (choice == "other") null else { { EquipmentIcon(choice, Modifier.size(24.dp)) } },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = menu) },
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
+                    .heightIn(min = 56.dp).semantics { contentDescription = "Equipment" })
+            ExposedDropdownMenu(expanded = menu && enabled, onDismissRequest = { menu = false }, containerColor = skin.surface,
+                shape = RoundedCornerShape(16.dp)) {
+                labels.keys.forEach { value ->
+                    DropdownMenuItem(text = { Text(labels.getValue(value), style = WindmillFont.body(14)) },
+                        leadingIcon = { Box(Modifier.size(20.dp)) { EquipmentIcon(value, Modifier.size(20.dp)) } },
+                        trailingIcon = if (choice == value) {
+                            { Icon(painterResource(R.drawable.gym_equipment_selected), contentDescription = "Selected", modifier = Modifier.size(20.dp)) }
+                        } else null,
+                        onClick = { menu = false; onEquipment(value) }, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
         }
     }
 }

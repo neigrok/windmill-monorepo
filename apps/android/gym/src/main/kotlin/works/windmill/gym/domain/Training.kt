@@ -286,7 +286,7 @@ data class Routine(
         position = write.position,
         entries = write.entries.mapIndexed { index, entry ->
             RoutineEntry(position = index + 1, exerciseId = entry.exerciseId,
-                sets = entry.sets)
+                sets = entry.sets, restSeconds = entry.restSeconds)
         },
     )
 }
@@ -582,6 +582,7 @@ data class ExerciseWrite(
 data class RoutineEntryWrite(
     val exerciseId: String,
     val sets: List<SetTarget> = emptyList(),
+    val restSeconds: Int? = null,
 )
 
 @Serializable
@@ -598,7 +599,7 @@ data class RoutineWrite(
         routine.name,
         routine.position,
         routine.entries.sortedBy { it.position }.map {
-            RoutineEntryWrite(it.exerciseId, it.sets)
+            RoutineEntryWrite(it.exerciseId, it.sets, it.restSeconds)
         },
         expectedRevision,
     )

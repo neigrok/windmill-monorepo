@@ -52,7 +52,7 @@ class RoutineSheetTests {
             // The routine and a workout on it are the account's, written on another phone under its own ids.
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
-                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push")) is GymResult.Ok)
+                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push").capturingMovements(other.store.catalog)) is GymResult.Ok)
                 other.training.startSession(SessionStart("remote01", other.now - 10_000, routineId = "routine_push"))
                 other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 50.0, 8, other.now - 9_000))
                 other.training.finishSession("remote01", other.now)
@@ -112,7 +112,7 @@ class RoutineSheetTests {
             )
             runBlocking {
                 room.select(null)
-                assertTrue(room.store.saveRoutine(RoutineDraft(name = "Mixed equipment", entries = entries, creationId = "routine_mixed")) is GymResult.Ok)
+                assertTrue(room.store.saveRoutine(RoutineDraft(name = "Mixed equipment", entries = entries, creationId = "routine_mixed").capturingMovements(room.store.catalog)) is GymResult.Ok)
             }
             val visible = mutableStateOf(true)
             compose.setContent { if (visible.value) GymMaterial { GymRoom(room.account(), room.store) } }

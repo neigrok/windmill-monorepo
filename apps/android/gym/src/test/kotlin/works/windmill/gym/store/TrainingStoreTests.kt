@@ -100,7 +100,7 @@ class TrainingStoreTests {
                                                       proposalId: String = "proposal1"): Routine {
         room.select("alice"); room.pull(server)
         val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-            .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+            .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
         room.sync(server)
         coachProposes(server, room.now, pushA.id, proposalId, name, removing = removing)
         room.pull(server); room.store.refreshEngine()
@@ -374,7 +374,7 @@ class TrainingStoreTests {
             // A finished workout first, so the open one never shares an id with the start this room mints.
             phone.workout()
             val pushA = (phone.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(phone.store.catalog)) as GymResult.Ok).value
             val live = (phone.store.start(pushA.id) as GymResult.Ok).value
             phone.store.choose("bench-press"); phone.store.logSet(82.5, 5)
             val start = phone.outbox().map { it.member("intent") }
@@ -409,7 +409,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(EngineRoomFixture.server())
             val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.store.start(pushA.id)
             room.store.choose("bench-press")
 
@@ -465,7 +465,7 @@ class TrainingStoreTests {
             room.select(null)
 
             val kept = (room.store.saveRoutine(RoutineDraft(name = "Push Day")
-                .adding("bench-press").targeting("bench-press", List(2) { SetTarget(5, 100.0) })) as GymResult.Ok).value
+                .adding("bench-press").targeting("bench-press", List(2) { SetTarget(5, 100.0) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             assertTrue(kept.id.startsWith("rt_"))
             assertEquals(listOf("Push Day"), room.store.routines.map { it.name })
 
@@ -477,7 +477,7 @@ class TrainingStoreTests {
             assertEquals("the saved routine carries every target",
                 listOf(SetTarget(5, 100.0), SetTarget(5, 100.0)), kept.entries.first().sets)
             assertTrue(room.store.saveRoutine(RoutineDraft.of(kept)
-                .targeting("bench-press", List(2) { SetTarget(5, 105.0) })) is GymResult.Ok)
+                .targeting("bench-press", List(2) { SetTarget(5, 105.0) }).capturingMovements(room.store.catalog)) is GymResult.Ok)
             assertEquals(listOf(SetTarget(5, 105.0), SetTarget(5, 105.0)),
                 room.store.routines.first { it.id == kept.id }.entries.first().sets)
             assertEquals("and the phone's replica holds the edited document",
@@ -652,7 +652,7 @@ class TrainingStoreTests {
             room.select("alice")
             room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             val routine = (room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")
-                .targeting("bench-press", List(3) { SetTarget(5, 100.0) })) as GymResult.Ok).value
+                .targeting("bench-press", List(3) { SetTarget(5, 100.0) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.store.refreshEngine()
             val opened = (room.store.start(routine.id) as GymResult.Ok).value
             assertEquals("the plan froze off the routine this store holds", PlanSnapshot(routine), opened.plan)
@@ -893,7 +893,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
             val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.store.refreshEngine()
             val opened = (room.store.start(pushA.id) as GymResult.Ok).value
             room.store.choose("bench-press")
@@ -1341,7 +1341,7 @@ class TrainingStoreTests {
             pushAWaitingOnADiff(room, server)
             room.select(null)
             room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", listOf(SetTarget(5, 82.5))))
+                .targeting("bench-press", listOf(SetTarget(5, 82.5))).capturingMovements(room.store.catalog))
 
             assertTrue("the phone's own routine wears no card",
                 room.store.routines.isNotEmpty() && room.store.routines.all { it.pendingProposal == null })
@@ -1409,7 +1409,7 @@ class TrainingStoreTests {
             val pushA = pushAWaitingOnADiff(room, server)
 
             assertTrue(room.store.saveRoutine(RoutineDraft.of(pushA)
-                .targeting("bench-press", List(5) { SetTarget(5, 87.5) })) is GymResult.Ok)
+                .targeting("bench-press", List(5) { SetTarget(5, 87.5) }).capturingMovements(room.store.catalog)) is GymResult.Ok)
             room.sync(server); room.store.refreshEngine()
             assertEquals("the log moved the revision under the diff", 2, room.store.routine(pushA.id)?.revision)
 
@@ -1436,7 +1436,7 @@ class TrainingStoreTests {
             assertEquals(emptySet<String>(), room.store.outOfDateProposals)
 
             assertTrue(room.store.saveRoutine(RoutineDraft.of(pushA)
-                .targeting("bench-press", List(5) { SetTarget(5, 87.5) })) is GymResult.Ok)
+                .targeting("bench-press", List(5) { SetTarget(5, 87.5) }).capturingMovements(room.store.catalog)) is GymResult.Ok)
             room.store.refreshEngine()
             assertEquals("an edit the log has not confirmed already dates the diff", setOf("proposal1"), room.store.outOfDateProposals)
 
@@ -1568,7 +1568,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice"); room.pull(server)
             val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.sync(server); room.store.refreshEngine()
             assertEquals(emptyList<Proposal>(), room.store.pendingProposals)
 
@@ -1809,7 +1809,7 @@ class TrainingStoreTests {
                 .adding("barbell-row")
                 .targeting("back-squat", List(5) { SetTarget(3, 110.0) })
 
-            val saved = (room.store.saveRoutine(draft) as GymResult.Ok).value
+            val saved = (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value
 
             assertEquals("the name is trimmed and never blank", "Heavy Thursday", saved.name)
             val lines = listOf(
@@ -1893,7 +1893,7 @@ class TrainingStoreTests {
             room.select(null)
             val kept = (room.store.saveRoutine(RoutineDraft(name = "Push Day")
                 .adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 100.0) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 100.0) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             val opened = (room.store.start(routineId = kept.id) as GymResult.Ok).value
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 100.0, reps = 5)
@@ -1922,7 +1922,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
             val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.sync(server); room.store.refreshEngine()
 
             assertNull(room.store.dropRoutine(pushA.id))
@@ -1941,7 +1941,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
             val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")
-                .targeting("bench-press", List(5) { SetTarget(5, 82.5) })) as GymResult.Ok).value
+                .targeting("bench-press", List(5) { SetTarget(5, 82.5) }).capturingMovements(room.store.catalog)) as GymResult.Ok).value
             room.sync(server); room.store.refreshEngine()
             assertEquals(listOf(pushA.id), room.store.routines.map { it.id })
             anotherPhone(server, room.now) { phone ->
@@ -2052,7 +2052,7 @@ class TrainingStoreTests {
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice"); room.pull(server)
             room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")
-                .targeting("bench-press", List(3) { SetTarget() }))
+                .targeting("bench-press", List(3) { SetTarget() }).capturingMovements(room.store.catalog))
             room.store.edit("bench-press", "Flat press")
             room.workout()
             room.store.savePreferences(GymPreferences(confirmSound = true))

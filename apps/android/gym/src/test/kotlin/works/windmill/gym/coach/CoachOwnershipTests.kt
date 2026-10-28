@@ -309,7 +309,7 @@ class CoachOwnershipTests {
                 val server = EngineRoomFixture.server()
                 room.select("a")
                 val routine = (room.store.saveRoutine(RoutineDraft(name = "A's routine")
-                    .adding("bench-press", listOf(SetTarget(5, 80.0)))) as GymResult.Ok).value
+                    .adding("bench-press", listOf(SetTarget(5, 80.0))).capturingMovements(room.store.catalog)) as GymResult.Ok).value
                 room.sync(server)
                 val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
                 assertTrue(runner.run(ProposeRoutine(Id("proposal1", SyncProposal), Id(routine.id, SyncRoutine), routine.name,

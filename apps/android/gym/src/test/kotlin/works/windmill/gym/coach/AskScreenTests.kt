@@ -96,7 +96,7 @@ class AskScreenTests {
         }
 
     private fun saved(room: EngineRoomFixture, server: ModelServer, draft: RoutineDraft): Routine = runBlocking {
-        (room.store.saveRoutine(draft) as GymResult.Ok).value.also { room.sync(server) }
+        (room.store.saveRoutine(draft.capturingMovements(room.store.catalog)) as GymResult.Ok).value.also { room.sync(server) }
     }
 
     // Coach writes a proposal on the server, and this phone pulls it.

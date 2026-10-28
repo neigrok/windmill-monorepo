@@ -1,157 +1,131 @@
 package works.windmill.gym.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.semantics.SemanticsActions
+import android.text.InputType
+import android.view.inputmethod.EditorInfo
+import androidx.compose.runtime.*
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.domain.TargetEntry
+import works.windmill.gym.domain.*
 import works.windmill.gym.store.EngineRoomFixture
 
-// R7: `±` is drawn only on the load fields of a movement the catalog loads by bodyweight — the
-// one place a negative load, band assistance, is a plan a lifter can mean — and nowhere else.
+@OptIn(ExperimentalComposeUiApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class TargetSheetSignKeyTests {
-    @get:Rule
-    val compose = createComposeRule()
+    @get:Rule val compose = createComposeRule()
+    @get:Rule val tmp = TemporaryFolder()
 
-    @get:Rule
-    val tmp = TemporaryFolder()
-
-    // Signed out, so the catalog is the anonymous replica's: the seeds by name and equipment.
-    private fun editor(room: EngineRoomFixture, opening: RoutineDraft, movement: String): () -> RoutineDraft {
+    private fun editor(room: EngineRoomFixture, opening: RoutineDraft, movement: String,
+        inputs: MutableList<Int>? = null): () -> RoutineDraft {
         runBlocking { room.select(null) }
         var draft by mutableStateOf(opening)
         compose.setContent {
-            RoutineBuilder(
-                draft = draft,
-                store = room.store,
-                saving = false,
-                onDraft = { draft = it },
-                onSave = {},
-                onClose = {},
-                say = {},
-            )
+            GymMaterial {
+                InterceptPlatformTextInput({ request, _ ->
+                    val info = EditorInfo()
+                    request.createInputConnection(info)
+                    inputs?.add(info.inputType)
+                    awaitCancellation()
+                }) { RoutineBuilder(draft, room.store, false, { draft = it }, {}, {}, {}) }
+            }
         }
         compose.onNodeWithText(movement).performClick()
-        val targets = opening.entries.first().sets
-        if (targets.isNotEmpty() && works.windmill.gym.domain.Scheme.straight(targets)) {
-            compose.onNodeWithText("Vary by set").performClick()
-        }
         return { draft }
     }
 
-    private fun typed(description: String): String =
-        compose.onNodeWithContentDescription(description).fetchSemanticsNode()
-            .config[SemanticsProperties.EditableText].text
+    private fun noSignKey() {
+        compose.onAllNodesWithContentDescription(bandAssistedSignDescription).assertCountEquals(0)
+        compose.onAllNodesWithText("±").assertCountEquals(0)
+    }
 
-    private fun signKeys() = compose.onAllNodesWithContentDescription(bandAssistedSignDescription)
-
-    @Test
-    fun testTheSignKeyStandsOnEveryLoadFieldOfABodyweightMovementAndOnNoBarbell() {
+    @Test fun nativeSignedUniformEntryStagesEverySetAndPreservesLegacyEquipment() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            val pull = RoutineDraft(name = "Pull A").adding("chin-up").adding("barbell-row")
-                .targeting("chin-up", List(3) { SetTarget(8, 20.0) })
-                .targeting("barbell-row", List(3) { SetTarget(8, 60.0) })
-            editor(room, pull, "Chin Up")
-
-            signKeys().assertCountEquals(4)
-            compose.onAllNodesWithText("±").assertCountEquals(4)
+            val draft = editor(room, RoutineDraft(name = "Pull").adding("chin-up")
+                .targeting("chin-up", List(3) { SetTarget(8, 20.0) }), "Chin Up")
+            noSignKey()
+            compose.onNodeWithContentDescription("Load, kg added").performTextReplacement("-12.5")
+            compose.onNodeWithText("Done").performClick()
+            assertEquals(List(3) { SetTarget(8, -12.5) }, draft().entry("chin-up")!!.sets)
+            assertEquals("bodyweight", draft().movements.single().base!!.equipment)
+            assertEquals("bodyweight", draft().movements.single().current.equipment)
+            assertEquals(emptyList<works.windmill.gym.domain.Routine>(), room.training.program())
         } } finally { scope.cancel() }
     }
 
-    @Test
-    fun testABarbellsSheetHasNoSignKey() {
+    @Test fun aBarbellFormAlsoHasNoSeparateSignControl() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            editor(room, RoutineDraft(name = "Push A").adding("bench-press")
+            editor(room, RoutineDraft(name = "Push").adding("bench-press")
                 .targeting("bench-press", List(3) { SetTarget(8, 60.0) }), "Bench Press")
-
-            signKeys().assertCountEquals(0)
-            compose.onAllNodesWithText("±").assertCountEquals(0)
+            noSignKey()
+            compose.onNodeWithContentDescription("Load, kg total").assertExists()
+            compose.onNodeWithText("Vary by set").performScrollTo().performClick()
+            noSignKey()
+            compose.onNodeWithContentDescription("Set 3 load").assertExists()
         } } finally { scope.cancel() }
     }
 
-    // The head's key writes every row; a row's key writes that row alone; and a second press is the
-    // way back to a loaded lift.
-    @Test
-    fun testTheHeadsSignWritesEveryRowAndARowsSignWritesItsOwn() {
+    @Test fun aNativeMinusAndCommaInOneRowLeaveTheOtherRowsUnchanged() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            val draft = editor(room, RoutineDraft(name = "Pull A").adding("chin-up")
-                .targeting("chin-up", List(3) { SetTarget(8, 20.0) }), "Chin Up")
+            val draft = editor(room, RoutineDraft(name = "Pull").adding("chin-up")
+                .targeting("chin-up", listOf(SetTarget(8, -10.0), SetTarget(6, -5.0))), "Chin Up")
+            noSignKey()
+            compose.onNodeWithContentDescription("Set 2 load").performTextReplacement("−7,5")
+            compose.onNodeWithText("Done").performClick()
+            assertEquals(listOf(SetTarget(8, -10.0), SetTarget(6, -7.5)), draft().entry("chin-up")!!.sets)
+        } } finally { scope.cancel() }
+    }
 
-            signKeys()[0].performClick()
-            assertEquals("−20", typed("Weight target"))
-            assertEquals(List(3) { "−20" }, (1..3).map { typed("Set $it load") })
-
-            signKeys()[2].performClick()
-            assertEquals("20", typed("Set 2 load"))
-            assertEquals("", typed("Weight target"))
-            compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(1)
-
-            signKeys()[2].performClick()
-            assertEquals("−20", typed("Weight target"))
-
-            compose.onNodeWithText("Set · 3 × 8 · −20").performClick()
-            compose.runOnIdle {
-                assertEquals("band-assisted work is a negative load", List(3) { SetTarget(8, -20.0) }, draft().entry("chin-up")!!.sets)
+    @Test fun uniformAndPerSetLoadConnectionsBothRequestTheNativeSignedDecimalKeyboard() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val inputs = mutableListOf<Int>()
+            editor(room, RoutineDraft(name = "Pull").adding("chin-up")
+                .targeting("chin-up", List(3) { SetTarget(8, -10.0) }), "Chin Up", inputs)
+            compose.onNodeWithContentDescription("Load, kg added").performScrollTo().performClick()
+            compose.waitUntil { inputs.isNotEmpty() }
+            val uniform = inputs.last()
+            compose.onNodeWithText("Vary by set").performScrollTo().performClick()
+            val before = inputs.size
+            compose.onNodeWithContentDescription("Set 1 load").performScrollTo().performClick()
+            compose.waitUntil { inputs.size > before }
+            for (input in listOf(uniform, inputs.last())) {
+                assertEquals(InputType.TYPE_CLASS_NUMBER, input and InputType.TYPE_MASK_CLASS)
+                assertEquals(InputType.TYPE_NUMBER_FLAG_SIGNED, input and InputType.TYPE_NUMBER_FLAG_SIGNED)
+                assertEquals(InputType.TYPE_NUMBER_FLAG_DECIMAL, input and InputType.TYPE_NUMBER_FLAG_DECIMAL)
             }
+            noSignKey()
         } } finally { scope.cancel() }
     }
 
-    // C17: the glyph reads as nothing out loud, so both halves of the control's accessible name are
-    // the same pinned bytes — the label TalkBack speaks for the click, and the description.
-    @Test
-    fun testTheSignKeyIsNamedTheSameBytesForItsClickAndItsDescription() {
+    @Test fun anEmptyLoadRemainsUnspecifiedWhenDoneStagesTheMovement() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            editor(room, RoutineDraft(name = "Pull A").adding("chin-up")
-                .targeting("chin-up", List(3) { SetTarget(8, 20.0) }), "Chin Up")
-
-            val sign = signKeys()[0].fetchSemanticsNode()
-            assertEquals(listOf(bandAssistedSignDescription), sign.config[SemanticsProperties.ContentDescription])
-            assertEquals(bandAssistedSignDescription, sign.config[SemanticsActions.OnClick].label)
-        } } finally { scope.cancel() }
-    }
-
-    // An empty load is `last time`, and a sign with no number behind it is not a load.
-    @Test
-    fun testTheSignOnAnEmptyFieldLeavesItEmpty() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            editor(room, RoutineDraft(name = "Pull A").adding("chin-up")
+            val draft = editor(room, RoutineDraft(name = "Pull").adding("chin-up")
                 .targeting("chin-up", List(3) { SetTarget(8) }), "Chin Up")
-
-            signKeys()[0].performClick()
-            assertEquals("", typed("Weight target"))
-            compose.onNodeWithText(TargetEntry.notANumber).assertDoesNotExist()
-            compose.onNodeWithContentDescription("Weight target").performTextReplacement("20")
-            assertEquals(List(3) { "20" }, (1..3).map { typed("Set $it load") })
+            noSignKey()
+            assertEquals("", compose.onNodeWithContentDescription("Load, kg added").fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText].text)
+            compose.onNodeWithText("Done").performClick()
+            assertEquals(List(3) { SetTarget(8) }, draft().entry("chin-up")!!.sets)
         } } finally { scope.cancel() }
     }
 }

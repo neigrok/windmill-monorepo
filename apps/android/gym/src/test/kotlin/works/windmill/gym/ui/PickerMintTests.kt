@@ -115,7 +115,9 @@ class PickerMintTests {
             compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
             dismissTheCreateStep()
 
+            hideSearchIme()
             compose.onNodeWithText("Create movement").assertIsDisplayed()
+            compose.onNode(hasSetTextAction() and hasText("Zercher")).assertIsDisplayed()
             compose.onNode(hasText("Create movement") and !hasClickAction()).assertDoesNotExist()
         } } finally { scope.cancel() }
     }
@@ -130,11 +132,11 @@ class PickerMintTests {
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
             hideSearchIme()
             compose.waitForIdle()
-            compose.onNodeWithText("Add to routine").performClick()
+            compose.onNodeWithText("Add").performClick()
             compose.waitForIdle()
 
             compose.runOnIdle {
-                assertEquals("the picker's create door mints and adds, it opens no second screen",
+                assertEquals("the combined form stages one movement in the outer draft",
                              1, draft.value.entries.size)
             }
             compose.onNodeWithText("Zercher Squat").assertIsDisplayed()

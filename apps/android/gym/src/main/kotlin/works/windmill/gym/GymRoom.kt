@@ -44,6 +44,8 @@ import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.ui.WorkoutBar
 import works.windmill.gym.domain.SessionDetail
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,6 +67,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withTimeoutOrNull
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
@@ -265,7 +268,8 @@ private fun finishedSaver(telemetry: Telemetry) = Saver<FinishedSession?, String
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null) {
+fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifications? = null,
+    routineSaveContext: CoroutineContext = EmptyCoroutineContext) {
     val telemetry = LocalTelemetry.current
     val skin = LocalGymColors.current
     val context = LocalContext.current
@@ -293,6 +297,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     var selectedRoutineId by rememberSaveable { mutableStateOf<String?>(null) }
     var starting by remember { mutableStateOf(false) }
     var savingRoutine by remember { mutableStateOf(false) }
+    var routineSaveAttempt by remember { mutableStateOf<Any?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     // Which tab was open exists nowhere but here, so it is saved through `tabSaver`.
     var tab by rememberSaveable(stateSaver = tabSaver) { mutableStateOf(Tab.Routines) }
@@ -491,6 +496,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             finished = null
             discardPrompt = null
             building = null
+            routineSaveAttempt = null
+            savingRoutine = false
             selectedRoutineId = null
             reviewing = null
             note = null
@@ -754,13 +761,25 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // draft is let go of. The door closes while one is in flight, or two taps are two routines.
     fun write(draft: RoutineDraft) {
         if (savingRoutine) return
+        val initiatingOwner = currentAccount.user?.id
+        val initiatingIdentity = currentAccount.identityRevision
+        val initiatingAccountKey = store.accountKey
+        val initiatingReplica = store.editReplica
+        val attempt = Any()
         val prepared = if (draft.id == null && draft.creationId == null) draft.copy(creationId = Ids.routine()) else draft
         building = prepared
+        routineSaveAttempt = attempt
         savingRoutine = true
-        scope.launch {
+        fun ownsAttempt() = routineSaveAttempt === attempt && currentAccount.user?.id == initiatingOwner &&
+            currentAccount.identityRevision == initiatingIdentity &&
+            store.accountKey == initiatingAccountKey && store.editReplica == initiatingReplica
+        scope.launch(routineSaveContext.minusKey(Job)) {
             try {
+                if (!ownsAttempt()) return@launch
                 note = null
-                when (val written = store.saveRoutine(prepared)) {
+                val written = store.saveRoutine(prepared, initiatingAccountKey, initiatingReplica)
+                if (!ownsAttempt()) return@launch
+                when (written) {
                     is GymResult.Failed -> note = written.why.line("${draft.name} wasn’t saved")
                     is GymResult.Ok -> {
                         haptics.saved()
@@ -771,7 +790,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     }
                 }
             } finally {
-                savingRoutine = false
+                if (routineSaveAttempt === attempt) {
+                    routineSaveAttempt = null
+                    savingRoutine = false
+                }
             }
         }
     }
