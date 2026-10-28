@@ -1,0 +1,39 @@
+[
+  {
+    "board": "A4",
+    "name": "onboarding-gym",
+    "account": "empty",
+    "launcher": true,
+    "steps": [
+      {
+        "wait": "Three ways to grow."
+      },
+      {
+        "tap": "Next"
+      },
+      {
+        "tap": "Next"
+      },
+      {
+        "tap": "Next"
+      },
+      {
+        "wait": "Log the set."
+      },
+      {
+        "wait": "Page 4 of 4"
+      },
+      {
+        "wait": "Get started"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Get started"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

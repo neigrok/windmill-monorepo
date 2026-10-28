@@ -500,15 +500,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
   screenshot.
-- **9f · The gym glimpse draws a rack neither phone has.** The page-4 fixture (*Squat · set 3 of 5 ·
-  … Set 3 · target 100 × 5 · … Last time · 97.5 kg × 5 · Set 3 logged · Log set*) and
-  `_Glimpse / Gym` (`210:56`) draw a slot target, a *Last time* line and the mono face, and both
-  phones' glimpses draw that fixture (`OnboardingGlimpses.swift`, `OnboardingGlimpses.kt`). The iOS
-  rack (board 03.1) has none of the three. Shell · Android A4 (`2:10131`, Daylight `2:10203`) now
-  draws the Android glimpse from today's rack as a target (Squat, the ledger with its current row,
-  *100 kg total*, *5 reps*, *Log set*); `OnboardingGlimpses.kt` still draws the old fixture. The iOS
-  A4 and `_Glimpse / Gym` (`210:56`) still draw it: redraw them from the iOS rack and align the iOS
-  glimpse.
+- **9f · Onboarding gym drawings trail the phone racks.** Shell · Android A4 (`2:10131`,
+  Daylight `2:10203`) retains the obsolete *Set / kg / Reps* header in its embedded rack.
+  `OnboardingGlimpses.kt` draws the approved current-rack substitution: three headerless rows,
+  the checked current row, glyph clocks, *100 kg total*, *5 reps* and the full-width *Log set*.
+  Redraw only A4's embedded rack from Gym · Android 03.13 (`1252:28829`), preserving the Shell
+  card, copy, pager and actions. The iOS code already reuses `MovementLedger`, `WorkoutLedgerRow`
+  and `GymNumeral` (`OnboardingGlimpses.swift`); inspect the iOS A4 drawing and `_Glimpse / Gym`
+  (`210:56`) against that current rack before editing them.
 - **9g · Where each product lives.** The iOS app tags both rooms *In this app* (`Onboarding.swift`);
   Android tags Journal *On the web* and Gym *In this app* (`gym/src/main/res/values/onboarding.xml`).
   Decide whether Android's tags name the iPhone.

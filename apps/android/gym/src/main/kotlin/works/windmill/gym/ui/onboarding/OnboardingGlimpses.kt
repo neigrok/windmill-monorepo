@@ -25,6 +25,8 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.compositeOver
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.PlatformTextStyle
@@ -118,12 +121,14 @@ fun OnboardingGlimpse(page: Int, active: Boolean, reducedMotion: Boolean, modifi
     // The picture owns its type size; accessibility scale applies to the surrounding words.
     CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
         val textMeasurer = rememberTextMeasurer(cacheSize = 48)
+        val workoutClock = painterResource(R.drawable.gym_clock)
+        val sinceSetClock = painterResource(R.drawable.gym_stopwatch)
         Canvas(modifier.clearAndSetSemantics { }) {
             val naturalHeight = if (page == 0) 320f else 340f
             val fit = minOf(size.width / 354f, size.height / naturalHeight)
             translate((size.width - 354f * fit) / 2f, (size.height - naturalHeight * fit) / 2f) {
                 scale(fit, fit, Offset.Zero) {
-                    val painter = GlimpsePainter(this, textMeasurer, dark, gym)
+                    val painter = GlimpsePainter(this, textMeasurer, dark, gym, workoutClock, sinceSetClock)
                     when (page) {
                         0 -> painter.rooms(beat.value, reducedMotion)
                         1 -> painter.roadmap(beat.value, breath, reducedMotion)
@@ -150,6 +155,8 @@ private class GlimpsePainter(
     val measurer: TextMeasurer,
     val dark: Boolean,
     val gymColors: GymColors,
+    val workoutClock: Painter,
+    val sinceSetClock: Painter,
 ) {
     val roadmap = if (dark) GlimpsePalette(
         Color(0xFF0B0B0C), Color(0xFF171719), Color(0xFF222224), Color(0xFFF2F0EB),
@@ -306,29 +313,41 @@ private class GlimpsePainter(
 
     fun gym(progress: Float, reduced: Boolean) {
         val elapsed = progress * 870f
-        val done = if (reduced) progress else easeStandard.transform(((elapsed - 150f) / 320f).coerceIn(0f, 1f))
-        val logged = if (reduced) progress else WindmillMotion.easeSoft.transform(((elapsed - 590f) / 280f).coerceIn(0f, 1f))
+        val done = if (reduced) 1f else easeStandard.transform(((elapsed - 150f) / 320f).coerceIn(0f, 1f))
         card(340f, gymColors.canvas, if (dark) gymColors.lineStrong else gymColors.line) {
             text("Squat", 20f, 18f, 22, gymColors.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 28)
-            text("set 3 of 5", 20f, 48f, 11, gymColors.inkDim, OnboardingMono, tracking = 0.4f)
-            text("1   ✓   100 kg × 5", 28f, 78f, 12, gymColors.inkDim, OnboardingMono, lineHeight = 16)
-            text("2   ✓   100 kg × 5", 28f, 100f, 12, gymColors.inkDim, OnboardingMono, lineHeight = 16)
-            draw.drawRoundRect(accent.copy(alpha = if (dark) 0.16f else 0.12f), Offset(20f, 120f), Size(314f, 26f), CornerRadius(8f))
-            draw.drawRoundRect(accent, Offset(20f, 120f), Size(3f, 26f), CornerRadius(2f))
-            text("Set 3 · target 100 × 5", 32f, 125f, 12, gymColors.ink, OnboardingMono, lineHeight = 16)
-            text("100", 18f, 162f, 72, gymColors.ink, OnboardingMono, FontWeight.Medium, lineHeight = 80, tracking = -2f)
-            text("kg × 5", 154f, 208f, 18, gymColors.inkDim, OnboardingMono, lineHeight = 24)
-            text("Last time · 97.5 kg × 5", 20f, 252f, 11, gymColors.inkFaint, OnboardingMono, tracking = 0.3f)
+            listOf(workoutClock, sinceSetClock).forEachIndexed { index, icon ->
+                val left = 105f + index * 72f
+                draw.translate(left, 51f) {
+                    with(icon) { draw(Size(12f, 12f), colorFilter = ColorFilter.tint(gymColors.inkDim)) }
+                }
+                text("0:22", left + 17f, 49f, 11, gymColors.inkDim, OnboardingMono, lineHeight = 16)
+            }
+            repeat(3) { index ->
+                val top = 72f + index * 25f
+                val current = index == 2
+                if (current) {
+                    draw.drawRoundRect(gymColors.accentSoft, Offset(20f, top), Size(314f, 26f), CornerRadius(8f))
+                    draw.drawRoundRect(accent, Offset(20f, top), Size(3f, 26f), CornerRadius(2f))
+                }
+                text(if (current) "Set 3" else "${index + 1}", 32f, top + 5f, 12,
+                    if (current) accent else gymColors.inkDim,
+                    if (current) OnboardingNunito else OnboardingMono,
+                    if (current) FontWeight.Bold else FontWeight.Normal, lineHeight = 16)
+                text("100 kg total × 5", 90f, top + 5f, 12, gymColors.inkDim, OnboardingMono, lineHeight = 16)
+                check(Offset(318f, top + 13f), gymColors.setDone,
+                    progress = if (current) done else 1f, alpha = if (current) done else 1f)
+            }
+            text("100", 20f, 164f, 64, gymColors.ink, OnboardingNunito, FontWeight.ExtraBold, lineHeight = 72, tracking = -1f)
+            text("kg total", 142f, 204f, 16, gymColors.inkDim, OnboardingNunito, lineHeight = 22)
+            text("5 reps", 20f, 242f, 15, gymColors.ink, weight = FontWeight.Medium, lineHeight = 20)
             val press = if (reduced || elapsed >= 150f) 1f else 1f - 0.03f *
                 (1f - kotlin.math.abs(elapsed - 75f) / 75f)
-            draw.scale(press, press, Offset(285.5f, 298f)) {
-                draw.drawRoundRect(accent, Offset(237f, 276f), Size(97f, 44f), CornerRadius(22f))
-                text("Log set", 285.5f, 288f, 15, onAccent, OnboardingNunito, FontWeight.ExtraBold,
+            draw.scale(press, press, Offset(177f, 298f)) {
+                draw.drawRoundRect(accent, Offset(20f, 276f), Size(314f, 44f), CornerRadius(16f))
+                text("Log set", 177f, 288f, 15, onAccent, OnboardingNunito, FontWeight.ExtraBold,
                     centered = true, lineHeight = 20)
             }
-            draw.drawCircle(gymColors.setDone.copy(alpha = done), 11f, Offset(31f, 299f))
-            check(Offset(31f, 299f), gymColors.onAccent, if (reduced) 1f else done, alpha = done)
-            text("Set 3 logged", 50f, 291f, 11, gymColors.inkDim.copy(alpha = logged), OnboardingMono)
             caption(gymColors.inkFaint)
         }
     }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -27,6 +28,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.gym.ui.GymSkin
+import works.windmill.gym.ui.LocalGymColors
+import works.windmill.platform.design.LocalWindmillDark
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -49,19 +53,67 @@ class OnboardingGlimpseTests {
         compose.mainClock.autoAdvance = true
     }
 
-    private fun caretPixel(): Int {
-        val bounds = compose.onNodeWithTag("journal_picture").fetchSemanticsNode().boundsInRoot
+    private fun picturePixel(tag: String, x: Float, y: Float): Int {
+        val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
         var pixel = 0
         compose.runOnIdle {
             val bitmap = Bitmap.createBitmap(contentView.width, contentView.height, Bitmap.Config.ARGB_8888)
             contentView.draw(Canvas(bitmap))
             pixel = bitmap.getPixel(
-                (bounds.left + bounds.width * 204f / 354f).toInt(),
-                (bounds.top + bounds.height * 180f / 340f).toInt(),
+                (bounds.left + bounds.width * x / 354f).toInt(),
+                (bounds.top + bounds.height * y / 340f).toInt(),
             )
             bitmap.recycle()
         }
         return pixel
+    }
+
+    private fun caretPixel(): Int = picturePixel("journal_picture", 204f, 180f)
+
+    @Test
+    fun reducedGymDrawsTheCompletedRowAndWideLogActionInBothAppearances() {
+        val skin = mutableStateOf(GymSkin.Instrument)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            contentView = LocalView.current
+            CompositionLocalProvider(LocalGymColors provides skin.value,
+                LocalWindmillDark provides (skin.value == GymSkin.Instrument)) {
+                Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
+                    OnboardingGlimpse(3, active = true, reducedMotion = true, Modifier.fillMaxSize())
+                }
+            }
+        }
+        for (palette in listOf(GymSkin.Instrument, GymSkin.Daylight)) {
+            for (scale in listOf(1f, 0f)) {
+                compose.runOnIdle {
+                    skin.value = palette
+                    Settings.Global.putFloat(compose.activity.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, scale)
+                }
+                compose.mainClock.advanceTimeByFrame()
+                assertEquals(palette.accent.toArgb(), picturePixel("gym_picture", 32f, 298f))
+                assertEquals(palette.accent.toArgb(), picturePixel("gym_picture", 324f, 298f))
+                assertEquals(palette.setDone.toArgb(), picturePixel("gym_picture", 317f, 138f))
+            }
+        }
+    }
+
+    @Test
+    fun theGymCheckLandsInTheThirdLedgerRow() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            contentView = LocalView.current
+            CompositionLocalProvider(LocalGymColors provides GymSkin.Instrument, LocalWindmillDark provides true) {
+                Box(Modifier.size(354.dp, 340.dp).testTag("gym_picture")) {
+                    OnboardingGlimpse(3, active = true, reducedMotion = false, Modifier.fillMaxSize())
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(32)
+        val opening = picturePixel("gym_picture", 317f, 138f)
+        compose.mainClock.advanceTimeBy(870)
+        val landed = picturePixel("gym_picture", 317f, 138f)
+        assertNotEquals(opening, landed)
+        assertEquals(GymSkin.Instrument.setDone.toArgb(), landed)
     }
 
     @Test

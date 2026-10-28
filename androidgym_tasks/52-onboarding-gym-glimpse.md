@@ -6,8 +6,9 @@
 - Shell · Android A4 Gym: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-10131) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-10203)
 - The rack it copies: [Gym · Android 03.13 Barbell](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28829), under the approved current Workout flow above.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `ui/onboarding/OnboardingGlimpses.kt` `gym()` (:307-334) draws an old rack: *set 3 of 5* (:313), *Set 3 · target 100 × 5* as a slot target in mono (:318), *100* with *kg × 5* in mono (:319-320), *Last time · 97.5 kg × 5* (:321) and *Set 3 logged* (:331).
+**Implementation**
+- `ui/onboarding/OnboardingGlimpses.kt` draws three compact headerless rows, inline **kg total × reps**, the existing clock glyphs, a Nunito load numeral and the full-width Log action inside the unchanged Shell card. The animated check lands in row 3; reduced motion draws that completed state immediately. The other three picture routines and the pager content are unchanged.
+- Source verification passes 12 gym rendering/pager cases, 11 app onboarding-flow cases and 31 capture-tool cases with no failures or skips. The new `onboarding-gym.json` recipe opts into the actual Android launcher intent on an empty install; ordinary captures retain their existing VIEW launch. Native paired appearance and event/runtime acceptance are pending.
 
 **Change**
 - Draw 09’s approved rack inside the existing glimpse: *Squat*, up to three compact headerless rows with set number, inline *kg total* and × reps, ✓ for logged rows and an accent current row; the load *100*, *kg total*, *5 reps* and **Log set**. Preserve the target/clock context shown by the current rack. There is no *Set / kg / Reps* header, text movement counter, previous/next arrows, duplicate sets/kg summary or standalone Add button. Use the current visual position marker only when the example contains several movements; no marker for a single-movement example.

@@ -79,12 +79,18 @@ def model_timing(scenario):
 def validate_scenarios(scenarios):
     for scenario in scenarios:
         model_timing(scenario)
+        if "launcher" in scenario and (type(scenario["launcher"]) is not bool or scenario["launcher"] and scenario["account"] != "empty"):
+            raise ValueError("Launcher capture needs an empty account and a boolean choice.")
         if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
                 not re.fullmatch(r"[a-z0-9-]+", scenario["name"]) or scenario["account"] not in ("empty", "fixture"):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
         if "frame_delay_ms" in scenario and (type(scenario["frame_delay_ms"]) is not int or
                 not 0 <= scenario["frame_delay_ms"] <= 1000 or scenario.get("settle", True) is not False):
             raise ValueError("Transient frame delays need settle:false and an integer from 0 to 1000 ms.")
+
+    empty = [scenario for scenario in scenarios if scenario["account"] == "empty"]
+    if any(scenario.get("launcher", False) for scenario in empty) and len(empty) != 1:
+        raise ValueError("Launcher capture must be the only empty-account scenario in its batch.")
 
 
 def read_fixture(path):
@@ -555,8 +561,9 @@ class Device:
             previous = current
         raise RuntimeError("The capture control did not stop moving.")
 
-    def launch(self):
-        return self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity", "-a", "android.intent.action.VIEW")
+    def launch(self, launcher=False):
+        intent = ["-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"] if launcher else ["-a", "android.intent.action.VIEW"]
+        return self.run("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity", *intent)
 
     def viewport(self, value=None):
         if value is None:
@@ -872,7 +879,7 @@ def main():
                 device.run("shell", "pm", "clear", PACKAGE)
                 device.run("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
                 device.run("shell", "cmd", "uimode", "night", value)
-                device.launch()
+                device.launch(launcher=any(item.get("launcher", False) for item in scenarios if item["account"] == account))
                 if account == "fixture":
                     device.sign_in(fixture.link())
                     device.find("Push A")

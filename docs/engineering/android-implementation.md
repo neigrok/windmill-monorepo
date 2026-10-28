@@ -980,3 +980,26 @@ The shared read still has a separate top-set representation: Kotlin
 The shared `packages/api-contract/gym/domain/training-reads.json` corpus preserves that shape.
 Those verified paths require a separately coordinated all-set/range contract update; this Android
 detail change does not claim to correct them.
+
+## Task 52 · Current rack in the onboarding gym picture
+
+The gym example retains the Shell card, reading band, caption, pager and surrounding copy. Its
+three headerless rows carry the set number, inline load basis and reps, with logged checks and an
+accent current row. The existing workout/since-set glyphs supply the clock context. The load uses
+the rack's Nunito treatment; reps and the full-width Log action keep the existing Shell positions.
+The animation retains the press and lands its check in row 3. Reduced motion draws the completed
+row immediately, including at zero platform animator scale. There is no separate saved line,
+old set counter, column header, last-time line or single-movement position marker.
+
+The implementation reuses the clock drawables and existing check painter. The four-picture Canvas
+keeps the other three draw routines unchanged. Its pixel test helper is shared by the Journal
+caret checks and the new gym checks, covering both gym skins, the wide action and the landing.
+Twelve gym and eleven app onboarding checks pass with zero failures/errors/skips; the existing
+first-launch, page-view and exit paths stay intact. Thirty-one capture-tool checks pass.
+
+The A4 recipe uses an opt-in boolean launcher choice, isolated to one empty-account scenario in its
+batch. Other fixture-account scenarios remain composable. It invokes
+the real MAIN/LAUNCHER intent because the ordinary VIEW launch intentionally bypasses first-run
+onboarding. The default rig launch stays VIEW, and no product flag or debug application hook is
+added. The recipe follows the three Next actions and Get started. Paired native appearance,
+reduced-motion capture, first-party page events and runtime acceptance remain pending.

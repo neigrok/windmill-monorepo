@@ -17,6 +17,18 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_launcher_capture_requires_an_empty_account_and_a_boolean_choice(self):
+        scenario = {"board": "A4", "name": "onboarding-gym", "account": "empty", "launcher": True}
+        capture.validate_scenarios([scenario])
+        ordinary = {"board": "05.1", "name": "log", "account": "empty"}
+        capture.validate_scenarios([scenario, {**ordinary, "account": "fixture"}])
+        for batch in ([ordinary, scenario], [scenario, ordinary]):
+            with self.subTest(batch=batch), self.assertRaises(ValueError):
+                capture.validate_scenarios(batch)
+        for invalid in ({**scenario, "account": "fixture"}, {**scenario, "launcher": "true"}, {**scenario, "launcher": 1}):
+            with self.subTest(scenario=invalid), self.assertRaises(ValueError):
+                capture.validate_scenarios([invalid])
+
     def test_gym_requests_carry_the_source_schema_and_mcp_stays_dynamic(self):
         fixture = capture.Fixture("http://127.0.0.1:8120", "unused")
         schema = str(json.loads((capture.ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"])
