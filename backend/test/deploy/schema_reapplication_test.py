@@ -71,6 +71,61 @@ class SchemaReapplicationTest(unittest.TestCase):
                     after[name].splitlines(keepends=True), fromfile="first apply", tofile="second apply"))
                 self.assertEqual(before[name], after[name], f"{name} changed:\n{difference}")
 
+    def test_other_equipment_upgrade_keeps_legacy_metadata_and_signed_history(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table gym_exercises drop constraint gym_exercises_equipment_check,
+  add constraint gym_exercises_equipment_check check (equipment in ('barbell','dumbbell','machine','cable','bodyweight','kettlebell'));
+alter table gym_exercise_names drop constraint gym_exercise_names_equipment_check,
+  add constraint gym_exercise_names_equipment_check check (equipment in ('barbell','dumbbell','machine','cable','bodyweight','kettlebell'));
+insert into users(id,email) values('00000000-0000-4000-8000-000000000042','equipment@example.invalid');
+insert into gym_exercises(id,name,pattern,equipment,created_by)
+  select 'legacy-'||equipment,equipment,'pull',equipment,'00000000-0000-4000-8000-000000000042'
+  from unnest(array['barbell','dumbbell','machine','cable','bodyweight','kettlebell']) equipment;
+insert into gym_exercise_names(user_id,exercise_id,equipment,load_count)
+  values('00000000-0000-4000-8000-000000000042','dumbbell-row','dumbbell',1);
+insert into gym_sessions(id,user_id,started_at)
+  values('equipment-session','00000000-0000-4000-8000-000000000042',now());
+insert into gym_sets(id,user_id,session_id,exercise_id,set_number,weight_kg,reps,completed_at)
+  values('equipment-set','00000000-0000-4000-8000-000000000042','equipment-session','legacy-bodyweight',1,-12.5,8,now());
+"""])
+        legacy = """
+select jsonb_build_object(
+  'exercises', (select jsonb_agg(to_jsonb(t) order by id) from gym_exercises t where created_by='00000000-0000-4000-8000-000000000042'),
+  'overrides', (select jsonb_agg(to_jsonb(t) order by exercise_id) from gym_exercise_names t where user_id='00000000-0000-4000-8000-000000000042'),
+  'sets', (select jsonb_agg(to_jsonb(t) order by id) from gym_sets t where user_id='00000000-0000-4000-8000-000000000042')
+)::text;
+"""
+        before = command([*query, legacy])
+        self.apply_schema()
+        self.assertEqual(before, command([*query, legacy]))
+        command([*query, """
+insert into gym_exercises(id,name,pattern,equipment,created_by)
+  values('explicit-other','Other fixture','pull','other','00000000-0000-4000-8000-000000000042');
+insert into gym_exercise_names(user_id,exercise_id,equipment)
+  values('00000000-0000-4000-8000-000000000042','pull-up','other');
+do $$ begin
+  begin
+    update gym_exercises set equipment='unknown' where id='explicit-other';
+    raise exception 'unknown custom equipment was accepted';
+  exception when check_violation then null; end;
+  begin
+    update gym_exercise_names set equipment='unknown' where exercise_id='pull-up';
+    raise exception 'unknown seed equipment was accepted';
+  exception when check_violation then null; end;
+end $$;
+"""])
+        self.assertEqual("other\nother\n", command([*query, """
+select equipment from gym_exercises where id='explicit-other'
+union all select equipment from gym_exercise_names where exercise_id='pull-up';
+"""]))
+        upgraded_rows = command([*query, legacy])
+        upgraded_constraints = command([*query, CATALOG])
+        self.apply_schema()
+        self.assertEqual(upgraded_rows, command([*query, legacy]))
+        self.assertEqual(upgraded_constraints, command([*query, CATALOG]))
+
     def test_cutover_copies_are_removed_without_changing_live_rows(self):
         self.apply_schema()
         command(["psql", self.database, "-Xq", "-v", "ON_ERROR_STOP=1", "-c", """

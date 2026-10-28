@@ -23,22 +23,23 @@ class RecordStateTests {
 
     // Signed in, with the account's log read once and nothing logged on it.
     private fun store(room: EngineRoomFixture): TrainingStore {
-        runBlocking { room.select("a"); room.pull(EngineRoomFixture.server()); room.store.refreshEngine() }
+        runBlocking { room.select("a"); room.pull(EngineRoomFixture.server()); room.store.refreshEngine(); room.store.observeEngine() }
         return room.store
     }
 
     @Test
-    fun initialReadIsHonestAndRenameKeepsOverlongDraftWithoutInventingARecord() {
+    fun initialReadIsHonestAndEditingKeepsTheWholeInvalidDraftWithoutInventingARecord() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
             compose.onNodeWithText("Nothing logged for this movement yet. The first set you log lands here.").assertIsDisplayed()
             compose.onNodeWithText("Rename").performClick()
-            compose.onNode(hasSetTextAction()).performTextReplacement("N".repeat(61))
-            compose.onNodeWithText("61/60").assertIsDisplayed()
-            compose.onNode(hasText("Rename") and hasAnyAncestor(isDialog())).assertIsNotEnabled()
-            compose.onNodeWithText("Old name: Bench Press\nSearchable as an alias.").assertExists()
+            compose.onNodeWithContentDescription("Movement name").performTextReplacement("N".repeat(61))
+            compose.onNodeWithContentDescription("Movement name").assertTextContains("N".repeat(61))
+            compose.onNodeWithText("Use 60 characters or fewer.").assertIsDisplayed()
+            compose.onNodeWithText("Save").assertIsNotEnabled()
+            compose.onNodeWithText("Old name: Bench Press\nSearchable as an alias.").assertDoesNotExist()
             assertEquals(listOf(movement), store.catalog.filter { it.id == movement.id })
             assertEquals(listOf(movement), room.training.catalogue().filter { it.id == movement.id })
         } } finally { scope.cancel() }
@@ -46,17 +47,18 @@ class RecordStateTests {
 
     // The rename is one local commit, so the sheet comes down on the name the replica now holds.
     @Test
-    fun aRenameShowsOnlyTheNameTheReplicaHolds() {
+    fun anEditShowsTheAcceptedNameAndTheObserverRefreshesTheCatalogue() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val store = store(room)
             val renamed = movement.copy(name = "Paused Bench", aliases = listOf("Bench Press"))
             compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
             compose.onNodeWithText("Rename").performClick()
-            compose.onNode(hasSetTextAction()).performTextReplacement("Paused Bench")
-            compose.onNode(hasText("Rename") and hasAnyAncestor(isDialog())).performClick()
+            compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
+            compose.onNodeWithText("Save").performClick()
             compose.onNodeWithText("Paused Bench").assertIsDisplayed()
-            compose.onNodeWithText("Rename movement").assertDoesNotExist()
+            compose.onNodeWithText("Edit movement").assertDoesNotExist()
+            compose.waitUntil(5_000) { store.catalog.single { it.id == movement.id } == renamed }
             compose.runOnIdle {
                 assertEquals(listOf(renamed), store.catalog.filter { it.id == movement.id })
                 assertEquals(listOf(renamed), room.training.catalogue().filter { it.id == movement.id })

@@ -34,6 +34,7 @@ class AndroidTelemetryTest {
             Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"), Triple("note_editor", "delete", "ok"),
             Triple("note_editor", "delete", "refused"), Triple("note_editor", "delete", "failed"),
             Triple("note_editor", "save", "ok"), Triple("note_editor", "save", "refused"), Triple("note_editor", "save", "failed"),
+            Triple("record", "edit", "ok"), Triple("record", "edit", "refused"), Triple("record", "edit", "failed"),
             Triple("bodyweight", "delete", "held"), Triple("bodyweight", "delete", "closed"),
             Triple("bodyweight", "undo", "ok"), Triple("bodyweight", "undo", "closed"),
             Triple("bodyweight", "cancel", "rewritten"), Triple("notification", "log_set", "ok"),
@@ -49,6 +50,8 @@ class AndroidTelemetryTest {
             mapOf("screen" to "bodyweight", "action" to "delete", "outcome" to "acknowledged"),
             mapOf("screen" to "bodyweight", "action" to "undo", "outcome" to "private"),
             mapOf("screen" to "notes", "action" to "private", "outcome" to "ok"),
+            mapOf("screen" to "record", "action" to "edit", "outcome" to "private"),
+            mapOf("screen" to "record", "action" to "delete", "outcome" to "ok"),
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels))
     }
 

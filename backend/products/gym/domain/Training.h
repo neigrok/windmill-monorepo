@@ -29,7 +29,7 @@ using RoutineId = Id<RoutineTag>;
 
 // Pattern is the only classification. Equipment decides the default stepKg.
 enum class Pattern { squat, hinge, press, pull, carry, core, isolation };
-enum class Equipment { barbell, dumbbell, machine, cable, bodyweight, kettlebell };
+enum class Equipment { barbell, dumbbell, machine, cable, bodyweight, kettlebell, other };
 enum class SetKind { warmup, working, drop, failure };
 
 std::string toString(Pattern pattern);

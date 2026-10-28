@@ -71,7 +71,7 @@ admission. Workout forms preflight known conflicts in their commit transaction a
 submitted draft in `rack:workoutDrafts` until admission succeeds. Pending saves stay on the form;
 refusals keep it editable, survive reload, and offer a route back from the log. Only acceptance shows
 Saved or leaves the editor. HTTP refusals also recover through the engine's durable notices.
-The composition is schema v7 with minimum v4. Routine `revision` and `createdEntries`, proposal
+The composition is schema v8 with minimum v8. Other is an explicit one-load category; received signed weights remain unchanged. Existing creation selectors keep their approved choices. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
 right after the row drawn above it. The independent `routineCreation.snapshot` record is read-only

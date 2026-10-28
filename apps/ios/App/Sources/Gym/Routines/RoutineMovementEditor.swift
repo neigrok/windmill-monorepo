@@ -30,7 +30,7 @@ struct RoutineMovementDraft: Equatable {
   var isDirty: Bool { exercise != opening || targets != initialTargets }
   var problem: String? {
     if let problem = MovementName.problem(name) { return problem }
-    if !MovementEquipment.choices.contains(equipment) { return "Choose equipment." }
+    if !MovementEquipment.choices.contains(equipment) && !(base?.equipment == "other" && equipment == "other") { return "Choose equipment." }
     if equipment == "dumbbell" && ![1, 2].contains(loadCount) { return "Choose one or two dumbbells." }
     return targets.refusal?.message
   }
@@ -69,18 +69,15 @@ struct RoutineMovementEditor: View {
           if let counter = MovementName.counter(movement.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           if !movement.name.isEmpty, let problem = MovementName.problem(movement.name) { refusalLine(problem) }
           MovementEquipmentPicker(equipment: $movement.equipment, loadCount: $movement.loadCount, identifier: "gym-movement-equipment")
-        } footer: {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Name and equipment apply everywhere. Targets stay in this routine.")
-            if movement.equipmentChanged { Text("Changing equipment recalculates historical volume. Your entered weights do not change.") }
-          }
         }
         Section {
           headField("Sets", field: .sets, placeholder: "open", focus: .sets)
           headField("Reps", field: .reps, placeholder: movement.targets.varies(.reps) ? "varies" : "max", focus: .reps)
           headField(MovementEquipment(exercise).unit, field: .weight, placeholder: movement.targets.varies(.weight) ? "varies" : "last time", focus: .weight)
         } header: { Text("Targets") } footer: {
-          Text(exercise.equipment == "bodyweight" ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
+          if exercise.equipment != "other" {
+            Text(exercise.equipment == "bodyweight" ? "Enter added weight or a negative value for assistance. Blank means no load target." : MovementEquipment(exercise).help)
+          }
         }
         Section {
           Toggle("Vary by set", isOn: $movement.targets.varyBySet)

@@ -307,3 +307,31 @@ TEST(exercise_loading_edits_keep_history_identity_and_account_scope) {
   REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Custom press", Equipment::dumbbell, 2}));
   CHECK_FALSE(h.door.updateExercise(h.other, ExerciseUpdate{ExerciseId{"ex_custom01"}, {}, Equipment::dumbbell, 1}));
 }
+
+TEST(other_equipment_round_trips_without_rewriting_signed_history_or_legacy_values) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Harness h;
+  const auto created = h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_other01"}, "Assistance", Pattern::pull,
+                                                                 Equipment::other, std::nullopt});
+  REQUIRE(created.exercise);
+  CHECK_EQ(*created.exercise, Exercise(ExerciseId{"ex_other01"}, "Assistance", Pattern::pull, Equipment::other, 2.5, true));
+  h.door.start(h.user, SessionStart{sid(), h.clock.now, true});
+  h.door.append(h.user, sid(), SetWrite{setId(), created.exercise->id, -16, 10, SetKind::working, std::nullopt, "", h.clock.now});
+  h.door.finish(h.user, sid(), h.clock.now + 1000);
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{created.exercise->id, "My assistance", {}, {}}));
+  const auto history = h.repo.log.history(h.user, HistoryQuery{});
+  REQUIRE_EQ(history.sessions.size(), 1u);
+  REQUIRE_EQ(history.sessions.front().sets.size(), 1u);
+  CHECK_EQ(history.sessions.front().sets.front().exercise, std::string("My assistance"));
+  CHECK_EQ(history.sessions.front().sets.front().weightKg, -16.0);
+  CHECK_EQ(history.summary.tonnageKg, 0.0);
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedsWith({Exercise{created.exercise->id, "My assistance", Pattern::pull,
+      Equipment::other, 2.5, true, {"Assistance"}}}));
+  CHECK_EQ(h.repo.catalog.catalog(h.other), seedCatalog());
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"bench-press"}, {}, Equipment::other, 2}));
+  const auto catalog = h.repo.catalog.catalog(h.user);
+  const auto override = std::find_if(catalog.begin(), catalog.end(), [](const auto& exercise) { return exercise.id == ExerciseId{"bench-press"}; });
+  REQUIRE(override != catalog.end());
+  CHECK_EQ(*override, Exercise(ExerciseId{"bench-press"}, "Bench Press", Pattern::press, Equipment::other, 2.5, false));
+  CHECK(doortest::scopeConsistent(h.user));
+}

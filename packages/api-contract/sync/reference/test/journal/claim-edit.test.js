@@ -182,9 +182,13 @@ test("pending journal refusals record terminal failures and exclude both automat
 const journalJson = JSON.parse(readFileSync(new URL("../../../journal.registry.json", import.meta.url)));
 const gymJson = JSON.parse(readFileSync(new URL("../../../gym.registry.json", import.meta.url)));
 const v4JournalRegistry = new Registry({ ...journalJson, version: 4, minVersion: 4 });
-const composedRegistry = new Registry({ registry: "windmill", version: gymJson.version, minVersion: gymJson.minVersion,
+const beforeCutoffGym = structuredClone(gymJson);
+for (const type of beforeCutoffGym.types.filter((type) => ["exercise", "exerciseName"].includes(type.type))) {
+  type.fields.equipment.domain.enum = type.fields.equipment.domain.enum.filter((value) => value !== "other");
+}
+const composedRegistry = new Registry({ registry: "windmill", version: 8, minVersion: 4,
   products: { ...gymJson.products, ...journalJson.products },
-  types: [...gymJson.types, ...journalJson.types], commands: [...gymJson.commands, ...journalJson.commands] });
+  types: [...beforeCutoffGym.types, ...journalJson.types], commands: [...gymJson.commands, ...journalJson.commands] });
 
 function gymDoorWrites(state, now) {
   const journalBefore = structuredClone({ scope: state.scope("acct:A/journal"), rows: state.rowsOf("acct:A/journal"),

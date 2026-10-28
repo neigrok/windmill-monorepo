@@ -81,6 +81,9 @@ TEST(equipment_parses_strictly_and_clamps_on_read) {
   CHECK(parseEquipment("cable") == Equipment::cable);
   CHECK(parseEquipment("bodyweight") == Equipment::bodyweight);
   CHECK(parseEquipment("kettlebell") == Equipment::kettlebell);
+  CHECK(parseEquipment("other") == Equipment::other);
+  CHECK_EQ(toString(Equipment::other), "other");
+  CHECK(equipmentFromStored("other") == Equipment::other);
   CHECK(rejects([] { parseEquipment("bands"); }));
   CHECK(equipmentFromStored("bands") == Equipment::barbell);
   CHECK(equipmentFromStored("cable") == Equipment::cable);
@@ -166,6 +169,7 @@ TEST(default_step_is_the_equipments_own) {
   CHECK_EQ(defaultStepKg(Equipment::cable), 2.5);
   CHECK_EQ(defaultStepKg(Equipment::bodyweight), 2.5);
   CHECK_EQ(defaultStepKg(Equipment::kettlebell), 4.0);
+  CHECK_EQ(defaultStepKg(Equipment::other), 2.5);
 }
 
 TEST(exercise_construction_guards_the_name_and_the_step) {
@@ -368,3 +372,11 @@ TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
   }));
 }
 
+
+TEST(other_loads_preserve_signed_values_and_count_one_external_load) {
+  CHECK_EQ(liftedVolume(16, 10, Equipment::other, 2), 160.0);
+  CHECK_EQ(liftedVolume(-16, 10, Equipment::other, 2), 0.0);
+  CHECK_EQ(liftedVolume(0, 10, Equipment::other, 2), 0.0);
+  CHECK_EQ(set(-16, 10).weightKg, -16.0);
+  CHECK_EQ(Exercise(ExerciseId{"ex_other01"}, "Other load", Pattern::pull, Equipment::other, 2.5, true, {}, 2).loadCount, 1);
+}

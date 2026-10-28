@@ -63,7 +63,7 @@ class CataloguePreferencesTests {
             Triple(custom.copy(name = "\u3000\n"), "name", Violation.Reason.Blank),
             Triple(custom.copy(name = "x".repeat(61)), "name", Violation.Reason.TooLong(60, MeasureUnit.chars, 61)),
             Triple(custom.copy(pattern = "push"), "pattern", Violation.Reason.NotOneOf),
-            Triple(custom.copy(equipment = "other"), "equipment", Violation.Reason.NotOneOf),
+            Triple(custom.copy(equipment = "unknown"), "equipment", Violation.Reason.NotOneOf),
             Triple(custom.copy(stepKg = 0.0), "stepKg", Violation.Reason.Below(0.01)),
             Triple(custom.copy(stepKg = 100.0), "stepKg", Violation.Reason.Above(99.99))))
             invalid(decide(CreateExercise(value)), "exercise.$field", field, reason)

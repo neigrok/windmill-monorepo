@@ -149,6 +149,12 @@ class CorpusTests {
             val value = input["loadCount"]?.let { exercise.copy(loadCount = it.long().toInt()) } ?: exercise
             corpus.decision(CreateExercise(value), vector, { it.json }, ::refusalForm)
         }
+        "EditExercise" -> {
+            val form = input.member("base")
+            val base = Exercise.fromForm(form).let { it.copy(loadCount = form["loadCount"]?.long()?.toInt() ?: it.loadCount) }
+            corpus.decision(EditExercise(base, input.member("name").str(), input.member("equipment").str(),
+                input.member("loadCount").long().toInt()), vector, { Json.objectOf("exercise" to exerciseForm(it), "loadCount" to Json.of(it.loadCount)) }, ::refusalForm)
+        }
         "RenameExercise" -> corpus.decision(RenameExercise(Id(RecordID(input.member("id")), Exercise), input.member("name").str()), vector, { Json.Null }, ::refusalForm)
         null -> decoded { corpus.read(vector, Exercise.scope) { read -> when (vector.input.member("read").str()) {
             "SeedExercises" -> Json.Arr(SeedExercises.all.map(::exerciseForm))
@@ -158,7 +164,8 @@ class CorpusTests {
                     ?: catalogue.search(input["query"]?.str() ?: "")).map(::exerciseForm))
             }
             "RenamedAliases" -> Json.Arr(ExerciseRules.renamedAliases(input.member("previous").str(), input.member("next").str(), input.member("aliases").arr().map { it.str() }).map(Json::of))
-            "DefaultStepKg" -> Json.Obj(listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell").map { it to Json.of(ExerciseRules.defaultStepKg(it)) })
+            "LoadingChoice" -> Json.of(ExerciseRules.loadingChoice(input.member("equipment").str(), input.member("loadCount").long().toInt()))
+            "DefaultStepKg" -> Json.Obj(listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other").map { it to Json.of(ExerciseRules.defaultStepKg(it)) })
             else -> error("unclaimed catalogue read")
         } } }
         else -> error("unclaimed catalogue action")

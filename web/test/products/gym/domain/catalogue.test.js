@@ -5,7 +5,7 @@ import test from 'node:test';
 import { GymProduct } from '../../../../../packages/api-contract/sync/reference/gym/product.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { Catalogue, CreateExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
@@ -105,4 +105,31 @@ test('custom and seed renames converge with server aliases while refused and unc
     assert.deepEqual(exercise(phone, seed), seedExpected);
     assert.deepEqual(phone.runner.read(Exercise.scope, (read) => new Catalogue(read).search('OLD SQUAT')).map((value) => value.id.record), ['exercise1']);
   }
+});
+
+
+test('standalone edit rolls back name loading and aliases on storage failure and a concurrent loading refusal', async (t) => {
+  const a = await open(t);
+  const b = await a.device();
+  const id = new Id('exercise1', Exercise);
+  const base = new ExerciseValue(id, 'Press', 'press', 'barbell', 2.5);
+  await a.runner.run(new CreateExercise(base));
+  await a.sync();
+  const edit = new EditExercise(base, 'First', 'dumbbell', 1);
+  const before = (await a.engine.store.read()).device.toJSON();
+  a.failNextCommit();
+  await assert.rejects(a.runner.run(edit));
+  assert.deepEqual((await a.engine.store.read()).device.toJSON(), before);
+  assert.deepEqual(a.runner.read(Exercise.scope, (read) => new Catalogue(read).find(id)), base);
+  assert.equal((await a.runner.run(edit)).kind, 'committed');
+  assert.equal((await b.runner.run(new EditExercise(base, 'Second', 'dumbbell', 2))).kind, 'committed');
+  await a.sync();
+  const expected = new ExerciseValue(id, 'First', 'press', 'dumbbell', 2.5, ['Press'], 1);
+  for (const phone of [a, b]) {
+    assert.deepEqual(phone.runner.read(Exercise.scope, (read) => new Catalogue(read).find(id)), expected);
+    assert.deepEqual(phone.drawn(ExerciseName).map((value) => value.fields()), [{ equipment: 'dumbbell', loadCount: 1 }]);
+  }
+  const notices = b.notices(GymRefusals);
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].notice.code, 'stale');
 });

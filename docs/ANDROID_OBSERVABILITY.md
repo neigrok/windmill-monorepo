@@ -371,3 +371,18 @@ Native crash delivery and vendor receipt require a separate installed-app check.
 and a successful build do not establish either.
 
 Coach routine confirmation runs in the training store's scope, so leaving Coach mid-save still records `saved`, `refused` or `failed`. It uses the static HTTP operation `gym_coach_routine_confirm`; 5xx statuses, timeouts, interrupted connections and malformed replies report within that transport boundary, while offline and expected 4xx statuses are metrics only. Response validation failures, and a saved routine this phone fails to keep, report `gym.coachRoutineConfirm`; a routine the server saved still counts as saved. A 404 or 422 takes Save away; other refusals and failures leave the same operation available to retry. Account changes prevent late replies from appearing in another account.
+
+
+### Standalone movement edit
+
+Record opens the approved editor without changing its navigation route. Save emits `gym_action`
+with `screen=record`, `action=edit` and `outcome=ok|refused|failed`. An unchanged form cannot submit;
+dismissal writes nothing. Expected name, stale-state and account-change refusals remain visible in
+the sheet and do not create Sentry Issues. Unexpected storage failures report under the static
+`gym.editExercise` boundary. Events and failures contain no names, aliases, equipment selections,
+load counts, account identifiers or raw exception text.
+
+The local native recipe delivers four `record/edit/ok` events through `POST /v1/events`, with only
+the three bounded labels and common application metadata. Backend sync/event write receipts arrive
+without fixture names. Store boundary tests verify the refused/failed outcomes and a single static
+`gym.editExercise` report for an unexpected commit failure; the live capture does not inject one.

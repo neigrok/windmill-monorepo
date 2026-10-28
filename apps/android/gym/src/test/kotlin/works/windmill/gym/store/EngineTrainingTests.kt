@@ -91,21 +91,46 @@ class EngineTrainingTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
             room.training.createExercise(ExerciseWrite("exercise1", "Original", "pull", "machine"))
-            assertEquals(listOf("Original"), room.training.renameExercise("exercise1", "Mine").aliases)
-            assertEquals(listOf("Bench Press"), room.training.renameExercise("bench-press", "Phone bench").aliases)
-            assertFalse("the signed-out UI keeps its existing promise", room.store.renameKeepsAnAlias("exercise1"))
+            assertEquals(listOf("Original"), room.training.editExercise("exercise1", "Mine").aliases)
+            assertEquals(listOf("Bench Press"), room.training.editExercise("bench-press", "Phone bench").aliases)
             room.select("A")
             val server = EngineRoomFixture.server()
             room.sync(server)
             EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
                 other.select("A"); other.pull(server)
-                other.training.renameExercise("exercise1", "Elsewhere")
+                other.training.editExercise("exercise1", "Elsewhere")
                 other.sync(server)
             }
             room.pull(server)
             assertEquals(listOf("Mine", "Original"), room.training.catalogue().first { it.id == "exercise1" }.aliases)
-            room.training.renameExercise("exercise1", "Phone name")
-            assertEquals(listOf("Phone name", "Elsewhere", "Mine", "Original"), room.training.renameExercise("exercise1", "Final").aliases)
+            room.training.editExercise("exercise1", "Phone name")
+            assertEquals(listOf("Phone name", "Elsewhere", "Mine", "Original"), room.training.editExercise("exercise1", "Final").aliases)
+        }
+    }
+
+    @Test fun editingAFormerPairChangesOnlyDerivedVolumeAndReturningWritesTheSelectedCount() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val id = "dumbbell-bench-press"
+            val pair = room.training.catalogue().first { it.id == id }
+            room.training.startSession(SessionStart("session1", room.now))
+            room.training.appendSet("session1", SetWrite("set00001", id, 16.0, 8, completedAt = ++room.now))
+            room.training.appendSet("session1", SetWrite("set00002", id, -5.0, 4, completedAt = ++room.now))
+            room.training.finishSession("session1", ++room.now)
+            val history = room.training.session("session1")!!
+            assertEquals(256.0, SessionSummary.of(history, listOf(history), listOf(pair)).tonnageKg)
+            var opened = pair
+            for ((equipment, count, volume) in listOf(Triple("other", 2, 128.0), Triple("bodyweight", 2, 128.0), Triple("dumbbell", 1, 128.0),
+                Triple("barbell", 3, 128.0), Triple("dumbbell", 2, 256.0))) {
+                val edited = room.training.editExercise(id, opened.name, equipment, count, opened)
+                assertEquals(equipment, edited.equipment)
+                assertEquals(if (equipment == "dumbbell") count else 1, edited.loadCount)
+                val after = room.training.session("session1")!!
+                assertEquals(history, after)
+                assertEquals(volume, SessionSummary.of(after, listOf(after), listOf(edited)).tonnageKg)
+                opened = edited
+            }
+            assertEquals(pair, opened)
         }
     }
 
@@ -126,7 +151,7 @@ class EngineTrainingTests {
             assertEquals(896.0, volume)
             for (id in ids) {
                 val original = catalog.getValue(id)
-                val renamed = room.training.renameExercise(id, "My ${original.name}")
+                val renamed = room.training.editExercise(id, "My ${original.name}")
                 assertEquals(original.copy(name = "My ${original.name}", aliases = listOf(original.name)), renamed)
             }
             val after = room.training.session("session1")!!

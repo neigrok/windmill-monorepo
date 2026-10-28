@@ -267,10 +267,12 @@ converge on the current service digest.
 
 ## The journal product
 
-`reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against a
-composed service (version 8, minimum version 4). Ready/sent/acked saves and pending claims survive gym
-writes through MCP/ask doors, client relaunch and a lost claim response; retained typing reconciles
-once, with no epoch change and no gym subscription.
+`reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against the
+composed service before cutoff (version 8, minimum version 4). Ready/sent/acked saves and pending
+claims survive gym writes through MCP/ask doors, client relaunch and a lost claim response. Swift
+`MixedVersionTests` also rehydrates those pending v4 saves under the current registry and exercises
+claims separately at each rollout generation. Retained typing reconciles once, with no epoch change
+and no gym subscription.
 
 `journal/` runs against `../journal.registry.json` and Appendix A.3. It has a keyed `page` and a
 nonprimary singleton `journalState`. A blank page remains a stored REST resource and participates

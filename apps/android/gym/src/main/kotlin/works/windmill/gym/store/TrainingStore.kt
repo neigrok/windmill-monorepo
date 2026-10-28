@@ -1627,28 +1627,30 @@ class TrainingStore(
         return GymResult.Ok(read)
     }
 
-    // Whether the old name keeps finding this movement: the alias is a row on the ACCOUNT, so a
-    // signed-out movement keeps the signed-out naming promise.
-    fun renameKeepsAnAlias(exerciseId: String): Boolean = owner != null
+    val editReplica: String? get() = controls.engineReplica
 
-    // The id never moves, so every set, routine line and frozen plan snapshot still points at the
-    // same movement. It answers with the movement the replica holds and never the string typed.
-    suspend fun rename(exerciseId: String, to: String): GymResult<Exercise> {
+    suspend fun edit(exerciseId: String, name: String, equipment: String? = null, loadCount: Int? = null,
+        base: Exercise? = null, expectedAccountKey: String = accountKey, expectedReplica: String? = editReplica): GymResult<Exercise> {
         val seat = owner
-        val name = to.trim()
-        Program.nameProblem(to)?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
-        val renamed = try {
-            training.renameExercise(exerciseId, name)
+        val result = try {
+            if (expectedAccountKey != accountKey || expectedReplica == null)
+                throw TrainingRefused("account-changed", accountChanged)
+            Program.nameProblem(name)?.let { throw TrainingRefused("invalid", it) }
+            val edited = training.editExercise(exerciseId, name, equipment, loadCount, base, expectedReplica, seat == null)
+            if (seat == owner) invalidateProgress()
+            GymResult.Ok(edited)
         } catch (interrupted: CancellationException) {
             throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.rename", refusing)
-            return GymResult.Failed(WriteFailure(refusing))
+        } catch (failure: Exception) {
+            reportFailure("gym.editExercise", failure)
+            GymResult.Failed(WriteFailure(failure))
         }
-        if (seat != owner) return GymResult.Failed(WriteFailure.Refused("The account changed while renaming."))
-        invalidateProgress()
-        catalog = catalog.map { if (it.id == renamed.id) renamed else it } + listOfNotNull(renamed.takeIf { catalog.none { old -> old.id == it.id } })
-        return GymResult.Ok(renamed)
+        val outcome = when (result) {
+            is GymResult.Ok -> "ok"
+            is GymResult.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+        }
+        telemetry.event("gym_action", mapOf("screen" to "record", "action" to "edit", "outcome" to outcome))
+        return result
     }
 
     // Both answer with what went wrong: a link that was not made and one still live after a failed

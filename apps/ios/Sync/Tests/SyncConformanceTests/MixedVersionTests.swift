@@ -8,9 +8,28 @@ import Testing
 struct MixedVersionTests {
   static let scope = ScopeRef.product("journal")
   static let current = try! Registry(name: "windmill", composing: [ServerHandlers.gym, ServerHandlers.journal])
+  static let beforeCutoff: Registry = {
+    let parts = try! [ServerHandlers.gym, ServerHandlers.journal].map { registry in
+      var json = try registry.json.asObject()
+      json["version"] = 8; json["minVersion"] = 4
+      json["types"] = .array(try json.member("types").asArray().map { value in
+        var type = try value.asObject()
+        if type["type"] == "exercise" || type["type"] == "exerciseName" {
+          var fields = try type.member("fields").asObject()
+          var equipment = try fields.member("equipment").asObject()
+          var domain = try equipment.member("domain").asObject()
+          domain["enum"] = .array(try domain.member("enum").asArray().filter { $0 != "other" })
+          equipment["domain"] = .object(domain); fields["equipment"] = .object(equipment); type["fields"] = .object(fields)
+        }
+        return .object(type)
+      })
+      return try Registry(json: .object(json))
+    }
+    return try! Registry(name: "windmill", composing: parts)
+  }()
   static let v4: Registry = {
     var json = try! ServerHandlers.journal.json.asObject()
-    json["version"] = 4
+    json["version"] = 4; json["minVersion"] = 4
     return try! Registry(json: .object(json))
   }()
   static let sample = try! Corpus.vectors(in: Corpus.files().first { $0.path == "journal/claim-edit.json" }!)
@@ -44,8 +63,10 @@ struct MixedVersionTests {
     #expect(server.state.epoch == before.epoch)
   }
 
-  @Test(arguments: ["ready", "sent", "acked"])
-  func pendingV4SavesSurviveCurrentGymWritesPullsAndRelaunch(_ phase: String) throws {
+  @Test(arguments: ["ready", "sent", "acked"], [false, true])
+  func pendingV4SavesSurviveGymWritesPullsAndRelaunchBeforeAndAfterLocalUpgrade(_ phase: String, _ upgraded: Bool) throws {
+    let clientRegistry = upgraded ? Self.current : Self.v4
+    let serverRegistry = upgraded ? Self.current : Self.beforeCutoff
     let now = try Self.sample.member("now").asInteger(), day = try Self.sample.member("day").asString()
     let replica = try Self.sample.member("replica").asString()
     var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: now + 1, appVersion: "v4")
@@ -70,14 +91,14 @@ struct MixedVersionTests {
     }
     #expect(try device.activeReplica().outbox.map { $0.state.rawValue } == [phase])
     let pending = try device.dump()
-    var server = ModelServer(registry: Self.current, rules: ComposedServerRules.windmill(registry: Self.current), state: oldServer.state)
+    var server = ModelServer(registry: serverRegistry, rules: ComposedServerRules.windmill(registry: serverRegistry), state: oldServer.state)
     try Self.gymDoorWrites(&server, at: now + 4)
-    device = PlannedDevice(try LoadedDevice(json: pending, registry: Self.v4), registry: Self.v4, limits: Limits())
+    device = PlannedDevice(try LoadedDevice(json: pending, registry: clientRegistry), registry: clientRegistry, limits: Limits())
     #expect(try device.dump() == pending)
     let greeting = server.hello(credential: .account("A"), at: now + 6)
     #expect(greeting.status == 200)
-    #expect(greeting.body["schema"] == JSON(Self.current.version))
-    #expect(greeting.body["minSchema"] == JSON(Self.v4.version))
+    #expect(greeting.body["schema"] == JSON(serverRegistry.version))
+    #expect(greeting.body["minSchema"] == JSON(serverRegistry.minVersion))
     try device.hello(.ok(try HelloResponse(json: greeting.body)), timing: .steady(send: now + 6, recv: now + 6))
     if phase != "acked" {
       request = try #require(try device.push(limit: nil, at: now + 7))
@@ -85,7 +106,7 @@ struct MixedVersionTests {
       let reply = server.push(request!.json, credential: .account("A"), at: now + 7)
       #expect(reply.status == 200)
       #expect(try reply.body.member("results").asArray()[0]["s"] == "ok")
-      var steps = PushPlanner(registry: Self.v4).steps(for: .ok(try PushResponse(json: reply.body)), to: request!)
+      var steps = PushPlanner(registry: clientRegistry).steps(for: .ok(try PushResponse(json: reply.body)), to: request!)
       while let step = steps.next(sizes: WriterSlices(.fixed(.init(chunkRows: .max)))) {
         try device.apply(step, instance: &instance, timing: .steady(send: now + 7, recv: now + 7), identities: identities)
       }
@@ -93,13 +114,13 @@ struct MixedVersionTests {
     let pull = try #require(try device.pullRequest([Self.scope]))
     let reply = server.pull(pull.json, credential: .account("A"), at: now + 8)
     #expect(reply.status == 200)
-    var steps = PageApplier(registry: Self.v4).steps(for: .ok(try PullResponse(json: reply.body)), to: pull, account: "A")
+    var steps = PageApplier(registry: clientRegistry).steps(for: .ok(try PullResponse(json: reply.body)), to: pull, account: "A")
     while let step = steps.next(sizes: WriterSlices(.fixed(.init(chunkRows: 1))), settles: .max) {
       let result = try device.apply(step, subscribed: [Self.scope], instance: &instance,
         timing: .steady(send: now + 8, recv: now + 8), identities: identities)
       if result.unsettled { while try device.settle(Self.scope, count: .max) {} }
     }
-    device = PlannedDevice(try LoadedDevice(json: device.dump(), registry: Self.v4), registry: Self.v4, limits: Limits())
+    device = PlannedDevice(try LoadedDevice(json: device.dump(), registry: clientRegistry), registry: clientRegistry, limits: Limits())
     let loaded = try device.activeReplica()
     let expected = server.state.rows[ScopeKey(Self.scope, account: "A")!]!.values.sorted { $0.key < $1.key }
     #expect(loaded.meta.replica == replica)
@@ -112,9 +133,11 @@ struct MixedVersionTests {
     #expect(Set(loaded.cursors.keys) == [Self.scope])
   }
 
-  @Test func aV4ClaimRetainsTypingAcrossCurrentGymWritesLostReplyAndRelaunch() throws {
+  @Test(arguments: [false, true]) func claimsRetainTypingAcrossGymWritesAtEachRolloutGeneration(_ currentGeneration: Bool) throws {
+    let clientRegistry = currentGeneration ? Self.current : Self.v4
+    let serverRegistry = currentGeneration ? Self.current : Self.beforeCutoff
     let now = try Self.sample.member("now").asInteger()
-    let answer = try JournalHandlers.claimEdit(Self.sample, clientRegistry: Self.v4, serverRegistry: Self.current,
+    let answer = try JournalHandlers.claimEdit(Self.sample, clientRegistry: clientRegistry, serverRegistry: serverRegistry,
       beforeAdmission: { try Self.gymDoorWrites(&$0, at: now + 4) }, loseClaimReply: true)
     let trace = try answer.member("trace").asArray()
     let lost = try #require(trace.first { $0["op"] == "claimReplyLost" })
@@ -125,7 +148,7 @@ struct MixedVersionTests {
     #expect(answer["pending"] == .null)
     #expect(try answer.member("claimResponse").member("body").member("results").asArray()[0]["s"] == "ok")
     #expect(try answer.member("saveResponse").member("body").member("results").asArray()[0]["s"] == "ok")
-    let device = try LoadedDevice(json: answer.member("device"), registry: Self.v4)
+    let device = try LoadedDevice(json: answer.member("device"), registry: clientRegistry)
     let state = try ServerState(json: answer.member("server"))
     let day = RecordID(try Self.sample.member("day").asString())
     let page = try #require(state.rows[ScopeKey(Self.scope, account: "A")!]?[RecordKey("page", day)])

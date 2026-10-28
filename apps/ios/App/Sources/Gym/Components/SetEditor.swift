@@ -4,7 +4,7 @@ import DomainKit
 import GymDomain
 
 // Load and reps on two native wheels, one beside the other: the load in the movement's steps and labelled by its basis,
-// bodyweight running from assistance through zero to added load, the reps 1 to 99. A value off the steps keeps its row,
+// bodyweight and Other running from assistance through zero to added load, the reps 1 to 99. A value off the steps keeps its row,
 // so the wheels never move a number they were opened on. The rack's sheet (03.2) and Fix set (03.3) both draw them.
 struct SetWheels: View {
   @Binding var weightKg: Double
@@ -22,7 +22,7 @@ struct SetWheels: View {
   static func loads(around weightKg: Double, basis: MovementEquipment) -> [Double] {
     var magnitudes: [Double] = [0]
     while let last = magnitudes.last, last < 500 { magnitudes.append(WeightLadder.round(last + WeightLadder.steps(magnitude: last).small)) }
-    let grid = basis.value == "bodyweight" ? magnitudes.dropFirst().reversed().map { -$0 } + magnitudes : magnitudes
+    let grid = ["bodyweight", "other"].contains(basis.value) ? magnitudes.dropFirst().reversed().map { -$0 } + magnitudes : magnitudes
     return grid.contains(weightKg) || !weightKg.isFinite ? grid : (grid + [weightKg]).sorted()
   }
 

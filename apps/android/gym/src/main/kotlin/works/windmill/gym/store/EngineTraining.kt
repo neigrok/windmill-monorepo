@@ -116,11 +116,13 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     fun catalogue(): List<Exercise> = read { reader ->
         val aliases = reader.device("rack:aliases0")?.obj().orEmpty()
+        val formerNames = reader.device(Catalogue.formerNamesKey)?.obj().orEmpty()
         Catalogue(reader).exercises.map { value -> value.ui().let { exercise ->
             val phone = aliases[exercise.id]?.arr()?.map(Json::str).orEmpty()
             val pending = reader.repository(EngineExercise).record(value.id, ViewMode.drawn)?.isPending == true ||
                 reader.repository(ExerciseName).record(Id(value.id.record, ExerciseName), ViewMode.drawn)?.isPending == true
-            val ordered = if (pending) phone + exercise.aliases else exercise.aliases + phone
+            val currentOverlay = formerNames[exercise.id]?.member("name")?.str() == exercise.name
+            val ordered = if (pending && !currentOverlay) phone + exercise.aliases else exercise.aliases + phone
             exercise.copy(aliases = ordered.filter { it != exercise.name }.distinct().take(5))
         } }
     }.sortedWith { a, b -> compareBytes(a.pattern, b.pattern).takeIf { it != 0 }
@@ -132,29 +134,31 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (existing == null) apply(CreateExercise(value))
         return catalogue().first { it.id == write.id }
     }
-    suspend fun renameExercise(exerciseId: String, name: String): Exercise {
-        if (catalogue().none { it.id == exerciseId }) throw missing("That movement is no longer on the log.")
-        val action = RenameExercise(Id(exerciseId, EngineExercise), name)
-        apply(object : Action<Triple<RenameExercise.Loaded, Json?, Boolean>, Unit, GymRefusal> {
+    suspend fun editExercise(exerciseId: String, name: String, equipment: String? = null, loadCount: Int? = null,
+        base: Exercise? = null, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): Exercise {
+        val opened = base ?: catalogue().firstOrNull { it.id == exerciseId }
+            ?: throw missing("That movement is no longer on the log.")
+        require(opened.id == exerciseId)
+        val value = EngineExercise(Id(exerciseId, EngineExercise), opened.name, opened.pattern, opened.equipment,
+            opened.stepKg ?: ExerciseRules.defaultStepKg(opened.equipment), opened.aliases, opened.loadCount)
+        val action = EditExercise(value, name, equipment ?: opened.equipment, loadCount ?: opened.loadCount)
+        val accepted = apply(object : Action<EditExercise.Loaded?, EngineExercise?, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
-            override fun load(read: Reader) = Triple(action.load(read), read.device("rack:aliases0"),
-                read.repository(EngineExercise).record(Id(exerciseId, EngineExercise), ViewMode.drawn)?.isPending == true ||
-                    read.repository(ExerciseName).record(Id(exerciseId, ExerciseName), ViewMode.drawn)?.isPending == true)
-            override fun decide(loaded: Triple<RenameExercise.Loaded, Json?, Boolean>, ids: IDSource): Decision<Unit, GymRefusal> {
-                val decision = action.decide(loaded.first, ids)
-                if (decision is Decision.Write) {
-                    val aliases = loaded.second?.obj().orEmpty().toMutableMap()
-                    val phone = aliases[exerciseId]?.arr()?.map(Json::str).orEmpty()
-                    val server = loaded.first.exercise!!.aliases
-                    aliases[exerciseId] = Json.Arr(ExerciseRules.renamedAliases(loaded.first.exercise!!.name, name,
-                        if (loaded.third) phone + server else server + phone).map(Json::of))
-                    decision.plan.device("rack:aliases0", Json.Obj(aliases.toList()))
+            override fun load(read: Reader): EditExercise.Loaded? {
+                if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                return action.load(read)
+            }
+            override fun decide(loaded: EditExercise.Loaded?, ids: IDSource): Decision<EngineExercise?, GymRefusal> {
+                if (loaded == null) return Decision.Unchanged(null)
+                return when (val decision = action.decide(loaded, ids)) {
+                    is Decision.Write -> Decision.Write(decision.plan, decision.result)
+                    is Decision.Unchanged -> Decision.Unchanged(decision.result)
+                    is Decision.Refuse -> decision
                 }
-                return decision
             }
         })
-        return catalogue().first { it.id == exerciseId }
+        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
     suspend fun startSession(start: SessionStart, requireRoutine: Boolean = false): Session {
         val open = read { TrainingLog(it).open }

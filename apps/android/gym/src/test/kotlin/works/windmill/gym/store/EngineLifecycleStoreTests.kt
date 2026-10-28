@@ -299,9 +299,8 @@ class EngineLifecycleStoreTests {
         engine().use { engine ->
             val room = room(engine); room.store.connect(account())
             val made = (room.store.create("Hammer row", "machine", "exercise1") as GymResult.Ok).value
-            assertFalse(room.store.renameKeepsAnAlias(made.id)); room.add(engine)
-            assertTrue(room.store.renameKeepsAnAlias(made.id))
-            val renamed = (room.store.rename(made.id, "Hammer pull") as GymResult.Ok).value
+            room.add(engine)
+            val renamed = (room.store.edit(made.id, "Hammer pull") as GymResult.Ok).value
             assertEquals(made.id, renamed.id); assertEquals("Hammer pull", renamed.name)
         }
     }

@@ -72,6 +72,12 @@ The six [iOS Gym flow contracts](engineering/ios-gym-ui-flows.md) record human a
 boundaries, scoped native/backend results and the existing load-wheel responsiveness follow-up.
 Current delivery status is on each linked Figma flow.
 
+The human-approved [iOS Other compatibility states](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1572-7844)
+are ✅ Ready for dev on the canonical iOS page. Dark/Light rack, signed load/Fix wheels and existing
+Other equipment fields use plain headings and kg; Name/Equipment footers are removed. This does not
+add an Other picker option or a target sign button. [Task 20](../androidgym_tasks/20-edit-exercise.md)
+owns implementation and native acceptance.
+
 ## Gym · Android
 
 Figma: Gym file, page [Android](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=56-2).

@@ -24,7 +24,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextReplacement
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.junit.Assert.assertEquals
@@ -124,30 +123,26 @@ class SheetDismissTests {
     }
 
     @Test
-    fun testTheRenameSheetDismissesFromTheHandleAndRenamesNothing() {
+    fun testTheEditMovementSheetDismissesFromTheHandleAndSavesNothing() {
         val dismissed = mutableListOf<String>()
         val renamed = mutableListOf<String>()
         raised(dismissed) {
-            RenameSheet(
-                title = "Rename this movement", from = "Bench Press", value = "Bench Pres",
-                keepsAlias = false, refused = null, onValue = {}, onRename = { renamed += "renamed" },
-            )
+            EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Pres", "barbell", 1,
+                refused = null, onName = {}, onEquipment = {}, onSave = { renamed += "saved" })
         }
 
         nothingDrawnSaysCancelOrClose()
-        compose.onNodeWithText("Rename").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsDisplayed()
         dismissFromTheHandle(dismissed)
         assertEquals(emptyList<String>(), renamed)
     }
 
     @Test
-    fun testTheRenameSheetDismissesFromTheScrim() {
+    fun testTheEditMovementSheetDismissesFromTheScrim() {
         val dismissed = mutableListOf<String>()
         raised(dismissed) {
-            RenameSheet(
-                title = "Rename this movement", from = "Bench Press", value = "Bench Press",
-                keepsAlias = false, refused = null, onValue = {}, onRename = {},
-            )
+            EditMovementSheet(Exercise("bench-press", "Bench Press"), "Bench Press", "barbell", 1,
+                refused = null, onName = {}, onEquipment = {}, onSave = {})
         }
         dismissFromTheScrim(dismissed)
     }

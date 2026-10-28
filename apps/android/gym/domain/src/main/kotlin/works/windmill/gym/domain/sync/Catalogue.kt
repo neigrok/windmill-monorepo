@@ -52,13 +52,18 @@ object ExerciseRules {
     val name = TextSpec("exercise.name", MeasureUnit.chars, 1, 60, trim = true, nfc = true)
     val seedName = TextSpec("exerciseName.name", MeasureUnit.chars, 1, 60, trim = true, nfc = true)
     val pattern = ChoiceSpec("exercise.pattern", listOf("squat", "hinge", "press", "pull", "carry", "core", "isolation"))
-    val equipment = ChoiceSpec("exercise.equipment", listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"))
-    val equipmentOverride = ChoiceSpec("exerciseName.equipment", listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"))
+    val equipment = ChoiceSpec("exercise.equipment", listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"))
+    val equipmentOverride = ChoiceSpec("exerciseName.equipment", listOf("barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"))
     val loadCount = NumberSpec("exerciseName.loadCount", 1.0, 2.0, integer = true)
     val stepKg = NumberSpec("exercise.stepKg", 0.01, 99.99, quantum = 0.01)
     val rules = listOf(name, seedName, pattern, equipment, equipmentOverride, loadCount, stepKg).map(Rule::local)
     fun defaultLoadCount(equipment: String, id: String?): Int =
         if (equipment == "dumbbell" && id !in listOf("goblet-squat", "dumbbell-row", "suitcase-carry", "overhead-triceps-extension")) 2 else 1
+    fun loadingChoice(equipment: String, loadCount: Int): String = when {
+        equipment == "barbell" -> "barbell"
+        equipment == "dumbbell" && loadCount == 2 -> "dumbbell"
+        else -> "other"
+    }
     fun defaultStepKg(equipment: String): Double = when (equipment) {
         "dumbbell" -> 2.0; "machine" -> 5.0; "kettlebell" -> 4.0; else -> 2.5
     }
@@ -122,5 +127,53 @@ class RenameExercise(val id: Id<Exercise>, val name: String) : Action<RenameExer
             else plan.update(Valid(override, ExerciseName, listOf("name"), loaded.moment))
         } else plan.update(Valid(old.copy(name = next), Exercise, listOf("name"), loaded.moment))
         return Decision.Write(plan, Unit)
+    }
+}
+
+class EditExercise(val base: Exercise, val name: String, val equipment: String, val loadCount: Int) :
+    Action<EditExercise.Loaded, Exercise, GymRefusal> {
+    data class Loaded(val exercise: Exercise?, val visible: Boolean, val formerNames: Map<String, Json>, val moment: Moment)
+    val id get() = base.id
+    override val scope = Exercise.scope
+    override val refusals = GymRefusal
+    override fun load(read: Reader) = Loaded(Catalogue(read, ViewMode.stored).find(id), Catalogue(read).find(id) != null,
+        read.device(Catalogue.formerNamesKey)?.obj().orEmpty(), read.moment)
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Exercise, GymRefusal> {
+        val old = loaded.exercise
+        if (old == null || !loaded.visible)
+            return Decision.Refuse(GymRefusal.of(Refused(works.windmill.sync.core.RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted)))
+        val nextName = ExerciseRules.name.apply(name, Path("name"))
+        val nextEquipment = ExerciseRules.equipment.apply(equipment, Path("equipment"))
+        val nextCount = if (nextEquipment == "dumbbell") ExerciseRules.loadCount.apply(loadCount, Path("loadCount")) else 1
+        val renamed = nextName != base.name && nextName != old.name
+        val unitsChanged = nextEquipment != base.equipment || nextCount != base.loadCount
+        val unitsSettled = nextEquipment == old.equipment && nextCount == old.loadCount
+        if ((renamed && old.name != base.name) || (unitsChanged && !unitsSettled &&
+                (old.equipment != base.equipment || old.loadCount != base.loadCount)))
+            return Decision.Refuse(GymRefusal.of(Refused(works.windmill.sync.core.RefusalCode.stale, id.ref, path = Refused.Path.predicted)))
+        val equipped = unitsChanged && nextEquipment != old.equipment
+        val counted = unitsChanged && nextEquipment == "dumbbell" && (equipped || nextCount != old.loadCount)
+        if (!renamed && !equipped && !counted) return Decision.Unchanged(old)
+        val seed = SeedExercises.all.any { it.id == id }
+        val metadata = ExerciseName(Id(id.record, ExerciseName), if (seed && renamed) nextName else null,
+            equipment = if (equipped) nextEquipment else null, loadCount = if (counted) nextCount else null)
+        val plan = Plan()
+        if (unitsChanged) plan.guardRead(metadata.id, listOf("equipment", "loadCount"))
+        val aliases = if (renamed) ExerciseRules.renamedAliases(old.name, nextName, old.aliases + base.aliases) else old.aliases
+        if (renamed) {
+            if (!seed) plan.update(Valid(old.copy(name = nextName), Exercise, listOf("name"), loaded.moment), from = old, guarded = true)
+            val former = loaded.formerNames + (id.record.toString() to Json.objectOf("name" to Json.of(nextName),
+                "aliases" to Json.Arr(aliases.map(Json::of))))
+            plan.device(Catalogue.formerNamesKey, Json.Obj(former.toList()))
+        }
+        val fields = metadata.fields().keys.sorted()
+        if (fields.isNotEmpty()) {
+            plan.guardRead(metadata.id, fields)
+            plan.create(Valid(metadata, ExerciseName, fields, loaded.moment), fields = fields)
+        }
+        return Decision.Write(plan, old.copy(name = if (renamed) nextName else old.name,
+            equipment = if (unitsChanged) nextEquipment else old.equipment,
+            loadCount = if (unitsChanged) nextCount else old.loadCount, aliases = aliases))
     }
 }

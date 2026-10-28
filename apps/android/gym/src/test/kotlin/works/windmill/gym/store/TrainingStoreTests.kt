@@ -132,6 +132,123 @@ class TrainingStoreTests {
     private suspend fun noticed(room: EngineRoomFixture) =
         withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
 
+    @Test fun anOpenMovementEditorCannotWriteIntoAnotherAccountBeforeOrAfterConnect() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            val opened = room.store.catalog.first { it.id == "bench-press" }
+            val account = room.store.accountKey
+            val replica = room.store.editReplica
+            assertTrue(room.engine.signOut("keep").member("complete").bool())
+            assertTrue(room.engine.signIn("bob", mapOf("gym" to true)).member("complete").bool())
+            val beforeConnect = room.engine.snapshot()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
+                room.store.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals(beforeConnect, room.engine.snapshot())
+            room.selected = "bob"
+            room.store.connect(room.account())
+            val afterConnect = room.engine.snapshot()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
+                room.store.edit(opened.id, "ALICE_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals(afterConnect, room.engine.snapshot())
+            assertEquals(opened, room.training.catalogue().first { it.id == opened.id })
+        }
+    }
+
+    @Test fun anonymousAdoptionCannotReuseAnOpenMovementEditorEvenWhenTheReplicaIdStaysTheSame() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            room.store.create("ANONYMOUS_PRIVATE_MOVEMENT", "barbell")
+            val opened = room.store.catalog.first { it.id == "bench-press" }
+            val account = room.store.accountKey
+            val replica = room.store.editReplica
+            assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
+            assertEquals(replica, room.engine.activeReplica())
+            val before = room.engine.snapshot()
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")),
+                room.store.edit(opened.id, "ANONYMOUS_PRIVATE_NAME", "dumbbell", 2, opened, account, replica))
+            assertEquals(before, room.engine.snapshot())
+            assertEquals(opened, room.training.catalogue().first { it.id == opened.id })
+        }
+    }
+
+    @Test fun aCommittedEditKeepsItsSuccessWhenTheNextLockOwnerChangesAccount() = runTest {
+        val armed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val lifecycle = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val lifecycleFailure = java.util.concurrent.atomic.AtomicReference<Throwable>()
+        lateinit var engine: works.windmill.sync.engine.Engine
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
+            works.windmill.sync.engine.Engine.memory(works.windmill.sync.schema.SyncSchema.registry, snapshot,
+                clock = object : works.windmill.sync.engine.EngineClock {
+                    override fun now(): Long {
+                        if (armed.compareAndSet(true, false)) {
+                            val thread = Thread {
+                                try {
+                                    assertTrue(engine.signOut("keep").member("complete").bool())
+                                    assertTrue(engine.signIn("bob", mapOf("gym" to false)).member("complete").bool())
+                                } catch (failure: Throwable) { lifecycleFailure.set(failure) }
+                            }
+                            lifecycle.set(thread)
+                            thread.start()
+                            val deadline = System.nanoTime() + 5_000_000_000
+                            while (thread.state != Thread.State.WAITING && thread.isAlive && System.nanoTime() < deadline) Thread.yield()
+                            assertEquals(Thread.State.WAITING, thread.state)
+                        }
+                        return clock.now()
+                    }
+                }).also { engine = it }
+        }).use { room ->
+            room.select("alice")
+            val base = room.store.catalog.first { it.id == "bench-press" }
+            events.clear(); failures.clear(); armed.set(true)
+            val result = room.store.edit(base.id, "Alice press", "other", 1, base)
+            lifecycle.get().join(5_000)
+            assertFalse(lifecycle.get().isAlive)
+            assertNull(lifecycleFailure.get())
+            val accepted = base.copy(name = "Alice press", equipment = "other", aliases = listOf("Bench Press"))
+            assertEquals(GymResult.Ok(accepted), result)
+            assertEquals(base, room.training.catalogue().first { it.id == base.id })
+            room.selected = "bob"
+            room.store.connect(room.account("bob"))
+            assertEquals(base, room.store.catalog.first { it.id == base.id })
+            assertEquals(listOf("gym_action" to mapOf("screen" to "record", "action" to "edit", "outcome" to "ok")), events)
+            assertEquals(emptyList<String>(), failures)
+            room.select("alice")
+            assertEquals(accepted, room.training.catalogue().first { it.id == base.id })
+        }
+    }
+
+    @Test fun editReportsBoundedOutcomesAndUnexpectedFailureWithoutMovementContent() = runTest {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                failures += operation to properties
+            }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val base = room.store.catalog.first { it.id == "bench-press" }
+            assertTrue(room.store.edit(base.id, "PRIVATE_MOVEMENT", "dumbbell", 2, base) is GymResult.Ok)
+            room.store.refreshEngine()
+            assertEquals("PRIVATE_MOVEMENT", room.store.catalog.first { it.id == base.id }.name)
+            assertEquals(GymResult.Failed(WriteFailure.Refused("Name it to save it.")), room.store.edit(base.id, " "))
+            val before = room.engine.snapshot()
+            room.engine.failNextCommit()
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.edit(base.id, "PRIVATE_FAILED_MOVEMENT"))
+            assertEquals(before, room.engine.snapshot())
+            assertEquals(listOf("ok", "refused", "failed").map { outcome -> "gym_action" to
+                mapOf("screen" to "record", "action" to "edit", "outcome" to outcome) }, events)
+            assertEquals(listOf("gym.editExercise" to emptyMap<String, String>()), failures)
+        }
+    }
+
     @Test
     fun testASetLoggedOfflineSurvivesARelaunchAndFlushesOnReconnect() = runTest {
         val folder = tmp.newFolder()
@@ -443,7 +560,8 @@ class TrainingStoreTests {
 
             assertEquals("the page draws the movement the write confirmed, not the string typed at it",
                 movement.copy(name = "Bench Press", aliases = listOf("Bench Pres")),
-                (room.store.rename(movement.id, " Bench Press ") as GymResult.Ok).value)
+                (room.store.edit(movement.id, " Bench Press ") as GymResult.Ok).value)
+            room.store.refreshEngine()
             assertEquals("Bench Press", room.store.catalog.single { it.id == movement.id }.name)
 
             val record = (room.store.record(movement.id) as GymResult.Ok).value
@@ -451,9 +569,9 @@ class TrainingStoreTests {
             assertEquals("the history is whole — the id never moved", 1, record.recentDays.size)
 
             assertEquals("Name it to save it.",
-                ((room.store.rename(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)
+                ((room.store.edit(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)
             assertEquals("a catalog movement is renamed on the phone signed out too",
-                "Squat", (room.store.rename("back-squat", "Squat") as GymResult.Ok).value.name)
+                "Squat", (room.store.edit("back-squat", "Squat") as GymResult.Ok).value.name)
             runCurrent()
             snapshot = room.engine.snapshot(); clock = room.now
         }
@@ -473,9 +591,10 @@ class TrainingStoreTests {
             room.select("alice"); room.pull(server)
 
             assertEquals("Low-bar Squat",
-                (room.store.rename("back-squat", "Low-bar Squat") as GymResult.Ok).value.name)
+                (room.store.edit("back-squat", "Low-bar Squat") as GymResult.Ok).value.name)
 
             assertEquals(listOf("exerciseName back-squat"), owed(room))
+            room.store.refreshEngine()
             assertEquals("Low-bar Squat", room.store.catalog.single { it.id == "back-squat" }.name)
             assertEquals("the id is what every set points at, and it did not move",
                 "back-squat", room.store.catalog.single { it.id == "back-squat" }.id)
@@ -495,7 +614,7 @@ class TrainingStoreTests {
         EngineRoomFixture(folder, backgroundScope).use { room ->
             room.select("alice")
             pristine = room.store.catalog
-            room.store.rename("back-squat", "Alice’s Secret Squat")
+            room.store.edit("back-squat", "Alice’s Secret Squat")
             runCurrent()
             snapshot = room.engine.snapshot(); clock = room.now
         }
@@ -636,7 +755,7 @@ class TrainingStoreTests {
         val folder = tmp.newFolder()
         val server = EngineRoomFixture.server()
         anotherPhone(server, 1_800_000_000_000L) { phone ->
-            phone.store.rename("bench-press", "Flat press")
+            phone.store.edit("bench-press", "Flat press")
             phone.sync(server)
         }
         val snapshot: Json
@@ -1931,7 +2050,7 @@ class TrainingStoreTests {
             room.select("alice"); room.pull(server)
             room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")
                 .targeting("bench-press", List(3) { SetTarget() }))
-            room.store.rename("bench-press", "Flat press")
+            room.store.edit("bench-press", "Flat press")
             room.workout()
             room.store.savePreferences(GymPreferences(confirmSound = true))
             runCurrent()

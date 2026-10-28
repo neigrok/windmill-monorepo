@@ -31,7 +31,7 @@ function progressSnapshot(snapshot, now) {
 
 function movementRead(snapshot, exerciseId, equipment, now) {
   const read = progressSnapshot(snapshot, now).movement(new Id(exerciseId, Exercise));
-  const estimatesAllowed = ['barbell', 'dumbbell', 'machine', 'cable', 'kettlebell'].includes(equipment);
+  const estimatesAllowed = ['barbell', 'dumbbell', 'machine', 'cable', 'kettlebell', 'other'].includes(equipment);
   return new MovementProgress(read.exerciseId, read.sessions.filter((point) => point.startedAt.ms <= now).map((point) =>
     estimatesAllowed ? point : { ...point, fact: new MovementSessionFact(point.fact.exerciseId, point.fact.workingSetCount,
       point.fact.heaviest, point.fact.mostReps, null, point.fact.bodyweightReps) }), read.isComplete);

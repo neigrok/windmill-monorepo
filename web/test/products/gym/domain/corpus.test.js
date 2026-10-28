@@ -9,7 +9,7 @@ import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
-import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg, loadingChoice, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
@@ -255,6 +255,12 @@ const handlers = {
       return corpus.decision(new CreateExercise(new ExerciseValue(value.id, value.name, value.pattern, value.equipment, value.stepKg,
         value.aliases, input.loadCount)), vector, (id) => id.json, refusalForm);
     }
+    if (vector.input.action === 'EditExercise') {
+      const form = input.base;
+      const value = Exercise.decode(Fields.values('exercise', form.id, form.fields));
+      const base = new ExerciseValue(value.id, value.name, value.pattern, value.equipment, value.stepKg, value.aliases, form.loadCount);
+      return corpus.decision(new EditExercise(base, input.name, input.equipment, input.loadCount), vector, (value) => ({ exercise: exerciseForm(value), loadCount: value.loadCount }), refusalForm);
+    }
     if (vector.input.action === 'RenameExercise') {
       return corpus.decision(new RenameExercise(new Id(input.id, Exercise), input.name), vector, () => null, refusalForm);
     }
@@ -268,7 +274,8 @@ const handlers = {
           return (input.id === undefined ? catalogue.search(input.query ?? '') : found ? [found] : []).map(exerciseForm);
         }
         case 'RenamedAliases': return [...renamedAliases(input.previous, input.next, input.aliases)];
-        case 'DefaultStepKg': return Object.fromEntries(['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell']
+        case 'LoadingChoice': return loadingChoice(input.equipment, input.loadCount);
+        case 'DefaultStepKg': return Object.fromEntries(['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell', 'other']
           .map((equipment) => [equipment, defaultStepKg(equipment)]));
         default: throw new Error(`unclaimed catalogue read ${vector.input.read}`);
       }

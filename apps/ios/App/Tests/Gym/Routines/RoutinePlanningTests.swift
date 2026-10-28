@@ -22,6 +22,36 @@ import UIKit
     Draft(new: Routine(id: gym.runner.mint(Routine.self), name: name, entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 60)])]))
   }
 
+  @Test func receivedOtherTargetsKeepSignedLoadsAndTheNativeStepperCrossesZero() throws {
+    let (_, gym) = fixture()
+    let exercise = Exercise(id: gym.runner.mint(Exercise.self), name: "Assistance", pattern: "pull", equipment: "other", stepKg: 2.5)
+    gym.run(CreateExercise(exercise))
+    var routine = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Assistance day",
+      entries: [RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8, weightKg: -5)])]))
+    #expect(gym.saveRoutine(&routine))
+    let edit = RoutineEditingSession(gym: gym, routine: routine.current)
+    edit.editMovement(exercise.id, gym: gym)
+    #expect(edit.editor?.problem == nil)
+    #expect(edit.editor?.targets.reading == .scheme([SetTarget(reps: 8, weightKg: -5)]))
+    edit.editor?.targets.type("−1", field: .weight)
+    edit.editor?.targets.step(.weight, direction: 1)
+    #expect(edit.editor?.targets.reading == .scheme([SetTarget(reps: 8)]))
+    edit.editor?.targets.step(.weight, direction: 1)
+    #expect(edit.editor?.targets.reading == .scheme([SetTarget(reps: 8, weightKg: 1)]))
+    edit.editor?.targets.step(.weight, direction: -1)
+    edit.editor?.targets.step(.weight, direction: -1)
+    #expect(edit.editor?.targets.reading == .scheme([SetTarget(reps: 8, weightKg: -1)]))
+    #expect(edit.stageMovement(gym))
+    #expect(edit.save(gym))
+    #expect(gym.routines == [Routine(id: routine.id, name: "Assistance day",
+      entries: [RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8, weightKg: -1)])])])
+    #expect(gym.catalogue.find(exercise.id) == exercise)
+    #expect(!MovementEquipment.choices.contains("other"))
+    #expect(RoutineMovementDraft(exercise: exercise, base: nil, entry: nil).problem == "Choose equipment.")
+    let unknown = Exercise(id: exercise.id, name: exercise.name, pattern: "pull", equipment: "unknown", stepKg: 2.5)
+    #expect(RoutineMovementDraft(exercise: unknown, base: unknown, entry: routine.current.entries.first).problem == "Choose equipment.")
+  }
+
   @Test func namesAndMovementLimitsUseOrderedRefusals() {
     let routine = Routine(id: ID("r"))
     #expect(RoutinePlanning.problem(routine) == "Name it to save it.")

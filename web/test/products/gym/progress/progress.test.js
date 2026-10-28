@@ -145,3 +145,20 @@ test('chart readiness and gaps use local calendar days across daylight saving ch
     else process.env.TZ = before;
   }
 });
+
+
+test('received Other keeps positive estimates and signed history without inventing zero or assisted estimates', () => {
+  const now = new Date(2026, 8, 25, 12).getTime();
+  for (const weightKg of [-16, 0, 60]) {
+    const rows = [
+      confirmed('exercise', 'other_load', { name: 'Other load', pattern: 'pull', equipment: 'other', stepKg: 2.5 }),
+      confirmed('session', 'session_other', { startedAt: now - 3600000, finishedAt: now - 1000 }),
+      confirmed('set', 'set_other', { sessionId: 'session_other', exerciseId: 'other_load', weightKg, reps: 5, completedAt: now - 2000 }),
+    ];
+    const snapshot = gymReadView({ drawn: rows, stored: rows, firstPullComplete: true }, { now }).log.progress;
+    const model = movementProgress(snapshot, 'other_load', { now, equipment: 'other' });
+    assert.deepEqual({ loads: model.sessions.map((session) => session.heaviest.weightKg), estimates: model.points.map((point) => point.value) },
+      { loads: [weightKg], estimates: weightKg > 0 ? [70] : [] });
+    assert.deepEqual(movementProgress(snapshot, 'other_load', { now, equipment: 'unknown' }).points, []);
+  }
+});

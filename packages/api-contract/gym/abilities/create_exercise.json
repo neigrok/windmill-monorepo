@@ -103,5 +103,47 @@
       "sha256": "02805a3438cccbfb517ceb45df5f1543ed8c3f8507ad545278f6f2664a1a50bb",
       "writes": []
     }
+  },
+  {
+    "case": "Other is explicit and retains one external load without a dumbbell count",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {
+        "equipment": "other",
+        "id": "other-movement01",
+        "name": "Assisted pull",
+        "pattern": "isolation"
+      },
+      "name": "create_exercise"
+    },
+    "expect": {
+      "result": {
+        "custom": true,
+        "equipment": "other",
+        "id": "other-movement01",
+        "name": "Assisted pull",
+        "pattern": "isolation",
+        "stepKg": 2.5
+      },
+      "sha256": "550bb7a203c904c2d8217d27a2ae4e4595ae58c81df98bf591ec99cdd5294d5b",
+      "writes": [
+        {
+          "f": {
+            "equipment": "other",
+            "name": "Assisted pull",
+            "pattern": "isolation",
+            "stepKg": 2.5
+          },
+          "id": "other-movement01",
+          "life": "alive",
+          "t": "exercise"
+        }
+      ]
+    }
   }
 ]

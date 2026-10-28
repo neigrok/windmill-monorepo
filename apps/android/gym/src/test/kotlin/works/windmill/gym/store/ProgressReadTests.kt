@@ -1,5 +1,12 @@
 package works.windmill.gym.store
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import works.windmill.sync.core.Json
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.engine.RecordsView
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -74,7 +81,7 @@ class ProgressReadTests {
     }
 
     @Test
-    fun aConfirmedRenameIsTheCatalogsAndSurvivesTheNextRead() = runTest {
+    fun anAcceptedEditReachesTheObservedCatalogueAndSurvivesTheNextRead() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("a"); other.pull(server)
@@ -83,10 +90,18 @@ class ProgressReadTests {
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a"); room.pull(server); room.store.refreshEngine()
-            val renamed = room.store.rename("private-bench", "Bench Press")
+            room.store.observeEngine()
+            runCurrent()
+            val renamed = room.store.edit("private-bench", "Bench Press")
             val confirmed = room.training.catalogue().single { it.id == "private-bench" }
             assertEquals(GymResult.Ok(confirmed), renamed)
             assertEquals("Bench Press", confirmed.name)
+            val view = room.engine.records(ScopeRef.product("gym"), "exercise")
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) { view.state.first { state -> state is RecordsView.State.Loaded &&
+                    state.snapshot.records.any { it.id.toString() == "private-bench" && it.values["name"] == Json.of("Bench Press") } } }
+            }
+            runCurrent()
             assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
             room.store.connect(room.account())
             assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })

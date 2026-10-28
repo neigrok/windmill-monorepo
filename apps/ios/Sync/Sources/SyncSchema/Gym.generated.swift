@@ -183,7 +183,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 4,
+    "minVersion": 9,
     "products": [
       "gym": [
         "codes": [
@@ -317,7 +317,7 @@ public enum Gym {
           ],
           "equipment": [
             "domain": [
-              "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+              "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
               "type": "string",
             ],
             "kind": "const",
@@ -371,7 +371,7 @@ public enum Gym {
           ],
           "equipment": [
             "domain": [
-              "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+              "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
               "type": "string",
             ],
             "kind": "lww",
@@ -761,6 +761,6 @@ public enum Gym {
         "type": "message",
       ],
     ],
-    "version": 8,
+    "version": 9,
   ]
 }

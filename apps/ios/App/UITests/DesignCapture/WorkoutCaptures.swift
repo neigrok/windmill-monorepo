@@ -1,6 +1,51 @@
 import XCTest
 
 final class WorkoutCaptures: DesignCapture {
+  func testReceivedOtherKeepsSignedLoadsAndNativeEditors() {
+    for look in Look.both {
+      let app = launch("workout-upper-other", look)
+      let weight = app.buttons["workout-weight"]
+      XCTAssertTrue(weight.waitForLabel("Weight, −5 kg"))
+      XCTAssertFalse(app.images["figure.strengthtraining.functional"].exists)
+      capture("other-rack", look, app)
+      weight.tap()
+      let load = app.pickerWheels.element(boundBy: 0)
+      XCTAssertTrue(load.waitForValue("−5 kg"))
+      for value in ["0 kg", "1 kg", "−1 kg", "0 kg"] {
+        load.adjust(toPickerWheelValue: value)
+        XCTAssertTrue(load.waitForValue(value))
+      }
+      capture("other-load-and-reps", look, app)
+      app.buttons["set-wheel-cancel"].tap()
+      XCTAssertTrue(weight.waitForLabel("Weight, −5 kg"))
+      let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
+      XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
+      XCTAssertTrue(load.waitForValue("−5 kg"))
+      app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "8 reps")
+      capture("other-fix-set", look, app)
+      load.adjust(toPickerWheelValue: "−4 kg")
+      app.buttons["workout-fix-save"].tap()
+      XCTAssertTrue(set.waitForLabel("Set 2, logged, −4 kilograms, 8 reps"))
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
+      XCTAssertTrue(app.buttons["gym-session-movement"].firstMatch.waitForExistence(timeout: 10))
+      back(app)
+      open(.routines, app)
+      let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Upper A,")).firstMatch
+      XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
+      XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 5)); app.buttons["edit-routine"].tap()
+      app.buttons["builder-movement-pull-up"].tap()
+      XCTAssertTrue(app.textFields["gym-movement-name"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["gym-movement-equipment"].waitForValue("Other"))
+      XCTAssertEqual(app.textFields["gym-target-weight"].value as? String, "−5")
+      XCTAssertFalse(app.staticTexts["Enter the external weight you lift."].exists)
+      XCTAssertFalse(app.staticTexts["Name and equipment apply everywhere. Targets stay in this routine."].exists)
+      capture("other-movement-editor", look, app)
+      app.buttons["gym-movement-editor-cancel"].tap()
+      app.terminate()
+    }
+  }
+
   func testWorkout() {
     for look in Look.both {
       let app = launch("workout-planned", look)

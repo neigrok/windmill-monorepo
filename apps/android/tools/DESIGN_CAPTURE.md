@@ -85,6 +85,13 @@ node and value except exact app-package descriptions `Workout time, …`, `Since
 text, geometry and any similar label in another package must still settle. The pressed and 300 ms
 changed states use transient-frame capture; they do not skip the actual user action.
 
+`--scenarios apps/android/tools/capture-recipes/edit-movement.json` opens the standalone Record
+editor and captures Barbell, Dumbbells, Other and the three-choice menu in both appearances. It saves
+Other through the native form, reopens the accepted value, then restores Barbell before the next
+appearance. The final native acceptance also checks draft cancellation, name refusal and small-height
+keyboard reachability on that same isolated account. The recipe includes 320 × 480 dp keyboard-up
+and 200% text refusal captures in both appearances; its after-steps discard these drafts.
+
 Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
 known animation phase; the manifest records that delay. This does not establish screen readiness.
 Transient recipes may set `settle: false` to capture a native pressed state or the 300 ms change

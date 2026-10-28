@@ -8,6 +8,28 @@ import SyncSchema
 import Testing
 
 struct CatalogueTests {
+  @Test func standaloneEditKeepsNameLoadingAndAliasesAtomicAcrossStorageFailureAndAStaleRace() throws {
+    let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), rules: GymServerRules())
+    let other = phone.device()
+    let base = Exercise(id: phone.runner.mint(Exercise.self), name: "Press", pattern: "press", equipment: "barbell", stepKg: 2.5)
+    #expect(try phone.runner.run(CreateExercise(base)).receipt != nil)
+    phone.sync()
+    let edit = EditExercise(base: base, name: "First", equipment: "dumbbell", loadCount: 1)
+    phone.failNextCommit()
+    #expect(throws: (any Error).self) { try phone.runner.run(edit) }
+    #expect(try phone.runner.read(Gym.scope) { try Catalogue($0).find(base.id) } == base)
+    #expect(try phone.runner.read(Gym.scope) { try $0.device(Catalogue.formerNamesKey) } == nil)
+    #expect(try phone.runner.run(edit).receipt != nil)
+    #expect(try other.runner.run(EditExercise(base: base, name: "Second", equipment: "dumbbell", loadCount: 2)).receipt != nil)
+    phone.sync()
+    let expected = Exercise(id: base.id, name: "First", pattern: "press", equipment: "dumbbell", stepKg: 2.5, loadCount: 1, aliases: ["Press"])
+    for device in [phone, other] {
+      #expect(try device.runner.read(Gym.scope) { try Catalogue($0).find(base.id) } == expected)
+      #expect(try device.drawn(ExerciseName.self).map(\.fields) == [["equipment": "dumbbell", "loadCount": 1]])
+    }
+    #expect(try other.notices(GymRefusal.self).map(\.notice.code) == [.stale])
+  }
+
   @Test func exerciseMetadataKeepsIdsAndRawHistoryWhileChangingDerivedVolume() throws {
     let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: nil)
     let id = phone.runner.mint(Exercise.self)
@@ -158,6 +180,14 @@ struct CatalogueTests {
         let exercise = Exercise(id: form.id, name: form.name, pattern: form.pattern, equipment: form.equipment, stepKg: form.stepKg,
                                 loadCount: try input["loadCount"].map { Int(try $0.asInteger()) }, aliases: form.aliases)
         result = try corpus.decision(of: CreateExercise(exercise), vector, result: \.json, refusal: \.form)
+      case "EditExercise":
+        let form = try input.member("base")
+        let value = try Exercise(form: form)
+        let base = Exercise(id: value.id, name: value.name, pattern: value.pattern, equipment: value.equipment,
+                            stepKg: value.stepKg, loadCount: try form["loadCount"].map { Int(try $0.asInteger()) }, aliases: value.aliases)
+        result = try corpus.decision(of: EditExercise(base: base, name: input.member("name").asString(),
+          equipment: input.member("equipment").asString(), loadCount: Int(input.member("loadCount").asInteger())),
+          vector, result: { ["exercise": Self.form($0), "loadCount": .of($0.loadCount)] }, refusal: \.form)
       case "RenameExercise":
         let id = ID<Exercise>(try RecordID(json: input.member("id")))
         result = try corpus.decision(of: RenameExercise(id, name: input.member("name").asString()), vector, result: { _ in .null }, refusal: \.form)
@@ -175,8 +205,10 @@ struct CatalogueTests {
           case "RenamedAliases":
             return .array(try ExerciseRules.renamedAliases(previous: input.member("previous").asString(), next: input.member("next").asString(),
                                                          aliases: input.member("aliases").asArray().map { try $0.asString() }).map(JSON.string))
+          case "LoadingChoice":
+            return .string(try ExerciseRules.loadingChoice(equipment: input.member("equipment").asString(), loadCount: Int(input.member("loadCount").asInteger())))
           case "DefaultStepKg":
-            return .object(fields: Dictionary(uniqueKeysWithValues: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"].map {
+            return .object(fields: Dictionary(uniqueKeysWithValues: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"].map {
               ($0, .of(ExerciseRules.defaultStepKg(equipment: $0)))
             }))
           case let name: throw ContractError("no catalogue read \(name)")

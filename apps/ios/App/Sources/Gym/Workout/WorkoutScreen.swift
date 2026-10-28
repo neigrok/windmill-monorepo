@@ -190,7 +190,9 @@ struct WorkoutLedger: View {
     VStack(spacing: RoomSpace.related) {
       Button(action: assembly) {
         HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
-          Image(systemName: MovementEquipment(movement).symbol).font(.title3).accessibilityHidden(true)
+          if let symbol = MovementEquipment(movement).symbol {
+            Image(systemName: symbol).font(.title3).accessibilityHidden(true)
+          }
           Text(movement?.name ?? "Movement").font(.title2.weight(.bold)).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity)

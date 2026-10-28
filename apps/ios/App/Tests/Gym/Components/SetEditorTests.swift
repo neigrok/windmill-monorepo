@@ -14,6 +14,8 @@ import SyncCore
     let grid = ones + bands, assistance: [Double] = grid.dropFirst().reversed().map { -$0 }
     #expect(SetWheels.loads(around: 16, basis: MovementEquipment("dumbbell")) == grid)
     #expect(SetWheels.loads(around: -10, basis: MovementEquipment("bodyweight")) == assistance + grid)
+    #expect(SetWheels.loads(around: -5, basis: MovementEquipment("other")) == assistance + grid)
+    #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("other")) == (assistance + [-12.5] + grid).sorted())
     let offTheSteps: [Double] = ones.prefix(17) + [16.25] + ones.suffix(4) + bands
     #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")) == offTheSteps)
     #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("machine")) == [-12.5] + grid)

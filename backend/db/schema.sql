@@ -1150,7 +1150,7 @@ create table if not exists gym_exercises (
   pattern     text not null check (pattern in
                 ('squat','hinge','press','pull','carry','core','isolation')),
   equipment   text not null check (equipment in
-                ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
+                ('barbell','dumbbell','machine','cable','bodyweight','kettlebell','other')),
   step_kg     numeric(4,2) not null default 2.5,   -- per-movement increment, seeded and served;
                                                    -- read by nothing today
   created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
@@ -1667,7 +1667,7 @@ alter table gym_exercises
 create index if not exists gym_exercises_sync_feed on gym_exercises (created_by, seq);
 
 alter table gym_exercise_names
-  add column if not exists equipment text check (equipment in ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
+  add column if not exists equipment text check (equipment in ('barbell','dumbbell','machine','cable','bodyweight','kettlebell','other')),
   add column if not exists equipment_stamp text,
   add column if not exists load_count integer check (load_count in (1,2)),
   add column if not exists load_count_stamp text,
@@ -1676,6 +1676,20 @@ alter table gym_exercise_names
   add column if not exists ru bigint,
   add column if not exists name_stamp text,
   add column if not exists aliases_stamp text;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid='gym_exercises'::regclass
+    and conname='gym_exercises_equipment_check' and pg_get_constraintdef(oid) like '%''other''%') then
+    alter table gym_exercises drop constraint if exists gym_exercises_equipment_check;
+    alter table gym_exercises add constraint gym_exercises_equipment_check check (equipment in
+      ('barbell','dumbbell','machine','cable','bodyweight','kettlebell','other'));
+  end if;
+  if not exists (select 1 from pg_constraint where conrelid='gym_exercise_names'::regclass
+    and conname='gym_exercise_names_equipment_check' and pg_get_constraintdef(oid) like '%''other''%') then
+    alter table gym_exercise_names drop constraint if exists gym_exercise_names_equipment_check;
+    alter table gym_exercise_names add constraint gym_exercise_names_equipment_check check (equipment in
+      ('barbell','dumbbell','machine','cable','bodyweight','kettlebell','other'));
+  end if;
+end $$;
 create index if not exists gym_exercise_names_sync_feed on gym_exercise_names (user_id, seq);
 alter table gym_exercise_aliases add column if not exists sync_positions jsonb;
 

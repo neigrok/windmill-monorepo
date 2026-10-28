@@ -25,7 +25,7 @@ export function lastSetLabel(last, now = Date.now()) {
 // The catch-all bucket: pattern is not asked for at creation.
 export const CREATED_PATTERN = 'isolation';
 
-// Four of the schema's six; cable and kettlebell stay valid, just not offered here.
+// The existing four creation choices; cable, kettlebell and Other remain readable without new picker options.
 export const EQUIPMENT_CHOICES = ['barbell', 'dumbbell', 'machine', 'bodyweight'];
 export const DEFAULT_EQUIPMENT = 'barbell';
 

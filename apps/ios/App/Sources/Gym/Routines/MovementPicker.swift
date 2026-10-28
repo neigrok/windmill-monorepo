@@ -288,7 +288,7 @@ struct CreateMovementSheet: View {
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           MovementEquipmentPicker(equipment: $draft.equipment, loadCount: $draft.loadCount, identifier: "gym-movement-equipment").disabled(busy)
-        } footer: { Text(MovementEquipment(draft.equipment, loadCount: draft.loadCount).help) }
+        }
 
       }.listRowBackground(GymPalette.card)
     }

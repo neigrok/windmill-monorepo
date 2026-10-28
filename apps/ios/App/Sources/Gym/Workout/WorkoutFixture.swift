@@ -26,13 +26,17 @@ enum WorkoutFixture {
     if gym.openSession != nil { gym.workout.restore(); return true }
     // The rack's boards (03.x) stand at Upper A's dumbbell press, its squat and pull-up sets already logged.
     let upper = board.contains("upper"), planned = upper || board.contains("planned")
+    let other = board == "workout-upper-other"
+    if other {
+      guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: "other"))?.refusal == nil else { return true }
+    }
     let targets = { (id: String, count: Int, reps: Int, kg: Double) in
       RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count))
     }
     var routineId: ID<Routine>?
     if planned {
       var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: upper ? "Upper A" : "Lower A", entries: upper ? [
-        targets("back-squat", 4, 5, 100), targets("dumbbell-bench-press", 4, 8, 16), targets("pull-up", 4, 8, 10), targets("overhead-press", 3, 8, 40),
+        targets("back-squat", 4, 5, 100), targets("dumbbell-bench-press", 4, 8, 16), targets("pull-up", 4, 8, other ? -5 : 10), targets("overhead-press", 3, 8, 40),
       ] : [targets("back-squat", 4, 5, 100), targets("romanian-deadlift", 3, 6, 82.5)]))
       guard case .saved = gym.save(&draft) else { return true }
       routineId = draft.current.id
@@ -50,13 +54,13 @@ enum WorkoutFixture {
       ] : [("back-squat", 100, 5, 1_210_000), ("back-squat", 100, 5, 97_000)]
       for logged in logged {
         let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID(RecordID(logged.movement)),
-                              weightKg: logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs))
+                              weightKg: other && logged.movement == "pull-up" ? -5 : logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs))
         _ = gym.run(AppendSet(set))
       }
     }
     gym.workout.reconcile()
     if !planned { gym.workout.select(ID("back-squat")) }
-    if upper { gym.workout.select(ID("dumbbell-bench-press")) }
+    if upper { gym.workout.select(other ? ID("pull-up") : ID("dumbbell-bench-press")) }
     if board == "workout-notice", let runtime = gym.runtime, let server = runtime.auth.fake {
       await runtime.engine.flushOnLeave(); gym.refresh(); gym.workout.reconcile()
       server.state.withLock { $0.server.refuse(code: .cap, detail: ["type": .string(TrainingSet.type), "cap": 10]) }

@@ -153,41 +153,41 @@ must be public.
 
 ## Coordinated client cutoff
 
-The current registry is schema 7 / minimum 4. The planned explicit gym `other` category requires
-schema 8 / minimum 8 and coordinated Android and iOS replacements. The cutoff remains held until both
-replacement artifacts and their upgrade destinations are prepared and verified. This prerequisite
-does not change the registry, distribute a phone build, or authorize a production cutoff.
+The repository registry is schema 9 / minimum 9 with explicit gym `other` support. Its production
+cutoff remains held until coordinated Android and iOS replacement artifacts and their upgrade
+destinations are prepared and verified. The guard reads the current live minimum and refuses
+an automatic compatibility change; a source merge does not authorize the cutoff.
 
-1. Ship this guard while the minimum remains 4. Keep that schema 7 / minimum 4 image available for
+1. Ship this guard while the minimum remains 4. Keep that schema 8 / minimum 4 image available for
    maintenance during preparation. New backend images may build and publish, but their automatic
    deployment refuses if their minimum differs from the live server.
-2. Prepare the schema 8 backend and compatibility readers on every surface, preserving old stored
+2. Prepare the schema 9 backend and compatibility readers on every surface, preserving old stored
    equipment/count values and pending writes. Web deploys independently and automatically; early
-   web or iOS code must not originate Other against schema 7. New selectors require their own design
+   web or iOS code must not originate Other against schema 8. New selectors require their own design
    approval and an explicit write/distribution gate. Read-only handling must truthfully retain and
    display Other after cutover. Android's three-choice design does not approve iOS or web pickers.
 3. Verify the signed Android update over public 0.12.1 (schema 6), including retained local work,
-   and verify its delivery gate against the schema 7 server: new work remains ready until a fresh
+   and verify its delivery gate against the schema 8 server: new work remains ready until a fresh
    hello meets the app's registry minimum. Upload the exact iOS version/build through
    the manual `ios-release.yml` workflow; check its TestFlight processing and beta readiness.
    Separately verify intended tester distribution availability; the status artifact proves neither
    tester access nor installation. Verify the replacement client against the candidate backend and
    publish the verified Android release with the delivery gate. Verify both upgrade destinations
    provide the prepared replacements before the cutoff. The new Android app can retain edits on
-   the schema 7 server without sending unsupported intents; iOS cannot originate the new category.
+   the schema 8 server without sending unsupported intents; iOS cannot originate the new category.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
    '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Dispatch **Deploy to VPS** from `main` with
-   that `image_tag`, `expected_old_minimum=4`, `expected_new_minimum=8` and `expected_image_id`.
+   that `image_tag`, `expected_old_minimum=4`, `expected_new_minimum=9` and `expected_image_id`.
    Both minimum fields must match the current live response and the candidate manifest exactly;
    both raises and lowers refuse without this acknowledgement. An interrupted attempt must read
    the live minimum again before retrying. A genuinely fresh host uses old minimum 0; a missing
    `.env` beside an existing deployment is not treated as bootstrap.
-5. Verify the runtime receipt: schema 8 advertises 8 / minimum 8, while schema 6 and 7 return
+5. Verify the runtime receipt: schema 9 advertises 9 / minimum 9, while schemas 6, 7 and 8 return
    `426 upgrade-required` at all four sync doors. Confirm the new Android app's queued work delivers
-   after its fresh schema 8 hello and both upgrade destinations still resolve correctly. Cached web and older native
+   after its fresh schema 9 hello and both upgrade destinations still resolve correctly. Cached web and older native
    clients must retain local work and show their existing update-required surface.
-6. Keep an Other-capable schema 8 / minimum 8 maintenance image available before accepting Other
-   writes. After Other exists, rollback only to that compatible image; do not reopen schema 6/7 or
+6. Keep an Other-capable schema 9 / minimum 9 maintenance image available before accepting Other
+   writes. After Other exists, rollback only to that compatible image; do not reopen schema 6/7/8 or
    run a six-value parser/CHECK. Ordinary backend automation resumes when candidate and live
    minimum match. The image-ID pin covers both the server and the migration job.
 

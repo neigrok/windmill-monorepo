@@ -103,11 +103,17 @@ public enum ExerciseRules {
   public static let name = TextSpec("exercise.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
   public static let seedName = TextSpec("exerciseName.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
   public static let pattern = ChoiceSpec("exercise.pattern", values: ["squat", "hinge", "press", "pull", "carry", "core", "isolation"])
-  public static let equipment = ChoiceSpec("exercise.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"])
-  public static let seedEquipment = ChoiceSpec("exerciseName.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"])
+  public static let equipment = ChoiceSpec("exercise.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"])
+  public static let seedEquipment = ChoiceSpec("exerciseName.equipment", values: ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"])
   public static let loadCount = NumberSpec("exerciseName.loadCount", min: 1, max: 2, integer: true)
   public static let stepKg = NumberSpec("exercise.stepKg", min: 0.01, max: 99.99, quantum: 0.01)
   static let rules: [Rule] = [.local(name), .local(seedName), .local(pattern), .local(equipment), .local(seedEquipment), .local(loadCount), .local(stepKg)]
+
+  public static func loadingChoice(equipment: String, loadCount: Int) -> String {
+    if equipment == "barbell" { return "barbell" }
+    if equipment == "dumbbell" && loadCount == 2 { return "dumbbell" }
+    return "other"
+  }
 
   public static func defaultStepKg(equipment: String) -> Double {
     switch equipment {
@@ -246,5 +252,71 @@ public struct UpdateExercise: Action {
     let changed = Array(metadata.fields.keys)
     if !changed.isEmpty { plan.create(try Valid(metadata, fields: changed, at: loaded.moment), fields: changed) }
     return .write(plan)
+  }
+}
+
+public struct EditExercise: Action {
+  public typealias Loaded = (exercise: Exercise?, visible: Bool, formerNames: JSON.Object, moment: Moment)
+  public let base: Exercise
+  public let name: String
+  public let equipment: String
+  public let loadCount: Int
+  public var id: ID<Exercise> { base.id }
+
+  public init(base: Exercise, name: String, equipment: String, loadCount: Int) {
+    self.base = base
+    self.name = name
+    self.equipment = equipment
+    self.loadCount = loadCount
+  }
+
+  public var scope: ScopeRef { Exercise.scope }
+  public func load(_ read: Reader) throws -> Loaded {
+    (try Catalogue(read, in: .stored).find(id), try Catalogue(read).find(id) != nil,
+     try read.device(Catalogue.formerNamesKey)?.asObject() ?? JSON.Object(), read.moment)
+  }
+
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Exercise, GymRefusal> {
+    guard let old = loaded.exercise, loaded.visible else {
+      return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)))
+    }
+    let nextName = try ExerciseRules.name.apply(name, at: "name")
+    let nextEquipment = try ExerciseRules.equipment.apply(equipment, at: "equipment")
+    let nextCount = nextEquipment == "dumbbell" ? Int(try ExerciseRules.loadCount.apply(Double(loadCount), at: "loadCount")) : 1
+    let renamed = !nextName.utf8.elementsEqual(base.name.utf8) && !nextName.utf8.elementsEqual(old.name.utf8)
+    let unitsChanged = nextEquipment != base.equipment || nextCount != base.loadCount
+    let unitsSettled = nextEquipment == old.equipment && nextCount == old.loadCount
+    if (renamed && !old.name.utf8.elementsEqual(base.name.utf8)) ||
+        (unitsChanged && !unitsSettled && (old.equipment != base.equipment || old.loadCount != base.loadCount)) {
+      return .refuse(GymRefusal(Refused(.stale, subject: id.ref, path: .predicted)))
+    }
+    let equipped = unitsChanged && nextEquipment != old.equipment
+    let counted = unitsChanged && nextEquipment == "dumbbell" && (equipped || nextCount != old.loadCount)
+    if !renamed && !equipped && !counted { return .unchanged(old) }
+    let seed = SeedExercises.contains(id)
+    let metadata = ExerciseName(id: ID(id.record), name: seed && renamed ? nextName : nil,
+                               equipment: equipped ? nextEquipment : nil, loadCount: counted ? nextCount : nil)
+    var plan = Plan()
+    if unitsChanged { plan.guardRead(metadata.id, fields: ["equipment", "loadCount"]) }
+    let aliases = renamed ? ExerciseRules.renamedAliases(previous: old.name, next: nextName, aliases: old.aliases + base.aliases) : old.aliases
+    if renamed {
+      if !seed {
+        var value = old
+        value.name = nextName
+        plan.update(try Valid(value, fields: ["name"], at: loaded.moment), from: old, guarded: true)
+      }
+      var former = loaded.formerNames
+      former[id.record.description] = ["name": .string(nextName), "aliases": .array(
+        aliases.map(JSON.string))]
+      plan.device(Catalogue.formerNamesKey, .object(former))
+    }
+    let fields = metadata.fields.keys.sorted()
+    if !fields.isEmpty {
+      plan.guardRead(metadata.id, fields: fields)
+      plan.create(try Valid(metadata, fields: fields, at: loaded.moment), fields: fields)
+    }
+    return .write(plan, Exercise(id: old.id, name: renamed ? nextName : old.name, pattern: old.pattern,
+      equipment: unitsChanged ? nextEquipment : old.equipment, stepKg: old.stepKg,
+      loadCount: unitsChanged ? nextCount : old.loadCount, aliases: aliases))
   }
 }

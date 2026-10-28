@@ -109,7 +109,11 @@ routine draft; outer Save commits the routine and changed exercise metadata atom
 `SaveRoutinePlan`. Outer Cancel discards those staged edits; editor Cancel restores the entry draft.
 Exercise metadata applies across the account, while targets belong to that routine entry. The form
 keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
-destination. Stale metadata or a changed owner refuses the whole save.
+destination. Stale metadata or a changed owner refuses the whole save. Received Other movements
+retain their category and signed targets through name-only and target edits. Other uses kg without
+an equipment glyph; its load and Fix set wheels span negative, zero and positive values. The six
+existing equipment picker choices remain. Name/Equipment explanatory footers are absent, and the
+Other target section has no equipment help.
 
 The Log groups workouts, every weigh-in and optional records by local date. Timed entries share a
 chronological sequence; a backdated or legacy weight with day-only precision follows timed entries

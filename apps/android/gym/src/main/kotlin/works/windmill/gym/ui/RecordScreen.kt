@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,13 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     var asked by remember(exerciseId) { mutableIntStateOf(0) }
     var renaming by rememberSaveable(exerciseId) { mutableStateOf(false) }
     var draft by rememberSaveable(exerciseId) { mutableStateOf("") }
+    var equipment by rememberSaveable(exerciseId) { mutableStateOf("") }
+    var loadCount by rememberSaveable(exerciseId) { mutableIntStateOf(1) }
+    var openedName by rememberSaveable(exerciseId) { mutableStateOf("") }
+    var openedEquipment by rememberSaveable(exerciseId) { mutableStateOf("") }
+    var openedCount by rememberSaveable(exerciseId) { mutableIntStateOf(1) }
+    var openedAccount by rememberSaveable(exerciseId) { mutableStateOf("") }
+    var openedReplica by rememberSaveable(exerciseId) { mutableStateOf<String?>(null) }
     var refused by rememberSaveable(exerciseId) { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
@@ -75,7 +83,13 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     val ready = record != null && progress != null && failure == null && store.progressFailure == null
     GymScreen(title = record?.exercise?.name ?: Readout.movement(exerciseId, store.catalog),
         onBack = onBack, backTo = backTo,
-        actions = { if (ready) TopAction("Rename") { draft = record!!.exercise.name; refused = null; renaming = true } }) {
+        actions = { if (ready) TopAction("Rename") {
+            val exercise = record!!.exercise
+            draft = exercise.name; equipment = exercise.equipment; loadCount = exercise.loadCount
+            openedName = exercise.name; openedEquipment = exercise.equipment; openedCount = exercise.loadCount
+            openedAccount = store.accountKey; openedReplica = store.editReplica
+            refused = null; renaming = true
+        } }) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
             .padding(top = 12.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             when {
@@ -93,22 +107,37 @@ fun RecordScreen(exerciseId: String, store: TrainingStore, backTo: String, onBac
     if (renaming && read != null) {
         ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
             properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
-            containerColor = skin.surface, scrimColor = skin.scrim) {
+            containerColor = skin.surface, scrimColor = skin.scrim,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = {
+                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                }
+            }) {
             WindmillSheetWindow()
             WindmillSheetBack(onDismiss = { close() }) {
                 BackHandler(saving || closing) {}
-                RenameSheet("Rename movement", read.exercise.name, draft,
-                    store.renameKeepsAnAlias(exerciseId), refused,
-                    onValue = { if (!saving && !closing) { draft = it; refused = null } },
-                    onRename = {
+                val base = read.exercise.copy(name = openedName, equipment = openedEquipment, loadCount = openedCount)
+                EditMovementSheet(base, draft, equipment, loadCount, refused,
+                    onName = { if (!saving && !closing) { draft = it; refused = null } },
+                    onEquipment = { if (!saving && !closing) {
+                        val original = works.windmill.gym.domain.sync.ExerciseRules.loadingChoice(openedEquipment, openedCount)
+                        equipment = if (it == original) openedEquipment else it
+                        loadCount = if (it == original) openedCount else if (it == "dumbbell") 2 else 1
+                        refused = null
+                    } },
+                    onSave = {
                         if (!saving && !closing) {
                             saving = true
                             scope.launch {
                                 try {
-                                    when (val result = store.rename(exerciseId, draft)) {
-                                        is GymResult.Failed -> refused = result.why.line("That movement kept its name.")
+                                    when (val result = store.edit(exerciseId, draft, equipment, loadCount, base, openedAccount, openedReplica)) {
+                                        is GymResult.Failed -> refused = result.why.line("that movement was not changed.")
                                         is GymResult.Ok -> {
-                                            record = read.copy(exercise = result.value)
+                                            if (store.accountKey == openedAccount && store.editReplica == openedReplica) {
+                                                record = read.copy(exercise = result.value)
+                                                asked += 1
+                                            }
                                             saving = false
                                             close()
                                         }

@@ -74,7 +74,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 8, minimum 4), and
+`windmill_gym` embeds `gym.registry.json` (version 9, minimum 9), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -1326,11 +1326,14 @@ External MCP retains its explicit create tool. No model-facing tool can confirm 
 `exerciseName` overrides a movement's loading by its stable id. Keyed by a seed it holds optional
 `name`, `equipment` and `loadCount`; keyed by a custom movement it holds only `equipment` and
 `loadCount`, since a custom movement's name and aliases live on its `exercise` row. The registers are
-optional LWW fields, additive in schema 7/minimum 4: unset is absent, and a null register is refused.
+optional LWW fields: unset is absent, and a null register is refused. Schema 9/minimum 9 admits
+explicit `other` equipment alongside all six legacy values. Other counts one external load; signed
+weights are retained and negative contributions to volume remain zero.
 The base equipment register retains its const contract. Names and loading metadata resolve across the
 history by stable exercise ID, with raw set values unchanged. Counts apply only to dumbbells.
 Goblet squat, dumbbell row, suitcase carry and overhead triceps extension have explicit one-dumbbell
-seed metadata. Other dumbbell movements default to two, and the lifter can edit that count.
+seed metadata. Other dumbbell movements default to two. Existing one-dumbbell values remain intact; Android’s
+standalone editor presents Barbell, paired Dumbbells and Other without a count selector.
 `update_exercise` uses the same sync door and preserves IDs; Coach reads the catalog before an edit.
 Its account-scoped `gym_exercise_updates` receipt commits in that engine transaction. Recovery returns
 the original exercise snapshot even after a later user edit, without writing the fields again.

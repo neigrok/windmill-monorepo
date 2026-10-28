@@ -37,13 +37,17 @@ import SyncTesting
   @Test func eachEquipmentSaysWhatItsLoadMeans() {
     let basis = [MovementEquipment("barbell"), MovementEquipment("dumbbell"), MovementEquipment("dumbbell", loadCount: 1),
                  MovementEquipment("bodyweight"), MovementEquipment("machine"), MovementEquipment("cable", loadCount: 2),
-                 MovementEquipment("kettlebell"), MovementEquipment(nil)]
+                 MovementEquipment("kettlebell"), MovementEquipment("other"), MovementEquipment(nil)]
     #expect(basis.map { "\($0.title) | \($0.choice) | \($0.unit) | \($0.loadCount) | \($0.each ? "each" : "whole")" } == [
       "Barbell | Barbell | kg total | 1 | whole", "Dumbbells | Dumbbells | kg each | 2 | each",
       "One dumbbell | Dumbbells | kg | 1 | whole", "Bodyweight | Bodyweight | kg added | 1 | whole",
       "Machine | Machine | kg | 1 | whole", "Cable | Cable | kg | 1 | whole", "Kettlebell | Kettlebell | kg | 1 | whole",
-      " |  | kg | 1 | whole",
+      "Other | Other | kg | 1 | whole", " |  | kg | 1 | whole",
     ])
+    #expect(basis.map(\.symbol) == ["figure.strengthtraining.traditional", "dumbbell.fill", "dumbbell.fill",
+      "figure.strengthtraining.functional", "figure.strengthtraining.functional", "figure.strengthtraining.functional",
+      "dumbbell", nil, nil])
+    #expect(MovementEquipment.choices == ["barbell", "dumbbell", "machine", "cable", "kettlebell", "bodyweight"])
   }
 
   @Test func anonymousCatalogueAndCustomRenamesStayOnDevice() throws {

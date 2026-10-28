@@ -30,6 +30,7 @@ std::string toString(Equipment equipment) {
     case Equipment::cable: return "cable";
     case Equipment::bodyweight: return "bodyweight";
     case Equipment::kettlebell: return "kettlebell";
+    case Equipment::other: return "other";
   }
   return "barbell";
 }
@@ -62,6 +63,7 @@ Equipment parseEquipment(std::string_view text) {
   if (text == "cable") return Equipment::cable;
   if (text == "bodyweight") return Equipment::bodyweight;
   if (text == "kettlebell") return Equipment::kettlebell;
+  if (text == "other") return Equipment::other;
   throw InvalidTraining("unknown equipment: " + std::string(text));
 }
 
@@ -152,6 +154,7 @@ double defaultStepKg(Equipment equipment) {
     case Equipment::cable: return 2.5;
     case Equipment::bodyweight: return 2.5;   // a belt plate
     case Equipment::kettlebell: return 4.0;
+    case Equipment::other: return 2.5;
   }
   return 2.5;
 }

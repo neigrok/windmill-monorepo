@@ -89,11 +89,11 @@ struct RenameMovementSheet: View {
           if let refusal, !saving {
             Text(refusal).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
           }
-        } footer: { Text("The new name shows in your routines and history. Search still finds the old name.") }
+        }
           .listRowBackground(GymPalette.card)
         Section {
           MovementEquipmentPicker(equipment: $equipment, loadCount: $loadCount, identifier: "gym-rename-movement-equipment").disabled(saving)
-        } footer: { Text(MovementEquipment(equipment, loadCount: loadCount).help + " Changing equipment updates past volume. Your logged weights do not change.") }
+        }
           .listRowBackground(GymPalette.card)
       }
       .modifier(GymPage()).navigationTitle("Edit movement")
@@ -139,13 +139,14 @@ struct MovementEquipment {
   var choice: String { value == "dumbbell" ? "Dumbbells" : value.capitalized }
   // A pair of dumbbells, whose load is the weight of one, said per hand.
   var each: Bool { value == "dumbbell" && loadCount == 2 }
-  var symbol: String {
+  var symbol: String? {
     switch value {
     case "barbell": "figure.strengthtraining.traditional"
     case "dumbbell": "dumbbell.fill"
     case "bodyweight": "figure.strengthtraining.functional"
     case "machine", "cable": "figure.strengthtraining.functional"
-    default: "dumbbell"
+    case "kettlebell": "dumbbell"
+    default: nil
     }
   }
   var unit: String {
@@ -176,7 +177,11 @@ struct MovementEquipmentPicker: View {
         Menu {
           Picker("Equipment", selection: $equipment) {
             ForEach(MovementEquipment.choices, id: \.self) { value in
-              Label(MovementEquipment(value).choice, systemImage: MovementEquipment(value).symbol).tag(value)
+              if let symbol = MovementEquipment(value).symbol {
+                Label(MovementEquipment(value).choice, systemImage: symbol).tag(value)
+              } else {
+                Text(MovementEquipment(value).choice).tag(value)
+              }
             }
           }
         } label: {
@@ -186,7 +191,11 @@ struct MovementEquipmentPicker: View {
           }
         }.accessibilityLabel("Equipment").accessibilityValue(MovementEquipment(equipment).choice).accessibilityIdentifier(identifier)
       } label: {
-        Label("Equipment", systemImage: MovementEquipment(equipment).symbol).foregroundStyle(GymPalette.ink)
+        if let symbol = MovementEquipment(equipment).symbol {
+          Label("Equipment", systemImage: symbol).foregroundStyle(GymPalette.ink)
+        } else {
+          Text("Equipment").foregroundStyle(GymPalette.ink)
+        }
       }
       if equipment == "dumbbell" {
         LabeledContent("Dumbbells lifted") {

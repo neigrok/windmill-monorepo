@@ -560,7 +560,8 @@ TEST(gym_catalog_publishes_the_vocabularies_the_domain_actually_parses) {
   for (const char* word : kEquipment) CHECK_EQ(toString(parseEquipment(word)), std::string(word));
   for (const char* word : kSetKinds) CHECK_EQ(toString(parseSetKind(word)), std::string(word));
   CHECK_EQ(kPatterns.size(), std::size_t{7});
-  CHECK_EQ(kEquipment.size(), std::size_t{6});
+  CHECK_EQ((std::vector<std::string>{kEquipment.begin(), kEquipment.end()}),
+           (std::vector<std::string>{"barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"}));
   CHECK_EQ(kSetKinds.size(), std::size_t{4});
 }
 

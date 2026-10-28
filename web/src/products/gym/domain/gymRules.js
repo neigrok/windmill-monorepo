@@ -71,8 +71,8 @@ export const ExerciseRules = Object.freeze({
   name: new TextSpec('exercise.name', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
   seedName: new TextSpec('exerciseName.name', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
   pattern: new ChoiceSpec('exercise.pattern', ['squat', 'hinge', 'press', 'pull', 'carry', 'core', 'isolation']),
-  equipment: new ChoiceSpec('exercise.equipment', ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell']),
-  equipmentOverride: new ChoiceSpec('exerciseName.equipment', ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell']),
+  equipment: new ChoiceSpec('exercise.equipment', ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell', 'other']),
+  equipmentOverride: new ChoiceSpec('exerciseName.equipment', ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell', 'other']),
   loadCount: new NumberSpec('exerciseName.loadCount', { min: 1, max: 2, integer: true }),
   stepKg: new NumberSpec('exercise.stepKg', { min: 0.01, max: 99.99, quantum: 0.01 }),
 });

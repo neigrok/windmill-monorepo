@@ -1,50 +1,48 @@
 # Edit movement replaces Rename movement
 
-**Approved flow:** [Routine editor metadata contract](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25. This task’s standalone Record editor is distinct from routine staging. Its existing drawings below cover four equipment examples; new Cable/Kettlebell visuals still need designer approval (08).
+**Approved flow:** [Edit movement — plain equipment choices](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), on the canonical Android page `56:2` — ✅ Ready for dev, human-approved 2026-10-26. This is the standalone Record editor; routine staging remains separate.
 
 **Figma:**
-- 05.9 Edit movement, name and Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6349) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31338)
-- 05.10 Edit movement, the Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-6469) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31377)
-- Components (Design System library, Android page):
-  - `Android / Equipment icon` `337:2025` (Kind=Machine `343:2377`, Material Symbol `table_rows`)
-  - `Android / Menu` `342:2725`
-  - `Android / Button` `210:181`
+- Barbell: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7649) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-8163)
+- Dumbbells: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7762) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-8276)
+- Other: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7874) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-8388)
+- Equipment menu: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7986) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-8500)
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- The Record's *Rename* opens `RenameSheet` (`ui/RenameSheet.kt:20-63`) titled *Rename movement* (`ui/RecordScreen.kt:94`):
-  - *Name*, one field.
-  - *Renames this movement everywhere.* / *Your logged sets and records keep the same movement.* (`ui/RenameSheet.kt:51-52`)
-  - Signed in: *Old name: {from}\nSearchable as an alias.* (`ui/RenameSheet.kt:53`)
-  - *Rename* / *Renaming…* (`ui/RenameSheet.kt:59`); a refusal reads *That movement kept its name.* (`ui/RecordScreen.kt:103`).
-- Name only. `TrainingStore.rename` (`store/TrainingStore.kt:1534-1550`) calls `EngineTraining.renameExercise` (`store/EngineTraining.kt:129`), which runs the domain's `RenameExercise` (`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/Catalogue.kt:103-120`).
-- The model already holds equipment and the dumbbell count: `ExerciseName` carries `equipment` and `loadCount` overrides (`…/domain/sync/Catalogue.kt:31-47`), `Exercise.loadCount` (`domain/Training.kt:42`).
+**Implementation state**
+
+The standalone `EditExercise` action, changed-field guards, alias preservation, shared vectors and account-pinned Android save boundary are implemented in the task branch. The approved Android sheet and iOS compatibility read states are implemented in the task branch. The eight iOS native states are accepted; all twelve Android canonical/responsive captures and first-party event/database checks pass. Native review is accepted; shipment remains pending. The task branch adds explicit `other` support under schema 9 / minimum 9. Shared domain, migration, backend Postgres and real HTTP compatibility gates pass; the exact evidence and bounded verification limits are recorded in [the phase note](../docs/engineering/android-edit-movement.md). The user authorized coordinated Android and iOS releases. The deployment guard and Android delivery-readiness prerequisite are on main; the schema 9 / minimum 9 cutoff remains held until replacement artifacts and upgrade availability are verified. No optional-register alias or implicit migration is used.
 
 **Change**
-- Rename `RenameSheet` to an Edit movement sheet (one file, `ui/EditMovementSheet.kt`), opened from the Record's ⋮ (21).
-- 05.9:
-  - Title *Edit movement*.
-  - `OutlinedTextField` *Name*, with the note *The new name shows in your routines and history. Search still finds the old name.*
-  - Exposed dropdown *Equipment* with the leading equipment icon (08).
-  - For Dumbbells: *Dumbbells lifted*, M3 segmented button *One* / *Two*.
-  - Help for Dumbbells: *Enter the weight of one dumbbell. Volume counts both. Changing equipment updates past volume. Your logged weights do not change.*
-  - Filled **Save** (56 dp); *Saving…* while busy. Enabled only when something changed.
-- 05.10 draws four menu examples: *Barbell*, *Dumbbells*, *Bodyweight*, *Machine*, each with its approved icon and a check on the chosen one. They do not exhaust supported stored records. A Cable/Kettlebell record must retain its actual selected value and name-only editing must preserve equipment/load count; never default or coerce it. Preserve its existing presentation pending 08’s explicit designer follow-up for new icons/options/load-basis wording.
-  - Help for Bodyweight: *Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight. Changing equipment updates past volume. Your logged weights do not change.*
-- Delete *Renames this movement everywhere.*, *Your logged sets and records keep the same movement.* and the *Old name … Searchable as an alias.* line.
-- Domain (use the `domain-feature` skill): the standalone `EditExercise` action is still missing; `SaveRoutinePlan` already exists only for the routine’s atomic save. Implement one `EditExercise(id, name, equipment, loadCount)` action that writes only changed fields, retains the alias/stale guards, supports all six stored equipment values and permits a count override only for dumbbells. Add shared vectors before wiring this standalone Save; do not replace the routine’s SaveRoutinePlan or use this action during routine staging.
-- Store: `TrainingStore.edit(exerciseId, name, equipment, loadCount)` replaces `rename`; invalidate progress and volume reads, as `rename` does today.
-- A refusal shows under the fields in the error role (02), keeping the server's sentence.
+- Replace `RenameSheet` with `ui/EditMovementSheet.kt`; retain the current Record trigger until task 21 provides its menu.
+- Title: *Edit movement*. Native outlined *Name* and *Equipment* fields, each 56 dp high. The approved 412 dp sheet has 372 dp fields and a 56 dp **Save** action.
+- Exactly three equipment choices: *Barbell*, *Dumbbells*, *Other*. Menu rows are 48 dp high, with the approved icons and selected check.
+- No One/Two selector, multiplier labels, or hints/warnings under either field. Do not add compatibility or storage explanations to the UI.
+- Multipliers remain domain behavior: Barbell once, Dumbbells twice, Other once. Other covers machines, kettlebells, added weight and negative assistance. Signed load entry continues through the native keyboard.
+- Existing display mapping: barbell → Barbell; dumbbell with resolved count two → Dumbbells; every other stored combination, including one dumbbell → Other. Name-only saves preserve the exact stored equipment/count and all raw history.
+- Save is enabled only for a changed draft; show *Saving…* while busy. Cancel writes nothing. A refused save retains the draft and shows the full refusal in the error role below the fields.
+- Preserve the `RecordScreen.onDraftOpen` callback so tile navigation cannot discard an open edit draft.
 
-**Out of scope:**
-- The Record's ⋮ menu and subhead (21).
-- Coach changing a movement (35).
+**Domain and storage**
+
+Use the `domain-feature` skill. The standalone `EditExercise` action receives the opening exercise snapshot, compares only fields the user changed, and persists one changed-field Batch. Equipment and load count are guarded together when edited; untouched concurrent values survive. Keep existing alias/stale guards and legacy RenameExercise consumers. Do not call this action during routine staging or alter SaveRoutinePlan as part of the standalone UI.
+
+Preserve all six legacy equipment values, existing one/two counts, raw weights and history. Add explicit `other` support across backend and client domains under registry schema 9 / minimum 9. Compatibility probes confirm older readers retain the string and calculate one load, but whole-movement validation on older iOS refuses it; the coordinated upgrade is required. Keep ordinary backend batches behind the deployment cutoff guard until replacement builds are ready. Early automatically deployed web and distributed iOS compatibility code must not originate Other against a pre-cutoff server. New iOS or web selectors need their own design approval; this Android drawing approves neither.
+
+**Approved iOS compatibility**
+
+[Other read states](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1572-7844) are human-approved and ✅ Ready for dev on canonical iOS page `11:2`. The eight Dark/Light frames cover the rack, load and reps wheel, Fix set and existing Other in the movement editor. Other has no equipment glyph, uses kg, and the existing load/Fix wheel spans negative through zero to positive. Name/Equipment explanatory footers are removed globally. Existing picker choices and target controls remain; no Other picker option or new target sign button is introduced. The received Other target section has no equipment help, matching the approved form. Other categories retain their existing Targets help and the open-plan hint remains.
+
+**Observability**
+
+Emit `gym_action` with `screen=record`, `action=edit`, and bounded `outcome=ok/refused/failed`; never names, equipment values or account/replica IDs. Report unexpected boundary failures under `gym.editExercise`. List the flow in `docs/ANDROID_OBSERVABILITY.md` and verify first-party intake against the local stack.
 
 **Done when**
-- Screenshots of 05.9 and 05.10 match in Dark and Daylight; the rig (01) adds `05.9-edit-movement-dark/light` and `05.10-edit-movement-equipment-menu-dark/light`.
-- Rename emits no event today. Add `gym_action` with `screen=record`, `action=edit`, `outcome=ok` / `refused` / `failed`; no name or equipment in properties. List it in `docs/ANDROID_OBSERVABILITY.md`.
-- The failure operation `gym.rename` becomes `gym.editExercise`. Name-only saves on seeded Cable and Kettlebell keep equipment, load basis, raw set values and volume unchanged; cancelling writes nothing. Equipment changes preserve logged weights and apply the existing domain volume rule only after Save. New visual options remain blocked on 08’s designer follow-up.
-- Tests: `store/EngineTrainingTests.kt`, `store/TrainingStoreTests.kt`, `ui/SheetDismissTests.kt` (rename cases become edit cases), and the domain tests next to `CataloguePreferencesTests.kt` in `apps/android/gym/domain/src/test/`.
+- The approved Barbell, Dumbbells, Other and menu states match in Dark and Daylight; native small-height/large-text checks prove fields, refusal and Save remain reachable.
+- Selection, dirty-state Save, busy state, refusal, cancel and recreation tests pass. Name-only Cable, Kettlebell and one-dumbbell edits retain their stored loading basis and derived volume.
+- A delayed Save after account/replica change refuses before writing, including anonymous adoption that retains a replica ID.
+- Shared domain vectors and engine rollback/race tests pass; actual local-stack events and failure receipts are verified.
+- Refactoring/simplification and adversarial correctness/privacy/observability reviews are complete.
 
-**Depends on:** 08.
+**Out of scope:** Record menu/subhead (21), Coach movement actions (35), routine SaveRoutinePlan staging, implicit data migration, uncoordinated client cutoff, new iOS or web picker designs.
 
-**Ledger:** 11e, 9z; dogfood `android-gym-target-page`.
+**Depends on:** 08. **Ledger:** 11e, 9z; dogfood `android-gym-target-page`.

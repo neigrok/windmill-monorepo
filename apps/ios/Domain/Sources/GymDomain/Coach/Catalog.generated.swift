@@ -99,7 +99,7 @@ extension Catalog {
                 "aliases": ["items": ["type": "string"], "type": "array"],
                 "custom": ["type": "boolean"],
                 "equipment": [
-                  "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+                  "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
                   "type": "string",
                 ],
                 "id": ["type": "string"],
@@ -909,7 +909,7 @@ extension Catalog {
               "aliases": ["items": ["type": "string"], "type": "array"],
               "custom": ["type": "boolean"],
               "equipment": [
-                "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+                "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
                 "type": "string",
               ],
               "id": ["type": "string"],
@@ -1182,7 +1182,7 @@ extension Catalog {
         "properties": [
           "equipment": [
             "description": "What it is loaded with. The one classification gym keeps beside pattern.",
-            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
             "type": "string",
           ],
           "id": [
@@ -1213,7 +1213,7 @@ extension Catalog {
           "aliases": ["items": ["type": "string"], "type": "array"],
           "custom": ["type": "boolean"],
           "equipment": [
-            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
             "type": "string",
           ],
           "id": ["type": "string"],
@@ -2168,7 +2168,7 @@ extension Catalog {
         "properties": [
           "equipment": [
             "description": "How the entered load is measured: barbell includes the bar; dumbbell is per dumbbell; bodyweight is added load only.",
-            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
             "type": "string",
           ],
           "exerciseId": [
@@ -2200,7 +2200,7 @@ extension Catalog {
           "aliases": ["items": ["type": "string"], "type": "array"],
           "custom": ["type": "boolean"],
           "equipment": [
-            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
+            "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"],
             "type": "string",
           ],
           "id": ["type": "string"],

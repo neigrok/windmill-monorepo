@@ -15,7 +15,7 @@ The six revised Gym flows were approved on **2026-10-25** and their affected fra
 
 Before visual work, use the task's approved **✅ Ready for dev** frame and resolve any explicit missing-state design gate. Keep domain/transport work separate from a screen whose new state is not drawn. Existing source behavior and a Figma URL alone do not establish approval of a new visual state.
 
-Implement one commit per numbered task. Ship batches to main after adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Create an Android release after all tasks in the current release scope are complete. Postponed tasks do not gate this release. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark each Figma flow **🚀 In production** only after its verified implementation is merged; design approval does not mark app delivery complete.
+Implement one commit per numbered task. Ship batches to main after adversarial review, a simplification pass, targeted tests and native/local-stack acceptance including failures and content-free events. Create coordinated Android and iOS releases after all tasks in the current release scope are complete. The user authorized the explicit Other category and an older-client upgrade; its schema 9 / minimum 9 cutoff stays held behind the deployment guard until replacement artifacts and upgrade availability are verified. Postponed tasks do not gate this release. Update `docs/ANDROID_OBSERVABILITY.md` with the implemented boundaries and events. Mark each Figma flow **🚀 In production** only after its verified implementation is merged; design approval does not mark app delivery complete.
 
 ## Current release scope
 
@@ -32,7 +32,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | Gate | Affected task | Work that waits |
 |---|---|---|
 | `android-gym-signed-load-input-design` · resolved | [07](07-number-stepper.md), [10](10-fix-set.md), [18](18-targets.md) | Use the approved native-keyboard minus interaction and original sizing; verify negative decimal entry on the target emulator |
-| `android-gym-equipment-variants-design` | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | New cable/kettlebell menu/icon presentation; preserve stored values and current presentation |
+| `android-gym-equipment-variants-design` · resolved | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | [Canonical plain Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), Ready for dev; no Name/Equipment hints. Preserve legacy values/history. New iOS/web pickers require separate design approval. |
 | `android-gym-empty-finish-design` · resolved | [14](14-finish-receipt.md) | [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) is ✅ Ready for dev, human-approved 2026-10-25 |
 | `android-gym-no-routine-picker-design` | [13](13-free-workout-start.md) | Changing the existing picker for an externally started workout without a routine |
 | `android-gym-mcp-proposal-row-design` | [17](17-routines-list.md), [29](29-coach-change-card.md) | New proposal route without a Coach conversation; keep its existing review path |
@@ -43,6 +43,12 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | `account-delete-reconciliation` · resolved | [48](48-delete-account.md) | Backend receipt/recovery across session revocation is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance |
 
 Existing task-local drawing gaps remain authoritative, including anonymous refusal copy in task 38. This table does not waive them or expand approval to undrawn states.
+
+The approved three-choice equipment control also governs tasks 18 and 19: Barbell, Dumbbells and
+Other, implicit 1/2/1, no count selector or Name/Equipment hints. Their existing combined-form
+composition remains; those Figma frames use the approved shared control from canonical section
+[1548:7642](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642).
+Unchanged and name-only edits preserve all legacy equipment/count values.
 
 ## Execution order
 

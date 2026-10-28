@@ -101,6 +101,13 @@ export const ExerciseName = new EntityType({
       ExerciseRules.loadCount.applyOptional(value.loadCount, new Path('loadCount'))))],
 });
 
+/** @param {string} equipment @param {number} loadCount */
+export function loadingChoice(equipment, loadCount) {
+  if (equipment === 'barbell') return 'barbell';
+  if (equipment === 'dumbbell' && loadCount === 2) return 'dumbbell';
+  return 'other';
+}
+
 /** @param {string} equipment */
 export function defaultStepKg(equipment) {
   switch (equipment) {
@@ -216,5 +223,63 @@ export class RenameExercise {
       plan.update(new Valid(new ExerciseValue(old.id, name, old.pattern, old.equipment, old.stepKg, old.aliases), loaded.moment, ['name']));
     }
     return Decision.write(plan, null);
+  }
+}
+
+export class EditExercise {
+  /** @param {ExerciseValue} base @param {string} name @param {string} equipment @param {number} loadCount */
+  constructor(base, name, equipment, loadCount) {
+    this.base = base;
+    this.id = base.id;
+    this.name = name;
+    this.equipment = equipment;
+    this.loadCount = loadCount;
+    this.scope = Exercise.scope;
+    this.refusals = GymRefusals;
+    Object.freeze(this);
+  }
+
+  /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
+  load(read) {
+    return { exercise: new Catalogue(read, 'stored').find(this.id), visible: new Catalogue(read).find(this.id) !== null,
+      formerNames: Fields.object(read.device(Catalogue.formerNamesKey) ?? {}).values, moment: read.moment };
+  }
+
+  /** @param {ReturnType<EditExercise['load']>} loaded */
+  decide(loaded) {
+    const old = loaded.exercise;
+    if (old === null || !loaded.visible) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', this.id.ref, null, 'predicted')));
+    const name = ExerciseRules.name.apply(this.name, new Path('name'));
+    const equipment = ExerciseRules.equipment.apply(this.equipment, new Path('equipment'));
+    const count = equipment === 'dumbbell' ? ExerciseRules.loadCount.apply(this.loadCount, new Path('loadCount')) : 1;
+    const renamed = name !== this.base.name && name !== old.name;
+    const unitsChanged = equipment !== this.base.equipment || count !== this.base.loadCount;
+    const unitsSettled = equipment === old.equipment && count === old.loadCount;
+    if ((renamed && old.name !== this.base.name) || (unitsChanged && !unitsSettled
+      && (old.equipment !== this.base.equipment || old.loadCount !== this.base.loadCount))) {
+      return Decision.refuse(GymRefusals.ofRefused(new Refused('stale', this.id.ref, null, 'predicted')));
+    }
+    const equipped = unitsChanged && equipment !== old.equipment;
+    const counted = unitsChanged && equipment === 'dumbbell' && (equipped || count !== old.loadCount);
+    if (!renamed && !equipped && !counted) return Decision.unchanged(old);
+    const seed = SeedExercises.has(this.id);
+    const metadata = new ExerciseNameValue(new Id(this.id.record, ExerciseName), seed && renamed ? name : null,
+      [], equipped ? equipment : null, counted ? count : null);
+    const plan = new Plan();
+    if (unitsChanged) plan.guardRead(metadata.id, ['equipment', 'loadCount']);
+    const aliases = renamed ? renamedAliases(old.name, name, [...old.aliases, ...this.base.aliases]) : old.aliases;
+    if (renamed) {
+      if (!seed) plan.update(new Valid(new ExerciseValue(old.id, name, old.pattern, old.equipment, old.stepKg, old.aliases, old.loadCount),
+        loaded.moment, ['name']), { from: old, guarded: true });
+      plan.device(Catalogue.formerNamesKey, { ...loaded.formerNames, [String(this.id.record)]: {
+        name, aliases: [...aliases] } });
+    }
+    const fields = Object.keys(metadata.fields()).sort();
+    if (fields.length > 0) {
+      plan.guardRead(metadata.id, fields);
+      plan.create(new Valid(metadata, loaded.moment, fields), { fields });
+    }
+    return Decision.write(plan, new ExerciseValue(old.id, renamed ? name : old.name, old.pattern,
+      unitsChanged ? equipment : old.equipment, old.stepKg, aliases, unitsChanged ? count : old.loadCount));
   }
 }

@@ -46,3 +46,18 @@ Runtime verification belongs to implementation: local engine/backend cases, nati
 recreation, TalkBack, small phones, pending/failed writes and privacy-safe telemetry. Documentation
 checks validate task coverage, links, dependency order and consistency; they do not establish that
 the Android app behaves as these tasks require.
+
+## Coordinated equipment compatibility
+
+[Task 20](../../androidgym_tasks/20-edit-exercise.md) uses explicit Other under schema 9 / minimum 9,
+preserving all legacy records and the additive Coach records. The human-approved Android control is
+[Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642),
+with plain labels and no Name/Equipment hints. The canonical combined 18/19 forms use that control.
+The [iOS Other read states](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1572-7844)
+are approved and Ready on page `11:2`: no Other glyph, kg, signed existing load/Fix wheels and removal
+of Name/Equipment footers. Existing iOS picker choices and target controls remain unchanged.
+
+The deployment guard and Android delivery-readiness gate are on main. The coordinated Android/iOS
+cutoff remains held until replacement builds and distribution availability are verified; Android's
+new writes stay ready until a fresh hello meets its registry minimum. No implicit migration or
+physical-equipment alias is part of the release.

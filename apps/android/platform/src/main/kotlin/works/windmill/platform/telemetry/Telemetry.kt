@@ -60,6 +60,7 @@ object TelemetryPolicy {
             val actions = when (properties["screen"]) {
                 "routines", "session", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))
+                "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))

@@ -11,13 +11,13 @@
     {"guarded": false, "held": true, "ordered": false, "removable": true, "timestamp": "recordedAt", "type": "weighin"}
   ],
   "rules": [
-    {"kind": "local", "name": "exercise.equipment", "spec": {"kind": "choice", "path": "exercise.equipment", "values": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"]}, "subject": "exercise"},
+    {"kind": "local", "name": "exercise.equipment", "spec": {"kind": "choice", "path": "exercise.equipment", "values": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"]}, "subject": "exercise"},
     {"codes": ["unknown-record", "record-dead"], "kind": "server", "name": "exercise.gone", "subject": "exercise"},
     {"kind": "local", "name": "exercise.name", "spec": {"kind": "text", "max": 60, "min": 1, "nfc": true, "path": "exercise.name", "trim": true, "unit": "chars"}, "subject": "exercise"},
     {"kind": "local", "name": "exercise.pattern", "spec": {"kind": "choice", "path": "exercise.pattern", "values": ["squat", "hinge", "press", "pull", "carry", "core", "isolation"]}, "subject": "exercise"},
     {"kind": "local", "name": "exercise.stepKg", "spec": {"integer": false, "kind": "number", "max": 99.99, "min": 0.01, "path": "exercise.stepKg", "quantum": 0.01}, "subject": "exercise"},
     {"codes": ["id-taken", "id-spent"], "kind": "server", "name": "exercise.taken", "subject": "exercise"},
-    {"kind": "local", "name": "exerciseName.equipment", "spec": {"kind": "choice", "path": "exerciseName.equipment", "values": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"]}, "subject": "exerciseName"},
+    {"kind": "local", "name": "exerciseName.equipment", "spec": {"kind": "choice", "path": "exerciseName.equipment", "values": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"]}, "subject": "exerciseName"},
     {"kind": "local", "name": "exerciseName.loadCount", "spec": {"integer": true, "kind": "number", "max": 2, "min": 1, "path": "exerciseName.loadCount"}, "subject": "exerciseName"},
     {"kind": "local", "name": "exerciseName.name", "spec": {"kind": "text", "max": 60, "min": 1, "nfc": true, "path": "exerciseName.name", "trim": true, "unit": "chars"}, "subject": "exerciseName"},
     {"kind": "local", "name": "gym.correctSession.requestId", "spec": {"kind": "text", "max": 64, "min": 8, "nfc": false, "path": "gym.correctSession.requestId", "trim": false, "unit": "chars"}, "subject": "gym"},
