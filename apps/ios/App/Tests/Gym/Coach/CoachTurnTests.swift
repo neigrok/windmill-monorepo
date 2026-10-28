@@ -296,24 +296,29 @@ import SyncTesting
     #expect(phone.coach.saved.photo == nil && phone.coach.saved.photoData == nil)
   }
 
-  // Text lands on the Coach message in coalesced chunks: five tokens arriving within the window commit once, so the
-  // message's text is seen empty and then whole, never a word at a time.
   @Test func textCommitsInCoalescedChunks() async throws {
     let phone = try await phone(seat: "anon", beat: .seconds(1))
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
-    var events: [JSON] = []
-    for index in 1...5 { events += [["sleep": 30], ["event": "text", "data": ["delta": .string("word\(index) ")]]] }
-    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: events + [["await": "stop"], ["event": "done", "data": ["state": "stopped"]]], lostOnResume: false) }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [["await": "stop"], ["event": "done", "data": ["state": "stopped"]]], lostOnResume: false) }
     phone.coach.edit("Stream it"); phone.coach.send()
-    var seen: [String] = []
-    for _ in 0..<80 {
-      if let text = try messages(phone).last(where: { $0.role == .coach })?.text, seen.last != text { seen.append(text) }
-      try await Task.sleep(for: .milliseconds(10))
+    try await settle { TurnFixtureProtocol.state.withLock { $0.pending == "stop" } }
+    let running = try #require(phone.driver.running)
+    var seen = [try #require(try messages(phone).last { $0.role == .coach }?.text)]
+    for index in 1...5 {
+      phone.driver.streamed += "word\(index) "
+      phone.driver.scheduleTextCommit(running)
+      let text = try #require(try messages(phone).last { $0.role == .coach }?.text)
+      #expect(text == "")
+      if seen.last != text { seen.append(text) }
     }
+    let flush = try #require(phone.driver.textFlush)
+    await flush.value
+    seen.append(try #require(try messages(phone).last { $0.role == .coach }?.text))
     #expect(seen == ["", "word1 word2 word3 word4 word5 "])
     phone.driver.requestStop()
     try await settle { phone.driver.running == nil }
-    #expect(try messages(phone).last { $0.role == .coach }?.state == .stopped)
+    let message = try #require(try messages(phone).last { $0.role == .coach })
+    #expect(message.text == "word1 word2 word3 word4 word5 " && message.state == .stopped)
   }
 
   // Deleting a conversation removes its thread, its messages and the pictures it kept on this phone.
