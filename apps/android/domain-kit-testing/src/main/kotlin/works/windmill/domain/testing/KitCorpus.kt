@@ -48,7 +48,7 @@ object KitCorpus {
         return when (spec.member("kind").str()) {
             "text" -> textSpec(spec).applyOptional(value.orNull()?.str(), at)?.let { Json.of(it) } ?: Json.Null
             "number" -> {
-                val numberSpec = NumberSpec(spec.member("path").str(), spec.member("min").num(), spec.member("max").num(),
+                val numberSpec = NumberSpec(spec.member("path").str(), spec["min"]?.num(), spec["max"]?.num(),
                     spec["integer"]?.bool() ?: false, spec["quantum"]?.orNull()?.num())
                 if (value === Json.Null) return Json.Null
                 val number = if (value is Json.Num) value.value else when (value.str()) {

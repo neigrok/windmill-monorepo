@@ -5,6 +5,7 @@ import DomainKit
 import GymDomain
 import SyncCore
 import SyncEngine
+import SyncSchema
 @testable import Windmill
 
 @MainActor final class InstallationMemoryStore: InstallationCredentialStore {
@@ -41,6 +42,17 @@ extension CoachTests {
     var record = CoachOnboardingRecord(request: CoachOnboardingIn(requestId: id, mode: "conversation", text: "Make Push A harder"))
     record.response = try JSONDecoder().decode(CoachOnboardingOut.self, from: Data(response.utf8))
     return record
+  }
+
+  @Test func installationOnboardingCarriesTheGeneratedSchemaAndKeepsUpgradeRefusal() async throws {
+    #expect(CoachCopy.refusal("client-update-required") == "Update Windmill to keep using Gym.")
+    let service = installation(store: InstallationMemoryStore())
+    for path in ["/v1/gym/coach/onboarding", "/v1/gym/coach/onboarding/fixture"] {
+      CoachTestProtocol.state.withLock { $0 = .init(reply: .http(426, #"{"code":"client-update-required","error":"Update Windmill to keep using Gym."}"#)) }
+      do { _ = try await service.request(path); Issue.record("Expected update refusal") }
+      catch let failure as AiRequestFailure { #expect(failure.status == 426) }
+      #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.schema) } == [String(SyncSchema.version)])
+    }
   }
 
   @Test(arguments: [false, true]) func installationIssueAndBindShareTheInFlightCredential(previousSignIn: Bool) async throws {

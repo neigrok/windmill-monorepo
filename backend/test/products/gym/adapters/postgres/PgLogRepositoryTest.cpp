@@ -8,11 +8,14 @@
 #include <atomic>
 #include <cstdlib>
 #include <latch>
+#include <limits>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -522,7 +525,7 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_FALSE(legacy[3].closedItself);
 }
 
-// Both counts come off ONE GROUP BY, and `greatest(weight_kg, 0)` keeps a NEGATIVE assisted load from subtracting.
+// Raw rows provide both counts; the domain reducer clamps assisted loads before arithmetic.
 TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_tonnage) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
@@ -707,7 +710,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   finished(h, h.user, "ses_pg000001", t1 + 2'000);
   // A set row inside the owner's session carrying ANOTHER account's user_id.
   sql("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, completed_at) "
-      "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 60, 5, 'working', to_timestamp($3::bigint / 1000.0))",
+      "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 900, 5, 'working', to_timestamp($3::bigint / 1000.0))",
       pqxx::params{"set_pg000009", h.other.str(), static_cast<long long>(t1 + 3'000)});
 
   LastTimeOutcome theirs = h.repo.log.lastTime(h.other, ExerciseId{"bench-press"});
@@ -723,6 +726,12 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(ours.lastTime->routineName, std::string("A private routine"));
   REQUIRE_EQ(ours.lastTime->sets.size(), static_cast<std::size_t>(1));
   CHECK_EQ(ours.lastTime->sets[0].id, SetId{"set_pg000001"});
+  const auto summaries = pageOf(h, page(t1 + 10000, 50));
+  REQUIRE_EQ(summaries.size(), std::size_t{1});
+  CHECK_EQ(summaries[0].setCount, 1);
+  CHECK_EQ(summaries[0].workingSetCount, 1);
+  CHECK_EQ(summaries[0].tonnageKg, std::optional<double>{142.5 * 8});
+  CHECK_EQ(summaries[0].topSet, (std::optional<TopWorkingSet>{TopWorkingSet{142.5, 8}}));
 }
 
 // Against real jsonb, with the blob written STRAIGHT INTO the column: only a string is a routine name.
@@ -778,7 +787,7 @@ TEST(pg_gym_a_stored_plan_set_that_cannot_be_read_opens_its_line_and_never_shift
   CHECK_EQ(stored->plan, std::optional<PlanSnapshot>(PlanSnapshot{
                              "Lower A",
                              {PlanEntry{ExerciseId{"back-squat"}, {}, 180},
-                              PlanEntry{ExerciseId{"bench-press"}, {}, std::nullopt},
+                              PlanEntry{ExerciseId{"bench-press"}, {{5, 60}, {5, 900}}, std::nullopt},
                               PlanEntry{ExerciseId{"chin-up"}, {}, std::nullopt},
                               PlanEntry{ExerciseId{"barbell-row"}, gym::fake::straight(2, 8, 60.0),
                                         std::nullopt}}}));
@@ -1634,7 +1643,7 @@ TEST(pg_gym_batch_hashes_the_same_precision_the_store_holds) {
   halfCent.rpe = 7.05;
   const auto stored = h.door.append(h.user, SessionId{"ses_batch001"}, halfCent);
   REQUIRE(stored.set.has_value());
-  CHECK_EQ(stored.set->weightKg, 1.01);
+  CHECK_EQ(stored.set->weightKg, 1.0);
   CHECK_EQ(stored.set->rpe, std::optional<double>{7.1});
   CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"},
                               {SetWrite{stored.set->id, stored.set->exercise, stored.set->weightKg, stored.set->reps,
@@ -1730,4 +1739,44 @@ TEST(pg_gym_imports_racing_into_one_hour_land_exactly_one) {
   CHECK_EQ(std::count(answers.begin(), answers.end(), BatchLogError::none), 1);
   CHECK_EQ(std::count(answers.begin(), answers.end(), BatchLogError::overlap), kRacers - 1);
   CHECK_EQ(sql("SELECT count(*) FROM gym_sessions WHERE user_id = $1::uuid", pqxx::params{h.user.str()})[0][0].as<int>(), 1);
+}
+
+
+TEST(pg_gym_session_volume_folds_canonical_raw_facts_without_numeric_rescue) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto now = h.clock.now;
+  const double maximum = std::numeric_limits<double>::max();
+  struct Example { std::vector<std::tuple<std::string, double, int>> sets; std::optional<double> expected; };
+  const std::vector<Example> examples{
+      {{{"bench-press", maximum, 1}}, maximum},
+      {{{"bench-press", maximum, 2}}, std::nullopt},
+      {{{"dumbbell-bench-press", maximum, 1}}, std::nullopt},
+      {{{"bench-press", maximum, 1}, {"bench-press", maximum, 1}}, std::nullopt},
+      {{{"bench-press", maximum, 1}, {"dumbbell-bench-press", -maximum, 500}}, maximum},
+      {{{"bench-press", .1, 3}}, .1 * 3},
+      {{{"bench-press", 1e16, 1}, {"bench-press", 1, 1}, {"bench-press", 1, 1}}, 1e16},
+      {{}, 0.0}};
+  std::map<SessionId, std::optional<double>> expected;
+  for (std::size_t i = 0; i < examples.size(); ++i) {
+    const std::string session = "ses_volume" + std::to_string(i);
+    const auto at = now - 100000 + i * 10000;
+    started(h, h.user, session, at);
+    for (std::size_t remaining = examples[i].sets.size(); remaining > 0; --remaining) {
+      const std::size_t j = remaining - 1;
+      const auto& [movement, load, reps] = examples[i].sets[j];
+      logged(h, h.user, session, lift("set_volume" + std::to_string(i) + std::to_string(j), movement,
+          load, reps, at + 1000 + examples[i].sets.size() - j));
+    }
+    finished(h, h.user, session, at + 5000);
+    expected.emplace(SessionId{session}, examples[i].expected);
+  }
+  const auto rows = pageOf(h, page(now + 1, 50));
+  REQUIRE_EQ(rows.size(), examples.size());
+  for (const auto& row : rows) CHECK_EQ(row.tonnageKg, expected.at(row.session.id));
+  HistoryQuery history; history.fromMs = now - 100000; history.untilMs = now - 90000;
+  CHECK_EQ(h.repo.log.history(h.user, history).summary.tonnageKg, std::optional<double>{maximum});
+  history.untilMs = kMaxInstantMs;
+  CHECK_FALSE(h.repo.log.history(h.user, history).summary.tonnageKg);
+  CHECK(h.failures.messages.empty());
 }

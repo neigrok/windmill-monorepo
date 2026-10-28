@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { photoLimitNote, prepareCoachPhoto } from '../../../../src/products/gym/coach/photos.js';
 import { gymApi } from '../../../../src/products/gym/gymApi.js';
+import { registry } from '../../../../src/platform/sync/schema.js';
 
 test('picture limits accept the boundary and reject encoded size or decoded edge overruns', () => {
   assert.equal(photoLimitNote({ bytes: 5 * 1024 * 1024, width: 4096, height: 4096 }), null);
@@ -34,7 +35,7 @@ test('raw upload reports browser progress, uses credentials, and abort preserves
   globalThis.XMLHttpRequest = class {
     constructor() { this.upload = {}; requests.push(this); }
     open(method, url) { this.method = method; this.url = url; }
-    setRequestHeader(name, value) { this.header = [name, value]; }
+    setRequestHeader(name, value) { (this.headers ??= {})[name] = value; }
     send(blob) { this.blob = blob; }
     abort() { this.onabort(); }
   };
@@ -51,7 +52,7 @@ test('raw upload reports browser progress, uses credentials, and abort preserves
   assert.equal(request.method, 'PUT');
   assert.ok(request.url.endsWith('/threads/thr_1/attachments/img_1'));
   assert.equal(request.withCredentials, true);
-  assert.deepEqual(request.header, ['content-type', 'image/png']);
+  assert.deepEqual(request.headers, { 'content-type': 'image/png', 'Sync-Schema': String(registry.version) });
   assert.equal(request.blob, blob);
   const controller = new AbortController();
   const canceled = gymApi.uploadCoachPhoto('thr_1', 'img_2', blob, { signal: controller.signal });

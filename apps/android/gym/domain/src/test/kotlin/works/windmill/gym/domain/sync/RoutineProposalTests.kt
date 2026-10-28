@@ -46,16 +46,15 @@ class RoutineProposalTests {
         assertEquals(20, Valid(routine.copy(entries = listOf(entry.copy(sets = List(20) { SetTarget() }))), Routine, at = testMoment).value.entries.single().sets!!.size)
     }
 
-    @Test fun targetsRefuseZerosAndGiveFirstRowRepsBeforeWeight() {
-        for (target in listOf(SetTarget(0, 600.0), SetTarget(5, 0.0), SetTarget(5, 0.001))) {
+    @Test fun targetsKeepZeroLoadAndRefuseZeroRepsOrLostPrecision() {
+        assertEquals(SetTarget(5, 0.0), SetTarget(5, 0.0).validated(Path("sets.0")))
+        for (target in listOf(SetTarget(0, 600.0), SetTarget(5, 0.001))) {
             val path = if (target.reps == 0) "reps" else "weightKg"
             invalidValue("routine.zeroTarget", "sets.0.$path", Violation.Reason.Custom("zeroTarget")) { target.validated(Path("sets.0")) }
         }
         for ((target, path, reason) in listOf(
             Triple(SetTarget(-1, 600.0), "reps", Violation.Reason.Below(1.0)),
             Triple(SetTarget(101, 600.0), "reps", Violation.Reason.Above(100.0)),
-            Triple(SetTarget(5, -501.0), "weightKg", Violation.Reason.Below(-500.0)),
-            Triple(SetTarget(5, 501.0), "weightKg", Violation.Reason.Above(500.0)),
             Triple(SetTarget(5, Double.NaN), "weightKg", Violation.Reason.NotANumber)))
             invalidValue("routine.entries.sets.$path", "sets.0.$path", reason) { target.validated(Path("sets.0")) }
         for (rest in listOf(15, 900)) assertEquals(rest, entry.copy(restSeconds = rest).validated(Path("entries.0")).restSeconds)
@@ -63,7 +62,7 @@ class RoutineProposalTests {
             invalidValue("routine.entries.restSeconds", "entries.0.restSeconds", reason) { entry.copy(restSeconds = rest).validated(Path("entries.0")) }
     }
 
-    @Test fun nestedExerciseIdentitiesCannotStoreNulAndProposalTargetsCannotStoreZero() {
+    @Test fun nestedExerciseIdentitiesRefuseNulAndProposalTargetsRefuseZeroRepsOrLostPrecision() {
         val id = Id("back\u0000squat", Exercise)
         invalidValue("routine.entries.exerciseId", "entries.0.exerciseId", Violation.Reason.Nul) {
             entry.copy(exerciseId = id).validated(Path("entries.0"))
@@ -187,7 +186,6 @@ class RoutineProposalTests {
             for ((targets, suffix, reason) in listOf(
                 Triple(EntryTargets(emptyList()), "sets", Violation.Reason.TooFew(1)),
                 Triple(EntryTargets(List(21) { SetTarget() }), "sets", Violation.Reason.TooMany(20)),
-                Triple(EntryTargets(listOf(SetTarget(5, 501.0))), "sets.0.weightKg", Violation.Reason.Above(500.0)),
                 Triple(EntryTargets(restSeconds = 14), "restSeconds", Violation.Reason.Below(15.0)),
                 Triple(EntryTargets(restSeconds = 901), "restSeconds", Violation.Reason.Above(900.0)))) {
                 val changeWithTargets = proposal.changes.single().let { if (side == "before") it.copy(before = targets) else it.copy(after = targets) }

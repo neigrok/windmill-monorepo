@@ -95,7 +95,7 @@ public enum Gym {
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
-                  "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                  "weightKg": ["quantum": 0.01, "type": "number"],
                 ],
                 "required": ["id", "exerciseId", "weightKg", "reps", "completedAt"],
                 "type": "object",
@@ -132,7 +132,7 @@ public enum Gym {
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
                   "setNumber": ["integer": true, "max": 2147483647, "min": 1, "type": "number"],
-                  "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                  "weightKg": ["quantum": 0.01, "type": "number"],
                 ],
                 "required": ["id", "exerciseId", "setNumber", "weightKg", "reps", "completedAt"],
                 "type": "object",
@@ -183,7 +183,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 9,
+    "minVersion": 10,
     "products": [
       "gym": [
         "codes": [
@@ -241,7 +241,7 @@ public enum Gym {
                     "items": [
                       "properties": [
                         "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
-                        "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                        "weightKg": ["quantum": 0.01, "type": "number"],
                       ],
                       "type": "object",
                     ],
@@ -464,11 +464,7 @@ public enum Gym {
           ],
           "sessionId": ["kind": "const", "parent": true, "ref": "session", "writer": "client"],
           "setNumber": ["kind": "serial", "serialNext": ["sessionId", "exerciseId"], "writer": "server"],
-          "weightKg": [
-            "domain": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
-            "kind": "lww",
-            "writer": "client",
-          ],
+          "weightKg": ["domain": ["quantum": 0.01, "type": "number"], "kind": "lww", "writer": "client"],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -589,7 +585,7 @@ public enum Gym {
                         "items": [
                           "properties": [
                             "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
-                            "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                            "weightKg": ["quantum": 0.01, "type": "number"],
                           ],
                           "type": "object",
                         ],
@@ -606,7 +602,7 @@ public enum Gym {
                         "items": [
                           "properties": [
                             "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
-                            "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                            "weightKg": ["quantum": 0.01, "type": "number"],
                           ],
                           "type": "object",
                         ],
@@ -761,6 +757,6 @@ public enum Gym {
         "type": "message",
       ],
     ],
-    "version": 9,
+    "version": 10,
   ]
 }

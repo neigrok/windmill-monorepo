@@ -1,4 +1,5 @@
 import Foundation
+import SyncSchema
 import Observation
 import Security
 import SyncEngine
@@ -139,6 +140,7 @@ struct KeychainInstallationError: Error {}
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else { throw URLError(.badURL) }
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
+    if path.hasPrefix("/v1/gym/") { request.setValue(String(SyncSchema.version), forHTTPHeaderField: "Sync-Schema") }
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
     if let credential { request.setValue(credential, forHTTPHeaderField: "X-Windmill-Installation") }
     if let token { request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization") }

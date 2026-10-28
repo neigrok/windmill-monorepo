@@ -3,6 +3,9 @@ import { createServer } from 'node:http';
 import { describe, it } from 'node:test';
 
 import { GymClient, GymRefusal } from '../client.js';
+import { readFileSync } from 'node:fs';
+
+const gym = JSON.parse(readFileSync(new URL('../../../packages/api-contract/sync/gym.registry.json', import.meta.url), 'utf8'));
 
 const WORKOUT = {
   id: 'ses_example', startedAt: 7, finishedAt: 9,
@@ -51,7 +54,7 @@ describe('the conversation', () => {
     strictEqual(calls[0].url, 'http://localhost:8080/v1/gym/sessions/import');
     strictEqual(calls[0].method, 'POST');
     deepStrictEqual(calls[0].headers, {
-      'content-type': 'application/json', authorization: 'Bearer secret', cookie: 'wm_session=secret',
+      'content-type': 'application/json', 'Sync-Schema': String(gym.version), authorization: 'Bearer secret', cookie: 'wm_session=secret',
     });
     strictEqual(calls[0].body, JSON.stringify(WORKOUT));
   });
@@ -66,6 +69,7 @@ describe('the conversation', () => {
     deepStrictEqual(await client.exercises(), [{ id: 'dip', name: 'Dip' }]);
     strictEqual(calls[0].url, 'http://localhost:8080/v1/gym/exercises');
     strictEqual(calls[0].method, 'GET');
+    strictEqual(calls[0].headers['Sync-Schema'], String(gym.version));
     strictEqual(calls[0].body, undefined);
   });
 
@@ -79,7 +83,7 @@ describe('the conversation', () => {
 
 describe('the retry rule', () => {
   it('treats all 4xx refusals as terminal and keeps the machine code and sentence', async () => {
-    for (const status of [400, 401, 403, 404, 409, 429]) {
+    for (const status of [400, 401, 403, 404, 409, 426, 429]) {
       const { client, calls, sleeps } = clientOver([reply(status, { error: 'no such exercise', code: 'unknown-exercise' })]);
       await rejects(client.importSession(WORKOUT), (error) => {
         strictEqual(error instanceof GymRefusal, true);

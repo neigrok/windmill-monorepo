@@ -20,7 +20,7 @@ object Record {
         val untrained = progress.sessions.isEmpty() && record.recentDays.isEmpty()
         val tiles = buildList {
             best?.let { point ->
-                add(Tile("Best e1RM", Readout.estimatedWeight(point.fact.estimate!!.e1rm),
+                add(Tile("Best e1RM", Readout.estimatedWeight(requireNotNull(point.fact.estimate!!.e1rm)),
                     "kg · ${Readout.briefDay(point.startedAt, now)}", true))
             }
             heaviest?.takeIf { it.weightKg != 0.0 }?.let {
@@ -37,7 +37,7 @@ object Record {
             }, tiles,
             progress.earlierRecords.asReversed().map { point ->
                 val fact = point.fact.estimate!!
-                Best(Readout.effort(fact.weightKg, fact.reps), Readout.estimate(fact.e1rm),
+                Best(Readout.effort(fact.weightKg, fact.reps), Readout.estimate(requireNotNull(fact.e1rm)),
                     Readout.briefDay(point.startedAt, now))
             }, record.recentDays.map { day ->
                 Day(Readout.briefDay(day.startedAtMs, now), day.sets.joinToString(" · ") { set ->
@@ -45,7 +45,7 @@ object Record {
                 })
             },
             if (untrained) "Nothing logged for this movement yet. The first set you log lands here." else null,
-            if (!untrained && best == null && (heaviest?.weightKg ?: 0.0) > 0)
+            if (!untrained && progress.estimatesComplete && best == null && (heaviest?.weightKg ?: 0.0) > 0)
                 "No eligible estimate yet. Estimates use 1–10 reps at effort 7 or higher, or unrated sets." else null,
         )
     }

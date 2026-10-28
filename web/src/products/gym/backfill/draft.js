@@ -38,9 +38,8 @@ function lastTimeOf(reply) {
   return { at: reply.session.startedAt, sets: (reply.sets ?? []).map(({ weightKg, reps }) => ({ weightKg, reps })) };
 }
 
-// Zero is no named load, the same as an absent one.
 function namedLoad(slot) {
-  return slot.weightKg == null || slot.weightKg === 0 ? null : slot.weightKg;
+  return slot.weightKg ?? null;
 }
 
 // The Nth set: the target's own value, then last time's Nth working set, then last time's last set.
@@ -196,7 +195,8 @@ export function typedValue(text, field) {
 export function steppedValue(value, field, direction, stepKg) {
   if (field === 'reps') return Math.min(LOGGER_REPS_MAX, Math.max(LOGGER_REPS_MIN, (value ?? 0) + direction));
   const step = stepKg ?? DEFAULT_STEP_KG;
-  return Math.min(SetRules.weightKg.max, Math.max(SetRules.weightKg.min, round((value ?? 0) + direction * step)));
+  const next = round((value ?? 0) + direction * step);
+  return Number.isFinite(next) ? next : value;
 }
 
 function setCountOf(draft) {

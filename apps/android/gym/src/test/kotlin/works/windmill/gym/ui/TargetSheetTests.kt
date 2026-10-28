@@ -148,8 +148,8 @@ class TargetSheetTests {
             compose.onNodeWithContentDescription("Reps target").performTextReplacement("5")
             compose.onNodeWithContentDescription("Weight target").performTextReplacement("82.5.0")
             compose.onNodeWithText(TargetEntry.onePoint).assertIsDisplayed()
-            compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
-            compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("1e999")
+            compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
             compose.onNodeWithContentDescription("Weight target").performTextReplacement("eighty")
             compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
 

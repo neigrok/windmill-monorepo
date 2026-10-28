@@ -41,8 +41,13 @@ class WindmillApi(
     private val credential: () -> String?,
     client: OkHttpClient = OkHttpClient(),
     @PublishedApi internal val telemetry: Telemetry = Telemetry.None,
+    headers: Map<String, String> = emptyMap(),
 ) {
     private val transport = RequestDiagnostics.attachTo(client)
+    private val requestHeaders = headers.toMap()
+
+    fun withHeaders(headers: Map<String, String>): WindmillApi =
+        WindmillApi(baseUrl, credential, transport, telemetry, requestHeaders + headers)
 
     suspend inline fun <reified Reply> get(path: String, operation: String = "http_request"): Reply = send("GET", path, operation = operation)
 
@@ -130,7 +135,8 @@ class WindmillApi(
         read: (Response) -> Reply,
     ): Reply {
         val url = baseUrl.resolve(path) ?: throw WindmillApiException.Malformed
-        val request = Request.Builder().url(url).header("Accept", accept).tag(RequestDiagnostics::class.java, diagnostics)
+        val request = Request.Builder().url(url).header("Accept", accept)
+            .apply { requestHeaders.forEach { (name, value) -> header(name, value) } }.tag(RequestDiagnostics::class.java, diagnostics)
             .apply { credential()?.let { header("Authorization", "Bearer $it") } }
             .method(method, body ?: if (method == "POST" || method == "PUT" || method == "PATCH") ByteArray(0).toRequestBody() else null)
             .build()

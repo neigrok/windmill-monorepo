@@ -10,6 +10,8 @@ import time
 import unittest
 import uuid
 
+from gym_http import gym_headers
+
 
 class HttpDisconnectTest(unittest.TestCase):
     def test_client_reset_during_large_reply_keeps_server_serving(self):
@@ -57,7 +59,7 @@ class HttpDisconnectTest(unittest.TestCase):
                         self.assertLess(len(body), length)
                         client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
 
-                    connection.request("GET", "/v1/gym/preferences", headers={"Authorization": f"Bearer {token}"})
+                    connection.request("GET", "/v1/gym/preferences", headers={"Authorization": f"Bearer {token}", **gym_headers("/v1/gym/preferences")})
                     response = connection.getresponse()
                     self.assertEqual(response.status, 200)
                     self.assertEqual(json.loads(response.read()), {

@@ -28,13 +28,23 @@ data class Session(override val id: Id<Session>, val startedAt: Instant, val fin
     }
 }
 
+class VolumePart(val id: String, weightKg: Double?, reps: Int?, loadCount: Int?) {
+    val kg: Double? = run {
+        if (weightKg == null || !weightKg.isFinite() || reps == null || reps <= 0 || loadCount == null || loadCount <= 0) return@run null
+        val lifted = maxOf(weightKg, 0.0) * reps
+        if (!lifted.isFinite()) return@run null
+        val volume = lifted * loadCount
+        volume.takeIf { it.isFinite() }
+    }
+}
+
 data class TrainingSet(override val id: Id<TrainingSet>, val sessionId: Id<Session>, val exerciseId: Id<Exercise>,
     val weightKg: Double, val reps: Int, val rpe: Double? = null, val note: String = "",
     val completedAt: Instant, val setNumber: Int? = null) : Writable<TrainingSet> {
     override fun fields(): Map<String, Json> = mapOf("sessionId" to sessionId.json, "exerciseId" to exerciseId.json, "weightKg" to Json.of(weightKg),
         "reps" to Json.of(reps), "rpe" to (rpe?.let(Json::of) ?: Json.Null), "note" to Json.of(note), "completedAt" to Json.of(completedAt.ms))
-    val volumeKg: Double get() = maxOf(0.0, weightKg) * reps
-    fun volumeFor(exercise: Exercise?): Double = volumeKg * (exercise?.loadCount ?: 1)
+    val volumeKg: Double? get() = VolumePart(id.json.jcs, weightKg, reps, 1).kg
+    fun volumeFor(exercise: Exercise?): Double? = VolumePart(id.json.jcs, weightKg, reps, exercise?.loadCount).kg
     val e1rm: Double? get() = GymEstimate.value(weightKg, reps, rpe)
     companion object : WritableType<TrainingSet>, RemovableType<TrainingSet> {
         override val type = Gym.Types.set
@@ -53,7 +63,7 @@ data class TrainingSet(override val id: Id<TrainingSet>, val sessionId: Id<Sessi
 }
 
 object SetRules {
-    val weightKg = NumberSpec("set.weightKg", -500.0, 500.0, quantum = 0.01)
+    val weightKg = NumberSpec("set.weightKg", quantum = 0.01)
     val reps = NumberSpec("set.reps", 1.0, 500.0, integer = true)
     val rpe = NumberSpec("set.rpe", 1.0, 10.0, quantum = 0.1)
     val note = TextSpec("set.note", MeasureUnit.bytes, 0, 4000, trim = false, nfc = false)
@@ -112,6 +122,6 @@ data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>,
         if (sessions.none { it.id == session }) return emptyList()
         return sets.filter { it.sessionId == session }.sortedWith(compareBy({ it.completedAt }, { it.id }))
     }
-    fun volumeKg(session: Id<Session>): Double = sets(session).sumOf { it.volumeFor(catalogue.find(it.exerciseId)) }
-    fun topE1rm(session: Id<Session>): Double? = sets(session).mapNotNull { it.e1rm }.maxOrNull()
+    fun volumeKg(session: Id<Session>): Double? = GymVolume.of(sets(session), catalogue)
+    fun topE1rm(session: Id<Session>): Double? = GymEstimate.top(sets(session))
 }

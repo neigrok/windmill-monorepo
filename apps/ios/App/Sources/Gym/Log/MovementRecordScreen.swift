@@ -46,9 +46,9 @@ struct MovementRecordScreen: View {
         if progress.records.count > 1 {
           Section("Earlier records") {
             ForEach(progress.records.reversed().filter { $0.id != progress.best?.id }, id: \.id) { record in
-              if let fact = record.fact.estimate {
+              if let fact = record.fact.estimate, let value = fact.e1rm {
                 VStack(alignment: .leading, spacing: RoomSpace.small) {
-                  Text("\(Readout.effort(weightKg: fact.weightKg, reps: fact.reps)) · \(Readout.estimate(fact.e1rm))").font(.body.monospaced())
+                  Text("\(Readout.effort(weightKg: fact.weightKg, reps: fact.reps)) · \(Readout.estimate(value))").font(.body.monospaced())
                   Text(dates.day(record.startedAt)).font(.footnote).foregroundStyle(GymPalette.inkDim)
                 }.foregroundStyle(GymPalette.ink).accessibilityElement(children: .combine).listRowSeparator(.hidden)
               }
@@ -88,13 +88,15 @@ struct MovementRecordScreen: View {
                         bestID: progress.best?.id.description, selected: selected?.description)
             .accessibilityIdentifier("gym-record-chart")
         } else {
-          if let best = display.best, best.id != progress.best?.id, let estimate = best.fact.estimate {
-            Text("Best in 12 weeks: \(Readout.estimate(estimate.e1rm)), from \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps)).")
+          if let best = display.best, best.id != progress.best?.id, let estimate = best.fact.estimate, let value = estimate.e1rm {
+            Text("Best in 12 weeks: \(Readout.estimate(value)), from \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps)).")
               .font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.ink)
           }
           Text(caption).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim)
         }
-        if display.estimates.isEmpty { Text("No eligible estimate in this window.").font(.subheadline).foregroundStyle(GymPalette.inkDim) }
+        if display.isComplete && display.estimatesComplete && display.estimates.isEmpty {
+          Text("No eligible estimate in this window.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
+        }
       }
     } header: {
       HStack {
@@ -107,7 +109,7 @@ struct MovementRecordScreen: View {
 
   // The standing records, each once: the best estimate and the heaviest load lifted.
   func facts(_ progress: MovementProgress) -> [FactTiles.Fact] {
-    [progress.best?.fact.estimate.map { FactTiles.Fact(value: "\(Readout.estimatedWeight($0.e1rm)) kg", label: "Best e1RM", identifier: "gym-record-best") },
+    [progress.best?.fact.estimate?.e1rm.map { FactTiles.Fact(value: "\(Readout.estimatedWeight($0)) kg", label: "Best e1RM", identifier: "gym-record-best") },
      progress.heaviest.flatMap { $0.fact.heaviest.weightKg == 0 ? nil : $0.fact.heaviest }
        .map { FactTiles.Fact(value: "\(Readout.weight($0.weightKg)) kg", label: "Heaviest", identifier: "gym-record-heaviest") }]
       .compactMap { $0 }

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -105,6 +106,9 @@ TEST(set_construction_accepts_the_full_legal_range) {
   CHECK_EQ(set(-20.0, 8).weightKg, -20.0);                // band-assisted work is NEGATIVE and legal
   CHECK_EQ(set(-500.0, 8).weightKg, -500.0);
   CHECK_EQ(set(500.0, 8).weightKg, 500.0);
+  CHECK_EQ(set(500.5, 8).weightKg, 500.5);
+  CHECK_EQ(set(-500.5, 8).weightKg, -500.5);
+  CHECK_EQ(set(std::numeric_limits<double>::max(), 1).weightKg, std::numeric_limits<double>::max());
   CHECK_EQ(set(80.0, 1).reps, 1);
   CHECK_EQ(set(80.0, 500).reps, 500);
   CHECK_EQ(set(80.0, 8, SetKind::working, 8.5).rpe, std::optional<double>(8.5));
@@ -117,8 +121,8 @@ TEST(set_construction_accepts_the_full_legal_range) {
 TEST(set_construction_rejects_out_of_range_fields) {
   CHECK(rejects([] { set(80.0, 0); }));                   // reps 0 is not a set that happened
   CHECK(rejects([] { set(80.0, 501); }));
-  CHECK(rejects([] { set(500.5, 8); }));
-  CHECK(rejects([] { set(-500.5, 8); }));
+  CHECK(rejects([] { set(std::numeric_limits<double>::infinity(), 8); }));
+  CHECK(rejects([] { set(std::numeric_limits<double>::quiet_NaN(), 8); }));
   CHECK(rejects([] { set(80.0, 8, SetKind::working, 0.5); }));
   CHECK(rejects([] { set(80.0, 8, SetKind::working, 10.5); }));
   CHECK(rejects([] { set(80.0, 8, SetKind::working, std::nullopt, std::string(4001, 'x')); }));

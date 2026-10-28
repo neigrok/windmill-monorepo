@@ -153,43 +153,37 @@ must be public.
 
 ## Coordinated client cutoff
 
-The repository registry is schema 9 / minimum 9 with explicit gym `other` support. Its production
-cutoff remains held until coordinated Android and iOS replacement artifacts and their upgrade
-destinations are prepared and verified. The guard reads the current live minimum and refuses
-an automatic compatibility change; a source merge does not authorize the cutoff.
+The repository registry is schema 10 / minimum 10 with explicit gym `other`, finite normalized loads
+without a fixed kg cap, and nullable derived metrics. Production's last verified registry is schema 8 /
+minimum 4; source and web versions do not prove the live backend version. Production cutoff remains
+held until coordinated Android and iOS replacement artifacts and their upgrade destinations are
+verified. A source merge does not authorize a minimum change.
 
-1. Ship this guard while the minimum remains 4. Keep that schema 8 / minimum 4 image available for
-   maintenance during preparation. New backend images may build and publish, but their automatic
-   deployment refuses if their minimum differs from the live server.
-2. Prepare the schema 9 backend and compatibility readers on every surface, preserving old stored
-   equipment/count values and pending writes. Web deploys independently and automatically; early
-   web or iOS code must not originate Other against schema 8. New selectors require their own design
-   approval and an explicit write/distribution gate. Read-only handling must truthfully retain and
-   display Other after cutover. Android's three-choice design does not approve iOS or web pickers.
-3. Verify the signed Android update over public 0.12.1 (schema 6), including retained local work,
-   and verify its delivery gate against the schema 8 server: new work remains ready until a fresh
-   hello meets the app's registry minimum. Upload the exact iOS version/build through
-   the manual `ios-release.yml` workflow; check its TestFlight processing and beta readiness.
-   Separately verify intended tester distribution availability; the status artifact proves neither
-   tester access nor installation. Verify the replacement client against the candidate backend and
-   publish the verified Android release with the delivery gate. Verify both upgrade destinations
-   provide the prepared replacements before the cutoff. The new Android app can retain edits on
-   the schema 8 server without sending unsupported intents; iOS cannot originate the new category.
+1. Keep a schema 8 / minimum 4 maintenance image available during preparation. Automatic deployment
+   refuses a candidate minimum that differs from the live server.
+2. Prepare schema 10 readers on every surface. Preserve stored equipment/count values, exact zero,
+   absent targets and pending writes. Web deploys independently. New selectors require their own
+   design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
+   fresh hello advertises a server schema at least the client's generated registry minimum.
+3. Verify the signed Android update over the public replacement floor, including retained local work
+   and delivery against the schema 8 server. Upload the exact iOS version/build through the manual
+   `ios-release.yml` workflow and check processing, beta readiness and intended tester availability.
+   Verify both native replacements against the schema 10 candidate, publish the Android release,
+   and verify both upgrade destinations before cutoff. TestFlight status alone proves no tester access.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
-   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Dispatch **Deploy to VPS** from `main` with
-   that `image_tag`, `expected_old_minimum=4`, `expected_new_minimum=9` and `expected_image_id`.
-   Both minimum fields must match the current live response and the candidate manifest exactly;
-   both raises and lowers refuse without this acknowledgement. An interrupted attempt must read
-   the live minimum again before retrying. A genuinely fresh host uses old minimum 0; a missing
-   `.env` beside an existing deployment is not treated as bootstrap.
-5. Verify the runtime receipt: schema 9 advertises 9 / minimum 9, while schemas 6, 7 and 8 return
-   `426 upgrade-required` at all four sync doors. Confirm the new Android app's queued work delivers
-   after its fresh schema 9 hello and both upgrade destinations still resolve correctly. Cached web and older native
-   clients must retain local work and show their existing update-required surface.
-6. Keep an Other-capable schema 9 / minimum 9 maintenance image available before accepting Other
-   writes. After Other exists, rollback only to that compatible image; do not reopen schema 6/7/8 or
-   run a six-value parser/CHECK. Ordinary backend automation resumes when candidate and live
-   minimum match. The image-ID pin covers both the server and the migration job.
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch
+   **Deploy to VPS** from `main` with that `image_tag`, its exact `expected_old_minimum`,
+   `expected_new_minimum=10` and `expected_image_id`. Both raises and lowers require exact
+   acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
+5. Verify schema 10 / minimum 10 at hello and schema 9 or older `426 upgrade-required` refusals at
+   hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
+   header and return `426 client-update-required` for missing/old carriers before JSON, image or
+   SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
+   web and old native clients retain local work and show their existing update-required surface.
+6. Keep a schema 10 / minimum 10 maintenance image available before accepting the new load range
+   or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
+   column caps. Automation resumes when candidate and live minimum match. Server and migration use
+   the same pinned image ID.
 
 The guard queries anonymous hello with a high schema header to read live metadata even during a
 manually acknowledged downgrade. This is a metadata read, not a client capability claim. It neither

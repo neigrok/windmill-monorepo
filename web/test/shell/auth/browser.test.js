@@ -276,8 +276,11 @@ test('Chromium: closure names the confirmed account and a mismatch keeps its pen
     assert.equal(state.signedIn, true);
     assert.equal(page.url(), `${origin}/auth-test#/settings`);
     const retained = await page.evaluate(() => engine.device.activeReplica.toJSON());
-    // The bounded flush can schedule another send without changing the pending work.
+    // A fresh hello samples the clock; the bounded flush can schedule another send.
     delete replica.meta.pushRetryAt; delete retained.meta.pushRetryAt;
+    delete replica.meta.clockReading; delete retained.meta.clockReading;
+    assert.ok(retained.meta.offsetSamples.every(({ offset, rtt }) => Number.isFinite(offset) && Number.isFinite(rtt)));
+    delete replica.meta.offsetSamples; delete retained.meta.offsetSamples;
     assert.deepEqual(retained, replica);
     assert.equal(await page.evaluate(() => engine.device.meta.closingAccount), undefined);
     assert.equal(await page.evaluate(() => engine.signingOut), false);

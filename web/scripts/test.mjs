@@ -14,9 +14,15 @@ function discover(directory) {
 }
 discover(process.argv[2] ?? 'test');
 const performanceFiles = files.filter((file) => /\.perf\.test\.(js|mjs)$/.test(file)).sort();
-const ordinaryFiles = files.filter((file) => !performanceFiles.includes(file)).sort();
+const runtimeFuzzFiles = files.filter((file) => file.endsWith('platform/sync/fuzz/runtime.test.js'));
+const ordinaryFiles = files.filter((file) => !performanceFiles.includes(file) && !runtimeFuzzFiles.includes(file)).sort();
 if (ordinaryFiles.length) {
   const runner = run({ files: ordinaryFiles, concurrency: true, timeout: 120000 });
+  runner.on('test:fail', () => { process.exitCode = 1; });
+  for await (const chunk of runner.compose(spec())) process.stdout.write(chunk);
+}
+if (runtimeFuzzFiles.length) {
+  const runner = run({ files: runtimeFuzzFiles, concurrency: false, timeout: 300000 });
   runner.on('test:fail', () => { process.exitCode = 1; });
   for await (const chunk of runner.compose(spec())) process.stdout.write(chunk);
 }

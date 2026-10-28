@@ -35,6 +35,7 @@ package actor Sender {
   var batchLimit: Int?
   var kicksSeen: UInt64 = 0
   var conflicts = 0
+  var helloRetryAt: Int64?
   // §7.10 sign-out step 1: the sign-out that holds its account's replica, from the end of the bounded flush until it
   // finishes, is cancelled, or another sign-out takes the hold. Nothing more of the account is numbered, so the count the
   // confirmation states stays true; a push already in flight is abandoned, and whatever answer it gets is still recorded.
@@ -101,6 +102,7 @@ package actor Sender {
       wait.kick(at: mono)
     }
     guard !core.upgradeRequired else { return .stopped }
+    if let retryAt = helloRetryAt, mono < retryAt { return .wait(ms: retryAt - mono) }
     if let left = wait.pauseLeft(at: mono, leaving: leaving) { return .wait(ms: left) }
     let before = wait
     defer { if leaving { wait.restoreBackoff(from: before) } }
@@ -111,7 +113,36 @@ package actor Sender {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
       guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
       guard let token = core.tokens.token(for: account) else { return try core.pauseAuth(seat.replica, sentUnder: nil) ? .paused : .again }
-      guard let request = try core.write({ store, instance in try store.number(limit: batchLimit, at: instance.deviceNow) }) else {
+      let queued = try core.storageRead { tx in
+        try tx.replica(seat.replica)?.outbox.contains { $0.state == .ready || $0.state == .sent } ?? false
+      }
+      guard queued else { return .idle }
+      let network = core.connectivityGeneration.withLock { $0 }
+      let lifecycle = core.lifecycleGeneration.withLock { $0 }
+      let hello = await core.hello(transport: transport, token: token)
+      guard !Task.isCancelled, core.connectivity.isOnline, let current = try core.seat(), current.replica == seat.replica,
+            current.account == account, current.state == .bound,
+            core.tokens.token(for: account) == token, signingOut?.account != account,
+            core.connectivityGeneration.withLock({ $0 }) == network else { return .idle }
+      if current.serverEpoch != seat.serverEpoch { return .again }
+      if core.lifecycleGeneration.withLock({ $0 }) != lifecycle { return .again }
+      if current.authPaused { return .paused }
+      guard !core.upgradeRequired else { return .stopped }
+      guard case .answered(.ok(let ready)) = hello, ready.isServed(to: account), ready.schema >= core.registry.minVersion else {
+        let delay = nextBackoff(floorMs: Constants.backoffBaseMs)
+        helloRetryAt = core.clock.wall.reading().mono + delay
+        return .wait(ms: delay)
+      }
+      helloRetryAt = nil
+      guard let request = try core.write({ store, instance in
+        guard core.connectivity.isOnline, core.tokens.token(for: account) == token,
+              core.connectivityGeneration.withLock({ $0 }) == network,
+              core.lifecycleGeneration.withLock({ $0 }) == lifecycle else {
+          throw CancellationError()
+        }
+        return try store.number(limit: batchLimit, at: instance.deviceNow, replica: seat.replica, account: account, epoch: seat.serverEpoch)
+      }) else {
+        if let current = try core.seat(), current.replica == seat.replica, current.serverEpoch != seat.serverEpoch { return .again }
         return .idle
       }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }

@@ -36,7 +36,7 @@ export function tilesOf(record, now) {
     });
   }
   if (record.heaviest) {
-    // Zero is the absence of a load, so the heaviest bodyweight movement is a number of REPS.
+    // At zero added load, the bodyweight movement's comparison reads its reps.
     const { weightKg, reps } = record.heaviest;
     tiles.push(weightKg === 0
       ? { label: 'heaviest', value: String(reps), sub: 'reps · bodyweight', standing: false }

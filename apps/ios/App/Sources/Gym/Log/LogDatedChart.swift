@@ -42,13 +42,13 @@ struct LogDatedChart: View {
     self.points = points; self.from = from; self.through = through; self.series = series
     self.dates = dates; self.caption = caption; self.bestID = bestID; self.selected = selected
   }
-  var ordered: [LogPlotPoint] { points.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
+  var ordered: [LogPlotPoint] { points.filter { $0.value.isFinite }.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
   // The ringed point: the one a finger inspects, else the one the chart opened at.
   var marked: String? { inspected ?? selected }
   var axis: ClosedRange<Double> { Self.axis(points.map(\.value), step: series.axisStep) }
   var low: Double { axis.lowerBound }
   var high: Double { axis.upperBound }
-  var ticks: [Double] { [high, (high + low) / 2, low] }
+  var ticks: [Double] { [high, Self.middle(low, high), low] }
   var gaps: [(LogPlotPoint, LogPlotPoint)] {
     zip(ordered, ordered.dropFirst()).filter { LogPresentation.day($0.date).days(until: LogPresentation.day($1.date)) > series.gapDays }
   }
@@ -166,16 +166,31 @@ struct LogDatedChart: View {
       .onChange(of: points) { _, _ in clearing?.cancel(); inspected = nil }
   }
 
-  // The plot's bounds on the series' own step, an even number of steps apart, so the axis's three labels read 110 or
-  // 82.4, never 109.62 or 82.45.
+  // Bounds follow the series' step while that step is representable at the logged magnitude.
   static func axis(_ values: [Double], step: Double) -> ClosedRange<Double> {
-    guard let lowest = values.min(), let highest = values.max() else { return 0...(step * 2) }
-    let reach = max(step, 1)
-    let middle = (lowest + highest) / 2
-    let bottom = ((min(lowest, middle - reach) / step + 1e-9).rounded(.down) * step)
-    var top = ((max(highest, middle + reach) / step - 1e-9).rounded(.up) * step)
-    if Int(((top - bottom) / step).rounded()) % 2 == 1 { top += step }
+    let finite = values.filter(\.isFinite)
+    guard let lowest = finite.min(), let highest = finite.max() else { return 0...(step * 2) }
+    let reach = max(step, 1), middle = middle(lowest, highest)
+    let lower = min(lowest, middle - reach), upper = max(highest, middle + reach)
+    let roundedBottom = (lower / step + 1e-9).rounded(.down) * step
+    let roundedTop = (upper / step - 1e-9).rounded(.up) * step
+    var bottom = roundedBottom.isFinite ? min(lowest, roundedBottom) : lower
+    var top = roundedTop.isFinite ? max(highest, roundedTop) : upper
+    let count = ((top - bottom) / step).rounded()
+    if count.isFinite && count.truncatingRemainder(dividingBy: 2) == 1 && (top + step).isFinite { top += step }
+    if Self.middle(bottom, top) <= bottom || Self.middle(bottom, top) >= top {
+      let below = bottom.nextDown, above = top.nextUp
+      if below.isFinite { bottom = below }
+      if above.isFinite { top = above }
+      if !below.isFinite { top = top.nextUp }
+      if !above.isFinite { bottom = bottom.nextDown }
+    }
     return bottom...top
+  }
+
+  static func middle(_ low: Double, _ high: Double) -> Double {
+    let sum = low + high
+    return sum.isFinite ? sum / 2 : low / 2 + high / 2
   }
 
   func dateInterval(in viewport: CGRect, contentWidth: CGFloat) -> ClosedRange<Date> {
@@ -192,7 +207,11 @@ struct LogDatedChart: View {
     return 6 + min(1, max(0, date.timeIntervalSince(from) / span)) * max(0, width - 12)
   }
   func y(_ value: Double, height: CGFloat) -> CGFloat {
-    6 + (high - value) / max(series.axisStep, high - low) * max(0, height - 12)
+    let span = high - low
+    let scale = max(abs(low), abs(high))
+    let fraction = span.isFinite ? (high - value) / max(series.axisStep, span)
+      : (high / scale - value / scale) / (high / scale - low / scale)
+    return 6 + min(1, max(0, fraction)) * max(0, height - 12)
   }
   func position(_ point: LogPlotPoint, size: CGSize) -> CGPoint {
     CGPoint(x: x(point.date, width: size.width), y: y(point.value, height: size.height))
@@ -245,9 +264,9 @@ struct ChartWindowPicker: UIViewRepresentable {
 extension MovementProgress {
   func logPlotPoints(_ dates: GymDate) -> [LogPlotPoint] {
     estimates.compactMap { point in
-      guard let fact = point.fact.estimate else { return nil }
-      return LogPlotPoint(id: point.id.description, date: point.startedAt.date, value: fact.e1rm,
-        label: "\(Readout.estimatedWeight(fact.e1rm)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
+      guard let fact = point.fact.estimate, let value = fact.e1rm else { return nil }
+      return LogPlotPoint(id: point.id.description, date: point.startedAt.date, value: value,
+        label: "\(Readout.estimatedWeight(value)) kg est · \(dates.day(point.startedAt)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
     }
   }
 }

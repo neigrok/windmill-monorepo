@@ -104,13 +104,9 @@ export const SHEET_CHROME = [EVERY_SET, 'Sets', 'Reps', 'Weight', SET_BY_SET, FI
 // logger's 1–99 sentence is logger/entry.js's. Each is drawn under the row that carries the fault.
 export const ONE_DECIMAL = 'One decimal point only.';
 export const NOT_A_NUMBER = 'That is not a number yet.';
-export const OVER_MAX_LOAD = 'Over 500 kg — check the number.';
 export const REPS_BAND = 'Whole reps, 1 to 100.';
 export const SETS_BAND = 'Sets, 1 to 20.';
 export const ZERO_TARGET = 'A zero target is no target — clear the field instead.';
-
-// The store's ceiling on a load, the same number the live logger refuses past.
-export const MAX_LOAD_KG = 500;
 
 const BLANK_ROW = { reps: '', weight: '' };
 
@@ -178,8 +174,8 @@ export function refusalOf(field, text) {
   if ((normalised.match(/\./g) || []).length > 1) return ONE_DECIMAL;
   const value = Number(normalised);
   if (normalised === '-' || !Number.isFinite(value)) return NOT_A_NUMBER;
+  if (field === 'weight') return value !== 0 && round(value) === 0 ? NOT_A_NUMBER : null;
   if (value === 0) return ZERO_TARGET;
-  if (field === 'weight') return Math.abs(value) > MAX_LOAD_KG ? OVER_MAX_LOAD : null;
   if (field === 'reps') {
     return Number.isInteger(value) && value >= ENTRY_REPS_MIN && value <= ENTRY_REPS_MAX ? null : REPS_BAND;
   }

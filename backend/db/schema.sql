@@ -1222,8 +1222,8 @@ create table if not exists gym_routine_entries (
   primary key (routine_id, position)
 );
 -- One row per set of a line, in lifting order: the scheme. Both value columns mean something by
--- being null and never by a zero — no reps is `max`, no weight is last time's set of the same
--- number. Written in the same transaction as the line, and bounded by it: at most 50 lines of at
+-- being null — no reps is `max`, no weight is last time's set of the same number. An explicit
+-- zero load is a target. Written in the same transaction as the line, and bounded by it: at most 50 lines of at
 -- most 20 sets per routine. The key cascades from the line, so a replace that lays the run down
 -- again takes the old scheme with it.
 create table if not exists gym_routine_entry_sets (
@@ -1231,7 +1231,9 @@ create table if not exists gym_routine_entry_sets (
   position   int  not null,
   set_index  int  not null check (set_index between 1 and 20),
   reps       int  check (reps between 1 and 100),
-  weight_kg  numeric(6,2) check (weight_kg between -500 and 500),
+  weight_kg  numeric constraint gym_routine_entry_sets_load_finite_cent
+    check (weight_kg not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+           and weight_kg = trunc(weight_kg, 2)),
   primary key (routine_id, position, set_index),
   foreign key (routine_id, position) references gym_routine_entries (routine_id, position)
     on delete cascade
@@ -1397,7 +1399,9 @@ create table if not exists gym_sets (
   user_id      uuid not null references users(id) on delete cascade,
   exercise_id  text not null references gym_exercises(id) deferrable initially deferred,
   set_number   int  not null check (set_number >= 1),
-  weight_kg    numeric(6,2) not null check (weight_kg between -500 and 500),
+  weight_kg    numeric not null constraint gym_sets_load_finite_cent
+    check (weight_kg not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+           and weight_kg = trunc(weight_kg, 2)),
   reps         int  not null check (reps between 1 and 500),
   kind         text not null default 'working' check (kind in
                  ('warmup','working','drop','failure')),
@@ -1419,7 +1423,7 @@ create table if not exists gym_set_revisions (
   user_id      uuid not null references users(id) on delete cascade,
   exercise_id  text not null references gym_exercises(id),
   set_number   int  not null,
-  weight_kg    numeric(6,2) not null,
+  weight_kg    numeric not null,
   reps         int  not null,
   kind         text not null,
   rpe          numeric(3,1),
@@ -1432,6 +1436,27 @@ create table if not exists gym_set_revisions (
 -- unwritable.
 create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
 create index if not exists gym_set_revisions_user on gym_set_revisions (user_id);
+
+do $$
+declare
+  relation text;
+  check_name text;
+begin
+  foreach relation in array array['gym_routine_entry_sets', 'gym_sets', 'gym_set_revisions'] loop
+    execute format('alter table %I drop constraint if exists %I', relation, relation || '_weight_kg_check');
+    if exists (select 1 from pg_attribute where attrelid = relation::regclass
+               and attname = 'weight_kg' and atttypmod <> -1) then
+      execute format('alter table %I alter column weight_kg type numeric', relation);
+    end if;
+    if relation = 'gym_set_revisions' then continue; end if;
+    check_name := relation || '_load_finite_cent';
+    if not exists (select 1 from pg_constraint where conrelid = relation::regclass and conname = check_name) then
+      execute format('alter table %I add constraint %I check (weight_kg not in '
+                     || '(''NaN''::numeric, ''Infinity''::numeric, ''-Infinity''::numeric) '
+                     || 'and weight_kg = trunc(weight_kg, 2))', relation, check_name);
+    end if;
+  end loop;
+end $$;
 
 -- The coach share. session_id is the primary key, so a repeated mint is idempotent and hands back
 -- the same link. The token is minted by the server, never accepted from a client, and stored in the

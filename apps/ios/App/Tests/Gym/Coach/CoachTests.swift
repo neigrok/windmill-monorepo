@@ -64,6 +64,36 @@ import SyncTesting
     }
   }
 
+  @Test func retiredServerConversationRequestsNeverReachTransport() async throws {
+    let (_, rest, _) = try await authed(.stalled)
+    for path in ["/v1/gym/ask", "/v1/gym/threads/fixture/attachments/fixture"] {
+      await #expect(throws: AppFailure.self) { _ = try await rest.coachRequest(path, method: "POST") }
+    }
+    #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty } && rest.tasks.isEmpty)
+  }
+
+  @Test func localCoachSourcesOmitOnlyUnavailableVolume() throws {
+    let (h, gym) = fixture()
+    #expect(gym.run(CreateExercise(Exercise(id: ID("source-other"), name: "Other", pattern: "press", equipment: "other", stepKg: 2.5)))?.receipt != nil)
+    let cases: [(Double, Double?)] = [(80, 160), (0, 0), (-10, 0), (Double.greatestFiniteMagnitude, nil)]
+    for (index, item) in cases.enumerated() {
+      let id = ID<Session>(RecordID("source-" + String(index)))
+      let start = Instant(ms: 1_790_423_900_000 - Int64(index) * 1_000)
+      #expect(gym.run(ImportSession(id: id, startedAt: start, finishedAt: Instant(ms: start.ms + 100), sets: [
+        ImportedSet(id: ID(RecordID("source-set-" + String(index))), exerciseId: ID("source-other"), weightKg: item.0,
+                    reps: 2, completedAt: Instant(ms: start.ms + 1)),
+      ]))?.receipt != nil)
+      h.sync(); gym.refresh()
+      let session = try #require(gym.sessions.first { $0.id == id })
+      var served = ReadServed(); served.saw(session: session)
+      let reading = CoachReading(calls: [AbilityCall(callId: "source-call", name: "get_session", input: nil, outcome: .ok, read: served)], gym: gym)
+      let expected = [gym.dates.subtitle(start), "1 working set"] + (item.1.map { [Readout.weight($0) + " kg"] } ?? [])
+      #expect(reading.workouts.map(\.id) == [id.description])
+      #expect(reading.workouts.map(\.meta) == [expected.joined(separator: " · ")])
+      #expect(reading.workouts.map(\.available) == [true])
+    }
+  }
+
   func settle(_ condition: () -> Bool) async throws {
     for _ in 0..<200 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
     Issue.record("Asynchronous Coach work did not settle")
@@ -920,7 +950,7 @@ nonisolated final class CoachCountingTokenStore: TokenStore {
 
 nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
   enum Reply: Sendable { case http(Int, String, String = "application/json"), partial(String), failure(URLError.Code), stalled }
-  struct Request: Sendable, Equatable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data? }
+  struct Request: Sendable, Equatable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data?; var schema: String? = nil }
   struct State: Sendable { var reply: Reply; var replies: [String: Reply] = [:]; var requests: [Request] = []; var active: CoachTestProtocol?; var activeByPath: [String: CoachTestProtocol] = [:] }
   static let state = Mutex(State(reply: .stalled))
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -932,7 +962,7 @@ nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
       while stream.hasBytesAvailable { let count = stream.read(&buffer, maxLength: buffer.count); if count <= 0 { break }; data.append(contentsOf: buffer.prefix(count)) }; body = data
     }
     let reply = Self.state.withLock { state in
-      state.requests.append(Request(path: request.url!.path, method: request.httpMethod!, authorization: request.value(forHTTPHeaderField: "Authorization"), mediaType: request.value(forHTTPHeaderField: "Content-Type"), body: body))
+      state.requests.append(Request(path: request.url!.path, method: request.httpMethod!, authorization: request.value(forHTTPHeaderField: "Authorization"), mediaType: request.value(forHTTPHeaderField: "Content-Type"), body: body, schema: request.value(forHTTPHeaderField: "Sync-Schema")))
       state.active = self; state.activeByPath[request.url!.path] = self; return state.replies[request.url!.path] ?? state.reply
     }
     switch reply {

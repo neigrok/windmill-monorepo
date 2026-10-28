@@ -9,13 +9,31 @@ enum class MeasureUnit {
 }
 
 class Quantum(val step: Double) {
+    val perUnit: Double
+    val decimalPlaces: Int?
     init {
         val reciprocal = 1 / step
         require(step.isFinite() && step > 0 && (step == kotlin.math.floor(step) || (reciprocal.isFinite() && reciprocal == kotlin.math.floor(reciprocal))))
+        perUnit = if (step == kotlin.math.floor(step)) 0.0 else reciprocal
+        var places: Int? = null
+        var decimalScale = 1.0
+        for (count in 0..22) {
+            if (perUnit == decimalScale) { places = count; break }
+            decimalScale *= 10
+        }
+        decimalPlaces = places
     }
     fun rounded(value: Double): Double {
-        val result = if (step == kotlin.math.floor(step)) halfAway(value / step) * step
-            else halfAway(value * (1 / step)) / (1 / step)
+        if (value.isFinite() && decimalPlaces != null) {
+            val parts = Json.of(value).jcs.split('e')
+            val mantissa = parts[0].split('.')
+            val fraction = if (mantissa.size == 2) mantissa[1].length else 0
+            val exponent = if (parts.size == 2) parts[1].toInt() else 0
+            if (fraction - exponent <= decimalPlaces) return if (value == 0.0) 0.0 else value
+        }
+        val scaled = value * perUnit
+        if (perUnit > 0 && value.isFinite() && !scaled.isFinite()) return if (value == 0.0) 0.0 else value
+        val result = if (perUnit == 0.0) halfAway(value / step) * step else halfAway(scaled) / perUnit
         return if (result == 0.0) 0.0 else result
     }
     fun holds(value: Double): Boolean = rounded(value) == value

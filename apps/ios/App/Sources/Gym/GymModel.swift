@@ -1,4 +1,5 @@
 import Foundation
+import SyncSchema
 import Observation
 import DomainKit
 import GymDomain
@@ -391,6 +392,7 @@ final class GymModel {
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else { throw AppFailure(message: "Gym could not open this request.") }
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
+    request.setValue(String(SyncSchema.version), forHTTPHeaderField: "Sync-Schema")
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
     let id = UUID(), task = Task { try await NativeAuth.data(for: request, session: session) }

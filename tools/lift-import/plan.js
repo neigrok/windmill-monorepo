@@ -1,8 +1,6 @@
 // The pure half of the import: no network, no disk.
 
 export const MAX_INSTANT_MS = 253402300799000;   // 9999-12-31T23:59:59Z — Training.h kMaxInstantMs
-export const MIN_WEIGHT_KG = -500;               // negative is LEGAL: band-assisted work
-export const MAX_WEIGHT_KG = 500;
 export const MIN_REPS = 1;
 export const MAX_REPS = 500;
 
@@ -235,9 +233,9 @@ export function planSessions(document, resolved) {
         skips.push({ scope: 'set', label: setLabel, reason: `reps out of the 1..500 band: ${rawSet?.reps}` });
         continue;
       }
-      if (!Number.isFinite(rawSet?.weight) || rawSet.weight < MIN_WEIGHT_KG || rawSet.weight > MAX_WEIGHT_KG) {
+      if (!Number.isFinite(rawSet?.weight)) {
         counts.setsSkippedWeightOutOfBand += 1;
-        skips.push({ scope: 'set', label: setLabel, reason: `weight out of the -500..500 band: ${rawSet?.weight}` });
+        skips.push({ scope: 'set', label: setLabel, reason: `weight must be finite: ${rawSet?.weight}` });
         continue;
       }
       if (!isInstant(rawSet?.completedAt)) {
@@ -256,7 +254,7 @@ export function planSessions(document, resolved) {
         const divisor = 10n ** BigInt(scale);
         cents = (digits + divisor / 2n) / divisor;
       }
-      const weightKg = Number(rawSet.weight < 0 ? -cents : cents) / 100;
+      const weightKg = Number(`${rawSet.weight < 0 ? -cents : cents}e-2`);
       if (weightKg !== rawSet.weight) counts.setsWeightRounded += 1;
 
       seenSetIds.add(setId);

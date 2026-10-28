@@ -73,11 +73,9 @@ object Program {
 object TargetEntry {
     val setsBand = 1..Program.maxSets
     val repsBand = 1..Program.maxReps
-    const val maxWeightKg = 500.0
 
     const val onePoint = "One decimal point only."
     const val notANumber = "That is not a number yet."
-    const val overWeight = "Over 500 kg — check the number."
     const val outsideReps = "Whole reps, 1 to 100."
     const val outsideSets = "Sets, 1 to 20."
     const val zeroTarget = "A zero target is no target — clear the field instead."
@@ -141,10 +139,10 @@ object TargetEntry {
             val next = when (field) {
                 Field.Sets -> (current + direction).coerceIn(0.0, Program.maxSets.toDouble())
                 Field.Reps -> (current + direction).coerceIn(0.0, Program.maxReps.toDouble())
-                Field.Weight -> Ladder.bump(current, direction, big = false).coerceIn(-maxWeightKg, maxWeightKg)
+                Field.Weight -> Ladder.bump(current, direction, big = false).takeIf { it.isFinite() } ?: return this
             }
             if (field != Field.Weight && current != kotlin.math.floor(current)) return this
-            val value = if (next == 0.0) "" else Readout.weight(next)
+            val value = if (next == 0.0 && field != Field.Weight) "" else Readout.weight(next)
             return when (field) {
                 Field.Sets -> withCount(value)
                 Field.Reps -> copy(rows = withReps(rows, value))
@@ -294,9 +292,9 @@ object TargetEntry {
         if (normalised.count { it == '.' } > 1) return Read(said = onePoint)
         val value = normalised.toDoubleOrNull()
         if (value == null || !value.isFinite()) return Read(said = notANumber)
-        if (kotlin.math.abs(value) > maxWeightKg) return Read(said = overWeight)
-        if (value == 0.0) return Read(said = zeroTarget)
-        return Read(kg = Ladder.round(value))
+        val rounded = Ladder.round(value)
+        if (value != 0.0 && rounded == 0.0) return Read(said = notANumber)
+        return Read(kg = rounded)
     }
 }
 

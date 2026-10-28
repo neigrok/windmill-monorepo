@@ -152,7 +152,7 @@ test('a routine arrives filled: agreeing sets fold to a line and a rail, bodywei
   ]), [
     ['Bench Press', '3 × 8 · 60', false, true, 3],
     ['Overhead Press', '3 × 8 · 32.5', false, false, 3],
-    ['Chin-up', '3 × 6–8', true, false, 0],
+    ['Chin-up', '3 × 6–8 · 0', true, false, 0],
     ['Face Pull', 'open · no last time', true, false, 0],
   ]);
   assert.deepEqual(rowsOf(drawn[2]).map((cell) => [cell.field, cell.value]), [
@@ -176,7 +176,7 @@ test('each movement says what its typed load counts, after the one kilogram head
   assert.deepEqual(drawn.map(({ props, tree }) => [props.name, textOf(findByClass(tree, 'gym-past-scheme')[0])]), [
     ['Bench Press', '3 × 8 · 60 · kg total'],
     ['Overhead Press', '3 × 8 · 32.5 · kg each'],
-    ['Chin-up', '3 × 6–8 · kg added'],
+    ['Chin-up', '3 × 6–8 · 0 · kg added'],
     ['Face Pull', 'open · no last time'],
   ]);
   assert.deepEqual(rowsOf(drawn[2]).slice(0, 2).map((cell) => cell.label), ['Chin-up, set 1, load in kg added', 'Chin-up, set 1, reps']);

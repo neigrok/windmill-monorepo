@@ -17,9 +17,9 @@ test('whole-workout correction preserves actual facts, shifts instants and renum
 });
 
 test('refused text remains in the draft and identifies its exact input without clamping it', () => {
-  const fields = { weightKg: '501', reps: '8', rpe: '', note: '' };
-  assert.deepEqual(readSetFields(fields), { field: 'weightKg', reason: 'Over 500 kg — check the number.' });
-  assert.deepEqual(fields, { weightKg: '501', reps: '8', rpe: '', note: '' });
+  const fields = { weightKg: '1e999', reps: '8', rpe: '', note: '' };
+  assert.deepEqual(readSetFields(fields), { field: 'weightKg', reason: 'That is not a number yet.' });
+  assert.deepEqual(fields, { weightKg: '1e999', reps: '8', rpe: '', note: '' });
   assert.deepEqual(readSetFields({ ...fields, weightKg: '-20,5' }), { value: { weightKg: -20.5, reps: 8, rpe: null, note: '' } });
   assert.deepEqual(readSetFields({ ...fields, weightKg: '60', reps: '1.5' }), { field: 'reps', reason: 'Enter 1 to 500 reps.' });
 });
@@ -31,7 +31,7 @@ test('editing a set preserves the workout’s original sub-minute instants and r
   draft.sets[0].fields.weightKg = '42.5';
   const result = correctionWrite(session, draft, 'fix_a').value;
   assert.deepEqual([result.startedAt, result.finishedAt, result.sets[0].completedAt], [session.startedAt, session.finishedAt, sets[0].completedAt]);
-  assert.deepEqual(readSetFields({ weightKg: '0x20', reps: '8', rpe: '', note: '' }), { field: 'weightKg', reason: 'Enter a load from −500 to 500 kg.' });
+  assert.deepEqual(readSetFields({ weightKg: '0x20', reps: '8', rpe: '', note: '' }), { field: 'weightKg', reason: 'That is not a number yet.' });
   assert.deepEqual(readSetFields({ weightKg: '−20,5', reps: '8', rpe: '', note: '' }), { value: { weightKg: -20.5, reps: 8, rpe: null, note: '' } });
 });
 
@@ -39,7 +39,7 @@ test('editing a set preserves the workout’s original sub-minute instants and r
 test('correction preserves backend-valid high reps and historical RPE values', () => {
   const fields = { weightKg: '60', reps: '500', rpe: '5.3', note: '' };
   assert.deepEqual(readSetFields(fields), { value: { weightKg: 60, reps: 500, rpe: 5.3, note: '' } });
-  assert.deepEqual(readSetFields({ ...fields, reps: '501' }), { field: 'reps', reason: 'Enter 1 to 500 reps.' });
+  assert.deepEqual(readSetFields({ ...fields, reps: '1e999' }), { field: 'reps', reason: 'Enter 1 to 500 reps.' });
   assert.deepEqual(readSetFields({ ...fields, rpe: '5.33' }), { value: { weightKg: 60, reps: 500, rpe: 5.33, note: '' } });
   assert.deepEqual(readSetFields({ ...fields, rpe: '11' }), { field: 'rpe', reason: 'Enter an RPE from 1 to 10.' });
 });

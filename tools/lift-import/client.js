@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+
+const gym = JSON.parse(readFileSync(new URL('../../packages/api-contract/sync/gym.registry.json', import.meta.url), 'utf8'));
+
 // `code` is the machine word; `sentence` is for a human and must never be branched on.
 export class GymRefusal extends Error {
   constructor(status, code, sentence) {
@@ -33,6 +37,7 @@ export class GymClient {
           method,
           headers: {
             'content-type': 'application/json',
+            'Sync-Schema': String(gym.version),
             authorization: `Bearer ${this.token}`,
             cookie: `wm_session=${this.token}`,
           },

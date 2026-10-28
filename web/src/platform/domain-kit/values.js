@@ -128,7 +128,7 @@ export class TextSpec {
 export class NumberSpec {
   /**
    * @param {string} path
-   * @param {{ min: number, max: number, integer?: boolean, quantum?: number | null }} rule
+   * @param {{ min?: number, max?: number, integer?: boolean, quantum?: number | null }} rule
    */
   constructor(path, { min, max, integer = false, quantum = null }) {
     precondition(!(integer && quantum !== null), `${path}: a number spec is integer or has a quantum, not both`);
@@ -143,7 +143,8 @@ export class NumberSpec {
 
   /** @returns {Json} */
   get json() {
-    const json = { path: this.path, kind: 'number', min: this.min, max: this.max, integer: this.integer };
+    const json = { path: this.path, kind: 'number', ...(this.min === undefined ? {} : { min: this.min }),
+      ...(this.max === undefined ? {} : { max: this.max }), integer: this.integer };
     return this.quantum === null ? json : { ...json, quantum: this.quantum };
   }
 
@@ -156,8 +157,9 @@ export class NumberSpec {
     if (!Number.isFinite(value)) throw new Violation(this.path, at, { kind: 'notANumber' });
     if (this.integer && !Number.isInteger(value)) throw new Violation(this.path, at, { kind: 'notInteger' });
     const rounded = this.quantum === null ? value : roundToQuantum(value, this.quantum);
-    if (rounded < this.min) throw new Violation(this.path, at, { kind: 'below', min: this.min });
-    if (rounded > this.max) throw new Violation(this.path, at, { kind: 'above', max: this.max });
+    if (!Number.isFinite(rounded)) throw new Violation(this.path, at, { kind: 'notANumber' });
+    if (this.min !== undefined && rounded < this.min) throw new Violation(this.path, at, { kind: 'below', min: this.min });
+    if (this.max !== undefined && rounded > this.max) throw new Violation(this.path, at, { kind: 'above', max: this.max });
     return rounded;
   }
 

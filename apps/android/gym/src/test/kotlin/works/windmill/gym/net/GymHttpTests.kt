@@ -10,6 +10,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import java.util.concurrent.TimeUnit
 import works.windmill.gym.coach.AskQuestion
 import works.windmill.platform.net.WindmillApi
+import works.windmill.sync.schema.SyncSchema
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -27,6 +28,7 @@ class GymHttpTests {
         val bodies = mutableListOf<String>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
+            assertEquals(SyncSchema.version.toString(), request.header("Sync-Schema"))
             paths += request.url.encodedPath + request.url.encodedQuery?.let { "?$it" }.orEmpty()
             request.body?.let { body -> val buffer = okio.Buffer(); body.writeTo(buffer); bodies += buffer.readUtf8() }
             val reply = when (request.url.encodedPath) {

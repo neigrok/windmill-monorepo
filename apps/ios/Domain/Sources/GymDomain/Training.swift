@@ -44,6 +44,20 @@ public struct Session: Entity, Removable, Equatable {
   }
 }
 
+public struct VolumePart: Equatable, Sendable {
+  public let id: String
+  public let kg: Double?
+
+  public init(id: String, weightKg: Double?, reps: Int?, loadCount: Int?) {
+    self.id = id
+    guard let weightKg, weightKg.isFinite, let reps, reps > 0, let loadCount, loadCount > 0 else { kg = nil; return }
+    let lifted = max(weightKg, 0) * Double(reps)
+    guard lifted.isFinite else { kg = nil; return }
+    let volume = lifted * Double(loadCount)
+    kg = volume.isFinite ? volume : nil
+  }
+}
+
 public struct TrainingSet: Writable, Removable, Equatable {
   public static let type = Gym.Types.set
   public static let scope = Gym.scope
@@ -79,8 +93,8 @@ public struct TrainingSet: Writable, Removable, Equatable {
     ["sessionId": sessionId.json, "exerciseId": exerciseId.json, "weightKg": .of(weightKg), "reps": JSON(reps),
      "rpe": .of(rpe), "note": .string(note), "completedAt": .of(completedAt)]
   }
-  public func volumeKg(on exercise: Exercise?) -> Double {
-    max(0, weightKg) * Double(reps) * Double(exercise?.loadCount ?? 1)
+  public func volumeKg(on exercise: Exercise?) -> Double? {
+    VolumePart(id: id.json.jcsText, weightKg: weightKg, reps: reps, loadCount: exercise?.loadCount).kg
   }
   public var e1rm: Double? { GymEstimate.value(weightKg: weightKg, reps: reps, rpe: rpe) }
 
@@ -94,7 +108,7 @@ public struct TrainingSet: Writable, Removable, Equatable {
 }
 
 public enum SetRules {
-  public static let weightKg = NumberSpec("set.weightKg", min: -500, max: 500, quantum: 0.01)
+  public static let weightKg = NumberSpec("set.weightKg", quantum: 0.01)
   public static let reps = NumberSpec("set.reps", min: 1, max: 500, integer: true)
   public static let rpe = NumberSpec("set.rpe", min: 1, max: 10, quantum: 0.1)
   public static let note = TextSpec("set.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false)
@@ -198,10 +212,10 @@ public struct TrainingLog: Sendable {
     guard sessions.contains(where: { $0.id == session }) else { return [] }
     return sets.filter { $0.sessionId == session }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
   }
-  public func volumeKg(session: ID<Session>) -> Double {
-    sets(session: session).reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
+  public func volumeKg(session: ID<Session>) -> Double? {
+    GymVolume.of(sets(session: session), catalogue: catalogue)
   }
-  public func topE1rm(session: ID<Session>) -> Double? { sets(session: session).compactMap(\.e1rm).max() }
+  public func topE1rm(session: ID<Session>) -> Double? { GymEstimate.top(sets(session: session)) }
 }
 
 public typealias DeleteSet = Remove<TrainingSet, GymRefusal>

@@ -143,6 +143,38 @@ import SyncTesting
     #expect(!phone.telemetry.entries.withLock { $0.flatMap { $0.properties.values } }.contains { $0.contains(question) })
   }
 
+  @Test func everyTurnRouteCarriesTheGeneratedSchemaAndOnlyItsOpeningSeat() throws {
+    let wire = CoachTurnWire(baseURL: URL(string: "https://coach.invalid"))
+    for seat in [TurnSeat.bound(token: "private-token"), .anon(credential: "private-installation")] {
+      for (path, method) in [("/v1/gym/coach/turns", "POST"), ("/v1/gym/coach/turns/fixture", "GET"),
+                             ("/v1/gym/coach/turns/fixture/results", "POST"), ("/v1/gym/coach/turns/fixture/stop", "POST")] {
+        let request = try wire.request(path, method: method, seat: seat)
+        #expect(request.value(forHTTPHeaderField: "Sync-Schema") == String(SyncSchema.version))
+        #expect(request.httpMethod == method && request.url?.path == path)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == (seat == .bound(token: "private-token") ? "Bearer private-token" : nil))
+        #expect(request.value(forHTTPHeaderField: "X-Windmill-Installation") == (seat == .anon(credential: "private-installation") ? "private-installation" : nil))
+      }
+    }
+  }
+
+  @Test(arguments: ["bound", "anon"]) func schemaRefusalWithdrawsTheLocalTurnAndKeepsTheDraft(seat: String) async throws {
+    let phone = try await phone(seat: seat)
+    defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (426, "client-update-required") }
+    try await send(phone, "Private question")
+    #expect(try messages(phone).isEmpty)
+    try await settle { phone.coach.saved.text == "Private question" }
+    #expect(phone.coach.thread == nil && phone.coach.saved.conversation == nil)
+    #expect(phone.driver.refusal == .updateRequired && phone.coach.canCompose)
+    #expect(phone.driver.refusal?.message == AuthRefusal.updateRequired.message)
+    let requests = TurnFixtureProtocol.state.withLock { $0.requests }
+    #expect(requests.map(\.path) == ["/v1/gym/coach/turns"])
+    #expect(requests.first?.headers["Sync-Schema"] == String(SyncSchema.version))
+    let events = phone.telemetry.entries.withLock { $0 }
+    #expect(events.filter { $0.name == "client_error" }.isEmpty)
+    #expect(!events.flatMap { $0.properties.values }.contains { $0.contains("Private question") || $0.contains("private-token") })
+  }
+
   // A turn the server no longer knows on resume ends interrupted, and the same results posted again are a replay.
   @Test func aLostTurnEndsInterruptedAndResultsReplay() async throws {
     let phone = try await phone(seat: "bound")

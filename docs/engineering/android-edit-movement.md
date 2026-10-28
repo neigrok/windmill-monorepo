@@ -17,7 +17,7 @@ or explanatory field footer. Web preserves Other reads and includes only positiv
 
 ## Compatibility and deployment
 
-Both registries are schema 9 / minimum 9 and retain the additive Coach records. Explicit Other is
+Both source registries are schema 10 / minimum 10 and retain the additive Coach records. Explicit Other is
 accepted by the backend parser, database checks, generated schemas and all shared domains. Legacy
 records are retained without coercion. The conditional database upgrade widens the two existing
 checks once; an unchanged reapplication keeps their identities and every existing trigger.
@@ -26,7 +26,7 @@ The deployment compatibility guard and Android fresh-hello delivery gate are on 
 cutoff remains held until the coordinated Android/iOS replacement artifacts and their distribution
 availability are verified. Android keeps queued writes ready against a server below its registry
 minimum. Existing iOS/web selectors cannot originate Other. Any rollback after Other data exists
-must remain Other-capable at schema 9 / minimum 9.
+must retain Other, finite unbounded loads and nullable metrics at schema 10 / minimum 10.
 
 ## Verification
 
@@ -55,7 +55,7 @@ must remain Other-capable at schema 9 / minimum 9.
   Fix set and movement form in both appearances; root reviewed and accepted the narrow scope.
   The captures use the real local engine/model fixture, not the network backend.
 
-The isolated real backend advertises schema 9 / minimum 9. Schema 6, 7 and 8 each receive 426 on
+The Task 20 verification receipt covers an isolated schema 9 / minimum 9 backend. Schema 6, 7 and 8 each received 426 on
 hello, push, pull and a WebSocket upgrade (12 refusals). MCP creates and reads Other, then a
 name-only update preserves its equipment, alias and exact −5/0/20 kg set history. Structured write
 receipts arrive; synthetic names, email and credentials are absent from logs.

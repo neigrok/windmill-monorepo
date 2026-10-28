@@ -10,7 +10,7 @@ import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fixSetHref, fromSession,
   groupByExercise, isFinished, logWhenLabel, NO_ROUTINE, planFrozenLabel, recordHref,
-  loadBasisLabel, routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel,
+  loadBasisLabel, routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel, tonnageTotalLabel,
 } from './log.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
@@ -283,7 +283,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
         <h1 className="gym-title">{routineNameOf(session) ?? NO_ROUTINE}</h1>
         <p className="gym-detail-when">{dayLabel(session.startedAt)} {new Date(session.startedAt).getFullYear()} · {timeLabel(session.startedAt)}{session.finishedAt != null ? `–${timeLabel(session.finishedAt)}` : ''}</p>
         {closedOnItsOwn(session, logged) && <p className="gym-detail-closed">{CLOSED_ITSELF_NOTE}</p>}
-        <dl className="gym-reader-totals">{[[totals.sets, 'sets'], [totals.reps, 'reps'], [tonnageLabel(totals.tonnageKg) ?? '0', `${weightUnit()} external`]].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        <dl className="gym-reader-totals">{[[totals.sets, 'sets'], [totals.reps, 'reps'], [tonnageTotalLabel(totals.tonnageKg), `${weightUnit()} external`]].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       </header>
       {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
@@ -298,7 +298,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
               </h2>
               {scheme && <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${movements.get(exerciseId)?.name ?? exerciseId}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('./logbook/assets/expand.svg', import.meta.url).href : new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button>}
               {!scheme && <span className="gym-movement-state" aria-hidden="true"><img src={new URL('./logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
-              <span className="gym-movement-totals">{movementTotals.reps} reps · {group.every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageLabel(movementTotals.tonnageKg) ?? '0'} ${weightUnit()}`}</span>
+              <span className="gym-movement-totals">{movementTotals.reps} reps · {group.every((set) => set.weightKg === 0) ? 'bodyweight' : `${tonnageTotalLabel(movementTotals.tonnageKg)} ${weightUnit()}`}</span>
             </div>
             {collapsed && <button type="button" className="gym-scheme-row" aria-expanded="false" onClick={() => setExpanded((current) => new Set(current).add(exerciseId))}>
               <span className="gym-set-rail" aria-label={`${group.length} recorded sets`}>{group.map((set) => <i key={set.id} />)}</span>

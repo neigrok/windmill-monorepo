@@ -377,9 +377,9 @@ class TargetSheetLadderTests {
             commit().assertIsNotEnabled()
             commit().assertIsDisplayed()
 
-            compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("1e999")
             compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
-            val load = compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
+            val load = compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
             assertTrue(load > yOf("Weight target") && load < yOf("Set 1 load"))
             compose.onNodeWithContentDescription("Weight target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
         } } finally { scope.cancel() }
@@ -438,11 +438,11 @@ class TargetSheetLadderTests {
             commit().assertIsDisplayed()
 
             // Topmost first: a second fault lower down waits its turn.
-            compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("501")
+            compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("1e999")
             compose.onAllNodesWithText(TargetEntry.zeroTarget).assertCountEquals(1)
-            compose.onNodeWithText(TargetEntry.overWeight).assertDoesNotExist()
+            compose.onNodeWithText(TargetEntry.notANumber).assertDoesNotExist()
             compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("3")
-            compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
+            compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 

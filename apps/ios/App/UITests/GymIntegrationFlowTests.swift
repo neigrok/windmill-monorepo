@@ -33,6 +33,79 @@ import XCTest
     }
     field.typeText(text)
   }
+
+  func gymRequest(_ path: String, identity: [String: String]) throws -> URLRequest {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let data = try Data(contentsOf: root.appendingPathComponent("packages/api-contract/sync/gym.registry.json"))
+    let registry = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let schema = try XCTUnwrap(registry["version"] as? Int)
+    var request = URLRequest(url: try XCTUnwrap(URL(string: try XCTUnwrap(server) + "/v1/gym/" + path)))
+    request.setValue("Bearer " + (try XCTUnwrap(identity["token"])), forHTTPHeaderField: "Authorization")
+    request.setValue(String(schema), forHTTPHeaderField: "Sync-Schema")
+    return request
+  }
+
+  func testFiniteLoadWheelsSaveAndSyncBeyondTheOldLimitIncludingZero() async throws {
+    guard server != nil, let file = ProcessInfo.processInfo.environment["WM_GYM_LOAD_CASES"] else {
+      throw XCTSkip("requires the isolated schema10 load fixture")
+    }
+    let data = try Data(contentsOf: URL(fileURLWithPath: file))
+    let cases = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    let identity = try XCTUnwrap(identities["signed"])
+    func get(_ path: String) async throws -> [String: Any] {
+      let (data, response) = try await URLSession.shared.data(for: gymRequest(path, identity: identity))
+      XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+    func selected(_ wheel: XCUIElement) throws -> Double {
+      let value = try XCTUnwrap(wheel.value as? String)
+      let number = value.components(separatedBy: " kg")[0].replacingOccurrences(of: ",", with: "")
+        .replacingOccurrences(of: "−", with: "-")
+      return try XCTUnwrap(Double(number))
+    }
+    for item in cases {
+      let load = try XCTUnwrap(item["weightKg"] as? Double), routine = try XCTUnwrap(item["routineId"] as? String)
+      let before = try await get("sessions")["sessions"] as? [[String: Any]] ?? []
+      let earlier = Set(before.compactMap { $0["id"] as? String })
+      let app = launch()
+      let row = app.buttons["routine-" + routine]
+      XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
+      XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+      XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
+      let wheel = app.pickerWheels.element(boundBy: 0)
+      XCTAssertTrue(wheel.waitForExistence(timeout: 5)); XCTAssertEqual(try selected(wheel), load)
+      if abs(load) < 1_000 {
+        let unit = try XCTUnwrap(wheel.value as? String).components(separatedBy: " kg").last!
+        let neighbor = load == 0 ? -5.0 : load > 0 ? 505.0 : -505.0
+        let neighborLabel = String(Int(neighbor)).replacingOccurrences(of: "-", with: "−")
+        let openingLabel = String(Int(load)).replacingOccurrences(of: "-", with: "−")
+        wheel.adjust(toPickerWheelValue: "\(neighborLabel) kg\(unit)")
+        XCTAssertEqual(try selected(wheel), neighbor)
+        wheel.adjust(toPickerWheelValue: "\(openingLabel) kg\(unit)")
+        XCTAssertEqual(try selected(wheel), load)
+      }
+      app.buttons["set-wheel-done"].tap()
+      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.waitForExistence(timeout: 5))
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 15)); app.buttons["workout-done"].tap()
+      var confirmed = false
+      for _ in 0..<80 {
+        let sessions = try await get("sessions")["sessions"] as? [[String: Any]] ?? []
+        for session in sessions where session["finishedAt"] is NSNumber && !earlier.contains(session["id"] as? String ?? "") {
+          let detail = try await get("sessions/" + (try XCTUnwrap(session["id"] as? String)))
+          let sets = detail["sets"] as? [[String: Any]] ?? []
+          confirmed = sets.count == 1 && sets.first?["weightKg"] as? Double == load
+          if confirmed { break }
+        }
+        if confirmed { break }
+        try await Task.sleep(for: .milliseconds(250))
+      }
+      XCTAssertTrue(confirmed, "The installed app's exact finite load must reach the schema10 backend")
+      app.terminate()
+    }
+  }
   func pickBench(_ app: XCUIApplication, routineEditor: Bool = false) {
     let search = routineEditor ? app.textFields["gym-movement-search"] : app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")
@@ -456,10 +529,9 @@ import XCTest
     wait(for: [confirmed], timeout: 30)
   }
   func verifyServerAsync(_ kind: String, edited: Bool) async throws {
-    let identity = try XCTUnwrap(identities[kind]), origin = try XCTUnwrap(server)
+    let identity = try XCTUnwrap(identities[kind])
     func get(_ path: String) async throws -> [String: Any] {
-      var request = URLRequest(url: URL(string: origin + "/v1/gym/" + path)!)
-      request.setValue("Bearer " + identity["token"]!, forHTTPHeaderField: "Authorization")
+      let request = try gymRequest(path, identity: identity)
       let (data, response) = try await URLSession.shared.data(for: request)
       XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
       return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

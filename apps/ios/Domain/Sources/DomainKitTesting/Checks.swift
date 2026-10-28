@@ -279,8 +279,14 @@ struct SpecTarget {
     guard case .number(let integer, let min, let max, let quantum)? = item?.shape else {
       return "a number spec on a value that is no number"
     }
-    if let min, let specMin = spec.number("min"), specMin < min { return "admits \(specMin), below the registry's \(min)" }
-    if let max, let specMax = spec.number("max"), specMax > max { return "admits \(specMax), above the registry's \(max)" }
+    if let min {
+      guard let specMin = spec.number("min") else { return "admits a value below the registry's \(min)" }
+      if specMin < min { return "admits \(specMin), below the registry's \(min)" }
+    }
+    if let max {
+      guard let specMax = spec.number("max") else { return "admits a value above the registry's \(max)" }
+      if specMax > max { return "admits \(specMax), above the registry's \(max)" }
+    }
     let specIntegral = spec.json["integer"] == .bool(true) || spec.quantum.map { $0.rounded() == $0 } == true
     if integer && !specIntegral { return "admits a fraction the registry's integer domain refuses" }
     if let quantum, !(spec.quantum.map(quantum.holds) ?? false) { return "admits a value off the registry's quantum \(quantum.step)" }

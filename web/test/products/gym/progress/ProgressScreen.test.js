@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spellWeightsIn } from '../../../../src/products/gym/units.js';
 import { browserWith, elementsOf, loadScreen, renderHook, textOf } from '../harness.mjs';
 
 test('a no-estimate record distinguishes loaded facts from bodyweight additions', async (t) => {
@@ -43,4 +44,49 @@ test('a partial training pull shows observed estimates without asserting a best'
   assert.deepEqual(elementsOf(screen.tree).filter((element) => element.type === 'p').map(textOf),
     ['1 session', 'Estimates, not tested lifts.', 'Latest · 76 kg est · 60 × 8']);
   assert.deepEqual(elementsOf(screen.tree).filter((element) => element.type === 'td').map(textOf), ['25 Sep', '60×8', '76.0']);
+});
+
+
+test('extreme estimates keep finite axis labels and unavailable pound cells', async (t) => {
+  browserWith();
+  const at = new Date(2026, 8, 25, 12).getTime();
+  t.mock.method(Date, 'now', () => at);
+  const { MovementChart } = await loadScreen('products/gym/progress/Progress.jsx');
+  const log = { progress: { phase: 'ready', data: { sessions: [1e307, 1e308].map((e1rm, index) => ({ sessionId: `s${index}`,
+    startedAt: at - index * 86400000, movements: [{ exerciseId: 'bench', workingSetCount: 1,
+      heaviest: { setId: `set${index}`, weightKg: e1rm, reps: 1 }, estimate: { setId: `set${index}`, weightKg: e1rm, reps: 1, e1rm } }] })) } } };
+  const kilograms = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log }));
+  const chart = elementsOf(kilograms.tree).find((each) => typeof each.type === 'function' && each.type.name === 'DotChart');
+  assert.equal(chart.props.formatValue(1e308), '1e+308');
+  assert.equal(chart.props.formatValue(82.45), '82.5');
+  spellWeightsIn('lb');
+  try {
+    const pounds = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log }));
+    const cells = elementsOf(pounds.tree).filter((each) => each.type === 'td').map(textOf);
+    assert.equal(cells[2], '—');
+    assert.ok(cells.every((cell) => !/NaN|Infinity/.test(cell)));
+  } finally { spellWeightsIn('kg'); }
+});
+
+test('unavailable estimates never claim that no eligible estimate exists', async (t) => {
+  browserWith();
+  const at = new Date(2026, 8, 25, 12).getTime();
+  t.mock.method(Date, 'now', () => at);
+  const { MovementChart } = await loadScreen('products/gym/progress/Progress.jsx');
+  for (const unavailable of ['unit', 'arithmetic', 'partial']) {
+    spellWeightsIn(unavailable === 'unit' ? 'lb' : 'kg');
+    const fact = { setId: 'set', weightKg: Number.MAX_VALUE, reps: 1 };
+    const log = { progress: { phase: 'ready', data: { isComplete: unavailable !== 'partial', sessions: [{
+      sessionId: 'session', startedAt: at, movements: [{ exerciseId: 'bench', workingSetCount: 1,
+        heaviest: fact, estimate: unavailable === 'unit' ? { ...fact, e1rm: Number.MAX_VALUE } : null,
+        estimatesComplete: unavailable !== 'arithmetic' }],
+    }] } } };
+    try {
+      const screen = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log }));
+      const paragraphs = elementsOf(screen.tree).filter((each) => each.type === 'p').map(textOf);
+      assert.ok(paragraphs.some((line) => line.includes('1 session')));
+      assert.ok(!paragraphs.includes('No estimate in this window.'));
+      assert.ok(paragraphs.every((line) => !/NaN|Infinity/.test(line)));
+    } finally { spellWeightsIn('kg'); }
+  }
 });

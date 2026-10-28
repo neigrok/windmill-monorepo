@@ -17,7 +17,7 @@ import { Move, Remove } from '../../../src/platform/domain-kit/standardActions.j
 import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
-import { CountSpec, Fault, Path, TextSpec, Violation } from '../../../src/platform/domain-kit/values.js';
+import { CountSpec, Fault, NumberSpec, Path, TextSpec, Violation } from '../../../src/platform/domain-kit/values.js';
 import { PROBE_SCOPE, ProbeRefusals, probeCommand, probeEntity, probeValue, refusalForm } from './probe.js';
 import { Contract, ContractError, VectorReplica, applySpec, decisionForm, draftForm, listsRecords, momentOf, outcomeForm, placementOf,
   probeRegistry, savedForm, specOf, vectorViews, withRecordsReversed } from './vectors.js';
@@ -27,6 +27,12 @@ import { Contract, ContractError, VectorReplica, applySpec, decisionForm, draftF
 
 const DIRECTORY = 'domain-kit';
 const nothing = () => /** @type {Json} */ (null);
+
+test('number specs omit absent bounds', () => {
+  assert.deepEqual(new NumberSpec('load', { quantum: 0.01 }).json, { path: 'load', kind: 'number', integer: false, quantum: 0.01 });
+  assert.deepEqual(new NumberSpec('load', { min: 0 }).json, { path: 'load', kind: 'number', min: 0, integer: false });
+  assert.deepEqual(new NumberSpec('load', { max: 0 }).json, { path: 'load', kind: 'number', max: 0, integer: false });
+});
 
 /** @param {any} json */
 const recordID = (json) => (json === undefined || json === null ? null : json);

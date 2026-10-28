@@ -214,7 +214,7 @@ private fun RecordMetric(tile: Record.Tile, modifier: Modifier) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId, focusSessionId: String?) {
+internal fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId, focusSessionId: String?) {
     val skin = LocalGymColors.current
     val focus = progressSeries(progress, nowMs, zone, all = true).ordered.firstOrNull { it.id == focusSessionId }
     var all by rememberSaveable(progress.exerciseId, focusSessionId) {
@@ -251,6 +251,6 @@ private fun StrengthChart(progress: MovementProgress, nowMs: Long, zone: ZoneId,
             onInspect = { inspected = it }, gapLabel = { a, b -> "No workout · ${Readout.date(a.atMs)} – ${Readout.date(b.atMs)}" })
         Text("${if (all) "All" else "Last 12 weeks"} · ${Readout.sessionCount(window.sessions.size)}",
             style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
-        if (window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillFont.body(14), color = skin.inkDim)
+        if (window.estimatesComplete && window.estimates.isEmpty()) Text("No eligible estimate in this window.", style = WindmillFont.body(14), color = skin.inkDim)
     }
 }

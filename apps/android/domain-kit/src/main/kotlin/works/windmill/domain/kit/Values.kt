@@ -69,19 +69,21 @@ data class TextSpec(override val path: String, val unit: MeasureUnit, val min: I
     }
 }
 
-class NumberSpec(override val path: String, val min: Double, val max: Double, val integer: Boolean = false, quantum: Double? = null) : ValueSpec {
+class NumberSpec(override val path: String, val min: Double? = null, val max: Double? = null, val integer: Boolean = false, quantum: Double? = null) : ValueSpec {
     val quantum = quantum?.let(::Quantum)
     init { require(!integer || quantum == null) }
     override val json: Json get() = Json.Obj(buildList {
-        add("path" to Json.of(path)); add("kind" to Json.of("number")); add("min" to Json.of(min)); add("max" to Json.of(max))
+        add("path" to Json.of(path)); add("kind" to Json.of("number"))
+        min?.let { add("min" to Json.of(it)) }; max?.let { add("max" to Json.of(it)) }
         add("integer" to Json.of(integer)); quantum?.let { add("quantum" to Json.of(it.step)) }
     })
     fun apply(value: Double, at: Path): Double {
         if (!value.isFinite()) throw Violation(path, at, Violation.Reason.NotANumber)
         if (integer && kotlin.math.floor(value) != value) throw Violation(path, at, Violation.Reason.NotInteger)
         val rounded = quantum?.rounded(value) ?: value
-        if (rounded < min) throw Violation(path, at, Violation.Reason.Below(min))
-        if (rounded > max) throw Violation(path, at, Violation.Reason.Above(max))
+        if (!rounded.isFinite()) throw Violation(path, at, Violation.Reason.NotANumber)
+        if (min != null && rounded < min) throw Violation(path, at, Violation.Reason.Below(min))
+        if (max != null && rounded > max) throw Violation(path, at, Violation.Reason.Above(max))
         return rounded
     }
     fun applyOptional(value: Double?, at: Path): Double? = value?.let { apply(it, at) }

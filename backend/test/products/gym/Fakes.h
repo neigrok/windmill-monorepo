@@ -580,6 +580,7 @@ private:
     });
     HistoryPage page;
     std::vector<ProgressSet> facts;
+    std::vector<VolumePart> volume;
     std::map<std::string, HistoryFacet> exercises;
     std::map<std::string, HistoryFacet> routines;
     std::map<std::string, int> months;
@@ -595,7 +596,8 @@ private:
       ++page.summary.sessions;
       page.summary.sets += totals.sets;
       page.summary.reps += totals.reps;
-      page.summary.tonnageKg += totals.tonnageKg;
+      for (const auto& set : workout.sets)
+        if (set.working) volume.emplace_back(set.id, set.weightKg, set.reps, set.equipment, set.loadCount);
       const std::chrono::year_month_day date{std::chrono::floor<std::chrono::days>(
           std::chrono::sys_time<std::chrono::milliseconds>{std::chrono::milliseconds{workout.startedAtMs}})};
       const unsigned month = unsigned(date.month());
@@ -628,6 +630,7 @@ private:
       });
       page.progress = statsProgress(facts, query.asOfMs);
     }
+    page.summary.tonnageKg = totalVolume(std::move(volume));
     return page;
   }
 

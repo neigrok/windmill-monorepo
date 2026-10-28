@@ -41,7 +41,9 @@ public enum Transcripts {
       let place = "step \(line["step"]?.jcsText ?? "?")"
       if line["end"] != nil {
         for (name, device) in devices.sorted(by: { $0.key < $1.key }) {
-          differences += Self.compare(try device.dump(), line["devices"]?[name], "\(place): \(name)'s store is")
+          let expected = try device.offsets.augment(line["devices"]?[name])
+          differences += expected.differences.map { "\(place): \(name): \($0)" }
+          differences += Self.compare(try device.dump(), expected.device, "\(place): \(name)'s store is")
           differences += Self.compare(.array(device.ended.filter(\.isEnded).map(\.json)), line["ended"]?[name],
                                       "\(place): \(name)'s ended log is")
         }
@@ -102,11 +104,13 @@ final class TranscriptDevice {
   var store: Store
   var engine: SyncEngine
   var subscribed: [ScopeRef] = []
+  var offsets: TranscriptOffsets
 
   init(holding device: LoadedDevice, registry: Registry, identities: QueuedIdentities, tokens: InMemoryTokenStore) throws {
     let around = Surroundings(registry: registry, identities: identities, tokens: tokens)
     (store, engine) = try around.engine(holding: device)
     self.around = around
+    offsets = TranscriptOffsets(device)
   }
 
   var ended: [EngineEvent] { around.ended.events }
@@ -126,7 +130,11 @@ final class TranscriptDevice {
 
   // One line: a client action, an exchange, or a frame. Where the engine and the line disagree.
   func perform(_ line: JSON, place: String) async throws -> [String] {
-    if let action = try line["do"]?.asString() { return try act(action, try line.member("args"), returns: line["returns"], place: place) }
+    if let action = try line["do"]?.asString() {
+      let differences = try act(action, try line.member("args"), returns: line["returns"], place: place)
+      if action == "load" { offsets = try TranscriptOffsets(LoadedDevice(json: line.member("args").member("device"), registry: around.registry)) }
+      return differences
+    }
     if let call = try line["http"]?.asString() { return try await exchange(call, line, place: place) }
     if let frame = line["frame"] { return try await receive(frame, returns: line["returns"], place: place) }
     return []
@@ -183,6 +191,21 @@ final class TranscriptDevice {
   // wanted. A pull's page outcomes are checked against the line's `returns`.
   func exchange(_ call: String, _ line: JSON, place: String) async throws -> [String] {
     let request = call == "hello" ? nil : try line.member("request")
+    let before = try store.read { try $0.meta(of: $0.activeReplica()) }
+    let reading = around.clock.engineClock.wall.reading()
+    var readiness: Int64?
+    if call == "push" {
+      let account = try request!.member("account").asString()
+      let time = try line.member("response").member("body").member("serverTime").asInteger()
+      let epoch = try line.member("response").member("body").member("epoch").asString()
+      readiness = time
+      let hello: JSON = ["status": 200, "body": [
+        "serverTime": JSON(time), "epoch": .string(epoch),
+        "as": .string(account), "schema": JSON(around.registry.version), "minSchema": JSON(around.registry.minVersion),
+      ]]
+      around.transport.expect(.init(call: "hello", request: nil, response: hello, lost: false,
+                                    place: "\(place) readiness", credential: Transcripts.token(for: account)))
+    }
     around.transport.expect(TranscriptTransport.Exchange(
       call: call, request: request, response: try line.member("response"), lost: try line["lost"]?.asBool() ?? false, place: place))
     var differences: [String] = []
@@ -213,6 +236,10 @@ final class TranscriptDevice {
     case let other:
       throw VectorError("\(place): unknown exchange \(other)")
     }
+    let ordinary = try line["lost"]?.asBool() == true ? nil : line["response"]?["body"]?["serverTime"].map { try $0.asInteger() }
+    let device = try store.read { try $0.device(rows: true) }
+    differences += offsets.record(device, before: before, readiness: readiness, ordinary: ordinary, reading: reading)
+      .map { "\(place): \($0)" }
     return around.transport.settle() + differences
   }
 
@@ -224,5 +251,61 @@ final class TranscriptDevice {
     guard await engine.live.receiveNext() else { return ["\(place): the live socket is closed"] }
     guard case .frame(_, let outcome) = await engine.puller.step() else { return ["\(place): the puller applied no frame"] }
     return Transcripts.compare(.string(outcome?.rawValue ?? "dropped"), returns, "\(place): the frame returned")
+  }
+}
+
+// The runtime's readiness exchange is additional to the kernel transcript. Both offset histories are modeled in call
+// order: every actual sample is checked, and only the modeled readiness samples augment the unchanged end fixture.
+struct TranscriptOffsets {
+  var kernel: [String: ServerOffset]
+  var runtime: [String: ServerOffset]
+
+  init(_ device: LoadedDevice) {
+    kernel = Dictionary(uniqueKeysWithValues: device.replicas.map { ($0.id, $0.meta.offset) })
+    runtime = kernel
+  }
+
+  mutating func record(_ device: LoadedDevice, before: ReplicaMeta?, readiness: Int64?, ordinary: Int64?, reading: ClockReading) -> [String] {
+    var differences: [String] = []
+    if let before {
+      if kernel[before.replica] == nil {
+        kernel[before.replica] = ServerOffset(); runtime[before.replica] = ServerOffset()
+      }
+      if let readiness { runtime[before.replica]!.take(serverTime: readiness, send: reading, recv: reading) }
+      if let ordinary {
+        kernel[before.replica]!.take(serverTime: ordinary, send: reading, recv: reading)
+        runtime[before.replica]!.take(serverTime: ordinary, send: reading, recv: reading)
+      }
+    }
+    for replica in device.replicas {
+      if runtime[replica.id] == nil {
+        if let before, device.active == replica.id, !device.replicas.contains(where: { $0.id == before.replica }) {
+          kernel[replica.id] = kernel[before.replica]; runtime[replica.id] = runtime[before.replica]
+        } else {
+          kernel[replica.id] = ServerOffset(); runtime[replica.id] = ServerOffset()
+        }
+      }
+      if replica.meta.offset != runtime[replica.id] { differences.append("\(replica.id) offset samples differ from the exact modeled exchanges") }
+    }
+    return differences
+  }
+
+  func augment(_ device: JSON?) throws -> (device: JSON?, differences: [String]) {
+    guard let device else { return (nil, []) }
+    var value = try device.asObject(), differences: [String] = []
+    value["replicas"] = .array(try device.member("replicas").asArray().map { replica in
+      var row = try replica.asObject()
+      let meta = try ReplicaMeta(json: replica.member("meta"))
+      guard let ordinary = kernel[meta.replica], let actual = runtime[meta.replica] else {
+        differences.append("\(meta.replica) has no modeled offset history")
+        return replica
+      }
+      if meta.offset != ordinary { differences.append("\(meta.replica) ordinary offset samples differ from the unchanged transcript") }
+      var augmented = meta
+      augmented.offset = actual
+      row["meta"] = augmented.json
+      return .object(row)
+    })
+    return (.object(value), differences)
   }
 }

@@ -302,7 +302,8 @@ package final class Simulator {
   // What the wire does to a push: mostly it arrives.
   func pushFate() -> SimNetwork.Fate {
     switch rng.below(100) {
-    case ..<67: .deliver
+    case ..<65: .deliver
+    case ..<67: .servedAs("foreign")
     case ..<69: .loseCredential
     case ..<75: .drop
     case ..<81: .loseReply

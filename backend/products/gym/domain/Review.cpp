@@ -11,12 +11,12 @@ namespace {
 // never reaches the wire. A set with no estimate scores zero, below every set that has one.
 struct Candidate {
   PersonalRecord record;
-  std::int64_t score;
+  EstimateScore score;
 };
 
 Candidate candidateOf(PersonalRecord record, const PerformedFact& set) {
   const std::optional<Estimate> estimate = set.estimate();
-  return Candidate{std::move(record), estimate ? estimate->score : 0};
+  return Candidate{std::move(record), estimate ? estimate->score : EstimateScore{}};
 }
 
 // The ranking, in one place: kinds in their declared order, then the higher score, then the heavier load, then the
@@ -87,8 +87,8 @@ std::vector<Candidate> recordsFor(const ExerciseId& exercise, const std::vector<
   const std::optional<MovementSeries::Point> before = MovementSeries{progressSessions(standing), exercise}.best();
   if (now && before && Estimate::stated(now->fact.estimate->estimate.e1rm) > Estimate::stated(before->fact.estimate->estimate.e1rm)) {
     const EstimatedFact& set = *now->fact.estimate;
-    earned.push_back(candidateOf(PersonalRecord{RecordKind::e1rm, exercise, set.estimate.e1rm, set.performed.weightKg,
-                                                set.performed.reps, before->fact.estimate->estimate.e1rm,
+    earned.push_back(candidateOf(PersonalRecord{RecordKind::e1rm, exercise, *set.estimate.e1rm, set.performed.weightKg,
+                                                set.performed.reps, *before->fact.estimate->estimate.e1rm,
                                                 before->startedAtMs},
                                  set.performed));
   }
@@ -200,8 +200,10 @@ std::string toString(RecordKind kind) {
 std::optional<double> topE1rmOf(const std::vector<ProgressSet>& sets) {
   std::optional<double> top;
   for (const ProgressSet& set : sets)
-    if (const std::optional<Estimate> estimate = set.performed.estimate(); estimate && (!top || estimate->e1rm > *top))
-      top = estimate->e1rm;
+    if (const std::optional<Estimate> estimate = set.performed.estimate(); estimate) {
+      if (!estimate->e1rm) return std::nullopt;
+      if (!top || *estimate->e1rm > *top) top = estimate->e1rm;
+    }
   return top;
 }
 

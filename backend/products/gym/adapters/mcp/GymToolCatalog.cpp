@@ -59,15 +59,6 @@ Json::Value enumStr(const char* description, const std::vector<const char*>& val
   return property;
 }
 
-Json::Value boundedNum(const char* description, double smallest, double largest) {
-  Json::Value property(Json::objectValue);
-  property["type"] = "number";
-  property["description"] = description;
-  property["minimum"] = smallest;
-  property["maximum"] = largest;
-  return property;
-}
-
 Json::Value boundedInt(const char* description, int smallest, int largest) {
   Json::Value property(Json::objectValue);
   property["type"] = "integer";
@@ -105,9 +96,8 @@ Json::Value setArray() {
   Json::Value fields(Json::objectValue);
   fields["reps"] = boundedInt("Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
                               1, 100);
-  fields["weightKg"] = boundedNum("Load for THIS set in kg, inside ±500. OMIT to mean what they "
-                                  "lifted for the set of the same number last time.",
-                                  -kMaxLoadKg, kMaxLoadKg);
+  fields["weightKg"] = num("Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they "
+                          "lifted for the set of the same number last time.");
   Json::Value set(Json::objectValue);
   set["type"] = "object";
   set["properties"] = fields;
@@ -211,7 +201,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "the heaviest load, judged against the log as it stands now, and false on around 190 rows "
         "in 200), and `closedItself` (the four-hour rule ended it rather than a "
         "tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two "
-        "workouts can start in the same millisecond.",
+        "workouts can start in the same millisecond. Unavailable derived metrics are null; they "
+        "never stand for zero or a smaller record.",
         p, {}));
   }
   {
@@ -225,7 +216,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With "
         "`review: true` the reply also carries the finish readout — duration, working sets, top "
         "e1RM, at most one record, and the comparison against the last time you trained that day of "
-        "the program.",
+        "the program. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
         p, {"sessionId"}));
   }
   {
@@ -266,7 +257,8 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "Monday, UTC — a week you did not train is present and zero), and per movement its line of "
         "top working sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, "
         "and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is "
-        "no volume, no score and no streak here — every number is a fact with a direction.",
+        "no volume, no score and no streak here — every number is a fact with a direction. "
+        "Unavailable derived metrics are null; they never stand for zero or a smaller record.",
         p, {}));
   }
   {
@@ -514,8 +506,6 @@ std::vector<ToolDeclaration> gymToolCatalog() {
       row["properties"]["id"]["minLength"] = 8;
       row["properties"]["id"]["maxLength"] = 64;
       row["properties"]["id"]["pattern"] = "^[A-Za-z0-9_-]{8,64}$";
-      row["properties"]["weightKg"]["minimum"] = -500;
-      row["properties"]["weightKg"]["maximum"] = 500;
       row["properties"]["weightKg"]["multipleOf"] = 0.01;
       row["properties"]["rpe"]["minimum"] = 1;
       row["properties"]["rpe"]["maximum"] = 10;

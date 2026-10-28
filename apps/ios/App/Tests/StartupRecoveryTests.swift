@@ -285,9 +285,9 @@ import Synchronization
       let before = OfflineLoader.asked.withLock { $0.count }
       let start = Task { await model.start() }
       let hellos = { OfflineLoader.asked.withLock { $0.dropFirst(before).filter { $0 == "/v1/sync/hello" }.count } }
-      // Startup has met the network: offline settled, or, stalled, its one hello asked and still unanswered.
+      // A stalled startup has one unanswered hello; an unreachable sender also checks fresh readiness.
       let met = { mode == .stalled ? hellos() == 1 && model.resumingBackup && !model.syncStarted
-                                   : hellos() == (mode == .noNetwork ? 0 : 1) && model.syncStarted }
+                                   : (mode == .noNetwork ? hellos() == 0 : hellos() >= 1) && model.syncStarted }
       for _ in 0..<300 where !met() { try await Task.sleep(for: .milliseconds(10)) }
       #expect(met() && model.observationTask != nil && model.timerTask != nil)
       #expect(model.account == account && model.runtime?.engine.status.online == (mode != .noNetwork))

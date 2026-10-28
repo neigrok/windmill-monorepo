@@ -239,7 +239,7 @@ test('diffRows — an omitted target reads as the word the wire means by omittin
     kind: 'retargeted',
     exerciseId: 'chin-up',
     moves: [
-      { field: 'sets', from: '3 × 8', to: '3 × max', ladder: { from: Array(3).fill('last × 8'), to: Array(3).fill('last × max') } },
+      { field: 'sets', from: '3 × 8 · 0', to: '3 × max', ladder: { from: Array(3).fill('0 × 8'), to: Array(3).fill('last × max') } },
       { field: 'rest', from: '2:00', to: 'your rest target' },
     ],
   }]);

@@ -11,7 +11,7 @@ export function setFields(set) {
 export function readSetFields(fields) {
   const typedLoad = fields.weightKg.trim().replace('−', '-').replace(',', '.');
   const weightKg = Number(typedLoad);
-  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(typedLoad)) return { field: 'weightKg', reason: 'Enter a load from −500 to 500 kg.' };
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(typedLoad)) return { field: 'weightKg', reason: 'That is not a number yet.' };
   const reps = Number(fields.reps);
   const rpe = fields.rpe === '' ? null : Number(fields.rpe);
   try {
@@ -24,9 +24,7 @@ export function readSetFields(fields) {
     if (!(error instanceof Violation)) throw error;
     const field = error.path.text;
     if (field === 'weightKg') {
-      if (error.reason.kind === 'above') return { field, reason: 'Over 500 kg — check the number.' };
-      if (error.reason.kind === 'below') return { field, reason: 'Below −500 kg — check the number.' };
-      return { field, reason: 'Enter a load from −500 to 500 kg.' };
+      return { field, reason: 'That is not a number yet.' };
     }
     if (field === 'reps') return { field, reason: 'Enter 1 to 500 reps.' };
     if (field === 'rpe') return { field, reason: 'Enter an RPE from 1 to 10.' };

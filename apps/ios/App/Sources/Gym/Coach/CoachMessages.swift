@@ -110,7 +110,7 @@ struct CoachReading: Identifiable {
     let sessions = served.sessions.compactMap { id in gym.sessions.first { $0.id == id } }.sorted { $0.startedAt > $1.startedAt }
     workouts = sessions.map { session in
       let readout = gym.log?.readout(session: session.id)
-      let facts = readout.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.volumeKg) + " kg"] } ?? []
+      let facts = readout.map { [GymCount.of($0.workingSetCount, "working set")] + ($0.volumeKg.map { [Readout.weight($0) + " kg"] } ?? []) } ?? []
       return Workout(id: session.id.description, title: readout?.name ?? session.displayName ?? Readout.noRoutine,
                      meta: ([gym.dates.subtitle(session.startedAt)] + facts).joined(separator: " · "), available: true)
     }

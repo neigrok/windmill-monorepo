@@ -23,6 +23,21 @@ class RecordStateTests {
 
     private val movement = Exercise("bench-press", "Bench Press", "press", "barbell", 2.5)
 
+    @Test fun unavailableEstimateDoesNotRenderAnIneligibilityClaim() {
+        val now = 1_790_424_000_000L
+        var complete by mutableStateOf(false)
+        compose.setContent {
+            val fact = PerformedFact("set", if (complete) 60.0 else Double.MAX_VALUE, if (complete) 11 else 2)
+            val progress = MovementProgress("bench-press", listOf(MovementProgress.Session("session", now - 1_000,
+                MovementSessionFact("bench-press", 1, fact, estimatesComplete = complete))))
+            GymMaterial { StrengthChart(progress, now, java.time.ZoneOffset.UTC, null) }
+        }
+        compose.onNodeWithText("Estimated strength").assertExists()
+        compose.onNodeWithText("No eligible estimate in this window.").assertDoesNotExist()
+        compose.runOnIdle { complete = true }
+        compose.onNodeWithText("No eligible estimate in this window.").assertExists()
+    }
+
     // Signed in, with the account's log read once and nothing logged on it.
     private fun store(room: EngineRoomFixture): TrainingStore {
         runBlocking { room.select("a"); room.pull(EngineRoomFixture.server()); room.store.refreshEngine(); room.store.observeEngine() }

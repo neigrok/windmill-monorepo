@@ -1,15 +1,42 @@
 package works.windmill.gym.domain.sync
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.domain.kit.*
+import works.windmill.domain.testing.withActionContext
 import works.windmill.sync.api.Change
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.JsonError
 import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
+import works.windmill.sync.modelserver.GymServerRules
+import works.windmill.sync.testing.SteppedEngine
 
 class TrainingRulesTests {
+    @Test fun nonFiniteTypedDraftsLeaveNoPartialWriteOrSpentIdentity() = runBlocking<Unit> {
+        SteppedEngine(SyncSchema.registry, testMoment.now.ms, rules = GymServerRules()).use { step ->
+            withActionContext { context ->
+                val runner = ActionRunner(step.replica, SyncSchema.registry, FixedZone(0), context)
+                val movement = Id("finite-squat", Exercise)
+                assertTrue(runner.run(CreateExercise(Exercise(movement, "Squat", "squat", "barbell", 2.5))) is Outcome.Committed)
+                assertTrue(runner.run(StartSession(sessionId)) is Outcome.Committed)
+                step.sync()
+                val before = step.engine.snapshot()
+                val set = trainingSet().copy(exerciseId = movement, completedAt = testMoment.now)
+                for (weight in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+                    assertThrows(JsonError::class.java) { runner.run(AppendSet(set.copy(weightKg = weight))) }
+                    assertEquals(before, step.engine.snapshot())
+                    assertEquals(emptyList<Any>(), step.stored(Session.scope, TrainingSet.type))
+                }
+                assertTrue(runner.run(AppendSet(set)) is Outcome.Committed)
+                step.sync()
+                assertEquals(listOf(set.id.record), step.stored(Session.scope, TrainingSet.type).map { it.id })
+            }
+        }
+    }
+
     @Test fun unreadableFrozenPlansRetainExactJsonAndDoNotHideSessionFacts() {
         val values = Session(sessionId, Instant(1000)).fields()
         val malformed = listOf(Json.of(false), Json.of(42), Json.Arr(emptyList()),
@@ -96,7 +123,7 @@ class TrainingRulesTests {
         val log = TrainingLog(reader(drawn = listOf(row(workout), setRow(best), setRow(first), warmupRow, setRow(assisted))))
         assertEquals(workout, log.open)
         assertTrue(log.liveHint)
-        assertEquals(1750.0, log.volumeKg(sessionId), 0.0)
+        assertEquals(1750.0, requireNotNull(log.volumeKg(sessionId)), 0.0)
         assertEquals(95.0 * (1 + 10 / 30.0), log.topE1rm(sessionId)!!, 0.0)
         assertEquals(listOf(first, warmup, assisted, best).sortedWith(compareBy({ it.completedAt }, { it.id })), log.sets(sessionId))
         val stale = log.copy(sessions = listOf(workout), sets = listOf(first), moment = Moment(Instant(first.completedAt.ms + SessionRules.staleAfterMs), FixedZone(0)))
@@ -122,8 +149,6 @@ class TrainingRulesTests {
     @Test fun eachSetFieldHasOrderedLocalRefusals() {
         val value = trainingSet()
         val cases = listOf(
-            Triple(value.copy(weightKg = -501.0), "weightKg", Violation.Reason.Below(-500.0)),
-            Triple(value.copy(weightKg = 501.0), "weightKg", Violation.Reason.Above(500.0)),
             Triple(value.copy(reps = 0), "reps", Violation.Reason.Below(1.0)),
             Triple(value.copy(reps = 501), "reps", Violation.Reason.Above(500.0)),
             Triple(value.copy(rpe = 0.9), "rpe", Violation.Reason.Below(1.0)),
@@ -134,6 +159,8 @@ class TrainingRulesTests {
         )
         for ((input, field, reason) in cases) invalid(decide(AppendSet(input)), "set.$field", field, reason)
         invalidValue("set.weightKg", "weightKg", Violation.Reason.NotANumber) { SetRules.weightKg.apply(Double.NaN, Path("weightKg")) }
+        for (weight in listOf(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY))
+            invalidValue("set.weightKg", "weightKg", Violation.Reason.NotANumber) { SetRules.weightKg.apply(weight, Path("weightKg")) }
         invalid(decide(AppendSet(value.copy(note = "é".repeat(2001)))), "set.note", "note", Violation.Reason.TooLong(4000, works.windmill.sync.core.MeasureUnit.bytes, 4002))
     }
 

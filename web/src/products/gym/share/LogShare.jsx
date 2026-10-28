@@ -228,7 +228,7 @@ export function SharedWorkoutReader({ catalog = [], session, previous, next, onS
     </nav>
     <h2 className="gym-title">{session.routineName || 'Free session'}</h2>
     <p className="gym-detail-when">{date} · {clock(session.startedAt)}–{clock(session.finishedAt)}</p>
-    <dl className="gym-reader-totals"><div><dt>sets</dt><dd>{session.workingSetCount ?? session.setCount}</dd></div><div><dt>reps</dt><dd>{session.reps}</dd></div><div><dt>kg external</dt><dd>{number.format(session.tonnageKg)}</dd></div></dl>
+    <dl className="gym-reader-totals"><div><dt>sets</dt><dd>{session.workingSetCount ?? session.setCount}</dd></div><div><dt>reps</dt><dd>{session.reps}</dd></div><div><dt>kg external</dt><dd>{session.tonnageKg === null ? '—' : number.format(session.tonnageKg)}</dd></div></dl>
     {groupByExercise(session.sets ?? []).map(([exerciseId, sets]) => {
       const scheme = sharedSetScheme(sets);
       const collapsed = scheme && !expanded.has(exerciseId);
@@ -238,7 +238,7 @@ export function SharedWorkoutReader({ catalog = [], session, previous, next, onS
         <header>
           <h3>{sets[0].exercise}</h3>
           {scheme ? <button type="button" className="gym-movement-expand" aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sets[0].exercise}`} aria-expanded={!collapsed} onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId); return next; })}><img src={collapsed ? new URL('../logbook/assets/expand.svg', import.meta.url).href : new URL('../logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></button> : <span className="gym-movement-state" aria-hidden="true"><img src={new URL('../logbook/assets/collapse.svg', import.meta.url).href} width="12" height="12" alt="" /></span>}
-          {totals && <p>{totals.reps} reps · {bodyweight && totals.tonnageKg === 0 ? 'bodyweight' : `${number.format(totals.tonnageKg)} kg`}</p>}
+          {totals && <p>{totals.reps} reps · {bodyweight && totals.tonnageKg === 0 ? 'bodyweight' : `${totals.tonnageKg === null ? '—' : number.format(totals.tonnageKg)} kg`}</p>}
         </header>
         {collapsed ? <button type="button" className="gym-share-scheme" aria-expanded="false" aria-label={`Show every set of ${sets[0].exercise}`} onClick={() => setExpanded((current) => new Set([...current, exerciseId]))}><span className="gym-share-ticks" aria-hidden="true">{sets.map((set) => <i key={set.id} />)}</span>{scheme}</button> : <ul className="gym-share-sets">{sets.map((set) => <li key={set.id}><i aria-hidden="true" /><span className="gym-share-set-line"><span>{set.weightKg === 0 ? 'bodyweight' : number.format(set.weightKg)}</span><span className="gym-share-set-times">×</span><span>{set.reps}</span></span>{set.rpe != null && <span>RPE {set.rpe}</span>}</li>)}</ul>}
       </section>;

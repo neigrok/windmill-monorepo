@@ -102,10 +102,10 @@ data class AskGeneration(
 @Serializable
 data class WorkoutObservation(
     val workingSetCount: Int,
-    val tonnageKg: Double,
+    val tonnageKg: Double?,
     val durationMs: Long? = null,
 ) {
-    val valid: Boolean get() = workingSetCount >= 0 && tonnageKg.isFinite() && tonnageKg >= 0 &&
+    val valid: Boolean get() = workingSetCount >= 0 && (tonnageKg == null || tonnageKg.isFinite() && tonnageKg >= 0) &&
         (durationMs == null || durationMs >= 0)
 }
 
