@@ -124,7 +124,12 @@ public struct LastTime: Equatable, Sendable {
   }
 
   public static func of(_ exerciseId: ID<Exercise>, log: TrainingLog) -> LastTime {
-    for session in log.drawnSessions where !session.isOpen {
+    of(exerciseId, among: log.drawnSessions, log: log)
+  }
+
+  // The newest of the given closed sessions, in their order, holding a set of the movement.
+  public static func of(_ exerciseId: ID<Exercise>, among sessions: [Session], log: TrainingLog) -> LastTime {
+    for session in sessions where !session.isOpen {
       let sets = log.sets(session: session.id).filter { $0.exerciseId == exerciseId }
       if !sets.isEmpty { return LastTime(exerciseId: exerciseId, session: session, sets: sets, isComplete: log.firstPullComplete) }
     }

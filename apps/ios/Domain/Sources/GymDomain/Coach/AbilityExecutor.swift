@@ -94,63 +94,69 @@ public struct RunAbility: Action {
       return .refuse(GymRefusal(Refused(.unknownRecord, subject: self.message.ref, path: .predicted)))
     }
     guard message.state == .running else { return .refuse(GymRefusal(Refused(Gym.Codes.messageFinal, subject: self.message.ref, path: .predicted))) }
-    let call = { (input: JSON?, outcome: AbilityCall.Outcome, answer: AbilityAnswer?) in
-      AbilityCall(callId: request.callId, name: request.name, input: input, outcome: outcome, created: answer?.created ?? [], read: answer?.served ?? .none)
+    let refusing = { (code: AbilityRefusal, input: JSON?) throws(Violation) -> Decision<AbilityOutcome, GymRefusal> in
+      try recording(AbilityCall(callId: request.callId, name: request.name, input: input, outcome: .refused(code)), answering: .refused(code),
+                    plan: Plan(), on: message, at: loaded.moment)
     }
     switch (gate, loaded.ability) {
     case (.refuse(let code), _):
-      return try recording(call(nil, .refused(code), nil), answering: .refused(code), plan: Plan(), on: message, at: loaded.moment)
+      return try refusing(code, nil)
     case (.run(let ability), let value?):
       switch ability.decide(value, ids) {
       case .refuse:
-        return try recording(call(request.input, .refused(.refused), nil), answering: .refused(.refused), plan: Plan(), on: message, at: loaded.moment)
+        return try refusing(.refused, request.input)
       case .unchanged(let answer):
-        return try recording(call(request.input, .ok, answer), answering: RunAbility.result(of: answer), plan: Plan(), on: message, at: loaded.moment)
+        return try answering(answer, plan: Plan(), on: message, at: loaded.moment)
       case .write(let plan, let answer):
-        return try recording(call(request.input, .ok, answer), answering: RunAbility.result(of: answer), plan: plan, on: message, at: loaded.moment)
+        return try answering(answer, plan: plan, on: message, at: loaded.moment)
       }
     case (.run, nil):
       preconditionFailure("an admitted call loaded nothing")
     }
   }
 
-  // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3): with its input while the
-  // calls have room for it; refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and
-  // refused unrecorded, as the message's own bound, when not even that fits.
-  func recording(_ call: AbilityCall, answering outcome: AbilityOutcome, plan: Plan, on message: CoachMessage, at moment: Moment)
-    throws(Violation) -> Decision<AbilityOutcome, GymRefusal>
-  {
-    let trimmed = AbilityCall(callId: call.callId, name: call.name, input: nil, outcome: call.outcome, created: call.created, read: call.read)
-    let bare = AbilityCall(callId: call.callId, name: call.name, input: nil, outcome: .refused(.volume))
-    for (recorded, written, ended) in [(call, plan, outcome), (trimmed, plan, outcome), (bare, Plan(), .refused(.volume))] {
-      var next = message
-      next.calls.append(recorded)
-      guard next.callsBytes <= CoachRules.maxCallsBytes else { continue }
-      var plan = written
-      plan.update(try Valid(next, fields: ["calls"], at: moment), fields: ["calls"])
-      return .write(plan, ended)
-    }
-    return .refuse(GymRefusal(Refused(.tooLarge, subject: message.id.ref, path: .predicted)))
-  }
-
-  // The result as the server answers it: the payload, with the tally of what the call served when it served anything.
-  static func result(of answer: AbilityAnswer) -> AbilityOutcome {
+  // Coach §4.3 step 2, §6.4: the result as the server answers it, with the tally of what the call served when it served
+  // anything, measured before anything commits; past `TOOL_RESULT_BYTES` the call is refused `result-too-large`, its
+  // writes dropped, so no result the phone cannot send is ever written.
+  func answering(_ answer: AbilityAnswer, plan: Plan, on message: CoachMessage, at moment: Moment) throws(Violation) -> Decision<AbilityOutcome, GymRefusal> {
     var payload = answer.payload
     if !answer.served.isEmpty, case .object(var members) = payload {
-      members["read"] = answer.served.tally
+      members["read"] = answer.served.tally.json
       payload = .object(members)
     }
     let bytes = payload.jcs
-    return .result(jcs: bytes, sha256: SHA256Hex.of(bytes))
+    guard bytes.count <= CoachRules.maxResultBytes else {
+      return try recording(AbilityCall(callId: request.callId, name: request.name, input: request.input, outcome: .refused(.resultTooLarge)),
+                           answering: .refused(.resultTooLarge), plan: Plan(), on: message, at: moment)
+    }
+    let call = AbilityCall(callId: request.callId, name: request.name, input: request.input, outcome: .ok, created: answer.created,
+                           read: .ids(answer.served))
+    return try recording(call, answering: .result(jcs: bytes, sha256: SHA256Hex.of(bytes)), plan: plan, on: message, at: moment)
+  }
+
+  // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the
+  // message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record
+  // fits the bound; and refused unrecorded, as the message's own bound, when not even that fits.
+  func recording(_ call: AbilityCall, answering outcome: AbilityOutcome, plan: Plan, on message: CoachMessage, at moment: Moment)
+    throws(Violation) -> Decision<AbilityOutcome, GymRefusal>
+  {
+    guard let recorded = message.recorded(call) else { return .refuse(GymRefusal(Refused(.tooLarge, subject: message.id.ref, path: .predicted))) }
+    var next = message
+    next.calls.append(recorded)
+    var written = recorded.outcome == call.outcome ? plan : Plan()
+    written.update(try Valid(next, fields: ["calls"], at: moment), fields: ["calls"])
+    return .write(written, recorded.outcome == call.outcome ? outcome : .refused(.volume))
   }
 
   // Coach §5 on the phone: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then the
-  // ability's decider from its input.
+  // ability's decider from its input. Three codes for a call its input sinks, the server's own: the gate's G-3 shape
+  // check refuses `invalid-input`; an input past a bound the schema does not state, which the server's tool refuses as
+  // malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`.
   static func gate(_ request: AbilityRequest, seat: Seat, appBaseUrl: String) -> Gate {
     guard let ability = Catalog.ability(named: request.name), ability.agent != .withheld, ability.declared,
           !AbilityExecutor.serverRun.contains(request.name) else { return .refuse(.notOffered) }
     guard ability.admits(seat) else { return .refuse(.seatRequired) }
-    guard JSONSchema(ability.input).fault(in: request.input) == nil else { return .refuse(.invalidArguments) }
+    guard JSONSchema(ability.input).fault(in: request.input) == nil else { return .refuse(.invalidInput) }
     do {
       return .run(try decider(for: request, appBaseUrl: appBaseUrl))
     } catch {
@@ -184,7 +190,17 @@ public struct RunAbility: Action {
       return AbilityRun(CreateExerciseCall(Exercise(id: try given("id", f, Exercise.self), name: try f.string("name"), pattern: try f.string("pattern"),
                                                  equipment: equipment, stepKg: try f.optionalDouble("stepKg") ?? ExerciseRules.defaultStepKg(equipment: equipment))))
     case "save_note":
-      return AbilityRun(SaveNoteAbility(Note(id: try given("id", f, Note.self), title: try f.string("title"), body: try f.string("body"))))
+      // The server's note bounds (backend Note.cpp, its tool's `invalid-arguments`): a blank title, a title past 60 code
+      // points or a body past 500 UTF-8 bytes, both measured after the trim, the same measures NoteRules keep. What the
+      // store refuses beyond them (ten notes, a taken id) stays `refused`.
+      let note = Note(id: try given("id", f, Note.self), title: try f.string("title"), body: try f.string("body"))
+      do {
+        _ = try NoteRules.title.apply(note.title, at: "title")
+        _ = try NoteRules.body.apply(note.body, at: "body")
+      } catch {
+        throw DecodeError(type: Note.type, field: error.path.text, reason: "past the note's bounds")
+      }
+      return AbilityRun(SaveNoteAbility(note))
     case "propose_routine_change":
       let proposing = ProposeRoutine(id: try given("id", f, Proposal.self), routineId: try f.ref("routineId", Routine.self),
                                      name: try f.optionalString("name"), entries: try f.list("entries", of: RoutineEntry.self),

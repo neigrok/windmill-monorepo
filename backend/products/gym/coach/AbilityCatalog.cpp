@@ -50,7 +50,7 @@ constexpr AppendixRow kAppendixC[] = {
     {"finish_session", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
     {"fix_set", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
     {"correct_session", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
-    {"rename_exercise", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
+    {"update_exercise", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
     {"edit_note", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
     {"reorder_notes", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},
     {"set_preferences", AbilityClass::change, AgentRule::withheld, AbilitySeats::any},

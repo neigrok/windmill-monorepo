@@ -68,7 +68,25 @@ nonisolated struct CoachTurnTally: Sendable {
   var answerBytes = 0
 }
 
-nonisolated struct TurnInterrupted: Error {}
+// Why a turn ended `interrupted` on this phone, in the word the `coach_turn` event's `code` carries: a §6.5 code the
+// server refused a turn request with, or the phone's own cause.
+nonisolated struct TurnInterrupted: Error {
+  static let transport = "transport"
+  static let decode = "decode"
+  static let storage = "storage"
+  static let refusal = "refusal"
+  static let clientCauses: Set<String> = [transport, decode, storage, refusal]
+
+  let code: String
+
+  init(_ code: String) {
+    self.code = TurnRefusal.codes.contains(code) || Self.clientCauses.contains(code) ? code : "other"
+  }
+
+  init(refusal: TurnRefusal) {
+    self.init(refusal.code)
+  }
+}
 
 @Observable @MainActor final class CoachTurnDriver {
   struct Running: Equatable, Sendable {
@@ -130,18 +148,20 @@ nonisolated struct TurnInterrupted: Error {}
       let message = try runner.read(Gym.scope) { try $0.repository(CoachMessage.self).find(ID(RecordID(id)), in: .drawn) }
       guard let message, message.state == .running else { return }
       _ = try runner.run(EndTurn(message.id, state: .interrupted))
-    } catch { report("storage", error) }
+    } catch { report(TurnInterrupted.storage, error) }
   }
 
   // The active replica changed under the turn: its stream ended with its identity, and this is the one write of an
-  // `interrupted` the replica that opened it does not make itself.
+  // `interrupted` the replica that opened it does not make itself. The server is told to stop once, so its slot is not
+  // held for `CALL_RESULT_TIMEOUT`; whether that lands changes nothing here.
   func seatChanged(from previous: String) {
     guard let running else { return }
     let message = try? runner.read(Gym.scope) { try $0.repository(CoachMessage.self).find(running.turn.coach, in: .drawn) }
     work?.cancel(); work = nil; textFlush?.cancel(); textFlush = nil
     self.running = nil; stopping = false; reconnecting = false
+    Task { [wire] in _ = try? await wire.stop(running.turnId, seat: running.seat) }
     guard message?.replica == previous, message?.state == .running else { return }
-    do { _ = try runner.run(EndTurn(running.turn.coach, state: .interrupted)) } catch { report("storage", error) }
+    do { _ = try runner.run(EndTurn(running.turn.coach, state: .interrupted)) } catch { report(TurnInterrupted.storage, error) }
   }
 
   // MARK: - Open
@@ -175,7 +195,7 @@ nonisolated struct TurnInterrupted: Error {}
       return turn
     } catch {
       self.error = "Your message couldn’t be saved. Try again."
-      report("storage", error)
+      report(TurnInterrupted.storage, error)
       return nil
     }
   }
@@ -239,16 +259,19 @@ nonisolated struct TurnInterrupted: Error {}
           withdraw(running, refusal: refusal, started: started); withdrawn(running.turn); return
         } catch let refusal as TurnRefusal {
           if refusal.status >= 500 { report("http", refusal) }
-          throw TurnInterrupted()
-        } catch is TurnInterrupted {
-          throw TurnInterrupted()
+          throw TurnInterrupted(refusal: refusal)
+        } catch let interrupted as TurnInterrupted {
+          throw interrupted
         } catch is CancellationError {
           throw CancellationError()
         } catch {
           // Coach §4.5: a dropped stream, or one another stream of this turn replaced, resumes after 1, 2, 4 and 8 beats; a
           // fifth loss ends the turn interrupted.
           let dropped = [.endedWithoutTerminal, .streamReplaced].contains(error as? TurnWireFault) || !(error is TurnWireFault)
-          guard reconnects < 4, dropped else { report(dropped ? "transport" : "decode", error); throw TurnInterrupted() }
+          guard reconnects < 4, dropped else {
+            report(dropped ? TurnInterrupted.transport : TurnInterrupted.decode, error)
+            throw TurnInterrupted(dropped ? TurnInterrupted.transport : TurnInterrupted.decode)
+          }
           reconnects += 1
           reconnecting = true
           try await Task.sleep(for: beat * (1 << (reconnects - 1)))
@@ -260,7 +283,8 @@ nonisolated struct TurnInterrupted: Error {}
       return
     } catch {
       guard self.running == running else { return }
-      end(running, state: .interrupted, truncated: false, code: nil, tally: tally, started: started)
+      if !(error is TurnInterrupted) { report(TurnInterrupted.storage, error) }
+      end(running, state: .interrupted, truncated: false, code: (error as? TurnInterrupted)?.code ?? TurnInterrupted.storage, tally: tally, started: started)
     }
   }
 
@@ -292,9 +316,6 @@ nonisolated struct TurnInterrupted: Error {}
     var results: [TurnResult] = []
     for call in batch.calls {
       switch try run(call, running, tally: &tally) {
-      case .result(let jcs, _) where jcs.count > CoachTurnBounds.toolResultBytes:
-        tally.refusals += 1
-        results.append(TurnResult(callId: call.callId, outcome: .refused(TurnResult.tooLarge)))
       case .result(let jcs, _):
         results.append(TurnResult(callId: call.callId, outcome: .ok(try JSON(parsing: jcs))))
       case .refused(let code):
@@ -309,11 +330,11 @@ nonisolated struct TurnInterrupted: Error {}
         return
       } catch let refusal as TurnRefusal {
         if refusal.status >= 500 { report("http", refusal) }
-        throw TurnInterrupted()
+        throw TurnInterrupted(refusal: refusal)
       } catch is CancellationError {
         throw CancellationError()
       } catch {
-        guard attempts < 3 else { report("transport", error); throw TurnInterrupted() }
+        guard attempts < 3 else { report(TurnInterrupted.transport, error); throw TurnInterrupted(TurnInterrupted.transport) }
         attempts += 1
         try await Task.sleep(for: beat * (1 << (attempts - 1)))
         guard self.running == running else { throw CancellationError() }
@@ -322,11 +343,17 @@ nonisolated struct TurnInterrupted: Error {}
   }
 
   // One call on the replica: its result or refusal, recorded on the Coach message by the executor; a refusal of the
-  // message itself (gone, ended, full) ends the turn.
+  // message itself (gone, ended, full) is a defect of this phone's turn and ends it.
   func run(_ call: AbilityRequest, _ running: Running, tally: inout CoachTurnTally) throws -> AbilityOutcome {
     let outcome: Outcome<AbilityOutcome, GymRefusal>
-    do { outcome = try executor.run(call, on: running.turn.coach, seat: running.seat.seat) } catch { report("storage", error); throw TurnInterrupted() }
-    guard let answered = outcome.value else { throw TurnInterrupted() }
+    do { outcome = try executor.run(call, on: running.turn.coach, seat: running.seat.seat) } catch {
+      report(TurnInterrupted.storage, error)
+      throw TurnInterrupted(TurnInterrupted.storage)
+    }
+    guard let answered = outcome.value else {
+      report(TurnInterrupted.refusal)
+      throw TurnInterrupted(TurnInterrupted.refusal)
+    }
     tally.calls += 1
     let said = switch answered {
     case .result: "ok"
@@ -350,20 +377,24 @@ nonisolated struct TurnInterrupted: Error {}
 
   func commitText(_ running: Running) throws {
     textFlush?.cancel(); textFlush = nil
-    do { _ = try runner.run(StreamTurnText(message: running.turn.coach, text: streamed)) } catch { report("storage", error); throw TurnInterrupted() }
+    do { _ = try runner.run(StreamTurnText(message: running.turn.coach, text: streamed)) } catch {
+      report(TurnInterrupted.storage, error)
+      throw TurnInterrupted(TurnInterrupted.storage)
+    }
   }
 
   // MARK: - End
 
   // Coach §4.4: the terminal state, the text and the receipt its calls derive, in one transaction; then what the band and
-  // the events say of it.
+  // the events say of it. The code is the §6.5 code a failed turn ended on, which the band states, or the cause of an
+  // interrupted one, which only the `coach_turn` event carries.
   func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, tally: CoachTurnTally, started: ContinuousClock.Instant) {
     textFlush?.cancel(); textFlush = nil
     let text = streamed
-    do { _ = try runner.run(EndTurn(running.turn.coach, state: state, text: text, truncated: truncated)) } catch { report("storage", error) }
+    do { _ = try runner.run(EndTurn(running.turn.coach, state: state, text: text, truncated: truncated)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
-    let refused = code.map { CoachTurnRefusal(code: $0) }
+    let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0) } : nil
     refusal = refused
     error = refused?.message ?? (state == .interrupted ? CoachCopy.interrupted : state == .stopped ? CoachCopy.stopped : nil)
     var ended = ["screen": "coach", "outcome": Self.outcome(of: state)]
@@ -378,7 +409,7 @@ nonisolated struct TurnInterrupted: Error {}
 
   // A refusal before the stream started never reached Coach: the turn's records go and the question returns to the field.
   func withdraw(_ running: Running, refusal: TurnRefusal, started: ContinuousClock.Instant) {
-    do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report("storage", error) }
+    do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
     let refused = CoachTurnRefusal(code: refusal.code, status: refusal.status)
@@ -426,9 +457,9 @@ nonisolated struct TurnInterrupted: Error {}
     telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": outcome])
   }
 
-  // A failure at the wire or the store, under one static name; never a word of the turn.
-  func report(_ kind: String, _ error: any Error) {
-    guard !(error is CancellationError), (error as? URLError)?.code != .cancelled, !GymRESTClient.needsConnection(error) else { return }
+  // A failure at the wire, the store or the replica's own refusal, under one static name; never a word of the turn.
+  func report(_ kind: String, _ error: (any Error)? = nil) {
+    guard !(error is CancellationError), (error as? URLError)?.code != .cancelled, !(error.map(GymRESTClient.needsConnection) ?? false) else { return }
     var properties = ["operation": "gym_coach_turn", "failure_kind": kind]
     if let refusal = error as? TurnRefusal { properties["status"] = String(refusal.status) }
     telemetry.failure("gym_coach_turn", kind: kind, properties: properties)

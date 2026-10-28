@@ -82,8 +82,9 @@ struct StreamTurnText: Action {
   }
 }
 
-// A turn the server refused before its stream started never happened: its two messages go, the conversation too when it
-// held nothing else, and the device's `runningTurn` row clears, so the question returns to the field.
+// A turn the server refused before its stream started never happened: its two messages go, with the pictures the
+// lifter's kept on this phone, the conversation too when it held nothing else, and the device's `runningTurn` row
+// clears, so the question returns to the field.
 struct WithdrawTurn: Action {
   let turn: OpenTurn.Turn
 
@@ -95,7 +96,10 @@ struct WithdrawTurn: Action {
 
   func decide(_ loaded: [CoachMessage], ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     var plan = Plan()
-    for message in loaded where message.id == turn.lifter || message.id == turn.coach { plan.remove(message.id) }
+    for message in loaded where message.id == turn.lifter || message.id == turn.coach {
+      plan.remove(message.id)
+      for picture in message.pictures where picture.localOnly { plan.device(CoachPictureRow.key(picture.id), nil) }
+    }
     if loaded.allSatisfy({ $0.id == turn.lifter || $0.id == turn.coach }) { plan.remove(turn.thread) }
     plan.device(EndTurn.runningTurnKey, nil)
     return .write(plan)
@@ -176,7 +180,6 @@ nonisolated enum CoachTurnBounds {
   static let contextBytes = 24_000
   static let contextPictures = 2
   static let contextReadBytes = 64 * 1024
-  static let toolResultBytes = 16 * 1024
   static let modelPictureEdge = 1568
   static let modelPictureBytes = 1024 * 1024
   static let textCoalescing = Duration.milliseconds(250)

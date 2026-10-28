@@ -45,6 +45,7 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
   return verdict;
 }
 
+// A phone refuses a call before it commits, so its refusal means nothing was written and the slot is free.
 void TurnGate::settle(const Ability& ability, bool ok) {
   if (ok) return;
   if (ability.agent == AgentRule::proposes) proposalHeld_ = false;

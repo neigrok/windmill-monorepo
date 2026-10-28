@@ -4,6 +4,9 @@
 #include "platform/adapters/llm/AiCallBudget.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 
+#include <trantor/utils/Logger.h>
+
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -559,4 +562,67 @@ TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling)
   CHECK_EQ(h.model->requests[0]["max_tokens"].asInt(), 2000);
   CHECK_EQ(h.model->requests[0]["tools"].size(), gymAbilityCatalog().offered(Seat::bound).size());
   h.service->stop();
+}
+
+// F6: a call the phone answered `ok: false` is counted as the phone's refusal, by code, on both
+// lines; a batch the phone refused whole is `refused`, and a code that is not a slug logs as `other`.
+TEST(coach_turn_logs_count_the_phone_refusals_by_code_and_a_batch_refused_whole_is_refused) {
+  struct LogLines {
+    std::mutex mutex;
+    std::vector<std::string> lines;
+    trantor::Logger::LogLevel level = trantor::Logger::logLevel();
+    LogLines() {
+      trantor::Logger::setLogLevel(trantor::Logger::kInfo);
+      trantor::Logger::setOutputFunction(
+          [this](const char* message, std::uint64_t length) {
+            const std::string line(message, length);
+            const std::size_t start = line.find("coach_");
+            if (start == std::string::npos) return;
+            std::lock_guard lock(mutex);
+            lines.push_back(line.substr(start, line.find(" duration_ms=") - start));
+          },
+          [] {});
+    }
+    ~LogLines() {
+      trantor::Logger::setOutputFunction([](const char* message, std::uint64_t length) { fwrite(message, 1, length, stdout); },
+                                         [] { fflush(stdout); });
+      trantor::Logger::setLogLevel(level);
+    }
+  } logs;
+
+  Harness h;
+  h.model->replies = parse(R"([
+    {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}},
+      {"type":"tool_use","id":"toolu_2","name":"save_note","input":{"id":"note_a","title":"Knee","body":"Left knee."}}]},
+    {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_3","name":"list_notes","input":{}},
+      {"type":"tool_use","id":"toolu_4","name":"list_exercises","input":{}}]},
+    {"stop_reason":"end_turn","content":[{"type":"text","text":"Done."}]}])");
+  const std::map<int, Json::Value> answers{
+      {1, parse(R"({"batch":1,"results":[{"callId":"toolu_1","ok":false,"code":"record-dead"},{"callId":"toolu_2","ok":false,"code":"Knee hurts"}]})")},
+      {2, parse(R"({"batch":2,"results":[{"callId":"toolu_3","ok":true,"result":{"notes":[]}},{"callId":"toolu_4","ok":false,"code":"coach-turn-volume"}]})")}};
+  const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_phone_refused1","question":"Hi"})")));
+  REQUIRE(admission.turn);
+  auto recorder = std::make_shared<Recorder>();
+  admission.turn->attach(recorder, false);
+  h.model->start();
+  std::size_t seen = 0;
+  while (!recorder->isClosed()) {
+    REQUIRE(recorder->waitFor(seen + 1));
+    const std::vector<Json::Value> frames = recorder->snapshot();
+    for (; seen < frames.size(); ++seen) {
+      if (frames[seen]["event"].asString() != "calls") continue;
+      const Json::Value& body = answers.at(frames[seen]["data"]["batch"].asInt());
+      CHECK(admission.turn->answer(body["batch"].asInt(), resultsOf(body), digestOf(body)) == ResultsAnswer::accepted);
+    }
+  }
+  h.service->stop();
+
+  CHECK_EQ(std::string(nameOf(admission.turn->state())), std::string("completed"));
+  std::lock_guard lock(logs.mutex);
+  CHECK(logs.lines == (std::vector<std::string>{
+      "coach_batch turn=tn_phone_refused1 batch=1 seat=bound calls=2 server=0 refused=0 phone_refused=2 outcome=refused",
+      "coach_batch turn=tn_phone_refused1 batch=2 seat=bound calls=2 server=0 refused=0 phone_refused=1 outcome=answered",
+      "coach_turn turn=tn_phone_refused1 seat=bound state=completed truncated=0 code=- model_calls=3 batches=2 "
+      "ability_calls=list_exercises:1,list_notes:1,list_routines:1,save_note:1 refusals=- "
+      "phone_refusals=coach-turn-volume:1,other:1,record-dead:1 question_bytes=2 answer_bytes=5"}));
 }

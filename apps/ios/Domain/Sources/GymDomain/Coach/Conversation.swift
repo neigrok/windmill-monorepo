@@ -149,12 +149,41 @@ public struct CoachMessage: Writable, Removable, Equatable {
   ]
 
   public var callsBytes: Int { JSON.array(calls.map(\.json)).jcs.count }
+
+  // The log rows the message's calls already hold by identity.
+  public var heldReads: ReadServed {
+    var held = ReadServed()
+    for call in calls where call.outcome == .ok {
+      if case .ids(let served) = call.read { held.saw(served) }
+    }
+    return held
+  }
+
+  // The call as this message's calls can hold it within their bound (Coach §4.3 step 2, §9.2): whole, its read less the
+  // rows earlier calls hold; without its input; with its read as counts alone, `readTruncated`; refused `coach-turn-volume`
+  // with nothing but its id and name; or not at all.
+  public func recorded(_ call: AbilityCall) -> AbilityCall? {
+    let fresh = switch call.read {
+    case .ids(let served): call.read(.ids(served.without(heldReads)))
+    case .counts: call
+    }
+    let bare = AbilityCall(callId: call.callId, name: call.name, input: nil, outcome: .refused(.volume))
+    var forms = [fresh, fresh.input(nil)]
+    if case .ids(let served) = fresh.read, !served.isEmpty { forms.append(fresh.input(nil).read(.counts(served.tally))) }
+    forms.append(bare)
+    return forms.first { form in
+      var next = self
+      next.calls.append(form)
+      return next.callsBytes <= CoachRules.maxCallsBytes
+    }
+  }
 }
 
 public enum CoachRules {
   public static let maxQuestionBytes = 8_000
   public static let maxReceiptBytes = 16_384
   public static let maxCallsBytes = 32_768
+  public static let maxResultBytes = 16_384
   public static let title = TextSpec("thread.title", unit: .bytes, min: 1, max: 8_000, trim: false, nfc: false)
   public static let role = ChoiceSpec("message.role", values: ["lifter", "coach"])
   public static let replica = TextSpec("message.replica", unit: .chars, min: 35, max: 35, trim: false, nfc: false)
@@ -180,14 +209,42 @@ public enum CoachRules {
 
 // MARK: - The calls a turn ran
 
-// The codes a call the phone refused carries back (Coach §5, §6.4): the gate's for an ability not offered or not open
-// to the seat, the executor's for a malformed input or a rule's refusal, and the turn's own volume bound.
+// The codes a call the phone refused carries back (Coach §5, §6.4): the gate's for an ability not offered, not open to
+// the seat or out of its schema's shape, the executor's for an input past a bound beyond the schema, a rule's refusal
+// or a result past `TOOL_RESULT_BYTES`, and the turn's own volume bound.
 public enum AbilityRefusal: String, Sendable, Equatable {
   case notOffered = "not-offered"
   case seatRequired = "seat-required"
+  case invalidInput = "invalid-input"
   case invalidArguments = "invalid-arguments"
   case refused
+  case resultTooLarge = "result-too-large"
   case volume = "coach-turn-volume"
+}
+
+// `{sets, sessions, weeks}`: how many log rows a read served, as a result states it and a receipt sums it.
+public struct ReadTally: Equatable, Sendable {
+  public var sets: Int
+  public var sessions: Int
+  public var weeks: Int
+
+  public init(sets: Int = 0, sessions: Int = 0, weeks: Int = 0) {
+    self.sets = sets
+    self.sessions = sessions
+    self.weeks = weeks
+  }
+
+  init(json: JSON) throws(DecodeError) {
+    let f = try Fields(json)
+    self.init(sets: try f.int("sets"), sessions: try f.int("sessions"), weeks: try f.int("weeks"))
+  }
+
+  public var isEmpty: Bool { sets == 0 && sessions == 0 && weeks == 0 }
+  public var json: JSON { ["sets": JSON(sets), "sessions": JSON(sessions), "weeks": JSON(weeks)] }
+
+  public static func + (a: ReadTally, b: ReadTally) -> ReadTally {
+    ReadTally(sets: a.sets + b.sets, sessions: a.sessions + b.sessions, weeks: a.weeks + b.weeks)
+  }
 }
 
 // The log rows a read handed to the model, by identity, and the weeks they fall in (Monday 00:00 UTC): what the read
@@ -228,10 +285,19 @@ public struct ReadServed: Equatable, Sendable {
     for week in other.weeks { saw(week: week) }
   }
 
+  // The rows this read served that another did not.
+  public func without(_ held: ReadServed) -> ReadServed {
+    var rest = ReadServed()
+    rest.sessions = sessions.filter { !held.sessions.contains($0) }
+    rest.sets = sets.filter { !held.sets.contains($0) }
+    rest.weeks = weeks.filter { !held.weeks.contains($0) }
+    return rest
+  }
+
   public var isEmpty: Bool { sessions.isEmpty && sets.isEmpty && weeks.isEmpty }
 
-  // `{sets, sessions, weeks}`, the tally a result carries when the call served anything.
-  public var tally: JSON { ["sets": JSON(sets.count), "sessions": JSON(sessions.count), "weeks": JSON(weeks.count)] }
+  // The tally a result carries when the call served anything.
+  public var tally: ReadTally { ReadTally(sets: sets.count, sessions: sessions.count, weeks: weeks.count) }
 
   public var json: JSON {
     ["sessions": .array(sessions.map(\.json)), "sets": .array(sets.map(\.json)), "weeks": .array(weeks.map { JSON($0) })]
@@ -276,6 +342,13 @@ public struct ReadServed: Equatable, Sendable {
   }
 }
 
+// What a call's record holds of the log rows it served: their identities, or their counts alone when the message's
+// calls had no room for the identities (`readTruncated`).
+public enum RecordedRead: Equatable, Sendable {
+  case ids(ReadServed)
+  case counts(ReadTally)
+}
+
 // One ability call as the Coach message records it (Coach §4.3 step 2): the call's id and name, its input while the
 // message's calls have room for it, what it created, what it served, and how it ended.
 public struct AbilityCall: Equatable, Sendable {
@@ -289,9 +362,9 @@ public struct AbilityCall: Equatable, Sendable {
   public let input: JSON?
   public let outcome: Outcome
   public let created: [RecordRef]
-  public let read: ReadServed
+  public let read: RecordedRead
 
-  public init(callId: String, name: String, input: JSON?, outcome: Outcome, created: [RecordRef] = [], read: ReadServed = .none) {
+  public init(callId: String, name: String, input: JSON?, outcome: Outcome, created: [RecordRef] = [], read: RecordedRead = .ids(.none)) {
     self.callId = callId
     self.name = name
     self.input = input
@@ -300,13 +373,26 @@ public struct AbilityCall: Equatable, Sendable {
     self.read = read
   }
 
+  public func input(_ input: JSON?) -> AbilityCall {
+    AbilityCall(callId: callId, name: name, input: input, outcome: outcome, created: created, read: read)
+  }
+
+  public func read(_ read: RecordedRead) -> AbilityCall {
+    AbilityCall(callId: callId, name: name, input: input, outcome: outcome, created: created, read: read)
+  }
+
   public var json: JSON {
     let outcome: JSON = switch self.outcome {
     case .ok: "ok"
     case .refused(let code): .string(code.rawValue)
     }
+    let (read, truncated): (JSON, JSON?) = switch self.read {
+    case .ids(let served): (served.json, nil)
+    case .counts(let tally): (tally.json, true)
+    }
     return .object(omittingNil: ["callId": .string(callId), "name": .string(name), "input": input, "outcome": outcome,
-                                 "created": .array(created.map { ["t": .string($0.type), "id": $0.id.json] }), "read": read.json])
+                                 "created": .array(created.map { ["t": .string($0.type), "id": $0.id.json] }), "read": read,
+                                 "readTruncated": truncated])
   }
 
   public init(json: JSON) throws(DecodeError) {
@@ -323,8 +409,8 @@ public struct AbilityCall: Equatable, Sendable {
       refs.append(RecordRef(type: try ref.string("t"), id: id))
     }
     guard let read = f.json("read") else { throw DecodeError(type: CoachMessage.type, field: "calls.read", reason: "absent") }
-    self.init(callId: try f.string("callId"), name: try f.string("name"), input: f.json("input"), outcome: ended, created: refs,
-              read: try ReadServed(json: read))
+    let recorded: RecordedRead = try f.bool("readTruncated", default: false) ? .counts(try ReadTally(json: read)) : .ids(try ReadServed(json: read))
+    self.init(callId: try f.string("callId"), name: try f.string("name"), input: f.json("input"), outcome: ended, created: refs, read: recorded)
   }
 
   static func list(_ json: JSON) throws(DecodeError) -> [AbilityCall] {
@@ -334,16 +420,23 @@ public struct AbilityCall: Equatable, Sendable {
     return calls
   }
 
-  // Coach §9.2: what the turn read, counted by identity across its calls, and the ids of what it created; a refused
-  // call counts nothing. Ids only: the room reads names and serials from the records when it draws.
+  // Coach §9.2: what the turn read, counted by identity across its calls, plus the counts of the calls recorded as
+  // counts alone (`truncated: true` then), and the ids of what it created; a refused call counts nothing. Ids only: the
+  // room reads names and serials from the records when it draws.
   public static func receipt(of calls: [AbilityCall]) -> JSON {
     var served = ReadServed()
+    var counted = ReadTally()
+    var truncated = false
     var created: [RecordRef] = []
     for call in calls where call.outcome == .ok {
-      served.saw(call.read)
+      switch call.read {
+      case .ids(let read): served.saw(read)
+      case .counts(let tally): counted = counted + tally; truncated = true
+      }
       created += call.created.filter { !created.contains($0) }
     }
-    return ["read": served.tally, "results": .array(created.map { ["t": .string($0.type), "id": $0.id.json] })]
+    return .object(omittingNil: ["read": (served.tally + counted).json, "results": .array(created.map { ["t": .string($0.type), "id": $0.id.json] }),
+                                 "truncated": truncated ? true : nil])
   }
 }
 

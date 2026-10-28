@@ -295,6 +295,7 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
            << " truncated=" << (truncated ? 1 : 0) << " code=" << (errorCode.empty() ? "-" : errorCode)
            << " model_calls=" << modelCalls << " batches=" << host.batches()
            << " ability_calls=" << tally(host.callsByName()) << " refusals=" << tally(host.refusalsByCode())
+           << " phone_refusals=" << tally(host.phoneRefusalsByCode())
            << " question_bytes=" << turn->open().question.size() << " answer_bytes=" << turn->text().size()
            << " duration_ms=" << elapsed.count();
 }
