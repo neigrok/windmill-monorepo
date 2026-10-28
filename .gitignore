@@ -51,3 +51,4 @@ uploads/
 google-services.json
 GoogleService-Info.plist
 build-*/
+__pycache__/
