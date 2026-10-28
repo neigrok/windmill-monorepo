@@ -330,79 +330,72 @@ class ShareWithCoachTests {
         compose.waitForIdle()
     }
 
-    // The bytes are pinned: the caption names the exact line the tap sends, so the two cannot drift.
     @Test
-    fun theCoachCopyNamesTheExactQuestionItSends() {
+    fun shareUsesTheApprovedWorkoutQuestion() {
         assertEquals("Share with Coach", FinishCoach.action)
-        assertEquals("Sends Coach one line — “Check my last session.” — and opens the answer.",
-                     FinishCoach.caption)
-        assertEquals("Check my last session.", FinishCoach.question)
+        assertEquals("Check my last workout.", FinishCoach.question)
     }
 
-    // One primary, one caption, on BOTH branches — the short session is exactly the one worth a
-    // second opinion — and the tap reaches the room once.
     @Test
-    fun theOnePrimaryStandsOnBothBranchesAndReachesTheRoomOnce() {
+    fun bothReceiptBranchesKeepShareAndDoneOutsideTheScrollBody() {
         receipt()
         listOf(ordinary, short).forEachIndexed { taps, finished ->
             show(finished)
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
-            compose.onNodeWithText(FinishCoach.caption).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
-            compose.runOnIdle { assertEquals(finished.session.id, taps + 1, shared.value) }
+            compose.onNodeWithText(FinishCoach.action).assertIsDisplayed().performClick()
+            compose.onNodeWithText("Done").assertIsDisplayed()
+            compose.runOnIdle { assertEquals(taps + 1, shared.value) }
+            compose.onNodeWithText("Against plan").assertDoesNotExist()
+            compose.onNodeWithText("Workout saved", substring = true).assertDoesNotExist()
         }
     }
 
-    // Where Coach cannot be reached nothing stands in the primary's place: the receipt is the head,
-    // the readout and the dismissal the platform draws.
     @Test
-    fun withoutCoachNothingStandsWhereThePrimaryWould() {
+    fun aDeploymentWithoutCoachStillOffersDone() {
         reachable.value = false
         receipt()
         listOf(ordinary, short).forEach { finished ->
             show(finished)
             compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
-            compose.onNodeWithText(FinishCoach.caption).assertDoesNotExist()
-            compose.onNodeWithText("Sign in").assertDoesNotExist()
-        }
-    }
-
-    // The receipt decides nothing and shares nothing but the one line: no Keep it / Discard pair
-    // on the slight branch, no dismissal of its own, and no link card — that one keeps its doors on
-    // the session page and the log row, because two share verbs on one receipt are two meanings.
-    @Test
-    fun theReceiptDrawsNeitherTheDecidedPairNorTheLinkCard() {
-        receipt()
-        listOf(ordinary, short).forEach { finished ->
-            show(finished)
-            compose.onNodeWithText("Keep it").assertDoesNotExist()
-            compose.onNodeWithText(Finish.discard).assertDoesNotExist()
-            compose.onNodeWithText("Done").assertDoesNotExist()
-            compose.onNodeWithText("Just keep the session").assertDoesNotExist()
-            compose.onNodeWithText("Share this workout").assertDoesNotExist()
+            compose.onNodeWithText("Done").assertIsDisplayed()
         }
     }
 
     @Test
-    fun noReceiptOffersToSaveARoutine() {
-        receipt()
-        for (finished in listOf(ordinary, short, ordinary.copy(session = ordinary.session.copy(routineId = "routine")))) {
-            show(finished)
-            compose.onNodeWithText("Save a routine").assertDoesNotExist()
-            compose.onNodeWithText("Save routine").assertDoesNotExist()
-            compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
-        }
+    fun theOverflowOwnsDiscardAndTheReceiptHasNoLinkOrRoutineSave() {
+        var discards = 0
+        compose.setContent { FinishScreen(ordinary, catalog, onDiscard = { discards++ }) }
+        compose.onNodeWithText("Discard").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Discard").assertIsDisplayed().performClick()
+        assertEquals(1, discards)
+        compose.onNodeWithText("Save a routine").assertDoesNotExist()
+        compose.onNodeWithText("Share this workout").assertDoesNotExist()
+        compose.onNodeWithText(Finish.discard).assertDoesNotExist()
     }
 
     @Test
-    fun theTitleCongratulatesAnOrdinarySessionAndNotAShortOne() {
+    fun titleAndCommittedDateDoNotDependOnReview() {
         receipt()
         compose.onNodeWithText("Well done.").assertIsDisplayed()
-        compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
-
+        compose.onNodeWithText("Free workout · ${Finish.day(ordinary.session.startedAtMs)}").assertIsDisplayed()
         show(short)
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
-        compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
-        compose.onNodeWithText("Well done.").assertDoesNotExist()
+        compose.onNodeWithText("Free workout · ${Finish.day(short.session.startedAtMs)}").assertIsDisplayed()
+    }
+
+    @Test
+    fun zeroSetsUsesOnlyTheTerminalCopyAndDone() {
+        var done = 0
+        compose.setContent { FinishScreen(short.copy(sets = emptyList()), catalog,
+            onDone = { done++ }, onShareWithCoach = {}, onDiscard = {}, onKeep = {}) }
+        compose.onNodeWithText("No sets logged").assertIsDisplayed()
+        compose.onNodeWithText("This workout has ended.").assertIsDisplayed()
+        compose.onNodeWithText("Done").performClick()
+        assertEquals(1, done)
+        for (text in listOf("Duration", "Working sets", "Volume", "Ended early.", "Keep it", FinishCoach.action)) {
+            compose.onNodeWithText(text).assertDoesNotExist()
+        }
+        compose.onNodeWithContentDescription("More").assertDoesNotExist()
     }
 }

@@ -462,6 +462,10 @@ class TrainingStore(
     var isFinishing: Boolean by mutableStateOf(false)
         private set
 
+    var replicaReadRevision by mutableStateOf(-1L)
+        private set
+    val workoutReplica: String? get() = controls.engineReplica
+    val accountReady: Boolean get() = workoutAuthorized && !isLoading
     val canFinish: Boolean get() = workoutAuthorized && session != null && !isFinishing
 
     private var seated: Account? = null
@@ -682,6 +686,7 @@ class TrainingStore(
         tried("gym.import_reconcile") { training.reconcileImports() }
         if (training.firstPullComplete && !training.anonymous) training.imports.retireStartSources()
         if (seat != owner) return
+        replicaReadRevision = training.engine.readRevision()
         refusals = training.refusedWrites()
         loadLog()
         if (seat != owner) return
@@ -866,36 +871,97 @@ class TrainingStore(
 
     fun retainedSession(detail: SessionDetail): SessionDetail = closedDetails[detail.session.id] ?: detail
 
+    suspend fun finishedSession(sessionId: String): GymResult<SessionDetail?> {
+        val seat = owner
+        val replica = controls.engineReplica
+        if (!accountReady || replica == null || replica != training.engine.activeReplica() || (seat == null) != training.anonymous)
+            return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        val detail = try { readTraining { shelfDetail(sessionId) ?: training.restoredSession(sessionId) } }
+        catch (_: TrainingReadChanged) { return GymResult.Failed(WriteFailure.Refused(accountChanged)) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.loadLog", failure)
+            return GymResult.Failed(WriteFailure.NoAnswer)
+        }
+        if (!accountReady || seat != owner || replica != controls.engineReplica || replica != training.engine.activeReplica() ||
+            (seat == null) != training.anonymous) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        if (detail == null) closedDetails = closedDetails - sessionId
+        else if (!detail.session.isOpen) retainClosed(detail)
+        return GymResult.Ok(detail)
+    }
+
     private fun retainClosed(detail: SessionDetail) {
         closedDetails = closedDetails + (detail.session.id to detail)
     }
 
     // The log refuses to delete a session somebody may still be logging into.
-    suspend fun discard(sessionId: String): Boolean {
-        if (!workoutAuthorized) return false
-        if (shelfDetail(sessionId) != null) {
-            training.imports.discardRefusal(sessionId)
-            invalidateProgress()
-            controls.close(sessionId)
-            controls.flush()
-            drawFromControls()
-            shelved = refusedImports()
-            return true
-        }
+    suspend fun discard(sessionId: String): Boolean = discardWorkout(sessionId) == null
+
+    private data class WorkoutDiscardKey(val account: String, val replica: String?, val anonymous: Boolean, val sessionId: String)
+    private val workoutDiscards = mutableMapOf<WorkoutDiscardKey, kotlinx.coroutines.Deferred<WriteFailure?>>()
+
+    suspend fun discardWorkout(sessionId: String, screen: String = "session",
+        expectedReplica: String? = controls.engineReplica, expectedAnonymous: Boolean = owner == null): WriteFailure? {
+        val key = WorkoutDiscardKey(accountKey, expectedReplica, expectedAnonymous, sessionId)
+        workoutDiscards[key]?.let { return it.await() }
         val seat = owner
-        tried("gym.discard") { training.discardSession(sessionId) } ?: return false
-        if (!workoutAuthorized || seat != owner) return false
-        invalidateProgress()
-        // The discard leaves the READ and not only the drawn rows, and the re-read below is not
-        // enough on its own: `loadLog` keeps every row DEEPER than the page it answers with, so a
-        // session older than the log's head would be folded straight back in and drawn again the
-        // moment the window that was hiding it closed.
-        logged = logged.filterNot { it.id == sessionId }
-        controls.close(sessionId)
-        controls.flush()
-        drawFromControls()
-        loadLog()
-        return true
+        val replica = expectedReplica
+        val job = scope.async(start = CoroutineStart.UNDISPATCHED) {
+            var accepted = false
+            val failure = try {
+                run write@{
+                    if (!workoutAuthorized || seat != owner || replica == null || replica != controls.engineReplica || expectedAnonymous != (owner == null)) return@write WriteFailure.Refused(accountChanged)
+                    if (shelfDetail(sessionId) != null) {
+                        training.imports.discardRefusal(sessionId)
+                        accepted = true
+                        invalidateProgress()
+                        if (controls.writable) {
+                            controls.close(sessionId)
+                            controls.flush()
+                            drawFromControls()
+                        }
+                        shelved = refusedImports()
+                        return@write null
+                    }
+                    training.discardSession(sessionId, replica, expectedAnonymous)
+                    accepted = true
+                    if (seat != owner) return@write null
+                    invalidateProgress()
+                    logged = logged.filterNot { it.id == sessionId }
+                    closedDetails = closedDetails - sessionId
+                    if (controls.writable) {
+                        controls.close(sessionId)
+                        controls.flush()
+                        drawFromControls()
+                    }
+                    loadLog()
+                    null
+                }
+            } catch (interrupted: CancellationException) {
+                throw interrupted
+            } catch (failure: Exception) {
+                reportFailure("gym.discard", failure)
+                if (accepted) null else WriteFailure(failure)
+            }
+            if (accepted && seat == owner && session?.id == sessionId) {
+                session = null
+                sets = emptyList()
+                order = emptyList()
+                exerciseId = null
+                rack = null
+                workoutFacts.value = null
+                if (!controls.writable) refuseWorkout()
+            }
+            telemetry.event("gym_action", mapOf("screen" to screen, "action" to "discard", "outcome" to when (failure) {
+                null -> "ok"
+                is WriteFailure.Refused -> "refused"
+                else -> "failed"
+            }))
+            failure
+        }
+        workoutDiscards[key] = job
+        job.invokeOnCompletion { if (workoutDiscards[key] === job) workoutDiscards.remove(key) }
+        return job.await()
     }
 
     // One day of the program, written WHOLE. A routine with an id is an edit, which moves the

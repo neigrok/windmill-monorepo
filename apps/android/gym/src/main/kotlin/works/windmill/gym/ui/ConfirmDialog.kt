@@ -9,11 +9,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import works.windmill.platform.design.WindmillFont
 
-// The platform's confirmation, in the room's own ink: the Material scheme is the brand's gold on
-// brown, and gold in this room means a personal record. Closing the dialog decides nothing.
-//
-// The room asks this question ONCE, over turning a proposal down: that settles for good and has no
-// way back. Every destructive act that HAS one takes the withheld window and its Undo instead.
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -48,6 +43,39 @@ fun ConfirmDialog(
                 colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim),
             ) {
                 Text(keep, style = WindmillFont.body(15, FontWeight.SemiBold))
+            }
+        },
+    )
+}
+
+data class WorkoutDiscardPrompt(
+    val summary: works.windmill.gym.domain.SessionSummary,
+    val detail: works.windmill.gym.domain.SessionDetail?,
+    val screen: String,
+    val replica: String?,
+    val anonymous: Boolean,
+)
+
+@Composable
+fun WorkoutDiscardDialog(setCount: Int, onDiscard: () -> Unit, onCancel: () -> Unit, busy: Boolean = false) {
+    val skin = LocalGymColors.current
+    val native = androidx.compose.ui.text.font.FontFamily.Default
+    AlertDialog(
+        onDismissRequest = { if (!busy) onCancel() },
+        containerColor = skin.surface,
+        title = { Text("Discard this workout?", fontFamily = native, fontSize = 24.sp, lineHeight = 32.sp, color = skin.ink) },
+        text = { Text("This deletes the workout and its $setCount sets. You can’t undo this.",
+            fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, color = skin.inkDim) },
+        confirmButton = {
+            TextButton(onClick = onDiscard, enabled = !busy,
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.error)) {
+                Text("Discard", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, enabled = !busy,
+                colors = ButtonDefaults.textButtonColors(contentColor = skin.inkDim)) {
+                Text("Cancel", fontFamily = native, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
             }
         },
     )

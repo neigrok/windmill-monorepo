@@ -1,5 +1,9 @@
 package works.windmill.gym
 
+import android.os.Bundle
+import android.os.Parcel
+import android.os.Parcelable
+
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -10,6 +14,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -19,6 +24,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import works.windmill.platform.Account
+import works.windmill.platform.ShellActions
+import works.windmill.platform.SignInAttempts
+import works.windmill.platform.LocalShellActions
+import works.windmill.platform.telemetry.LocalTelemetry
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -32,6 +47,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -42,6 +58,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.LocalCoach
+import works.windmill.platform.storage.AtomicDocument
+import java.io.File
+import java.io.IOException
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.SessionDetail
@@ -53,16 +74,10 @@ import works.windmill.gym.ui.Finish
 import works.windmill.gym.ui.FinishCoach
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.sync.engine.signOut
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
-// The finish is a sheet presented over the session it just closed, and dismissing it
-// leaves you in the workout you finished. That ruling costs the room three things at once — the
-// workout has to be PUSHED before the receipt rises, or a dismissal lands on the routines home; the
-// receipt has to carry its own title, because a sheet has no top bar to put one in; and it has to
-// carry its own refusals, because a sheet covers the bottom bar the room says everything else in.
-//
-// Back used to be claimed on this screen and answer with nothing at all.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class FinishSheetTests {
@@ -73,12 +88,18 @@ class FinishSheetTests {
     val tmp = TemporaryFolder()
 
     private var showing by mutableStateOf(true)
+    private var suppliedShell: ShellActions? = null
+    private var presentedAccount by mutableStateOf<Account?>(null)
+    private var roomTelemetry: Telemetry = Telemetry.None
+    private var suppliedRegistry by mutableStateOf<SaveableStateRegistry?>(null)
+    private var presentedStore by mutableStateOf<TrainingStore?>(null)
 
-    // The room flushes through the engine as it leaves, so the screen goes before the engine closes.
-    private fun inRoom(server: FakeGymRest = FakeGymRest(), seat: String? = "u1", test: (EngineRoomFixture) -> Unit) {
+    private fun inRoom(server: FakeGymRest = FakeGymRest(), seat: String? = "u1", telemetry: Telemetry = Telemetry.None, localCoach: LocalCoach? = null, test: (EngineRoomFixture) -> Unit) {
+        roomTelemetry = telemetry
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = server)
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = server, telemetry = telemetry, localCoach = localCoach)
         try {
+            room.store.observeEngine()
             runBlocking { room.select(seat) }
             test(room)
         } finally {
@@ -89,11 +110,39 @@ class FinishSheetTests {
         }
     }
 
-    private fun show(room: EngineRoomFixture) {
-        compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), room.store) } }
+    private fun show(room: EngineRoomFixture, restoration: StateRestorationTester? = null) {
+        val shell = suppliedShell ?: ShellActions(openYou = {})
+        val content: @Composable () -> Unit = {
+            if (showing) CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides roomTelemetry,
+                LocalSaveableStateRegistry provides (suppliedRegistry ?: LocalSaveableStateRegistry.current)) {
+                GymMaterial { GymRoom(presentedAccount ?: room.account(), presentedStore ?: room.store) }
+            }
+        }
+        if (restoration == null) compose.setContent(content) else restoration.setContent(content)
     }
 
-    // An externally started workout with no routine, then Finish from the logger.
+    @Suppress("UNCHECKED_CAST", "DEPRECATION")
+    private fun saveRoom(): Map<String, List<Any?>> {
+        val bundle = Bundle()
+        for ((key, values) in suppliedRegistry!!.performSave())
+            bundle.putParcelableArrayList(key, ArrayList(values) as ArrayList<Parcelable>)
+        val parcel = Parcel.obtain()
+        try {
+            parcel.writeBundle(bundle)
+            parcel.setDataPosition(0)
+            val restored = requireNotNull(parcel.readBundle(javaClass.classLoader))
+            return restored.keySet().associateWith { restored.get(it) as List<Any?> }
+        } finally { parcel.recycle() }
+    }
+
+    private fun restoreRoom(saved: Map<String, List<Any?>>) {
+        compose.runOnIdle { showing = false }
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        compose.runOnIdle { suppliedRegistry = SaveableStateRegistry(saved) { true }; showing = true }
+        if (compose.mainClock.autoAdvance) compose.waitForIdle()
+    }
+
     private fun finishAWorkout(room: EngineRoomFixture, sets: Int = 1) {
         runBlocking {
             room.startExternalWorkout()
@@ -102,10 +151,9 @@ class FinishSheetTests {
         }
         show(room)
         compose.waitForIdle()
-        finish(if (sets < 4) "Ended early." else "Well done.")
+        finish(if (sets == 0) "No sets logged" else if (sets < 4) "Ended early." else "Well done.")
     }
 
-    // One set read from the device is slight.
     private fun finish(title: String = "Ended early.") {
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("Finish") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
@@ -116,8 +164,11 @@ class FinishSheetTests {
         }
     }
 
-    // Composed FIRST and worked afterwards, so a test can hold a conversation on the Coach tab
-    // before the workout it then finishes.
+    private fun shareReceipt() {
+        compose.onNodeWithText(FinishCoach.action).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(FinishCoach.action).fetchSemanticsNodes().isEmpty() }
+    }
+
     private fun startAWorkout(room: EngineRoomFixture) {
         val started = room.scope.async {
             room.startExternalWorkout()
@@ -131,8 +182,6 @@ class FinishSheetTests {
         }
     }
 
-    // The receipt is its own window, so what stands on the session page beneath it — the link card
-    // and the discard door, both of which keep their place there — is not on the receipt.
     private fun onTheReceipt(text: String): Int {
         val sheet = compose.onNodeWithText("Ended early.").fetchSemanticsNode().root
         return compose.onAllNodesWithText(text).fetchSemanticsNodes().count { it.root == sheet }
@@ -149,12 +198,8 @@ class FinishSheetTests {
         inRoom { room ->
             finishAWorkout(room)
 
-            // The title is IN the receipt, not in a bar above it — `Ended early` is a slight session's
-            // whole salience and a sheet has nowhere else to put it.
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            // And the workout itself is what stands underneath, so dismissing lands on its detail page.
             compose.onNodeWithText(Readout.noRoutine).assertIsDisplayed()
-            // A pushed screen covers the rail, before the sheet and after it.
             compose.onNodeWithText("The log").assertDoesNotExist()
         }
     }
@@ -176,6 +221,7 @@ class FinishSheetTests {
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
         }
         val room = EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry, readDispatcher = reads)
+        room.store.observeEngine()
         try {
             runBlocking {
                 room.select(null)
@@ -223,7 +269,7 @@ class FinishSheetTests {
                 assertEquals(emptyList<String>(), failures)
             }
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            compose.onNodeWithText("500").assertIsDisplayed()
+            compose.onAllNodesWithText("500 kg").onLast().assertIsDisplayed()
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()
@@ -258,7 +304,7 @@ class FinishSheetTests {
                 assertEquals(SessionDetail(closed.session, performed), store.retainedSession(SessionDetail(closed.session, emptyList())))
             }
             compose.onNodeWithText("Ended early.").assertIsDisplayed()
-            compose.onNodeWithText("830").assertIsDisplayed()
+            compose.onAllNodesWithText("830 kg").onLast().assertIsDisplayed()
             compose.onNodeWithText("Routines").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(runBlocking { room.training.sessions(TrainingStore.logPage, null, null) }, store.allSessions)
@@ -271,15 +317,12 @@ class FinishSheetTests {
         }
     }
 
-    // The receipt's way out is the sheet coming down, and it decides nothing: no dismissal of its
-    // own, no Keep it / Discard pair, and no link card — the link keeps its doors on the session
-    // page and the log row.
     @Test
-    fun testTheReceiptDrawsNoDismissalNoDecidedPairAndNoLinkCard() {
+    fun theReceiptHasDoneAndKeepsDiscardInOverflow() {
         inRoom { room ->
             finishAWorkout(room)
 
-            compose.onAllNodesWithText("Done").assertCountEquals(0)
+            compose.onAllNodesWithText("Done").assertCountEquals(1)
             compose.onAllNodesWithText("Just keep the session").assertCountEquals(0)
             compose.onAllNodesWithText("Keep it").assertCountEquals(0)
             assertEquals(0, onTheReceipt(Finish.discard))
@@ -287,10 +330,6 @@ class FinishSheetTests {
         }
     }
 
-    // The tap, in order: the receipt comes down, a FRESH conversation opens on the Coach tab, and
-    // the one line goes through the same send a typed question takes — so the exchange is drawn
-    // waiting the instant the tab shows, and the thread is titled by the line verbatim. Nothing
-    // else rides with it: no session id, because Coach reads the log newest first.
     @Test
     fun testShareWithCoachOpensAFreshConversationAndSendsTheOneLine() {
         val server = FakeGymRest()
@@ -298,17 +337,17 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            // A conversation already standing, so the reset is proved and not assumed.
             askAnOpener()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
             val answer = CompletableDeferred<Unit>()
-            server.onAsk = { answer.await() }
+            val entered = CompletableDeferred<Unit>()
+            server.onAsk = { entered.complete(Unit); answer.await() }
             startAWorkout(room)
             finish()
 
-            compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
+            shareReceipt()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
@@ -316,20 +355,18 @@ class FinishSheetTests {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
 
-            // Waiting is drawn before any answer lands, in the exchange the room already renders.
             compose.onNodeWithText(FinishCoach.question).assertIsDisplayed()
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            // Fresh: the earlier exchange is gone from the screen and the id on the wire is a new one.
             compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
+            compose.waitUntil(10_000) { entered.isCompleted }
             compose.runOnIdle {
-                assertEquals(listOf(Ask.openers.first(), "Check my last session."),
+                assertEquals(listOf(Ask.openers.first(), "Check my last workout."),
                              server.asked.map { it.question })
                 assertTrue("a new conversation, not the one that stood",
                            server.asked[0].thread != server.asked[1].thread)
                 assertTrue(server.asked[1].thread.isNotEmpty())
             }
-            // The rail is back — the receipt and the workout beneath it are both down — on Coach.
             compose.onNodeWithText("The log").assertIsDisplayed()
 
             answer.complete(Unit)
@@ -340,9 +377,6 @@ class FinishSheetTests {
         }
     }
 
-    // A double tap while the sheet is still descending is ONE tap: the second must not fire the
-    // continuation again, or the fresh conversation minted by the first is wiped mid-request and a
-    // follow-up lands in a thread of its own.
     @Test
     fun testTwoTapsOnShareWithCoachAreOneAskAndTheFollowUpStaysInThatThread() {
         val server = FakeGymRest()
@@ -351,10 +385,7 @@ class FinishSheetTests {
         inRoom(server) { room ->
             finishAWorkout(room)
 
-            // Both taps inside ONE frame, with the clock held so the first descent is still in flight
-            // when the second `hide()` arrives: a second `performClick` would wait for idle first, and
-            // on a free-running test clock the sheet is down before it lands.
-            val tap = compose.onNodeWithText(FinishCoach.action).performScrollTo()
+            val tap = compose.onNodeWithText(FinishCoach.action)
                 .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
             compose.mainClock.autoAdvance = false
             compose.runOnIdle {
@@ -371,12 +402,17 @@ class FinishSheetTests {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
+            compose.waitUntil(10_000) { compose.runOnIdle { server.calls.count { it == "ask" } == 1 } }
             compose.runOnIdle { assertEquals("one tap, one ask", 1, server.calls.count { it == "ask" }) }
 
             answer.complete(Unit)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
+            compose.waitUntil(10_000) { compose.runOnIdle {
+                val id = room.store.coach.selectedChatId.orEmpty()
+                !room.store.coach.isAsking(id) && room.store.coach.draft(id).text.isEmpty()
+            } }
             compose.waitUntil(10_000) {
                 compose.onAllNodes(hasContentDescription("Question") and isEnabled()).fetchSemanticsNodes().size == 1
             }
@@ -400,10 +436,8 @@ class FinishSheetTests {
         }
     }
 
-    // A tap behind an ask still in flight resets nothing and sends nothing: the receipt comes down
-    // on the Coach tab, where the stalled exchange is already drawn waiting.
     @Test
-    fun testATapBehindAnAskStillInFlightLandsOnTheWaitingExchange() {
+    fun shareStartsItsOwnChatWhileThePreviousChatKeepsWorking() {
         val server = FakeGymRest()
         val answer = CompletableDeferred<Unit>()
         server.onAsk = { answer.await() }
@@ -418,15 +452,17 @@ class FinishSheetTests {
             startAWorkout(room)
             finish()
 
-            compose.onNodeWithText(FinishCoach.action).performScrollTo().performClick()
+            shareReceipt()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            // The question, not the empty room's chips: the thread was not wiped.
-            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(1)
-            compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(0)
-            compose.runOnIdle { assertEquals("the opener, and nothing behind it", 1, server.asked.size) }
+            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
+            compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
+            compose.runOnIdle {
+                assertEquals(listOf(Ask.openers.first(), FinishCoach.question), server.asked.map { it.question })
+                assertTrue(server.asked[0].thread != server.asked[1].thread)
+            }
 
             answer.complete(Unit)
             compose.waitUntil(10_000) {
@@ -435,10 +471,8 @@ class FinishSheetTests {
         }
     }
 
-    // Signed out there is no Coach to reach, and nothing stands where the primary would — on the
-    // slight branch here, which is the branch the old decided pair stood on.
     @Test
-    fun testSignedOutTheReceiptOffersNoShareWithCoach() {
+    fun signedOutTheReceiptOffersShareThroughSignIn() {
         val server = FakeGymRest()
         inRoom(server, seat = null) { room ->
             show(room)
@@ -446,14 +480,12 @@ class FinishSheetTests {
             startAWorkout(room)
             finish(title = "Ended early.")
 
-            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
-            compose.onAllNodesWithText(FinishCoach.caption).assertCountEquals(0)
+            compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(1)
+            compose.onNodeWithText("Only on this phone · Keep it").assertIsDisplayed()
             assertEquals("nothing was asked", 0, server.calls.count { it == "ask" })
         }
     }
 
-    // A deployment without Coach — the route answered 404 — takes the door down on the receipt as
-    // it does on the tab.
     @Test
     fun testWithoutCoachOnThisDeploymentTheReceiptOffersNoShareWithCoach() {
         val server = FakeGymRest()
@@ -470,7 +502,6 @@ class FinishSheetTests {
             finish()
 
             compose.onAllNodesWithText(FinishCoach.action).assertCountEquals(0)
-            compose.onAllNodesWithText(FinishCoach.caption).assertCountEquals(0)
             assertEquals("the one ask was the opener", 1, server.calls.count { it == "ask" })
         }
     }
@@ -480,11 +511,549 @@ class FinishSheetTests {
         inRoom { room ->
             finishAWorkout(room, sets = 4)
 
-            compose.onNodeWithText("Free workout · Workout saved").assertIsDisplayed()
+            compose.onNodeWithText("Well done.").assertIsDisplayed()
             compose.onNodeWithText("Save a routine").assertDoesNotExist()
             compose.onNodeWithText("Save routine").assertDoesNotExist()
             compose.onNodeWithContentDescription("Routine name").assertDoesNotExist()
             compose.runOnIdle { assertEquals(emptyList<Routine>(), room.training.program()) }
         }
     }
+    @Test
+    fun overflowCancelPreservesTheReceiptAndConfirmationDiscardsImmediatelyOnce() {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { error("Unexpected $operation") }
+        }
+        inRoom(telemetry = telemetry) { room ->
+            finishAWorkout(room)
+            val id = room.store.recent.single().id
+            val before = room.engine.snapshot()
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
+            compose.onNodeWithText("This deletes the workout and its 1 sets. You can’t undo this.").assertIsDisplayed()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.runOnIdle { assertEquals(before, room.engine.snapshot()) }
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            val tap = compose.onNodeWithText("Discard").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.runOnIdle { tap(); tap() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Discard this workout?").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
+            compose.runOnIdle {
+                assertEquals(null, runBlocking { room.training.session(id) })
+                assertEquals(emptyList<works.windmill.gym.store.Withheld>(), room.store.withheld)
+                assertEquals(listOf(
+                    mapOf("screen" to "finish", "action" to "discard", "state" to "shown"),
+                    mapOf("screen" to "finish", "action" to "discard", "outcome" to "cancelled"),
+                    mapOf("screen" to "finish", "action" to "discard", "state" to "shown"),
+                    mapOf("screen" to "finish", "action" to "discard", "outcome" to "ok"),
+                ), events.filter { it.first == "gym_action" && it.second["action"] == "discard" }.map { it.second })
+            }
+            compose.onAllNodesWithText("The log").onLast().assertIsDisplayed()
+            compose.onNodeWithText("Undo").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun emptyFinishHasNoSavedClaimAndDoneReturnsToRoutines() {
+        inRoom { room ->
+            finishAWorkout(room, sets = 0)
+            compose.onNodeWithText("No sets logged").assertIsDisplayed()
+            compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
+            compose.onNodeWithText("Working sets").assertDoesNotExist()
+            compose.onNodeWithText("Volume").assertDoesNotExist()
+            compose.onNodeWithText("0 kg").assertDoesNotExist()
+            compose.onNodeWithText("Share this workout").assertDoesNotExist()
+            compose.onNodeWithText(Finish.discard).assertDoesNotExist()
+            compose.onNodeWithText("Done").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("No sets logged").fetchSemanticsNodes().isEmpty() }
+            compose.onAllNodesWithText("Routines").onLast().assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun signedOutShareRetainsItsRequestAcrossRecreationAndWaitsForTheAccountDecision() {
+        val server = FakeGymRest()
+        val attempts = SignInAttempts()
+        val opened = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
+        inRoom(server, seat = null) { room ->
+            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            val restoration = StateRestorationTester(compose)
+            show(room, restoration)
+            finish()
+            shareReceipt()
+            compose.waitUntil(10_000) { opened.size == 1 }
+            val request = opened.single()
+            restoration.emulateSavedInstanceStateRestore()
+            compose.runOnIdle {
+                attempts.complete("u1")
+                presentedAccount = Account("https://windmill.works", works.windmill.platform.User("u1", "u1@example.com"), resolved = false)
+            }
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+            runBlocking { room.select("u1") }
+            compose.runOnIdle { presentedAccount = room.account() }
+            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.isNotEmpty() } }
+            compose.runOnIdle {
+                assertEquals(listOf(FinishCoach.question), server.asked.map { it.question })
+                assertEquals(request, server.asked.single().requestId)
+                assertEquals(null, attempts.result)
+            }
+            restoration.emulateSavedInstanceStateRestore()
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(1, server.asked.size) }
+        }
+    }
+
+    @Test
+    fun cancellingShareSignInDoesNotSendOnAnUnrelatedLaterSignIn() {
+        val server = FakeGymRest()
+        val attempts = SignInAttempts()
+        val opened = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
+        inRoom(server, seat = null) { room ->
+            finishAWorkout(room)
+            shareReceipt()
+            compose.waitUntil(10_000) { opened.size == 1 }
+            compose.runOnIdle { attempts.cancel() }
+            compose.waitForIdle()
+            runBlocking { room.select("u1") }
+            compose.runOnIdle { presentedAccount = room.account() }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked); assertEquals(null, attempts.result) }
+        }
+    }
+
+    @Test
+    fun keepOpensOrdinarySignInWithoutQueuingAQuestionAndTheNextReceiptHasNoOffer() {
+        val server = FakeGymRest()
+        var ordinary = 0
+        val tracked = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignIn = { ordinary++ }, openSignInForResult = { tracked += it })
+        inRoom(server, seat = null) { room ->
+            finishAWorkout(room)
+            compose.onNodeWithText("Only on this phone · Keep it").performScrollTo().performClick()
+            compose.waitUntil(10_000) { ordinary == 1 }
+            compose.runOnIdle { assertEquals(emptyList<String>(), tracked); assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+            compose.onNodeWithContentDescription("Back to Routines").performClick()
+            startAWorkout(room)
+            finish()
+            compose.onNodeWithText("Only on this phone · Keep it").assertDoesNotExist()
+            compose.onNodeWithText("Done").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
+            runBlocking { room.select("u1") }
+            compose.runOnIdle { presentedAccount = room.account() }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked) }
+        }
+    }
+
+    @Test
+    fun aFastFailedConfirmationIgnoresItsOldCallbackAndAllowsANewExplicitRetry() {
+        val outcomes = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action" && properties["action"] == "discard") properties["outcome"]?.let(outcomes::add)
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { assertEquals("gym.discard", operation) }
+        }
+        inRoom(telemetry = telemetry) { room ->
+            finishAWorkout(room)
+            val id = room.store.recent.single().id
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            val old = compose.onNodeWithText("Discard").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.runOnIdle { room.engine.failNextCommit(); old(); old() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
+            compose.runOnIdle {
+                assertEquals(listOf("failed"), outcomes)
+                assertTrue(runBlocking { room.training.session(id) } != null)
+                old()
+                assertEquals(listOf("failed"), outcomes)
+            }
+            compose.onNodeWithText("Discard this workout?").assertDoesNotExist()
+            compose.onNodeWithText("This workout couldn’t be deleted on this phone. It is still saved.").assertIsDisplayed()
+            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { outcomes.size == 2 } }
+            compose.runOnIdle {
+                assertEquals(listOf("failed", "ok"), outcomes)
+                assertEquals(null, runBlocking { room.training.session(id) })
+            }
+        }
+    }
+
+    @Test
+    fun aCompletedSignInForAWaitingAccountCannotShareIntoAnotherAccount() {
+        val server = FakeGymRest()
+        val attempts = SignInAttempts()
+        val opened = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
+        inRoom(server, seat = null) { room ->
+            finishAWorkout(room)
+            shareReceipt()
+            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            compose.runOnIdle {
+                attempts.complete("alice")
+                presentedAccount = Account("https://windmill.works", works.windmill.platform.User("alice", "a@example.com"), resolved = false)
+            }
+            runBlocking { room.select("bob") }
+            compose.runOnIdle { presentedAccount = room.account() }
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(null, attempts.result)
+                assertEquals(null, room.store.coach.selectedChatId)
+            }
+        }
+    }
+
+    @Test
+    fun ordinarySignInReplacesAnAlreadyCompletedShareAttemptBeforeAccountReadiness() {
+        val server = FakeGymRest()
+        val attempts = SignInAttempts()
+        val opened = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignIn = { attempts.cancel() },
+            openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
+        inRoom(server, seat = null) { room ->
+            finishAWorkout(room)
+            shareReceipt()
+            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            compose.runOnIdle {
+                attempts.complete("alice")
+                presentedAccount = Account("https://windmill.works", works.windmill.platform.User("alice", "a@example.com"), resolved = false)
+                suppliedShell!!.openSignIn()
+            }
+            runBlocking { room.select("alice") }
+            compose.runOnIdle { presentedAccount = room.account() }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked); assertEquals(null, attempts.result) }
+        }
+    }
+
+    @Test
+    fun aConfirmationFromBeforeSameAccountReplicaRestorationCannotDeleteTheNewReplica() {
+        val events = mutableListOf<Map<String, String>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action" && properties["action"] == "discard" && properties["outcome"] != null) events += properties
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { error("Unexpected $operation") }
+        }
+        inRoom(telemetry = telemetry) { room ->
+            finishAWorkout(room)
+            val id = room.store.recent.single().id
+            val server = EngineRoomFixture.server()
+            runBlocking { room.sync(server) }
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            val opening = room.store.workoutReplica
+            compose.runOnIdle {
+                runBlocking {
+                    room.store.prepareEngineTransition()
+                    assertTrue(room.engine.signOut("discard").member("complete").bool())
+                    room.selected = null
+                    room.select("u1"); room.pull(server); room.store.refreshEngine()
+                }
+                assertTrue(opening != room.store.workoutReplica)
+            }
+            compose.onNodeWithText("Discard").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { events.isNotEmpty() } }
+            compose.runOnIdle {
+                assertEquals(listOf(mapOf("screen" to "finish", "action" to "discard", "outcome" to "refused")), events)
+                assertTrue(runBlocking { room.training.session(id) } != null)
+            }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("The account changed. Open this again.").assertIsDisplayed()
+            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { events.size == 2 } }
+            compose.runOnIdle {
+                assertEquals("ok", events.last()["outcome"])
+                assertEquals(null, runBlocking { room.training.session(id) })
+            }
+        }
+    }
+
+    @Test
+    fun recreationAfterAcceptedDiscardDoesNotRestoreTheDeletedReceipt() {
+        inRoom { room ->
+            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            val restoration = StateRestorationTester(compose)
+            show(room, restoration)
+            finish()
+            val id = room.store.recent.single().id
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
+            val confirm = compose.onNodeWithText("Discard").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { confirm() }
+            compose.waitUntil(10_000) { compose.mainClock.advanceTimeByFrame(); compose.runOnIdle { runBlocking { room.training.session(id) } == null } }
+            restoration.emulateSavedInstanceStateRestore()
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
+            compose.onAllNodesWithText("The log").onLast().assertIsDisplayed()
+            compose.onNodeWithText("Discard this workout?").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun anOlderSavedReceiptCannotRestoreADeletedWorkoutOrItsDetail() {
+        inRoom(seat = null) { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val id = room.store.recent.single().id
+            val beforeDiscard = compose.runOnIdle { saveRoom() }
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.onNodeWithText("Discard").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { runBlocking { room.training.session(id) } == null } }
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            EngineRoomFixture(tmp.newFolder(), room.scope, snapshot = room.engine.snapshot()).use { cold ->
+                cold.store.observeEngine()
+                runBlocking { cold.select(null) }
+                compose.runOnIdle { presentedStore = cold.store }
+                restoreRoom(beforeDiscard)
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("No sessions yet").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithText("No sessions yet").assertIsDisplayed()
+                compose.onNodeWithText("Ended early.").assertDoesNotExist()
+                compose.onNodeWithContentDescription("Back to Routines").assertDoesNotExist()
+                compose.onNodeWithContentDescription("Question").assertDoesNotExist()
+                compose.onNodeWithText("Routines").assertIsDisplayed()
+                compose.onNodeWithText("Coach").assertIsDisplayed()
+                compose.runOnIdle { showing = false }
+                compose.waitForIdle()
+            }
+        }
+    }
+
+    @Test
+    fun aRestoredReceiptWaitsForAnUnreadReplicaThenReconcilesItsFirstPull() {
+        inRoom { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val beforeRestart = compose.runOnIdle { saveRoom() }
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            EngineRoomFixture(tmp.newFolder(), room.scope).use { cold ->
+                cold.store.observeEngine()
+                runBlocking { cold.select("u1") }
+                compose.runOnIdle { presentedStore = cold.store }
+                restoreRoom(beforeRestart)
+                compose.onNodeWithText("Ended early.").assertIsDisplayed()
+                compose.runOnIdle { assertFalse(cold.training.firstPullComplete) }
+                runBlocking { cold.pull(EngineRoomFixture.server()); cold.store.refreshEngine() }
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("No sessions yet").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithText("No sessions yet").assertIsDisplayed()
+                compose.onNodeWithText("Ended early.").assertDoesNotExist()
+                compose.onNodeWithContentDescription("Back to Routines").assertDoesNotExist()
+                compose.onNodeWithText("Routines").assertIsDisplayed()
+                compose.onNodeWithText("Coach").assertIsDisplayed()
+                compose.runOnIdle { showing = false }
+                compose.waitForIdle()
+            }
+        }
+    }
+
+    @Test
+    fun recreatingDuringTheShareExitContinuesItsOneExplicitSignInAndQuestion() {
+        val server = FakeGymRest()
+        val attempts = SignInAttempts()
+        val opened = mutableListOf<String>()
+        suppliedShell = ShellActions(openYou = {}, openSignInForResult = { id -> opened += id; attempts.begin(id) }, signInAttempts = attempts)
+        inRoom(server, seat = null) { room ->
+            runBlocking { room.startExternalWorkout(); room.store.choose("back-squat"); room.store.logSet(100.0, 5) }
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            show(room)
+            finish()
+            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { share(); assertEquals(emptyList<String>(), opened) }
+            val duringExit = compose.runOnIdle { saveRoom() }
+            compose.runOnIdle { showing = false }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertEquals(emptyList<String>(), opened)
+                suppliedRegistry = SaveableStateRegistry(duringExit) { true }
+                showing = true
+            }
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10_000) { opened.isNotEmpty() }
+            val request = opened.single()
+            runBlocking { room.select("u1") }
+            compose.runOnIdle { attempts.complete("u1"); presentedAccount = room.account() }
+            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.isNotEmpty() } }
+            compose.runOnIdle {
+                assertEquals(listOf(request), opened)
+                assertEquals(listOf(FinishCoach.question), server.asked.map { it.question })
+                assertEquals(request, server.asked.single().requestId)
+            }
+            val afterShare = compose.runOnIdle { saveRoom() }
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            compose.runOnIdle { suppliedRegistry = SaveableStateRegistry(afterShare) { true }; showing = true }
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals(1, server.asked.size); assertEquals(listOf(request), opened) }
+        }
+    }
+
+    @Test
+    fun anOldQueuedShareReopensItsCompletedChatWithoutAnotherQuestionOrFreshEntry() {
+        val server = FakeGymRest()
+        val steps = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action") properties["action"]?.let(steps::add)
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { error("Unexpected $operation") }
+        }
+        val disk = LocalCoach(File(tmp.root, "completed-share"))
+        inRoom(server, telemetry = telemetry, localCoach = disk) { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { share() }
+            val queued = compose.runOnIdle { saveRoom() }
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 && !room.store.coach.isAsking(server.asked.single().thread) } }
+            val request = server.asked.single().requestId!!
+            val original = disk.chats("u1").single { it.id == request }
+            val other = compose.runOnIdle { room.store.coach.freshChat("Another draft") }
+            val before = steps.toList()
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            val restored = room.freshStore().also { it.observeEngine() }
+            runBlocking { restored.connect(room.account()) }
+            compose.runOnIdle { presentedStore = restored }
+            restoreRoom(queued)
+            compose.waitUntil(10_000) { compose.runOnIdle { restored.coach.selectedChatId == request } }
+            compose.runOnIdle {
+                assertEquals(listOf(request), server.asked.map { it.requestId })
+                assertEquals(request, server.asked.single().thread)
+                assertEquals(original, restored.coach.chat(request))
+                assertEquals(CoachDraft("Another draft"), restored.coach.draft(other))
+                assertEquals(before, steps)
+                assertEquals(2, restored.coach.allThreads.size)
+                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), disk.pending("u1"))
+            }
+        }
+    }
+
+    @Test
+    fun anOldQueuedShareDoesNotResubmitOrCancelItsPendingQuestion() {
+        val server = FakeGymRest()
+        val answer = CompletableDeferred<Unit>()
+        server.onAsk = { answer.await() }
+        val disk = LocalCoach(File(tmp.root, "pending-share"))
+        inRoom(server, localCoach = disk) { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { share() }
+            val queued = compose.runOnIdle { saveRoom() }
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 } }
+            val request = server.asked.single().requestId!!
+            val other = compose.runOnIdle { room.store.coach.freshChat("Keep typing") }
+            restoreRoom(queued)
+            compose.waitUntil(10_000) { compose.runOnIdle { room.store.coach.selectedChatId == request } }
+            compose.runOnIdle {
+                assertEquals(listOf(request), server.asked.map { it.requestId })
+                assertTrue(room.store.coach.isAsking(request))
+                assertEquals(listOf(request), disk.pending("u1").map { it.requestId })
+                assertEquals(CoachDraft("Keep typing"), room.store.coach.draft(other))
+                assertEquals(listOf(request), room.store.coach.chat(request)!!.exchanges.map { it.requestId })
+            }
+            answer.complete(Unit)
+            compose.waitUntil(10_000) { compose.runOnIdle { !room.store.coach.isAsking(request) } }
+            compose.runOnIdle {
+                assertEquals(1, server.asked.size)
+                assertEquals("nothing has moved in three weeks.", room.store.coach.chat(request)!!.exchanges.single().answer?.answer)
+                assertEquals(request, room.store.coach.selectedChatId)
+            }
+        }
+    }
+
+    @Test
+    fun aShareWhoseDraftWriteFailedBeforeAdmissionRecoversTheSameIdentityFromSavedState() {
+        var writes = 0
+        val disk = LocalCoach(File(tmp.root, "share-failure")) { file, text ->
+            writes++
+            if (writes == 2) throw IOException("fixture-local-write-failed")
+            AtomicDocument.write(file, text)
+        }
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val server = FakeGymRest()
+        inRoom(server, telemetry = telemetry, localCoach = disk) { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { share() }
+            val queued = compose.runOnIdle { saveRoom() }
+            compose.mainClock.autoAdvance = true
+            compose.waitUntil(10_000) { compose.runOnIdle { failures.isNotEmpty() } }
+            val request = room.store.coach.selectedChatId!!
+            compose.runOnIdle {
+                assertEquals(listOf("gym.saveDraft"), failures)
+                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(listOf(request), disk.chats("u1").map { it.id })
+            }
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            val restored = room.freshStore().also { it.observeEngine() }
+            runBlocking { restored.connect(room.account()) }
+            compose.runOnIdle { presentedStore = restored }
+            restoreRoom(queued)
+            compose.waitUntil(10_000) { compose.runOnIdle { server.asked.size == 1 } }
+            compose.runOnIdle {
+                assertEquals(request, server.asked.single().thread)
+                assertEquals(request, server.asked.single().requestId)
+                assertEquals(listOf(request), disk.chats("u1").map { it.id })
+                assertEquals(listOf(request), restored.coach.chat(request)!!.exchanges.map { it.requestId })
+            }
+        }
+    }
+
+    @Test
+    fun anOldQueuedShareNeverOpensOrSubmitsInTheReplacementOwner() {
+        val server = FakeGymRest()
+        inRoom(server) { room ->
+            suppliedRegistry = SaveableStateRegistry(null) { true }
+            finishAWorkout(room)
+            val share = compose.onNodeWithText(FinishCoach.action).fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle { share() }
+            val queued = compose.runOnIdle { saveRoom() }
+            compose.runOnIdle { showing = false }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
+            runBlocking { room.select("bob") }
+            compose.runOnIdle {
+                presentedAccount = room.account()
+                suppliedRegistry = SaveableStateRegistry(queued) { true }
+                showing = true
+            }
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
+                assertEquals(null, room.store.coach.selectedChatId)
+                assertEquals(emptyList<works.windmill.gym.coach.AskThread>(), room.store.coach.allThreads)
+            }
+            compose.onNodeWithText("Ended early.").assertDoesNotExist()
+        }
+    }
+
 }

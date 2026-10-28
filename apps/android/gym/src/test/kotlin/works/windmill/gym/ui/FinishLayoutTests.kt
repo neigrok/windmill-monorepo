@@ -34,6 +34,22 @@ class FinishLayoutTests {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun theThreeFactsShareOneContinuousRow() {
+        val finished = FinishedSession(Session("done", startedAtMs = 1_000, finishedAtMs = 601_000),
+            List(4) { TrainingSet("set_$it", "bench-press", weightKg = 10.0, reps = 5, completedAtMs = 2_000L + it) }, null)
+        compose.setContent { GymMaterial { FinishScreen(finished, emptyList()) } }
+        val duration = compose.onNodeWithText("Duration").fetchSemanticsNode().boundsInRoot
+        val count = compose.onNodeWithText("Working sets").fetchSemanticsNode().boundsInRoot
+        val volume = compose.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot
+        assertEquals(duration.right, count.left, 0.5f)
+        assertEquals(count.right, volume.left, 0.5f)
+        assertEquals(duration.width, count.width, 1f)
+        assertEquals(count.width, volume.width, 1f)
+        assertEquals(duration.top, count.top, 0.5f)
+        assertEquals(count.top, volume.top, 0.5f)
+    }
+
+    @Test
     fun largeTextKeepsTotalsAndLongPerformedTargetsReadableOnAShortFrame() {
         val name = "Long movement name with several words"
         val sets = List(9) { index -> TrainingSet("set_$index", "move_${index / 3}",
@@ -52,23 +68,21 @@ class FinishLayoutTests {
                 }
             }
         }
-        for (text in listOf("2700", "Sets", "kg lifted", "Movements")) {
+        for (text in listOf("2,700 kg", "Duration", "Working sets", "Volume")) {
             val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
             val layouts = mutableListOf<TextLayoutResult>()
             node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
             assertEquals(1, layouts.single().lineCount)
             assertFalse("$text: size=${layouts.single().size}, paragraph=${layouts.single().multiParagraph.width}x${layouts.single().multiParagraph.height}, font=${layouts.single().layoutInput.style.fontSize}", layouts.single().hasVisualOverflow)
         }
-        compose.onNodeWithText("Against plan").performScrollTo().assertIsDisplayed()
-        val plan = compose.onNodeWithText("3 × 8 · 60 → 3 × 8 · 60").performScrollTo().assertIsDisplayed()
-        val layouts = mutableListOf<TextLayoutResult>()
-        plan.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
-        assertFalse(layouts.single().hasVisualOverflow)
+        compose.onNodeWithText("Against plan").assertDoesNotExist()
+        compose.onNodeWithText("Done").assertIsDisplayed()
+        compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
         val target = compose.onAllNodesWithText("3 × 8 · 60 kg total").onLast().performScrollTo().assertIsDisplayed()
         val movement = compose.onAllNodesWithText(name).onFirst().fetchSemanticsNode().boundsInRoot
         assertTrue(target.fetchSemanticsNode().boundsInRoot.top >= movement.bottom)
         compose.onNodeWithText("Save routine").assertDoesNotExist()
-        compose.onNodeWithText(FinishCoach.action).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(FinishCoach.action).assertIsDisplayed()
     }
 
 }

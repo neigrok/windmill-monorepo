@@ -31,6 +31,10 @@ import works.windmill.platform.net.WindmillJson
 class AndroidTelemetryTest {
     @Test fun deletionActionsKeepOnlyTheirBoundedLabelsAndPreserveNotificationAndTileEvents() {
         val valid = listOf(
+            Triple("finish", "discard", "ok"), Triple("finish", "discard", "cancelled"),
+            Triple("finish", "discard", "refused"), Triple("finish", "discard", "failed"),
+            Triple("finish", "keep", "ok"), Triple("finish", "done", "ok"),
+            Triple("session", "discard", "ok"), Triple("log", "discard", "ok"),
             Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"), Triple("note_editor", "delete", "ok"),
             Triple("note_editor", "delete", "refused"), Triple("note_editor", "delete", "failed"),
             Triple("note_editor", "save", "ok"), Triple("note_editor", "save", "refused"), Triple("note_editor", "save", "failed"),
@@ -50,6 +54,10 @@ class AndroidTelemetryTest {
             val labels = mapOf("screen" to screen, "action" to action, "outcome" to outcome, "platform" to "android")
             assertEquals(labels, TelemetryPolicy.eventProperties("gym_action", labels + mapOf(
                 "date" to "2026-09-01", "weight" to "81.25", "name" to "private", "operation" to "private")))
+        }
+        for (screen in listOf("finish", "session", "log")) {
+            val shown = mapOf("screen" to screen, "action" to "discard", "state" to "shown")
+            assertEquals(shown, TelemetryPolicy.eventProperties("gym_action", shown + mapOf("request_id" to "private", "question" to "private")))
         }
         for (labels in listOf(
             mapOf("screen" to "private", "action" to "delete", "outcome" to "ok"),

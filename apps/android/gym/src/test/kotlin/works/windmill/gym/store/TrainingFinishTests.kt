@@ -729,4 +729,160 @@ class TrainingFinishTests {
             assertEquals("Push A", kept.value.name)
         }
     }
+    @Test
+    fun discardFailureReportsOnceAndRetryRemovesTheCommittedWorkoutWithoutAHold() = runTest {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val workout = room.workout()
+            val saved = room.training.session(workout.id)!!
+            room.engine.failNextCommit()
+            assertEquals(WriteFailure.NoAnswer, room.store.discardWorkout(workout.id, "finish"))
+            assertEquals(saved, room.training.session(workout.id))
+            assertEquals(listOf("gym.discard"), failures)
+            assertEquals(null, room.store.discardWorkout(workout.id, "finish"))
+            assertEquals(null, room.training.session(workout.id))
+            assertEquals(emptyList<Withheld>(), room.store.withheld)
+            assertEquals(listOf(
+                "gym_action" to mapOf("screen" to "finish", "action" to "discard", "outcome" to "failed"),
+                "gym_action" to mapOf("screen" to "finish", "action" to "discard", "outcome" to "ok"),
+            ), events.filter { it.first == "gym_action" })
+        }
+    }
+
+    @Test
+    fun anOfflineDiscardIsImmediatelyReleasedAndLaterSyncKeepsTheServerAbsent() = runTest {
+        val rest = FakeGymRest().apply { online = false }
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
+            room.select("u1")
+            room.pull(server)
+            val workout = room.workout()
+            room.sync(server)
+            assertTrue(room.training.session(workout.id) != null)
+            assertEquals(null, room.store.discardWorkout(workout.id, "finish"))
+            assertEquals(null, room.training.session(workout.id))
+            assertEquals(emptyList<String>(), rest.calls)
+            assertEquals(emptyList<Withheld>(), room.store.withheld)
+            assertTrue(room.outbox().isNotEmpty())
+            assertTrue(room.outbox().all { it.member("state") == works.windmill.sync.core.Json.of("ready") })
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { beforeDelivery ->
+                beforeDelivery.select("u1"); beforeDelivery.pull(server)
+                assertTrue(beforeDelivery.training.session(workout.id) != null)
+            }
+            room.sync(server)
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { observer ->
+                observer.select("u1"); observer.pull(server)
+                assertEquals(null, observer.training.session(workout.id))
+            }
+        }
+    }
+
+    @Test
+    fun deletingBeforeTheFirstPublicationCannotResurrectAfterRestartAndSync() = runTest {
+        val server = EngineRoomFixture.server()
+        val directory = tmp.newFolder()
+        var at = 0L
+        lateinit var id: String
+        val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
+            room.select("u1"); room.pull(server)
+            id = room.workout().id
+            assertEquals(null, room.store.discardWorkout(id, "finish"))
+            assertEquals(null, room.training.session(id))
+            assertTrue(room.outbox().all { it.member("state") == works.windmill.sync.core.Json.of("ready") })
+            at = room.now
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+            cold.now = at; cold.selected = "u1"; cold.store.connect(cold.account())
+            assertEquals(null, cold.training.session(id))
+            cold.sync(server)
+            assertEquals(null, cold.training.session(id))
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { observer ->
+                observer.select("u1"); observer.pull(server)
+                assertEquals(null, observer.training.session(id))
+            }
+        }
+    }
+
+    @Test
+    fun anAnonymousWorkoutDeletedBeforeSignInIsNotAdoptedOrResurrected() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val id = room.workout().id
+            assertEquals(null, room.store.discardWorkout(id, "finish"))
+            assertEquals(null, room.training.session(id))
+            room.training.prepareAdoption()
+            room.select("u1")
+            room.sync(server)
+            assertEquals(null, room.training.session(id))
+            assertEquals(emptyList<ImportRefusal>(), room.training.imports.refusals())
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { observer ->
+                observer.select("u1"); observer.pull(server)
+                assertEquals(null, observer.training.session(id))
+            }
+        }
+    }
+
+    @Test
+    fun failureToDurablyReleaseTheExactDeleteRestoresTheWorkout() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val id = room.workout().id
+            val saved = room.training.session(id)
+            val failing = EngineTraining(room.engine) { throw IOException("local-release-failed") }
+            assertTrue(runCatching { failing.discardSession(id) }.exceptionOrNull() is IOException)
+            assertEquals(saved, room.training.session(id))
+            assertEquals(emptyList<works.windmill.sync.api.UndoOffer>(), room.engine.undoOffers())
+        }
+    }
+
+    @Test
+    fun acceptedDeleteSurvivesAControlsPublicationFailureWithoutReopeningTheWorkout() = runTest {
+        val directory = tmp.newFolder()
+        var fail = false
+        val failures = mutableListOf<String>()
+        val outcomes = mutableListOf<Map<String, String>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action" && properties["action"] == "discard") outcomes += properties
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        lateinit var id: String
+        var at = 0L
+        val snapshot = EngineRoomFixture(directory, backgroundScope, telemetry = telemetry,
+            controlsWrite = { file, raw -> if (fail) throw IOException("local-controls-publication") else works.windmill.platform.storage.AtomicDocument.write(file, raw) }).use { room ->
+            room.select(null)
+            id = room.startExternalWorkout().id
+            room.store.choose("bench-press"); room.store.logSet(80.0, 5)
+            room.training.finishSession(id, room.now + 1_000)
+            fail = true
+            assertEquals(null, room.store.discardWorkout(id, "finish"))
+            assertEquals(null, room.training.session(id))
+            assertEquals(null, room.store.session)
+            assertEquals(null, room.store.rack)
+            assertEquals(null, room.store.notification.value)
+            assertEquals(listOf(mapOf("screen" to "finish", "action" to "discard", "outcome" to "ok")), outcomes)
+            assertEquals(listOf("gym.discard"), failures)
+            room.store.refreshEngine()
+            assertEquals(null, room.store.session)
+            assertEquals(listOf("gym.discard"), failures)
+            at = room.now
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+            cold.now = at
+            cold.select(null)
+            assertEquals(null, cold.training.session(id))
+            assertEquals(null, cold.store.session)
+        }
+    }
+
 }

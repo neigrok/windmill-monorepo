@@ -44,6 +44,56 @@ class EngineTrainingTests {
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
 
+    @Test fun restoredReceiptAbsenceRequiresAReadReplicaOrAReleasedLocalDeletion() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            assertFalse(room.training.firstPullComplete)
+            assertThrows(TrainingUnanswered::class.java) { room.training.restoredSession("missing") }
+            val session = room.startExternalWorkout()
+            room.training.finishSession(session.id, room.now + 1)
+            val detail = room.training.session(session.id)!!
+            assertEquals(detail, room.training.restoredSession(session.id))
+            val held = room.engine.commit(ScopeRef(Gym.scope), Gesture(
+                listOf(Change.delete(Gym.Types.session, RecordID(session.id))), hold = true)) as CommitOutcome.Committed
+            assertThrows(TrainingUnanswered::class.java) { room.training.restoredSession(session.id) }
+            room.engine.undo(held.receipt.gestureId)
+            assertEquals(detail, room.training.restoredSession(session.id))
+            room.training.discardSession(session.id)
+            assertNull(room.training.restoredSession(session.id))
+            assertFalse(room.training.firstPullComplete)
+            val snapshot = room.engine.snapshot()
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, snapshot = snapshot).use { restored ->
+                restored.selected = "alice"
+                restored.store.connect(restored.account())
+                assertFalse(restored.training.firstPullComplete)
+                assertNull(restored.training.restoredSession(session.id))
+                assertThrows(TrainingUnanswered::class.java) { restored.training.restoredSession("missing") }
+                restored.pull(EngineRoomFixture.server())
+                assertNull(restored.training.restoredSession("missing"))
+            }
+        }
+    }
+
+    @Test fun anAcceptedRetainedImportDiscardIsKnownAcrossRestartBeforeFirstPull() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val saved = SavedWorkout(Session("session1", now - 5_000, now - 10_000), emptyList())
+            room.training.imports.prepare(saved)
+            room.select("alice")
+            assertFalse(room.training.firstPullComplete)
+            assertEquals(GymResult.Ok(SessionDetail(saved.session, saved.sets)), room.store.finishedSession(saved.session.id))
+            assertNull(room.store.discardWorkout(saved.session.id))
+            assertEquals(GymResult.Ok<SessionDetail?>(null), room.store.finishedSession(saved.session.id))
+            EngineRoomFixture(tmp.newFolder(), backgroundScope, snapshot = room.engine.snapshot()).use { cold ->
+                cold.selected = "alice"
+                cold.store.connect(cold.account())
+                assertFalse(cold.training.firstPullComplete)
+                assertEquals(GymResult.Ok<SessionDetail?>(null), cold.store.finishedSession(saved.session.id))
+                assertEquals(emptyList<SavedWorkout>(), cold.training.imports.retainedWorkouts())
+            }
+        }
+    }
+
     @Test fun aRepeatedRequiredRoutineStartKeepsItsExistingSessionAfterTheRoutineIsDeleted() = runTest {
         engine().use { engine ->
             seedRoutine(engine)
