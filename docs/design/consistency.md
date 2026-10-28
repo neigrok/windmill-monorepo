@@ -804,9 +804,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | `android-gym-mcp-proposal-row-design` | 17, 29 | A proposal with no conversation; retain its existing review route until the replacement is approved. |
   | `android-coach-uncertain-apply-design` · deferred, unapproved | 34 | Excluded from this release with Coach action-presentation changes; the proposed awaiting-receipt states are not approved. |
   | `android-coach-partial-drafts-design` · deferred, unapproved | 41, 42 | Excluded from this release with Coach action-presentation changes; the proposed mixed-result cards are not approved. |
-  | `android-coach-bound-installation-design` | 36, 38 | After sign-out, a bound installation can retain local History and recover pending results, but cannot send anonymous questions. |
-  | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; backend reconciliation remains required. |
-  | `account-delete-reconciliation` | 48 | Backend platform/auth supplies the account-scoped closure receipt/recovery contract after session revocation; the existing grace-period behavior does not supply it. |
+  | `android-coach-bound-installation-design` · access approved | 36, 38 | 08.6b Dark `1489:49152` / Daylight `1489:49306` are human-approved 2026-10-28 and Ready on the Android design page. History and Sign in remain available; anonymous Send is absent. The separate B.2 recovery card is unapproved. |
+  | `android-account-delete-recovery-design` · approved | 48 | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25; Android integration remains task 48. |
+  | `account-delete-reconciliation` · resolved | 48 | Backend account-scoped closure receipts and session-independent recovery are deployed in `ac1e0c75`; Android integration and acceptance remain task 48. |
 
 - **11q · Routine editor field and picker geometry (owner: task 18).** Installed Android
   `ui/RoutineBuilder.kt` still paints the Name field with a filled rounded container; approved
@@ -934,9 +934,12 @@ these places.
   truncated output and unavailable or invalid installation credentials are in
   [Gym Proposals](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069), with
   [waiting/local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
-  and [permanent account binding](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3461).
-  These remain 💡 proposals awaiting human approval. Anonymous waiting and local saving are
-  distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
+  and [bound pending-result recovery](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49219).
+  These recovery cards remain unapproved; local-save cards A2.3/A2.4 are postponed with tasks 41/42.
+  The access-only 08.6b pair is human-approved 2026-10-28 and moved to the Android design page:
+  [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) /
+  [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306).
+  Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
   anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
   variant remains excluded while checkout is closed.
 - **6v · Local Coach drafts awaiting owner approval (2026-10-27).** The Gym iOS page holds 🚧

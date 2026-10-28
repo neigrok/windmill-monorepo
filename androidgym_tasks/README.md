@@ -23,7 +23,7 @@ At the user's request, tasks **29–35, 41–42 and 44 are postponed from this r
 
 Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle remain active. Task 37 does not wait for task 30's postponed outcome-word changes, and retains tool-write receipt content in its current presentation while task 35 waits. Task 17 keeps the existing proposal review route while task 29 waits. Task 49 remains active: its choices populate chat input and its kept draft is composer text, not a tool-action output.
 
-The additional U/P proposals are deferred from the current release scope and are not approved. A/B recovery proposals remain unapproved. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) and [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
+The additional U/P proposals and A2 local-save cards are deferred from this release and are not approved. A request-recovery cards and B.2 pending-result recovery remain unapproved. The two [08.6b signed-out access screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152), formerly B.1, are human-approved 2026-10-28 and ✅ Ready for dev on the Android design page. [Z zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462) and [D account-deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25. Active tasks retain their remaining scoped design and backend prerequisites.
 
 ## Scoped prerequisites
 
@@ -38,7 +38,7 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | `android-gym-mcp-proposal-row-design` | [17](17-routines-list.md), [29](29-coach-change-card.md) | New proposal route without a Coach conversation; keep its existing review path |
 | `android-coach-uncertain-apply-design` · deferred from release scope, unapproved | [34](34-proposal-long-failure-retry.md) | New unknown-outcome Apply/removal state |
 | `android-coach-partial-drafts-design` · deferred from release scope, unapproved | [41](41-coach-drafts-card.md), [42](42-coach-drafts-saved.md) | New signed-in partial-save/recovery states |
-| `android-coach-bound-installation-design` | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Signed-out stance for a bound installation |
+| `android-coach-bound-installation-design` · resolved for access | [36](36-coach-access-states.md), [38](38-signed-out-coach.md) | Approved 08.6b retains History and Sign in; no anonymous Send. The separate B.2 recovery card remains unapproved. |
 | `android-account-delete-recovery-design` · resolved | [48](48-delete-account.md) | [D1–D5 recovery states](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) are ✅ Ready for dev, human-approved 2026-10-25; backend receipt/recovery is deployed in `ac1e0c75`; Android task 48 remains pending |
 | `account-delete-reconciliation` · resolved | [48](48-delete-account.md) | Backend receipt/recovery across session revocation is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance |
 

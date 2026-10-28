@@ -2,6 +2,7 @@
 
 **Figma:**
 - 08.6 Coach, no seat: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28737) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41279)
+- 08.6b Signed out, earlier chats retained: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306), human-approved 2026-10-28 and ✅ Ready for dev on the Android design page.
 - 08.7 not on this Windmill: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28776) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41292)
 - 08.8 the day's cap: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28820) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41310)
 - 08.31 signed out, a change needs an account: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38214) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41909)
@@ -30,7 +31,7 @@
   - Board copy: *Bench has stalled for three weeks. Is Push A still doing anything?* · *Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.* · composer *What should Thursday look like?*
   - The ceiling uses the same notice with its own sentence.
   - Delete `CapDoors`, `ConnectDoor` and the cap's *Ask something new*.
-- Bound installation, signed out: `GET /v1/ai/installations/current` reports `bound=true`, or onboarding POST returns `device_bound` (38). Keep the installation and local chat archive; show Sign in and allow the approved local History route, but do not offer anonymous Send or issue a replacement credential. Continue recovering an already submitted anonymous request through GET. `android-coach-bound-installation-design` must draw and obtain approval for this combination beside 08.6/08.4 before its visual implementation.
+- Bound installation, signed out: `GET /v1/ai/installations/current` reports `bound=true`, or onboarding POST returns `device_bound` (38). Keep the installation and local chat archive; use approved 08.6b with History, *Sign in to ask Coach.*, *Your earlier chats stay on this phone.* and Sign in. Do not offer anonymous Send or issue a replacement credential. Continue recovering an already submitted anonymous request through GET. Approval covers these two access screens only; the B.2 Check again recovery card remains unapproved and is not required to implement GET recovery.
 - A change needs an account (08.31), signed out:
   - Lifter: *Make Push A harder*. Coach: *I need your account to change a routine. Sign in, then ask again.*
   - One primary **Sign in** under the bubble opens the sign-in door.
@@ -48,6 +49,6 @@
 - The Sign in buttons open the sign-in door as today (`auth_code_requested` and `auth_sign_in_started` still fire there); *Use your own AI agent* opens Connected log (`gym_screen_viewed` `connections`), and a browser failure still reports under `gym.openConnections`.
 - Tests to update: `coach/AskScreenTests.kt`, `coach/AskOutcomeTests.kt`, `ui/StanceReadsTheAccountTests.kt`.
 
-**Depends on:** 28, 38; the bound-installation visual state requires `android-coach-bound-installation-design`.
+**Depends on:** 28, 38. The bound-installation access design gate is resolved by approved 08.6b; additional recovery cards retain their own approval gates.
 
 **Ledger:** 11k, 10v, 12h; dogfood `android-gym-target-page`.
