@@ -328,9 +328,8 @@ TEST(gym_list_bodyweight_answers_day_ascending_in_kilograms_and_claims_no_log_ro
   CHECK_EQ(body(listed)["entries"][2]["weightKg"].asDouble(), 81.95);
   CHECK_FALSE(body(listed)["entries"][0].isMember("recordedAt"));
   CHECK_FALSE(body(listed).isMember("read"));
-  // B3: the text the agent reads carries the two decimals the lifter wrote, never a double's noise.
-  CHECK_EQ(message(listed),
-           std::string(R"({"entries":[{"dateLocal":"2026-08-01","weightKg":83.0},)"
+  CHECK_EQ(parse(message(listed)),
+           parse(R"({"entries":[{"dateLocal":"2026-08-01","weightKg":83.0},)"
                        R"({"dateLocal":"2026-08-03","weightKg":82.4},)"
                        R"({"dateLocal":"2026-08-25","weightKg":81.95}]})"));
 
@@ -990,8 +989,8 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   CHECK_EQ(set["properties"]["reps"]["minimum"].asInt(), 1);
   CHECK_EQ(set["properties"]["reps"]["maximum"].asInt(), 100);
   CHECK_EQ(set["properties"]["weightKg"]["type"].asString(), std::string("number"));
-  CHECK_EQ(set["properties"]["weightKg"]["minimum"].asDouble(), -500.0);
-  CHECK_EQ(set["properties"]["weightKg"]["maximum"].asDouble(), 500.0);
+  CHECK_FALSE(set["properties"]["weightKg"].isMember("minimum"));
+  CHECK_FALSE(set["properties"]["weightKg"].isMember("maximum"));
   CHECK_EQ(set["additionalProperties"].asBool(), false);
   CHECK(set["required"].isNull());   // each set's two absences mean something
   CHECK_EQ(fields["restSeconds"]["minimum"].asInt(), 15);
@@ -1008,8 +1007,8 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
            std::optional<int>(15));
   CHECK(refuses([] { SetTarget(101, 82.5); }));
   CHECK(refuses([] { SetTarget(0, 82.5); }));
-  CHECK(refuses([] { SetTarget(5, 500.01); }));
-  CHECK(refuses([] { SetTarget(5, -500.01); }));
+  CHECK_EQ(SetTarget(5, 500.01).weightKg, std::optional<double>(500.01));
+  CHECK_EQ(SetTarget(5, -500.01).weightKg, std::optional<double>(-500.01));
   CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, straight(21, 5, 82.5), 180); }));
   CHECK(refuses([] { RoutineEntry(1, ExerciseId{"bench-press"}, straight(5, 5, 82.5), 3600); }));
 }

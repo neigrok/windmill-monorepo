@@ -21,6 +21,29 @@ struct CoachAbilitiesTests {
     #expect(try Contract.files(under: "gym/abilities") == Self.files.map { "gym/abilities/\($0).json" })
   }
 
+  @Test func derivedResultSchemasAdmitNullWithoutInventingZero() throws {
+    func metrics(_ value: JSON) -> [JSON] {
+      switch value {
+      case .array(let items): return items.flatMap(metrics)
+      case .object(let object): return object.members.flatMap { member in
+        (["tonnageKg", "volumeKg", "topE1rm", "e1rm"].contains(member.key) ? [member.value] : []) + metrics(member.value)
+      }
+      default: return []
+      }
+    }
+    let schemas = try ["list_sessions", "get_session", "get_sessions", "get_stats", "get_record"].flatMap { name in
+      let ability = try #require(Catalog.ability(named: name))
+      return metrics(ability.result)
+    }
+    #expect(schemas.count == 11)
+    for schema in schemas {
+      #expect(schema == ["type": ["number", "null"]])
+      #expect(JSONSchema(schema).fault(in: .null) == nil)
+      #expect(JSONSchema(schema).fault(in: 123.45) == nil)
+      #expect(JSONSchema(schema).fault(in: "unavailable") != nil)
+    }
+  }
+
   // One vector per case: the given records beside a running Coach message of this turn, at the case's moment.
   static func cases() throws -> [(Vector, JSON)] {
     try files.flatMap { file throws -> [(Vector, JSON)] in

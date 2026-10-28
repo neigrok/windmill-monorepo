@@ -45,16 +45,16 @@ class TrainingHistory(private val read: Reader) {
 
     private fun top(sets: List<TrainingSet>): TrainingSet? = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
 
-    private fun tonnage(sets: List<TrainingSet>): Double = sets.sumOf { maxOf(0.0, works.windmill.sync.core.Quantum.halfAway(it.weightKg * 100)) * it.reps * (catalogue.find(it.exerciseId)?.loadCount ?: 1) } / 100
+    private fun tonnage(sets: List<TrainingSet>): Double? = GymVolume.of(sets, catalogue)
 
     private fun summary(value: Session): Json {
         val sets = log.sets(value.id)
         val result = sessionDocument(value).obj().toMutableMap()
-        result.putAll(mapOf("setCount" to Json.of(sets.size), "workingSetCount" to Json.of(sets.size), "tonnageKg" to Json.of(tonnage(sets)),
+        result.putAll(mapOf("setCount" to Json.of(sets.size), "workingSetCount" to Json.of(sets.size), "tonnageKg" to (tonnage(sets)?.let(Json::of) ?: Json.Null),
             "exercises" to Json.Arr(sets.mapNotNull { catalogue.find(it.exerciseId)?.name }.distinct().sortedWith(::compareBytes).map(Json::of)),
             "record" to Json.of(sets.size >= 4 && recordFor(value) != null), "closedItself" to Json.of(if (value.closedBy != null) value.closedBy == "stale" else value.finishedAt == SessionRules.lastActivity(value, sets))))
         top(sets)?.let { result["topSet"] = Json.objectOf("weightKg" to Json.of(it.weightKg), "reps" to Json.of(it.reps)) }
-        log.topE1rm(value.id)?.let { result["topE1rm"] = Json.of(it) }
+        result["topE1rm"] = log.topE1rm(value.id)?.let(Json::of) ?: Json.Null
         return Json.Obj(result.toList())
     }
 
@@ -114,11 +114,11 @@ class TrainingHistory(private val read: Reader) {
         return Json.Obj(buildList {
             add("id" to value.id.json); add("startedAt" to Json.of(value.startedAt.ms)); value.finishedAt?.let { add("finishedAt" to Json.of(it.ms)) }
             value.historyRoutineId?.let { add("routineId" to it.json) }; add("routineName" to Json.of(value.name ?: ""))
-            add("setCount" to Json.of(sets.size)); add("workingSetCount" to Json.of(sets.size)); add("reps" to Json.of(sets.sumOf { it.reps })); add("tonnageKg" to Json.of(tonnage(sets)))
+            add("setCount" to Json.of(sets.size)); add("workingSetCount" to Json.of(sets.size)); add("reps" to Json.of(sets.sumOf { it.reps })); add("tonnageKg" to (tonnage(sets)?.let(Json::of) ?: Json.Null))
             add("sets" to Json.Arr(sets.map { set -> Json.Obj((setDocument(set).obj() - "note" + ("exercise" to Json.of(catalogue.find(set.exerciseId)?.name ?: ""))).toList()) }))
             add("movements" to Json.Arr(sets.map { it.exerciseId }.distinct().sorted().map { id ->
                 val held = sets.filter { it.exerciseId == id }
-                Json.objectOf("exerciseId" to id.json, "sets" to Json.of(held.size), "reps" to Json.of(held.sumOf { it.reps }), "tonnageKg" to Json.of(tonnage(held)))
+                Json.objectOf("exerciseId" to id.json, "sets" to Json.of(held.size), "reps" to Json.of(held.sumOf { it.reps }), "tonnageKg" to (tonnage(held)?.let(Json::of) ?: Json.Null))
             }))
             add("exerciseNames" to Json.Arr(sets.map { catalogue.find(it.exerciseId)?.name ?: "" }.distinct().sortedWith(::compareBytes).map(Json::of)))
         })
@@ -150,7 +150,7 @@ class TrainingHistory(private val read: Reader) {
         }
         val facetOrder = Comparator<Json> { a, b -> compareBytes(a.member("name").str(), b.member("name").str()).takeIf { it != 0 } ?: compareBytes(a.member("id").str(), b.member("id").str()) }
         return Json.Obj(buildList {
-            add("sessions" to Json.Arr(page.map(::historyWorkout))); add("summary" to Json.objectOf("sessions" to Json.of(scoped.size), "sets" to Json.of(allSets.size), "reps" to Json.of(allSets.sumOf { it.reps }), "tonnageKg" to Json.of(tonnage(allSets))))
+            add("sessions" to Json.Arr(page.map(::historyWorkout))); add("summary" to Json.objectOf("sessions" to Json.of(scoped.size), "sets" to Json.of(allSets.size), "reps" to Json.of(allSets.sumOf { it.reps }), "tonnageKg" to (tonnage(allSets)?.let(Json::of) ?: Json.Null)))
             add("months" to Json.Arr(months.keys.sortedDescending().map { Json.objectOf("month" to Json.of(it), "sessions" to Json.of(months.getValue(it))) }))
             add("exercises" to Json.Arr(exercises.sortedWith(facetOrder))); add("routines" to Json.Arr(routines.sortedWith(facetOrder)))
             add("next" to if (afterCursor.size > limit && page.isNotEmpty()) Json.objectOf("before" to Json.of(page.last().startedAt.ms), "beforeId" to page.last().id.json) else Json.Null)
@@ -248,14 +248,16 @@ class TrainingHistory(private val read: Reader) {
         val prior = StatsProgress(log.copy(sessions = previous))
         val current = StatsProgress(log.copy(sessions = listOf(value)))
         data class Candidate(val rank: Int, val kind: String, val exercise: Id<Exercise>, val fact: PerformedFact, val amount: Double, val before: Double, val beforeAt: Instant) {
-            val score get() = GymEstimate.score(fact.weightKg, fact.reps, fact.rpe) ?: 0.0
+            val score get() = GymEstimate.score(fact.weightKg, fact.reps, fact.rpe) ?: EstimateScore.zero
         }
         val candidates = mutableListOf<Candidate>()
         for (fact in current.sessions.flatMap { it.movements }) {
             val now = fact.estimate
             val before = prior.movement(fact.exerciseId).best
-            if (now != null && before != null && now.score > before.fact.estimate!!.score)
-                candidates += Candidate(0, "e1rm", fact.exerciseId, now.performed, now.e1rm, before.fact.estimate!!.e1rm, before.startedAt)
+            val amount = now?.e1rm
+            val previousEstimate = before?.fact?.estimate?.e1rm
+            if (fact.estimatesComplete && now != null && amount != null && before != null && previousEstimate != null && now.score > before.fact.estimate!!.score)
+                candidates += Candidate(0, "e1rm", fact.exerciseId, now.performed, amount, previousEstimate, before.startedAt)
             val today = log.sets(value.id).filter { it.exerciseId == fact.exerciseId }
             val priors = previous.flatMap { session -> log.sets(session.id).filter { it.exerciseId == fact.exerciseId }.map { it to session } }
             val heavy = priors.sortedWith(compareByDescending<Pair<TrainingSet, Session>> { it.first.weightKg }.thenByDescending { it.first.reps }.thenBy { it.second.startedAt }.thenBy { it.first.id }).firstOrNull()
@@ -277,7 +279,7 @@ class TrainingHistory(private val read: Reader) {
     fun review(id: Id<Session>): Json {
         val value = log.drawnSessions.firstOrNull { it.id == id } ?: return Json.Null
         val facts = log.readout(id)!!
-        val stats = Json.Obj(buildList { add("durationMs" to Json.of(facts.durationMs ?: maxOf(0, SessionRules.lastActivity(value, log.sets).ms - value.startedAt.ms))); add("workingSets" to Json.of(facts.workingSetCount)); facts.topE1rm?.let { add("topE1rm" to Json.of(it)) } })
+        val stats = Json.Obj(buildList { add("durationMs" to Json.of(facts.durationMs ?: maxOf(0, SessionRules.lastActivity(value, log.sets).ms - value.startedAt.ms))); add("workingSets" to Json.of(facts.workingSetCount)); add("topE1rm" to (facts.topE1rm?.let(Json::of) ?: Json.Null)) })
         val result = mutableMapOf("stats" to stats, "slight" to Json.of(facts.workingSetCount < 4))
         if (facts.workingSetCount < 4) return Json.Obj(result.toList())
         recordFor(value)?.let { result["record"] = it }

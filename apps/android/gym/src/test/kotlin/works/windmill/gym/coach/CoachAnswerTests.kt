@@ -181,6 +181,17 @@ class CoachAnswerTests {
         compose.onNodeWithText("Workout 5", substring = true).performScrollTo().assertIsDisplayed()
     }
 
+    @Test fun unavailableVolumeKeepsTheExistingSourcesSlotWithoutClaimingZero() {
+        val fact = SessionObservation("unavailable", 2000, "get_session", "session", 3,
+            routine = "Unavailable fixture", workout = WorkoutObservation(3, null, 90000))
+        compose.setContent { GymMaterial {
+            CoachAnswer("A factual answer.", AnswerReceipt(1, ReadTally(3, 1, 1), observations = listOf(fact)), emptyList(), 4000)
+        } }
+        compose.onNodeWithText("Read 1 workout · 1 week").performClick()
+        compose.onNodeWithText("3 working sets · —", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("0 kg", substring = true).assertDoesNotExist()
+    }
+
     @Test
     fun aPastAnswerWithoutEvidenceNeverTreatsProseAsFacts() {
         compose.setContent { GymMaterial { CoachAnswer("Nine working sets, 2700kg, 48 minutes.", null, emptyList(), 5000) } }

@@ -9,7 +9,7 @@ namespace {
 // The set that earned a session's estimate, dated by that session.
 RecordPoint pointOf(const MovementSeries::Point& point) {
   const EstimatedFact& set = *point.fact.estimate;
-  return RecordPoint{point.startedAtMs, set.performed.weightKg, set.performed.reps, set.estimate.e1rm};
+  return RecordPoint{point.startedAtMs, set.performed.weightKg, set.performed.reps, *set.estimate.e1rm};
 }
 }
 
@@ -26,11 +26,12 @@ MovementRecord movementRecord(const Exercise& exercise, const MovementHistory& h
     const PerformedFact& set = heaviest->fact.heaviest;
     const std::optional<Estimate> estimate = set.estimate();
     record.heaviest = Best{set.weightKg, set.reps, heaviest->startedAtMs,
-                           estimate ? std::optional<double>(estimate->e1rm) : std::nullopt};
+                           estimate ? estimate->e1rm : std::nullopt};
   }
   const std::uint64_t floorMs = nowMs > kRecordWindowMs ? nowMs - kRecordWindowMs : 0;
   for (const MovementSeries::Point& point : series.points)
-    if (point.fact.estimate && point.startedAtMs >= floorMs) record.series.push_back(pointOf(point));
+    if (series.estimatesComplete() && point.fact.estimate && point.fact.estimate->estimate.e1rm &&
+        point.startedAtMs >= floorMs) record.series.push_back(pointOf(point));
   // A record needs a mark to have been passed, so the ladder's first step, the baseline, is no record. Newest first,
   // the order the list prints in.
   const std::vector<MovementSeries::Point> ladder = series.records();

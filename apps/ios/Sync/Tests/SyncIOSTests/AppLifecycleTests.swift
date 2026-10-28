@@ -22,7 +22,13 @@ struct AppLifecycleTests {
   let lifecycle: AppLifecycle
 
   init() throws {
-    store = try Store.inMemory(registry: try Corpus.probeRegistry())
+    let registry = try Corpus.probeRegistry()
+    store = try Store.inMemory(registry: registry)
+    transport.otherwiseHello { token in
+      Reply(status: 200, body: ["serverTime": 1_700_000_000_000, "epoch": "ep-1",
+        "as": token == SessionToken("token-1") ? "acct-1" : .null,
+        "schema": JSON(registry.version), "minSchema": JSON(registry.minVersion)])
+    }
     let identities = Identities(random: SeededRandomSource(seed: 11))
     _ = try store.firstLaunch(identities: identities)
     _ = try store.signIn(account: "acct-1", holdsRecords: [:], decisions: [:], counted: [:], identities: identities)

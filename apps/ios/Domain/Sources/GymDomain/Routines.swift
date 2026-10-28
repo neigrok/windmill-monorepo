@@ -134,7 +134,7 @@ public enum RoutineRules {
   public static let entries = CountSpec("routine.entries", min: 1, max: 50)
   public static let targets = CountSpec("routine.entries.sets", min: 1, max: 20)
   public static let targetReps = NumberSpec("routine.entries.sets.reps", min: 1, max: 100, integer: true)
-  public static let targetWeight = NumberSpec("routine.entries.sets.weightKg", min: -500, max: 500, quantum: 0.01)
+  public static let targetWeight = NumberSpec("routine.entries.sets.weightKg", quantum: 0.01)
   public static let rest = NumberSpec("routine.entries.restSeconds", min: 15, max: 900, integer: true)
   public static let exercise = TextSpec("routine.entries.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false)
   static let rules: [Rule] = [.local(name), .local(position), .local(entries), .local(targets), .local(targetReps),

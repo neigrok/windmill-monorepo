@@ -28,6 +28,7 @@ public final class ScriptedTransport: SyncTransport {
 
   struct State {
     var hellos: [Scripted<HelloResponse>] = []
+    var helloFallback: (@Sendable (SessionToken?) -> Reply<HelloResponse>)?
     var pushes: [Scripted<PushResponse>] = []
     var pulls: [Scripted<PullResponse>] = []
     var sockets: [Scripted<any LiveConnection>] = []
@@ -45,6 +46,10 @@ public final class ScriptedTransport: SyncTransport {
   // `body` nil: a response with no JSON body; a 200 without one finds no network.
   public func willAnswerHello(_ status: Int, _ body: JSON? = nil, after gate: Gate? = nil) {
     state.withLock { $0.hellos.append(Scripted(reply: Reply(status: status, body: body), gate: gate)) }
+  }
+
+  public func otherwiseHello(_ answer: @escaping @Sendable (SessionToken?) -> Reply<HelloResponse>) {
+    state.withLock { $0.helloFallback = answer }
   }
 
   public func willAnswerPush(_ status: Int, _ body: JSON? = nil, after gate: Gate? = nil) {
@@ -106,7 +111,12 @@ public final class ScriptedTransport: SyncTransport {
   // MARK: SyncTransport
 
   public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    await answer(.hello(token: token), \.hellos)
+    if let fallback = state.withLock({ state -> (@Sendable (SessionToken?) -> Reply<HelloResponse>)? in
+      guard state.hellos.isEmpty, let fallback = state.helloFallback else { return nil }
+      state.calls.append(.hello(token: token))
+      return fallback
+    }) { return fallback(token) }
+    return await answer(.hello(token: token), \.hellos)
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
@@ -366,14 +376,16 @@ public final class TranscriptTransport: SyncTransport {
     public let response: JSON
     public let lost: Bool
     public let place: String
+    public let credential: SessionToken?
 
     // `call`: hello, push or pull; `request` nil for a hello, whose request is `{}`; `response` `{status, body}`.
-    public init(call: String, request: JSON?, response: JSON, lost: Bool, place: String) {
+    public init(call: String, request: JSON?, response: JSON, lost: Bool, place: String, credential: SessionToken? = nil) {
       self.call = call
       self.request = request
       self.response = response
       self.lost = lost
       self.place = place
+      self.credential = credential
     }
   }
 
@@ -401,28 +413,32 @@ public final class TranscriptTransport: SyncTransport {
   }
 
   public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    answer("hello", nil)
+    answer("hello", nil, token: token)
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    answer("push", request.json)
+    answer("push", request.json, token: token)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    answer("pull", request.json)
+    answer("pull", request.json, token: token)
   }
 
   public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
     .answered(.ok(socket))
   }
 
-  func answer<Body: ResponseBody>(_ call: String, _ request: JSON?) -> Reply<Body> {
+  func answer<Body: ResponseBody>(_ call: String, _ request: JSON?, token: SessionToken?) -> Reply<Body> {
     state.withLock { state in
       guard !state.expected.isEmpty, state.expected[0].call == call else {
         state.differences.append("the engine made a \(call) the transcript does not: \(request?.jcsText ?? "{}")")
         return .unreachable
       }
       let exchange = state.expected.removeFirst()
+      if let credential = exchange.credential, token != credential {
+        state.differences.append("\(exchange.place): the engine used the wrong credential")
+        return .unreachable
+      }
       if let expected = exchange.request, let request, request != expected {
         state.differences.append("\(exchange.place): the engine sent \(request.jcsText), not \(expected.jcsText)")
       }

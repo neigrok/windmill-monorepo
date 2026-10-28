@@ -81,8 +81,8 @@ function checkTarget(spec, definition) {
     }
   } else if (spec.kind === 'number') {
     if (item?.type !== 'number') fail(6, spec.path, 'a number spec on a value that is no number');
-    if (item.min !== undefined && spec.min < item.min) fail(6, spec.path, 'admits a value below the registry minimum');
-    if (item.max !== undefined && spec.max > item.max) fail(6, spec.path, 'admits a value above the registry maximum');
+    if (item.min !== undefined && (spec.min === undefined || spec.min < item.min)) fail(6, spec.path, 'admits a value below the registry minimum');
+    if (item.max !== undefined && (spec.max === undefined || spec.max > item.max)) fail(6, spec.path, 'admits a value above the registry maximum');
     if (item.integer && !spec.integer && (spec.quantum == null || !Number.isInteger(spec.quantum))) fail(6, spec.path, 'admits a fraction the registry refuses');
     if (item.quantum !== undefined && (spec.quantum == null || !isOnQuantum(spec.quantum, item.quantum))) fail(6, spec.path, 'admits a value off the registry quantum');
   } else if (spec.kind === 'count') {

@@ -7,18 +7,19 @@ import SyncCore
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct SetEditorTests {
-  // The load wheel walks the ladder's bands to 500 kg, bodyweight mirrors them below zero for assistance, and a load off
-  // the steps keeps its own row.
-  @Test func loadWheelStepsByTheLadderBandsAndKeepsALoadOffTheSteps() {
-    let ones: [Double] = (0...20).map(Double.init), bands: [Double] = Array(stride(from: 22.5, through: 500, by: 2.5))
-    let grid = ones + bands, assistance: [Double] = grid.dropFirst().reversed().map { -$0 }
-    #expect(SetWheels.loads(around: 16, basis: MovementEquipment("dumbbell")) == grid)
-    #expect(SetWheels.loads(around: -10, basis: MovementEquipment("bodyweight")) == assistance + grid)
-    #expect(SetWheels.loads(around: -5, basis: MovementEquipment("other")) == assistance + grid)
-    #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("other")) == (assistance + [-12.5] + grid).sorted())
-    let offTheSteps: [Double] = ones.prefix(17) + [16.25] + ones.suffix(4) + bands
-    #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")) == offTheSteps)
-    #expect(SetWheels.loads(around: -12.5, basis: MovementEquipment("machine")) == [-12.5] + grid)
+  @Test func loadWheelUsesFiniteDistinctBoundedNeighborsAndKeepsTheEnteredLoad() {
+    for weight in [0, 16, 16.25, -12.5, 501, 1e16, Double.greatestFiniteMagnitude, -Double.greatestFiniteMagnitude] {
+      for equipment in ["barbell", "bodyweight", "other"] {
+        let values = SetWheels.loads(around: weight, basis: MovementEquipment(equipment))
+        #expect(values.contains(weight))
+        #expect(values.count <= 123 && Set(values).count == values.count)
+        #expect(values.allSatisfy(\.isFinite) && values == values.sorted())
+      }
+    }
+    #expect(SetWheels.loads(around: 500, basis: MovementEquipment("barbell")).contains(502.5))
+    #expect(SetWheels.loads(around: -500, basis: MovementEquipment("other")).contains(-502.5))
+    #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")).contains(16))
+    #expect(SetWheels.loads(around: Double.greatestFiniteMagnitude, basis: MovementEquipment("other")) == [Double.greatestFiniteMagnitude])
   }
 
   @Test func repsWheelRunsOneToNinetyNineAndKeepsACountOutsideIt() {
@@ -33,7 +34,8 @@ import SyncCore
     #expect(draft.problem == nil)
     #expect([draft.value.weightKg, Double(draft.value.reps)] == [-20.5, 99] && draft.value.rpe == nil && draft.value.note == "")
     draft.weightKg = .nan; #expect(draft.problem == "That is not a number yet.")
-    draft.weightKg = 500.01; #expect(draft.problem == "Between −500 and 500 kg — check the number.")
+    draft.weightKg = 500.01; #expect(draft.problem == nil)
+    draft.weightKg = .greatestFiniteMagnitude; #expect(draft.problem == nil)
     draft.weightKg = -500; draft.reps = 100; #expect(draft.problem == "Whole reps, 1–99.")
     draft.reps = 0; #expect(draft.problem == "Whole reps, 1–99.")
     draft.reps = 1; draft.note = String(repeating: "é", count: 2_001)

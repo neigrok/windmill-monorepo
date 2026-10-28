@@ -13,6 +13,8 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from gym_http import gym_headers
+
 
 class LiveCoachProof:
     def __init__(self, evidence, database):
@@ -30,7 +32,7 @@ class LiveCoachProof:
 
     def request(self, method, path, body=None, role="free", media="application/json"):
         connection = http.client.HTTPConnection("127.0.0.1", 8088, timeout=330)
-        headers = {"Content-Type": media}
+        headers = {"Content-Type": media, **gym_headers(path)}
         if role:
             headers["Authorization"] = "Bearer " + self.accounts[role]["token"]
         data = body if isinstance(body, bytes) else json.dumps(body) if body is not None else None

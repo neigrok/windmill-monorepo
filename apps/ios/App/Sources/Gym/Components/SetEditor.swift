@@ -20,10 +20,22 @@ struct SetWheels: View {
   }
 
   static func loads(around weightKg: Double, basis: MovementEquipment) -> [Double] {
-    var magnitudes: [Double] = [0]
-    while let last = magnitudes.last, last < 500 { magnitudes.append(WeightLadder.round(last + WeightLadder.steps(magnitude: last).small)) }
-    let grid = ["bodyweight", "other"].contains(basis.value) ? magnitudes.dropFirst().reversed().map { -$0 } + magnitudes : magnitudes
-    return grid.contains(weightKg) || !weightKg.isFinite ? grid : (grid + [weightKg]).sorted()
+    guard weightKg.isFinite else { return [0] }
+    let signed = ["bodyweight", "other"].contains(basis.value)
+    var values = [weightKg]
+    let grid = WeightLadder.onGrid(weightKg)
+    let anchor = grid.isFinite ? grid : weightKg
+    for direction in [-1, 1] {
+      var current = weightKg < 0 && !signed ? 0 : anchor
+      if current != weightKg { values.append(current) }
+      for _ in 0..<60 {
+        let next = WeightLadder.bump(current, direction: direction)
+        guard next.isFinite, next != current, signed || next >= 0 else { break }
+        values.append(next)
+        current = next
+      }
+    }
+    return Array(Set(values)).sorted()
   }
 
   static func reps(around reps: Int) -> [Int] {
@@ -34,6 +46,10 @@ struct SetWheels: View {
     HStack(spacing: 0) {
       wheel("Load", unit: basis.unit, selection: $weightKg, values: loads, reading: { Readout.weight($0) }, identifier: "set-wheel-load")
       wheel("Reps", unit: "reps", selection: $reps, values: repCounts, reading: { "\($0)" }, identifier: "set-wheel-reps")
+    }
+    .onChange(of: weightKg) { _, value in
+      guard let index = loads.firstIndex(of: value), index < 15 || index >= loads.count - 15 else { return }
+      loads = Self.loads(around: value, basis: basis)
     }
   }
 
@@ -80,7 +96,6 @@ struct SetWheels: View {
   var noteCounter: String? { noteBytes >= 3_200 ? "\(noteBytes) of 4000 bytes" : nil }
   var problem: String? {
     guard weightKg.isFinite else { return "That is not a number yet." }
-    guard abs(weightKg) <= 500 else { return "Between −500 and 500 kg — check the number." }
     guard (1...99).contains(reps) else { return "Whole reps, 1–99." }
     guard noteBytes <= 4_000 else { return "A set note runs to 4000 bytes." }
     return nil

@@ -46,12 +46,20 @@ struct Rig {
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
        limits: Limits = Limits(), slicing: WriterSlicing = .measured, drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
        crashPoints: CrashPoints = .none, path: String? = nil, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] },
-       telemetry: any Telemetry = NoopTelemetry()) throws {
+       telemetry: any Telemetry = NoopTelemetry(), freshHelloFallback: Bool = true) throws {
     self.slicing = slicing
     clock = SimClock(wallMs: Self.startMs)
     random = QueuedRandom(seed: 7)
     transport = ScriptedTransport()
     tokens = InMemoryTokenStore(account.flatMap { account in token.map { [account: $0] } } ?? [:])
+    if freshHelloFallback {
+      let credentials = tokens
+      transport.otherwiseHello { token in
+        let account = token.flatMap { token in credentials.accounts().first { credentials.token(for: $0) == token } }
+        return Reply(status: 200, body: ["serverTime": JSON(Self.startMs), "epoch": "ep-1",
+          "as": account.map(JSON.string) ?? .null, "schema": JSON(registry.version), "minSchema": JSON(registry.minVersion)])
+      }
+    }
     forkGuard = InMemoryForkGuardStore()
     connectivity = SwitchedConnectivity()
     store = try path.map { try Store(path: $0, registry: registry, limits: limits, crashPoints: crashPoints, pendingDeviceWork: pendingDeviceWork) }

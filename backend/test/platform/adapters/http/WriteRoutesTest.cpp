@@ -442,7 +442,8 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
     if (entry.path().extension() != ".cpp" && entry.path().extension() != ".h") continue;
     const std::string relative = std::filesystem::relative(entry.path(), backend).generic_string();
     if (relative.rfind("test/", 0) == 0 || relative.rfind("deploy/", 0) == 0 ||
-        relative == "platform/adapters/http/WriteRoutes.h") continue;
+        relative == "platform/adapters/http/WriteRoutes.h" ||
+        relative == "products/gym/adapters/http/GymSchema.h") continue;
     const std::string source = sourceText(entry.path());
     CHECK(source.find("METHOD_ADD(") == std::string::npos);
     CHECK(source.find("ADD_METHOD_TO(") == std::string::npos);
@@ -467,11 +468,16 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
       }
       const std::string registration = source.substr(begin, end - begin);
       const std::string receiver = (*match)[1].str();
-      CHECK(source.find("WriteRoutes " + receiver + "(") != std::string::npos);
+      const std::string wrapper = relative == "products/gym/routes.cpp" ? "GymRoutes " : "WriteRoutes ";
+      CHECK(source.find(wrapper + receiver + "(") != std::string::npos);
       if (!(*match)[2].matched && !std::regex_search(registration, verb)) continue;
       ++writes;
     }
   }
+  const std::string gymGuard = sourceText(backend / "products/gym/adapters/http/GymSchema.h");
+  CHECK(gymGuard.find("WriteRoutes routes_;") != std::string::npos);
+  CHECK(gymGuard.find("routes_.registerHandler(") != std::string::npos);
+  CHECK(gymGuard.find("routes_.registerWriteHandler(") != std::string::npos);
   CHECK(writes >= 69);
   std::cout << "observability route inventory: " << writes << " registered write routes\n";
   const std::string main = sourceText(backend / "platform/infra/main.cpp");

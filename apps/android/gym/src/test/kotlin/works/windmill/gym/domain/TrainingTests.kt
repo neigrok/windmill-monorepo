@@ -298,6 +298,60 @@ class TrainingWireTests {
     }
 }
 
+class ReviewEstimateTests {
+    private fun detail(id: String, at: Long, weight: Double, reps: Int) = SessionDetail(
+        Session(id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
+        List(4) { index -> TrainingSet("$id$index", "bench-press", weightKg = weight, reps = reps, completedAtMs = at + index + 1) },
+    )
+
+    @Test
+    fun anOverflowingEstimateRetainsFiniteSetFactsAndRoundTripsWithNullEstimate() {
+        val before = detail("before", 1_000, 80.0, 5)
+        val current = detail("now", 100_000, Double.MAX_VALUE, 8)
+        val mixed = current.copy(sets = current.sets.dropLast(1) + current.sets.last().copy(weightKg = 100.0))
+        for (workout in listOf(current, mixed)) {
+            val review = Review.of(workout, listOf(before, workout))
+            assertNull(review.stats.topE1rm)
+            assertEquals("heaviest", review.record?.kind)
+            assertEquals(Double.MAX_VALUE, review.record?.value)
+            val saved = WindmillJson.encodeToString(Review.serializer(), review)
+            assertEquals(review, WindmillJson.decodeFromString(Review.serializer(), saved))
+            assertFalse(saved.contains("Infinity"))
+            assertFalse(saved.contains("NaN"))
+            assertEquals(workout.sets, WindmillJson.decodeFromString(SessionDetail.serializer(),
+                WindmillJson.encodeToString(SessionDetail.serializer(), workout)).sets)
+        }
+        val single = current.copy(sets = current.sets.map { it.copy(reps = 1) })
+        assertEquals(Double.MAX_VALUE, Review.of(single, listOf(before, single)).stats.topE1rm)
+    }
+
+    @Test
+    fun anUnavailableStrongestPriorEstimateCannotBecomeALowerFiniteRecord() {
+        val overflowing = detail("before", 1_000, Double.MAX_VALUE, 8)
+        val before = overflowing.copy(sets = overflowing.sets.dropLast(1) + overflowing.sets.last().copy(weightKg = 50.0, reps = 5))
+        val current = detail("now", 100_000, 100.0, 8)
+        val review = Review.of(current, listOf(before, current))
+        assertEquals(100.0 * (1 + 8 / 30.0), review.stats.topE1rm)
+        assertNull(review.record)
+        assertEquals(review, WindmillJson.decodeFromString(Review.serializer(),
+            WindmillJson.encodeToString(Review.serializer(), review)))
+    }
+
+    @Test
+    fun ordinaryEstimateRankingAndExactTiesUseTheSharedScore() {
+        val before = detail("before", 1_000, 70.0, 10)
+        val tie = detail("tie", 100_000, 80.0, 5)
+        val tied = Review.of(tie, listOf(before, tie))
+        assertEquals("heaviest", tied.record?.kind)
+        val improved = detail("improved", 200_000, 82.5, 5)
+        val record = Review.of(improved, listOf(before, tie, improved)).record
+        assertEquals(PersonalRecord("e1rm", "bench-press", 96.25, 82.5, 5,
+            93.33333333333333, before.sets.first().completedAtMs), record)
+        val excluded = improved.copy(sets = improved.sets.map { it.copy(rpe = 6.5) })
+        assertNull(Review.of(excluded, listOf(before, excluded)).stats.topE1rm)
+    }
+}
+
 class SchemeTests {
     @Test
     fun testRampingUpDrawsAStraightLineFromSetOneToTheTopSet() {

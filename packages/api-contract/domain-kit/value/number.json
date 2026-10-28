@@ -360,6 +360,76 @@
     "expect": {"error": true}
   },
   {
+    "name": "an unbounded number spec normalizes a large positive load",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": 12345.678},
+    "expect": {"value": 12345.68}
+  },
+  {
+    "name": "an unbounded number spec permits negative assistance",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": -12345.678},
+    "expect": {"value": -12345.68}
+  },
+  {
+    "name": "an unbounded optional number remains absent",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": null},
+    "expect": {"value": null}
+  },
+  {
+    "name": "a minimum-only number spec keeps its lower boundary",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "min": 0, "quantum": 0.01}, "value": -0.01},
+    "expect": {"violation": {"rule": "probe.load", "path": "load", "reason": "below", "min": 0}}
+  },
+  {
+    "name": "a minimum-only number spec leaves the upper range open",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "min": 0, "quantum": 0.01}, "value": 12345.67},
+    "expect": {"value": 12345.67}
+  },
+  {
+    "name": "a maximum-only number spec keeps its upper boundary",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "max": 0, "quantum": 0.01}, "value": 0.01},
+    "expect": {"violation": {"rule": "probe.load", "path": "load", "reason": "above", "max": 0}}
+  },
+  {
+    "name": "a maximum-only number spec leaves the lower range open",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "max": 0, "quantum": 0.01}, "value": -12345.67},
+    "expect": {"value": -12345.67}
+  },
+  {
+    "name": "a large canonical cent load stays unchanged",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": 35333333333333.34},
+    "expect": {"value": 35333333333333.34}
+  },
+  {
+    "name": "a large non-cent load normalizes to a stable cent load",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": 35333333333333.336},
+    "expect": {"value": 35333333333333.34}
+  },
+  {
+    "name": "the largest finite cent load remains finite",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": 1.7976931348623157e308},
+    "expect": {"value": 1.7976931348623157e308}
+  },
+  {
+    "name": "the largest finite assistance load remains finite",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.01}, "value": -1.7976931348623157e308},
+    "expect": {"value": -1.7976931348623157e308}
+  },
+  {
+    "name": "a nondecimal reciprocal quantum preserves a finite value when scaling overflows",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.3333333333333333}, "value": 1.7976931348623157e308},
+    "expect": {"value": 1.7976931348623157e308}
+  },
+  {
+    "name": "a nondecimal reciprocal quantum keeps ordinary half-away rounding",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 0.3333333333333333}, "value": 1.5},
+    "expect": {"value": 1.6666666666666667}
+  },
+  {
+    "name": "an unbounded number spec refuses a non-finite normalized result",
+    "input": {"spec": {"path": "probe.load", "kind": "number", "quantum": 1e308}, "value": 1.7976931348623157e308},
+    "expect": {"violation": {"rule": "probe.load", "path": "load", "reason": "notANumber"}}
+  },
+  {
     "name": "a violation carries the path the spec was applied at",
     "input": {
       "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},

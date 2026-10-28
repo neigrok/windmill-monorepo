@@ -183,7 +183,7 @@ public enum ProposalRules {
     init(_ path: String) {
       sets = CountSpec("\(path).sets", min: 1, max: 20)
       reps = NumberSpec("\(path).sets.reps", min: 1, max: 100, integer: true)
-      weight = NumberSpec("\(path).sets.weightKg", min: -500, max: 500, quantum: 0.01)
+      weight = NumberSpec("\(path).sets.weightKg", quantum: 0.01)
       rest = NumberSpec("\(path).restSeconds", min: 15, max: 900, integer: true)
     }
 
@@ -200,7 +200,7 @@ public enum ProposalRules {
           if item.reps == 0 { throw Violation(rule: "proposal.zeroTarget", path: at + "reps", reason: .custom("zeroTarget")) }
           let checkedReps = try reps.apply(item.reps, at: at + "reps")
           let checkedWeight = try weight.apply(item.weightKg, at: at + "weightKg")
-          if checkedWeight == 0 { throw Violation(rule: "proposal.zeroTarget", path: at + "weightKg", reason: .custom("zeroTarget")) }
+          if checkedWeight == 0 && item.weightKg != 0 { throw Violation(rule: "proposal.zeroTarget", path: at + "weightKg", reason: .custom("zeroTarget")) }
           result.append(SetTarget(reps: checkedReps, weightKg: checkedWeight))
         }
         validated = result

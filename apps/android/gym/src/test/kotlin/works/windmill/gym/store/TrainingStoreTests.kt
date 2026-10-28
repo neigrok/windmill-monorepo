@@ -533,7 +533,7 @@ class TrainingStoreTests {
 
             val review = room.store.review(ended.id)
             assertEquals(Review(stats = ReviewStats(durationMs = ended.finishedAtMs!! - ended.startedAtMs,
-                workingSets = 5, topE1rm = 96.3), slight = false), review)
+                workingSets = 5, topE1rm = 96.25), slight = false), review)
 
             val detail = (room.store.sessionDetail(ended.id) as GymResult.Ok).value
             assertEquals(5, detail.sets.size)

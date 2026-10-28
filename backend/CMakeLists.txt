@@ -457,6 +457,7 @@ target_sources(windmill_gym PRIVATE
   products/gym/adapters/postgres/PgPreferencesRepository.cpp
   products/gym/adapters/postgres/PgNotesRepository.cpp
   products/gym/adapters/postgres/PgBodyweightRepository.cpp
+  products/gym/adapters/http/GymSchema.cpp
   products/gym/adapters/http/TrainingHistoryApi.cpp
   products/gym/adapters/http/TrainingApi.cpp
   products/gym/adapters/http/CatalogApi.cpp
@@ -580,6 +581,7 @@ add_executable(windmill_adapters_tests
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp
   test/platform/adapters/json/AiBudgetJsonTest.cpp
+  test/platform/adapters/json/JsonTextTest.cpp
   test/platform/adapters/http/EventsApiTest.cpp
   test/platform/adapters/http/FeedbackApiTest.cpp
   test/platform/adapters/http/RateLimiterTest.cpp
@@ -637,6 +639,7 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
   test/products/gym/sync/GymTrainingDoorTest.cpp
   test/products/gym/sync/GymRecordDoorTest.cpp
+  test/products/gym/adapters/http/GymSchemaTest.cpp
   test/products/gym/adapters/http/GymDoorApiTest.cpp
   test/products/gym/adapters/http/TrainingApiTest.cpp
   test/products/gym/adapters/http/CatalogApiTest.cpp

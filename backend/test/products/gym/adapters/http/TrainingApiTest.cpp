@@ -192,7 +192,7 @@ TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set)
            std::string(R"({"sessions":[{"closedItself":true,"exercises":["Bench Press"],)"
                        R"("finishedAt":1700000060000,"id":"ses_11111111","record":false,)"
                             R"("setCount":1,)"
-                       R"("startedAt":1700000000000,"tonnageKg":0.0,"workingSetCount":0}]})"));
+                       R"("startedAt":1700000000000,"tonnageKg":0.0,"topE1rm":null,"workingSetCount":0}]})"));
 }
 
 // The number on the row is the SESSION's e1RM and not the top set's: three back-offs at 95 × 10 estimate above 100 × 5.

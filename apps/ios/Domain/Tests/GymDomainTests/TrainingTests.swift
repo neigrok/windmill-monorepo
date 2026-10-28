@@ -32,6 +32,29 @@ struct TrainingTests {
                 weightKg: weight, reps: reps, rpe: rpe, note: note, completedAt: Instant(ms: h.clock.nowMs()))
   }
 
+  @Test func nonFiniteTypedDraftsWriteNothingAndLeaveTheirIdentityAvailable() throws {
+    let phone = Self.phone()
+    try Self.exercise(phone)
+    _ = try Self.start(phone)
+    phone.sync()
+    let original = Self.set(phone)
+    let sessions = try phone.stored(Session.self)
+    for weight in [Double.nan, .infinity, -.infinity] {
+      var draft = original
+      draft.weightKg = weight
+      let outcome = try phone.runner.run(AppendSet(draft))
+      #expect(outcome.refusal?.form == ["invalid": ["rule": "set.weightKg", "path": "weightKg", "reason": "notANumber"]])
+      #expect(try phone.stored(TrainingSet.self).isEmpty)
+      #expect(try phone.drawn(TrainingSet.self).isEmpty)
+      #expect(try phone.stored(Session.self) == sessions)
+      phone.sync()
+      #expect(try phone.stored(TrainingSet.self).isEmpty)
+    }
+    #expect(try committed(phone.runner.run(AppendSet(original))) == original.id)
+    phone.sync()
+    #expect(try phone.stored(TrainingSet.self).map(\.id) == [original.id])
+  }
+
   @Test func unreadableFrozenPlansRetainExactJSONAndDoNotHideSessionFacts() throws {
     let values = Session(id: Self.sessionID, startedAt: Instant(ms: 1000)).fields
     let malformed: [JSON] = [false, 42, [], ["routine": 42, "entries": []],

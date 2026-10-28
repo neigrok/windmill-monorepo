@@ -288,13 +288,13 @@ Json::Value toJson(const std::vector<Set>& sets) {
   return array;
 }
 
-// tonnageKg is always present and zero is a real answer. topSet is omitted for a session with no
-// working set, and topE1rm wherever no working set earned an estimate.
+// tonnageKg is always present: null is unavailable and zero is a real answer. topSet is omitted for a session with no
+// working set; topE1rm is null when no working set earned an available estimate.
 Json::Value toJson(const LogRow& row) {
   Json::Value body = toJson(row.summary.session);
   body["setCount"] = row.summary.setCount;
   body["workingSetCount"] = row.summary.workingSetCount;
-  body["tonnageKg"] = row.summary.tonnageKg;
+  body["tonnageKg"] = row.summary.tonnageKg ? Json::Value(*row.summary.tonnageKg) : Json::Value();
   Json::Value names(Json::arrayValue);
   for (const std::string& name : row.summary.exerciseNames) names.append(name);
   body["exercises"] = names;
@@ -304,7 +304,7 @@ Json::Value toJson(const LogRow& row) {
     top["reps"] = row.summary.topSet->reps;
     body["topSet"] = top;
   }
-  if (row.topE1rm) body["topE1rm"] = Estimate::stated(*row.topE1rm);
+  body["topE1rm"] = row.topE1rm ? Json::Value(Estimate::stated(*row.topE1rm)) : Json::Value();
   body["record"] = row.record;
   body["closedItself"] = row.summary.closedItself;
   return body;
@@ -745,7 +745,7 @@ Json::Value toJson(const Review& review) {
   Json::Value stats(Json::objectValue);
   stats["durationMs"] = Json::Value::UInt64(review.stats.durationMs);
   stats["workingSets"] = review.stats.workingSets;
-  if (review.stats.topE1rm) stats["topE1rm"] = Estimate::stated(*review.stats.topE1rm);
+  stats["topE1rm"] = review.stats.topE1rm ? Json::Value(Estimate::stated(*review.stats.topE1rm)) : Json::Value();
   Json::Value body(Json::objectValue);
   body["stats"] = stats;
   body["slight"] = review.slight;
@@ -829,7 +829,7 @@ Json::Value toJson(const AnswerReceipt& receipt) {
     line["setsRead"] = fact.setsRead;
     if (fact.workout) {
       line["workout"]["workingSetCount"] = fact.workout->workingSetCount;
-      line["workout"]["tonnageKg"] = fact.workout->tonnageKg;
+      line["workout"]["tonnageKg"] = fact.workout->tonnageKg ? Json::Value(*fact.workout->tonnageKg) : Json::Value();
       if (fact.workout->durationMs)
         line["workout"]["durationMs"] = Json::Value::UInt64(*fact.workout->durationMs);
     }
@@ -883,11 +883,11 @@ std::optional<AnswerReceipt> receiptFrom(const Json::Value& stored) {
     }
     if (!line["workout"].isNull()) {
       const Json::Value& workout = line["workout"];
-      if (!workout.isObject() || !workout["workingSetCount"].isInt() ||
-          !workout["tonnageKg"].isNumeric()) return std::nullopt;
+      if (!workout.isObject() || !workout["workingSetCount"].isInt() || !workout.isMember("tonnageKg") ||
+          (!workout["tonnageKg"].isNumeric() && !workout["tonnageKg"].isNull())) return std::nullopt;
       WorkoutObservation total;
       total.workingSetCount = workout["workingSetCount"].asInt();
-      total.tonnageKg = workout["tonnageKg"].asDouble();
+      total.tonnageKg = workout["tonnageKg"].isNull() ? std::nullopt : std::optional(workout["tonnageKg"].asDouble());
       if (!workout["durationMs"].isNull()) {
         if (!workout["durationMs"].isUInt64()) return std::nullopt;
         total.durationMs = workout["durationMs"].asUInt64();
@@ -958,8 +958,9 @@ Json::Value toJson(const StatsProgress& progress) {
       if (fact.mostReps) movement["mostReps"] = performedJson(*fact.mostReps);
       if (fact.estimate) {
         movement["estimate"] = performedJson(fact.estimate->performed);
-        movement["estimate"]["e1rm"] = fact.estimate->estimate.e1rm;
+        movement["estimate"]["e1rm"] = fact.estimate->estimate.e1rm ? Json::Value(*fact.estimate->estimate.e1rm) : Json::Value(Json::nullValue);
       }
+      if (!fact.estimatesComplete) movement["estimatesComplete"] = false;
       movements.append(movement);
     }
     Json::Value row(Json::objectValue);

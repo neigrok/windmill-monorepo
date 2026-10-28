@@ -1,6 +1,8 @@
 #include "products/gym/adapters/json/GymJson.h"
 
 #include <set>
+#include <cmath>
+#include <stdexcept>
 
 namespace wm::gym {
 
@@ -15,7 +17,7 @@ Json::Value toJson(const HistoryWorkout& workout) {
   body["setCount"] = static_cast<int>(workout.sets.size());
   body["workingSetCount"] = totals.sets;
   body["reps"] = totals.reps;
-  body["tonnageKg"] = totals.tonnageKg;
+  body["tonnageKg"] = totals.tonnageKg ? Json::Value(*totals.tonnageKg) : Json::Value();
   body["sets"] = Json::Value(Json::arrayValue);
   std::set<std::string> names;
   std::set<std::string> exerciseIds;
@@ -42,7 +44,7 @@ Json::Value toJson(const HistoryWorkout& workout) {
     movement["exerciseId"] = id;
     movement["sets"] = totals.sets;
     movement["reps"] = totals.reps;
-    movement["tonnageKg"] = totals.tonnageKg;
+    movement["tonnageKg"] = totals.tonnageKg ? Json::Value(*totals.tonnageKg) : Json::Value();
     body["movements"].append(movement);
   }
   body["exerciseNames"] = Json::Value(Json::arrayValue);
@@ -55,12 +57,15 @@ HistoryWorkout historyWorkoutFrom(const Json::Value& value) {
       value["finishedAt"].asUInt64(), value.get("routineId", "").asString(),
       value["routineName"].asString(), {}};
   for (const Json::Value& set : value["sets"]) {
+    if (!set["weightKg"].isNumeric() || !std::isfinite(set["weightKg"].asDouble()) ||
+        !set["reps"].isInt() || set["reps"].asInt() <= 0)
+      throw std::runtime_error("stored history set has unavailable numeric facts");
     std::optional<double> rpe;
     if (set["rpe"].isNumeric()) rpe = set["rpe"].asDouble();
     workout.sets.push_back(HistorySet{set["id"].asString(), set["exerciseId"].asString(),
         set["exercise"].asString(), set["setNumber"].asInt(), set["weightKg"].asDouble(),
         set["reps"].asInt(), rpe, set["completedAt"].asUInt64(), set["working"].asBool(), equipmentFromStored(set.get("equipment", "barbell").asString()),
-        set.get("loadCount", 0).asInt()});
+        set.get("loadCount", 0).asInt(), set.get("movementAvailable", true).asBool()});
   }
   return workout;
 }
@@ -72,7 +77,7 @@ Json::Value toJson(const HistoryPage& page) {
   body["summary"]["sessions"] = page.summary.sessions;
   body["summary"]["sets"] = page.summary.sets;
   body["summary"]["reps"] = page.summary.reps;
-  body["summary"]["tonnageKg"] = page.summary.tonnageKg;
+  body["summary"]["tonnageKg"] = page.summary.tonnageKg ? Json::Value(*page.summary.tonnageKg) : Json::Value();
   body["months"] = Json::Value(Json::arrayValue);
   for (const HistoryMonth& month : page.months) {
     Json::Value row(Json::objectValue);

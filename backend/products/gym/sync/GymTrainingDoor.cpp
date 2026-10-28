@@ -1,10 +1,12 @@
 #include "products/gym/sync/GymDoor.h"
 
 #include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/domain/sync/Registry.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/sync/GymDoorHash.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <stdexcept>
 
@@ -153,11 +155,10 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
       answer.error = AppendError::unknownExercise;
       return std::nullopt;
     }
-    pqxx::params precision{canonical.weightKg};
-    if (canonical.rpe) precision.append(*canonical.rpe); else precision.append();
-    const auto normalized = sql.exec("select $1::numeric(6,2)::float8,$2::numeric(3,1)::float8", precision);
-    canonical.weightKg = normalized[0][0].as<double>();
-    if (!normalized[0][1].is_null()) canonical.rpe = normalized[0][1].as<double>();
+    canonical.weightKg = sync::Quantum{0.01}.round(canonical.weightKg);
+    if (!std::isfinite(canonical.weightKg)) throw InvalidTraining("weight must be finite");
+    if (canonical.rpe)
+      canonical.rpe = sql.exec("select $1::numeric(3,1)::float8", pqxx::params{*canonical.rpe})[0][0].as<double>();
     auto value = intent();
     value["d"].append(delta("set", incoming.id.str(), setFields(canonical), true));
     return value;

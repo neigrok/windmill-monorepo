@@ -119,9 +119,9 @@ object RegistryCheck {
             }
             "number" -> {
                 if (item?.type != "number") return "a number spec on a value that is no number"
-                val min = spec.member("min").num(); val max = spec.member("max").num()
+                val min = spec["min"]?.num(); val max = spec["max"]?.num()
                 val quantum = spec["quantum"]?.orNull()?.num()
-                when { item.json["min"]?.num()?.let { min < it } == true -> "admits a value below registry minimum"; item.json["max"]?.num()?.let { max > it } == true -> "admits a value above registry maximum";
+                when { item.json["min"]?.num()?.let { min == null || min < it } == true -> "admits a value below registry minimum"; item.json["max"]?.num()?.let { max == null || max > it } == true -> "admits a value above registry maximum";
                     item.json["integer"]?.bool() == true && spec["integer"]?.bool() != true && (quantum == null || quantum != kotlin.math.floor(quantum)) -> "admits a fraction the registry refuses";
                     item.quantum?.let { quantum == null || !it.holds(quantum) } == true -> "admits a value off registry quantum"; else -> null }
             }

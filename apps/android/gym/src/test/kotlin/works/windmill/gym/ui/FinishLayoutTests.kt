@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -32,6 +33,28 @@ import works.windmill.gym.domain.*
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class FinishLayoutTests {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun finiteMaximumRetainsItsExponentWhileOverflowUsesTheUnavailableSlotAndZeroStaysReal() {
+        val load = mutableStateOf(Double.MAX_VALUE)
+        val reps = mutableStateOf(1)
+        compose.setContent {
+            val finished = FinishedSession(Session("extreme", startedAtMs = 1_000, finishedAtMs = 61_000),
+                listOf(TrainingSet("set", "bench-press", weightKg = load.value, reps = reps.value, completedAtMs = 2_000)), null)
+            GymMaterial { FinishScreen(finished, listOf(Exercise("bench-press", "Bench Press", "press", "barbell"))) }
+        }
+        val text = "1.7976931348623157e+308 kg"
+        val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
+        assertFalse(layouts.single().hasVisualOverflow)
+        assertEquals(text.length, layouts.single().getLineEnd(layouts.single().lineCount - 1, visibleEnd = true))
+        compose.runOnIdle { reps.value = 2 }
+        compose.onNodeWithText("—").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("0 kg").assertDoesNotExist()
+        compose.runOnIdle { load.value = 0.0 }
+        compose.onNodeWithText("0 kg").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("—").assertDoesNotExist()
+    }
 
     @Test
     fun theThreeFactsShareOneContinuousRow() {

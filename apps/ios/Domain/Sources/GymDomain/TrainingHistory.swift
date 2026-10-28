@@ -75,10 +75,8 @@ public struct TrainingHistory {
     }.first
   }
 
-  func tonnage(_ sets: [TrainingSet]) -> Double {
-    sets.reduce(0) { total, set in
-      total + max(0, Quantum(1)!.rounded(set.weightKg * 100)) * Double(set.reps) * Double(catalogue.find(set.exerciseId)?.loadCount ?? 1)
-    } / 100
+  func tonnage(_ sets: [TrainingSet]) -> Double? {
+    GymVolume.of(sets, catalogue: catalogue)
   }
 
   // A workout as the log lists it: its facts, the names it trained, its top set, and whether it earned a record.
@@ -90,7 +88,7 @@ public struct TrainingHistory {
     result["exercises"] = .array(Set(sets.compactMap { catalogue.find($0.exerciseId)?.name }).sorted(by: Self.before).map(JSON.string))
     result["record"] = .bool(sets.count >= 4 && recordFor(value) != nil); result["closedItself"] = .bool(value.closedBy.map { $0 == "stale" } ?? (value.finishedAt == SessionRules.lastActivity(value, sets: sets)))
     if let top = top(sets) { result["topSet"] = ["weightKg": .of(top.weightKg), "reps": JSON(top.reps)] }
-    if let estimate = log.topE1rm(session: value.id) { result["topE1rm"] = .of(estimate) }
+    result["topE1rm"] = .of(log.topE1rm(session: value.id))
     return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) }))
   }
 
@@ -307,12 +305,14 @@ public struct TrainingHistory {
     let current = StatsProgress(log: TrainingLog(sessions: [value], sets: log.sets, moment: read.moment, catalogue: catalogue))
     struct Candidate {
       let rank: Int, kind: String, exercise: ID<Exercise>, fact: PerformedFact, amount: Double, before: Double, beforeAt: Instant
-      var score: Double { GymEstimate.score(weightKg: fact.weightKg, reps: fact.reps, rpe: fact.rpe) ?? 0 }
+      var score: EstimateScore { GymEstimate.score(weightKg: fact.weightKg, reps: fact.reps, rpe: fact.rpe) ?? .zero }
     }
     var candidates: [Candidate] = []
     for fact in current.sessions.flatMap(\.movements) {
-      if let now = fact.estimate, let before = prior.movement(fact.exerciseId).best, now.score > before.fact.estimate!.score {
-        candidates.append(Candidate(rank: 0, kind: "e1rm", exercise: fact.exerciseId, fact: now.performed, amount: now.e1rm, before: before.fact.estimate!.e1rm, beforeAt: before.startedAt))
+      if fact.estimatesComplete, let now = fact.estimate, let amount = now.e1rm,
+         let before = prior.movement(fact.exerciseId).best, let previous = before.fact.estimate?.e1rm,
+         now.score > before.fact.estimate!.score {
+        candidates.append(Candidate(rank: 0, kind: "e1rm", exercise: fact.exerciseId, fact: now.performed, amount: amount, before: previous, beforeAt: before.startedAt))
       }
       let today = log.sets(session: value.id).filter { $0.exerciseId == fact.exerciseId }
       let priors = previous.flatMap { session in log.sets(session: session.id).filter { $0.exerciseId == fact.exerciseId }.map { (set: $0, session: session) } }
@@ -350,7 +350,7 @@ public struct TrainingHistory {
   public func review(_ id: ID<Session>) -> JSON {
     guard let value = log.drawnSessions.first(where: { $0.id == id }), let facts = log.readout(session: id) else { return .null }
     let stats: JSON = .object(omittingNil: ["durationMs": JSON(facts.durationMs ?? max(0, SessionRules.lastActivity(value, sets: log.sets).ms - value.startedAt.ms)),
-      "workingSets": JSON(facts.workingSetCount), "topE1rm": facts.topE1rm.map(JSON.of)])
+      "workingSets": JSON(facts.workingSetCount), "topE1rm": .of(facts.topE1rm)])
     var result: [String: JSON] = ["stats": stats, "slight": .bool(facts.workingSetCount < 4)]
     guard facts.workingSetCount >= 4 else { return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) })) }
     if let record = recordFor(value) { result["record"] = record }

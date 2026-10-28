@@ -71,6 +71,63 @@ class SchemaReapplicationTest(unittest.TestCase):
                     after[name].splitlines(keepends=True), fromfile="first apply", tofile="second apply"))
                 self.assertEqual(before[name], after[name], f"{name} changed:\n{difference}")
 
+    def test_load_upgrade_preserves_signed_zero_and_absence_and_has_stable_finite_cent_checks(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+insert into users(id,email) values('00000000-0000-4000-8000-000000000043','loads@example.invalid');
+insert into gym_routines(id,user_id,name,position) values('routine-load-schema','00000000-0000-4000-8000-000000000043','Fixture',0);
+insert into gym_routine_entries(routine_id,position,exercise_id) values('routine-load-schema',1,'bench-press');
+insert into gym_routine_entry_sets(routine_id,position,set_index,reps,weight_kg)
+  values('routine-load-schema',1,1,8,-500),('routine-load-schema',1,2,8,0),('routine-load-schema',1,3,8,null);
+insert into gym_sessions(id,user_id,started_at) values('session-load-schema','00000000-0000-4000-8000-000000000043',to_timestamp(1));
+insert into gym_sets(id,session_id,user_id,exercise_id,set_number,weight_kg,reps,completed_at)
+  values('set-load-schema','session-load-schema','00000000-0000-4000-8000-000000000043','bench-press',1,500,1,to_timestamp(2));
+insert into gym_set_revisions(set_id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,note,completed_at)
+  select id,session_id,user_id,exercise_id,set_number,-500,reps,kind,note,completed_at from gym_sets where id='set-load-schema';
+set constraints all immediate;
+alter table gym_routine_entry_sets drop constraint gym_routine_entry_sets_load_finite_cent,
+  alter column weight_kg type numeric(6,2), add check(weight_kg between -500 and 500);
+alter table gym_sets drop constraint gym_sets_load_finite_cent,
+  alter column weight_kg type numeric(6,2), add check(weight_kg between -500 and 500);
+alter table gym_set_revisions alter column weight_kg type numeric(6,2);
+"""])
+        self.apply_schema()
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(before, self.snapshot())
+        self.assertEqual(command([*query, """
+select string_agg(relname||':'||atttypmod,',' order by relname)
+from pg_attribute join pg_class on pg_class.oid=attrelid
+where relname in ('gym_routine_entry_sets','gym_sets','gym_set_revisions') and attname='weight_kg';
+"""]).strip(), "gym_routine_entry_sets:-1,gym_set_revisions:-1,gym_sets:-1")
+        self.assertEqual(command([*query, """
+select (select weight_kg=-500 from gym_routine_entry_sets where routine_id='routine-load-schema' and set_index=1)
+  and (select weight_kg=0 from gym_routine_entry_sets where routine_id='routine-load-schema' and set_index=2)
+  and (select weight_kg is null from gym_routine_entry_sets where routine_id='routine-load-schema' and set_index=3)
+  and (select weight_kg=500 from gym_sets where id='set-load-schema')
+  and (select weight_kg=-500 from gym_set_revisions where set_id='set-load-schema');
+"""]).strip(), "t")
+        command([*query, """
+do $$
+declare relation text; sample text;
+begin
+  foreach relation in array array['gym_routine_entry_sets','gym_sets'] loop
+    foreach sample in array array['501','-501','0','0.1','35333333333333.34','1.7976931348623157e308','-1.7976931348623157e308'] loop
+      execute format('update %I set weight_kg=$1',relation) using sample::numeric;
+    end loop;
+    foreach sample in array array['NaN','Infinity','-Infinity','0.001','-0.001'] loop
+      begin
+        execute format('update %I set weight_kg=$1',relation) using sample::numeric;
+        raise exception 'invalid live load was accepted';
+      exception when check_violation then null; end;
+    end loop;
+  end loop;
+end $$;
+update gym_routine_entry_sets set weight_kg=null where routine_id='routine-load-schema' and set_index=3;
+update gym_set_revisions set weight_kg=1.001 where set_id='set-load-schema';
+"""])
+
     def test_other_equipment_upgrade_keeps_legacy_metadata_and_signed_history(self):
         self.apply_schema()
         query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]

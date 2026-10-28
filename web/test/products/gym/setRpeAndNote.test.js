@@ -94,11 +94,11 @@ test('focused correction retains surrounding saved rows and refuses overflow und
   const view = renderHook(t, () => FixSheet({ set: sets[1], sets, movement: 'Bench Press', session: { startedAt: new Date(2026, 8, 7).getTime() }, onSave: (fix) => saved.push(fix), onDelete() {}, onClose() {} }));
   assert.deepEqual(findByClass(view.tree, 'gym-fix-sibling').map(textOf), ['60 × 8', '60 × 8']);
   assert.equal(textOf(findByClass(view.tree, 'gym-fix-movement')[0]), 'Bench Press3 × 8 · 60');
-  elementsOf(view.tree).find((each) => each.props?.name === 'weightKg').props.onChange({ target: { value: '625' } });
+  elementsOf(view.tree).find((each) => each.props?.name === 'weightKg').props.onChange({ target: { value: '1e999' } });
   await elementsOf(view.tree).find((each) => each.type === 'form').props.onSubmit({ preventDefault() {} });
   assert.deepEqual(saved, []);
-  assert.deepEqual(findByClass(view.tree, 'gym-fix-refusal').map(textOf), ['Over 500 kg — check the number.']);
-  assert.equal(elementsOf(view.tree).find((each) => each.props?.name === 'weightKg').props.value, '625');
+  assert.deepEqual(findByClass(view.tree, 'gym-fix-refusal').map(textOf), ['That is not a number yet.']);
+  assert.equal(elementsOf(view.tree).find((each) => each.props?.name === 'weightKg').props.value, '1e999');
   assert.equal(textOf(findByClass(view.tree, 'gym-fix-movement')[0]), 'Bench Press3 × 8 · 60');
 });
 

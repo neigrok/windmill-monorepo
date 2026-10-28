@@ -192,8 +192,8 @@ extension Catalog {
                 "routineName": ["type": "string"],
                 "setCount": ["type": "integer"],
                 "startedAt": ["type": "integer"],
-                "tonnageKg": ["type": "number"],
-                "topE1rm": ["type": "number"],
+                "tonnageKg": ["type": ["number", "null"]],
+                "topE1rm": ["type": ["number", "null"]],
                 "topSet": [
                   "additionalProperties": false,
                   "properties": ["reps": ["type": "integer"], "weightKg": ["type": "number"]],
@@ -320,7 +320,7 @@ extension Catalog {
                 "additionalProperties": false,
                 "properties": [
                   "durationMs": ["type": "integer"],
-                  "topE1rm": ["type": "number"],
+                  "topE1rm": ["type": ["number", "null"]],
                   "workingSets": ["type": "integer"],
                 ],
                 "required": ["durationMs", "workingSets"],
@@ -506,7 +506,7 @@ extension Catalog {
                       "additionalProperties": false,
                       "properties": [
                         "durationMs": ["type": "integer"],
-                        "topE1rm": ["type": "number"],
+                        "topE1rm": ["type": ["number", "null"]],
                         "workingSets": ["type": "integer"],
                       ],
                       "required": ["durationMs", "workingSets"],
@@ -801,7 +801,7 @@ extension Catalog {
                   "additionalProperties": false,
                   "properties": [
                     "at": ["type": "integer"],
-                    "e1rm": ["type": "number"],
+                    "e1rm": ["type": ["number", "null"]],
                     "reps": ["type": "integer"],
                     "weightKg": ["type": "number"],
                   ],
@@ -813,7 +813,7 @@ extension Catalog {
                   "additionalProperties": false,
                   "properties": [
                     "at": ["type": "integer"],
-                    "e1rm": ["type": "number"],
+                    "e1rm": ["type": ["number", "null"]],
                     "reps": ["type": "integer"],
                     "weightKg": ["type": "number"],
                   ],
@@ -826,7 +826,7 @@ extension Catalog {
                     "additionalProperties": false,
                     "properties": [
                       "at": ["type": "integer"],
-                      "e1rm": ["type": "number"],
+                      "e1rm": ["type": ["number", "null"]],
                       "reps": ["type": "integer"],
                       "weightKg": ["type": "number"],
                     ],
@@ -882,7 +882,7 @@ extension Catalog {
             "additionalProperties": false,
             "properties": [
               "at": ["type": "integer"],
-              "e1rm": ["type": "number"],
+              "e1rm": ["type": ["number", "null"]],
               "reps": ["type": "integer"],
               "weightKg": ["type": "number"],
             ],
@@ -894,7 +894,7 @@ extension Catalog {
               "additionalProperties": false,
               "properties": [
                 "at": ["type": "integer"],
-                "e1rm": ["type": "number"],
+                "e1rm": ["type": ["number", "null"]],
                 "reps": ["type": "integer"],
                 "weightKg": ["type": "number"],
               ],
@@ -925,7 +925,7 @@ extension Catalog {
             "additionalProperties": false,
             "properties": [
               "at": ["type": "integer"],
-              "e1rm": ["type": "number"],
+              "e1rm": ["type": ["number", "null"]],
               "reps": ["type": "integer"],
               "weightKg": ["type": "number"],
             ],
@@ -968,7 +968,7 @@ extension Catalog {
               "additionalProperties": false,
               "properties": [
                 "at": ["type": "integer"],
-                "e1rm": ["type": "number"],
+                "e1rm": ["type": ["number", "null"]],
                 "reps": ["type": "integer"],
                 "weightKg": ["type": "number"],
               ],
@@ -1093,9 +1093,7 @@ extension Catalog {
                         "type": "integer",
                       ],
                       "weightKg": [
-                        "description": "Load for THIS set in kg, inside \u{B1}500. OMIT to mean what they lifted for the set of the same number last time.",
-                        "maximum": 500,
-                        "minimum": -500,
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number",
                       ],
                     ],
@@ -1342,9 +1340,7 @@ extension Catalog {
                         "type": "integer",
                       ],
                       "weightKg": [
-                        "description": "Load for THIS set in kg, inside \u{B1}500. OMIT to mean what they lifted for the set of the same number last time.",
-                        "maximum": 500,
-                        "minimum": -500,
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number",
                       ],
                     ],
@@ -1794,8 +1790,6 @@ extension Catalog {
                 ],
                 "weightKg": [
                   "description": "Load in kg, at most two decimal places.",
-                  "maximum": 500,
-                  "minimum": -500,
                   "multipleOf": 0.01,
                   "type": "number",
                 ],
@@ -1904,8 +1898,6 @@ extension Catalog {
                 ],
                 "weightKg": [
                   "description": "Load in kg, at most two decimal places.",
-                  "maximum": 500,
-                  "minimum": -500,
                   "multipleOf": 0.01,
                   "type": "number",
                 ],

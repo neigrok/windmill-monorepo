@@ -17,7 +17,7 @@ import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.j
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SaveRoutinePlan, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
-import { Session, SessionRules, SetRules, TrainingSet } from '../../../../src/products/gym/domain/training.js';
+import { GymVolume, Session, SessionRules, SetRules, TrainingSet, VolumePart } from '../../../../src/products/gym/domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
 import { GymEstimate, Prefill, ProgressRecords, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
@@ -81,6 +81,16 @@ function trainingReadsForm(vector, read) {
   const log = new TrainingLog(read);
   switch (vector.input.read) {
     case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.optionalDouble('rpe'));
+    case 'GymEstimateScore': {
+      const left = Fields.object(vector.input.input.left), right = Fields.object(vector.input.input.right);
+      const a = GymEstimate.score(left.double('weightKg'), left.int('reps'), left.optionalDouble('rpe'));
+      const b = GymEstimate.score(right.double('weightKg'), right.int('reps'), right.optionalDouble('rpe'));
+      return a === null || b === null ? null : a.compare(b);
+    }
+    case 'GymVolume': return GymVolume.total(vector.input.input.parts.map((/** @type {any} */ value) => {
+      const fields = Fields.object(value);
+      return new VolumePart(fields.string('id'), fields.optionalDouble('weightKg'), fields.optionalInt('reps'), fields.optionalInt('loadCount'));
+    }));
     case 'TrainingLog': {
       const id = f.ref('sessionId', Session);
       return { drawnSessions: log.drawnSessions.map((session) => session.id.json), open: log.open?.id.json ?? null,
@@ -129,6 +139,7 @@ function trainingReadsForm(vector, read) {
     }
     case 'Readout': {
       switch (f.string('operation')) {
+        case 'weight': return Readout.weight(f.double('value'));
         case 'estimate': return Readout.estimate(f.double('value'));
         case 'target': return Readout.target(f.optionalList('sets', SetTarget.decode));
         case 'loadUnit': return Readout.loadUnit(f.optionalString('equipment'), f.int('loadCount'));
@@ -172,7 +183,28 @@ function unitsForm(input) {
 
 /** @type {Record<string, (vector: Vector) => unknown>} */
 const handlers = {
-  [valuesFile]: (vector) => corpus.value(vector),
+  [valuesFile]: (vector) => {
+    const input = vector.input;
+    if (!input.nonFinite) return corpus.value(vector);
+    const fields = structuredClone(input.fields);
+    const parts = input.nonFinite.path.split('.');
+    let target = fields;
+    for (const part of parts.slice(0, -1)) target = target[part];
+    const named = { NaN: Number.NaN, Infinity: Number.POSITIVE_INFINITY, '-Infinity': Number.NEGATIVE_INFINITY };
+    assert.ok(Object.hasOwn(named, input.nonFinite.value));
+    target[parts.at(-1)] = named[/** @type {keyof typeof named} */ (input.nonFinite.value)];
+    const type = book.entity(input.entity);
+    assert.ok(type?.isWritable);
+    const check = type.checks?.find((check) => check.field === parts[0]);
+    assert.ok(check);
+    try {
+      const value = check.apply(type.decode(Fields.values(type.type, input.id, fields)), momentOf(input));
+      return { fields: new Valid(value, momentOf(input)).value.fields() };
+    } catch (error) {
+      if (error instanceof Violation) return { violation: error.json };
+      throw error;
+    }
+  },
   'gym/domain/training-actions.json': (vector) => {
     const input = vector.input.input;
     const f = Fields.object(input);

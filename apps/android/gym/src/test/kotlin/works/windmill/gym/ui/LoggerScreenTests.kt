@@ -258,10 +258,10 @@ class LoggerScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try { logger(scope).use { room ->
             val load = compose.onNodeWithContentDescription("Load, kg total")
-            load.performClick().performTextReplacement("500.001")
+            load.performClick().performTextReplacement("1e999")
             compose.onNodeWithText("Log set").performClick()
-            compose.onNodeWithText("Over 500 kg — check the number.").assertExists()
-            load.assertTextEquals("Load", "kg total", "500.001")
+            compose.onNodeWithText("That is not a number yet.").assertExists()
+            load.assertTextEquals("Load", "kg total", "1e999")
             compose.runOnIdle {
                 assertEquals(20.0, room.store.rack!!.weightKg, 0.0)
                 assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), room.store.sets)

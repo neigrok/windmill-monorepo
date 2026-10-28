@@ -33,8 +33,47 @@ struct GymRulesTests {
 
   @Test(arguments: try Contract.vectors("gym/domain/values.json"))
   func localRule(_ vector: Vector) throws {
-    let result = try ProductCorpus(GymRules.book).value(vector)
+    let result = try vector.input["nonFinite"].map { try nonFiniteEntity(vector, override: $0) } ?? ProductCorpus(GymRules.book).value(vector)
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+
+  func nonFiniteEntity(_ vector: Vector, override: JSON) throws -> JSON {
+    let input = vector.input
+    let moment = Moment(now: Instant(ms: try input.member("now").asInteger()),
+                        zone: FixedZone(offsetSeconds: Int(try input.member("offsetSeconds").asInteger())))
+    let weight: Double = switch try override.member("value").asString() {
+    case "NaN": .nan
+    case "Infinity": .infinity
+    case "-Infinity": -.infinity
+    default: throw ContractError("unknown non-finite number")
+    }
+    let path = try override.member("path").asString()
+    switch try input.member("entity").asString() {
+    case "set":
+      guard path == "weightKg" else { throw ContractError("unknown set numeric override") }
+      var value = try TrainingSet(form: input)
+      value.weightKg = weight
+      return checked(value, at: moment)
+    case "routine":
+      guard path == "entries.0.sets.0.weightKg" else { throw ContractError("unknown routine numeric override") }
+      var value = try Routine(form: input)
+      value.entries[0].sets![0].weightKg = weight
+      return checked(value, at: moment)
+    case "proposal":
+      var value = try Proposal(form: input)
+      switch path {
+      case "changes.0.before.sets.0.weightKg": value.changes[0].before!.sets![0].weightKg = weight
+      case "changes.0.after.sets.0.weightKg": value.changes[0].after!.sets![0].weightKg = weight
+      default: throw ContractError("unknown proposal numeric override")
+      }
+      return checked(value, at: moment)
+    default: throw ContractError("unknown numeric override entity")
+    }
+  }
+
+  func checked<E: Writable>(_ value: E, at moment: Moment) -> JSON {
+    do throws(Violation) { return ["fields": .object(fields: try Valid(value, at: moment).value.fields)] }
+    catch { return ["violation": error.form] }
   }
 }
 

@@ -2,19 +2,89 @@ import DomainKit
 import SyncAPI
 import SyncCore
 
-public enum GymEstimate {
-  public static func value(weightKg: Double, reps: Int, rpe: Double? = nil) -> Double? {
-    guard weightKg.isFinite, weightKg > 0, (1...10).contains(reps),
-          rpe.map({ $0.isFinite && $0 >= 7 }) ?? true else { return nil }
-    return reps == 1 ? weightKg : weightKg * (1 + Double(reps) / 30)
+public enum GymVolume {
+  public static func total(_ parts: [VolumePart]) -> Double? {
+    var total = 0.0
+    for part in parts.sorted(by: { $0.id.utf8.lexicographicallyPrecedes($1.id.utf8) }) {
+      guard let kg = part.kg else { return nil }
+      total += kg
+      guard total.isFinite else { return nil }
+    }
+    return total
   }
 
-  public static func score(weightKg: Double, reps: Int, rpe: Double? = nil) -> Double? {
-    guard value(weightKg: weightKg, reps: reps, rpe: rpe) != nil else { return nil }
-    return Quantum(1)!.rounded(weightKg * 100) * Double(reps == 1 ? 30 : 30 + reps)
+  public static func of(_ sets: [TrainingSet], catalogue: Catalogue) -> Double? {
+    total(sets.map { VolumePart(id: $0.id.json.jcsText, weightKg: $0.weightKg, reps: $0.reps,
+                               loadCount: catalogue.find($0.exerciseId)?.loadCount) })
+  }
+}
+
+public struct EstimateScore: Comparable, Sendable {
+  public static let zero = EstimateScore()
+  let digits: [UInt8]
+  let exponent: Int
+
+  init() { digits = [48]; exponent = 0 }
+
+  public init(weightKg: Double, reps: Int) {
+    precondition(weightKg.isFinite && weightKg >= 0 && (1...10).contains(reps))
+    let value = Quantum(0.01)!.rounded(weightKg)
+    if value == 0 { self = .zero; return }
+    let parts = JSON.Number(value)!.description.split(separator: "e")
+    let mantissa = parts[0].split(separator: ".")
+    var power = (parts.count == 2 ? Int(parts[1])! : 0) + 2 - (mantissa.count == 2 ? mantissa[1].count : 0)
+    var product = Array(mantissa.joined().utf8)
+    while product.first == 48 { product.removeFirst() }
+    var carry = 0
+    let factor = reps == 1 ? 30 : 30 + reps
+    for index in product.indices.reversed() {
+      let number = Int(product[index] - 48) * factor + carry
+      product[index] = UInt8(48 + number % 10)
+      carry = number / 10
+    }
+    if carry > 0 { product = Array(String(carry).utf8) + product }
+    while product.last == 48 { product.removeLast(); power += 1 }
+    digits = product
+    exponent = power
+  }
+
+  public static func < (left: Self, right: Self) -> Bool {
+    if left.digits == [48] || right.digits == [48] { return left.digits == [48] && right.digits != [48] }
+    let length = left.digits.count + left.exponent
+    let rightLength = right.digits.count + right.exponent
+    if length != rightLength { return length < rightLength }
+    for index in 0..<max(left.digits.count, right.digits.count) {
+      let a = index < left.digits.count ? left.digits[index] : 48
+      let b = index < right.digits.count ? right.digits[index] : 48
+      if a != b { return a < b }
+    }
+    return false
+  }
+}
+
+public enum GymEstimate {
+  static func qualifies(weightKg: Double, reps: Int, rpe: Double?) -> Bool {
+    weightKg.isFinite && weightKg > 0 && (1...10).contains(reps) && (rpe.map { $0.isFinite && $0 >= 7 } ?? true)
+  }
+
+  public static func value(weightKg: Double, reps: Int, rpe: Double? = nil) -> Double? {
+    guard qualifies(weightKg: weightKg, reps: reps, rpe: rpe) else { return nil }
+    let value = reps == 1 ? weightKg : weightKg * (1 + Double(reps) / 30)
+    return value.isFinite ? value : nil
+  }
+
+  public static func score(weightKg: Double, reps: Int, rpe: Double? = nil) -> EstimateScore? {
+    guard qualifies(weightKg: weightKg, reps: reps, rpe: rpe) else { return nil }
+    return EstimateScore(weightKg: weightKg, reps: reps)
   }
 
   public static func stated(_ e1rm: Double) -> Double { Quantum(0.1)!.rounded(e1rm) }
+
+  public static func top(_ sets: [TrainingSet]) -> Double? {
+    let eligible = sets.filter { qualifies(weightKg: $0.weightKg, reps: $0.reps, rpe: $0.rpe) }
+    guard eligible.allSatisfy({ $0.e1rm != nil }) else { return nil }
+    return eligible.compactMap(\.e1rm).max()
+  }
 }
 
 public struct SessionReadout: Equatable, Sendable {
@@ -23,7 +93,7 @@ public struct SessionReadout: Equatable, Sendable {
   public let durationMs: Int64?
   public let workingSetCount: Int
   public let movementCount: Int
-  public let volumeKg: Double
+  public let volumeKg: Double?
   public let topE1rm: Double?
 
   public init(session: Session, sets: [TrainingSet], catalogue: Catalogue) {
@@ -33,8 +103,8 @@ public struct SessionReadout: Equatable, Sendable {
     durationMs = session.finishedAt.map { max(0, $0.ms - session.startedAt.ms) }
     workingSetCount = sets.count
     movementCount = Set(sets.map(\.exerciseId)).count
-    volumeKg = sets.reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
-    topE1rm = sets.compactMap(\.e1rm).max()
+    volumeKg = GymVolume.of(sets, catalogue: catalogue)
+    topE1rm = GymEstimate.top(sets)
   }
 }
 
@@ -103,14 +173,14 @@ public struct PerformedFact: Equatable, Sendable {
 
 public struct EstimatedFact: Equatable, Sendable {
   public let performed: PerformedFact
-  public let e1rm: Double
+  public let e1rm: Double?
   public var setId: ID<TrainingSet> { performed.setId }
   public var weightKg: Double { performed.weightKg }
   public var reps: Int { performed.reps }
   public var rpe: Double? { performed.rpe }
-  public var score: Double { GymEstimate.score(weightKg: weightKg, reps: reps, rpe: rpe) ?? 0 }
+  public var score: EstimateScore { GymEstimate.score(weightKg: weightKg, reps: reps, rpe: rpe) ?? .zero }
 
-  public init(_ set: TrainingSet, e1rm: Double) { performed = PerformedFact(set); self.e1rm = e1rm }
+  public init(_ set: TrainingSet, e1rm: Double?) { performed = PerformedFact(set); self.e1rm = e1rm }
   public var json: JSON {
     .object(omittingNil: ["setId": setId.json, "weightKg": .of(weightKg), "reps": JSON(reps), "rpe": rpe.map { .of($0) }, "e1rm": .of(e1rm)])
   }
@@ -123,8 +193,10 @@ public struct MovementSessionFact: Equatable, Sendable {
   public let mostReps: PerformedFact
   public let estimate: EstimatedFact?
   public let bodyweightReps: PerformedFact?
+  public var estimatesComplete: Bool = true
   public var json: JSON {
-    .object(omittingNil: ["exerciseId": exerciseId.json, "workingSetCount": JSON(workingSetCount), "heaviest": heaviest.json, "estimate": estimate?.json])
+    .object(omittingNil: ["exerciseId": exerciseId.json, "workingSetCount": JSON(workingSetCount), "heaviest": heaviest.json, "estimate": estimate?.json,
+                         "estimatesComplete": estimatesComplete ? nil : .bool(false)])
   }
 }
 
@@ -156,12 +228,14 @@ public struct StatsProgress: Equatable, Sendable {
           if a.reps != b.reps { return a.reps > b.reps }
           return a.weightKg == b.weightKg ? a.id < b.id : a.weightKg > b.weightKg
         }).first else { continue }
-        let estimates = sets.compactMap { set in set.e1rm.map { EstimatedFact(set, e1rm: $0) } }
+        let estimates = sets.filter { GymEstimate.qualifies(weightKg: $0.weightKg, reps: $0.reps, rpe: $0.rpe) }
+          .map { EstimatedFact($0, e1rm: $0.e1rm) }
         let estimate = estimates.sorted { $0.score == $1.score ? $0.setId < $1.setId : $0.score > $1.score }.first
         let bodyweightReps = sets.filter { $0.weightKg == 0 }.sorted { $0.reps == $1.reps ? $0.id < $1.id : $0.reps > $1.reps }.first
         movements.append(MovementSessionFact(exerciseId: exerciseId, workingSetCount: sets.count,
                                              heaviest: PerformedFact(heaviest), mostReps: PerformedFact(mostReps), estimate: estimate,
-                                             bodyweightReps: bodyweightReps.map(PerformedFact.init)))
+                                             bodyweightReps: bodyweightReps.map(PerformedFact.init),
+                                             estimatesComplete: estimates.allSatisfy { $0.e1rm != nil }))
       }
       if !movements.isEmpty { sessions.append(ProgressSession(sessionId: session.id, startedAt: session.startedAt, movements: movements)) }
     }
@@ -213,10 +287,11 @@ public struct MovementProgress: Equatable, Sendable {
     self.sessions = sessions.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt }
   }
 
-  public var estimates: [Point] { sessions.filter { $0.fact.estimate != nil } }
+  public var estimatesComplete: Bool { sessions.allSatisfy { $0.fact.estimatesComplete } }
+  public var estimates: [Point] { estimatesComplete ? sessions.filter { $0.fact.estimate?.e1rm != nil } : [] }
   public var latest: Point? { estimates.last }
   public var best: Point? {
-    guard isComplete else { return nil }
+    guard isComplete && estimatesComplete else { return nil }
     return estimates.sorted { a, b in
       let left = a.fact.estimate!.score, right = b.fact.estimate!.score
       if left != right { return left > right }
@@ -248,9 +323,9 @@ public struct MovementProgress: Equatable, Sendable {
     }.first
   }
   public var records: [Point] {
-    guard isComplete else { return [] }
+    guard isComplete && estimatesComplete else { return [] }
     var records: [Point] = []
-    for point in estimates where point.fact.estimate!.score > (records.last?.fact.estimate?.score ?? 0) { records.append(point) }
+    for point in estimates where point.fact.estimate!.score > (records.last?.fact.estimate?.score ?? .zero) { records.append(point) }
     return records
   }
 
@@ -260,7 +335,7 @@ public struct MovementProgress: Equatable, Sendable {
   }
 
   public func hasChart(in zone: any Zone) -> Bool {
-    guard isComplete else { return false }
+    guard isComplete && estimatesComplete else { return false }
     let points = estimates
     guard points.count >= 4, let first = points.first, let last = points.last else { return false }
     return LocalDay(first.startedAt, in: zone).days(until: LocalDay(last.startedAt, in: zone)) >= 21
@@ -291,9 +366,10 @@ public struct ProgressRecords: Equatable, Sendable {
     var series: [ID<Exercise>: [(point: MovementProgress.Point, estimate: Double)]] = [:]
     for session in progress.sessions where progress.isComplete {
       for fact in session.movements {
-        guard let estimate = fact.estimate else { continue }
+        guard progress.movement(fact.exerciseId).estimatesComplete,
+              let estimate = fact.estimate?.e1rm else { continue }
         let point = MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: fact)
-        series[fact.exerciseId, default: []].append((point, GymEstimate.stated(estimate.e1rm)))
+        series[fact.exerciseId, default: []].append((point, GymEstimate.stated(estimate)))
       }
     }
     var movements: [ID<Exercise>: [Record]] = [:]
@@ -328,12 +404,8 @@ public enum Readout {
 
   public static func weight(_ kg: Double, units: GymUnits = .kg) -> String {
     let value = WeightLadder.round(units.display(kg))
-    guard value.isFinite else { return String(value) }
-    let hundredths = Int((abs(value) * 100).rounded(.toNearestOrAwayFromZero))
-    let whole = String(hundredths / 100)
-    let tail = hundredths % 100
-    let digits = tail == 0 ? whole : tail % 10 == 0 ? "\(whole).\(tail / 10)" : "\(whole).\(tail < 10 ? "0" : "")\(tail)"
-    return (value < 0 ? "−" : "") + digits
+    guard let number = JSON.Number(value) else { return "—" }
+    return String(number.description.map { $0 == "-" ? "−" : $0 })
   }
 
   public static func effort(weightKg: Double, reps: Int, units: GymUnits = .kg) -> String { "\(weight(weightKg, units: units)) × \(reps)" }
@@ -372,8 +444,10 @@ public enum Readout {
 
   public static func tonnes(_ kg: Double) -> String? {
     guard kg.isFinite, kg > 0 else { return nil }
-    let tenths = Int((kg / 100).rounded(.toNearestOrAwayFromZero))
-    return tenths > 0 ? "\(tenths / 10).\(tenths % 10) t" : nil
+    let tonnes = Quantum(0.1)!.rounded(kg / 1000)
+    guard tonnes > 0 else { return nil }
+    let digits = JSON.Number(tonnes)!.description
+    return "\(digits.contains(".") || digits.contains("e") ? digits : digits + ".0") t"
   }
 
   public static func duration(_ milliseconds: Int64) -> String {

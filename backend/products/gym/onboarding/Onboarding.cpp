@@ -1,6 +1,7 @@
 #include "products/gym/onboarding/Onboarding.h"
 
 #include "platform/domain/sync/TextMerge.h"
+#include "platform/domain/sync/Registry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -185,7 +186,7 @@ std::optional<std::vector<OnboardingRoutine>> readOnboardingRoutines(
         if (!target["weightKg"].isNull()) {
           if (input.mode == "goal" || !target["weightKg"].isNumeric()) return std::nullopt;
           const double value = target["weightKg"].asDouble();
-          if (!std::isfinite(value) || value < -500 || value > 500 || std::abs(value * 100 - std::round(value * 100)) > 0.000001) return std::nullopt;
+          if (!std::isfinite(value) || sync::Quantum{0.01}.round(value) != value) return std::nullopt;
           weight = value;
         }
         sets.emplace_back(reps, weight);

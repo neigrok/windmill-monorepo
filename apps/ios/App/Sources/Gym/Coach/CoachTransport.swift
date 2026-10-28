@@ -1,4 +1,5 @@
 import Foundation
+import SyncSchema
 import UIKit
 import ImageIO
 import SyncEngine
@@ -26,6 +27,7 @@ extension GymRESTClient {
     }
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
+    if path.hasPrefix("/v1/gym/") { request.setValue(String(SyncSchema.version), forHTTPHeaderField: "Sync-Schema") }
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue(mediaType ?? "application/json", forHTTPHeaderField: "Content-Type") }
     if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept"); request.timeoutInterval = idleTimeout }

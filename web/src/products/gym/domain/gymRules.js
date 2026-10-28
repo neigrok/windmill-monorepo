@@ -82,7 +82,7 @@ function targetSpecs(path) {
   return Object.freeze({
     sets: new CountSpec(`${path}.sets`, { min: 1, max: 20 }),
     reps: new NumberSpec(`${path}.sets.reps`, { min: 1, max: 100, integer: true }),
-    weight: new NumberSpec(`${path}.sets.weightKg`, { min: -500, max: 500, quantum: 0.01 }),
+    weight: new NumberSpec(`${path}.sets.weightKg`, { quantum: 0.01 }),
     rest: new NumberSpec(`${path}.restSeconds`, { min: 15, max: 900, integer: true }),
   });
 }

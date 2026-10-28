@@ -6,7 +6,7 @@
 
 namespace wm::gym {
 
-WorkoutObservation::WorkoutObservation(const Session& session, int workingSetCount, double tonnageKg)
+WorkoutObservation::WorkoutObservation(const Session& session, int workingSetCount, std::optional<double> tonnageKg)
     : workingSetCount(workingSetCount), tonnageKg(tonnageKg) {
   if (session.finishedAtMs && *session.finishedAtMs >= session.startedAtMs)
     durationMs = *session.finishedAtMs - session.startedAtMs;
@@ -14,13 +14,15 @@ WorkoutObservation::WorkoutObservation(const Session& session, int workingSetCou
 
 WorkoutObservation::WorkoutObservation(const Session& session, const std::vector<Set>& sets, const std::vector<Exercise>& catalog)
     : WorkoutObservation(session, 0, 0) {
+  std::vector<VolumePart> parts;
   for (const Set& set : sets) {
     if (set.kind != SetKind::working) continue;
     ++workingSetCount;
     const auto exercise = std::find_if(catalog.begin(), catalog.end(), [&](const auto& item) { return item.id == set.exercise; });
-    tonnageKg += liftedVolume(set.weightKg, set.reps, exercise == catalog.end() ? Equipment::barbell : exercise->equipment,
-                             exercise == catalog.end() ? 1 : exercise->loadCount);
+    if (exercise == catalog.end()) parts.emplace_back(set.id.str(), set.weightKg, set.reps, std::nullopt);
+    else parts.emplace_back(set.id.str(), set.weightKg, set.reps, exercise->equipment, exercise->loadCount);
   }
+  tonnageKg = totalVolume(std::move(parts));
 }
 
 SessionObservation::SessionObservation(std::string tool, const Session& session, ReadCoverage coverage,
@@ -41,8 +43,8 @@ bool AnswerReceipt::valid() const {
       continue;
     }
     if (fact.coverage != ReadCoverage::summary && fact.coverage != ReadCoverage::session) return false;
-    if (fact.exerciseId || !fact.workout || fact.workout->workingSetCount < 0 ||
-        !std::isfinite(fact.workout->tonnageKg) || fact.workout->tonnageKg < 0) return false;
+    if (fact.exerciseId || !fact.workout || fact.workout->workingSetCount < 0) return false;
+    if (fact.workout->tonnageKg && (!std::isfinite(*fact.workout->tonnageKg) || *fact.workout->tonnageKg < 0)) return false;
     if (fact.coverage == ReadCoverage::summary && fact.setsRead != 0) return false;
   }
   return true;

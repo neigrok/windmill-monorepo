@@ -23,8 +23,14 @@ const GAP_ROW_PX = 14;
 const LABEL_GUTTER = 8;
 const AXIS_PAD = 14;
 
-function tickStep(span, atMost) {
-  return TICK_STEPS.find((step) => span / step <= atMost) ?? TICK_STEPS[TICK_STEPS.length - 1];
+function tickStep(domain, atMost) {
+  const span = domain.max - domain.min;
+  const fixed = TICK_STEPS.find((step) => span / step <= atMost);
+  if (fixed) return fixed;
+  const target = Math.max(domain.max / atMost - domain.min / atMost,
+    Math.max(Math.abs(domain.min), Math.abs(domain.max)) * Number.EPSILON);
+  const power = 10 ** Math.floor(Math.log10(target));
+  return [1, 2, 5, 10].map((factor) => factor * power).find((step) => Number.isFinite(step) && step >= target) ?? target;
 }
 
 // The y-domain is the series' own min and max plus a padding of fifteen percent of the span (a
@@ -32,22 +38,32 @@ function tickStep(span, atMost) {
 function valueDomain(values, rounded = false) {
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const pad = max > min ? Math.max((max - min) * 0.15, 0.2) : 1;
-  const domain = { min: min - pad, max: max + pad };
+  const span = max - min;
+  const pad = max > min ? Math.max(Number.isFinite(span) ? span * 0.15 : max * 0.15 - min * 0.15, 0.2) : 1;
+  let domain = { min: Math.max(-Number.MAX_VALUE, min - pad), max: Math.min(Number.MAX_VALUE, max + pad) };
+  if (domain.min === domain.max) {
+    const reach = Math.max(Math.abs(min) * Number.EPSILON * 2, 1);
+    domain = { min: Math.max(-Number.MAX_VALUE, min - reach), max: Math.min(Number.MAX_VALUE, max + reach) };
+  }
   if (!rounded) return domain;
-  const target = (domain.max - domain.min) / 2;
+  const target = Number.isFinite(domain.max - domain.min) ? (domain.max - domain.min) / 2 : domain.max / 2 - domain.min / 2;
   const power = 10 ** Math.floor(Math.log10(target));
-  const step = [1, 2, 5, 10].map((factor) => factor * power).find((value) => value >= target);
-  return { min: Math.floor(domain.min / step) * step, max: Math.ceil(domain.max / step) * step };
+  const step = [1, 2, 5, 10].map((factor) => factor * power).find((value) => Number.isFinite(value) && value >= target) ?? target;
+  const bottom = Math.floor(domain.min / step) * step;
+  const top = Math.ceil(domain.max / step) * step;
+  return { min: Number.isFinite(bottom) ? bottom : domain.min, max: Number.isFinite(top) ? top : domain.max };
 }
 
 function valueTicks(domain, formatValue) {
-  const step = tickStep(domain.max - domain.min, 5);
+  const step = tickStep(domain, 5);
+  const first = Math.ceil(domain.min / step);
   const ticks = [];
-  for (let value = Math.ceil(domain.min / step) * step; value <= domain.max + 1e-9; value += step) {
-    ticks.push({ value: Math.round(value / step) * step, label: formatValue(Math.round(value / step) * step) });
+  for (let index = 0; index < 12; index += 1) {
+    const value = (first + index) * step;
+    if (!Number.isFinite(value) || value > domain.max + 1e-9) break;
+    if (!ticks.length || value > ticks[ticks.length - 1].value) ticks.push({ value, label: formatValue(value) });
   }
-  return ticks;
+  return ticks.length > 1 ? ticks : [domain.min, domain.max].map((value) => ({ value, label: formatValue(value) }));
 }
 
 function dateTicks(domain, formatDate) {
@@ -87,7 +103,7 @@ function placeBeneath(gaps, width, glyphWidth = GLYPH_PX) {
 export function dotChartLayout({
   points, domain = null, joins, width, height, formatValue, formatDate, gapLabel, fontSize = 10.5, compact = false, minimal = false, edgeInset = 0,
 }) {
-  const sorted = [...points].sort((a, b) => a.at - b.at);
+  const sorted = points.filter((point) => Number.isFinite(point.value) && Number.isFinite(point.at)).sort((a, b) => a.at - b.at);
   const margin = compact ? COMPACT_MARGIN : minimal ? MINIMAL_MARGIN : MARGIN;
   if (sorted.length === 0) {
     const plot = { left: margin.left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom };
@@ -106,7 +122,13 @@ export function dotChartLayout({
   const plot = { left, right: width - margin.right, top: margin.top, bottom: height - margin.bottom };
   const xSpan = Math.max(xDomain.to - xDomain.from, 1);
   const x = (at) => plot.left + edgeInset + ((at - xDomain.from) / xSpan) * (plot.right - plot.left - edgeInset * 2);
-  const y = (value) => plot.bottom - ((value - yDomain.min) / (yDomain.max - yDomain.min)) * (plot.bottom - plot.top);
+  const y = (value) => {
+    const span = yDomain.max - yDomain.min;
+    const scale = Math.max(Math.abs(yDomain.min), Math.abs(yDomain.max));
+    const fraction = Number.isFinite(span) ? (value - yDomain.min) / span
+      : (value / scale - yDomain.min / scale) / (yDomain.max / scale - yDomain.min / scale);
+    return plot.bottom - Math.min(1, Math.max(0, fraction)) * (plot.bottom - plot.top);
+  };
 
   const dots = sorted.map((point) => ({ x: compact ? Math.min(x(point.at), width - COMPACT_DOT_RADIUS) : x(point.at), y: y(point.value), point }));
   const segments = [];

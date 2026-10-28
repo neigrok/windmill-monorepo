@@ -420,7 +420,7 @@ class WorkoutControlsTests {
         controls.choose("bench")
         controls.prepare(null, now, true) { "set_${++id}" }
         val old = requireNotNull(controls.workout.offer)
-        for ((weight, reps) in listOf(20.0 to 100, 500.1 to 8, -500.1 to 8, 20.0 to 0)) {
+        for ((weight, reps) in listOf(20.0 to 100, 20.0 to 0)) {
             controls.control(controls.workout.edit(weight, reps))
             controls.prepare(null, now, true) { "set_${++id}" }
             assertNull(controls.workout.offer)

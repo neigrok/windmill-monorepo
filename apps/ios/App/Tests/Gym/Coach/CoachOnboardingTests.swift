@@ -5,6 +5,7 @@ import DomainKit
 import GymDomain
 import SyncCore
 import SyncEngine
+import SyncSchema
 @testable import Windmill
 
 @MainActor final class InstallationMemoryStore: InstallationCredentialStore {
@@ -43,6 +44,17 @@ extension CoachTests {
     let body: [String: Any] = ["requestId": request.requestId, "resultId": "onb_" + String(repeating: "b", count: 64), "status": status,
       "expiresAtMs": 1_900_000_000_000 as Int64, "routines": status == "completed" ? [["name": "Upper", "entries": [["exerciseId": "bench-press", "sets": [["reps": 8, "weightKg": NSNull()]], "restSeconds": 120]]]] : [], "errorCode": NSNull(), "allowance": allowance]
     return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+  }
+
+  @Test func installationOnboardingCarriesTheGeneratedSchemaAndKeepsUpgradeRefusal() async throws {
+    #expect(CoachConversation.onboardingRefusalMessage("client-update-required") == "Update Windmill to keep using Gym.")
+    let service = installation(store: InstallationMemoryStore())
+    for path in ["/v1/gym/coach/onboarding", "/v1/gym/coach/onboarding/fixture"] {
+      CoachTestProtocol.state.withLock { $0 = .init(reply: .http(426, #"{"code":"client-update-required","error":"Update Windmill to keep using Gym."}"#)) }
+      do { _ = try await service.request(path); Issue.record("Expected update refusal") }
+      catch let failure as AiRequestFailure { #expect(failure.status == 426) }
+      #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.schema) } == [String(SyncSchema.version)])
+    }
   }
 
   @Test(arguments: [false, true]) func installationIssueAndBindShareTheInFlightCredential(previousSignIn: Bool) async throws {

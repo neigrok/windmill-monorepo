@@ -1,5 +1,6 @@
 import { fmt } from '../log.js';
 import { weightUnit } from '../units.js';
+import { GymVolume, VolumePart } from '../domain/training.js';
 
 export function historyQuery(hash) {
   const query = new URLSearchParams((hash ?? '').split('?')[1] ?? '');
@@ -34,7 +35,7 @@ export function historyScope(filters) {
 // store goes on holding it until the window closes.
 export function withoutRows(summary, sessions) {
   return sessions.reduce((left, session) => ({ ...left, sessions: left.sessions - 1, sets: left.sets - session.workingSetCount,
-    reps: left.reps - session.reps, tonnageKg: Math.round((left.tonnageKg - session.tonnageKg) * 100) / 100 }), summary);
+    reps: left.reps - session.reps, tonnageKg: null }), summary);
 }
 
 export function historyTotals(summary, unit = weightUnit()) {
@@ -70,5 +71,6 @@ export function collapsedScheme(sets) {
 
 export function workoutTotals(sets, catalog) {
   const counts = new Map(catalog.map((exercise) => [exercise.id, exercise.loadCount ?? 1]));
-  return { sets: sets.length, reps: sets.reduce((sum, set) => sum + set.reps, 0), tonnageKg: sets.reduce((sum, set) => sum + Math.max(0, set.weightKg) * set.reps * (counts.get(set.exerciseId) ?? 1), 0) };
+  return { sets: sets.length, reps: sets.reduce((sum, set) => sum + set.reps, 0),
+    tonnageKg: GymVolume.total(sets.map((set) => new VolumePart(set.id, set.weightKg, set.reps, counts.get(set.exerciseId) ?? null))) };
 }

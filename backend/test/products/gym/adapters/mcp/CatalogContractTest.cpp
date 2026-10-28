@@ -1,9 +1,11 @@
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
 #include "platform/domain/sync/Jcs.h"
+#include "products/gym/coach/AbilityCatalog.h"
 #include "test/testing.h"
 
 #include <map>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
@@ -67,6 +69,30 @@ TEST(gym_catalog_json_is_catalog_1_and_every_ability_carries_exactly_the_declare
     CHECK((std::set<std::string>{"any", "bound"}.contains(ability["seats"].asString())));
     CHECK(!ability["phrase"].asString().empty() && !ability["phrase"].asString().ends_with('.'));
     CHECK(!ability["ui"].asString().empty());
+  }
+}
+
+TEST(gym_catalog_derived_result_metrics_admit_explicit_null) {
+  std::vector<Json::Value> metrics;
+  std::function<void(const Json::Value&)> collect = [&](const Json::Value& schema) {
+    if (schema.isArray()) {
+      for (const auto& item : schema) collect(item);
+      return;
+    }
+    if (!schema.isObject()) return;
+    for (const auto& key : schema.getMemberNames()) {
+      if (key == "tonnageKg" || key == "volumeKg" || key == "topE1rm" || key == "e1rm") metrics.push_back(schema[key]);
+      collect(schema[key]);
+    }
+  };
+  for (const auto& ability : catalog()["abilities"]) collect(ability["result"]);
+  CHECK_EQ(metrics.size(), std::size_t(11));
+  const auto expected = sync::parseJson(R"({"type":["number","null"]})");
+  for (const auto& schema : metrics) {
+    CHECK_EQ(schema, expected);
+    CHECK_FALSE(coach::schemaViolation(schema, Json::Value()).has_value());
+    CHECK_FALSE(coach::schemaViolation(schema, Json::Value(123.45)).has_value());
+    CHECK(coach::schemaViolation(schema, Json::Value("unavailable")).has_value());
   }
 }
 

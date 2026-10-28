@@ -7,7 +7,6 @@ import { round } from './ladder.js';
 
 export const LOGGER_REPS_MIN = 1;
 export const LOGGER_REPS_MAX = 99;
-export const MAX_LOAD_KG = 500;
 
 // The line under a valid weight is the unit and nothing else: both separators are accepted, so there
 // is nothing to explain.
@@ -18,7 +17,6 @@ export const REPS_HINT = 'whole reps';
 // own rep band in the one sentence that names a band.
 export const ONE_DECIMAL = 'One decimal point only.';
 export const NOT_A_NUMBER = 'That is not a number yet.';
-export const OVER_MAX_LOAD = 'Over 500 kg — check the number.';
 export const REPS_BAND = 'Whole reps, 1 to 99.';
 
 export function parseEntry(pad, mode, current) {
@@ -33,9 +31,6 @@ export function parseEntry(pad, mode, current) {
   const value = Number(normalised);
   if (!Number.isFinite(value)) {
     return { valid: false, value: null, message: NOT_A_NUMBER };
-  }
-  if (mode === 'weight' && Math.abs(value) > MAX_LOAD_KG) {
-    return { valid: false, value: null, message: OVER_MAX_LOAD };
   }
   // The server refuses reps < 1.
   if (mode === 'reps' && (value < LOGGER_REPS_MIN || value > LOGGER_REPS_MAX || value % 1 !== 0)) {

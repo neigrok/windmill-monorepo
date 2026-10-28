@@ -46,6 +46,13 @@ private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): Li
     List(sets) { SetTarget(reps, weightKg) }
 
 class FinishTests {
+    @Test fun volumeKeepsOrdinaryGroupingAndUsesCompleteFiniteScientificReadouts() {
+        assertEquals(listOf("0", "2,505", "1,234.56", "—", "—"),
+            listOf(0.0, 2505.0, 1234.56, null, Double.POSITIVE_INFINITY).map(Finish::volume))
+        assertEquals("1.7976931348623157e+308", Finish.volume(Double.MAX_VALUE))
+        assertEquals("1e+21", Finish.volume(1e21))
+    }
+
     @Test
     fun noRecordDrawsNoLineAtAll() {
         assertNull(Finish.recordSentence(null, catalog))
@@ -242,6 +249,34 @@ class FinishTests {
     @Test
     fun anAdHocSessionHasNothingToCompareAgainst() {
         assertNull(Finish.comparison(null, catalog))
+    }
+}
+
+class RecordEstimateFormattingTests {
+    private fun workout(id: String, at: Long, load: Double, reps: Int) = works.windmill.gym.domain.SessionDetail(
+        Session(id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
+        List(4) { index -> TrainingSet("$id$index", "bench-press", weightKg = load, reps = reps, completedAtMs = at + index + 1) },
+    )
+
+    @Test
+    fun aLocalReviewKeepsItsApprovedTenthForCurrentAndPriorEstimates() {
+        val before = workout("before", 1_000, 70.0, 8)
+        val now = workout("now", 100_000, 80.0, 8)
+        val review = Review.of(now, listOf(before, now))
+        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_001)}.",
+            Finish.recordSentence(review.record, listOf(Exercise("bench-press", "Bench Press"))))
+    }
+
+    @Test
+    fun aHugeFiniteEstimateRetainsItsCompleteFiniteSpelling() {
+        val before = workout("before", 1_000, Double.MAX_VALUE / 2, 1)
+        val now = workout("now", 100_000, Double.MAX_VALUE, 1)
+        val review = Review.of(now, listOf(before, now))
+        val text = Finish.recordSentence(review.record, listOf(Exercise("bench-press", "Bench Press")))!!
+        assertEquals("e1rm", review.record?.kind)
+        assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_001)}.", text)
+        assertFalse(text.contains("Infinity"))
+        assertFalse(text.contains("NaN"))
     }
 }
 
