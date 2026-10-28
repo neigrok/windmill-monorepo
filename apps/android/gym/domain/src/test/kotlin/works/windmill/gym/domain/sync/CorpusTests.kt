@@ -71,7 +71,7 @@ class CorpusTests {
     fun run(vector: Vector): Json {
         val input = vector.input["input"]
         return when (vector.file) {
-            "gym/domain/values.json" -> corpus.value(vector)
+            "gym/domain/values.json" -> if (vector.input["nonFinite"] == null) corpus.value(vector) else nonFiniteEntity(vector.input)
             "gym/domain/notes-actions.json" -> when (vector.input.member("action").str()) {
                 "SaveNoteCall" -> corpus.decision(SaveNoteCall(Note.fromForm(input!!.member("note"))), vector, { it.json }, ::refusalForm)
                 "MoveNote" -> corpus.decision(moveNote(Fields(input!!).ref("id", Note), Fields(input).optionalRef("below", Note)), vector, { Json.Null }, ::refusalForm)
@@ -97,6 +97,43 @@ class CorpusTests {
             "gym/domain/training-reads.json" -> corpus.read(vector, Session.scope) { trainingReadsForm(vector, it) }
             "gym/domain/units.json" -> unitsForm(vector.input)
             else -> error("unclaimed gym file ${vector.file}")
+        }
+    }
+
+    fun nonFiniteEntity(input: Json): Json {
+        val override = input.member("nonFinite")
+        val weight = when (override.member("value").str()) {
+            "NaN" -> Double.NaN; "Infinity" -> Double.POSITIVE_INFINITY; "-Infinity" -> Double.NEGATIVE_INFINITY
+            else -> error("unknown non-finite number")
+        }
+        val path = override.member("path").str()
+        fun <E : Writable<E>> checked(value: E, type: WritableType<E>): Json = try {
+            val check = type.checks.single { it.field == path.substringBefore('.') }
+            val checked = check.apply(value, moment(input))
+            Json.objectOf("fields" to Json.Obj(Valid(checked, type, at = moment(input)).value.fields().toList()))
+        } catch (violation: Violation) { Json.objectOf("violation" to violation.json) }
+        return when (input.member("entity").str()) {
+            "set" -> { require(path == "weightKg"); checked(TrainingSet.fromForm(input).copy(weightKg = weight), TrainingSet) }
+            "routine" -> {
+                require(path == "entries.0.sets.0.weightKg")
+                val value = Routine.fromForm(input)
+                val entry = value.entries.first()
+                val target = entry.sets!!.first().copy(weightKg = weight)
+                checked(value.copy(entries = listOf(entry.copy(sets = listOf(target) + entry.sets.drop(1))) + value.entries.drop(1)), Routine)
+            }
+            "proposal" -> {
+                val value = Proposal.fromForm(input)
+                val change = value.changes.first()
+                val side = when (path) {
+                    "changes.0.before.sets.0.weightKg" -> change.before!!
+                    "changes.0.after.sets.0.weightKg" -> change.after!!
+                    else -> error("unknown proposal numeric override")
+                }
+                val changed = side.copy(sets = listOf(side.sets!!.first().copy(weightKg = weight)) + side.sets.drop(1))
+                val next = if (path.contains(".before.")) change.copy(before = changed) else change.copy(after = changed)
+                checked(value.copy(changes = listOf(next) + value.changes.drop(1)), Proposal)
+            }
+            else -> error("unknown numeric override entity")
         }
     }
 
@@ -234,7 +271,7 @@ class CorpusTests {
                     val id = f.ref("sessionId", Session)
                     Json.objectOf("sessions" to Json.Arr(log.drawnSessions.map { entityForm(it.id, it.fields()) }),
                         "sets" to Json.Arr(log.sets(id).map { entityForm(it.id, it.fields() + (it.setNumber?.let { number -> mapOf("setNumber" to Json.of(number)) } ?: emptyMap())) }),
-                        "open" to (log.open?.id?.json ?: Json.Null), "liveHint" to Json.of(log.liveHint), "volumeKg" to Json.of(log.volumeKg(id)), "topE1rm" to nullable(log.topE1rm(id)))
+                        "open" to (log.open?.id?.json ?: Json.Null), "liveHint" to Json.of(log.liveHint), "volumeKg" to nullable(log.volumeKg(id)), "topE1rm" to nullable(log.topE1rm(id)))
                 }
                 "SessionRules" -> when (f.string("operation")) {
                     "drawn" -> SessionRules.drawn(Session.fromForm(input.member("session")), read.repository(TrainingSet).all(ViewMode.drawn), read.moment.now).let { entityForm(it.id, it.fields()) }

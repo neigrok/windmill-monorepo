@@ -304,6 +304,29 @@ import SyncTesting
     #expect([flat.lowerBound, flat.upperBound].map { Readout.weight($0) } == ["81.4", "83.4"])
   }
 
+  @Test func chartAxesAndCoordinatesRemainFiniteForExtremeLoads() {
+    let maximum = Double.greatestFiniteMagnitude
+    let first = Date(timeIntervalSince1970: 0), last = Date(timeIntervalSince1970: 2)
+    for values in [[1e308], [maximum], [-maximum], [maximum.nextDown, maximum],
+                   [-maximum, -maximum.nextDown], [8e307, 1e308], [-1e308, -8e307], [-maximum, 0, maximum]] {
+      for series in [LogDatedChart.Series.strength, .bodyweight] {
+        let points = values.enumerated().map { LogPlotPoint(id: "\($0.offset)", date: first, value: $0.element, label: "Load") }
+        let chart = LogDatedChart(points: points, from: first, through: last, series: series, dates: GymDate(), caption: "Series")
+        #expect(chart.low.isFinite && chart.high.isFinite && chart.low < chart.high)
+        #expect(chart.low <= values.min()! && chart.high >= values.max()!)
+        #expect(chart.ticks.allSatisfy { $0.isFinite && (chart.low...chart.high).contains($0) })
+        #expect(Set(chart.ticks).count == 3)
+        #expect((values + chart.ticks).allSatisfy { (6...170).contains(chart.y($0, height: 176)) })
+        #expect(zip(values.sorted(), values.sorted().dropFirst()).allSatisfy { chart.y($0, height: 176) >= chart.y($1, height: 176) })
+      }
+    }
+    let symmetric = LogDatedChart(points: [-maximum, 0, maximum].enumerated().map {
+      LogPlotPoint(id: "\($0.offset)", date: first, value: $0.element, label: "Load")
+    }, from: first, through: last, series: .strength, dates: GymDate(), caption: "Series")
+    #expect(symmetric.ticks == [maximum, 0, -maximum])
+    #expect([-maximum, 0, maximum].map { symmetric.y($0, height: 176) } == [170, 88, 6])
+  }
+
   @Test func recordQualificationWindowGapsAndStandingProgression() throws {
     let (_, gym) = fixture()
     for (days, kg) in [(100, 50.0), (60, 60), (30, 65), (1, 70)] { _ = try session(gym, daysAgo: days, kg: kg) }

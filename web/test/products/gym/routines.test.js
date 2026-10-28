@@ -5,7 +5,7 @@ import {
   ADD_SET, commitLabel, draftFrom,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, EVERY_SET, FILL, headOf,
   isOpenEntry, LAST_TIME_PLACEHOLDER, MATCH_SET_ONE, MAX_PLACEHOLDER, ONE_DECIMAL,
-  OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
+  OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
   REPS_BAND, saysNeverLogged, SET_BY_SET, SETS_BAND, SHEET_CHROME,
   targetEntryOf, targetFieldsOf, targetRefusal, VARIES_PLACEHOLDER, withEntryAdded, withEntryRemoved,
   withEntrySet, withHead, withMatchedToFirst, withRampUp, withRow, withRowAdded, withRowRemoved, withSets,
@@ -101,7 +101,7 @@ test('RoutineValue.fromSession — every set is its own slot, as lifted: no moda
   const clear = [set('chin-up', 0, 9, 2), set('chin-up', 0, 7, 6), set('chin-up', 0, 7, 10)];
   const pull = sessionRoutine({ id: 'rt_4', name: 'Pull A', sets: clear }).entries;
   assert.deepEqual(pull, [{ exerciseId: 'chin-up', sets: [{ reps: 9, weightKg: 0 }, { reps: 7, weightKg: 0 }, { reps: 7, weightKg: 0 }] }]);
-  assert.equal(entryLabel(pull[0]), '3 × 7–9');
+  assert.equal(entryLabel(pull[0]), '3 × 7–9 · 0');
 
   // The ramp lifted as planned comes back as the ramp, key for key.
   const ramp = RAMP.map((slot, index) => set('back-squat', slot.weightKg, slot.reps, index + 1));
@@ -297,11 +297,11 @@ test('the six refusals are the pinned strings, and the reps band is the routine 
   assert.equal(refusalOf('weight', '7,2,5'), ONE_DECIMAL);
   assert.equal(refusalOf('weight', 'ninety'), NOT_A_NUMBER);
   assert.equal(refusalOf('weight', '-'), NOT_A_NUMBER);
-  assert.equal(refusalOf('weight', '501'), OVER_MAX_LOAD);
-  assert.equal(refusalOf('weight', '-501'), OVER_MAX_LOAD, 'band-assisted is a load like any other');
+  assert.equal(refusalOf('weight', '501'), null);
+  assert.equal(refusalOf('weight', '-501'), null, 'band-assisted is a load like any other');
   assert.equal(refusalOf('weight', '-20'), null);
   assert.equal(refusalOf('weight', '500'), null);
-  assert.equal(refusalOf('weight', '0'), ZERO_TARGET);
+  assert.equal(refusalOf('weight', '0'), null);
 
   assert.equal(refusalOf('reps', '1'), null);
   assert.equal(refusalOf('reps', '100'), null);
@@ -314,9 +314,8 @@ test('the six refusals are the pinned strings, and the reps band is the routine 
   for (const field of ['sets', 'reps', 'weight']) assert.equal(refusalOf(field, '  '), null);
 
   assert.deepEqual(
-    [ONE_DECIMAL, NOT_A_NUMBER, OVER_MAX_LOAD, REPS_BAND, SETS_BAND, ZERO_TARGET],
-    ['One decimal point only.', 'That is not a number yet.', 'Over 500 kg — check the number.',
-      'Whole reps, 1 to 100.', 'Sets, 1 to 20.', 'A zero target is no target — clear the field instead.'],
+    [ONE_DECIMAL, NOT_A_NUMBER, REPS_BAND, SETS_BAND, ZERO_TARGET],
+    ['One decimal point only.', 'That is not a number yet.', 'Whole reps, 1 to 100.', 'Sets, 1 to 20.', 'A zero target is no target — clear the field instead.'],
   );
 });
 
@@ -325,8 +324,8 @@ test('one refusal at a time, topmost first, under the row that carries the fault
   assert.equal(targetRefusal(straight), null);
   assert.deepEqual(targetRefusal(withSets(straight, '99')), { field: 'sets', row: null, message: SETS_BAND });
   // The count first, then the rows top to bottom, reps before weight inside a row.
-  const wrong = withRow(withRow(straight, 1, 'weight', '600'), 2, 'reps', '101');
-  assert.deepEqual(targetRefusal(wrong), { field: 'weight', row: 1, message: OVER_MAX_LOAD });
+  const wrong = withRow(withRow(straight, 1, 'weight', '1e999'), 2, 'reps', '101');
+  assert.deepEqual(targetRefusal(wrong), { field: 'weight', row: 1, message: NOT_A_NUMBER });
   assert.deepEqual(targetRefusal(withRow(wrong, 1, 'weight', '80')), { field: 'reps', row: 2, message: REPS_BAND });
   assert.deepEqual(targetRefusal(withRow(withRow(wrong, 0, 'reps', '0'), 0, 'weight', '5-')), { field: 'reps', row: 0, message: ZERO_TARGET });
   assert.deepEqual(targetRefusal(withRow(wrong, 0, 'weight', '5-')), { field: 'weight', row: 0, message: NOT_A_NUMBER });
@@ -395,10 +394,10 @@ test('typing a count through a lower intermediate — `5 → 1 → 12` — keeps
   assert.equal(targetEntryOf(entry, twelve).sets.length, 12);
   assert.deepEqual(targetEntryOf(entry, twelve).sets.slice(0, 5), RAMP);
   // A hidden row's fault is not judged, and a fill or a delete works on the ladder alone.
-  const faulted = withRow(ramp, 4, 'weight', '600');
-  assert.deepEqual(targetRefusal(faulted), { field: 'weight', row: 4, message: OVER_MAX_LOAD });
+  const faulted = withRow(ramp, 4, 'weight', '1e999');
+  assert.deepEqual(targetRefusal(faulted), { field: 'weight', row: 4, message: NOT_A_NUMBER });
   assert.equal(targetRefusal(withSets(faulted, '4')), null);
-  assert.deepEqual(withMatchedToFirst(withSets(faulted, '4')).rows, [row('5', '60'), row('5', '60'), row('5', '60'), row('5', '60'), row('5', '600')]);
+  assert.deepEqual(withMatchedToFirst(withSets(faulted, '4')).rows, [row('5', '60'), row('5', '60'), row('5', '60'), row('5', '60'), row('5', '1e999')]);
   assert.deepEqual(withRowRemoved(withSets(faulted, '4'), 0), fields({ sets: '3', rows: [row('5', '80'), row('3', '90'), row('1', '100')] }));
   assert.deepEqual(withRowAdded(withSets(faulted, '4')), fields({ sets: '5', rows: [row('5', '60'), row('5', '80'), row('3', '90'), row('1', '100'), row('1', '100')] }));
 });

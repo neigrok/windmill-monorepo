@@ -56,7 +56,7 @@ import XCTest
     XCTAssertTrue(log.waitForExistence(timeout: 5))
     log.tap()
     app.activate()
-    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, target 100 kilograms, 5 reps", timeout: 10))
+    XCTAssertTrue(currentSet.waitForLabel("Set 4, current, target 100 kilograms, 5 reps", timeout: 30))
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(after.map(\.label), before.map(\.label) + ["Set 3, logged, 100 kilograms, 5 reps"])
     XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))

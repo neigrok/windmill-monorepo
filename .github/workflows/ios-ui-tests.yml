@@ -100,29 +100,7 @@ jobs:
         env:
           UI_TEST_SELECTION: ${{ inputs.tests }}
           UI_TEST_LOG: ${{ runner.temp }}/ios-ui-${{ inputs.shard }}.log
-        run: |
-          python3 - <<'PY'
-          from collections import Counter
-          from pathlib import Path
-          import os
-          import re
-
-          selected = set(re.findall(r"-only-testing:WindmillUITests/(\w+)", os.environ["UI_TEST_SELECTION"]))
-          expected = Counter()
-          for source in Path("UITests").rglob("*.swift"):
-              text = source.read_text()
-              classes = re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", text)
-              if not classes or classes[0] not in selected:
-                  continue
-              assert len(classes) == 1, f"Expected one UI test class in {source}"
-              expected.update((classes[0], method) for method in re.findall(r"\bfunc\s+(test\w+)\s*\(", text))
-          log = Path(os.environ["UI_TEST_LOG"]).read_text()
-          started = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' started\.", log))
-          passed = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' passed ", log))
-          assert expected and started == expected, f"UI executions differ: expected={expected}, started={started}"
-          assert passed == expected, f"UI results differ: expected={expected}, passed={passed}"
-          print(f"All {sum(expected.values())} selected UI tests passed exactly once.")
-          PY
+        run: python3 Tools/check_ui_results.py
 
       # Each failed test's app hierarchy at its failure, so the job log alone shows what the screen held.
       - name: Show the screens of failed UI tests

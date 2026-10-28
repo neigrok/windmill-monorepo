@@ -108,6 +108,21 @@ class ChecksTests {
         fails(6, "item.tags.color") { check(type, rules + Rule.local(TextSpec("item.tags.color", MeasureUnit.chars, 0, 10, true, true))) }
         fails(6, "item.tags.label") { check(type, rules.filter { it.name != label.path } + Rule.local(TextSpec(label.path, MeasureUnit.chars, 0, 11, true, true))) }
     }
+    @Test fun stepSixRejectsMissingNumericBoundsAgainstBoundedRegistry() {
+        val type = CheckedDraft("item", itemFields, true)
+        for (spec in listOf(NumberSpec(weight.path, quantum = .5), NumberSpec(weight.path, min = -100.0, quantum = .5),
+            NumberSpec(weight.path, max = 100.0, quantum = .5))) {
+            fails(6, weight.path) { check(type, rules.filter { it.name != weight.path } + Rule.local(spec)) }
+        }
+    }
+    @Test fun numberSpecJsonOmitsOnlyAbsentBounds() {
+        assertEquals(Json.objectOf("path" to Json.of("load"), "kind" to Json.of("number"), "integer" to Json.of(false),
+            "quantum" to Json.of(.01)), NumberSpec("load", quantum = .01).json)
+        assertEquals(Json.objectOf("path" to Json.of("load"), "kind" to Json.of("number"), "min" to Json.of(0), "integer" to Json.of(false)),
+            NumberSpec("load", min = 0.0).json)
+        assertEquals(Json.objectOf("path" to Json.of("load"), "kind" to Json.of("number"), "max" to Json.of(0), "integer" to Json.of(false)),
+            NumberSpec("load", max = 0.0).json)
+    }
     @Test fun rankedChoiceAndArrayStringsRespectRegistry() {
         val state = ChoiceSpec("task.state", listOf("open", "done"))
         val task = CheckedType("task", mapOf("state" to Json.of("open")))

@@ -52,7 +52,8 @@ internal object CoachSources {
         val workout = observation.workout?.takeIf { observation.wholeWorkout }
             ?: return "$date · ${Readout.setCount(observation.setsRead)} read"
         val sets = if (workout.workingSetCount == 1) "1 working set" else "${workout.workingSetCount} working sets"
-        return "$date · $sets · ${Readout.weight(workout.tonnageKg)} kg"
+        val volume = workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"
+        return "$date · $sets · $volume"
     }
 }
 

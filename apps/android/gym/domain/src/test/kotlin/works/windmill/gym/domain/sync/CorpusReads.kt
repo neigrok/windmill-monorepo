@@ -34,15 +34,25 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
             }
         }
         "GymEstimate" -> nullable(GymEstimate.value(f.double("weightKg"), f.int("reps"), f.optionalDouble("rpe")))
+        "GymEstimateScore" -> {
+            val left = Fields(f.json("left")!!); val right = Fields(f.json("right")!!)
+            val a = GymEstimate.score(left.double("weightKg"), left.int("reps"), left.optionalDouble("rpe"))
+            val b = GymEstimate.score(right.double("weightKg"), right.int("reps"), right.optionalDouble("rpe"))
+            if (a == null || b == null) Json.Null else Json.of(a.compareTo(b).compareTo(0))
+        }
+        "GymVolume" -> nullable(GymVolume.total(f.json("parts")!!.arr().map { value ->
+            val fields = Fields(value)
+            VolumePart(fields.string("id"), fields.optionalDouble("weightKg"), fields.optionalInt("reps"), fields.optionalInt("loadCount"))
+        }))
         "TrainingLog" -> {
             val id = f.ref("sessionId", Session)
             Json.objectOf("drawnSessions" to Json.Arr(log.drawnSessions.map { it.id.json }), "open" to (log.open?.id?.json ?: Json.Null),
                 "liveHint" to Json.of(log.liveHint), "sets" to Json.Arr(log.sets(id).map { it.id.json }),
-                "volumeKg" to Json.of(log.volumeKg(id)), "topE1rm" to nullable(log.topE1rm(id)))
+                "volumeKg" to nullable(log.volumeKg(id)), "topE1rm" to nullable(log.topE1rm(id)))
         }
         "SessionReadout" -> log.readout(f.ref("sessionId", Session))?.let {
             Json.objectOf("sessionId" to it.sessionId.json, "name" to nullable(it.name), "durationMs" to nullable(it.durationMs),
-                "workingSetCount" to Json.of(it.workingSetCount), "movementCount" to Json.of(it.movementCount), "volumeKg" to Json.of(it.volumeKg), "topE1rm" to nullable(it.topE1rm))
+                "workingSetCount" to Json.of(it.workingSetCount), "movementCount" to Json.of(it.movementCount), "volumeKg" to nullable(it.volumeKg), "topE1rm" to nullable(it.topE1rm))
         } ?: Json.Null
         "LastTime" -> log.lastTime(f.ref("exerciseId", Exercise)).let {
             Json.objectOf("sessionId" to (it.session?.id?.json ?: Json.Null), "routine" to nullable(it.routine), "sets" to Json.Arr(it.sets.map { set -> set.id.json }), "isFirstTime" to Json.of(it.isFirstTime))
@@ -81,6 +91,7 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
             }) }), "sessions" to Json.Arr(records.sessions.sorted().map { it.json }))
         }
         "Readout" -> when (f.string("operation")) {
+            "weight" -> Json.of(Readout.weight(f.double("value")))
             "estimate" -> Json.of(Readout.estimate(f.double("value")))
             "target" -> Json.of(Readout.target(f.optionalList("sets", SetTarget)))
             "loadUnit" -> Json.of(Readout.loadUnit(f.optionalString("equipment"), f.int("loadCount")))

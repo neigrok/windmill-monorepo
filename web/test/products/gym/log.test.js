@@ -16,7 +16,7 @@ import {
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
   loadBasisLabel, sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
-  setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel,
+  setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageTotalLabel,
   threadHref, threadIdOf, THREADS_HREF,
   topSetLabel, topSetOf, weekdayName, whenLabel,
 } from '../../../src/products/gym/log.js';
@@ -318,12 +318,12 @@ test('entryLabel — one formula for a scheme, `{n} × {reps} · {load}`, a colu
   assert.equal(entryLabel({ sets: RAMP }).includes('\u2013'), true);
   // A load column no set names prints nothing; a rep column no set names prints `max`.
   assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8 }, { reps: 8 }, { reps: 8 }] }), '3 × 8');
-  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] }), '2 × 8', 'zero is the absence of a load');
+  assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] }), '2 × 8 · 0', 'zero is an explicit load');
   assert.equal(entryLabel({ exerciseId: 'chin-up', sets: [{}, {}, {}] }), '3 × max');
   assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ weightKg: 20 }, { weightKg: 20 }, { weightKg: 20 }] }), '3 × max · 20');
   assert.equal(entryLabel({ exerciseId: 'pull-up', sets: [{ reps: 6, weightKg: -20 }, { reps: 6, weightKg: -20 }] }), '2 × 6 · −20');
   // A load column some sets name and others leave to last time tops out at `last`, as the phones print it.
-  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ reps: 10, weightKg: 0 }, { reps: 8, weightKg: 20 }] }), '2 × 8–10 · 20–last');
+  assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ reps: 10, weightKg: 0 }, { reps: 8, weightKg: 20 }] }), '2 × 8–10 · 0–20');
   assert.equal(entryLabel({ exerciseId: 'dip', sets: [{ reps: 8 }, { reps: 8, weightKg: 20 }] }), '2 × 8 · 20–last');
   // The load is put on the ladder's grid before it is read.
   assert.equal(entryLabel({ exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.504 }, { reps: 5, weightKg: 82.5 }] }), '2 × 5 · 82.5');
@@ -334,7 +334,7 @@ test('setReading — one set inside a strip or a ladder is `{load} × {reps}`, i
   assert.equal(setReading({ weightKg: 100 }), '100 × max');
   assert.equal(setReading({ reps: 5 }), 'last × 5');
   assert.equal(setReading({}), 'last × max');
-  assert.equal(setReading({ reps: 5, weightKg: 0 }), 'last × 5', 'zero is the absence of a load');
+  assert.equal(setReading({ reps: 5, weightKg: 0 }), '0 × 5', 'zero is an explicit load');
   assert.equal(setReading({ reps: 6, weightKg: -20 }), '−20 × 6');
 });
 
@@ -755,4 +755,19 @@ test('focused set correction preserves the filtered history origin in its dedica
   assert.equal(screenOf(href), 'session');
   assert.equal(fixSetIdOf('#/gym/session/ses_1/edit'), null);
   assert.equal(fixSetIdOf('#/gym/session/ses_1/set/set_2/edit/more'), null);
+});
+
+
+test('tonnage totals keep true zero and use unavailable when pound conversion overflows', () => {
+  assert.equal(tonnageTotalLabel(0, KG), '0');
+  assert.equal(tonnageTotalLabel(0, LB), '0');
+  assert.equal(tonnageTotalLabel(1000, KG), '1,000');
+  assert.equal(tonnageTotalLabel(1000, LB), '2,204.6');
+  assert.equal(fmt(1e308, LB), '—');
+  assert.equal(fmt(-1e308, LB), '—');
+  assert.equal(fmt(1e308, KG), '1e+308');
+  assert.equal(tonnageLabel(1e308, LB), null);
+  assert.equal(tonnageTotalLabel(1e308, LB), '—');
+  for (const missing of [null, undefined, NaN, Infinity, -Infinity]) assert.equal(tonnageTotalLabel(missing, KG), '—');
+  assert.notEqual(tonnageTotalLabel(1e308, KG), '—');
 });

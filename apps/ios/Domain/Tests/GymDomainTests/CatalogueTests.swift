@@ -124,10 +124,8 @@ struct CatalogueTests {
     for device in [phone, other] {
       #expect(try device.runner.read(Gym.scope) { try Catalogue($0).find(id) } ==
               Exercise(id: id, name: "One-arm row", pattern: "pull", equipment: "dumbbell", stepKg: 2, loadCount: 1))
-      #expect(try device.runner.read(Gym.scope) { read -> [String] in
-        let log = try TrainingLog(read)
-        return log.sets(session: session).map(\.id.record.description) + ["\(log.volumeKg(session: session))"]
-      } == [set.id.record.description, "300.0"])
+      #expect(try device.runner.read(Gym.scope) { try TrainingLog($0).sets(session: session).map(\.id) } == [set.id])
+      #expect(try device.runner.read(Gym.scope) { try TrainingLog($0).volumeKg(session: session) } == 300)
       #expect(try device.notices(GymRefusal.self).isEmpty)
     }
   }

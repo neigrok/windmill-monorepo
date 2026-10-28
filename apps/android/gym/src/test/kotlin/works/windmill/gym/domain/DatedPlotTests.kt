@@ -94,4 +94,27 @@ class DatedPlotTests {
         assertNull(empty.hit(0f, 0f, 24f))
         assertTrue(empty.ticks.all(Double::isFinite))
     }
+    @Test
+    fun extremeFiniteLoadsKeepFiniteAxesTicksAndCoordinates() {
+        val maximum = Double.MAX_VALUE
+        for (values in listOf(listOf(1e308), listOf(maximum), listOf(-maximum),
+            listOf(Math.nextDown(maximum), maximum), listOf(-maximum, -Math.nextDown(maximum)),
+            listOf(8e307, 1e308), listOf(-1e308, -8e307), listOf(-maximum, 0.0, maximum))) {
+            val points = values.mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, "Load") }
+            val plot = DatedGeometry(DatedSeries(points, 0, 2, ZoneOffset.UTC, 7), 200f, 100f)
+            assertEquals(points, plot.points.map { it.fact })
+            assertTrue(plot.axis.start.isFinite() && plot.axis.endInclusive.isFinite())
+            assertTrue(plot.axis.start < plot.axis.endInclusive)
+            assertTrue(plot.axis.start <= values.min() && plot.axis.endInclusive >= values.max())
+            assertTrue(plot.ticks.all { it.isFinite() && it in plot.axis })
+            assertTrue(plot.points.all { it.x.isFinite() && it.y in 0f..100f })
+            assertTrue(plot.ticks.all { plot.y(it) in 0f..100f })
+            assertTrue(values.sorted().zipWithNext().all { (low, high) -> plot.y(low) >= plot.y(high) })
+        }
+        val points = listOf(-maximum, 0.0, maximum).mapIndexed { i, value -> DatedPoint("$i", i.toLong(), value, "Load") }
+        val plot = DatedGeometry(DatedSeries(points, 0, 2, ZoneOffset.UTC, 7), 200f, 100f)
+        assertEquals(listOf(maximum, 0.0, -maximum), plot.ticks)
+        assertEquals(listOf(100f, 50f, 0f), plot.points.map { it.y })
+    }
+
 }

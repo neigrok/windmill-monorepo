@@ -1,6 +1,7 @@
 #include "products/gym/domain/Training.h"
 
 #include "platform/domain/sync/TextMerge.h"
+#include "platform/domain/sync/Registry.h"
 
 #include <algorithm>
 #include <cmath>
@@ -159,8 +160,31 @@ double defaultStepKg(Equipment equipment) {
   return 2.5;
 }
 
-double liftedVolume(double weightKg, int reps, Equipment equipment, int loadCount) {
-  return std::max(weightKg, 0.0) * reps * (equipment == Equipment::dumbbell && loadCount != 1 ? 2 : 1);
+std::optional<double> liftedVolume(double weightKg, int reps, Equipment equipment, int loadCount) {
+  return VolumePart{"", weightKg, reps, equipment, loadCount}.kg;
+}
+
+VolumePart::VolumePart(std::string id, std::optional<double> weightKg, std::optional<int> reps, std::optional<int> loadCount)
+    : id(std::move(id)) {
+  if (!weightKg || !std::isfinite(*weightKg) || !reps || *reps <= 0 || !loadCount || *loadCount <= 0) return;
+  const double lifted = std::max(*weightKg, 0.0) * *reps;
+  if (!std::isfinite(lifted)) return;
+  const double volume = lifted * *loadCount;
+  if (std::isfinite(volume)) kg = volume;
+}
+
+VolumePart::VolumePart(std::string id, double weightKg, int reps, Equipment equipment, int loadCount)
+    : VolumePart(std::move(id), weightKg, reps, equipment == Equipment::dumbbell && loadCount != 1 ? 2 : 1) {}
+
+std::optional<double> totalVolume(std::vector<VolumePart> parts) {
+  std::ranges::sort(parts, {}, &VolumePart::id);
+  double total = 0;
+  for (const VolumePart& part : parts) {
+    if (!part.kg) return std::nullopt;
+    total += *part.kg;
+    if (!std::isfinite(total)) return std::nullopt;
+  }
+  return total;
 }
 
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
@@ -185,14 +209,14 @@ Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equ
   if (stepKg < kMinStepKg || stepKg > kMaxStepKg) throw InvalidTraining("step out of range");
 }
 
-// Rounded before it is bounded, as the column checks the value it stores.
 SetTarget::SetTarget(std::optional<int> reps, std::optional<double> weightKg)
     : reps(reps), weightKg(weightKg) {
-  if (this->weightKg) this->weightKg = std::round(*this->weightKg * 100.0) / 100.0;
   if (this->reps && (*this->reps < 1 || *this->reps > 100))
     throw InvalidTraining("a set names its reps 1 to 100");
-  if (this->weightKg && (*this->weightKg < -kMaxLoadKg || *this->weightKg > kMaxLoadKg))
-    throw InvalidTraining("a set names its load inside ±500 kg");
+  if (!weightKg) return;
+  if (!std::isfinite(*weightKg)) throw InvalidTraining("a set names a finite load");
+  this->weightKg = sync::Quantum{0.01}.round(*weightKg);
+  if (*weightKg != 0 && *this->weightKg == 0) throw InvalidTraining("a set load supports at most two decimal places");
 }
 
 Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
@@ -220,7 +244,7 @@ Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double
   if (this->session.empty()) throw InvalidTraining("a set belongs to a session");
   if (this->exercise.empty()) throw InvalidTraining("a set names an exercise");
   if (setNumber < 0) throw InvalidTraining("set number cannot be negative");
-  if (!std::isfinite(weightKg) || weightKg < -kMaxLoadKg || weightKg > kMaxLoadKg) throw InvalidTraining("weight out of range");
+  if (!std::isfinite(weightKg)) throw InvalidTraining("weight must be finite");
   if (reps < 1 || reps > 500) throw InvalidTraining("reps out of range");
   if (rpe && (!std::isfinite(*rpe) || *rpe < 1 || *rpe > 10)) throw InvalidTraining("rpe out of range");
   if (this->note.size() > kMaxSetNoteBytes) throw InvalidTraining("note too long");
@@ -245,12 +269,12 @@ SetBatch::SetBatch(SessionId sessionId, std::vector<Set> sets, std::uint64_t now
     if (set.session != this->sessionId) throw InvalidTraining(path + "session does not match the batch");
     if (!seen.insert(set.id).second) throw InvalidTraining(path + "duplicate set id");
     if (set.completedAtMs > nowMs) throw InvalidTraining(path + "completedAt cannot be in the future");
-    if (std::abs(set.weightKg * 100 - std::round(set.weightKg * 100)) > 0.0000001)
+    const double load = sync::Quantum{0.01}.round(set.weightKg);
+    if (std::abs(set.weightKg - load) > 0.000000001)
       throw InvalidTraining(path + "weightKg supports at most two decimal places");
     if (set.rpe && std::abs(*set.rpe * 10 - std::round(*set.rpe * 10)) > 0.0000001)
       throw InvalidTraining(path + "rpe supports at most one decimal place");
-    set.weightKg = std::round(set.weightKg * 100) / 100;
-    if (set.weightKg == 0) set.weightKg = 0;
+    set.weightKg = load;
     if (set.rpe) set.rpe = std::round(*set.rpe * 10) / 10;
   }
 }

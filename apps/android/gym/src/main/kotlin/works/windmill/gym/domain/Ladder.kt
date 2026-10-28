@@ -4,10 +4,11 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sign
+import works.windmill.sync.core.Quantum
 
 // One of two copies of this rule (the other is web/.../logger/ladder.js), pinned by
 // packages/api-contract/gym-ladder.json — every copy reads that file as a test. Bands are read off the
-// MAGNITUDE, and the step buttons do not clamp; only typed entry is bounded.
+// MAGNITUDE, and the step buttons do not clamp.
 
 object Ladder {
     data class Band(val under: Double?, val small: Double, val large: Double)
@@ -31,10 +32,7 @@ object Ladder {
     }
 
     // Half away from zero, so round(−x) == −round(x).
-    fun round(weight: Double): Double {
-        val hundredths = floor(abs(weight) * 100.0 + 0.5)
-        return (hundredths / 100.0) * sign(weight)
-    }
+    fun round(weight: Double): Double = Quantum(0.01).rounded(weight)
 
     // The nearest load on the plate grid: the small step of the band the load stands in (`<`, as a
     // lift reads it), half away from zero — `21.25` in the 20–50 band lands on `22.5`, `19.9` under

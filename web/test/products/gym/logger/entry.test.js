@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  LOGGER_REPS_MAX, LOGGER_REPS_MIN, NOT_A_NUMBER, ONE_DECIMAL, OVER_MAX_LOAD, parseEntry, REPS_BAND, REPS_HINT,
+  LOGGER_REPS_MAX, LOGGER_REPS_MIN, NOT_A_NUMBER, ONE_DECIMAL, parseEntry, REPS_BAND, REPS_HINT,
   WEIGHT_UNIT,
 } from '../../../../src/products/gym/logger/entry.js';
 
@@ -36,11 +36,11 @@ test('parseEntry — every refusal names the problem, and the empty one names wh
   assert.deepEqual(parseEntry(pad('5-'), 'weight', 102.5), {
     valid: false, value: null, message: NOT_A_NUMBER,
   });
-  assert.deepEqual(parseEntry(pad('501'), 'weight', 102.5), {
-    valid: false, value: null, message: OVER_MAX_LOAD,
+  assert.deepEqual(parseEntry(pad('1e999'), 'weight', 102.5), {
+    valid: false, value: null, message: NOT_A_NUMBER,
   });
-  assert.deepEqual(parseEntry(pad('-501'), 'weight', 102.5), {
-    valid: false, value: null, message: OVER_MAX_LOAD,
+  assert.deepEqual(parseEntry(pad('-1e999'), 'weight', 102.5), {
+    valid: false, value: null, message: NOT_A_NUMBER,
   });
 });
 
@@ -49,9 +49,8 @@ test('parseEntry — reps are whole, 1 to 99, and the comma cannot reach them', 
   assert.equal(LOGGER_REPS_MIN, 1);
   assert.equal(LOGGER_REPS_MAX, 99);
   assert.deepEqual(
-    [ONE_DECIMAL, NOT_A_NUMBER, OVER_MAX_LOAD, REPS_BAND],
-    ['One decimal point only.', 'That is not a number yet.', 'Over 500 kg — check the number.',
-      'Whole reps, 1 to 99.'],
+    [ONE_DECIMAL, NOT_A_NUMBER, REPS_BAND],
+    ['One decimal point only.', 'That is not a number yet.', 'Whole reps, 1 to 99.'],
   );
   assert.deepEqual(parseEntry(pad('14'), 'reps', 5), { valid: true, value: 14, message: REPS_HINT });
   assert.deepEqual(parseEntry(pad('1'), 'reps', 5), { valid: true, value: 1, message: REPS_HINT });

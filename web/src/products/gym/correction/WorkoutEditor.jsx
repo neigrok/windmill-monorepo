@@ -133,7 +133,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
       </form>
       <aside className="gym-workout-totals">
         <p className="gym-workout-unit">SAVED · {dayLabel(original.startedAt).toUpperCase()}</p>
-        <dl>{[[totals.sets, 'sets'], [totals.reps, 'reps'], [Number(fmtKg(totals.tonnageKg)).toLocaleString('en'), 'kg external']].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        <dl>{[[totals.sets, 'sets'], [totals.reps, 'reps'], [totals.tonnageKg === null ? '—' : totals.tonnageKg.toLocaleString('en'), 'kg external']].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <p>These are this workout’s own numbers.</p>
         <button type="button" className="gym-short-discard" disabled={busy} onClick={onDelete}>Delete workout</button>
       </aside>

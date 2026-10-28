@@ -4,9 +4,9 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { precondition } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
+import { roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Catalogue, Exercise } from './catalogue.js';
-import { GymEstimate, Session, SessionRules, TrainingSet } from './training.js';
+import { EstimateScore, GymEstimate, GymVolume, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';
 export { GymEstimate, SessionRules, SetRules } from './training.js';
 
@@ -56,12 +56,11 @@ export class TrainingLog {
   }
 
   /** @param {Id<SessionValue>} sessionId */
-  volumeKg(sessionId) { return this.setsFor(sessionId).reduce((sum, set) => sum + set.volumeFor(this.catalogue.find(set.exerciseId)), 0); }
+  volumeKg(sessionId) { return GymVolume.of(this.setsFor(sessionId), this.catalogue); }
 
   /** @param {Id<SessionValue>} sessionId */
   topE1rm(sessionId) {
-    const estimates = this.setsFor(sessionId).flatMap((set) => set.e1rm === null ? [] : [set.e1rm]);
-    return estimates.length === 0 ? null : Math.max(...estimates);
+    return GymEstimate.top(this.setsFor(sessionId));
   }
 
   /** @param {Id<SessionValue>} sessionId */
@@ -78,14 +77,13 @@ export class SessionReadout {
   /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {Catalogue} catalogue */
   constructor(session, sets, catalogue) {
     const own = sets.filter((set) => set.sessionId.equals(session.id));
-    const estimates = own.flatMap((set) => set.e1rm === null ? [] : [set.e1rm]);
     this.sessionId = session.id;
     this.name = session.name;
     this.durationMs = session.finishedAt === null ? null : Math.max(0, session.finishedAt.ms - session.startedAt.ms);
     this.workingSetCount = own.length;
     this.movementCount = new Set(own.map((set) => jcs(set.exerciseId.json))).size;
-    this.volumeKg = own.reduce((sum, set) => sum + set.volumeFor(catalogue.find(set.exerciseId)), 0);
-    this.topE1rm = estimates.length === 0 ? null : Math.max(...estimates);
+    this.volumeKg = GymVolume.of(own, catalogue);
+    this.topE1rm = GymEstimate.top(own);
     Object.freeze(this);
   }
 }
@@ -160,11 +158,11 @@ export class PerformedFact {
 }
 
 export class EstimatedFact {
-  /** @param {Pick<TrainingSetValue, 'id' | 'weightKg' | 'reps' | 'rpe'>} set @param {number} e1rm */
+  /** @param {Pick<TrainingSetValue, 'id' | 'weightKg' | 'reps' | 'rpe'>} set @param {number | null} e1rm */
   constructor(set, e1rm) {
     this.performed = new PerformedFact(set);
     this.e1rm = e1rm;
-    this.score = GymEstimate.score(set.weightKg, set.reps, set.rpe) ?? 0;
+    this.score = GymEstimate.score(set.weightKg, set.reps, set.rpe) ?? EstimateScore.zero;
     Object.freeze(this);
   }
 
@@ -176,20 +174,21 @@ export class EstimatedFact {
 }
 
 export class MovementSessionFact {
-  /** @param {Id<ExerciseValue>} exerciseId @param {number} workingSetCount @param {PerformedFact} heaviest @param {PerformedFact} mostReps @param {EstimatedFact | null} estimate @param {PerformedFact | null} bodyweightReps */
-  constructor(exerciseId, workingSetCount, heaviest, mostReps, estimate = null, bodyweightReps = null) {
+  /** @param {Id<ExerciseValue>} exerciseId @param {number} workingSetCount @param {PerformedFact} heaviest @param {PerformedFact} mostReps @param {EstimatedFact | null} estimate @param {PerformedFact | null} bodyweightReps @param {boolean} estimatesComplete */
+  constructor(exerciseId, workingSetCount, heaviest, mostReps, estimate = null, bodyweightReps = null, estimatesComplete = true) {
     this.exerciseId = exerciseId;
     this.workingSetCount = workingSetCount;
     this.heaviest = heaviest;
     this.mostReps = mostReps;
     this.estimate = estimate;
     this.bodyweightReps = bodyweightReps;
+    this.estimatesComplete = estimatesComplete;
     Object.freeze(this);
   }
 
   get json() {
     return { exerciseId: this.exerciseId.json, workingSetCount: this.workingSetCount, heaviest: this.heaviest.json,
-      ...(this.estimate === null ? {} : { estimate: this.estimate.json }) };
+      ...(this.estimate === null ? {} : { estimate: this.estimate.json }), ...(this.estimatesComplete ? {} : { estimatesComplete: false }) };
   }
 }
 
@@ -236,10 +235,11 @@ export class StatsProgress {
           const mostReps = [...sets].sort((a, b) => b.reps - a.reps || b.weightKg - a.weightKg || Id.compare(a.id, b.id))[0];
           if (!heaviest || !mostReps) return [];
           const bodyweight = sets.filter((set) => set.weightKg === 0).sort((a, b) => b.reps - a.reps || Id.compare(a.id, b.id))[0];
-          const estimate = sets.flatMap((set) => set.e1rm === null ? [] : [new EstimatedFact(set, set.e1rm)])
-            .sort((a, b) => b.score - a.score || Id.compare(a.setId, b.setId))[0] ?? null;
+          const estimates = sets.filter((set) => GymEstimate.qualifies(set.weightKg, set.reps, set.rpe)).map((set) => new EstimatedFact(set, set.e1rm));
+          const estimate = estimates
+            .sort((a, b) => b.score.compare(a.score) || Id.compare(a.setId, b.setId))[0] ?? null;
           return [new MovementSessionFact(heaviest.exerciseId, sets.length, new PerformedFact(heaviest), new PerformedFact(mostReps), estimate,
-            bodyweight ? new PerformedFact(bodyweight) : null)];
+            bodyweight ? new PerformedFact(bodyweight) : null, estimates.every((value) => value.e1rm !== null))];
         }).sort((a, b) => Id.compare(a.exerciseId, b.exerciseId));
         return movements.length === 0 ? [] : [new ProgressSession(session.id, session.startedAt, movements)];
       }).sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
@@ -273,8 +273,9 @@ export class StatsProgress {
   /** @param {Id<SessionValue>} id */
   sessionEstimate(id) {
     if (id.entity.type !== Session.type) return null;
-    const estimates = this.#sessionsById.get(jcs(id.json))?.movements
-      .flatMap((movement) => movement.estimate === null ? [] : [movement.estimate.e1rm]) ?? [];
+    const movements = this.#sessionsById.get(jcs(id.json))?.movements ?? [];
+    if (movements.some((movement) => !movement.estimatesComplete)) return null;
+    const estimates = movements.flatMap((movement) => movement.estimate?.e1rm == null ? [] : [movement.estimate.e1rm]);
     return estimates.length === 0 ? null : Math.max(...estimates);
   }
 
@@ -306,12 +307,13 @@ export class MovementProgress {
     Object.freeze(this);
   }
 
-  get estimates() { return Object.freeze(this.sessions.filter((point) => point.fact.estimate !== null)); }
+  get estimatesComplete() { return this.sessions.every((point) => point.fact.estimatesComplete); }
+  get estimates() { return Object.freeze(this.estimatesComplete ? this.sessions.filter((point) => point.fact.estimate?.e1rm != null) : []); }
   get latest() { return this.estimates.at(-1) ?? null; }
 
   get best() {
-    if (!this.isComplete) return null;
-    return [...this.estimates].sort((a, b) => (b.fact.estimate?.score ?? 0) - (a.fact.estimate?.score ?? 0)
+    if (!this.isComplete || !this.estimatesComplete) return null;
+    return [...this.estimates].sort((a, b) => (b.fact.estimate?.score ?? EstimateScore.zero).compare(a.fact.estimate?.score ?? EstimateScore.zero)
       || a.startedAt.ms - b.startedAt.ms || Id.compare(a.id, b.id))[0] ?? null;
   }
 
@@ -337,9 +339,11 @@ export class MovementProgress {
   get records() {
     /** @type {MovementPoint[]} */
     const records = [];
-    if (!this.isComplete) return Object.freeze(records);
+    if (!this.isComplete || !this.estimatesComplete) return Object.freeze(records);
     for (const point of this.estimates) {
-      if ((point.fact.estimate?.score ?? 0) > (records.at(-1)?.fact.estimate?.score ?? 0)) records.push(point);
+      const value = point.fact.estimate?.e1rm;
+      const previous = records.at(-1)?.fact.estimate?.e1rm;
+      if (value != null && (previous == null || GymEstimate.stated(value) > GymEstimate.stated(previous))) records.push(point);
     }
     return Object.freeze(records);
   }
@@ -353,7 +357,7 @@ export class MovementProgress {
 
   /** @param {Zone} zone */
   hasChart(zone) {
-    if (!this.isComplete) return false;
+    if (!this.isComplete || !this.estimatesComplete) return false;
     const points = this.estimates;
     const first = points[0];
     const last = points.at(-1);
@@ -395,7 +399,7 @@ export class ProgressRecords {
     const series = new Map();
     for (const session of progress.isComplete ? progress.sessions : []) {
       for (const fact of session.movements) {
-        if (fact.estimate === null) continue;
+        if (!progress.movement(fact.exerciseId).estimatesComplete || fact.estimate?.e1rm == null) continue;
         const key = jcs(fact.exerciseId.json);
         const movement = series.get(key) ?? { id: fact.exerciseId, estimates: [] };
         movement.estimates.push({ point: Object.freeze({ id: session.sessionId, startedAt: session.startedAt, fact }), estimate: GymEstimate.stated(fact.estimate.e1rm) });
@@ -440,12 +444,8 @@ export const Readout = Object.freeze({
   /** @param {number} kg @param {GymUnits} units */
   weight(kg, units = GymUnits.kg) {
     const value = WeightLadder.round(units.display(kg));
-    if (!Number.isFinite(value)) return String(value);
-    const hundredths = roundHalfAway(Math.abs(value) * 100);
-    const whole = String(Math.trunc(hundredths / 100));
-    const tail = hundredths % 100;
-    const digits = tail === 0 ? whole : tail % 10 === 0 ? `${whole}.${tail / 10}` : `${whole}.${String(tail).padStart(2, '0')}`;
-    return (value < 0 ? '−' : '') + digits;
+    if (!Number.isFinite(value)) return '—';
+    return jcs(value).replaceAll('-', '−');
   },
   /** @param {number} weightKg @param {number} reps @param {GymUnits} units */
   effort(weightKg, reps, units = GymUnits.kg) { return `${Readout.weight(weightKg, units)} × ${reps}`; },
@@ -487,8 +487,10 @@ export const Readout = Object.freeze({
   /** @param {number} kg */
   tonnes(kg) {
     if (!Number.isFinite(kg) || kg <= 0) return null;
-    const tenths = roundHalfAway(kg / 100);
-    return tenths > 0 ? `${Math.trunc(tenths / 10)}.${tenths % 10} t` : null;
+    const tonnes = roundToQuantum(kg / 1000, 0.1);
+    if (tonnes <= 0) return null;
+    const digits = jcs(tonnes);
+    return `${digits.includes('.') || digits.includes('e') ? digits : `${digits}.0`} t`;
   },
   /** @param {number} milliseconds */
   duration(milliseconds) {

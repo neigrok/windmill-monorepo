@@ -287,7 +287,7 @@ extension FactTiles {
     self.init(facts: [
       readout.durationMs.map { Fact(value: Readout.duration($0), label: "Duration") },
       Fact(value: "\(readout.workingSetCount)", label: GymCount.noun(readout.workingSetCount, "Working set")),
-      Fact(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
+      Fact(value: readout.volumeKg.map { "\(Readout.weight($0)) kg" } ?? "—", label: "Volume"),
     ].compactMap { $0 }, ground: ground)
   }
 }

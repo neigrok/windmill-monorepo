@@ -93,8 +93,11 @@ extension Store {
 
   // Numbering: the request to send, or nil. An entry refused as it is numbered may be an orphan, whose refusal folds
   // into its origin's stored notice, so the notices are loaded.
-  public func number(limit: Int? = nil, at deviceNow: Int64) throws -> Written<PushRequest?> {
-    try onActive(.number, notices: true) { replica in try planners.pushes.number(&replica, limit: limit, at: deviceNow) }
+  public func number(limit: Int? = nil, at deviceNow: Int64, replica expected: String? = nil, account: String? = nil, epoch: String? = nil) throws -> Written<PushRequest?> {
+    try onActive(.number, notices: true) { replica in
+      if let expected, replica.id != expected || replica.meta.account != account || replica.meta.serverEpoch != epoch || replica.meta.state != .bound || replica.meta.authPaused { return nil }
+      return try planners.pushes.number(&replica, limit: limit, at: deviceNow)
+    }
   }
 
   // One step of a push answer, for the replica the request was numbered in; a replica gone since drops it. The

@@ -17,7 +17,7 @@ test('live mirror uses frozen targets and actual sets without comparing ambiguou
       { key: 'set_1', kind: 'lifted', label: '62.5 × 7' },
       { key: 'slot-2', kind: 'target', label: '60 × 8', spoken: 'set 2, target 60 × 8' },
     ] },
-    { id: 'chin', name: 'Chin-up', scheme: '1 × 6 · bodyweight', targets: 1, rows: [{ key: 'slot-1', kind: 'target', label: 'last × 6', spoken: 'set 1, target last × 6' }] },
+    { id: 'chin', name: 'Chin-up', scheme: '1 × 6 · 0 · bodyweight', targets: 1, rows: [{ key: 'slot-1', kind: 'target', label: '0 × 6', spoken: 'set 1, target 0 × 6' }] },
   ] });
   const ambiguous = coachWorkout({ ...session, plan: { entries: [session.plan.entries[0], session.plan.entries[0]] } }, sets, catalog);
   assert.deepEqual(ambiguous.groups, [{ id: 'bench', name: 'Bench Press', scheme: null, targets: null, rows: [{ key: 'set_1', kind: 'lifted', label: '62.5 × 7' }] }]);

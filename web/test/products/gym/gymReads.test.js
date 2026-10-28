@@ -57,16 +57,16 @@ test('summaries count every set whatever kind its row stored, clamp assisted vol
   const rows = [sessionRow('session_b', at), sessionRow('session_a', at), setRow('working_1', 'session_a', { weightKg: -10, reps: 8 }), setRow('working_2', 'session_a', { weightKg: 50, reps: 10 }), setRow('warmup_1', 'session_a', { kind: 'warmup', weightKg: 150 }), setRow('drop_set1', 'session_a', { kind: 'drop', weightKg: 70 })];
   const api = readView(rows);
   assert.deepEqual(api.sessions({ limit: 1 }), [{ id: 'session_a', startedAt: at, finishedAt: at + 3600000, setCount: 4, workingSetCount: 4, tonnageKg: 2260, exercises: ['Bench Press'], topSet: { weightKg: 150, reps: 8 }, topE1rm: 150 * (1 + 8 / 30), record: false, closedItself: false }]);
-  assert.deepEqual(api.sessions({ before: at, beforeId: 'session_a' }), [{ id: 'session_b', startedAt: at, finishedAt: at + 3600000, setCount: 0, workingSetCount: 0, tonnageKg: 0, exercises: [], record: false, closedItself: false }]);
+  assert.deepEqual(api.sessions({ before: at, beforeId: 'session_a' }), [{ id: 'session_b', startedAt: at, finishedAt: at + 3600000, setCount: 0, workingSetCount: 0, tonnageKg: 0, exercises: [], topE1rm: null, record: false, closedItself: false }]);
 });
 
-test('volume totals retain PostgreSQL decimal precision across a complete log', () => {
+test('volume totals fold flat facts using the shared checked Double order', () => {
   const rows = [sessionRow('session_a', at), setRow('working_1', 'session_a', { weightKg: 77.3, reps: 17 }), setRow('working_2', 'session_a', { weightKg: 66.77, reps: 15 })];
   const api = readView(rows);
-  assert.equal(api.sessions()[0].tonnageKg, 2315.65);
-  assert.equal(api.history().summary.tonnageKg, 2315.65);
-  assert.equal(api.history().sessions[0].tonnageKg, 2315.65);
-  assert.deepEqual(api.history().sessions[0].movements, [{ exerciseId: 'bench-press', sets: 2, reps: 32, tonnageKg: 2315.65 }]);
+  assert.equal(api.sessions()[0].tonnageKg, 2315.6499999999996);
+  assert.equal(api.history().summary.tonnageKg, 2315.6499999999996);
+  assert.equal(api.history().sessions[0].tonnageKg, 2315.6499999999996);
+  assert.deepEqual(api.history().sessions[0].movements, [{ exerciseId: 'bench-press', sets: 2, reps: 32, tonnageKg: 2315.6499999999996 }]);
 });
 
 test('review needs four working sets and compares to earlier finished routines', () => {

@@ -212,12 +212,18 @@ describe('the bands the store enforces', () => {
     strictEqual(plan.counts.sessionsSkippedEverySetRefused, 1);
   });
 
-  it('refuses weight outside -500..500', () => {
-    const plan = planOf([liftSession({
-      sets: [set({ id: uuidB, weight: -500.01 }), set({ id: uuidC, weight: 900 })],
-    })]);
-    strictEqual(plan.counts.setsSkippedWeightOutOfBand, 2);
-    strictEqual(plan.counts.setsPlanned, 0);
+  it('keeps finite loads beyond the former cap and refuses nonfinite input', () => {
+    for (const weight of [-500.01, 900, Number.MAX_VALUE, -Number.MAX_VALUE]) {
+      const plan = planOf([liftSession({ sets: [set({ weight })] })]);
+      strictEqual(plan.counts.setsSkippedWeightOutOfBand, 0);
+      strictEqual(plan.counts.setsPlanned, 1);
+      strictEqual(plan.sessions[0].sets[0].weightKg, weight);
+    }
+    for (const weight of [Infinity, -Infinity, NaN]) {
+      const plan = planOf([liftSession({ sets: [set({ weight })] })]);
+      strictEqual(plan.counts.setsSkippedWeightOutOfBand, 1);
+      strictEqual(plan.counts.setsPlanned, 0);
+    }
   });
 
   it('refuses an instant of zero or past the end of time', () => {

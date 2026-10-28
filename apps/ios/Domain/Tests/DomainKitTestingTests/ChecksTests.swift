@@ -92,6 +92,22 @@ struct ChecksTests {
     }
   }
 
+  @Test func numberSpecOmitsAbsentBoundsAndRegistryStillRequiresItsBounds() throws {
+    #expect(NumberSpec("load", quantum: 0.01).json == ["path": "load", "kind": "number", "integer": false, "quantum": 0.01])
+    #expect(NumberSpec("load", min: 0).json == ["path": "load", "kind": "number", "min": 0, "integer": false])
+    #expect(NumberSpec("load", max: 0).json == ["path": "load", "kind": "number", "max": 0, "integer": false])
+    for (spec, reason) in [
+      (NumberSpec("item.weight", quantum: 0.5), "admits a value below the registry's -100.0"),
+      (NumberSpec("item.weight", min: -100, quantum: 0.5), "admits a value above the registry's 100.0"),
+      (NumberSpec("item.weight", max: 100, quantum: 0.5), "admits a value below the registry's -100.0"),
+    ] {
+      let rules = ChecksTests.rules.filter { $0.name != "item.weight" } + [.local(spec)]
+      #expect(throws: ChecksTests.failure(6, "item.weight", reason)) {
+        try RegistryCheck.entity(Item.self, sample: ChecksTests.item, book: ChecksTests.book(rules), registry: ChecksTests.registry)
+      }
+    }
+  }
+
   @Test func stepSixRefusesASpecTheRegistryWouldRefuse() {
     let wide = TextSpec("item.name", unit: .chars, min: 1, max: 30, trim: true, nfc: true)
     #expect(throws: ChecksTests.failure(6, "item.name", "admits 30 chars, beyond the registry's 20 chars")) {

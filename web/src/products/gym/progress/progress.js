@@ -22,7 +22,7 @@ function progressSnapshot(snapshot, now) {
       return new MovementSessionFact(new Id(movement.exerciseId, Exercise), movement.workingSetCount,
         new PerformedFact(fact(movement.heaviest)), new PerformedFact(fact(movement.mostReps ?? movement.heaviest)),
         movement.estimate ? new EstimatedFact(fact(movement.estimate), movement.estimate.e1rm) : null,
-        bodyweight ? new PerformedFact(fact(bodyweight)) : null);
+        bodyweight ? new PerformedFact(fact(bodyweight)) : null, movement.estimatesComplete !== false && movement.estimate?.e1rm !== null);
     });
     return movements.length ? [new ProgressSession(new Id(session.sessionId, Session), new Instant(session.startedAt), movements)] : [];
   });
@@ -66,8 +66,10 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
   const showYears = new Date(visible[0]?.at ?? now).getFullYear() !== new Date(now).getFullYear();
   const dateLabel = (at) => progressDateLabel(at, showYears);
   const standing = all.best;
-  const gaps = new Map(read.gaps(deviceZone).map(({ before, after }) => [before.id.record, after.id.record]));
-  const points = read.estimates.map((point) => ({
+  const plotted = new MovementProgress(read.exerciseId,
+    read.estimates.filter((point) => Number.isFinite(inDisplayUnit(point.fact.estimate.e1rm, unit))), read.isComplete);
+  const gaps = new Map(plotted.gaps(deviceZone).map(({ before, after }) => [before.id.record, after.id.record]));
+  const points = plotted.estimates.map((point) => ({
     key: point.id.record,
     at: point.startedAt.ms,
     value: inDisplayUnit(point.fact.estimate.e1rm, unit),
@@ -81,10 +83,11 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
   const start = LocalDay.in(new Instant(now), deviceZone).adding(-84);
   return {
     exerciseId, sessions: visible, points, latest, best, heaviest, windowLabel, sparseLine, assisted, showYears,
+    estimateAbsenceKnown: read.isComplete && read.estimatesComplete && points.length === read.estimates.length,
     mostRepsLine: bodyweight ? `most reps ${bodyweight.fact.bodyweightReps.reps} · bodyweight · ${dateLabel(bodyweight.startedAt.ms)}` : null,
     signedLoadLine: heaviest && heaviest.heaviest.weightKg !== 0 ? `heaviest ${heaviest.heaviest.weightKg > 0 ? 'added +' : 'assisted −'}${fmt(Math.abs(heaviest.heaviest.weightKg), unit)} · ${dateLabel(heaviest.at)}` : null,
     domain: { from: window === 'all' ? all.sessions[0]?.startedAt.ms ?? now : new Date(start.year, start.month - 1, start.day).getTime(), to: now },
-    chartReady: read.hasChart(deviceZone),
+    chartReady: plotted.hasChart(deviceZone),
     latestLine: latest ? `e1RM ${estimateValue(latest.estimate.e1rm, unit)} · ${agoLabel(latest.at, now)}` : null,
     bestLine: best ? `best e1RM ${estimateValue(best.estimate.e1rm, unit)} · ${dateLabel(best.at)}` : null,
     sparseBest: best ? `Best so far: e1RM ${estimateValue(best.estimate.e1rm, unit)}, from ${setLoadLabel(best.estimate, unit)} on ${dateLabel(best.at)}.` : null,

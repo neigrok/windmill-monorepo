@@ -245,6 +245,7 @@ public final class SimNetwork: SyncTransport {
   package enum Fate: Hashable, Sendable {
     case deliver, drop, loseReply, duplicate, delay, loseCredential
     case answer(status: Int)
+    case servedAs(String)
   }
 
   // The last answer the server made to a call of one kind: whom it was served as, an account or null, and the scopes a
@@ -297,7 +298,12 @@ public final class SimNetwork: SyncTransport {
   public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
     let fate = take(.hello)
     guard fate != .drop else { return .unreachable }
-    let answered = served(.hello, server.hello(as: fate == .loseCredential ? nil : token))
+    let sentUnder: SessionToken? = switch fate {
+    case .loseCredential: nil
+    case .servedAs(let account): server.issueToken(for: account)
+    default: token
+    }
+    let answered = served(.hello, server.hello(as: sentUnder))
     return Reply(status: answered.status, body: answered.body)
   }
 
@@ -311,6 +317,9 @@ public final class SimNetwork: SyncTransport {
       return .unreachable
     case .answer(let status):
       let answered = server.failure(status)
+      return Reply(status: answered.status, body: answered.body)
+    case .servedAs(let account):
+      let answered = served(.push, serve(request, as: server.issueToken(for: account)))
       return Reply(status: answered.status, body: answered.body)
     case .deliver, .loseReply, .duplicate, .loseCredential:
       let sentUnder = fate == .loseCredential ? nil : token
@@ -328,6 +337,9 @@ public final class SimNetwork: SyncTransport {
     case .answer(let status):
       let answered = server.failure(status)
       return Reply(status: answered.status, body: answered.body)
+    case .servedAs(let account):
+      let answered = served(.pull, server.pull(request, as: server.issueToken(for: account)), scopes: Set(request.scopes.map(\.scope)))
+      return Reply(status: answered.status, body: answered.body)
     case .deliver, .loseReply, .duplicate, .loseCredential:
       let sentUnder = fate == .loseCredential ? nil : token
       var answered = server.pull(request, as: sentUnder)
@@ -341,7 +353,12 @@ public final class SimNetwork: SyncTransport {
   public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
     let fate = take(.live)
     guard fate != .drop else { return .unreachable }
-    guard let opened = server.connect(as: fate == .loseCredential ? nil : token) else {
+    let sentUnder: SessionToken? = switch fate {
+    case .loseCredential: nil
+    case .servedAs(let account): server.issueToken(for: account)
+    default: token
+    }
+    guard let opened = server.connect(as: sentUnder) else {
       return .answered(.failed(HTTPFailure(status: 401)))
     }
     let connection = FakeLiveConnection { [weak self] request in self?.take(request, on: opened) }

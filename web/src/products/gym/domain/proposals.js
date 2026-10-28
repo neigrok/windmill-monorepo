@@ -44,7 +44,7 @@ export class EntryTargets {
       if (target.reps === 0) throw new Violation('proposal.zeroTarget', at.plus('reps'), { kind: 'custom', custom: 'zeroTarget' });
       const reps = specs.reps.applyOptional(target.reps, at.plus('reps'));
       const weightKg = specs.weight.applyOptional(target.weightKg, at.plus('weightKg'));
-      if (weightKg === 0) throw new Violation('proposal.zeroTarget', at.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
+      if (weightKg === 0 && target.weightKg !== 0) throw new Violation('proposal.zeroTarget', at.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
       return new SetTarget(reps, weightKg);
     });
     return new EntryTargets(sets, specs.rest.applyOptional(this.restSeconds, path.plus('restSeconds')));

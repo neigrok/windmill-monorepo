@@ -87,6 +87,7 @@ nonisolated enum CoachCopy {
   // What a refused send or a signed-out answer the server could not give says, by the code it named.
   static func refusal(_ code: String) -> String {
     switch code {
+    case "client-update-required": return "Update Windmill to keep using Gym."
     case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept."
     case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account."
     case "installation_rate_limited", "onboarding_rate_limited", "request_limit": return "Too many requests from this connection. Your draft is kept; try again later."

@@ -54,9 +54,9 @@ struct RoutineTargetsTests {
     draft.type("100", field: .reps)
     draft.type("500", field: .weight)
     draft.step(.sets, direction: 1); draft.step(.reps, direction: 1); draft.step(.weight, direction: 1)
-    #expect(draft.reading == .scheme(Array(repeating: SetTarget(reps: 100, weightKg: 500), count: 20)))
+    #expect(draft.reading == .scheme(Array(repeating: SetTarget(reps: 100, weightKg: 502.5), count: 20)))
     draft.type("−500", field: .weight); draft.step(.weight, direction: -1)
-    #expect(draft.shared(.weight) == "−500")
+    #expect(draft.shared(.weight) == "−502.5")
   }
 
   @Test func steppingCannotReplaceIncompleteOrFractionalWholeFields() {
@@ -110,8 +110,8 @@ struct RoutineTargetsTests {
     ("1.2.3", RoutineTargetDraft.onePoint), ("1,2.3", RoutineTargetDraft.onePoint),
     ("−", RoutineTargetDraft.notANumber), ("no", RoutineTargetDraft.notANumber),
     ("NaN", RoutineTargetDraft.notANumber), ("Infinity", RoutineTargetDraft.notANumber),
-    ("500.01", RoutineTargetDraft.overWeight), ("−500.01", RoutineTargetDraft.overWeight),
-    ("0", RoutineTargetDraft.zeroTarget), ("0.004", RoutineTargetDraft.zeroTarget),
+    ("1e999", RoutineTargetDraft.notANumber), ("−1e999", RoutineTargetDraft.notANumber),
+    ("0.004", RoutineTargetDraft.notANumber),
   ])
   func loadRefusalsPreserveTypedInput(typed: String, message: String) {
     var draft = RoutineTargetDraft(sets: straight)
@@ -140,7 +140,7 @@ struct RoutineTargetsTests {
     var draft = RoutineTargetDraft(sets: straight)
     for (typed, message) in [("0", RoutineTargetDraft.zeroTarget), ("−", RoutineTargetDraft.notANumber), ("1,2.3", RoutineTargetDraft.onePoint)] {
       draft.type(typed, field: field)
-      #expect(draft.refusal == .init(row: field == .sets ? nil : 0, field: field, message: message))
+      #expect(draft.refusal == (typed == "0" && field == .weight ? nil : .init(row: field == .sets ? nil : 0, field: field, message: message)))
       #expect(draft.shared(field) == typed)
     }
   }
@@ -148,11 +148,11 @@ struct RoutineTargetsTests {
   @Test func refusalOrderIsCountThenRowsWithRepsBeforeWeight() {
     var draft = RoutineTargetDraft(sets: straight)
     draft.type("bad", field: .reps, row: 1)
-    draft.type("0", field: .weight, row: 0)
+    draft.type("-", field: .weight, row: 0)
     draft.type("1,2.3", field: .sets)
     #expect(draft.refusal == .init(row: nil, field: .sets, message: RoutineTargetDraft.onePoint))
     draft.type("3", field: .sets)
-    #expect(draft.refusal == .init(row: 0, field: .weight, message: RoutineTargetDraft.zeroTarget))
+    #expect(draft.refusal == .init(row: 0, field: .weight, message: RoutineTargetDraft.notANumber))
     #expect(draft.headRefusal == nil)
     draft.type("0", field: .reps, row: 0)
     #expect(draft.refusal == .init(row: 0, field: .reps, message: RoutineTargetDraft.zeroTarget))

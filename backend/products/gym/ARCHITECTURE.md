@@ -150,6 +150,18 @@ session's set revisions and share, a log share's snapshots, Coach's tables) and 
   column anywhere. The domain carries `double`; an e1RM keeps full precision until the wire states it
   to a tenth, and two estimates compare by the rule's exact score, so float noise cannot mint a record.
 
+Loads retain finite normalized signed values without a fixed kg bound. Exact zero is a target;
+an absent target still means last time. The three load columns use unconstrained numeric with finite
+cent admission on live rows. Normalization preserves canonical decimal-grid values and finite
+reciprocal scaling overflow, as engine §7.1 defines. Estimate ordering compares bounded canonical
+decimal digits and an exponent; display availability does not decide eligibility.
+
+Each complete volume aggregate independently folds its flat working sets in canonical set-ID order:
+`max(load,0) × reps × historical load count`, then left-to-right additions, checking every operation.
+An unavailable contributor or nonfinite operation makes the whole aggregate explicit null; empty
+aggregates are zero. SQL does not sum numeric subtotals. Unavailable eligible estimates suppress
+unsupported smaller record claims, and clients use their existing unavailable metric slots.
+
 ### 3.3 The plan
 
 - `revision` is the concurrency token a proposal is minted AGAINST: a server-authored register,
@@ -415,11 +427,11 @@ agent holding `gym:read` (`list_bodyweight`), written by the lifter's own client
   whatever `?from=&to=` asked, so one windowed read draws the chart and the reading at the head of
   the log. A client may derive its own reading from `entries`, and a served row dated after the
   device's local today is never the reading and never a dot.
-- **`weightKg` crosses every wire as the two decimals the lifter wrote** — `82.4`, never
-  `82.400000000000006`. The rounding is the constructor's; the bytes are the writer's: every JSON
-  writer in the process carries 15 significant digits (`platform/adapters/json/JsonText.h`'s
-  `kJsonDoubleDigits` — `dump`, the tool text and Drogon's replies alike), and `BodyweightApiTest`
-  and `GymToolsTest` pin the bytes.
+- **`weightKg` crosses every wire as its finite normalized Double.** Constructors own cent
+  normalization. Every JSON writer carries 17 significant digits (`platform/adapters/json/JsonText.h`'s
+  `kJsonDoubleDigits` — `dump`, tool text and Drogon's replies alike), preserving exact finite values.
+  Client readouts own human formatting; canonical shortest spelling owns normalization, score
+  comparison and load storage.
 - **No write tool at any grant level, and nothing named `propose_*` ever.** A weigh-in is a fact
   only the lifter observed; an agent writing one would be inventing a number, which the prompt
   already forbids. `GymToolsTest` pins it off the declarations: every tool whose name or argument
@@ -469,7 +481,7 @@ restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `
   `step_kg numeric(4,2)` and of the registry's `stepKg`.
 - **A routine**: at least one entry, at most `kMaxRoutineEntries` (50), positions `1..n` in order,
   each line's scheme at most `kMaxSetTargets` (20) sets — none is the open line — every set's `reps`
-  1–100 when named and its `weightKg` inside ±500 after rounding to two decimals, `restSeconds`
+  1–100 when named and its `weightKg` finite after cent normalization, `restSeconds`
   15–900. The document's size is bounded beside every field's value: a routine's lines are one row
   each and each line's scheme one more, written in one transaction, at most 50 × 20 rows.
 - `parseSetKind` is **strict on write** (an unknown kind is a 400); `setKindFromStored` clamps to
@@ -751,6 +763,16 @@ frozen snapshot's, and the frozen plan itself does not travel.
 [routes.cpp](routes.cpp) is the route inventory; the HTTP adapters parse requests and map typed
 outcomes to responses. Owner routes require a session. Public workout and history reads use a
 share token and return the same 404 for absent, revoked or expired links.
+
+Every active Gym HTTP mount checks `Sync-Schema` against `engine::registry().minVersion()` before
+handler admission, including JSON, Coach streams, private photos, onboarding and public share JSON.
+An absent or old version returns `426 client-update-required`; a malformed or out-of-range decimal
+integer returns `400 malformed`. Leading zeros are accepted, and Drogon presents the first repeated
+carrier. OPTIONS, unknown or unmounted paths, and browser fragment navigation retain their ordinary
+behavior. `GymRoutes` delegates observations to `WriteRoutes`; schema refusals reuse the access
+log’s bounded matched route and status, and rejected writes retain one completion carrying the
+refusal code with no Sentry Issue. MCP has no static
+HTTP schema requirement. First-party request transports advertise their generated schema version.
 
 - [History and corrections](../../../packages/api-contract/gym-history.md) specify filtered reads,
   snapshot/live links and atomic workout corrections.
@@ -1332,7 +1354,7 @@ External MCP retains its explicit create tool. No model-facing tool can confirm 
 `exerciseName` overrides a movement's loading by its stable id. Keyed by a seed it holds optional
 `name`, `equipment` and `loadCount`; keyed by a custom movement it holds only `equipment` and
 `loadCount`, since a custom movement's name and aliases live on its `exercise` row. The registers are
-optional LWW fields: unset is absent, and a null register is refused. Schema 9/minimum 9 admits
+optional LWW fields: unset is absent, and a null register is refused. Source schema 10/minimum 10 admits
 explicit `other` equipment alongside all six legacy values. Other counts one external load; signed
 weights are retained and negative contributions to volume remain zero.
 The base equipment register retains its const contract. Names and loading metadata resolve across the

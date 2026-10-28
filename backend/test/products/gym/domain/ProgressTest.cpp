@@ -26,13 +26,33 @@ Json::Value trainingReads() {
   return sync::parseJson(std::string{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()});
 }
 
-void runEstimate(Json::ArrayIndex index) {
+void runTrainingRead(Json::ArrayIndex index) {
   const Json::Value vector = trainingReads()[index];
   const Json::Value& input = vector["input"]["input"];
+  if (vector["input"]["read"] == "GymVolume") {
+    std::vector<VolumePart> parts;
+    for (const auto& part : input["parts"])
+      parts.emplace_back(part["id"].asString(), part["weightKg"].isNumeric() ? std::optional(part["weightKg"].asDouble()) : std::nullopt,
+                         part["reps"].isInt() ? std::optional(part["reps"].asInt()) : std::nullopt,
+                         part["loadCount"].isInt() ? std::optional(part["loadCount"].asInt()) : std::nullopt);
+    const auto total = totalVolume(std::move(parts));
+    CHECK_EQ(sync::jcs(total ? Json::Value(*total) : Json::Value()), sync::jcs(vector["expect"]["result"]));
+    return;
+  }
+  if (vector["input"]["read"] == "GymEstimateScore") {
+    const auto estimate = [](const Json::Value& value) {
+      return Estimate::of(value["weightKg"].asDouble(), value["reps"].asInt(),
+                          value.isMember("rpe") ? std::optional(value["rpe"].asDouble()) : std::nullopt);
+    };
+    const auto left = estimate(input["left"]), right = estimate(input["right"]);
+    const Json::Value result = left && right ? Json::Value(left->score == right->score ? 0 : left->score < right->score ? -1 : 1) : Json::Value();
+    CHECK_EQ(sync::jcs(result), sync::jcs(vector["expect"]["result"]));
+    return;
+  }
   std::optional<double> rpe;
   if (input.isMember("rpe")) rpe = input["rpe"].asDouble();
   const std::optional<Estimate> estimate = Estimate::of(input["weightKg"].asDouble(), input["reps"].asInt(), rpe);
-  const Json::Value answered = estimate ? Json::Value(estimate->e1rm) : Json::Value(Json::nullValue);
+  const Json::Value answered = estimate && estimate->e1rm ? Json::Value(*estimate->e1rm) : Json::Value(Json::nullValue);
   CHECK_EQ(sync::jcs(answered), sync::jcs(vector["expect"]["result"]));
 }
 
@@ -45,8 +65,8 @@ void runEstimate(Json::ArrayIndex index) {
   }
   const Json::Value vectors = trainingReads();
   for (Json::ArrayIndex i = 0; i < vectors.size(); ++i)
-    if (vectors[i]["input"]["read"] == "GymEstimate")
-      ::testing::Register{"gym_training_reads/GymEstimate: " + vectors[i]["name"].asString(), [i] { runEstimate(i); }};
+    if (vectors[i]["input"]["read"] == "GymEstimate" || vectors[i]["input"]["read"] == "GymEstimateScore" || vectors[i]["input"]["read"] == "GymVolume")
+      ::testing::Register{"gym_training_reads/" + vectors[i]["input"]["read"].asString() + ": " + vectors[i]["name"].asString(), [i] { runTrainingRead(i); }};
   return true;
 }();
 
@@ -63,9 +83,9 @@ ProgressSet benched(const SessionId& session, std::uint64_t startedAtMs, const s
 }
 
 TEST(gym_estimate_is_stated_to_a_tenth_as_the_last_step) {
-  CHECK_EQ(Estimate::stated(Estimate::of(100, 5, std::nullopt)->e1rm), 116.7);
-  CHECK_EQ(Estimate::stated(Estimate::of(100, 1, std::nullopt)->e1rm), 100.0);
-  CHECK_EQ(Estimate::stated(Estimate::of(62.5, 5, 8.5)->e1rm), 72.9);
+  CHECK_EQ(Estimate::stated(*Estimate::of(100, 5, std::nullopt)->e1rm), 116.7);
+  CHECK_EQ(Estimate::stated(*Estimate::of(100, 1, std::nullopt)->e1rm), 100.0);
+  CHECK_EQ(Estimate::stated(*Estimate::of(62.5, 5, 8.5)->e1rm), 72.9);
 }
 
 // 70 × 10 and 80 × 5 differ in Epley's last bit only; their scores are the one equal number.
@@ -75,8 +95,19 @@ TEST(gym_estimate_scores_are_exact_where_epley_values_are_not) {
 
   CHECK(tens.e1rm != fives.e1rm);
   CHECK_EQ(tens.score, fives.score);
-  CHECK_EQ(tens.score, 280'000);
-  CHECK_EQ(Estimate::of(100, 1, std::nullopt)->score, 300'000);
+  CHECK_EQ(tens.score.digits, "28");
+  CHECK_EQ(tens.score.exponent, 4);
+  CHECK_EQ(Estimate::of(100, 1, std::nullopt)->score.digits, "3");
+  CHECK_EQ(Estimate::of(100, 1, std::nullopt)->score.exponent, 5);
+}
+
+TEST(gym_estimate_scores_preserve_large_decimal_ties_and_order_without_integer_overflow) {
+  CHECK(EstimateScore(3e305, 10) == EstimateScore(4e305, 1));
+  CHECK(EstimateScore(0.3, 10) == EstimateScore(0.4, 1));
+  CHECK(EstimateScore(1e16, 10) > EstimateScore(1e16, 9));
+  CHECK(EstimateScore(1e307, 10) < EstimateScore(1e308, 1));
+  CHECK(EstimateScore(1e308, 1) > EstimateScore(1e307, 10));
+  CHECK(EstimateScore(0.01, 1) > EstimateScore{});
 }
 
 TEST(gym_progress_qualifies_raw_sets_before_selecting_the_estimate) {

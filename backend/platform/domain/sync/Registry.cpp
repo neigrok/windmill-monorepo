@@ -496,12 +496,27 @@ Quantum::Quantum(double step) : step_(step), stepsPerUnit_(0) {
   if (!std::isfinite(step) || step <= 0) throw RegistryError("a quantum is a positive number");
   if (step == std::floor(step)) return;
   const double steps = std::round(1 / step);
-  if (steps < 2 || 1 / steps != step) throw RegistryError("a quantum is an integer or 1/k for an integer k");
+  if (!std::isfinite(steps) || steps < 2 || 1 / steps != step) throw RegistryError("a quantum is an integer or 1/k for an integer k");
   stepsPerUnit_ = steps;
+  double decimalScale = 1;
+  for (int places = 0; places <= 22; ++places, decimalScale *= 10) {
+    if (steps == decimalScale) { decimalPlaces_ = places; break; }
+  }
 }
 
 double Quantum::round(double value) const {
-  const double rounded = stepsPerUnit_ > 0 ? std::round(value * stepsPerUnit_) / stepsPerUnit_ : std::round(value / step_) * step_;
+  if (std::isfinite(value) && decimalPlaces_) {
+    const std::string text = jcs(Json::Value(value));
+    const auto exponentAt = text.find('e');
+    const auto point = text.find('.');
+    const auto mantissaEnd = exponentAt == std::string::npos ? text.size() : exponentAt;
+    const int fraction = point == std::string::npos ? 0 : static_cast<int>(mantissaEnd - point - 1);
+    const int exponent = exponentAt == std::string::npos ? 0 : std::stoi(text.substr(exponentAt + 1));
+    if (fraction - exponent <= *decimalPlaces_) return value == 0 ? 0.0 : value;
+  }
+  const double scaled = value * stepsPerUnit_;
+  if (stepsPerUnit_ > 0 && std::isfinite(value) && !std::isfinite(scaled)) return value == 0 ? 0.0 : value;
+  const double rounded = stepsPerUnit_ > 0 ? std::round(scaled) / stepsPerUnit_ : std::round(value / step_) * step_;
   return rounded == 0 ? 0.0 : rounded;
 }
 

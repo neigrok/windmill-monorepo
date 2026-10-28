@@ -4,8 +4,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
-import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.max
 
 // Days and months are spelled out rather than localised, exactly as the web spells them.
@@ -21,9 +19,7 @@ object Readout {
 
     // Trailing zeros stripped and a real U+2212 minus; the grid is the LADDER's own.
     fun weight(kg: Double): String {
-        val magnitude = Ladder.round(abs(kg))
-        val digits = if (magnitude == floor(magnitude)) magnitude.toLong().toString() else magnitude.toString()
-        return (if (kg < 0) "−" else "") + digits
+        return works.windmill.gym.domain.sync.Readout.weight(kg)
     }
 
     fun effort(weightKg: Double, reps: Int): String = "${weight(weightKg)} × $reps"
@@ -86,19 +82,16 @@ object Readout {
         return pad(at.hour) + ":" + pad(at.minute)
     }
 
-    // A sum that reaches zero prints NOTHING rather than `0.0 t`, rounded by hand with the tenths as
-    // an INTEGER so no locale touches it.
+    // The shared readout omits zero tonnage and spells a positive total without integer narrowing.
     fun tonnes(kg: Double): String? {
-        val tenths = floor(kg / 100.0 + 0.5).toLong()
-        if (tenths <= 0) return null
-        return "${tenths / 10}.${tenths % 10} t"
+        return works.windmill.gym.domain.sync.Readout.tonnes(kg)
     }
 
     const val noRoutine = "Free workout"
 
 
-    // The server computes the e1RM; this phone only spells it.
-    fun estimatedWeight(e1rm: Double): String = weight(floor(e1rm * 10.0 + 0.5) / 10.0)
+    // The shared readout states an estimate to a tenth.
+    fun estimatedWeight(e1rm: Double): String = works.windmill.gym.domain.sync.Readout.estimatedWeight(e1rm)
 
     fun estimate(e1rm: Double): String = "e1RM ${estimatedWeight(e1rm)}"
 

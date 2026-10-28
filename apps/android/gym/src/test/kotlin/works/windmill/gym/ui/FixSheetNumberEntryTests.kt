@@ -83,10 +83,10 @@ class FixSheetNumberEntryTests {
         val saved = mutableListOf<SetFix>()
         sheet(saved)
         val field = compose.onNodeWithContentDescription("Load, kg")
-        field.performClick().performTextReplacement("500.001")
+        field.performClick().performTextReplacement("1e999")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
-        compose.onNodeWithText("Over 500 kg — check the number.").performScrollTo().assertExists()
-        field.assertTextEquals("Load", "kg", "500.001").assertIsFocused()
+        compose.onNodeWithText("That is not a number yet.").performScrollTo().assertExists()
+        field.assertTextEquals("Load", "kg", "1e999").assertIsFocused()
         compose.runOnIdle { assertEquals(emptyList<SetFix>(), saved) }
         field.performTextReplacement("-499.99")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
@@ -207,11 +207,11 @@ class FixSheetNumberEntryTests {
         } } }
         compose.onNodeWithText("Set note").performTextReplacement("private note")
         val field = compose.onNodeWithContentDescription("Load, kg")
-        field.performClick().performTextReplacement("500.001")
+        field.performClick().performTextReplacement("1e999")
         field.performImeAction()
         compose.runOnIdle { assertEquals(emptyList<Pair<String, Map<String, String>>>(), events) }
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
-        field.assertTextEquals("Load", "kg", "500.001").assertIsFocused()
+        field.assertTextEquals("Load", "kg", "1e999").assertIsFocused()
         compose.runOnIdle {
             assertEquals(0, saves)
             assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused")), events)

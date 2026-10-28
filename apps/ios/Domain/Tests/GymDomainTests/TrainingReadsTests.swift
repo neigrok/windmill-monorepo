@@ -92,6 +92,18 @@ struct TrainingReadsTests {
         }
       case "GymEstimate": return .of(GymEstimate.value(weightKg: try fields.double("weightKg"), reps: try fields.int("reps"),
                                                          rpe: try fields.optionalDouble("rpe")))
+      case "GymEstimateScore":
+        let left = try Fields(input.member("left")), right = try Fields(input.member("right"))
+        guard let a = GymEstimate.score(weightKg: try left.double("weightKg"), reps: try left.int("reps"), rpe: try left.optionalDouble("rpe")),
+              let b = GymEstimate.score(weightKg: try right.double("weightKg"), reps: try right.int("reps"), rpe: try right.optionalDouble("rpe")) else { return .null }
+        return JSON(a == b ? 0 : a < b ? -1 : 1)
+      case "GymVolume":
+        let parts = try input.member("parts").asArray().map { value in
+          let fields = try Fields(value)
+          return VolumePart(id: try fields.string("id"), weightKg: try fields.optionalDouble("weightKg"),
+                            reps: try fields.optionalInt("reps"), loadCount: try fields.optionalInt("loadCount"))
+        }
+        return .of(GymVolume.total(parts))
       case "TrainingLog":
         let id = try fields.ref("sessionId", Session.self)
         return ["drawnSessions": .array(log.drawnSessions.map { $0.id.json }), "open": log.open?.id.json ?? .null,
@@ -135,6 +147,7 @@ struct TrainingReadsTests {
         })), "sessions": .array(records.sessions.sorted().map(\.json))]
       case "Readout":
         switch try fields.string("operation") {
+        case "weight": return .string(Readout.weight(try fields.double("value")))
         case "estimate": return .string(Readout.estimate(try fields.double("value")))
         case "target": return .string(Readout.target(try fields.optionalList("sets", of: SetTarget.self)))
         case "loadUnit": return .string(Readout.loadUnit(equipment: try fields.optionalString("equipment"), loadCount: try fields.int("loadCount")))

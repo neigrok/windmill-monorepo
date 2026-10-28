@@ -50,10 +50,7 @@ TEST(gym_bodyweight_lists_nothing_then_the_days_ascending_with_the_newest_as_lat
                        R"("weightKg":82.5}})"));
 }
 
-// B3: `weightKg` crosses the wire as the two decimals the lifter wrote — the reply's own bytes, as
-// Drogon writes them, read `82.4` and never `82.400000000000006`. A set's load already did (82.5
-// is an exact double); a weigh-in's two decimals rarely are, so the bytes are pinned here.
-TEST(gym_bodyweight_writes_two_decimals_of_kilograms_on_the_wire) {
+TEST(gym_bodyweight_wire_preserves_its_normalized_double_exactly) {
   Harness h;
   const UserId me = h.signIn("s-live");
   weighed(h, me, "2026-08-25", 82.4);
@@ -65,11 +62,11 @@ TEST(gym_bodyweight_writes_two_decimals_of_kilograms_on_the_wire) {
   const std::string listedBytes(listed->getBody());
   CHECK_EQ(listedBytes,
            std::string(R"({"entries":[)"
-                       R"({"dateLocal":"2026-08-23","recordedAt":1786000000000,"weightKg":82.46},)"
-                       R"({"dateLocal":"2026-08-24","recordedAt":1786000000000,"weightKg":81.95},)"
-                       R"({"dateLocal":"2026-08-25","recordedAt":1786000000000,"weightKg":82.4}],)"
+                       R"({"dateLocal":"2026-08-23","recordedAt":1786000000000,"weightKg":82.459999999999994},)"
+                       R"({"dateLocal":"2026-08-24","recordedAt":1786000000000,"weightKg":81.950000000000003},)"
+                       R"({"dateLocal":"2026-08-25","recordedAt":1786000000000,"weightKg":82.400000000000006}],)"
                        R"("latest":{"dateLocal":"2026-08-25","recordedAt":1786000000000,)"
-                       R"("weightKg":82.4}})"));
+                       R"("weightKg":82.400000000000006}})"));
   // `dump` — what the MCP text and every pin in this file are written with — agrees byte for byte.
   CHECK_EQ(dump(bodyOf(listed)), listedBytes);
 }

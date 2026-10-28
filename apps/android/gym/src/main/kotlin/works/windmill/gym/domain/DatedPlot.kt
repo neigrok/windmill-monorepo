@@ -45,13 +45,29 @@ class DatedGeometry(
     val axis: ClosedFloatingPointRange<Double> = run {
         val low = series.ordered.minOfOrNull { it.value } ?: 0.0
         val high = series.ordered.maxOfOrNull { it.value } ?: 1.0
-        val padding = max((high - low) * 0.1, 0.25)
-        val rough = (high - low + 2 * padding) / 4
+        val span = high - low
+        val padding = max(if (span.isFinite()) span * 0.1 else high * 0.1 - low * 0.1, 0.25)
+        val bottom = (low - padding).coerceAtLeast(-Double.MAX_VALUE)
+        val top = (high + padding).coerceAtMost(Double.MAX_VALUE)
+        val paddedSpan = high - low + 2 * padding
+        val rough = if (paddedSpan.isFinite()) paddedSpan / 4 else top / 4 - bottom / 4
         val power = 10.0.pow(floor(log10(rough)))
         val step = listOf(1.0, 2.0, 2.5, 5.0, 10.0).first { it * power >= rough } * power
-        floor((low - padding) / step) * step..ceil((high + padding) / step) * step
+        val roundedBottom = floor(bottom / step) * step
+        val roundedTop = ceil(top / step) * step
+        if (bottom < top) {
+            return@run (if (roundedBottom.isFinite()) minOf(low, roundedBottom) else bottom)..
+                (if (roundedTop.isFinite()) maxOf(high, roundedTop) else top)
+        }
+        val below = Math.nextDown(low).takeIf { it.isFinite() } ?: low
+        val above = Math.nextUp(high).takeIf { it.isFinite() } ?: high
+        (if (above == high) Math.nextDown(below) else below)..
+            (if (below == low) Math.nextUp(above) else above)
     }
-    val ticks = listOf(axis.endInclusive, (axis.start + axis.endInclusive) / 2, axis.start)
+    val ticks = listOf(axis.endInclusive, run {
+        val sum = axis.start + axis.endInclusive
+        if (sum.isFinite()) sum / 2 else axis.start / 2 + axis.endInclusive / 2
+    }, axis.start)
     val contentWidth: Float = run {
         val dates = series.ordered.map { it.atMs }.distinct()
         val span = ((dates.lastOrNull() ?: 0).toDouble() - (dates.firstOrNull() ?: 0).toDouble())
@@ -75,8 +91,13 @@ class DatedGeometry(
         return ((atMs.toDouble() - series.fromMs.toDouble()) / duration * contentWidth).toFloat() - maxPan + pan
     }
 
-    fun y(value: Double): Float =
-        ((axis.endInclusive - value) / (axis.endInclusive - axis.start) * height).toFloat()
+    fun y(value: Double): Float {
+        val span = axis.endInclusive - axis.start
+        val scale = max(abs(axis.start), abs(axis.endInclusive))
+        val fraction = if (span.isFinite()) (axis.endInclusive - value) / span else
+            (axis.endInclusive / scale - value / scale) / (axis.endInclusive / scale - axis.start / scale)
+        return (fraction.coerceIn(0.0, 1.0) * height).toFloat()
+    }
 
     fun time(x: Float): Long =
         (series.fromMs.toDouble() + ((x.toDouble() + maxPan - pan) / contentWidth) * duration).roundToLong()

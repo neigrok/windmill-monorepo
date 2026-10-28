@@ -255,7 +255,7 @@
     },
     {
       "name": "list_sessions",
-      "description": "Your training log, newest first — one row per workout: the session, `setCount` (every set it held) beside `workingSetCount` (only the working ones, which are the only sets that count toward anything), `tonnageKg` (the load those working sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley estimate any working set in it earned — the session's own number, not the heaviest set's), `record` (a personal record happened in that workout — best e1RM, most reps at a load, or the heaviest load, judged against the log as it stands now, and false on around 190 rows in 200), and `closedItself` (the four-hour rule ended it rather than a tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two workouts can start in the same millisecond.",
+      "description": "Your training log, newest first — one row per workout: the session, `setCount` (every set it held) beside `workingSetCount` (only the working ones, which are the only sets that count toward anything), `tonnageKg` (the load those working sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley estimate any working set in it earned — the session's own number, not the heaviest set's), `record` (a personal record happened in that workout — best e1RM, most reps at a load, or the heaviest load, judged against the log as it stands now, and false on around 190 rows in 200), and `closedItself` (the four-hour rule ended it rather than a tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two workouts can start in the same millisecond. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
       "input": {
         "additionalProperties": false,
         "properties": {
@@ -356,7 +356,10 @@
                   "type": "integer"
                 },
                 "tonnageKg": {
-                  "type": "number"
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 },
                 "exercises": {
                   "type": "array",
@@ -381,7 +384,10 @@
                   "additionalProperties": false
                 },
                 "topE1rm": {
-                  "type": "number"
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 },
                 "record": {
                   "type": "boolean"
@@ -437,7 +443,7 @@
     },
     {
       "name": "get_session",
-      "description": "One workout of yours with every set in it, in the order they were logged. A workout started from a routine carries `plan`, the routine frozen at the start: each line's `sets` scheme, one item per set in the order lifted (a ramp reads [{\"reps\":5,\"weightKg\":60},…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With `review: true` the reply also carries the finish readout — duration, working sets, top e1RM, at most one record, and the comparison against the last time you trained that day of the program.",
+      "description": "One workout of yours with every set in it, in the order they were logged. A workout started from a routine carries `plan`, the routine frozen at the start: each line's `sets` scheme, one item per set in the order lifted (a ramp reads [{\"reps\":5,\"weightKg\":60},…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With `review: true` the reply also carries the finish readout — duration, working sets, top e1RM, at most one record, and the comparison against the last time you trained that day of the program. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
       "input": {
         "additionalProperties": false,
         "properties": {
@@ -595,7 +601,10 @@
                     "type": "integer"
                   },
                   "topE1rm": {
-                    "type": "number"
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
@@ -961,7 +970,10 @@
                           "type": "integer"
                         },
                         "topE1rm": {
-                          "type": "number"
+                          "type": [
+                            "number",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -1559,7 +1571,7 @@
     },
     {
       "name": "get_stats",
-      "description": "The long view over your FINISHED workouts: sessions and working sets per week (Monday to Monday, UTC — a week you did not train is present and zero), and per movement its line of top working sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is no volume, no score and no streak here — every number is a fact with a direction.",
+      "description": "The long view over your FINISHED workouts: sessions and working sets per week (Monday to Monday, UTC — a week you did not train is present and zero), and per movement its line of top working sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is no volume, no score and no streak here — every number is a fact with a direction. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
       "input": {
         "additionalProperties": false,
         "properties": {
@@ -1623,7 +1635,10 @@
                         "type": "integer"
                       },
                       "e1rm": {
-                        "type": "number"
+                        "type": [
+                          "number",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
@@ -1647,7 +1662,10 @@
                       "type": "integer"
                     },
                     "e1rm": {
-                      "type": "number"
+                      "type": [
+                        "number",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -1670,7 +1688,10 @@
                       "type": "integer"
                     },
                     "e1rm": {
-                      "type": "number"
+                      "type": [
+                        "number",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
@@ -1725,7 +1746,7 @@
     {
       "name": "get_record",
       "declared": false,
-      "description": "The record of one movement: its best e1RM, heaviest set, record steps and recent days.",
+      "description": "The record of one movement: its best e1RM, heaviest set, record steps and recent days. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
       "input": {
         "type": "object",
         "properties": {
@@ -1826,7 +1847,10 @@
                 "type": "integer"
               },
               "e1rm": {
-                "type": "number"
+                "type": [
+                  "number",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -1849,7 +1873,10 @@
                 "type": "integer"
               },
               "e1rm": {
-                "type": "number"
+                "type": [
+                  "number",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -1874,7 +1901,10 @@
                   "type": "integer"
                 },
                 "e1rm": {
-                  "type": "number"
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -1901,7 +1931,10 @@
                   "type": "integer"
                 },
                 "e1rm": {
-                  "type": "number"
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 }
               },
               "required": [
@@ -2184,9 +2217,7 @@
                         "type": "integer"
                       },
                       "weightKg": {
-                        "description": "Load for THIS set in kg, inside ±500. OMIT to mean what they lifted for the set of the same number last time.",
-                        "maximum": 500,
-                        "minimum": -500,
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number"
                       }
                     },
@@ -2643,9 +2674,7 @@
                         "type": "integer"
                       },
                       "weightKg": {
-                        "description": "Load for THIS set in kg, inside ±500. OMIT to mean what they lifted for the set of the same number last time.",
-                        "maximum": 500,
-                        "minimum": -500,
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
                         "type": "number"
                       }
                     },
@@ -3433,8 +3462,6 @@
                 },
                 "weightKg": {
                   "description": "Load in kg, at most two decimal places.",
-                  "maximum": 500,
-                  "minimum": -500,
                   "multipleOf": 0.01,
                   "type": "number"
                 }
@@ -3594,8 +3621,6 @@
                 },
                 "weightKg": {
                   "description": "Load in kg, at most two decimal places.",
-                  "maximum": 500,
-                  "minimum": -500,
                   "multipleOf": 0.01,
                   "type": "number"
                 }

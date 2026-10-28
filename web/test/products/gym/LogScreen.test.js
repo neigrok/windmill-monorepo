@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { spellWeightsIn } from '../../../src/products/gym/units.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { CLOSED_ITSELF_NOTE } from '../../../src/products/gym/log.js';
 import {
@@ -402,4 +403,22 @@ test('a session’s set rows say what each load counts for its movement', async 
   const room = await sessionInARoom(t);
   assert.deepEqual(findByClass(room.screen(), 'gym-set-load').map(textOf),
     ['16 kg each × 8', '24 kg × 8', '−10 kg assisted × 8', '100 kg total × 8', '140 kg × 8']);
+});
+
+
+test('session totals use unavailable for pound conversion overflow and preserve true zero', async (t) => {
+  browserWith();
+  const rows = sessionWithASet();
+  rows[1] = confirmed('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 1,
+    weightKg: 1e308, reps: 1, kind: 'working', note: '', completedAt: 1_755_000_600_000 });
+  await gymAccount(t, [...rows, confirmed('prefs', 'prefs', { units: 'lb' })]);
+  spellWeightsIn('lb');
+  try {
+    const room = await sessionInARoom(t);
+    assert.equal(textOf(findByClass(room.screen(), 'gym-reader-totals')[0]), 'sets1reps1lb external—');
+    assert.equal(textOf(findByClass(room.screen(), 'gym-movement-totals')[0]), '1 reps · — lb');
+    deleteTheFirstSet(room);
+    await settle();
+    assert.equal(textOf(findByClass(room.screen(), 'gym-reader-totals')[0]), 'sets0reps0lb external0');
+  } finally { spellWeightsIn('kg'); }
 });

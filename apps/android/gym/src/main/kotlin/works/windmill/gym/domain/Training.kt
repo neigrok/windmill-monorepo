@@ -5,6 +5,8 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.sync.GymEstimate
+import works.windmill.gym.domain.sync.EstimateScore
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
@@ -168,7 +170,10 @@ data class SessionSummary(
         setCount = sets.size,
         workingSetCount = sets.size,
         // Clamped the server's way: an assisted set adds zero rather than subtracting.
-        tonnageKg = sets.sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
+        tonnageKg = works.windmill.gym.domain.sync.GymVolume.total(sets.map { set ->
+            works.windmill.gym.domain.sync.VolumePart(set.id, set.weightKg, set.reps,
+                catalog.firstOrNull { it.id == set.exerciseId }?.loadCount)
+        }),
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
             ?.let { TopSet(it.weightKg, it.reps) },
@@ -360,7 +365,9 @@ data class Review(
         // previous session movement by movement, with what the frozen plan asked.
         fun of(detail: SessionDetail, history: List<SessionDetail>): Review {
             val sets = performed(detail)
-            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull())) }
+            val strongest = sets.filter { estimateScore(it) != null }.maxByOrNull { estimateScore(it)!! }
+            val top = strongest?.let(::estimate)
+            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = top)) }
             if (base.slight) return base
             val previous = detail.session.routineId?.let { id -> prior(detail, history).lastOrNull { it.session.routineId == id } }
             val against = previous?.let { before -> Against(before.session.id, before.session.plan?.routine, before.session.startedAtMs,
@@ -371,9 +378,9 @@ data class Review(
     }
 }
 
-// What a review and a summary read off the account's history. The estimate is Epley's, rounded to
-// a tenth, and absent at or below zero load.
-private fun estimate(set: TrainingSet): Double? = if (set.weightKg > 0) floor(set.weightKg * (1 + set.reps / 30.0) * 10 + .5) / 10 else null
+// Reviews use the shared eligibility, finite estimate and exact ranking rules.
+private fun estimate(set: TrainingSet): Double? = GymEstimate.value(set.weightKg, set.reps, set.rpe)
+private fun estimateScore(set: TrainingSet): EstimateScore? = GymEstimate.score(set.weightKg, set.reps, set.rpe)
 private fun performed(detail: SessionDetail) = detail.sets.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
 private fun prior(detail: SessionDetail, history: List<SessionDetail>) = history.filter {
     !it.session.isOpen && it.session.startedAtMs < detail.session.startedAtMs
@@ -388,10 +395,12 @@ private fun earned(detail: SessionDetail, history: List<SessionDetail>): Persona
     val candidates = mutableListOf<Candidate>()
     for ((exercise, sets) in performed(detail).groupBy { it.exerciseId }) {
         val earlier = before.filter { it.first.exerciseId == exercise }
-        val best = sets.filter { estimate(it) != null }.maxByOrNull { estimate(it)!! }
-        val priorBest = earlier.filter { estimate(it.first) != null }.maxByOrNull { estimate(it.first)!! }
-        if (best != null && priorBest != null && estimate(best)!! > estimate(priorBest.first)!!) candidates += Candidate(0,
-            PersonalRecord("e1rm", exercise, estimate(best)!!, best.weightKg, best.reps, estimate(priorBest.first), priorBest.second), best)
+        val best = sets.filter { estimateScore(it) != null }.maxByOrNull { estimateScore(it)!! }
+        val priorBest = earlier.filter { estimateScore(it.first) != null }.maxByOrNull { estimateScore(it.first)!! }
+        val now = best?.let(::estimate)
+        val previous = priorBest?.first?.let(::estimate)
+        if (best != null && priorBest != null && now != null && previous != null && GymEstimate.stated(now) > GymEstimate.stated(previous)) candidates += Candidate(0,
+            PersonalRecord("e1rm", exercise, now, best.weightKg, best.reps, previous, priorBest.second), best)
         val heavy = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }
             .thenBy { it.completedAtMs }.thenBy { it.id }).first()
         val priorHeavy = earlier.maxWithOrNull(compareBy({ it.first.weightKg }, { it.first.reps }))
@@ -403,7 +412,7 @@ private fun earned(detail: SessionDetail, history: List<SessionDetail>): Persona
                 PersonalRecord("reps-at-weight", exercise, set.reps.toDouble(), set.weightKg, set.reps, priorLoad.first.reps.toDouble(), priorLoad.second), set)
         }
     }
-    return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { estimate(it.set) ?: 0.0 }
+    return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { estimateScore(it.set) ?: EstimateScore.zero }
         .thenByDescending { it.set.weightKg }.thenBy { it.set.completedAtMs }).firstOrNull()?.record
 }
 private fun effort(sets: List<TrainingSet>): Effort? {
@@ -638,8 +647,7 @@ object Ids {
 }
 
 object LoggedSetLimits {
-    const val maxWeightKg = 500
     const val maxReps = 99
     fun permits(weightKg: Double, reps: Int): Boolean =
-        weightKg.isFinite() && kotlin.math.abs(weightKg) <= maxWeightKg && reps in 1..maxReps
+        weightKg.isFinite() && reps in 1..maxReps
 }

@@ -34,9 +34,12 @@ import works.windmill.gym.sharing.SessionShare
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
+import works.windmill.sync.schema.SyncSchema
 
 // Pass every path WHOLE, query included: appending it as a path segment percent-encodes `?` and `&`.
-class GymHttp(private val api: WindmillApi) : GymRest {
+class GymHttp(api: WindmillApi) : GymRest {
+    private val api = api.withHeaders(mapOf("Sync-Schema" to SyncSchema.version.toString()))
+
     override suspend fun share(sessionId: String): SessionShare =
         api.send<SessionShare>("POST", "/v1/gym/sessions/$sessionId/share", operation = "gym_share")
 

@@ -11,7 +11,8 @@
 #include "products/gym/onboarding/OnboardingApi.h"
 #include "products/gym/coach/TurnApi.h"
 
-#include "platform/adapters/http/WriteRoutes.h"
+#include "products/gym/adapters/http/GymSchema.h"
+#include "products/gym/sync/GymProduct.h"
 
 #include <drogon/drogon.h>
 
@@ -30,7 +31,7 @@ namespace wm::gym {
 // method, its path and the reason it hangs where it does are read in one column. Every path below is
 // owner-scoped except public shares and installation-scoped Coach onboarding.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
-  WriteRoutes routes(app, "gym");
+  GymRoutes routes(app, engine::registry().minVersion());
   if (deps.onboarding && deps.installations) {
     auto onboarding = std::make_shared<OnboardingApi>(deps.onboarding, deps.installations, deps.failures);
     if (deps.onShutdown) deps.onShutdown([onboarding] { onboarding->stop(); });

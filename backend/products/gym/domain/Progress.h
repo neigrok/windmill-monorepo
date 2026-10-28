@@ -2,11 +2,22 @@
 
 #include "products/gym/domain/Training.h"
 
+#include <compare>
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 namespace wm::gym {
+
+struct EstimateScore {
+  std::string digits = "0";
+  int exponent = 0;
+
+  EstimateScore() = default;
+  EstimateScore(double weightKg, int reps);
+  std::strong_ordering operator<=>(const EstimateScore& other) const;
+  bool operator==(const EstimateScore&) const = default;
+};
 
 // The one e1RM rule (brand foundations, Gym), the `GymEstimate` both phones and the web hold and
 // packages/api-contract/gym/domain/training-reads.json pins. A set earns an estimate only at a positive load, for one
@@ -14,8 +25,8 @@ namespace wm::gym {
 // precision, and every reply states it to a tenth with `stated` as its last step. `score` is how two estimates
 // compare, exactly where their Epley values cannot: the load in whole cents times 30 for one rep, or 30 + reps.
 struct Estimate {
-  double e1rm;
-  std::int64_t score;
+  std::optional<double> e1rm;
+  EstimateScore score;
 
   static std::optional<Estimate> of(double weightKg, int reps, std::optional<double> rpe);
   static double stated(double e1rm);
@@ -64,6 +75,7 @@ struct MovementSessionFact {
   PerformedFact heaviest;
   std::optional<EstimatedFact> estimate;
   std::optional<PerformedFact> mostReps;
+  bool estimatesComplete = true;
 
   bool operator==(const MovementSessionFact&) const = default;
 };
@@ -104,6 +116,8 @@ struct MovementSeries {
   std::vector<Point> points;
 
   MovementSeries(const std::vector<ProgressSession>& sessions, const ExerciseId& exercise);
+
+  bool estimatesComplete() const;
 
   // The highest estimate, by score.
   std::optional<Point> best() const;

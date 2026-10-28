@@ -297,3 +297,34 @@ test('minimal full charts keep endpoint axes, every gap below the plot and keybo
   const axes = elementsOf(screen.tree).find(each => each.type === 'svg' && each.props['aria-hidden']);
   assert.deepEqual(elementsOf(axes).filter(each => each.type === 'text').map(textOf), ['60', '80', '1 Aug', '30 Aug']);
 });
+
+
+test('extreme finite series keep finite enclosing axes and bounded geometry in every chart mode', async () => {
+  const { dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  const maximum = Number.MAX_VALUE;
+  for (const values of [[1e308], [maximum], [-maximum], [maximum * (1 - Number.EPSILON), maximum],
+    [-maximum, -maximum * (1 - Number.EPSILON)], [8e307, 1e308], [-1e308, -8e307], [-maximum, 0, maximum]]) {
+    for (const mode of [{}, { compact: true }, { minimal: true }]) {
+      const layout = dotChartLayout({ ...words, ...mode, points: values.map((value, i) => ({ at: AUG(i + 1), value })) });
+      assert.deepEqual(layout.dots.map((dot) => dot.point.value), values);
+      assert.ok(layout.yTicks.length >= 2 && layout.yTicks.length <= 12);
+      assert.ok(layout.yTicks.every((tick) => Number.isFinite(tick.value) && Number.isFinite(tick.y)));
+      for (const dot of layout.dots) {
+        assert.ok(Number.isFinite(dot.x) && Number.isFinite(dot.y));
+        assert.ok(dot.y >= layout.plot.top && dot.y <= layout.plot.bottom);
+      }
+      const ordered = [...layout.dots].sort((a, b) => a.point.value - b.point.value);
+      assert.ok(ordered.every((dot, i) => i === 0 || dot.y <= ordered[i - 1].y));
+      for (const segment of layout.segments) assert.ok(Object.values(segment).every(Number.isFinite));
+    }
+  }
+  const signed = dotChartLayout({ ...words, compact: true, points: [-maximum, 0, maximum].map((value, i) => ({ at: AUG(i + 1), value })) });
+  assert.deepEqual(signed.yTicks.map((tick) => tick.value), [-maximum, maximum]);
+  assert.deepEqual(signed.dots.map((dot) => dot.y), [194, 97, 0]);
+});
+
+test('nonfinite converted values never enter chart geometry', async () => {
+  const { dotChartLayout } = await loadScreen('design-system/charts/DotChart.jsx');
+  const layout = dotChartLayout({ ...words, points: [Infinity, -Infinity, NaN].map((value) => ({ at: AUG(1), value })) });
+  assert.deepEqual([layout.dots, layout.yTicks, layout.xTicks], [[], [], []]);
+});

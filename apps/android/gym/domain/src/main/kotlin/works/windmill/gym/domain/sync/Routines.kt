@@ -17,7 +17,7 @@ data class SetTarget(val reps: Int? = null, val weightKg: Double? = null) : Valu
         if (reps == 0) throw Violation("routine.zeroTarget", at + "reps", Violation.Reason.Custom("zeroTarget"))
         val checkedReps = RoutineRules.targetReps.applyOptional(reps, at + "reps")
         val rounded = RoutineRules.targetWeight.applyOptional(weightKg, at + "weightKg")
-        if (rounded == 0.0) throw Violation("routine.zeroTarget", at + "weightKg", Violation.Reason.Custom("zeroTarget"))
+        if (rounded == 0.0 && weightKg != 0.0) throw Violation("routine.zeroTarget", at + "weightKg", Violation.Reason.Custom("zeroTarget"))
         return copy(reps = checkedReps, weightKg = rounded)
     }
     companion object : ValueType<SetTarget> {
@@ -87,7 +87,7 @@ object RoutineRules {
     val entries = CountSpec("routine.entries", 1, 50)
     val targets = CountSpec("routine.entries.sets", 1, 20)
     val targetReps = NumberSpec("routine.entries.sets.reps", 1.0, 100.0, integer = true)
-    val targetWeight = NumberSpec("routine.entries.sets.weightKg", -500.0, 500.0, quantum = 0.01)
+    val targetWeight = NumberSpec("routine.entries.sets.weightKg", quantum = 0.01)
     val rest = NumberSpec("routine.entries.restSeconds", 15.0, 900.0, integer = true)
     val exercise = TextSpec("routine.entries.exerciseId", MeasureUnit.chars, 1, 64, false, false)
     val rules = listOf(name, position, entries, targets, targetReps, targetWeight, rest, exercise).map(Rule::local) + Rule.local("routine.zeroTarget", Routine.type)

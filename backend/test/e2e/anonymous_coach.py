@@ -14,6 +14,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import coach_live
+from gym_http import gym_headers
 
 
 def photo_bytes(maximum=False):
@@ -90,7 +91,7 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
 
     def call(self, method, path, body=None, credential=None, account=None):
         connection = http.client.HTTPConnection("127.0.0.1", 8088, timeout=30)
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", **gym_headers(path)}
         if credential:
             headers["X-Windmill-Installation"] = credential
         if account:

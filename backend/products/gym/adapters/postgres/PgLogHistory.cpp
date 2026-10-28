@@ -5,6 +5,9 @@
 
 #include <pqxx/pqxx>
 
+#include <cmath>
+#include <stdexcept>
+
 namespace wm::gym {
 namespace {
 
@@ -14,10 +17,10 @@ std::string historySource(pqxx::transaction_base& txn, const UserId& user) {
       "'finishedAt',(extract(epoch from s.finished_at)*1000)::bigint,"
       "'routineId',coalesce(s.history_routine_id,''),'routineName',coalesce(s.display_name,s.plan->>'routine',''),"
       "'sets',coalesce((SELECT jsonb_agg(jsonb_build_object('id',st.id,'exerciseId',st.exercise_id,"
-      "'exercise',coalesce(n.name,e.name),'equipment',coalesce(n.equipment,e.equipment),'loadCount',coalesce(n.load_count,e.load_count,0),'setNumber',st.set_number,'weightKg',st.weight_kg,"
+      "'exercise',coalesce(n.name,e.name),'equipment',coalesce(n.equipment,e.equipment),'loadCount',coalesce(n.load_count,e.load_count,0),'movementAvailable',e.id IS NOT NULL,'setNumber',st.set_number,'weightKg',st.weight_kg,"
       "'reps',st.reps,'rpe',st.rpe,'completedAt',(extract(epoch from st.completed_at)*1000)::bigint,"
       "'working',st.kind='working') ORDER BY st.completed_at,st.set_number,st.id COLLATE \"C\") "
-      "FROM gym_sets st JOIN gym_exercises e ON e.id=st.exercise_id "
+      "FROM gym_sets st LEFT JOIN gym_exercises e ON e.id=st.exercise_id "
       "LEFT JOIN gym_exercise_names n ON n.exercise_id=e.id AND n.user_id=s.user_id "
       "WHERE st.session_id=s.id AND st.user_id=s.user_id),'[]'::jsonb)) AS workout "
       "FROM gym_sessions s WHERE s.user_id=" + txn.quote(user.str()) + "::uuid "
@@ -55,8 +58,8 @@ HistoryPage readHistory(pqxx::transaction_base& txn, const std::string& source,
       "(SELECT count(*)::int FROM scope) AS session_count,"
       "(SELECT count(*)::int FROM facts WHERE (fact->>'working')::boolean) AS set_count,"
       "(SELECT coalesce(sum((fact->>'reps')::int),0)::int FROM facts WHERE (fact->>'working')::boolean) AS reps,"
-      "(SELECT coalesce(sum(greatest((fact->>'weightKg')::numeric,0)*(fact->>'reps')::int * CASE WHEN fact->>'equipment'='dumbbell' AND coalesce((fact->>'loadCount')::int,0)<>1 THEN 2 ELSE 1 END),0)::float8 "
-      "FROM facts WHERE (fact->>'working')::boolean) AS tonnage,"
+      "(SELECT coalesce(jsonb_agg(fact ORDER BY (fact->>'id') COLLATE \"C\"),'[]') "
+      "FROM facts WHERE (fact->>'working')::boolean)::text AS volume_facts,"
       "(SELECT coalesce(jsonb_agg(m ORDER BY month DESC),'[]') FROM (SELECT "
       "to_char(to_timestamp(started_ms/1000.0) AT TIME ZONE " + txn.quote(query.timeZone) + ",'YYYY-MM') AS month,count(*)::int AS sessions "
       "FROM scope GROUP BY month) m)::text AS months,"
@@ -73,8 +76,22 @@ HistoryPage readHistory(pqxx::transaction_base& txn, const std::string& source,
     page.sessions.push_back(historyWorkoutFrom(workout));
   page.hasMore = page.sessions.size() > static_cast<std::size_t>(query.limit);
   if (page.hasMore) page.sessions.resize(query.limit);
+  std::vector<VolumePart> volume;
+  const auto facts = parse(row["volume_facts"].as<std::string>());
+  if (!facts.isArray()) throw std::runtime_error("stored history set has unavailable numeric facts");
+  for (const Json::Value& fact : facts) {
+    if (!fact["weightKg"].isNumeric() || !std::isfinite(fact["weightKg"].asDouble()) ||
+        !fact["reps"].isInt() || fact["reps"].asInt() <= 0)
+      throw std::runtime_error("stored history set has unavailable numeric facts");
+    std::optional<int> count;
+    if (fact.get("movementAvailable", true).asBool()) {
+      const auto equipment = equipmentFromStored(fact.get("equipment", "barbell").asString());
+      count = equipment == Equipment::dumbbell && fact.get("loadCount", 0).asInt() != 1 ? 2 : 1;
+    }
+    volume.emplace_back(fact["id"].asString(), fact["weightKg"].asDouble(), fact["reps"].asInt(), count);
+  }
   page.summary = HistoryTotals{row["session_count"].as<int>(), row["set_count"].as<int>(),
-                              row["reps"].as<int>(), row["tonnage"].as<double>()};
+                              row["reps"].as<int>(), totalVolume(std::move(volume))};
   for (const Json::Value& month : parse(row["months"].as<std::string>()))
     page.months.push_back(HistoryMonth{month["month"].asString(), month["sessions"].asInt()});
   for (const Json::Value& facet : parse(row["exercises"].as<std::string>()))

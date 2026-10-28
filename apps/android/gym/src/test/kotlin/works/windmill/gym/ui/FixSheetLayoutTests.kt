@@ -85,9 +85,9 @@ class FixSheetLayoutTests {
         val layouts = mutableListOf<TextLayoutResult>()
         field.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)
         assertFalse(layouts.single().hasVisualOverflow)
-        field.performTextReplacement("-500.001")
+        field.performTextReplacement("-1e999")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
-        compose.onNodeWithText("Over 500 kg — check the number.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("That is not a number yet.").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<SetFix>(), saved) }
         field.performScrollTo().performTextReplacement("-499.99")
         compose.onNodeWithText("Save fix").performScrollTo().performClick()

@@ -1,4 +1,5 @@
 import { API_BASE } from '../../shell/apiBase.js';
+import { registry } from '../../platform/sync/schema.js';
 import { readCoachStream } from './coach/stream.js';
 import { GymError } from './errors.js';
 
@@ -8,7 +9,7 @@ async function call(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     credentials: 'include',
     ...options,
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    headers: { 'content-type': 'application/json', ...(options.headers || {}), 'Sync-Schema': String(registry.version) },
   });
   return response;
 }
@@ -91,6 +92,7 @@ export const gymApi = {
       upload.open('PUT', `${base}/threads/${encodeURIComponent(thread)}/attachments/${encodeURIComponent(id)}`);
       upload.withCredentials = true;
       upload.setRequestHeader('content-type', blob.type);
+      upload.setRequestHeader('Sync-Schema', String(registry.version));
       upload.upload.onprogress = (event) => { if (event.lengthComputable) onProgress?.(event.loaded / event.total); };
       upload.onload = () => finish(() => {
         let body;

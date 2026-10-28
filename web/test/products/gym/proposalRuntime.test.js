@@ -250,8 +250,8 @@ test('a failed push result transaction keeps the pending receipt and replays the
   const a = await open(t);
   const pending = (await a.runtime.applyProposal(proposalId)).proposal;
   const snapshot = structuredClone(a.receipts());
-  // Send writes its numbered command, offset sample, then the result and receipt together.
-  failCommit(a.engine, 3);
+  // Fresh hello, numbering, push offset, then the result and receipt together.
+  failCommit(a.engine, 4);
   await a.engine.send();
   const sent = a.env.requests.filter(({ endpoint }) => endpoint === 'push').at(-1).request.intents;
   assert.deepEqual(a.engine.device.activeReplica.entries().map(({ state }) => state), ['sent']);
@@ -259,7 +259,7 @@ test('a failed push result transaction keeps the pending receipt and replays the
   assert.deepEqual((await a.engine.store.read()).device.activeReplica.deviceRows('gym')[REMOVAL_RECEIPTS], snapshot);
   assert.deepEqual(await a.runtime.removalReceipts(), [pending]);
   assert.deepEqual(a.visible('routine'), []);
-  assert.deepEqual(a.env.failures, ['storage', 'transport']);
+  assert.deepEqual(a.env.failures, ['storage']);
   await a.reopen();
   assert.deepEqual(await a.runtime.applyProposal(proposalId), { proposal: pending });
   await a.sync();

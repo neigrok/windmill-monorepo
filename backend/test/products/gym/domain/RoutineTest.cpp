@@ -3,6 +3,7 @@
 #include "test/testing.h"
 
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -63,15 +64,16 @@ TEST(set_target_accepts_the_full_legal_range_and_keeps_every_absence) {
 TEST(set_target_refuses_its_bounds_with_the_pinned_sentences) {
   CHECK_EQ(refusal([] { SetTarget(0, 82.5); }), std::string("a set names its reps 1 to 100"));
   CHECK_EQ(refusal([] { SetTarget(101, 82.5); }), std::string("a set names its reps 1 to 100"));
-  CHECK_EQ(refusal([] { SetTarget(5, 500.5); }),
-           std::string("a set names its load inside ±500 kg"));
-  CHECK_EQ(refusal([] { SetTarget(5, -500.5); }),
-           std::string("a set names its load inside ±500 kg"));
+  CHECK_EQ(refusal([] { SetTarget(5, std::numeric_limits<double>::infinity()); }), std::string("a set names a finite load"));
+  CHECK_EQ(refusal([] { SetTarget(5, 0.001); }), std::string("a set load supports at most two decimal places"));
 }
 
-// The column holds two decimals, so the entity does too: two schemes compare as the store compares
-// them, and a load that rounds inside the band is inside it.
-TEST(set_target_rounds_its_load_to_the_two_decimals_the_column_holds) {
+TEST(set_target_normalizes_loads_and_distinguishes_zero_from_absence) {
+  CHECK_EQ(SetTarget(5, 0).weightKg, std::optional<double>(0));
+  CHECK_EQ(SetTarget(5, 501).weightKg, std::optional<double>(501));
+  CHECK_EQ(SetTarget(5, -501).weightKg, std::optional<double>(-501));
+  CHECK_EQ(SetTarget(5, std::numeric_limits<double>::max()).weightKg, std::optional<double>(std::numeric_limits<double>::max()));
+  CHECK_EQ(SetTarget(5, 35333333333333.34), SetTarget(5, *SetTarget(5, 35333333333333.34).weightKg));
   CHECK_EQ(SetTarget(5, 82.333).weightKg, std::optional<double>(82.33));
   CHECK_EQ(SetTarget(5, 82.335), SetTarget(5, 82.34));
   CHECK_EQ(SetTarget(5, 500.004).weightKg, std::optional<double>(500.0));

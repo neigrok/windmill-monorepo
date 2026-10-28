@@ -90,7 +90,7 @@
         "key": "KEYCODE_DEL"
       },
       {
-        "text": "501"
+        "text": "-"
       },
       {
         "keyboard": "hide"
@@ -99,7 +99,7 @@
         "tap": "Save fix"
       },
       {
-        "wait": "Over 500 kg \u2014 check the number."
+        "wait": "Enter a number, or cancel to keep 75"
       }
     ],
     "after": [

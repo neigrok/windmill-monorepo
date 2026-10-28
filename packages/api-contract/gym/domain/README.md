@@ -2,13 +2,13 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v8/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
+v10/minimum-10 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
 Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
 R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
 The server claims the `training-reads.json` cases that make an estimate, by the one e1RM rule it holds as
-`Estimate` (`backend/products/gym/domain/Progress.h`): every `GymEstimate` case in its domain suite
+`Estimate` (`backend/products/gym/domain/Progress.h`): every `GymEstimate` and `GymEstimateScore` case in its domain suite
 (`backend/test/products/gym/domain/ProgressTest.cpp`), and every `StatsProgress` case and `TrainingHistory` review and
 stats case over Postgres (`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's
 records into the engine's stores and reads them through `TrainingService`. The server's wire states a review's and the
@@ -40,6 +40,8 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
+
+Entity vectors may name `nonFinite: {path, value}` with `NaN`, `Infinity` or `-Infinity` to exercise the declared field check on a typed draft value. The harness exercises that check before completing whole-entity validation, keeping non-finite numbers outside wire JSON and production decoders.
 
 Every JSON vector file is an array of `{name, input, expect}`. The kit's
 [forms](../../domain-kit/README.md) define specs, violations, row scenes, gestures and decisions.

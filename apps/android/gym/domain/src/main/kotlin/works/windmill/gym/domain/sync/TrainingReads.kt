@@ -1,23 +1,86 @@
 package works.windmill.gym.domain.sync
 
-import kotlin.math.abs
 import works.windmill.domain.kit.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.Quantum
 
-object GymEstimate {
-    fun value(weightKg: Double, reps: Int, rpe: Double? = null): Double? {
-        if (!weightKg.isFinite() || weightKg <= 0 || reps !in 1..10 ||
-            (rpe != null && (!rpe.isFinite() || rpe < 7))) return null
-        return if (reps == 1) weightKg else weightKg * (1 + reps / 30.0)
+object GymVolume {
+    fun total(parts: List<VolumePart>): Double? {
+        var total = 0.0
+        for (part in parts.sortedBy { it.id }) {
+            total += part.kg ?: return null
+            if (!total.isFinite()) return null
+        }
+        return total
+    }
+    fun of(sets: List<TrainingSet>, catalogue: Catalogue): Double? = total(sets.map {
+        VolumePart(it.id.json.jcs, it.weightKg, it.reps, catalogue.find(it.exerciseId)?.loadCount)
+    })
+}
+
+class EstimateScore(weightKg: Double, reps: Int) : Comparable<EstimateScore> {
+    val digits: String
+    val exponent: Int
+
+    init {
+        require(weightKg.isFinite() && weightKg >= 0 && reps in 1..10)
+        val parts = Json.of(Quantum(0.01).rounded(weightKg)).jcs.split('e')
+        val mantissa = parts[0].split('.')
+        var power = (if (parts.size == 2) parts[1].toInt() else 0) + 2 - (if (mantissa.size == 2) mantissa[1].length else 0)
+        val product = mantissa.joinToString("").trimStart('0').ifEmpty { "0" }.toCharArray()
+        var carry = 0
+        val factor = if (reps == 1) 30 else 30 + reps
+        for (index in product.indices.reversed()) {
+            val number = (product[index] - '0') * factor + carry
+            product[index] = ('0'.code + number % 10).toChar()
+            carry = number / 10
+        }
+        val multiplied = (if (carry > 0) carry.toString() else "") + product.concatToString()
+        val compact = multiplied.trimEnd('0')
+        power += multiplied.length - compact.length
+        digits = compact.ifEmpty { "0" }
+        exponent = if (digits == "0") 0 else power
     }
 
-    fun score(weightKg: Double, reps: Int, rpe: Double? = null): Double? {
-        if (value(weightKg, reps, rpe) == null) return null
-        return Quantum.halfAway(weightKg * 100) * (if (reps == 1) 30 else 30 + reps)
+    override fun compareTo(other: EstimateScore): Int {
+        if (digits == "0" || other.digits == "0") return (digits != "0").compareTo(other.digits != "0")
+        val length = digits.length + exponent
+        val otherLength = other.digits.length + other.exponent
+        if (length != otherLength) return length.compareTo(otherLength)
+        for (index in 0 until maxOf(digits.length, other.digits.length)) {
+            val left = digits.getOrElse(index) { '0' }
+            val right = other.digits.getOrElse(index) { '0' }
+            if (left != right) return left.compareTo(right)
+        }
+        return 0
+    }
+    override fun equals(other: Any?): Boolean = other is EstimateScore && digits == other.digits && exponent == other.exponent
+    override fun hashCode(): Int = 31 * digits.hashCode() + exponent
+    companion object { val zero = EstimateScore(0.0, 1) }
+}
+
+object GymEstimate {
+    fun qualifies(weightKg: Double, reps: Int, rpe: Double?): Boolean = weightKg.isFinite() && weightKg > 0 && reps in 1..10 &&
+        (rpe == null || rpe.isFinite() && rpe >= 7)
+
+    fun value(weightKg: Double, reps: Int, rpe: Double? = null): Double? {
+        if (!qualifies(weightKg, reps, rpe)) return null
+        val value = if (reps == 1) weightKg else weightKg * (1 + reps / 30.0)
+        return value.takeIf { it.isFinite() }
+    }
+
+    fun score(weightKg: Double, reps: Int, rpe: Double? = null): EstimateScore? {
+        if (!qualifies(weightKg, reps, rpe)) return null
+        return EstimateScore(weightKg, reps)
     }
 
     fun stated(e1rm: Double): Double = Quantum(0.1).rounded(e1rm)
+
+    fun top(sets: List<TrainingSet>): Double? {
+        val eligible = sets.filter { qualifies(it.weightKg, it.reps, it.rpe) }
+        if (eligible.any { it.e1rm == null }) return null
+        return eligible.mapNotNull { it.e1rm }.maxOrNull()
+    }
 }
 
 class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catalogue) {
@@ -26,8 +89,8 @@ class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catal
     val durationMs = session.finishedAt?.let { maxOf(0, it.ms - session.startedAt.ms) }
     val workingSetCount = sets.count { it.sessionId == session.id }
     val movementCount = sets.filter { it.sessionId == session.id }.map { it.exerciseId }.toSet().size
-    val volumeKg = sets.filter { it.sessionId == session.id }.sumOf { it.volumeFor(catalogue.find(it.exerciseId)) }
-    val topE1rm = sets.filter { it.sessionId == session.id }.mapNotNull { it.e1rm }.maxOrNull()
+    val volumeKg = GymVolume.of(sets.filter { it.sessionId == session.id }, catalogue)
+    val topE1rm = GymEstimate.top(sets.filter { it.sessionId == session.id })
 }
 
 data class LastTime(val exerciseId: Id<Exercise>, val session: Session? = null,
@@ -77,22 +140,23 @@ data class PerformedFact(val setId: Id<TrainingSet>, val weightKg: Double, val r
     })
 }
 
-data class EstimatedFact(val performed: PerformedFact, val e1rm: Double) {
-    constructor(set: TrainingSet, e1rm: Double) : this(PerformedFact(set), e1rm)
+data class EstimatedFact(val performed: PerformedFact, val e1rm: Double?) {
+    constructor(set: TrainingSet, e1rm: Double?) : this(PerformedFact(set), e1rm)
     val setId get() = performed.setId
     val weightKg get() = performed.weightKg
     val reps get() = performed.reps
     val rpe get() = performed.rpe
-    val score get() = GymEstimate.score(weightKg, reps, rpe) ?: 0.0
-    val json: Json get() = Json.Obj(performed.json.obj().toList() + ("e1rm" to Json.of(e1rm)))
+    val score get() = GymEstimate.score(weightKg, reps, rpe) ?: EstimateScore.zero
+    val json: Json get() = Json.Obj(performed.json.obj().toList() + ("e1rm" to (e1rm?.let(Json::of) ?: Json.Null)))
 }
 
 data class MovementSessionFact(val exerciseId: Id<Exercise>, val workingSetCount: Int,
     val heaviest: PerformedFact, val mostReps: PerformedFact, val estimate: EstimatedFact? = null,
-    val bodyweightReps: PerformedFact? = null) {
+    val bodyweightReps: PerformedFact? = null, val estimatesComplete: Boolean = true) {
     val json: Json get() = Json.Obj(buildList {
         add("exerciseId" to exerciseId.json); add("workingSetCount" to Json.of(workingSetCount)); add("heaviest" to heaviest.json)
         estimate?.let { add("estimate" to it.json) }
+        if (!estimatesComplete) add("estimatesComplete" to Json.Bool(false))
     })
 }
 
@@ -108,10 +172,12 @@ data class StatsProgress(val asOf: Instant, val sessions: List<ProgressSession>,
                 .toSortedMap().map { (exerciseId, sets) ->
                     val heaviest = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).first()
                     val mostReps = sets.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenByDescending { it.weightKg }.thenBy { it.id }).first()
-                    val estimate = sets.mapNotNull { set -> set.e1rm?.let { EstimatedFact(set, it) } }
+                    val estimates = sets.filter { GymEstimate.qualifies(it.weightKg, it.reps, it.rpe) }.map { EstimatedFact(it, it.e1rm) }
+                    val estimate = estimates
                         .sortedWith(compareByDescending<EstimatedFact> { it.score }.thenBy { it.setId }).firstOrNull()
                     val bodyweightReps = sets.filter { it.weightKg == 0.0 }.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenBy { it.id }).firstOrNull()
-                    MovementSessionFact(exerciseId, sets.size, PerformedFact(heaviest), PerformedFact(mostReps), estimate, bodyweightReps?.let(::PerformedFact))
+                    MovementSessionFact(exerciseId, sets.size, PerformedFact(heaviest), PerformedFact(mostReps), estimate,
+                        bodyweightReps?.let(::PerformedFact), estimates.all { it.e1rm != null })
                 }
             if (movements.isEmpty()) null else ProgressSession(session.id, session.startedAt, movements)
         }.sortedWith(compareBy({ it.startedAt }, { it.sessionId })), log.firstPullComplete)
@@ -121,7 +187,11 @@ data class StatsProgress(val asOf: Instant, val sessions: List<ProgressSession>,
     fun movement(exerciseId: Id<Exercise>): MovementProgress = MovementProgress(exerciseId, sessions.mapNotNull { session ->
         session.movements.firstOrNull { it.exerciseId == exerciseId }?.let { MovementProgress.Point(session.sessionId, session.startedAt, it) }
     }, isComplete)
-    fun sessionEstimate(id: Id<Session>): Double? = sessions.firstOrNull { it.sessionId == id }?.movements?.mapNotNull { it.estimate?.e1rm }?.maxOrNull()
+    fun sessionEstimate(id: Id<Session>): Double? {
+        val movements = sessions.firstOrNull { it.sessionId == id }?.movements ?: return null
+        if (movements.any { !it.estimatesComplete }) return null
+        return movements.mapNotNull { it.estimate?.e1rm }.maxOrNull()
+    }
     fun consistency(now: Instant, zone: Zone): Int? {
         if (!isComplete) return null
         val today = LocalDay.from(now, zone)
@@ -139,9 +209,10 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
     data class Point(val id: Id<Session>, val startedAt: Instant, val fact: MovementSessionFact)
     data class Gap(val before: Point, val after: Point)
     val sessions = sessions.sortedWith(compareBy({ it.startedAt }, { it.id }))
-    val estimates: List<Point> get() = sessions.filter { it.fact.estimate != null }
+    val estimatesComplete: Boolean get() = sessions.all { it.fact.estimatesComplete }
+    val estimates: List<Point> get() = if (estimatesComplete) sessions.filter { it.fact.estimate?.e1rm != null } else emptyList()
     val latest: Point? get() = estimates.lastOrNull()
-    val best: Point? get() = if (!isComplete) null else estimates.sortedWith(compareByDescending<Point> { it.fact.estimate!!.score }
+    val best: Point? get() = if (!isComplete || !estimatesComplete) null else estimates.sortedWith(compareByDescending<Point> { it.fact.estimate!!.score }
         .thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
     val heaviest: Point? get() = if (!isComplete) null else sessions.sortedWith(compareByDescending<Point> { it.fact.heaviest.weightKg }
         .thenByDescending { it.fact.heaviest.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
@@ -150,9 +221,10 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
     val bodyweightReps: Point? get() = if (!isComplete) null else sessions.filter { it.fact.bodyweightReps != null }
         .sortedWith(compareByDescending<Point> { it.fact.bodyweightReps!!.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
     val records: List<Point> get() {
-        if (!isComplete) return emptyList()
+        if (!isComplete || !estimatesComplete) return emptyList()
         val records = mutableListOf<Point>()
-        for (point in estimates) if (point.fact.estimate!!.score > (records.lastOrNull()?.fact?.estimate?.score ?: 0.0)) records.add(point)
+        for (point in estimates) if (records.isEmpty() || GymEstimate.stated(point.fact.estimate!!.e1rm!!) >
+            GymEstimate.stated(records.last().fact.estimate!!.e1rm!!)) records.add(point)
         return records
     }
     fun window(now: Instant, zone: Zone): MovementProgress {
@@ -160,7 +232,7 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
         return MovementProgress(exerciseId, sessions.filter { it.startedAt <= now && LocalDay.from(it.startedAt, zone) >= start }, isComplete)
     }
     fun hasChart(zone: Zone): Boolean {
-        if (!isComplete) return false
+        if (!isComplete || !estimatesComplete) return false
         val points = estimates
         if (points.size < 4) return false
         return LocalDay.from(points.first().startedAt, zone).daysUntil(LocalDay.from(points.last().startedAt, zone)) >= 21
@@ -183,9 +255,10 @@ class ProgressRecords(val progress: StatsProgress) {
     init {
         val series = linkedMapOf<Id<Exercise>, MutableList<Stated>>()
         if (progress.isComplete) for (session in progress.sessions) for (fact in session.movements) {
-            val estimate = fact.estimate ?: continue
+            if (!progress.movement(fact.exerciseId).estimatesComplete) continue
+            val estimate = fact.estimate?.e1rm ?: continue
             series.getOrPut(fact.exerciseId) { mutableListOf() } +=
-                Stated(MovementProgress.Point(session.sessionId, session.startedAt, fact), GymEstimate.stated(estimate.e1rm))
+                Stated(MovementProgress.Point(session.sessionId, session.startedAt, fact), GymEstimate.stated(estimate))
         }
         movements = series.mapValues { (_, estimates) ->
             var best = estimates.first()
@@ -213,12 +286,8 @@ object Readout {
 
     fun weight(kg: Double, units: GymUnits = GymUnits.kg): String {
         val value = WeightLadder.round(units.display(kg))
-        if (!value.isFinite()) return value.toString()
-        val hundredths = Quantum.halfAway(abs(value) * 100).toLong()
-        val whole = (hundredths / 100).toString()
-        val tail = hundredths % 100
-        val digits = if (tail == 0L) whole else if (tail % 10 == 0L) "$whole.${tail / 10}" else "$whole.${tail.toString().padStart(2, '0')}"
-        return (if (value < 0) "−" else "") + digits
+        if (!value.isFinite()) return "—"
+        return Json.of(value).jcs.replace('-', '−')
     }
     fun effort(weightKg: Double, reps: Int, units: GymUnits = GymUnits.kg): String = "${weight(weightKg, units)} × $reps"
     fun estimatedWeight(e1rm: Double, units: GymUnits = GymUnits.kg): String =
@@ -246,8 +315,10 @@ object Readout {
     }
     fun tonnes(kg: Double): String? {
         if (!kg.isFinite() || kg <= 0) return null
-        val tenths = Quantum.halfAway(kg / 100).toLong()
-        return if (tenths > 0) "${tenths / 10}.${tenths % 10} t" else null
+        val tonnes = Quantum(0.1).rounded(kg / 1000)
+        if (tonnes <= 0) return null
+        val digits = Json.of(tonnes).jcs
+        return "${if ('.' in digits || 'e' in digits) digits else "$digits.0"} t"
     }
     fun duration(milliseconds: Long): String {
         val minutes = maxOf(1L, milliseconds / 60_000)

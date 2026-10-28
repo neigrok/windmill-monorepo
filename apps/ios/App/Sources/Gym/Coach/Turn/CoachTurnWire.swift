@@ -1,5 +1,6 @@
 import Foundation
 import GymDomain
+import SyncSchema
 import SyncCore
 
 // The Coach turn wire (Coach §6): the four routes a phone speaks during a turn, over URLSession, and the frames the turn
@@ -203,6 +204,7 @@ nonisolated struct TurnSSE {
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else { throw URLError(.badURL) }
     var request = URLRequest(url: url)
     request.httpMethod = method
+    request.setValue(String(SyncSchema.version), forHTTPHeaderField: "Sync-Schema")
     request.httpBody = body
     request.timeoutInterval = Self.idleTimeout
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }

@@ -102,8 +102,10 @@ NOW=$(python3 -c "import time;print(int(time.time()*1000))")
 psql windmill -q -c "INSERT INTO users (id,email) VALUES ('$PROBE_USER_ID','probe-$RANDOM@example.com')"
 psql windmill -q -c "INSERT INTO sessions (token_hash,user_id,expires_ms) \
   VALUES ('$HASH','$PROBE_USER_ID',$((NOW+86400000)))"
-# either header works — the caller seam reads the cookie OR the bearer:
-curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET"
+# either credential works — the caller seam reads the cookie OR the bearer:
+GYM_SCHEMA=$(python3 -c 'import json; print(json.load(open("packages/api-contract/sync/gym.registry.json"))["version"])')
+G="Sync-Schema: $GYM_SCHEMA"
+curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET" -H "$G"
 ```
 
 Record ids are global, so prefix anything you seed (`ses_probe*`, `set_probe*`) and a parallel
@@ -203,27 +205,29 @@ the workouts below never overlap.
 
 ```sh
 C="Authorization: Bearer $SECRET"; J='content-type: application/json'
+GYM_SCHEMA=$(python3 -c 'import json; print(json.load(open("packages/api-contract/sync/gym.registry.json"))["version"])')
+G="Sync-Schema: $GYM_SCHEMA"
 NOW=$(python3 -c "import time;print(int(time.time()*1000))")
-curl -s localhost:8088/v1/gym/exercises -H "$C"                     # 64 seeded movements
+curl -s localhost:8088/v1/gym/exercises -H "$C" -H "$G"                     # 64 seeded movements
 
 # A live workout: start, log, finish.
 mcp gym_start_session "{\"id\":\"ses_probe0001\",\"startedAt\":$((NOW-3600000))}"
 mcp gym_log_sets "{\"sessionId\":\"ses_probe0001\",\"sets\":[{\"id\":\"set_probe0001\",
   \"exerciseId\":\"bench-press\",\"weightKg\":82.5,\"reps\":8,\"completedAt\":$((NOW-3000000))}]}"
 mcp gym_finish_session "{\"sessionId\":\"ses_probe0001\",\"finishedAt\":$((NOW-60000))}"
-curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C"    # the prefill read
+curl -s "localhost:8088/v1/gym/last?exercise=bench-press" -H "$C" -H "$G"    # the prefill read
 
 # Routines and the frozen plan. An entry takes `exerciseId`, `sets`, `restSeconds`; `sets` is the
 # per-set scheme, each `{reps, weightKg}` with either OMITTED.
-# No `sets` is an open line; an empty array is refused. Absences survive into the frozen `plan`; a
-# zero would be a target the lifter never set.
+# No `sets` is an open line; an empty array is refused. Absence survives into the frozen `plan`;
+# an explicit zero load is a valid target and remains distinct from absence.
 mcp gym_create_routine '{"id":"rt_probe00001","name":"Push A","position":0,"entries":[
   {"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}]},
   {"exerciseId":"chin-up","sets":[{"reps":8},{"reps":8},{"reps":8}]},
   {"exerciseId":"barbell-row"}]}'
-curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C"   # `history` rides on this read only; the list omits it
+curl -s localhost:8088/v1/gym/routines/rt_probe00001 -H "$C" -H "$G"   # `history` rides on this read only; the list omits it
 mcp gym_start_session "{\"id\":\"ses_probe0002\",\"startedAt\":$NOW,\"routineId\":\"rt_probe00001\"}"   # freezes `plan`
-curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C"
+curl -s localhost:8088/v1/gym/sessions/ses_probe0002/review -H "$C" -H "$G"
 mcp gym_discard_session '{"sessionId":"ses_probe0002"}'       # refused session-open while it runs
 mcp gym_finish_session "{\"sessionId\":\"ses_probe0002\",\"finishedAt\":$NOW}"
 mcp gym_discard_session '{"sessionId":"ses_probe0002"}'
@@ -232,30 +236,31 @@ mcp gym_discard_session '{"sessionId":"ses_probe0002"}'
 # the same body again → 200; a span crossing a finished session → 409 session-overlap {sessionId,
 # session}; the open session never blocks it. `gym_import_session` admits the same command over MCP.
 S=$((NOW-10800000)); F=$((S+3600000))
-curl -s -X POST localhost:8088/v1/gym/sessions/import -H "$C" -H "$J" -d "{\"id\":\"ses_probe0101\",
+curl -s -X POST localhost:8088/v1/gym/sessions/import -H "$C" -H "$G" -H "$J" -d "{\"id\":\"ses_probe0101\",
   \"startedAt\":$S,\"finishedAt\":$F,\"routineId\":\"rt_probe00001\",\"sets\":[
   {\"id\":\"set_probe0101\",\"exerciseId\":\"bench-press\",\"weightKg\":60,\"reps\":5,\"completedAt\":$((S+600000))}]}"
-curl -s localhost:8088/v1/gym/sessions -H "$C"
+curl -s localhost:8088/v1/gym/sessions -H "$C" -H "$G"
 ```
 
 ### As a phone writes: `/v1/sync`
 
-Every request carries `Sync-Schema`, the registry version the apps speak. Hello answers the server's
+Every sync and active Gym HTTP request carries `Sync-Schema`, the generated registry version the apps speak. Gym HTTP refuses missing or old versions with `426 client-update-required`, malformed or out-of-range integers with `400 malformed`; retired writes keep `410`, and MCP has no static schema requirement. Hello answers the server's
 `schema` and `minSchema`, and a version below the minimum is `426 upgrade-required`; to get one,
 [RUNNING.md](../../../backend/RUNNING.md) builds a server whose minimum is above the apps'. A push
 names a replica (`rp_` + 32 hex), the account it binds to, and numbered intents; stamps are
 `ms:counter:actor`, the actor `r_` + 12 `[a-z0-9]`. A weigh-in is the smallest record:
 
 ```sh
-S6='Sync-Schema: 6'; DAY=$(date -u +%F); ST="$NOW:0:r_verifyprobe"
+SYNC_SCHEMA=$(python3 -c 'import json,pathlib; p=pathlib.Path("packages/api-contract/sync"); c=json.loads((p/"composition.json").read_text()); versions={json.loads((p/name).read_text())["version"] for name in c["registries"]}; assert len(versions)==1; print(versions.pop())')
+SCHEMA_HEADER="Sync-Schema: $SYNC_SCHEMA"; DAY=$(date -u +%F); ST="$NOW:0:r_verifyprobe"
 REPLICA=rp_$(openssl rand -hex 16)
-curl -s localhost:8088/v1/sync/hello -H "$C" -H "$S6"
-curl -s -X POST localhost:8088/v1/sync/push -H "$C" -H "$S6" -H "$J" -d "{\"replica\":\"$REPLICA\",
+curl -s localhost:8088/v1/sync/hello -H "$C" -H "$SCHEMA_HEADER"
+curl -s -X POST localhost:8088/v1/sync/push -H "$C" -H "$SCHEMA_HEADER" -H "$J" -d "{\"replica\":\"$REPLICA\",
   \"account\":\"$PROBE_USER_ID\",\"ackThrough\":0,\"intents\":[{\"n\":1,\"scope\":\"self/gym\",\"d\":[
   {\"t\":\"weighin\",\"id\":\"$DAY\",\"life\":[\"alive\",\"$ST\"],\"f\":{\"kg\":[80.4,\"$ST\"],\"recordedAt\":[$NOW,\"$ST\"]}}]}]}"
-curl -s -X POST localhost:8088/v1/sync/pull -H "$C" -H "$S6" -H "$J" \
+curl -s -X POST localhost:8088/v1/sync/pull -H "$C" -H "$SCHEMA_HEADER" -H "$J" \
   -d '{"scopes":[{"scope":"self/gym","cursor":null}]}'            # every row as the replica sees it
-curl -s localhost:8088/v1/gym/bodyweight -H "$C"
+curl -s localhost:8088/v1/gym/bodyweight -H "$C" -H "$G"
 ```
 
 A result is `ok` with its `seq`, or `refused` with a `code` (engine §9.6). The next push from the

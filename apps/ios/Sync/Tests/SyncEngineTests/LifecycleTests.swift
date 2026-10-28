@@ -435,7 +435,7 @@ struct LifecycleTests {
     #expect(try rig.replicas().map { $0.replacingOccurrences(of: " new id", with: "") } == [
       "anon entries: 0", "bound(B) active entries: 0", "dormant(A) entries: 1",
     ])
-    #expect(rig.transport.calls.filter { if case .hello = $0 { true } else { false } }.count == 1)
+    #expect(rig.transport.calls.filter { if case .hello = $0 { true } else { false } }.count == 2)
   }
 
   // §7.9, §7.10: signed out, the person creates a board, opens its tree and titles it. The tree waits for its board's

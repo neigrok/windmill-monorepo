@@ -14,6 +14,112 @@ struct SenderTests {
   static let card1 = Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1")
   static let three = Gesture(changes: [Rig.card("card0001", "A"), Rig.card("card0002", "B"), Rig.card("card0003", "C")], gestureId: "g1")
 
+  static func sourceTen() throws -> Registry {
+    var json = try Rig.probe.json.asObject()
+    json["version"] = 10; json["minVersion"] = 10
+    return try Registry(json: .object(json))
+  }
+
+  static func ready(schema: Int) -> JSON {
+    ["serverTime": JSON(Rig.startMs), "epoch": "ep-1", "as": "A", "schema": JSON(schema), "minSchema": 4]
+  }
+
+  @Test func sourceTenKeepsReadyWorkUnnumberedUntilAFreshServerTenHello() async throws {
+    let rig = try Rig(account: "A", registry: Self.sourceTen(), freshHelloFallback: false)
+    try rig.commit(Self.card1)
+    let before = try rig.active()
+    rig.transport.willAnswerHello(200, Self.ready(schema: 8))
+    guard case .wait(let delay) = await rig.engine.sender.step() else { throw RigError("old server did not hold delivery") }
+    #expect(try rig.active().outbox == before.outbox)
+    #expect(try rig.meta().nextN == before.meta.nextN)
+    #expect(rig.transport.pushes.isEmpty)
+    rig.engine.foreground()
+    #expect(await rig.engine.sender.step() == .wait(ms: delay))
+    #expect(rig.transport.calls == [.hello(token: SessionToken("token-1"))])
+    rig.clock.advance(ms: delay)
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    #expect(rig.transport.pushes.count == 1)
+  }
+
+  @Test func aHelloUnderAnOldTokenCannotNumberQueuedWork() async throws {
+    let rig = try Rig(account: "A", registry: Self.sourceTen(), freshHelloFallback: false)
+    try rig.commit(Self.card1)
+    let before = try rig.active(), gate = Gate()
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10), after: gate)
+    let sending = Task { await rig.engine.sender.step() }
+    await gate.arrival()
+    rig.tokens.save(SessionToken("replacement"), for: "A")
+    gate.open()
+    #expect(await sending.value == .idle)
+    #expect(try rig.active().outbox == before.outbox)
+    #expect(try rig.meta().nextN == before.meta.nextN)
+    #expect(rig.transport.pushes.isEmpty)
+    #expect(try rig.meta().authPaused == false)
+  }
+
+  @Test func aReadinessHelloServedToAnotherOwnerCannotNumberOrPush() async throws {
+    let rig = try Rig(account: "A", registry: Self.sourceTen(), freshHelloFallback: false)
+    try rig.commit(Self.card1)
+    let before = try rig.active()
+    var hello = try Self.ready(schema: 10).asObject()
+    hello["as"] = "B"
+    rig.transport.willAnswerHello(200, .object(hello))
+    #expect(await rig.engine.sender.step() == .paused)
+    #expect(try rig.active().outbox == before.outbox)
+    #expect(try rig.meta().nextN == before.meta.nextN)
+    #expect(rig.transport.pushes.isEmpty)
+  }
+
+  @Test func aLocalEpochChangeDuringHelloRequiresAnotherHelloBeforeNumbering() async throws {
+    let rig = try Rig(account: "A", registry: Self.sourceTen(), freshHelloFallback: false)
+    try rig.commit(Self.card1)
+    let before = try rig.active(), gate = Gate()
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10), after: gate)
+    let sending = Task { await rig.engine.sender.step() }
+    await gate.arrival()
+    _ = try rig.store.write(.offset) { transaction in
+      let loaded = try transaction.replica(transaction.activeReplica())
+      var replica = try #require(loaded)
+      replica.update { $0.serverEpoch = "ep-2" }
+      return Planned((), replica.batch)
+    }
+    gate.open()
+    #expect(await sending.value == .again)
+    #expect(try rig.active().outbox == before.outbox)
+    #expect(try rig.meta().nextN == before.meta.nextN)
+    #expect(rig.transport.pushes.isEmpty)
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], epoch: "ep-2"))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    #expect(rig.transport.pushes.count == 1)
+  }
+
+  @Test(arguments: [false, true])
+  func aLifecycleChangeDuringHelloNeedsFreshReadinessAndPreservesBackgroundSending(returning: Bool) async throws {
+    let rig = try Rig(account: "A", registry: Self.sourceTen(), freshHelloFallback: false)
+    try rig.commit(Self.card1)
+    let before = try rig.active(), gate = Gate()
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10), after: gate)
+    let sending = Task { await rig.engine.sender.step() }
+    await gate.arrival()
+    try rig.engine.leave()
+    if returning { rig.engine.foreground() }
+    gate.open()
+    #expect(await sending.value == .again)
+    #expect(try rig.active().outbox == before.outbox)
+    #expect(try rig.meta().nextN == before.meta.nextN)
+    #expect(rig.transport.pushes.isEmpty)
+    rig.transport.willAnswerHello(200, Self.ready(schema: 10))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step(leaving: !returning) == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    #expect(rig.transport.pushes.count == 1)
+  }
+
   @Test(arguments: [0, 500, 503])
   func failedPushStatusNamesQueuedRecordsAndClearsOnlyAfterRecovery(status: Int) async throws {
     let rig = try Rig(account: "A")
@@ -70,6 +176,8 @@ struct SenderTests {
     let unanswered = { await MainActor.run { rig.engine.status.unansweredPushes } }
     rig.transport.willNotAnswerPush()
     async let stepping = rig.engine.sender.step()
+    for _ in 0..<1_000 where rig.transport.pushes.isEmpty { await Task.yield() }
+    #expect(rig.transport.pushes.count == 1)
     await rig.clock.asleep(until: Constants.requestTimeoutMs)
     rig.clock.advance(ms: Constants.requestTimeoutMs)
     _ = await stepping
@@ -99,7 +207,8 @@ struct SenderTests {
     try rig.commit(Self.card1)
     rig.transport.willNotAnswerPush()
     let sending = Task { await rig.engine.sender.step() }
-    await rig.clock.asleep(until: Constants.requestTimeoutMs)
+    for _ in 0..<1_000 where rig.transport.pushes.isEmpty { await Task.yield() }
+    #expect(rig.transport.pushes.count == 1)
     sending.cancel(); _ = await sending.value
     await rig.engine.settle()
     #expect(await MainActor.run { rig.engine.status.failedPushes.isEmpty })
@@ -119,6 +228,7 @@ struct SenderTests {
     #expect(await rig.engine.sender.step() == .again)
     let replica = try rig.active()
     #expect(rig.transport.calls == [
+      .hello(token: SessionToken("token-1")),
       .push(
         PushRequest(replica: replica.meta.replica, account: "A", ackThrough: 0, intents: replica.outbox.map(\.intent)),
         token: SessionToken("token-1")),
@@ -131,7 +241,7 @@ struct SenderTests {
     #expect(replica.meta.admittedHigh == receipt.stamp)
     #expect(try rig.engine.physNow() == Rig.startMs + 5_000)
     #expect(await rig.engine.sender.step() == .idle)
-    #expect(rig.transport.calls.count == 1)
+    #expect(rig.transport.calls.count == 2)
   }
 
   // §7.4 result batches: an answer's results are recorded in ascending n, a batch a transaction, however the answer lists
@@ -204,6 +314,8 @@ struct SenderTests {
     try rig.commit(Self.card1)
     rig.transport.willNotAnswerPush()
     async let stepping = rig.engine.sender.step()
+    for _ in 0..<1_000 where rig.transport.pushes.isEmpty { await Task.yield() }
+    #expect(rig.transport.pushes.count == 1)
     await rig.clock.asleep(until: Constants.requestTimeoutMs)
     rig.clock.advance(ms: Constants.requestTimeoutMs)
     #expect(await stepping == .backoff(ms: 1_000))
@@ -404,7 +516,10 @@ struct SenderTests {
     rig.transport.willAnswerPush(409, .object(body))
     guard case .backoff = await rig.engine.sender.step() else { throw RigError("a malformed conflict did not back off") }
     let after = try rig.active()
-    #expect(after.meta == before.meta)
+    var expectedMeta = before.meta
+    let reading = rig.clock.engineClock.wall.reading()
+    expectedMeta.sample(serverTime: Rig.startMs, send: reading, recv: reading)
+    #expect(after.meta == expectedMeta)
     #expect(after.outbox == before.outbox)
     #expect(after.cursors == before.cursors)
     #expect(after.staging == before.staging)

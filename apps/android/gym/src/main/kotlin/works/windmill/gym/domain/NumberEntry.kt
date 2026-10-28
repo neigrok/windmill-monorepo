@@ -1,6 +1,5 @@
 package works.windmill.gym.domain
 
-import kotlin.math.abs
 import kotlin.math.floor
 
 object NumberEntry {
@@ -8,7 +7,6 @@ object NumberEntry {
 
     const val onePoint = "One decimal point only."
     const val notANumber = "That is not a number yet."
-    const val overWeight = "Over 500 kg — check the number."
     const val outsideReps = "Whole reps, 1 to ${LoggedSetLimits.maxReps}."
     const val weightHint = "kg"
     const val repsHint = "whole reps"
@@ -29,7 +27,6 @@ object NumberEntry {
         val value = normalised.toDoubleOrNull()
         if (value == null || !value.isFinite()) return Reading(null, notANumber)
         if (field == Field.Load) {
-            if (abs(value) > LoggedSetLimits.maxWeightKg) return Reading(null, overWeight)
             return Reading(Ladder.round(value), weightHint)
         }
         if (value < 1 || value > LoggedSetLimits.maxReps || value != floor(value)) {

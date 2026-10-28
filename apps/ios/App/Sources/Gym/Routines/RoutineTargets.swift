@@ -33,7 +33,6 @@ nonisolated struct RoutineTargetDraft: Equatable, Sendable {
 
   static let onePoint = "One decimal point only."
   static let notANumber = "That is not a number yet."
-  static let overWeight = "Over 500 kg — check the number."
   static let outsideReps = "Whole reps, 1 to 100."
   static let outsideSets = "Sets, 1 to 20."
   static let zeroTarget = "A zero target is no target — clear the field instead."
@@ -130,9 +129,10 @@ nonisolated struct RoutineTargetDraft: Equatable, Sendable {
     switch field {
     case .sets: next = min(20, max(0, value + Double(direction)))
     case .reps: next = min(100, max(0, value + Double(direction)))
-    case .weight: next = min(500, max(-500, WeightLadder.bump(value, direction: direction)))
+    case .weight: next = WeightLadder.bump(value, direction: direction)
     }
-    type(next == 0 ? "" : Readout.weight(next), field: field)
+    guard next.isFinite else { return }
+    type(next == 0 && field != .weight ? "" : Readout.weight(next), field: field)
   }
 
   mutating func flipSign(row: Int? = nil) {
@@ -203,12 +203,11 @@ nonisolated struct RoutineTargetDraft: Equatable, Sendable {
     if normalized.isEmpty { return .success(nil) }
     if normalized.filter({ $0 == "." }).count > 1 { return .failure(NumberProblem(message: onePoint)) }
     guard let value = Double(normalized), value.isFinite else { return .failure(NumberProblem(message: notANumber)) }
-    if field == .weight && abs(value) > 500 { return .failure(NumberProblem(message: overWeight)) }
-    if value == 0 { return .failure(NumberProblem(message: zeroTarget)) }
     if field == .weight {
       let rounded = WeightLadder.round(value)
-      return rounded == 0 ? .failure(NumberProblem(message: zeroTarget)) : .success(rounded)
+      return value != 0 && rounded == 0 ? .failure(NumberProblem(message: notANumber)) : .success(rounded)
     }
+    if value == 0 { return .failure(NumberProblem(message: zeroTarget)) }
     let band: ClosedRange<Double> = field == .sets ? 1...20 : 1...100
     guard value == floor(value), band.contains(value) else {
       return .failure(NumberProblem(message: field == .sets ? outsideSets : outsideReps))

@@ -22,7 +22,19 @@ export function roundHalfAway(y) {
 export function roundToQuantum(value, quantum) {
   if (Number.isInteger(quantum)) return roundHalfAway(value / quantum) * quantum;
   const steps = Math.round(1 / quantum);
-  return roundHalfAway(value * steps) / steps;
+  if (Number.isFinite(value)) {
+    let decimalScale = 1;
+    for (let places = 0; places <= 22; places++, decimalScale *= 10) {
+      if (steps !== decimalScale) continue;
+      const [mantissa, exponent = '0'] = jcs(value).split('e');
+      const point = mantissa.indexOf('.');
+      if ((point < 0 ? 0 : mantissa.length - point - 1) - Number(exponent) <= places) return value === 0 ? 0 : value;
+      break;
+    }
+  }
+  const scaled = value * steps;
+  if (Number.isFinite(value) && !Number.isFinite(scaled)) return value === 0 ? 0 : value;
+  return roundHalfAway(scaled) / steps;
 }
 
 export function isOnQuantum(value, quantum) {

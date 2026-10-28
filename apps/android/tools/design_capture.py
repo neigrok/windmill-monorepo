@@ -2,6 +2,7 @@
 import argparse
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -121,9 +122,13 @@ def read_fixture(path):
             if sets * len(fixture["routines"][workout["routine"]]["entries"]) > 20:
                 raise ValueError("Capture custom history must fit all working sets inside its 40-minute workout.")
             kg = workout["weightKg"]
-            if type(kg) not in (int, float) or not math.isfinite(kg) or not -500 <= kg <= 500 or \
-                    abs(kg * 100 - round(kg * 100)) > 1e-7 or type(workout["reps"]) is not int or not 1 <= workout["reps"] <= 500:
-                raise ValueError("Capture history needs a load from -500 to 500 kg in hundredths and 1 to 500 reps.")
+            try:
+                number = float(kg) if type(kg) in (int, float) else math.nan
+            except OverflowError:
+                number = math.nan
+            if not math.isfinite(number) or Decimal(repr(number)).as_tuple().exponent < -2 or \
+                    type(workout["reps"]) is not int or not 1 <= workout["reps"] <= 500:
+                raise ValueError("Capture history needs a finite load in hundredths and 1 to 500 reps.")
     return fixture
 
 
@@ -158,6 +163,8 @@ class Fixture:
 
     def request(self, path, body=None, token=None, headers=None):
         request_headers = {"Content-Type": "application/json", **(headers or {})}
+        if path.startswith("/v1/gym/"):
+            request_headers["Sync-Schema"] = str(json.loads((ROOT / "packages/api-contract/sync/gym.registry.json").read_text())["version"])
         if token:
             request_headers["Authorization"] = "Bearer " + token
         request = urllib.request.Request(self.origin + path, None if body is None else json.dumps(body).encode(), request_headers)

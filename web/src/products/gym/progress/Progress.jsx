@@ -5,6 +5,11 @@ import { weightUnit } from '../units.js';
 import { estimateValue, joinsSessions, movementProgress, POINT_PITCH_PT, progressDateLabel, progressCards, SCRUB_HOLD_MS, sessionGapLabel } from './progress.js';
 import './progress.css';
 
+function axisLabel(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return String(Number.isFinite(rounded) ? rounded : value);
+}
+
 export function ProgressCards({ log, from = { screen: 'log' }, readOnly = false, unit = weightUnit() }) {
   const progress = log.progress;
   if (!progress || progress.phase === 'loading') return null;
@@ -17,7 +22,7 @@ export function ProgressCards({ log, from = { screen: 'log' }, readOnly = false,
           <Card className="gym-progress-card" key={card.exerciseId} href={readOnly ? undefined : recordHref(card.exerciseId, from)} aria-label={`${card.name}. ${[card.latestLine, card.bestLine, card.heaviestLine, card.mostRepsLine, card.sparseLine].filter(Boolean).join('. ')}.${readOnly ? '' : ' Opens this movement’s record.'}`}>
             <h3>{card.name}{!readOnly && <img src={new URL('../logbook/assets/record-door.svg', import.meta.url).href} width="12" height="12" alt="" />}</h3>
             {card.chartReady ? <>
-              <DotChart points={card.points} domain={card.domain} joins={joinsSessions} gapLabel={sessionGapLabel} formatValue={(value) => String(Math.round(value * 10) / 10)} formatDate={shortDayLabel} height={90} axisFontSize={13} compact ariaLabel={card.windowLabel} />
+              <DotChart points={card.points} domain={card.domain} joins={joinsSessions} gapLabel={sessionGapLabel} formatValue={axisLabel} formatDate={shortDayLabel} height={90} axisFontSize={13} compact ariaLabel={card.windowLabel} />
               <p className="gym-progress-window">{card.windowLabel}</p>
               <p className={card.latest?.sessionId === card.best?.sessionId ? 'is-record' : undefined}>{card.latestLine}</p>
               <p>{card.heaviestLine}</p>
@@ -49,18 +54,21 @@ export function MovementChart({ id, log, equipment }) {
     {model.points.length ? <>
       <section className="gym-record-chart" aria-label="Estimated strength">
         <h2>e1RM per session</h2>
-        <DotChart points={model.points} domain={model.domain} joins={joinsSessions} gapLabel={(from, to) => `No session · ${dateLabel(from.at)}–${dateLabel(to.at)}`} formatValue={(value) => String(Math.round(value * 10) / 10)} formatDate={dateLabel} ariaLabel={model.windowLabel} axisFontSize={13} interactive minimal pointPitch={POINT_PITCH_PT} holdMs={SCRUB_HOLD_MS} />
+        <DotChart points={model.points} domain={model.domain} joins={joinsSessions} gapLabel={(from, to) => `No session · ${dateLabel(from.at)}–${dateLabel(to.at)}`} formatValue={axisLabel} formatDate={dateLabel} ariaLabel={model.windowLabel} axisFontSize={13} interactive minimal pointPitch={POINT_PITCH_PT} holdMs={SCRUB_HOLD_MS} />
         <p>{model.points.length} {model.points.length === 1 ? 'session' : 'sessions'}</p><p className="gym-chart-disclosure">Estimates, not tested lifts.</p>
       </section>
       <p className="gym-record-latest">Latest · {estimateValue(model.latest.estimate.e1rm)} {weightUnit()} est · {setLoadLabel(model.latest.estimate)}</p>
       {model.best && <p className="gym-record-best">Best {estimateValue(model.best.estimate.e1rm)} {weightUnit()} est · {dateLabel(model.best.at)}{model.latest.sessionId !== model.best.sessionId && model.latest.estimate.e1rm === model.best.estimate.e1rm ? ` · matched ${dateLabel(model.latest.at)}` : ''}</p>}
-      <table className="gym-record-series"><thead><tr><th>Date</th><th>Top set · {weightUnit()}</th><th>e1RM</th></tr></thead><tbody>{model.sessions.filter((session) => session.estimate).map((session) => <tr key={session.sessionId}><td>{dateLabel(session.at)}</td><td><span className="gym-record-set"><span>{fmt(session.estimate.weightKg)}</span><span>×</span><span>{session.estimate.reps}</span></span></td><td className={session.sessionId === model.best?.sessionId ? 'is-record' : undefined}>{Number(estimateValue(session.estimate.e1rm)).toFixed(1)}</td></tr>)}</tbody></table>
+      <table className="gym-record-series"><thead><tr><th>Date</th><th>Top set · {weightUnit()}</th><th>e1RM</th></tr></thead><tbody>{model.sessions.filter((session) => session.estimate).map((session) => {
+        const estimate = estimateValue(session.estimate.e1rm);
+        return <tr key={session.sessionId}><td>{dateLabel(session.at)}</td><td><span className="gym-record-set"><span>{fmt(session.estimate.weightKg)}</span><span>×</span><span>{session.estimate.reps}</span></span></td><td className={session.sessionId === model.best?.sessionId ? 'is-record' : undefined}>{estimate === '—' ? estimate : Number(estimate).toFixed(1)}</td></tr>;
+      })}</tbody></table>
     </> : <section className="gym-record-chart">
       {model.assisted && model.mostRepsLine && <p className="gym-record-latest">{model.mostRepsLine}</p>}
       {model.assisted && model.signedLoadLine && <p className="gym-record-latest">{model.signedLoadLine}</p>}
       {!model.assisted && model.heaviestLine && <p className="gym-record-latest">{model.heaviestLine}</p>}
       <p>{model.sparseLine}</p>
-      {!model.assisted && <p>No estimate in this window.</p>}
+      {!model.assisted && model.estimateAbsenceKnown && <p>No estimate in this window.</p>}
     </section>}
   </section>;
 }

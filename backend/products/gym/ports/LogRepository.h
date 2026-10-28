@@ -33,7 +33,7 @@ struct SessionSummary {
   Session session;
   int setCount;
   int workingSetCount;
-  double tonnageKg;
+  std::optional<double> tonnageKg;
   std::vector<std::string> exerciseNames;
   std::optional<TopWorkingSet> topSet;
   std::vector<ProgressSet> worked;

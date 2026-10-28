@@ -5,11 +5,13 @@
 #include "platform/application/WorkerPool.h"
 #include "platform/application/WriteObservation.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/sync/PgGym.h"
 #include "products/gym/sync/GymProduct.h"
 
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 
 using namespace wm;
 using namespace wm::gym;
@@ -420,5 +422,55 @@ TEST(gym_training_engine_stale_settle_is_a_command) {
   CHECK(!h.training.openSession(h.user));
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"session_stale1"}),
            std::optional<Session>(Session{SessionId{"session_stale1"}, h.user, at, at, std::nullopt, std::nullopt, ClosedBy::stale}));
+  CHECK(h.failures.messages.empty());
+}
+
+
+TEST(gym_training_loads_are_canonical_across_single_batch_import_and_sync_projection) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto now = h.clock.now;
+  const auto started = h.door.start(h.user, startAt("session_load1", now));
+  REQUIRE(started.session);
+  const auto session = started.session->id;
+  const std::vector<double> loads{501, -501, 0, .1, std::numeric_limits<double>::max(),
+      -std::numeric_limits<double>::max(), 35333333333333.34};
+  std::vector<SetWrite> imported;
+  for (std::size_t i = 0; i < loads.size(); ++i) {
+    const auto load = loads[i];
+    auto single = setAt("set_load_single", now);
+    single.id = SetId{"set_load_single" + std::to_string(i)};
+    single.weightKg = load; single.reps = 1; single.rpe.reset();
+    const auto written = h.door.append(h.user, session, single);
+    REQUIRE(written.set);
+    CHECK_EQ(written.set->weightKg, load);
+    auto batch = single; batch.id = SetId{"set_load_batch" + std::to_string(i)};
+    const auto appended = h.door.appendSets(h.user, session, {batch});
+    CHECK_EQ(appended.error, BatchLogError::none);
+    REQUIRE_EQ(appended.sets.size(), std::size_t{1});
+    REQUIRE(appended.sets[0].current);
+    CHECK_EQ(appended.sets[0].current->weightKg, load);
+    auto synced = single; synced.id = SetId{"set_load_sync" + std::to_string(i)};
+    GymDoor::requireOk(rawAppend(h, h.user, session, synced));
+    REQUIRE(h.repo.log.setOf(h.user, synced.id));
+    CHECK_EQ(h.repo.log.setOf(h.user, synced.id)->weightKg, load);
+    auto historical = single; historical.id = SetId{"set_load_import" + std::to_string(i)};
+    historical.completedAtMs = now - 2000;
+    imported.push_back(historical);
+    PgLease lease{*pool()}; pqxx::read_transaction txn{*lease};
+    const auto stored = txn.exec("select weight_kg=$2::numeric as canonical from gym_sets where id=$1",
+        pqxx::params{single.id.str(), sync::jcs(Json::Value(load))});
+    REQUIRE_EQ(stored.size(), std::size_t{1});
+    CHECK(stored[0][0].as<bool>());
+  }
+  const auto history = h.door.importSession(h.user, SessionImport{SessionId{"session_load2"}, now - 3000,
+      now - 1000, std::nullopt, imported});
+  CHECK_EQ(history.error, BatchLogError::none);
+  REQUIRE_EQ(history.sets.size(), loads.size());
+  for (std::size_t i = 0; i < loads.size(); ++i) {
+    REQUIRE(history.sets[i].current);
+    CHECK_EQ(history.sets[i].current->weightKg, loads[i]);
+  }
+  CHECK(scopeConsistent(h.user));
   CHECK(h.failures.messages.empty());
 }

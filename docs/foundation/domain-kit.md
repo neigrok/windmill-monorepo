@@ -533,7 +533,7 @@ public struct TextSpec: ValueSpec {
   public static func isBlank(_ s: String) -> Bool                           // only §4.3's whitespace
 }
 public struct NumberSpec: ValueSpec {
-  public init(_ path: String, min: Double, max: Double, integer: Bool = false, quantum: Double? = nil)
+  public init(_ path: String, min: Double? = nil, max: Double? = nil, integer: Bool = false, quantum: Double? = nil)
   public func apply(_ x: Double, at: Path) throws(Violation) -> Double
   public func apply(_ x: Double?, at: Path) throws(Violation) -> Double?
   public func apply(_ x: Int, at: Path) throws(Violation) -> Int
@@ -573,8 +573,9 @@ Each `apply` is an ordered, fail-fast pipeline; the first failing step throws.
 1. Not finite → `notANumber`.
 2. `integer` and not integral → `notInteger`.
 3. `quantum q` → `Quantum(q).rounded(x)` (ER-11), engine §7.1 step 4's rounding; `-0` becomes `0`.
-4. Below `min` → `below`; above `max` → `above`, on the rounded value.
-5. Return the rounded value.
+4. A nonfinite rounded result → `notANumber`.
+5. Below a declared `min` → `below`; above a declared `max` → `above`, on the rounded value.
+6. Return the rounded value. Absent bounds are omitted from the spec's JSON.
 
 A spec with both `integer` and `quantum`, or with a quantum that is neither an integer nor `1/k`, traps
 at construction.
@@ -1803,7 +1804,7 @@ public enum RoutineRules {
   public static let movements = CountSpec("routine.entries", min: 1, max: 50)
   public static let sets      = CountSpec("routine.entries.sets", min: 1, max: 20)
   public static let reps      = NumberSpec("routine.entries.sets.reps", min: 1, max: 100, integer: true)
-  public static let load      = NumberSpec("routine.entries.sets.weightKg", min: -500, max: 500, quantum: 0.01)
+  public static let load      = NumberSpec("routine.entries.sets.weightKg", quantum: 0.01)
   public static let rest      = NumberSpec("routine.entries.restSeconds", min: 15, max: 900, integer: true)
   static func zero(at p: Path) -> Violation { Violation(rule: "routine.zeroTarget", path: p, reason: .custom("zero")) }
   static let rules: [Rule] = [.local(name), .local(movements), .local(sets), .local(reps), .local(load), .local(rest),

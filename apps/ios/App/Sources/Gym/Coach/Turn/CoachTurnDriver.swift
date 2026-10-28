@@ -25,7 +25,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     switch code {
     case _ where TurnRefusal.allowanceCodes.contains(code) && code != "invalid_installation": self = .allowance(code)
     case "coach-rate-limited": self = .rateLimited
-    case "coach-update-required": self = .updateRequired
+    case "coach-update-required", "client-update-required": self = .updateRequired
     case "invalid_installation", "installation_bound", "device_bound": self = .installation(code)
     case _ where status == 404: self = .absent
     default: self = .said(code)

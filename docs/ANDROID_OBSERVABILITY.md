@@ -7,6 +7,13 @@ no Amplitude API key. `Telemetry` is injected through the application, account, 
 workout stores, the SQLite sync runtime, signed-out workout imports, notifications and Compose
 provider; tests default to `Telemetry.None`.
 
+Gym load validation accepts finite normalized values without a fixed kg cap; explicit zero remains
+distinct from an absent target. An unrepresentable derived metric is unavailable data, rendered in
+existing unavailable slots, and creates no technical failure or event. Existing set, target, fix and
+import actions retain their bounded outcome events and storage/transport failure reporters. Fresh
+sender hellos use the existing sync diagnostics. Loads, numeric buffers, metric values and raw
+refusal text never enter telemetry properties.
+
 Gym palette selection and onboarding color reuse add no behavioral events or failure boundary.
 Existing screen, action and onboarding events retain their current labels and properties.
 

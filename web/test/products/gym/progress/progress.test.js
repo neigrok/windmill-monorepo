@@ -162,3 +162,33 @@ test('received Other keeps positive estimates and signed history without inventi
     assert.deepEqual(movementProgress(snapshot, 'other_load', { now, equipment: 'unknown' }).points, []);
   }
 });
+
+
+test('pound charts omit unavailable conversions while retaining their finite kilogram facts', () => {
+  const now = new Date(2026, 8, 25).getTime();
+  const snapshot = { sessions: [1e307, 1e308].map((e1rm, index) => ({ sessionId: `s${index}`, startedAt: now - index * 86400000,
+    movements: [{ exerciseId: 'bench', workingSetCount: 1, heaviest: { setId: `set${index}`, weightKg: e1rm, reps: 1 },
+      estimate: { setId: `set${index}`, weightKg: e1rm, reps: 1, e1rm } }] })) };
+  const pounds = movementProgress(snapshot, 'bench', { now, equipment: 'barbell', unit: 'lb' });
+  assert.deepEqual(pounds.points.map((point) => point.key), ['s0']);
+  assert.ok(pounds.points.every((point) => Number.isFinite(point.value)));
+  assert.equal(pounds.sessions.length, 2);
+  assert.equal(pounds.bestLine, 'best e1RM — · 24 Sep');
+  const kilograms = movementProgress(snapshot, 'bench', { now, equipment: 'barbell', unit: 'kg' });
+  assert.deepEqual(kilograms.points.map((point) => point.value), [1e308, 1e307]);
+});
+
+
+test('unavailable converted points preserve real calendar gaps and chart qualification', () => {
+  const now = new Date(2026, 8, 25).getTime();
+  const snapshot = { sessions: [1e307, 1e308, 1e308, 1e307].map((e1rm, index) => ({ sessionId: `s${index}`,
+    startedAt: now - (3 - index) * 14 * 86400000, movements: [{ exerciseId: 'bench', workingSetCount: 1,
+      heaviest: { setId: `set${index}`, weightKg: e1rm, reps: 1 }, estimate: { setId: `set${index}`, weightKg: e1rm, reps: 1, e1rm } }] })) };
+  const pounds = movementProgress(snapshot, 'bench', { now, equipment: 'barbell', unit: 'lb' });
+  assert.deepEqual(pounds.points.map((point) => point.key), ['s0', 's3']);
+  assert.equal(joinsSessions(...pounds.points), false);
+  assert.equal(pounds.chartReady, false);
+  const kilograms = movementProgress(snapshot, 'bench', { now, equipment: 'barbell', unit: 'kg' });
+  assert.equal(kilograms.points.length, 4);
+  assert.equal(kilograms.chartReady, true);
+});

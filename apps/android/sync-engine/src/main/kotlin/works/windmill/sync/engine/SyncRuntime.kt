@@ -43,6 +43,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     @Volatile private var foreground = false
     @Volatile private var online = true
     @Volatile private var closed = false
+    @Volatile private var readinessGeneration = 0L
     @Volatile var upgradeRequired = false; private set
     @Volatile private var socket: LiveConnection? = null
     private var socketOpenedAt: Long? = null
@@ -191,10 +192,18 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         launched = true
     }
-    fun enter() { foreground = true; launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() } }
+    fun enter() {
+        engine.lock.withLock { if (!foreground) { foreground = true; readinessGeneration++ } }
+        launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
+    }
     fun connectivity(online: Boolean) {
-        val reconnected = online && !this.online
-        this.online = online; engine.networkStatus(online = online)
+        val reconnected = engine.lock.withLock {
+            val reconnected = online && !this.online
+            if (this.online != online) readinessGeneration++
+            this.online = online
+            reconnected
+        }
+        engine.networkStatus(online = online)
         if (!online) { socket?.close(); socket = null }
         if (reconnected) launchWorker(EngineOperation.hello) {
             val account = engine.lock.withLock { engine.device.current().takeIf { it.state == "bound" }?.account }
@@ -203,7 +212,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
     suspend fun leave() {
-        foreground = false; socket?.close(); socket = null
+        engine.lock.withLock { if (foreground) { foreground = false; readinessGeneration++ } }
+        socket?.close(); socket = null
         engine.releaseHeld(true)
         if (online && wait.leaveMayPush(mono())) deadline(2_000) { senderStep(leaving = true) }
         wakeAll()
@@ -371,15 +381,18 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                     .takeWhile { it !in back || it.intent.command == null }.any { it !in back }
             }
             if (!queued) return@withLock false
+            val (epoch, generation) = engine.lock.withLock { engine.device.current().meta["serverEpoch"] to readinessGeneration }
+            fun ready() = !closed && online && (leaving || draining || foreground) && readinessGeneration == generation
             var response: SyncResponse? = null
             var compatible = false
+            var invalidated = false
             try {
                 response = hello(seat.token).answer
-                if (!current(seat)) return@withLock false
+                if (!current(seat) || !ready()) { invalidated = true; return@withLock false }
                 compatible = !upgradeRequired && response?.status == 200 && response.body?.get("as") == Json.of(seat.account!!) &&
                     response.body["schema"]?.long()?.let { it >= engine.registry.minVersion } == true
             } finally {
-                if (!compatible) {
+                if (!compatible && !invalidated) {
                     val now = mono()
                     helloWait.retry(now, Constants.BACKOFF_BASE_MS)
                     if (response?.status == 503) helloWait.unavailable(now,
@@ -389,14 +402,17 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             }
             if (!compatible) return@withLock false
             helloWait.kick(mono())
+            var changedEpoch = false
             val request = engine.lock.withLock {
-                if (current(seat)) engine.nextPush(pushLimit) else null
-            } ?: return@withLock false
-            if (!current(seat)) return@withLock false
+                if (!current(seat) || !ready()) return@withLock null
+                changedEpoch = engine.device.current().meta["serverEpoch"] != epoch
+                if (changedEpoch) null else engine.nextPush(pushLimit)
+            } ?: return@withLock changedEpoch
+            if (!current(seat) || !ready()) return@withLock false
             val send = engine.clock.reading()
             val job = currentCoroutineContext()[Job]
             if (!engine.lock.withLock {
-                if (signOutHold == seat.account) false else { activePush = job; true }
+                if (signOutHold == seat.account || !ready()) false else { activePush = job; true }
             }) return@withLock false
             // §7.4 What holds work back: every push's end records its scopes' failure, or clears it; a cancelled push records nothing.
             try {
