@@ -54,7 +54,9 @@ A failed durable logger-visibility write reports under static `gym.logger_visibi
 Show retains `gym.showWorkout`. Expected stale-owner/workout and unrestored-replica refusals create
 no Issue. Opening requests retain their workout key locally, consume once, and carry no identifiers
 into telemetry. Routine names, elapsed time, rack buffers and values are never event properties.
-Native delivery and appearance acceptance for these actions remain pending.
+Installed acceptance confirms these three bounded steps reach the first-party intake. Source
+identities, paired appearance/lifecycle checks and runtime qualifications are recorded in the
+[implementation record](engineering/android-implementation.md).
 
 This workout emits `gym_action` with `screen=workout`: `remove` uses `ok|refused`,
 `picker_open|picker_cancel|reorder` use `ok`, and `picker_add` uses `ok|refused` after the
