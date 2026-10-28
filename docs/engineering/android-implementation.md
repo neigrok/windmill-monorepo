@@ -606,3 +606,42 @@ Android's generated-schema composition check explicitly expects minimum 9. Its s
 passes with zero failures/errors/skips. CI 40659886043 passed 1,599 of 1,600 sync-testing cases and
 failed only this obsolete minimum-4 assertion; the long property run completed rather than timing
 out. Deliberate older-client and probe fixtures retain their original versions.
+
+## Task 09 — compact rack
+
+The movement name wraps at 22 sp with the existing equipment glyph and opens the current management
+sheet. The spoken position remains exact; decorative markers show at most seven positions and use
+smaller endpoints when more positions continue. A single movement has no markers. Previous/Next
+remain accessibility actions, without visible arrow buttons or a text pager.
+
+The headerless ledger combines each load with its equipment unit and reps. It grows from one current
+row to a maximum 144 dp viewport, preserves the current row as sets arrive, and scrolls older sets.
+The main Add movement row is removed; the existing management sheet remains its route. The native
+number buffers, signed keyboard, ladder bands, 48 dp controls and silent Log action stay intact.
+Only the part of a snackbar that overlaps the ledger reserves scrolling space.
+
+The simplification pass replaces separate landed/current/planned composables and three-column
+measurement with one row renderer over pure presentation values. A movement request belongs to its
+account/workout and its Compose effect. Programmatic page alignment never requests a new movement;
+a delivered gesture-stop is consumed once after settlement. A delayed read from another account
+cannot clear or report a later account's request.
+
+Affected Debug and Release gates each pass 75 cases with zero skips/failures/errors; six platform
+telemetry cases pass. Coverage includes completed/cancelled gestures, account switches during a held
+read, exact event labels, transient overlap, native draft/Fix restoration, and a single long movement
+at 320 × 640 dp with 200% text. The 39 capture-tool checks pass. The restoration fixture explicitly
+queues both its initial reconnect and recreation reads, asserts unavailable state before release,
+and keeps the exact restored note/refusal and single-save assertions on the owned test scheduler.
+Nine additional large-text geometry cases pass after aligning their assertions with the full
+inline load/unit/reps readout and the movement-name management route. Logs and XML are retained
+under `/private/tmp/windmill-android-task09`. The six live equipment frames were verified Ready for dev.
+API 37 evidence is `/private/tmp/windmill-android-workout-batch/candidate6`, APK SHA-256
+`38bce9df52641dcb6532a3bdbfe065c8ae20f6e0f0af92af2a2f702d2965650f`. Twelve Dark/Daylight PNG/XML
+pairs cover the three equipment modes, signed keyboard, ten-movement/long-name and single-movement
+states. The focused field, unit and Log set remain reachable above the IME; the ledger can scroll
+out of that compact viewport. Each appearance delivers four starts, four logged sets, four finishes,
+two management opens and two completed movement switches. Canonical phase event windows contain no
+client errors; the combined run’s later deliberate fault is reported under task 10. Setup/selector
+failures remain in their manifests. The runtime scan has no ANR/fatal exception; no timing comparison
+is claimed. Long default histories finish after their final generated set while valid short
+histories retain forty minutes.

@@ -191,8 +191,8 @@ class WorkoutRecoveryTests {
                 while (true) (waiting.poll() ?: break).run()
             }
             compose.waitUntil(10_000) { compose.runOnIdle { room.store.canFinish } }
-            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("Set 1, logged, 60 kg, 5 reps, on this device").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device")).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Set 1, logged, 60 kg total, 5 reps, on this device").performClick()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
             compose.onNode(load).performClick().performTextReplacement("500.001")
             compose.onNode(load).performImeAction()
@@ -490,25 +490,25 @@ class WorkoutRecoveryTests {
         }
         try {
             compose.waitUntil(10_000) {
-                compose.onAllNodes((hasContentDescription("Load, kg") and hasText("20"))).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodes((hasContentDescription("Load, kg total") and hasText("20"))).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("20"))).performClick()
-            compose.onNodeWithContentDescription("Load, kg").performTextReplacement("92")
-            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("20"))).performClick()
+            compose.onNodeWithContentDescription("Load, kg total").performTextReplacement("92")
+            compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
-            compose.onNode((hasContentDescription("Load, kg") and hasText("92"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
             compose.waitUntil(10_000) {
-                compose.onAllNodes((hasContentDescription("Load, kg") and hasText("92"))).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodes((hasContentDescription("Load, kg total") and hasText("92"))).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("92"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             val connection = compose.runOnIdle { currentScope.async { room.pull(server); current.connect(account) } }
             compose.waitUntil(10_000) { compose.runOnIdle { connection.isCompleted } }
             runBlocking { connection.await() }
             compose.runOnIdle { assertEquals(listOf(80.0), current.lastTime!!.sets.map { it.weightKg }) }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("92"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("92"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").performClick()
             compose.runOnIdle {
@@ -539,7 +539,7 @@ class WorkoutRecoveryTests {
         var showing by mutableStateOf(true)
         compose.setContent { if (showing) GymMaterial { GymRoom(account, held) } }
         try {
-            compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 8 reps")).performScrollTo().performClick()
+            compose.onNode(hasContentDescription("Set 1, logged, 60 kg total, 8 reps")).performScrollTo().performClick()
             compose.onNodeWithText("Set note").performTextInput("Live retained note")
             compose.onNodeWithText("Not rated").performClick()
             compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()

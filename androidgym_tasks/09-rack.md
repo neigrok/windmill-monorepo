@@ -11,30 +11,27 @@
   - `Android / Equipment icon` `337:2025`
   - `Android / Button` `210:181` (Log set)
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `MovementHead` (`ui/LoggerScreen.kt:571`): *‹* / *›* step keys (:588, :609), the name auto-sized 28 → 20 sp (:600-601), the pager *Exercise {i} / {n}*, spoken *Exercise {i} of {n}* (`domain/LiveSession.kt:134-135`). No equipment icon.
-- `Rack` (`ui/LoggerScreen.kt:836-868`): a `surface` panel with an accent top edge.
-  - *Weight* label (:860), `WeightReadout` (:873) auto-sized 40–96 sp (:887) with plain *kg* (:891). A tap opens the keypad.
-  - `LadderRow` (:898): four 56 dp pills from `Ladder.labels` (`domain/Ladder.kt:52-56`): *−2.5 −1 +1 +2.5* under 20 kg, *−5 −2.5 +2.5 +5* from 20 to 50, *−10 −2.5 +2.5 +10* above.
-  - `RepsRow` (:931): *Reps*, 56 dp − / +, the number.
-  - **Log set**, 64 dp accent (:991).
-- Ledger header *Set / kg / Reps* (:692-694). Warm-ups are indexed *W* (06 removes them).
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/LoggerScreen.kt` keeps the native number-entry buffers and signed decimal IME from 07. The movement name wraps at 22 sp with its existing equipment glyph and opens **This workout**; 11 owns that sheet’s separate presentation.
+- The name announces exact position and supplies Previous/Next accessibility actions. Decorative markers show a bounded window of at most seven positions, with smaller continuation endpoints and no markers for one movement.
+- `domain/LiveSession.kt` supplies performed/current/planned rows with inline equipment units. The ledger has no column header or main Add movement row and a maximum 144 dp viewport. Its current row remains visible as sets arrive.
+- The rack uses the shared Display/Regular `NumberStepper`, the existing load-band ladder, and a silent 64 dp **Log set**. Equipment units come from the shared readout: kg each, kg total, kg added, or kg for unclassified equipment.
+- Affected Debug and Release gates each pass 75 cases; six platform telemetry cases pass, with zero failures/errors/skips. API 37 native acceptance retains twelve Dark/Daylight captures: all three equipment modes, the signed keyboard, a long name with ten movements, and one open movement. The first-party intake records four logged sets and two completed switches/management opens per appearance.
 
 **Change**
 - Movement head: equipment icon (08), wrapping movement name at no less than 22 sp, and a minimum 48 dp name target opening **This workout** (11). Remove visible previous/next arrows and *Movement X of Y*.
 - Use the approved decorative position markers: current movement is an elongated accent capsule; at most seven markers, with small end markers for continuation; no markers for one movement. The markers are not tiny interactive targets. Horizontal movement switching preserves each movement draft; TalkBack announces exact position/count and exposes Previous/Next actions. Test one, two, seven and many movements and long names.
 - Remove the standalone **Add movement** button/row from the main rack. Name → **This workout** → **Add movement** remains the entry (11/19). Remove its reserved gap; retain target and elapsed/since-last-set clock context. Remove the duplicate sets/kg-total/bullet summary strip.
 - Load: `NumberStepper` (04, Display size) with the label *Load*, the numeral, and the unit by equipment (08):
-  - 03.1 Dumbbells: **16** *kg each*.
-  - 03.13 Barbell: **60** *kg total*.
+  - 03.1 Dumbbells: **24** *kg each*.
+  - 03.13 Barbell: **75** *kg total*.
   - 03.12 Bodyweight: **10** *kg added*; a negative number is band help.
-  - − / + nudge by the movement's step.
+  - − / + retain the established `Ladder` small-step bands; the larger pills use the same reader.
 - The plate ladder stays under the load with the same bands. It edits the same draft.
 - Reps: the same stepper, Regular size, labelled *Reps* with the unit *reps*.
 - **Log set** stays the 64 dp primary and stays silent.
 - Ledger: no *Set / kg / Reps* header. Show up to three 48 dp rows (144 dp maximum viewport), with the current/recent rows visible and older rows scrollable. Each row is self-explanatory: set number, equipment-aware inline load unit and × reps; ✓ distinguishes logged rows and accent identifies the current row. A newly added movement shows its single current row without reserving three empty rows. No *W*.
 - Apply this headerless layout to all rack-bearing states: units, focus/pressed/changed, Fix set/This workout backdrops, picker/custom-create returns and onboarding (52). Compact heights collapse flexible space, while controls and **Log set** remain reachable above the IME.
-- Delete the *Weight* label and `WeightReadout`.
 
 **Out of scope:** the stepper itself, keyboard, pressed and changed states (07); Fix set (10); This workout (11).
 

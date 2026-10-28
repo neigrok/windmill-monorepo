@@ -1,5 +1,8 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.hasTestTag
@@ -56,6 +59,7 @@ class LoggerPagerTests {
     private fun logger(
         scope: CoroutineScope,
         heavier: Boolean = false,
+        telemetry: Telemetry = Telemetry.None,
         benchTarget: SetTarget = SetTarget(5, 82.5),
         rowTarget: SetTarget = SetTarget(8, 60.0),
     ): EngineRoomFixture {
@@ -87,8 +91,9 @@ class LoggerPagerTests {
         }
         room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = room.store, say = {},
-                onFinish = {})
+            CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                LoggerScreen(store = room.store, say = {}, onFinish = {})
+            }
         }
         return room
     }
@@ -99,7 +104,7 @@ class LoggerPagerTests {
         try { logger(scope, heavier = true).use { room ->
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
-            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
@@ -112,7 +117,7 @@ class LoggerPagerTests {
 
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-            compose.onNode(hasContentDescription("Set 1, current, target 60 kg, 8 reps")).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, current, target 60 kg total, 8 reps")).assertIsDisplayed()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
             compose.onNodeWithText("Log set").assertIsNotEnabled()
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
@@ -123,7 +128,7 @@ class LoggerPagerTests {
                 up()
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
             compose.onNodeWithText("Log set").assertIsEnabled()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
@@ -163,7 +168,7 @@ class LoggerPagerTests {
         try { logger(scope).use { room ->
             val log = compose.onNodeWithText("Log set")
             val button = log.fetchSemanticsNode().boundsInRoot
-            val weight = compose.onNode((hasContentDescription("Load, kg") and hasText("82.5")))
+            val weight = compose.onNode((hasContentDescription("Load, kg total") and hasText("82.5")))
                 .fetchSemanticsNode().boundsInRoot
 
             log.performTouchInput {
@@ -174,7 +179,7 @@ class LoggerPagerTests {
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
             log.assertIsNotEnabled()
             assertEquals(button, log.fetchSemanticsNode().boundsInRoot)
-            assertEquals(weight, compose.onNode((hasContentDescription("Load, kg") and hasText("82.5")))
+            assertEquals(weight, compose.onNode((hasContentDescription("Load, kg total") and hasText("82.5")))
                 .fetchSemanticsNode().boundsInRoot)
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.exerciseId)
@@ -197,7 +202,12 @@ class LoggerPagerTests {
     @Test
     fun aCancelledTouchPastTheMidpointKeepsTheMovementDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try { logger(scope, heavier = true).use { room ->
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        try { logger(scope, heavier = true, telemetry = telemetry).use { room ->
             val sets = room.store.sets.toList()
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
             val pager = compose.onNodeWithTag("Movement pager")
@@ -216,9 +226,20 @@ class LoggerPagerTests {
                 assertEquals(sets, room.store.sets)
             }
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
-            compose.onNode((hasContentDescription("Load, kg") and hasText("90"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("90"))).assertIsDisplayed()
             compose.onNodeWithText("Heavier than the plan").assertDoesNotExist()
             compose.onNodeWithText("Log set").assertIsEnabled()
+            assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
+            compose.onNodeWithText("Bench Press").performTouchInput {
+                swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
+            }
+            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
+            compose.onNodeWithText("Barbell Row").performClick()
+            compose.onNodeWithText("This session").assertIsDisplayed()
+            assertEquals(listOf(
+                "gym_action" to mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"),
+                "gym_action" to mapOf("screen" to "workout", "action" to "open_workout", "outcome" to "ok"),
+            ), events)
         } } finally { scope.cancel() }
     }
 
@@ -228,7 +249,7 @@ class LoggerPagerTests {
         try { logger(scope, benchTarget = SetTarget(5, 20.0), rowTarget = SetTarget(5, 20.0)).use { room ->
             compose.onNode(hasText("+2.5") and hasClickAction()).performClick()
             compose.onNode(hasContentDescription("Increase Reps")).performClick()
-            compose.onNode((hasContentDescription("Load, kg") and hasText("22.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("22.5"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             val pager = compose.onNodeWithTag("Movement pager")
@@ -246,14 +267,14 @@ class LoggerPagerTests {
                 up()
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("22.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("22.5"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("6"))).assertIsDisplayed()
 
             compose.onNodeWithText("Bench Press").performTouchInput {
                 swipeLeft(startX = width * 0.9f, endX = width * 0.1f)
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("20"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("20"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
@@ -267,8 +288,8 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
             compose.onNodeWithText("Barbell Row").assertIsDisplayed()
-            compose.onNode(hasContentDescription("Set 1, current, target 60 kg, 8 reps")).assertIsDisplayed()
-            compose.onNode((hasContentDescription("Load, kg") and hasText("60"))).assertIsDisplayed()
+            compose.onNode(hasContentDescription("Set 1, current, target 60 kg total, 8 reps")).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("60"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("8"))).assertIsDisplayed()
             compose.onNode(hasContentDescription("Exercise 2 of 2")).assertIsDisplayed()
 
@@ -276,7 +297,7 @@ class LoggerPagerTests {
                 swipeRight(startX = width * 0.1f, endX = width * 0.9f)
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
-            compose.onNode((hasContentDescription("Load, kg") and hasText("82.5"))).assertIsDisplayed()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("82.5"))).assertIsDisplayed()
             compose.onNode((hasContentDescription("Reps, reps") and hasText("5"))).assertIsDisplayed()
         } } finally { scope.cancel() }
     }
@@ -322,7 +343,9 @@ class LoggerPagerTests {
             }
             compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
 
-            compose.onNodeWithText("Add movement").performScrollTo().performClick()
+            compose.onNodeWithText("Add movement").assertDoesNotExist()
+            compose.onNodeWithText("Bench Press").performClick()
+            compose.onNodeWithText("Add movement").performClick()
             // The picker holds the whole catalogue, so Cable Fly is scrolled to.
             compose.onNodeWithText("Cable Fly").performScrollTo().performClick()
             compose.runOnIdle { assertEquals("cable-fly", room.store.exerciseId) }

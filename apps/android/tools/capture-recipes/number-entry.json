@@ -2,7 +2,7 @@
   {
     "board": "03.10", "name": "rack-pressed", "account": "fixture", "workout_clock": true, "settle": false,
     "steps": [
-      {"tap": "Push A"}, {"tap": "Start workout"}, {"wait": "Load, kg"},
+      {"tap": "Push A"}, {"tap": "Start workout"}, {"wait": "Load, kg total"},
       {"touch": {"phase": "down", "target": "Increase Load"}}
     ],
     "after": [{"touch": {"phase": "up"}}, {"tap": "Decrease Load"}]
@@ -16,7 +16,7 @@
   },
   {
     "board": "03.2", "name": "load-keyboard", "account": "fixture", "workout_clock": true,
-    "steps": [{"keyboard": "show"}, {"tap": "Load, kg"}],
+    "steps": [{"keyboard": "show"}, {"tap": "Load, kg total"}],
     "after": [
       {"keyboard": "hide"}, {"tap": "Log set"}, {"tap": "Finish"}, {"wait": "Ended early."},
       {"key": "KEYCODE_BACK"}, {"wait": "660 kg"}, {"key": "KEYCODE_BACK"}, {"wait": "Routines"}

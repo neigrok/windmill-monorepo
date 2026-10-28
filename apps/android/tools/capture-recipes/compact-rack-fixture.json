@@ -1,0 +1,386 @@
+{
+  "exercises": [
+    {
+      "id": "ex_cafe0801",
+      "name": "Landmine Press",
+      "pattern": "press",
+      "equipment": "barbell",
+      "stepKg": 2.5
+    },
+    {
+      "id": "ex_cafe0901",
+      "name": "Standing Alternating Incline Dumbbell Press with a Long Movement Name",
+      "pattern": "press",
+      "equipment": "dumbbell",
+      "stepKg": 2
+    }
+  ],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 75
+            },
+            {
+              "reps": 8,
+              "weightKg": 75
+            },
+            {
+              "reps": 8,
+              "weightKg": 75
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "incline-dumbbell-press",
+          "sets": [
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "ex_cafe0801",
+          "sets": [
+            {
+              "reps": 10,
+              "weightKg": 20
+            },
+            {
+              "reps": 10,
+              "weightKg": 20
+            },
+            {
+              "reps": 10,
+              "weightKg": 20
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "triceps-pushdown",
+          "sets": [
+            {
+              "reps": 12,
+              "weightKg": 25
+            },
+            {
+              "reps": 12,
+              "weightKg": 25
+            },
+            {
+              "reps": 12,
+              "weightKg": 25
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    },
+    {
+      "name": "Pull A",
+      "entries": [
+        {
+          "exerciseId": "chin-up",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 10
+            },
+            {
+              "reps": 8,
+              "weightKg": 10
+            },
+            {
+              "reps": 8,
+              "weightKg": 10
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "barbell-curl",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 25
+            },
+            {
+              "reps": 8,
+              "weightKg": 25
+            },
+            {
+              "reps": 8,
+              "weightKg": 25
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    },
+    {
+      "name": "Long walk",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 75
+            },
+            {
+              "reps": 8,
+              "weightKg": 75
+            },
+            {
+              "reps": 8,
+              "weightKg": 75
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "overhead-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "incline-dumbbell-press",
+          "sets": [
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "barbell-row",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "ex_cafe0901",
+          "sets": [
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            },
+            {
+              "reps": 10,
+              "weightKg": 24
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "lat-pulldown",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            },
+            {
+              "reps": 8,
+              "weightKg": 45
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "chin-up",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 10
+            },
+            {
+              "reps": 8,
+              "weightKg": 10
+            },
+            {
+              "reps": 8,
+              "weightKg": 10
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "back-squat",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 80
+            },
+            {
+              "reps": 8,
+              "weightKg": 80
+            },
+            {
+              "reps": 8,
+              "weightKg": 80
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "romanian-deadlift",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            },
+            {
+              "reps": 8,
+              "weightKg": 60
+            }
+          ],
+          "restSeconds": 120
+        },
+        {
+          "exerciseId": "barbell-curl",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 25
+            },
+            {
+              "reps": 8,
+              "weightKg": 25
+            },
+            {
+              "reps": 8,
+              "weightKg": 25
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    },
+    {
+      "name": "Single movement",
+      "entries": [
+        {
+          "exerciseId": "chin-up",
+          "restSeconds": 120
+        }
+      ]
+    }
+  ]
+}

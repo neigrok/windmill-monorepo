@@ -26,6 +26,18 @@ step/set and finishes. Five committed sets across four sessions match five log e
 start/finish events. Two transient hello/unreachable results recover with cause unproven. This is
 local collector/intake evidence; no hosted delivery claim is made.
 
+## Workout navigation
+
+The rack emits `gym_action` with `screen=workout`, `action=movement_switch|open_workout` and
+`outcome=ok`. A movement switch is reported once after the requested movement is selected in the
+same account and workout. Gesture cancellation, programmatic pager alignment, stale account
+requests and notification refreshes do not create navigation events. The movement title opens the
+existing assembly sheet; no movement name, position, load, reps or identifier is a property.
+Existing `gym.choose`, `gym.editRack` and `gym.acceptSet` boundaries retain their static operations.
+Task 09’s local native intake records four starts, four logged sets and four finishes in each
+appearance, with two completed movement switches and two management opens per appearance.
+Those canonical windows contain no client errors; this verifies the local intake, not hosted delivery.
+
 ## Deletion actions
 
 Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
@@ -256,6 +268,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
+| Workout navigation | `gym_action` | screen: `workout`; action: `movement_switch`, `open_workout`; outcome: `ok` |
 | Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |
 | Quick Settings tile | `gym_action` | screen: `tile`; action: `routines`, `open`; outcome: `ok`, `failed` |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |

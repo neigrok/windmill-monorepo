@@ -52,8 +52,7 @@ object AutoClose {
 enum class Blocker { Offline, LogFailed, SignInLapsed }
 
 // A target as TalkBack says it: units named, the placeholders spelled out.
-private val SetTarget.spoken: String
-    get() = (weightKg?.let { "${Readout.weight(it)} kg" } ?: "last time’s weight") + ", " +
+private fun SetTarget.spoken(unit: String): String = (weightKg?.let { "${Readout.weight(it)} $unit" } ?: "last time’s weight") + ", " +
         (reps?.let(Readout::repCount) ?: "max reps")
 
 object LiveLines {
@@ -66,9 +65,11 @@ object LiveLines {
         val weight: String,
         val reps: Int,
         val isOnThisDevice: Boolean,
+        val unit: String = "kg",
     ) {
+        val line: String get() = "$weight $unit × $reps"
         val spoken: String
-            get() = listOfNotNull("Set $index", "logged", "$weight kg",
+            get() = listOfNotNull("Set $index", "logged", "$weight $unit",
                 Readout.repCount(reps), onThisDevice.takeIf { isOnThisDevice }).joinToString(", ")
     }
 
@@ -94,56 +95,69 @@ object LiveLines {
     // screen and `spoken` carries it to TalkBack.
     sealed interface Slot {
         val spoken: String
+        val line: String?
 
         data class Landed(val row: Row) : Slot {
             override val spoken: String get() = row.spoken
+            override val line: String get() = row.line
         }
 
         // The set about to be lifted. The rack is its editor, so the row names only the plan's target.
-        data class Current(val index: Int, val target: SetTarget?) : Slot {
-            val targetLine: String? get() = target?.let { "target ${Readout.setTarget(it)}" }
+        data class Current(val index: Int, val target: SetTarget?, val unit: String = "kg") : Slot {
+            override val line: String? get() = target?.let { "${it.weightKg?.let(Readout::weight) ?: "last"} $unit × ${Readout.repTarget(it.reps)}" }
             override val spoken: String
-                get() = listOfNotNull("Set $index", "current", target?.let { "target ${it.spoken}" }).joinToString(", ")
+                get() = listOfNotNull("Set $index", "current", target?.let { "target ${it.spoken(unit)}" }).joinToString(", ")
         }
 
-        data class Planned(val index: Int, val target: SetTarget) : Slot {
+        data class Planned(val index: Int, val target: SetTarget, val unit: String = "kg") : Slot {
             val weight: String get() = target.weightKg?.let(Readout::weight) ?: "last"
             val reps: String get() = Readout.repTarget(target.reps)
-            override val spoken: String get() = "Set $index, planned, ${target.spoken}"
+            override val line: String get() = "$weight $unit × $reps"
+            override val spoken: String get() = "Set $index, planned, ${target.spoken(unit)}"
         }
     }
 
     // Performed sets, the set in hand, and the remaining planned slots.
-    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>): List<Slot> {
-        val landed = rows(sets, stalled).map { Slot.Landed(it) }
+    fun slots(sets: List<TrainingSet>, planEntry: PlanEntry?, stalled: Set<String>, unit: String = "kg"): List<Slot> {
+        val landed = rows(sets, stalled, unit).map { Slot.Landed(it) }
         val lifted = setCount(sets)
         val plan = planEntry?.sets.orEmpty()
-        val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted))
+        val current = Slot.Current(index = lifted + 1, target = plan.getOrNull(lifted), unit = unit)
         val coming = plan.drop(lifted + 1).mapIndexed { offset, target ->
-            Slot.Planned(index = lifted + offset + 2, target = target)
+            Slot.Planned(index = lifted + offset + 2, target = target, unit = unit)
         }
         return landed + current + coming
     }
 
-    // Counted off the merged walk by position, never off a plan index; a walk of one has no place.
     data class Place(val at: Int, val of: Int) {
-        val shown: String get() = "Exercise $at / $of"
         val spoken: String get() = "Exercise $at of $of"
+        val markers: List<Marker>
+            get() {
+                if (of < 2) return emptyList()
+                val count = minOf(of, 7)
+                val start = (at - count / 2).coerceIn(1, of - count + 1)
+                return (start until start + count).map { position ->
+                    Marker(position == at, position == start && start > 1 || position == start + count - 1 && position < of)
+                }
+            }
     }
+
+    data class Marker(val current: Boolean, val continuation: Boolean)
 
     fun place(order: List<String>, movement: String?): Place? {
         val at = movement?.let { order.indexOf(it) } ?: -1
-        if (at < 0 || order.size < 2) return null
+        if (at < 0) return null
         return Place(at + 1, order.size)
     }
 
-    fun rows(sets: List<TrainingSet>, stalled: Set<String>): List<Row> =
+    fun rows(sets: List<TrainingSet>, stalled: Set<String>, unit: String = "kg"): List<Row> =
         sets.mapIndexed { index, set ->
             Row(id = set.id,
                 index = (index + 1).toString(),
                 weight = Readout.weight(set.weightKg),
                 reps = set.reps,
-                isOnThisDevice = set.id in stalled)
+                isOnThisDevice = set.id in stalled,
+                unit = unit)
         }
 
     fun setCount(sets: List<TrainingSet>, of: String? = null): Int =

@@ -103,6 +103,48 @@ class DesignCaptureTests(unittest.TestCase):
         self.assertEqual([(fixture.now - (28 - index * 2) * 86400000, 30 + index * 2.5, 8)
                           for index in range(12)], [(item["startedAt"], item["sets"][0]["weightKg"], item["sets"][0]["reps"]) for item in imports])
 
+    def test_default_history_encloses_every_set_in_short_and_long_routines(self):
+        calls = []
+        class RecordedFixture(capture.Fixture):
+            def sql(self, query):
+                return ""
+
+            def mcp(self, name, arguments):
+                calls.append((name, arguments))
+                return {}
+
+            def push(self, rows, schema):
+                pass
+
+            def request(self, path, body=None, token=None, headers=None):
+                replies = {
+                    "/v1/mcp-keys": ({}, {"token": "local"}),
+                    "/mcp": ({"Mcp-Session-Id": "local"}, {}),
+                    "/v1/gym/exercises": ({}, [{"id": f"exercise-{index}"} for index in range(10)]),
+                    "/v1/sync/hello": ({}, {"schema": 9}),
+                    "/v1/gym/bodyweight": ({}, {"entries": [None] * 6}),
+                    "/v1/gym/notes": ({}, {"notes": [None] * 2}),
+                }
+                return replies[path]
+
+        for movements in (2, 10):
+            with self.subTest(movements=movements):
+                calls.clear()
+                fixture = RecordedFixture("http://127.0.0.1:8098", "unused")
+                fixture.seed({"exercises": [], "routines": [{"name": "Walk", "entries": [
+                    {"exerciseId": f"exercise-{index}"} for index in range(movements)]}]})
+                sessions = [value for name, value in calls if name == "gym_import_session"]
+                expected = []
+                for index in range(12):
+                    start = fixture.now - (28 - index * 2) * 86400000
+                    expected.append((start, start + (2400000 if movements == 2 else 3720000),
+                                     [start + number * 120000 for number in range(1, movements * 3 + 1)]))
+                self.assertEqual(expected, [(session["startedAt"], session["finishedAt"],
+                                           [row["completedAt"] for row in session["sets"]]) for session in sessions])
+                self.assertTrue(all(session["startedAt"] <= row["completedAt"] <= session["finishedAt"]
+                                    for session in sessions for row in session["sets"]))
+
+
     def test_fixture_push_retains_identity_and_advances_only_acknowledged_prefixes(self):
         requests = []
         class PushHandler(capture.BaseHTTPRequestHandler):

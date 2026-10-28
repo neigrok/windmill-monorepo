@@ -81,6 +81,32 @@ class LiveOrderTests {
 
 class LiveLinesTests {
     @Test
+    fun decorativeMarkersWindowTheExactSpokenPositionWithoutBecomingTargets() {
+        val ordinary = LiveLines.Marker(false, false)
+        val current = LiveLines.Marker(true, false)
+        val continuation = LiveLines.Marker(false, true)
+        assertEquals(emptyList<LiveLines.Marker>(), LiveLines.Place(1, 1).markers)
+        assertEquals(listOf(current, ordinary), LiveLines.Place(1, 2).markers)
+        assertEquals(listOf(ordinary, current), LiveLines.Place(2, 2).markers)
+        assertEquals(listOf(ordinary, ordinary, ordinary, current, ordinary, ordinary, ordinary), LiveLines.Place(4, 7).markers)
+        assertEquals(listOf(current, ordinary, ordinary, ordinary, ordinary, ordinary, continuation), LiveLines.Place(1, 12).markers)
+        assertEquals(listOf(continuation, ordinary, ordinary, current, ordinary, ordinary, continuation), LiveLines.Place(6, 12).markers)
+        assertEquals(listOf(continuation, ordinary, ordinary, ordinary, ordinary, ordinary, current), LiveLines.Place(12, 12).markers)
+        assertEquals("Exercise 6 of 12", LiveLines.Place(6, 12).spoken)
+    }
+
+    @Test
+    fun ledgerRowsNameTheEquipmentUnitAndRetainOpenTargets() {
+        for (unit in listOf("kg each", "kg added", "kg total", "kg")) {
+            val rows = LiveLines.slots(listOf(aSet("lift", -12.5, 8, 1)),
+                PlanEntry("lift", listOf(SetTarget(8, -12.5), SetTarget(10, 24.0), SetTarget())), emptySet(), unit)
+            assertEquals(listOf("−12.5 $unit × 8", "24 $unit × 10", "last $unit × max"), rows.map { it.line })
+            assertEquals(listOf("Set 1, logged, −12.5 $unit, 8 reps", "Set 2, current, target 24 $unit, 10 reps",
+                "Set 3, planned, last time’s weight, max reps"), rows.map { it.spoken })
+        }
+    }
+
+    @Test
     fun testTheCounterKeepsCountingPastThePlansSetCount() {
         val entry = PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 82.5) })
         assertEquals("set 4 of 3", LiveLines.counter(setsToday = 3, planEntry = entry))
@@ -126,7 +152,7 @@ class LiveLinesTests {
                 "Set 5, planned, 80 kg, 5 reps",
             ),
             slots.map { it.spoken })
-        assertEquals("target 90 × 3", (slots[2] as LiveLines.Slot.Current).targetLine)
+        assertEquals("90 kg × 3", (slots[2] as LiveLines.Slot.Current).line)
         assertEquals(listOf("100" to "1", "80" to "5"),
             slots.filterIsInstance<LiveLines.Slot.Planned>().map { it.weight to it.reps })
     }
@@ -162,12 +188,12 @@ class LiveLinesTests {
                 "Set 2, current, target last time’s weight, max reps",
             ),
             opening.map { it.spoken })
-        assertEquals("target last × max", (opening[1] as LiveLines.Slot.Current).targetLine)
+        assertEquals("last kg × max", (opening[1] as LiveLines.Slot.Current).line)
 
         val free = LiveLines.slots(emptyList(), null, stalled = emptySet())
         assertEquals("no plan: only the set in hand", listOf(LiveLines.Slot.Current(index = 1, target = null)), free)
         assertEquals(listOf("Set 1, current"), free.map { it.spoken })
-        assertNull((free.single() as LiveLines.Slot.Current).targetLine)
+        assertNull((free.single() as LiveLines.Slot.Current).line)
     }
 
     @Test
@@ -175,15 +201,13 @@ class LiveLinesTests {
         val order = listOf("bench-press", "overhead-press", "cable-fly")
 
         assertEquals(LiveLines.Place(1, 3), LiveLines.place(order, "bench-press"))
-        assertEquals(listOf("Exercise 3 / 3", "Exercise 3 of 3"),
-                     LiveLines.place(order, "cable-fly")?.let { listOf(it.shown, it.spoken) })
+        assertEquals("Exercise 3 of 3", LiveLines.place(order, "cable-fly")?.spoken)
         assertEquals("an appended movement counts the moment it joins the walk",
                      LiveLines.Place(3, 3), LiveLines.place(order, order.last()))
         assertNull("a movement the walk does not hold has no place",
                    LiveLines.place(order, "chin-up"))
         assertNull(LiveLines.place(order, null))
-        assertNull("a walk of one is not a position worth a line",
-                   LiveLines.place(listOf("bench-press"), "bench-press"))
+        assertEquals(LiveLines.Place(1, 1), LiveLines.place(listOf("bench-press"), "bench-press"))
         assertNull(LiveLines.place(emptyList(), "bench-press"))
     }
 

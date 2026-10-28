@@ -99,7 +99,7 @@ class LoggerTransientTests {
                 .onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion), useUnmergedTree = true)
                 .getBoundsInRoot()
             val rack = listOf(
-                "Load, kg", "Decrease Reps", "Reps, reps", "Increase Reps",
+                "Load, kg total", "Decrease Reps", "Reps, reps", "Increase Reps",
             ).map { it to bounds(hasContentDescription(it)) } +
                 Ladder.labels(20.0).map { it to bounds(hasText(it) and hasClickAction()) } +
                 ("Log set" to compose.onNodeWithText("Log set").getBoundsInRoot())

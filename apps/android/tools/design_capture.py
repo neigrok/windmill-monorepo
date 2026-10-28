@@ -227,14 +227,16 @@ class Fixture:
             self.mcp("gym_create_routine", {"id": routine_id, "name": routine["name"], "position": position,
                                            "entries": routine["entries"]})
         history = replacement.get("history") if replacement is not None else None
-        if history is None:
+        default_history = history is None
+        if default_history:
             history = [{"routine": index % len(program), "daysAgo": 28 - index * 2, "minutesAgo": 0,
                         "weightKg": 30 + index * 2.5, "reps": 8} for index in range(12)]
         for index, workout in enumerate(history):
             routine = workout["routine"]
             started = self.now - workout["daysAgo"] * 86400000 - workout["minutesAgo"] * 60000
             session = "ses_" + prefix + str(index)
-            self.mcp("gym_import_session", {"id": session, "startedAt": started, "finishedAt": started + 2400000,
+            duration = max(2400000, (len(program[routine]["entries"]) * 3 + 1) * 120000) if default_history else 2400000
+            self.mcp("gym_import_session", {"id": session, "startedAt": started, "finishedAt": started + duration,
                 "routineId": self.routines[routine], "sets": [
                     {"id": f"set_{prefix}{index}_{movement}_{number}", "exerciseId": entry["exerciseId"],
                      "weightKg": workout["weightKg"], "reps": workout["reps"], "completedAt": started + (movement * 3 + number + 1) * 120000}

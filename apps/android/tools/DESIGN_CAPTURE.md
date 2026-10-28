@@ -101,6 +101,12 @@ lasts 40 minutes and must finish by the fixture clock. The supported `gym_import
 writes the same three-set shape for each movement; omitting history preserves the default seed.
 The Record fixture has six factual workouts, five daily chart points and two earlier records.
 
+`--fixture apps/android/tools/capture-recipes/compact-rack-fixture.json` with
+`--scenarios apps/android/tools/capture-recipes/compact-rack.json` covers the three equipment rack
+boards plus native keyboard, long-name/many-movement and single-movement variants. The canonical
+loads are 24 kg each, 10 kg added and 75 kg total. These recipes retain exact numeric values and
+geometry while normalizing only the identified workout clock descriptions for settlement.
+
 Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
 known animation phase; the manifest records that delay. This does not establish screen readiness.
 Transient recipes may set `settle: false` to capture a native pressed state or the 300 ms change
@@ -174,7 +180,9 @@ command arguments. The code, email and token never enter the manifest or event p
 program with explicit routine entries and targets, after creating its missing custom movement through
 the normal MCP write. Pair it with `--scenarios capture-recipes/equipment-units.json` for 02.2 summary,
 02.5 editor and a lifted row in both appearances. The default program is unchanged when omitted.
-The file accepts only `exercises` and `routines`; it supplies no origin, account or arbitrary tool.
+The file accepts `exercises`, `routines` and optional `history`; it supplies no origin, account or
+arbitrary tool. Explicit histories retain their validated 40-minute duration. Default histories
+last at least 40 minutes and finish after their final generated set, including long routines.
 Existing catalogue identities/names cannot be replaced by a custom exercise fixture.
 
 A `touch` step has `phase: "down"`, an accessibility `target`, and optional `at: [x, y]` fractions

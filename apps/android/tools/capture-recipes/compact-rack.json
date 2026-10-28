@@ -1,0 +1,229 @@
+[
+  {
+    "board": "03.13",
+    "name": "rack-barbell",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "wait": "Set 1, current, target 75 kg total, 8 reps"
+      }
+    ]
+  },
+  {
+    "board": "03.1",
+    "name": "rack-dumbbells",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Load, kg each"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 2, current, target 24 kg each, 10 reps"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Share this workout"
+      },
+      {
+        "tap": "Back to Routines"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "03.12",
+    "name": "rack-bodyweight",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Pull A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg added"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "Set 2, current, target 10 kg added, 8 reps"
+      }
+    ]
+  },
+  {
+    "board": "03.12",
+    "name": "rack-keyboard",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Load, kg added"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Share this workout"
+      },
+      {
+        "tap": "Back to Routines"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "03.1",
+    "name": "rack-long-many",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Long walk"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "swipe": [
+          850,
+          1700,
+          850,
+          650,
+          500
+        ]
+      },
+      {
+        "tap": "Standing Alternating Incline Dumbbell Press with a Long Movement Name"
+      },
+      {
+        "wait": "Load, kg each"
+      },
+      {
+        "wait": "Exercise 5 of 10"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Share this workout"
+      },
+      {
+        "tap": "Back to Routines"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "03.12",
+    "name": "rack-single",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Single movement"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg added"
+      },
+      {
+        "wait": "Set 1, current"
+      },
+      {
+        "absent": "Add movement"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Share this workout"
+      },
+      {
+        "tap": "Back to Routines"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

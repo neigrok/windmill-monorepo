@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -75,25 +76,22 @@ class LoggerMovementWalkTests {
     private fun title(name: String) =
         compose.onAllNodes(hasText(name) and hasClickAction()).onFirst()
 
-    // The head says where the walk stands, and its glyphs step it: at the first movement only the
-    // forward glyph is a door, and it is said once.
     @Test
-    fun theHeadSaysThePlaceAndItsGlyphsStepTheWalk() {
+    fun theHeadSaysThePlaceAndOpensTheOnlyAddMovementEntry() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try { logger(scope).use { room ->
+        try { logger(scope).use {
             title("Bench Press").assertIsDisplayed()
-            compose.onNodeWithText("Exercise 1 / 2").assertIsDisplayed()
+            compose.onNodeWithText("Exercise 1 / 2").assertDoesNotExist()
             assertEquals(1, compose.nodesDescribed("Exercise 1 of 2"))
-            assertEquals("nothing behind the first movement", 0, compose.nodesDescribed("Previous movement"))
-            assertEquals(1, compose.nodesDescribed("Next movement"))
-
-            compose.onNode(hasContentDescription("Next movement")).performClick()
-            compose.runOnIdle { assertEquals("barbell-row", room.store.exerciseId) }
-            compose.onNodeWithText("Exercise 2 / 2").assertIsDisplayed()
-            assertEquals("nothing past the last movement", 0, compose.nodesDescribed("Next movement"))
-
-            compose.onNode(hasContentDescription("Previous movement")).performClick()
-            compose.runOnIdle { assertEquals("bench-press", room.store.exerciseId) }
+            assertEquals(0, compose.nodesDescribed("Previous movement"))
+            assertEquals(0, compose.nodesDescribed("Next movement"))
+            compose.onNodeWithText("‹").assertDoesNotExist()
+            compose.onNodeWithText("›").assertDoesNotExist()
+            compose.onNodeWithText("Add movement").assertDoesNotExist()
+            title("Bench Press").performClick()
+            compose.onNodeWithText("This session").assertIsDisplayed()
+            compose.onNodeWithText("Add movement").assertIsDisplayed().performClick()
+            compose.onNodeWithText("Cable Fly").performScrollTo().assertIsDisplayed()
         } } finally { scope.cancel() }
     }
 
@@ -143,7 +141,7 @@ class LoggerMovementWalkTests {
             val session = room.store.session
             val sets = room.store.sets.toList()
 
-            val weight = compose.onNode(hasContentDescription("Load, kg")).fetchSemanticsNode().boundsInRoot
+            val weight = compose.onNode(hasContentDescription("Load, kg total")).fetchSemanticsNode().boundsInRoot
             compose.onRoot().performTouchInput {
                 swipe(weight.center, weight.center - Offset(width * 0.35f, 0f))
             }
@@ -264,12 +262,12 @@ class LoggerMovementWalkTests {
             val reps = room.store.rack!!.reps
             compose.onNodeWithContentDescription("Increase Reps").performClick()
             compose.runOnIdle { assertEquals(reps + 1, room.store.rack!!.reps) }
-            compose.onNode(hasContentDescription("Load, kg")).performClick()
-            compose.onNodeWithContentDescription("Load, kg").assertIsDisplayed().performTouchInput {
+            compose.onNode(hasContentDescription("Load, kg total")).performClick()
+            compose.onNodeWithContentDescription("Load, kg total").assertIsDisplayed().performTouchInput {
                 swipeLeft(startX = width * 0.85f, endX = width * 0.15f)
             }
-            compose.onNodeWithContentDescription("Load, kg").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.onNodeWithContentDescription("Load, kg total").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.runOnIdle {
                 assertEquals("bench-press", room.store.exerciseId)
                 assertEquals(0, room.store.sets.size)

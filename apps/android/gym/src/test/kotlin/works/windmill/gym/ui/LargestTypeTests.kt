@@ -266,7 +266,7 @@ class LargestTypeTests {
                 }
             }
 
-            compose.onNode((hasContentDescription("Load, kg") and hasText("60"))).assertExists()
+            compose.onNode((hasContentDescription("Load, kg total") and hasText("60"))).assertExists()
             val window = compose.onRoot().getBoundsInRoot()
             // A node pushed off the frame reports an EMPTY rect, so `inside` has to mean drawn as well.
             val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
@@ -343,7 +343,7 @@ class LargestTypeTests {
             compose.onNodeWithText("Bench Press").assertIsDisplayed()
             compose.onNode(hasContentDescription("Exercise 1 of 2")).assertIsDisplayed()
             val region = scroller()
-            listOf("Set 1, logged, 20 kg, 5 reps", "Set 2, current").forEach { said ->
+            listOf("Set 1, logged, 20 kg total, 5 reps", "Set 2, current").forEach { said ->
                 val row = compose.onNode(hasContentDescription(said, substring = true)).assertIsDisplayed().getBoundsInRoot()
                 assertTrue("$said at $row is clipped by the ledger $region", inside(row, region))
             }
@@ -373,7 +373,7 @@ class LargestTypeTests {
 
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun theCurrentSetStaysInViewAndAddMovementRemainsReachableWithTheDisplayRack() {
+    fun theCurrentSetStaysInViewAndTheMovementNameOpensTheManagementRoute() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         try { loggerOnThePhone(scope, server, fontScale = 1.3f, walk = listOf("bench-press")).use { room ->
@@ -385,8 +385,11 @@ class LargestTypeTests {
             val region = scroller()
             val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
             assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
-            val add = compose.onNodeWithText("Add movement").performScrollTo().assertIsDisplayed().getBoundsInRoot()
-            assertTrue("Add movement $add is clipped by the ledger $region", add.height > 0.dp && inside(add, region))
+            compose.onNodeWithText("Add movement").assertDoesNotExist()
+            compose.onNodeWithText("Bench Press").assertIsDisplayed().performClick()
+            compose.onNodeWithText("This session").assertIsDisplayed()
+            val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
+            assertTrue("Add movement remains a full management-sheet action", add.height >= 64.dp)
         } } finally { scope.cancel() }
     }
 
@@ -412,8 +415,6 @@ class LargestTypeTests {
         } } finally { scope.cancel() }
     }
 
-    // From set 10 on the index has two digits, and at a large scale the set column still holds it and
-    // its ✓ unclipped, while every row keeps its kg under the column label.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
     fun aTwoDigitSetKeepsItsTickAtOneThirtyPercent() {
@@ -435,18 +436,18 @@ class LargestTypeTests {
                 val tick = laid(ticks[at])
                 assertTrue("✓ $at is ${tick.size.width}px wide and needs ${tick.multiParagraph.maxIntrinsicWidth}px", unclipped(tick))
             }
-            val ten = laid(compose.onNode(hasText("10"), useUnmergedTree = true))
+            val ten = laid(compose.onNode(hasText("Set 10"), useUnmergedTree = true))
             assertTrue("10 is ${ten.size.width}px wide and needs ${ten.multiParagraph.maxIntrinsicWidth}px", unclipped(ten))
 
             compose.onNode(hasContentDescription("Set 10, logged", substring = true)).assertIsDisplayed()
-            // The column label is the topmost "kg"; the rack's units sit below the ledger.
-            val label = compose.onAllNodes(hasText("kg"), useUnmergedTree = true).fetchSemanticsNodes()
-                .minBy { it.positionInRoot.y }.positionInRoot.x
-            val ledgerFoot = with(compose.density) { scroller().bottom.toPx() }
-            val weights = compose.onAllNodes(hasText("20"), useUnmergedTree = true).fetchSemanticsNodes()
-                .filter { it.positionInRoot.y < ledgerFoot }
-            assertEquals(10, weights.size)
-            assertEquals(List(10) { label }, weights.map { it.positionInRoot.x })
+            val readouts = compose.onAllNodes(hasText("20 kg total × 5"), useUnmergedTree = true)
+            readouts.assertCountEquals(10)
+            val positions = readouts.fetchSemanticsNodes().map { it.positionInRoot.x }
+            assertEquals(List(10) { positions.first() }, positions)
+            (0 until 10).forEach { at ->
+                val readout = laid(readouts[at])
+                assertTrue("The full load, unit and reps fit on one line", unclipped(readout))
+            }
         } } finally { scope.cancel() }
     }
 }
