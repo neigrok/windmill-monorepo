@@ -36,10 +36,10 @@ const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
 /** @type {string[]} */
 const pending = [];
-/** @type {Record<string, string>} */
 // A web Coach turn runs its abilities on the server executor (gym Coach §4.6): the catalog, the abilities corpus and
 // the scripted turns are the server's and the phones' to claim.
 const coachFiles = Contract.files('gym').filter((path) => path === 'gym/catalog.json' || path.startsWith('gym/abilities/') || path.startsWith('gym/turns/'));
+/** @type {Record<string, string>} */
 const notApplicable = {
   'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate',
   ...Object.fromEntries(coachFiles.map((path) => [path, 'the web runs no replica executor'])),
