@@ -893,17 +893,19 @@ fallback remains unapproved.
 
 Root matches all 32 task-14 paths against its source commit except the composed current-state
 observations, and reviews the shared-load packet plus its isolated estimate, formatting and
-verification corrections. The combined Android gate passes 1,345 gym cases with 17 opt-in LiveWire
+verification corrections. The broad prepared-source Android gate passes 1,345 gym cases with 17 opt-in LiveWire
 skips, 138 platform and 48 App cases, with zero failures/errors; Debug assembles. All ten backend
 targets pass against two fresh isolated databases:
 domain 2,308/2,336 with 28 deliberate role/pattern skips, MCP 341/341, sync 765/765 and adapters
 1,360/1,360, with zero stopped cases or assertions. Both databases are removed.
 
 The composed native receipt displays the complete maximum finite exponent, an unavailable-volume
-dash and true zero separately. The iOS and web production source trees match their full verified
-developer trees. Supported Xcode 26.3 passes packages, builds, app unit tests and the gym/journal UI
-shard. The shell shard passes unchanged on rerun, establishing non-reproduction of the failed
-Live Activity update; the failed run's local commit or refusal remains unverified. Its OS trace
+dash and true zero separately. The current-main composition preserves the new iOS phone-local
+Coach turn driver, carries the generated schema on its four routes and maps the actual upgrade
+refusal to the existing stance. Nullable source facts omit unavailable volume while retaining zero.
+Supported Xcode 26.3 passes its packages, builds and app unit tests. An earlier shell shard passes
+unchanged on rerun, establishing non-reproduction of the failed Live Activity update; the failed
+run's local commit or refusal remains unverified. Its OS trace
 measures 14.44 seconds before intent execution. The test gives that same exact postcondition a
 bounded 30 seconds, preserving one tap, the existing ledger identities and exactly one new set.
 
@@ -911,8 +913,26 @@ UI accounting requires every selected method to start and finish exactly once. O
 finite-load fixture probe may skip, with its exact missing-fixture reason; requesting that fixture
 forbids the skip. Four checker tests pass, and replaying the CI logs accounts for four mandatory
 integration passes plus that one fixture skip and seven shell passes. The corrected supported CI
-run is pending before main shipment. Source schema 10/minimum 10 does not activate the production
-compatibility cutoff or publish either distribution.
+run remains pending before shared-load shipment. Its shell failure occurs before the Log action:
+SpringBoard remains on Home with an active workout Island, and the pull-down does not establish
+Notification Center. The cause is unproven; no gesture or product fix is claimed.
+
+The current-main backend passes all ten targets: domain 2,314/2,342 with 28 deliberate skips,
+MCP 341, sync 765 and adapters 1,365, with no stopped cases or assertions. Both fresh databases
+are removed. The actual mounted-route matrix passes with local vendor/onboarding switches enabled
+and disabled, including all four turn routes; it checks schema admission separately from the direct
+handler protocol tests. Source schema 10/minimum 10 does not activate the production compatibility
+cutoff or publish either distribution.
+
+Exact scores still select the strongest estimate. Record admission compares the final stated tenth,
+so two estimates displayed as 116.7 do not create another estimate record; independently earned
+heaviest records remain valid. Five shared vectors cover ties, genuine improvement and the exact
+prior best. Focused verification passes the Kotlin corpus and four Android review cases, Swift's
+three training-read tests including 170 vector cases, and 761 web corpus cases plus strict types.
+The Finish observer waits for actual request registration before its exact two-question/chat checks;
+that focused case passes. Task 14 is shipped on main as `ee70d13c` and its ten canonical frames are
+marked in production. The separate Target-summary overlap fix is postponed by the human; its
+proposal remains unapproved and the known 320 dp / 200% overlap is outside this release's scope.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at their shared boundaries. Native receipt integration uses existing text

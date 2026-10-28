@@ -1,13 +1,13 @@
 # Finish receipt, Ended early, Discard this workout?, and the first workout's Keep line
 
-**Approved flow:** [Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362) — ✅ Ready for dev, human-approved 2026-10-25.
+**Approved flow:** [Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362) — 🚀 In production on main `ee70d13c`, human-approved 2026-10-25.
 
 **Figma:**
 - 03.7 Finish receipt: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34558)
 - 03.8 Finish receipt, ended early: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32441) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-34614)
 - 03.14 Discard this workout?: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41920) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-41989)
 - 03.15 Finish receipt, first workout, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42292) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-42368)
-- Z.1 Zero-set finish: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49538) — ✅ Ready for dev, human-approved 2026-10-25.
+- Z.1 Zero-set finish: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49538) — 🚀 In production, human-approved 2026-10-25.
 - Components (Design System library, Android page): `Android / Button` `210:181` (Tonal for Share with Coach; native top-end menu for Discard; Filled for Done; Filled · Tone=Error in the dialog).
 - The approved Android revision above governs layout. The iOS receipt is behavioral context; do not copy an older bottom Discard row.
 
