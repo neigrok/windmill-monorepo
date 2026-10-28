@@ -15,7 +15,9 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import kotlin.math.roundToInt
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -27,7 +29,6 @@ import java.time.format.DateTimeFormatter
 import works.windmill.gym.R
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.ui.LocalGymColors
-import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheetWindow
 import works.windmill.platform.telemetry.LocalTelemetry
 
@@ -62,7 +63,7 @@ internal fun CoachReadSources(
     receipt: AnswerReceipt?,
     steps: List<AskStep>,
     onOpenWorkout: ((String) -> Unit)?,
-    onSheetHeight: (Int) -> Unit,
+    onSheetTop: (Int?) -> Unit,
 ) {
     val skin = LocalGymColors.current
     val telemetry = LocalTelemetry.current
@@ -72,32 +73,32 @@ internal fun CoachReadSources(
     val notesRead = steps.any { it.tool == "list_notes" && !it.failed }
     val line = if (counted.isNotEmpty()) "Read $counted" else if (notesRead) "Read your notes" else "Read nothing from your log"
     Row(verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "What Coach read") {
+        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "What Coach read") {
             expanded = true
             telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "read_sources", "outcome" to "ok"))
         }.padding(start = 12.dp, top = 4.dp),
     ) {
-        Text(line, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+        Text(line, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)
     }
     if (!expanded) return
-    DisposableEffect(Unit) { onDispose { onSheetHeight(0) } }
+    DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
     ModalBottomSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
         containerColor = skin.surface, scrimColor = skin.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
-            Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().height(24.dp).onGloballyPositioned { onSheetTop(it.positionOnScreen().y.roundToInt()) }, contentAlignment = Alignment.Center) {
                 Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
             }
         },
     ) {
         WindmillSheetWindow()
-        Column(Modifier.fillMaxWidth().onSizeChanged { onSheetHeight(it.height) }
+        Column(Modifier.fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("What Coach read", style = WindmillFont.body(28, FontWeight.ExtraBold).copy(lineHeight = 36.sp), color = skin.ink)
-            if (counted.isNotEmpty()) Text(counted, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            Text("What Coach read", style = CoachType.body(28, FontWeight.ExtraBold).copy(lineHeight = 36.sp), color = skin.ink)
+            if (counted.isNotEmpty()) Text(counted, style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
             receipt?.observed.orEmpty().groupBy { it.sessionId }.values.forEach { observations ->
                 val observation = observations.lastOrNull { it.wholeWorkout } ?: observations.last()
                 Row(verticalAlignment = Alignment.CenterVertically,
@@ -108,15 +109,15 @@ internal fun CoachReadSources(
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(observation.routine?.takeIf { it.isNotBlank() } ?: Readout.noRoutine,
-                            style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.ink)
-                        Text(CoachSources.facts(observation), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                            style = CoachType.body(15, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.ink)
+                        Text(CoachSources.facts(observation), style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
                     }
                     Icon(painterResource(R.drawable.gym_coach_source_chevron), null, Modifier.size(18.dp), tint = skin.inkDim)
                 }
             }
-            if (notesRead) Text("Also read your notes.", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+            if (notesRead) Text("Also read your notes.", style = CoachType.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
             TextButton(onClick = { expanded = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Text("Close", style = WindmillFont.body(16, FontWeight.Bold), color = skin.accent)
+                Text("Close", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.accent)
             }
         }
     }

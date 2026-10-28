@@ -96,6 +96,20 @@ Cancel or dismissal emits `outcome=cancelled`; the application-owned confirmed d
 failures retain `gym.deleteThread`; expected refusals emit an outcome without an Issue. Conversation
 deletion has no held window or Undo.
 
+## Coach messages
+
+Copy question and Copy answer emit one `gym_action` with `screen=coach`, `action=copy` and
+`outcome=ok|failed`. A failed clipboard write reports once under `gym.copyMessage` and keeps the
+existing menu available for Retry. Question/answer text and clipboard contents never enter these
+properties or diagnostics. Plain taps and opening the menu do not claim a copy. Jump to latest
+emits `action=jump_latest`, `outcome=ok` when the local scroll command is accepted.
+
+The native state-input pipeline retains draft/selection ownership while Material3 supplies its
+filled-field decoration. Signed-out local History uses the existing disabled native component:
+text/photo drafts stay retained, while editing, adding/removing a photo and Send stay disabled.
+Anonymous network composition remains gated by the installation implementation. The signed-out
+access-screen body belongs to task 36.
+
 ## Deletion actions
 
 Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
@@ -325,6 +339,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach archive navigation | `gym_action` | screen: `coach`; action: `fresh_entry`, `history_open`, `draft_restored`, `reply_open`, `read_sources`; outcome: `ok` |
+| Coach messages | `gym_action` | screen: `coach`; action: `copy`; outcome: `ok`, `failed`; or action: `jump_latest`, outcome: `ok` |
 | Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |

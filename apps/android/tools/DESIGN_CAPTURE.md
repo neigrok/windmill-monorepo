@@ -4,6 +4,9 @@
 fresh Pixel 8 emulator directory. It never clears or replaces an existing emulator. It builds a
 debug APK with an explicit local origin, verifies the generated `WM_API_BASE_URL` before installation,
 and preserves that APK with its SHA-256, source revision and dirty status in the manifest.
+The private cold-start marker carries the exact seeded routine identities as a JSON array. The
+debug provider waits for that complete set and a drawn frame; missing or empty marker bytes disable
+the probe, while a valid `[]` explicitly expects an empty program. Identities never enter telemetry.
 
 ## Run
 
@@ -26,6 +29,9 @@ retains each intent and replica across bounded prefix acknowledgements; refusals
 or exhausted retries stop the run before fixture acceptance. A separate
 empty installation captures signed-out states. Each appearance starts with clean app data;
 transient recipes run after the Dark/Daylight switch.
+Use `--fresh-mode-fixture` for independent Coach capture groups: Light gets a fresh disposable
+seeded account, so Dark conversations and the per-account question allowance do not carry into it.
+The default retains one fixture account across appearances.
 
 The backend inherits only runtime environment variables and explicit local configuration. Its
 Anthropic endpoint is the in-process deterministic model fixture; no hosted provider credential is
@@ -98,7 +104,9 @@ retained point opened from a Log new-best moment in both appearances. Optional f
 contains 1–40 explicit workouts: zero-based `routine`, integer `daysAgo` (0–3650), integer
 `minutesAgo` (0–1439), `weightKg` (−500–500 in hundredths), and integer `reps` (1–500). Each workout
 lasts 40 minutes and must finish by the fixture clock. The supported `gym_import_session` door
-writes the same three-set shape for each movement; omitting history preserves the default seed.
+writes three working sets per movement unless an explicit workout supplies `setsPerMovement`
+(1–20). Custom history permits at most 20 total working sets per workout, preserving its 40-minute
+duration. Omitting history preserves the default seed.
 The Record fixture has six factual workouts, five daily chart points and two earlier records.
 
 `--fixture apps/android/tools/capture-recipes/compact-rack-fixture.json` with
@@ -112,6 +120,12 @@ opens the actual logged row for 03.3, then captures the signed raw field with it
 an inline numeric refusal. It cancels that refused draft and ends the fixture workout. These
 recipes use the exact clock-only settlement option; native minus/Done interaction and the
 small-height/200% text check also require the installed-app acceptance pass.
+
+Scenarios with explicit `model_timing` use the existing zero-idle hierarchy helper while their
+steps run. This keeps live text and Stop observable without waiting for generation to finish;
+it does not normalize text or geometry. Other scenarios retain ordinary hierarchy capture.
+Thinking and streaming recipes enter through Routines then Coach, so the Coach header cannot be
+mistaken for its navigation item.
 
 Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
 known animation phase; the manifest records that delay. This does not establish screen readiness.
@@ -136,7 +150,8 @@ observed control bounds and release in `finally` as described below.
 ]
 ```
 
-`tap` and `wait` match exact accessibility text, description or resource ID. Other steps are `text`, `key`
+`tap` and `wait` match exact accessibility text, description or resource ID. `wait_contains`
+explicitly matches a visible partial label while a model answer grows. Other steps are `text`, `key`
 (Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
 `02.7`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
@@ -201,6 +216,20 @@ accepts a valid acknowledged prefix, retains operation identity for the suffix, 
 
 Each `responses` entry is one Anthropic response's content blocks. Text and `tool_use` blocks work
 in JSON and streaming responses. `$routine0` is replaced with the first fixture routine's id.
+Optional `model_timing` supplies integer `start_delay_ms` (0–10000), `chunk_chars` (1–4096)
+and `chunk_delay_ms` (0–1000). Validation bounds the entire scenario to 256 text chunks and ten
+seconds of fixture delay before startup. Text chunks preserve Unicode characters; tool JSON and
+default responses retain their existing event sequence. A stopped response may close its local
+fixture connection without a transport log.
+
+With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-history-fixture.json`,
+`capture-recipes/coach-messages.json` captures empty Coach, Markdown, thinking and streaming;
+`capture-recipes/coach-history.json` captures History, sources, delete confirmation, Copy and
+Jump to latest. Each group uses at most three asks per fresh account. Coach recipes wait for
+exact native input echo before sending or navigating; a partial fixture input fails that
+precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one working set and
+400 kg volume; the previews are deterministic fixture answers.
+
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must
 assert its actual backend receipt as well as its UI result.
 
@@ -232,3 +261,7 @@ Hide workout and Notification off rows are absent. The held removal ground is ca
 `after` so the large-text capture retains all four rows. Six Dark/Daylight API 37 captures are
 verified; released removal, handle reorder and retained movement drafts have separate native
 action/readback evidence. Capture cleanup waits for the saved workout receipt.
+
+Retire a capture AVD only after verifying its emulator process has stopped. Keep the APK,
+screenshots, XML, traces, logs, events and manifest; removing only the retired `avd/` directory
+recovers its mutable userdata space without removing acceptance evidence.

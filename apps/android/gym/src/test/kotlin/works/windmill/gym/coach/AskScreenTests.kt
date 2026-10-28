@@ -8,6 +8,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipboardManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assert
@@ -21,8 +24,11 @@ import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -42,6 +48,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalIntent
@@ -67,6 +74,7 @@ import works.windmill.gym.domain.sync.SetTarget as SyncTarget
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AskScreenTests {
     @get:Rule
     val compose = createComposeRule()
@@ -145,9 +153,42 @@ class AskScreenTests {
                 onBack = null,
                 onThreads = { doors += "threads" },
                 onNotes = { doors += "notes" },
-                onReview = {},
+                onReview = {}, seat = "A",
             )
         }
+    }
+
+    @Test fun anEmptyPendingMessagePacesBothTheFirstChunkAndItsTerminalTextInsideTheBubble() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        var generation by mutableStateOf<AskGeneration?>(null)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            AskScreen(store, listOf(generation?.exchange() ?: AskExchange("Question", requestId = "request-a")),
+                emptyList(), emptySet(), generation?.terminal != true, null, onAsk = {}, onRetry = {}, onAskNew = {},
+                seed = "", origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {},
+                conversationId = "thread-a", onStop = {})
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
+        val first = "First " + "word ".repeat(40)
+        val whole = first + "final ".repeat(40)
+        compose.runOnIdle { generation = AskGeneration("generation-a", "request-a", "Question", "running", first, revision = 1) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        fun shown(): String = compose.onAllNodes(hasText("First", substring = true), useUnmergedTree = true)
+            .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
+        val initial = shown()
+        assertTrue(initial.isNotEmpty() && initial.length < first.length && first.startsWith(initial))
+        compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
+        compose.runOnIdle { generation = generation!!.copy(status = "completed", answer = whole, revision = 2) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        val terminal = shown()
+        assertTrue(terminal.length > initial.length && terminal.length < whole.length && whole.startsWith(terminal))
+        compose.mainClock.advanceTimeBy(2000)
+        assertEquals(whole, shown())
+        scope.cancel()
     }
 
     @Test
@@ -164,7 +205,7 @@ class AskScreenTests {
         }
         compose.onNodeWithText("First words").assertIsDisplayed()
         compose.onNodeWithText("Jump to latest").assertDoesNotExist()
-        compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
         compose.runOnIdle { generation = generation.copy(answer = "First words, then more.", revision = 2) }
         compose.onNodeWithText("First words").assertDoesNotExist()
         compose.onNodeWithText("First words, then more.").assertIsDisplayed()
@@ -172,7 +213,7 @@ class AskScreenTests {
         compose.onNodeWithText("First words, then more.").assertIsDisplayed()
         compose.onNodeWithText(Ask.stopped).assertIsDisplayed()
         compose.onNodeWithText("Try again").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
         scope.cancel()
     }
 
@@ -236,20 +277,34 @@ class AskScreenTests {
     }
 
     @Test
-    fun partialToCompletedKeepsTheSameOpenMessageMenu() {
+    fun partialToCompletedKeepsTheOpenMenuAndCopiesAllReceivedTextBeforeRevealFinishes() {
+        lateinit var clipboard: ClipboardManager
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         var generation by mutableStateOf(AskGeneration("generation-a", "request-a", "Question", "running", "Partial café", revision = 1))
         compose.setContent {
+            clipboard = LocalClipboardManager.current
             AskScreen(store, listOf(generation.exchange()), emptyList(), emptySet(), !generation.terminal, null,
                 onAsk = {}, onRetry = {}, onAskNew = {}, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onNotes = {}, onReview = {}, conversationId = "thread-a")
         }
-        compose.onNodeWithText("Partial café").performClick()
-        compose.onNodeWithText("Copy").assertIsDisplayed()
-        compose.runOnIdle { generation = generation.copy(status = "completed", answer = "Final café 東京 🏋🏽‍♀️", revision = 3) }
-        compose.onNodeWithText("Copy").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Final café 東京 🏋🏽‍♀️").assertIsDisplayed()
+        compose.onNodeWithText("Partial café").performTouchInput { longClick() }
+        compose.onNodeWithText("Copy answer").assertIsDisplayed()
+        val whole = "Partial café 東京 🏋🏽‍♀️ " + "received words ".repeat(100).trimEnd()
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { generation = generation.copy(status = "completed", answer = whole, revision = 3) }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(150)
+        val shown = compose.onAllNodes(hasText("Partial café", substring = true), useUnmergedTree = true)
+            .fetchSemanticsNodes().flatMap { it.config[SemanticsProperties.Text] }.joinToString("") { it.text }
+        assertTrue(shown.length > "Partial café".length && shown.length < whole.length && whole.startsWith(shown))
+        val copy = compose.onNodeWithText("Copy answer").assertIsDisplayed()
+            .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        compose.runOnIdle {
+            assertTrue(copy())
+            assertEquals(whole, clipboard.getText()?.text)
+        }
+        compose.mainClock.autoAdvance = true
         scope.cancel()
     }
 
@@ -474,16 +529,16 @@ class AskScreenTests {
     }
 
     @Test
-    fun theQuietRoomKeepsNotesInMoreAndHistoryInTheBar() {
+    fun theQuietRoomKeepsHistoryAndTheAccountSeatInTheBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val doors = mutableListOf<String>()
         room(signedIn(scope).store, thread = emptyList(), cap = null, doors = doors)
 
         compose.onNodeWithText("Notes").assertDoesNotExist()
-        compose.onNode(hasContentDescription("More")).performClick()
-        compose.onNodeWithText("Notes").performClick()
-        compose.onNodeWithText("History").performClick()
-        compose.runOnIdle { assertEquals(listOf("notes", "threads"), doors) }
+        compose.onNodeWithContentDescription("More").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Your account").assertIsDisplayed()
+        compose.onNodeWithContentDescription("History").performClick()
+        compose.runOnIdle { assertEquals(listOf("threads"), doors) }
         scope.cancel()
     }
     @Test
@@ -515,7 +570,7 @@ class AskScreenTests {
     fun aFastSettledAnswerStillScrollsToItsNewQuestionAndProse() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
-        var thread by mutableStateOf(listOf(AskExchange("First question", AskAnswer("Long history. ".repeat(150), ReadTally(0, 0, 0)))))
+        var thread by mutableStateOf(listOf(AskExchange("First question", AskAnswer("Long history. ".repeat(500), ReadTally(0, 0, 0)))))
         compose.setContent {
             AskScreen(store, thread, emptyList(), emptySet(), false, null, onAsk = {}, onRetry = {}, onAskNew = {},
                 seed = "", origin = "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
@@ -525,18 +580,18 @@ class AskScreenTests {
         }
         compose.onNodeWithText("Second question").assertIsDisplayed()
         compose.onNodeWithText("A fast complete answer.").assertIsDisplayed()
-        val viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
+        val viewport = compose.onNodeWithTag("coach-thread").getUnclippedBoundsInRoot()
         val question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
-        assertTrue("the new question starts the visible response", question.top <= viewport.top + 32.dp)
+        assertTrue("the new question is visible above its answer", question.top >= viewport.top && question.bottom <= viewport.bottom)
         compose.onNodeWithText("First question").assertIsNotDisplayed()
         scope.cancel()
     }
 
     @Test
-    fun aSentQuestionStaysAtTheTopThroughPendingReplyAndKeyboardViewportExpansion() {
+    fun aSentQuestionAndReplyClearTheComposerThroughKeyboardViewportExpansion() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
-        val first = AskExchange("First question", AskAnswer("Your existing training history. ".repeat(18), ReadTally(0, 0, 0)))
+        val first = AskExchange("First question", AskAnswer("Your existing training history. ".repeat(150), ReadTally(0, 0, 0)))
         var thread by mutableStateOf(listOf(first))
         var height by mutableStateOf(540.dp)
         val sent = mutableListOf<String>()
@@ -549,20 +604,20 @@ class AskScreenTests {
         }
         compose.onNodeWithContentDescription("Question").performTextReplacement("Second question")
         compose.onNodeWithContentDescription("Send").performClick()
-        compose.onNodeWithText(Ask.waiting).assertIsDisplayed()
-        var viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
+        compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
+        var viewport = compose.onNodeWithTag("coach-thread").getUnclippedBoundsInRoot()
         var question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
-        assertTrue("pending response is anchored", question.top <= viewport.top + 32.dp)
+        assertTrue("pending question is visible above the typing bubble", question.top >= viewport.top && question.bottom <= viewport.bottom)
         compose.onNodeWithText("First question").assertIsNotDisplayed()
 
         compose.runOnIdle {
             height = 900.dp
             thread = listOf(first, AskExchange("Second question", AskAnswer("The complete answer is visible here.", ReadTally(0, 0, 0))))
         }
-        viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
+        viewport = compose.onNodeWithTag("coach-thread").getUnclippedBoundsInRoot()
         question = compose.onNodeWithText("Second question").getUnclippedBoundsInRoot()
         val answer = compose.onNodeWithText("The complete answer is visible here.").getUnclippedBoundsInRoot()
-        assertTrue("expanded viewport retains the question anchor: question=$question viewport=$viewport", question.top >= viewport.top && question.top <= viewport.top + 32.dp)
+        assertTrue("expanded viewport keeps the question visible: question=$question viewport=$viewport", question.top >= viewport.top && question.bottom <= viewport.bottom)
         assertTrue("the entire answer clears the composer", answer.top >= question.bottom && answer.bottom <= viewport.bottom)
         compose.onNodeWithText("First question").assertIsNotDisplayed()
         compose.runOnIdle { assertEquals(listOf("Second question"), sent) }
@@ -581,22 +636,21 @@ class AskScreenTests {
                 onAsk = {
                     sent += it
                     conversation = "new-thread"
-                    val answer = if (thread.isEmpty()) "A much longer training history. ".repeat(60) else "The new answer is here."
+                    val answer = if (thread.isEmpty()) "A much longer training history. ".repeat(200) else "The new answer is here."
                     thread = thread + AskExchange(it, AskAnswer(answer, ReadTally(0, 0, 0)))
                 }, onRetry = {}, onAskNew = { conversation = ""; thread = emptyList() }, seed = "", origin = "https://windmill.works",
                 onThreads = {}, onNotes = {}, onReview = {}, conversationId = conversation,
                 onNewDraft = { conversation = ""; thread = emptyList() })
         }
-        compose.onNode(hasContentDescription("More")).performClick()
-        compose.onNodeWithText("New chat").performClick()
+        compose.runOnIdle { conversation = ""; thread = emptyList() }
         compose.onNodeWithContentDescription("Question").performTextReplacement("New first question")
         compose.onNodeWithContentDescription("Send").performClick()
         compose.onNodeWithContentDescription("Question").performTextReplacement("New second question")
         compose.onNodeWithContentDescription("Send").performClick()
-        val viewport = compose.onNode(hasScrollAction() and !hasContentDescription("Question")).getUnclippedBoundsInRoot()
+        val viewport = compose.onNodeWithTag("coach-thread").getUnclippedBoundsInRoot()
         val question = compose.onNodeWithText("New second question").getUnclippedBoundsInRoot()
         assertTrue("new conversation uses its own measured anchor: $question in $viewport",
-            question.top >= viewport.top && question.top <= viewport.top + 32.dp)
+            question.top >= viewport.top && question.bottom <= viewport.bottom)
         compose.onNodeWithText("The new answer is here.").assertIsDisplayed()
         compose.onNodeWithText("New first question").assertIsNotDisplayed()
         compose.onNodeWithText("Old question 2").assertDoesNotExist()
@@ -688,11 +742,11 @@ class AskScreenTests {
         fun shown(): String = compose.onAllNodes(hasText("word", substring = true), useUnmergedTree = true)
             .fetchSemanticsNodes().joinToString("") { node -> node.config[SemanticsProperties.Text].joinToString("") { it.text } }
         assertEquals(partial, shown())
-        compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
         repeat(3) {
             compose.mainClock.advanceTimeByFrame()
             assertEquals(partial, shown())
-            compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Coach is thinking").assertDoesNotExist()
         }
         scope.cancel()
     }
@@ -715,6 +769,7 @@ class AskScreenTests {
         }
         compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
             .performScrollTo().assertIsDisplayed()
+        assertEquals(20.dp, compose.onNodeWithText(Ask.promise).getUnclippedBoundsInRoot().left)
         val settled = applied(room, server, "proposal1")
         compose.runOnIdle { receipts = listOf(requireNotNull(settled.proposal.receipt)) }
         compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).performScrollTo().assertIsDisplayed()

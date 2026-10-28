@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location("design_capture", Path(__file__).parents[1] / "design_capture.py")
@@ -25,6 +26,27 @@ class DesignCaptureTests(unittest.TestCase):
         for settle in [True, None]:
             with self.subTest(settle=settle), self.assertRaises(ValueError):
                 capture.validate_scenarios([{**scenario, "settle": settle, "frame_delay_ms": 180}])
+
+    def test_model_timing_is_optional_and_bounds_the_entire_scenario_before_capture(self):
+        scenario = {"board": "08.11", "name": "coach-streaming", "account": "fixture",
+                    "responses": [[{"type": "text", "text": "a" * 256}]]}
+        self.assertEqual((0, None, 0), capture.model_timing(scenario))
+        self.assertEqual((10000, None, 0), capture.model_timing({**scenario, "model_timing": {"start_delay_ms": 10000}}))
+        self.assertEqual((0, 1, 0), capture.model_timing({**scenario, "model_timing": {"chunk_chars": 1}}))
+        invalid = [None, [], {"unknown": 1}, {"chunk_chars": 1, "chunk_delay_ms": 40}]
+        for key, values in {"start_delay_ms": [-1, 10001, 1.5, True, "1"],
+                            "chunk_chars": [0, 4097, 1.5, True, "1"],
+                            "chunk_delay_ms": [-1, 1001, 1.5, True, "1"]}.items():
+            invalid.extend({key: value} for value in values)
+        for timing in invalid:
+            with self.subTest(timing=timing), self.assertRaises(ValueError):
+                capture.validate_scenarios([{**scenario, "model_timing": timing}])
+        for responses, timing in [([[{"type": "text", "text": "a" * 257}]], {"chunk_chars": 1}),
+                                  (scenario["responses"] * 2, {"start_delay_ms": 5001}),
+                                  ([[{"type": "text", "text": "ab"}]] * 2,
+                                   {"start_delay_ms": 4500, "chunk_chars": 1, "chunk_delay_ms": 501})]:
+            with self.subTest(responses=len(responses), timing=timing), self.assertRaises(ValueError):
+                capture.validate_scenarios([{**scenario, "responses": responses, "model_timing": timing}])
 
     def test_optional_fixture_retains_explicit_targets_and_rejects_other_configuration(self):
         self.assertIsNone(capture.read_fixture(None))
@@ -475,6 +497,42 @@ class DesignCaptureTests(unittest.TestCase):
         self.assertEqual("[0,0][100,100]", device.find("Workout").get("bounds"))
         self.assertEqual(2, device.calls)
 
+    def test_timed_coach_reads_the_live_hierarchy_without_normalizing_partial_text(self):
+        device = capture.Device(Path("/android-sdk"), 5582)
+        calls = []
+        raw = b'<hierarchy><node text="Partial answer 12.5" bounds="[0,1][80,90]" /></hierarchy>'
+        def run(*arguments, **kwargs):
+            calls.append(arguments)
+            return raw if arguments[0] == "exec-out" else b""
+        device.run = run
+        self.assertEqual(raw, ET.tostring(device.tree()))
+        self.assertIn(("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml"), calls)
+        calls.clear()
+        device.live_coach = True
+        self.assertEqual(raw, ET.tostring(device.tree()))
+        self.assertIn(("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
+            "app_process", "/system/bin", "works.windmill.capture.CaptureTree"), calls)
+        self.assertNotIn(("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml"), calls)
+        device.live_coach = False
+        calls.clear()
+        self.assertEqual(raw, ET.tostring(device.tree()))
+        self.assertIn(("shell", "uiautomator", "dump", "/data/local/tmp/design-capture.xml"), calls)
+
+    def test_partial_text_wait_is_explicit_and_ignores_hidden_content(self):
+        class Screens(capture.Device):
+            def __init__(self):
+                self.calls = 0
+            def tree(self):
+                self.calls += 1
+                root = ET.Element("hierarchy")
+                ET.SubElement(root, "node", {"text": "Thursday is still", "visible-to-user": "false"})
+                text = "Thursday" if self.calls == 1 else "Thursday is still growing"
+                ET.SubElement(root, "node", {"text": text, "visible-to-user": "true"})
+                return root
+        device = Screens()
+        device.steps([{"wait_contains": "Thursday is still"}])
+        self.assertEqual(2, device.calls)
+
     def test_tile_settlement_preserves_other_tiles_names_and_layout_changes(self):
         def tree(clock, title="Push A", bounds="[0,0][100,100]", other="00:01"):
             root = ET.Element("hierarchy")
@@ -535,6 +593,39 @@ class DesignCaptureTests(unittest.TestCase):
                 ], events)
             self.assertEqual([], server.responses)
             self.assertEqual(2, server.calls)
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join()
+
+    def test_model_timing_streams_unicode_chunks_and_preserves_tool_and_empty_text_events(self):
+        server = capture.ThreadingHTTPServer(("127.0.0.1", 0), capture.ModelFixture)
+        tool = {"type": "tool_use", "id": "tool_capture", "name": "gym_get_routines", "input": {"page": 1}}
+        content = [tool, {"type": "text", "text": "é東京🙂ab"}, {"type": "text", "text": ""}]
+        server.responses, server.calls, server.timing = [content, content], 0, (1000, 2, 200)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            with patch.object(capture.time, "sleep") as sleep:
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/messages",
+                    json.dumps({"model": "fixture", "stream": True}).encode(), {"Content-Type": "application/json"})
+                with urllib.request.urlopen(request) as response:
+                    events = [json.loads(line[6:]) for line in response.read().decode().splitlines() if line.startswith("data: ")]
+                self.assertEqual([1, .2, .2, .2], [call.args[0] for call in sleep.call_args_list])
+                self.assertEqual([
+                    {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": '{"page": 1}'}},
+                    *[{"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}}
+                      for index, text in [(1, "é東"), (1, "京🙂"), (1, "ab"), (2, "")]],
+                ], [event for event in events if event["type"] == "content_block_delta"])
+                self.assertEqual([0, 1, 2], [event["index"] for event in events if event["type"] == "content_block_stop"])
+                self.assertEqual({"type": "message_stop"}, events[-1])
+                sleep.reset_mock()
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/messages",
+                    json.dumps({"model": "fixture", "stream": False}).encode(), {"Content-Type": "application/json"})
+                with urllib.request.urlopen(request) as response:
+                    self.assertEqual(content, json.load(response)["content"])
+                self.assertEqual([1], [call.args[0] for call in sleep.call_args_list])
+            self.assertEqual(([], 2), (server.responses, server.calls))
         finally:
             server.shutdown()
             server.server_close()

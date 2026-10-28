@@ -118,8 +118,8 @@ class AccountRouteTests {
                 compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).performClick()
                 compose.onNodeWithContentDescription("Back to $tab").performClick()
             }
-            compose.onNodeWithText("History").assertIsDisplayed()
-            compose.onNodeWithContentDescription("More").assertIsDisplayed()
+            compose.onNodeWithContentDescription("History").assertIsDisplayed()
+            compose.onNodeWithContentDescription("More").assertDoesNotExist()
             compose.runOnIdle {
                 assertEquals(listOf("routines", "settings", "routines", "log", "settings", "log",
                     "coach", "settings", "coach").map { mapOf("screen" to it) }, screens)

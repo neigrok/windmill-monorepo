@@ -48,6 +48,13 @@ internal class CoachReveal(initial: String) {
         charsPerSecond = maxOf(floorCharsPerSecond, (received.length - revealed) / interval)
     }
 
+    fun settle(text: String) {
+        received = text
+        revealed = text.length.toDouble()
+        anchor = revealed
+        graphemes.setText(text)
+    }
+
     fun shown(atNanos: Long): String {
         advance(atNanos)
         val at = revealed.toInt()
@@ -67,15 +74,19 @@ internal class CoachReveal(initial: String) {
 // so a room revisited mid-stream never re-types. Arrival stamps and advancement both take the frame
 // clock, so the test clock drives the whole reveal.
 @Composable
-internal fun rememberRevealedText(messageKey: String, generation: AskGeneration): String {
-    val reveal = remember(messageKey) { CoachReveal(generation.answer) }
-    var shown by remember(messageKey) { mutableStateOf(generation.answer) }
-    LaunchedEffect(reveal, generation.answer) {
+internal fun rememberRevealedText(messageKey: String, generation: AskGeneration): String = rememberRevealedText(messageKey, generation.answer, generation.status in listOf("failed", "stopped"))
+
+@Composable
+internal fun rememberRevealedText(messageKey: String, text: String, settled: Boolean = false): String {
+    val reveal = remember(messageKey) { CoachReveal(text) }
+    var shown by remember(messageKey) { mutableStateOf(text) }
+    LaunchedEffect(reveal, text, settled) {
+        if (settled) { reveal.settle(text); shown = text; return@LaunchedEffect }
         withFrameNanos { frame ->
-            reveal.receive(generation.answer, frame)
+            reveal.receive(text, frame)
             shown = reveal.shown(frame)
         }
         while (!reveal.settled) withFrameNanos { frame -> shown = reveal.shown(frame) }
     }
-    return shown
+    return if (settled) text else shown
 }

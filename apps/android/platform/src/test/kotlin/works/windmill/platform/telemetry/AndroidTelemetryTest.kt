@@ -62,8 +62,9 @@ class AndroidTelemetryTest {
     }
 
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
-        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources")
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
+            listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
             listOf("ok", "refused", "failed", "cancelled").map { mapOf("screen" to "threads", "action" to "delete", "outcome" to it) } +
             listOf(mapOf("screen" to "threads", "action" to "delete", "state" to "shown"))
         val content = mapOf("chat_id" to "private", "question" to "private", "photo" to "private",

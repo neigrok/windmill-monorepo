@@ -2,10 +2,13 @@ package works.windmill.gym.coach
 
 data class CoachSpan(val text: String, val bold: Boolean = false, val italic: Boolean = false, val code: Boolean = false)
 
+data class CoachTableRow(val cells: List<List<CoachSpan>>)
+
 sealed interface CoachBlock {
     data class Paragraph(val spans: List<CoachSpan>) : CoachBlock
     data class Heading(val level: Int, val spans: List<CoachSpan>) : CoachBlock
     data class ListItem(val ordinal: Int?, val depth: Int, val spans: List<CoachSpan>) : CoachBlock
+    data class Table(val header: CoachTableRow, val rows: List<CoachTableRow>) : CoachBlock
     data class Code(val text: String) : CoachBlock
     data object Rule : CoachBlock
 }
@@ -61,6 +64,38 @@ private sealed interface Line {
     }
 }
 
+private object TableLine {
+    private val delimiter = Regex(":?-{3,}:?")
+    fun cells(raw: String): List<String>? {
+        if ('|' !in raw) return null
+        val source = raw.trim()
+        val cells = mutableListOf<String>()
+        val cell = StringBuilder()
+        var escaped = false
+        var code = false
+        source.forEach { char ->
+            when {
+                escaped -> { cell.append(char); escaped = false }
+                char == '\\' -> { cell.append(char); escaped = true }
+                char == '`' -> { cell.append(char); code = !code }
+                char == '|' && !code -> { cells += cell.toString().trim(); cell.clear() }
+                else -> cell.append(char)
+            }
+        }
+        cells += cell.toString().trim()
+        if (source.startsWith('|') && cells.firstOrNull().isNullOrEmpty()) cells.removeAt(0)
+        if (source.endsWith('|') && cells.lastOrNull().isNullOrEmpty()) cells.removeAt(cells.lastIndex)
+        return cells.takeIf { it.isNotEmpty() }
+    }
+
+    fun header(lines: List<String>, at: Int): List<String>? {
+        val header = cells(lines[at])?.takeIf { it.size >= 2 } ?: return null
+        val divider = lines.getOrNull(at + 1)?.let(::cells) ?: return null
+        if (header.size != divider.size || divider.any { !delimiter.matches(it) }) return null
+        return header
+    }
+}
+
 // A stretch of consecutive lines that one block claims, with its rendered and its copied form.
 private sealed interface Source {
     val block: CoachBlock?
@@ -87,6 +122,12 @@ private sealed interface Source {
         override val plainLines: List<String> get() = listOf(prefix + Inline(text).plain)
     }
 
+    data class Table(val header: List<String>, val rows: List<List<String>>) : Source {
+        override val block: CoachBlock get() = CoachBlock.Table(CoachTableRow(header.map { Inline(it).spans }),
+            rows.map { CoachTableRow(it.map { cell -> Inline(cell).spans }) })
+        override val plainLines: List<String> get() = (listOf(header) + rows).map { row -> row.joinToString("\t") { Inline(it).plain } }
+    }
+
     data class Code(val lines: List<String>, val closed: Boolean) : Source {
         private val shown: List<String>
             get() {
@@ -103,6 +144,19 @@ private sealed interface Source {
             val sources = mutableListOf<Source>()
             var at = 0
             while (at < lines.size) {
+                val header = TableLine.header(lines, at)
+                if (header != null) {
+                    var end = at + 2
+                    val rows = mutableListOf<List<String>>()
+                    while (end < lines.size) {
+                        val row = TableLine.cells(lines[end])?.takeIf { it.size <= header.size } ?: break
+                        rows += row + List(header.size - row.size) { "" }
+                        end++
+                    }
+                    sources += Table(header, rows)
+                    at = end
+                    continue
+                }
                 val raw = lines[at]
                 when (val line = Line.read(raw, last = at == lines.lastIndex)) {
                     Line.Blank, Line.Held -> {
@@ -139,7 +193,7 @@ private sealed interface Source {
 
         private fun continuationEnd(lines: List<String>, from: Int): Int {
             var end = from
-            while (end < lines.size && Line.read(lines[end], last = end == lines.lastIndex) is Line.Text) end += 1
+            while (end < lines.size && TableLine.header(lines, end) == null && Line.read(lines[end], last = end == lines.lastIndex) is Line.Text) end += 1
             return end
         }
     }
@@ -176,7 +230,7 @@ private class Inline(private val source: String) {
 
     private fun escape(at: Int): Int {
         val next = source.getOrNull(at + 1)
-        if (next == null || next !in "\\`*_#[]()") {
+        if (next == null || next !in "\\`*_#[]()|") {
             run.append('\\')
             return at + 1
         }

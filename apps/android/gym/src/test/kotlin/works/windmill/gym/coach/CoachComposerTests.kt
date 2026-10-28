@@ -73,6 +73,23 @@ class CoachComposerTests {
             runBlocking { room.select("user-a") }
         }
 
+    @Test fun aDisabledLocalHistoryComposerRetainsTextAndPhotoWithoutEditingOrSending() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val store = signedIn(scope).store
+        val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
+        val draft = CoachDraft("Retained draft", photo)
+        store.coach.saveDraft("thread-a", draft)
+        compose.setContent { CoachComposer(store.coach, "thread-a", "", false, { _, _ -> error("Read-only history sent a message") },
+            null, null, true, enabled = false) }
+        compose.onNodeWithContentDescription("Question").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Add photo").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        compose.onNodeWithText("Remove photo").assertIsNotEnabled().performClick()
+        assertEquals(draft, store.coach.draft("thread-a"))
+        assertEquals(draft, LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
+        scope.cancel()
+    }
+
     @Test
     fun touchDoubleTapSelectsAWordAndDraftNotificationsPreserveItUntilAnExternalClear() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -89,8 +106,9 @@ class CoachComposerTests {
         field.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val layout = layouts.single()
         val textTop = (field.fetchSemanticsNode().boundsInRoot.height - layout.size.height) / 2f
-        val word = layout.getBoundingBox(8).center + Offset(0f, textTop)
-        field.performTouchInput { doubleClick(word) }
+        val textLeft = (field.fetchSemanticsNode().boundsInRoot.width - layout.size.width) / 2f
+        val word = layout.getBoundingBox(8).center + Offset(textLeft, textTop)
+        field.performTouchInput { advanceEventTime(500); doubleClick(word, delayMillis = 150) }
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
         compose.runOnIdle { store.coach.saveDraft("another-thread", CoachDraft("Unrelated draft")) }

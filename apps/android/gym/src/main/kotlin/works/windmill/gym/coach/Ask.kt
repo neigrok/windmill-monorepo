@@ -211,7 +211,6 @@ object Ask {
     const val draftRetry = "Couldn’t save the routine. Try again."
     const val draftSignIn = "Sign in again to save this routine."
 
-    const val waiting = "reading your log…"
 
     const val interrupted = "Response interrupted. Retry to continue this response."
     const val stopped = "Response stopped."

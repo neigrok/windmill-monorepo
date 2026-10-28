@@ -15,7 +15,7 @@
       [
         {
           "type": "text",
-          "text": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+          "text": "Keep the same total work each week.\n\nDo 3 sets of 3 at 90 kg for a heavier top set."
         }
       ],
       [
@@ -36,10 +36,13 @@
         "text": "Is Push A still doing anything?"
       },
       {
+        "wait": "Is Push A still doing anything?"
+      },
+      {
         "tap": "Send"
       },
       {
-        "wait": "Keep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set."
+        "wait": "Do 3 sets of 3 at 90 kg for a heavier top set."
       },
       {
         "tap": "History"
@@ -52,6 +55,9 @@
       },
       {
         "text": "How heavy should I start squats?"
+      },
+      {
+        "wait": "How heavy should I start squats?"
       },
       {
         "tap": "Send"
@@ -70,6 +76,9 @@
       },
       {
         "text": "Plan a lighter week"
+      },
+      {
+        "wait": "Plan a lighter week"
       },
       {
         "keyboard": "hide"
@@ -126,7 +135,7 @@
           "target": "Is Push A still doing anything?",
           "row": true,
           "at": [
-            0.95,
+            0.85,
             0.5
           ]
         }
@@ -155,6 +164,100 @@
       },
       {
         "wait": "Is Push A still doing anything?"
+      }
+    ]
+  },
+  {
+    "board": "08.32",
+    "name": "coach-copy",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Is Push A still doing anything?"
+      },
+      {
+        "wait": "Do 3 sets of 3 at 90 kg for a heavier top set."
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Keep the same total work each week."
+        }
+      },
+      {
+        "wait": "Copy answer"
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      }
+    ],
+    "after": [
+      {
+        "tap": "Copy answer"
+      }
+    ]
+  },
+  {
+    "board": "08.33",
+    "name": "coach-jump-latest",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Keep the weekly plan steady. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. "
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Keep the weekly plan in view"
+      },
+      {
+        "wait": "Keep the weekly plan in view"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Keep the weekly plan steady. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again."
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Keep the weekly plan steady. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again. The final working set should leave enough room to train well again.",
+          "at": [
+            0.5,
+            0.1
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.5,
+            0.9
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Jump to latest"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Jump to latest"
       }
     ]
   }

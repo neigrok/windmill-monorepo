@@ -6,7 +6,6 @@ import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.GymTap
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.ProposalCard
-import works.windmill.gym.ui.TopAction
 import works.windmill.gym.ui.YouSeat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -28,9 +27,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +46,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import kotlin.math.roundToInt
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalDensity
@@ -61,7 +66,6 @@ import works.windmill.gym.domain.Proposal
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.platform.LocalShellActions
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
 
@@ -99,14 +103,17 @@ fun AskScreen(
     upload: Float? = null,
     onOpenWorkout: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
+    composerEnabled: Boolean = true,
 ) {
     val skin = LocalGymColors.current
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
     val savedPosition = store.coach.chat(conversationId)
     val account = store.coach.accountKey
     val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
-    var sourcesHeight by remember(conversationId) { mutableStateOf(0) }
-    val sourcesSpace = with(LocalDensity.current) { sourcesHeight.toDp() } + if (sourcesHeight > 0) 24.dp else 0.dp
+    var sourcesTop by remember(conversationId) { mutableStateOf<Int?>(null) }
+    var viewportBottom by remember(conversationId) { mutableStateOf(0) }
+    val overlap = (viewportBottom - (sourcesTop ?: viewportBottom)).coerceAtLeast(0)
+    val sourcesSpace = with(LocalDensity.current) { overlap.toDp() } + if (sourcesTop != null) 16.dp else 0.dp
     DisposableEffect(presentation, account) {
         onDispose {
             if (store.coach.accountKey == account) store.coach.keepPosition(conversationId, presentation.scroll.value, presentation.followEnd)
@@ -121,12 +128,8 @@ fun AskScreen(
     val messageKeys = presentation.keys
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
     val scope = rememberCoroutineScope()
-    val web = LocalUriHandler.current
     val telemetry = LocalTelemetry.current
-    val shell = LocalShellActions.current
-    var menu by remember { mutableStateOf(false) }
     var draftFailure by remember { mutableStateOf<String?>(null) }
-    fun newChat() { onAskNew() }
 
 
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
@@ -146,29 +149,14 @@ fun AskScreen(
         }
     }
 
+    if (onBack != null) BackHandler(onBack = onBack)
     GymScreen(
         title = Ask.title,
-        onBack = onBack,
-        backTo = backTo,
         actions = {
-            TopAction(Threads.door, onClick = onThreads)
-            Box {
-                IconButton(onClick = { menu = true }) {
-                    Icon(painterResource(R.drawable.gym_more), "More", tint = skin.inkDim, modifier = Modifier.size(24.dp))
-                }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = skin.raised) {
-                    DropdownMenuItem(text = { Text("Notes") }, onClick = { menu = false; onNotes() })
-                    DropdownMenuItem(text = { Text("Connected log") }, onClick = {
-                        menu = false
-                        if (onConnections != null) onConnections()
-                        else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }.onFailure { telemetry.failure("gym.openConnections", it) }
-                    })
-                    if (thread.isNotEmpty()) DropdownMenuItem(text = { Text("New chat") }, enabled = !asking,
-                        onClick = { menu = false; newChat() })
-                    DropdownMenuItem(text = { Text("Account") }, onClick = { menu = false; shell.openYou() })
-                }
+            IconButton(onClick = onThreads, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.gym_coach_history), "History", tint = skin.ink, modifier = Modifier.size(24.dp))
             }
-            if (onBack == null) seat?.let { YouSeat(it) }
+            seat?.let { YouSeat(it) }
         },
     ) {
       Column(
@@ -176,41 +164,38 @@ fun AskScreen(
             .fillMaxSize()
             .imePadding(),
       ) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val latestHeight = (maxHeight - GymLayout.contentTop - WindmillSpace.x2).coerceAtLeast(0.dp)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { viewportBottom = (it.positionOnScreen().y + it.size.height).roundToInt() }) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
                 modifier = Modifier
                     .fillMaxSize()
+                    .testTag("coach-thread")
                     .nestedScroll(presentation.gestures)
                     .then(presentation.anchoring)
                     .verticalScroll(presentation.scroll)
-                    .padding(horizontal = GymLayout.gutter)
-                    .padding(top = GymLayout.contentTop, bottom = WindmillSpace.x2 + sourcesSpace),
+                    .heightIn(min = maxHeight)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp, bottom = 8.dp + sourcesSpace),
             ) {
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
                 (historyFailure ?: draftFailure ?: store.coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
                 thread.forEachIndexed { index, exchange ->
                     if (upload != null && index == thread.lastIndex && exchange.generation == null) return@forEachIndexed
                     key(messageKeys[index]) {
-                        Column(Modifier.fillMaxWidth()
-                            .heightIn(min = if (index == thread.lastIndex && cap == null) latestHeight else 0.dp),
-                            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
-                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ChatTimestamp(exchange.atMs, nowMs)
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 exchange.attachments.forEach { CoachPhoto(store.coach, conversationId, it, Modifier.size(160.dp)) }
-                                if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question)
+                                if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
                             }
                             val answered = exchange.answer ?: exchange.generation?.response()
-                            val running = exchange.generation?.takeIf { exchange.answer == null && it.status == "running" }
-                            val text = if (running != null) rememberRevealedText(messageKeys[index], running) else answered?.answer.orEmpty()
-                            if (exchange.pending && text.isEmpty()) {
-                                Text(Ask.waiting, style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
-                            }
+                            val text = rememberRevealedText(messageKeys[index], answered?.answer.orEmpty(), exchange.generation?.status in listOf("failed", "stopped"))
+                            if (exchange.pending && text.isEmpty()) CoachTyping()
                             answered?.let { answer ->
-                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesHeight = it }
+                                Answer(answer, text, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
-                                    else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
+                                    else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
                             exchange.trouble?.let { said ->
@@ -232,7 +217,9 @@ fun AskScreen(
                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
                 }
                 val shown = (minted + store.settledProposals).values.mapNotNull { it.receipt }.toSet()
-                receipts.filterNot { it in shown }.forEach { ReceiptLine(it) }
+                receipts.filterNot { it in shown }.forEach { receipt ->
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
+                }
                 cap?.let {
                     Text(
                         thread.lastOrNull()?.trouble ?: it.wordless,
@@ -241,18 +228,21 @@ fun AskScreen(
                     )
                 }
             }
-            if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) TextButton(onClick = {
+            if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {
+                telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "jump_latest", "outcome" to "ok"))
                 scope.launch { presentation.jumpToLatest() }
-            }, modifier = Modifier.align(Alignment.BottomCenter).heightIn(min = 48.dp)
-                .background(skin.surface, RoundedCornerShape(24.dp)).padding(horizontal = 12.dp)) {
-                Text("Jump to latest", style = WindmillFont.body(14), color = skin.accent)
+            }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).heightIn(min = 40.dp),
+                colors = ButtonDefaults.elevatedButtonColors(containerColor = skin.surface, contentColor = skin.accent),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+                Icon(painterResource(R.drawable.gym_coach_down), null, Modifier.size(20.dp))
+                Text("Jump to latest", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), modifier = Modifier.padding(start = 8.dp))
             }
         }
         store.coach.pendingChat(conversationId)?.takeIf { thread.isEmpty() }?.let { pending ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Reply pending", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
-                    Text(pending.title, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
+                    Text("Reply pending", style = CoachType.body(16, FontWeight.Bold).copy(lineHeight = 24.sp), color = skin.ink)
+                    Text(pending.title, style = CoachType.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
                 }
                 TextButton(onClick = { onOpenChat?.invoke(pending.id) }, enabled = onOpenChat != null) { Text("View chat") }
             }
@@ -260,14 +250,12 @@ fun AskScreen(
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = GymLayout.gutter)
-                .padding(top = WindmillSpace.x2, bottom = WindmillSpace.x3),
+                .fillMaxWidth(),
         ) {
             when {
                 cap != null -> Column {
                     if (thread.lastOrNull()?.again == true) CoachAction("Try again", onRetry)
-                    CapDoors(cap, origin, ::newChat, onConnections)
+                    CapDoors(cap, origin, onAskNew, onConnections)
                 }
                 Ask.needsNew(thread) -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
@@ -275,13 +263,13 @@ fun AskScreen(
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
                 }
-                else -> CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking || olderBusy,
+                else -> CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking,
                     onSend = { text, photo ->
                         val last = thread.lastOrNull()
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
                         else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
-                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null)
+                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy)
             }
         }
       }
@@ -289,9 +277,14 @@ fun AskScreen(
 }
 
 @Composable
-fun AskSignedOutStance(seat: String, onSignIn: () -> Unit) {
+fun AskSignedOutStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null) {
     val skin = LocalGymColors.current
-    GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
+    GymScreen(title = Ask.title, actions = {
+        onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.gym_coach_history), "History", tint = skin.ink, modifier = Modifier.size(24.dp))
+        } }
+        YouSeat(seat)
+    }) {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
                 Text(Ask.signedOut, style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink)
@@ -371,6 +364,7 @@ private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit, onConnec
 @Composable
 private fun Answer(
     answer: AskAnswer,
+    text: String,
     settled: Boolean,
     minted: Map<String, Proposal>,
     catalog: List<Exercise>,
@@ -384,15 +378,14 @@ private fun Answer(
     canConfirm: Boolean,
     onOpenWorkout: ((String) -> Unit)?,
     hasHeaderProposals: Boolean,
-    onSourcesHeight: (Int) -> Unit,
+    onSourcesTop: (Int?) -> Unit,
 ) {
-    val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
         val current = answer.confirmedBy(coach.confirmedGeneration(requestId))
-        CoachAnswer(current.answer, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
+        CoachAnswer(text, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
             routineDrafts = current.routineDrafts,
             onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null,
-            hasProposals = hasHeaderProposals || current.proposals.isNotEmpty(), onOpenWorkout = onOpenWorkout, onSourcesHeight = onSourcesHeight)
+            hasProposals = hasHeaderProposals || current.proposals.isNotEmpty(), onOpenWorkout = onOpenWorkout, copyText = current.answer, receiptInset = 4.dp, onSourcesTop = onSourcesTop)
         // Drawn from the LOG's own copy and never from what the model said about it.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
             Minted(proposal, catalog, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }
@@ -414,7 +407,7 @@ fun ReceiptLine(line: String) {
 @Composable
 private fun Minted(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, stillWaiting: Boolean, onReview: () -> Unit) {
     val skin = LocalGymColors.current
-    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         ProposalCard(proposal, proposal.routineName, nowMs, stillWaiting, onReview)
         if (proposal.isPending) Text(Ask.promise, style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         proposal.receipt?.let { ReceiptLine(it) }
@@ -424,7 +417,7 @@ private fun Minted(proposal: Proposal, catalog: List<Exercise>, nowMs: Long, sti
 @Composable
 private fun Trouble(said: String, onRetry: (() -> Unit)?) {
     val skin = LocalGymColors.current
-    Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
+    Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1)) {
         Text(
             said,
             style = WindmillFont.body(14).copy(lineHeight = 21.sp),

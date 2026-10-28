@@ -1,9 +1,17 @@
 package works.windmill.gym.coach
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -22,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.GymRoom
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -50,6 +59,7 @@ class CoachHistoryTests {
             ThreadsScreen(fixture.store, "Coach", {}, {}, {})
         } } }
         compose.onNodeWithText("Private first question").assertIsDisplayed()
+        compose.onNodeWithContentDescription(Threads.open).assertIsDisplayed()
         events.clear()
         failures.clear()
         return fixture
@@ -62,6 +72,35 @@ class CoachHistoryTests {
         compose.runOnIdle { assertTrue(actions.single().action()) }
         compose.onNodeWithText("Delete this conversation?").assertIsDisplayed()
         compose.onNodeWithText("You can’t undo this.").assertIsDisplayed()
+    }
+
+    @Test fun theFullRailLeavesASelectedHistoryChatAndRetainsItsDraft() {
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), telemetry = telemetry)
+        room = fixture
+        runBlocking { fixture.select("alice") }
+        val id = fixture.store.coach.freshChat("Retained local draft")
+        var showing by mutableStateOf(true)
+        compose.setContent { if (showing) GymMaterial { GymRoom(fixture.account(), fixture.store) } }
+        try {
+            compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+            compose.onNodeWithContentDescription("History").performClick()
+            compose.onNodeWithText("Retained local draft").performClick()
+            compose.onNodeWithContentDescription("Question").assertTextEquals("Retained local draft")
+            compose.onNode(hasText("The log") and hasClickAction()).performClick()
+            compose.onNodeWithContentDescription("Question").assertDoesNotExist()
+            compose.onNodeWithText("Weigh in").assertIsDisplayed()
+            compose.onNode(hasText("Coach") and hasClickAction()).performClick()
+            assertEquals("", compose.onNodeWithContentDescription("Question").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            compose.onNodeWithContentDescription("History").performClick()
+            compose.onNodeWithText("Retained local draft").performClick()
+            compose.onNode(hasText("Routines") and hasClickAction()).performClick()
+            compose.onNodeWithContentDescription("Question").assertDoesNotExist()
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            assertEquals("Retained local draft", fixture.store.coach.draft(id).text)
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+        }
     }
 
     @Test fun cancellationRestoresTheRowAndNeverSendsADelete() {

@@ -3,6 +3,8 @@ package works.windmill.gym.coach
 import works.windmill.gym.ui.*
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,6 +28,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -39,9 +43,42 @@ class CoachAnswerTests {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun anOpenCopyMenuAndExpandedReceiptSurviveReplacementText() {
+    fun ordinaryMarkdownUsesSixteenDpGuttersAndTheReadTallyKeepsItsThirtyTwoDpStart() {
+        compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            CoachAnswer("## Thursday\n\nA complete paragraph.", AnswerReceipt(1, ReadTally(1, 1, 1)),
+                emptyList(), 0, receiptInset = 4.dp)
+        } } }
+        val bubble = compose.onNodeWithText("Thursday").getUnclippedBoundsInRoot()
+        assertEquals(16.dp, bubble.left)
+        assertEquals(396.dp, bubble.right)
+        assertEquals(32.dp, compose.onNodeWithText("Read 1 workout · 1 week", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot().left)
+    }
+
+    @Test
+    fun aMixedWriteReceiptRetainsItsTwentyDpLaneAndExistingTypography() {
+        val read = ReadTally(2, 1, 1)
+        val receipt = AnswerReceipt(1, read, steps = listOf(AskStep("get_session"), AskStep("save_note")),
+            observations = listOf(SessionObservation("asked", 2000, "get_session", "session", 2,
+                routine = "My actual workout", workout = WorkoutObservation(2, 960.0, 90000))))
+        compose.setContent { GymMaterial { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            CoachAnswer("Ordinary prose.", receipt, emptyList(), 4000, receiptInset = 4.dp)
+        } } }
+        assertEquals(20.dp, compose.onNodeWithText("From your log").getUnclippedBoundsInRoot().left)
+        assertEquals(36.dp, compose.onNodeWithText("Working sets").getUnclippedBoundsInRoot().left)
+        assertEquals(376.dp, compose.onNodeWithText("960 kg").getUnclippedBoundsInRoot().right)
+        val layout = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Working sets").fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        assertEquals(16.sp, layout.single().layoutInput.style.fontSize)
+        compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).performClick()
+        compose.onNodeWithText("Saved a note").assertIsDisplayed()
+        compose.onNodeWithText("What Coach read").assertDoesNotExist()
+    }
+
+    @Test
+    fun aSecondParagraphCopyMenuAndExpandedReceiptSurviveReplacementByOneParagraph() {
         lateinit var clipboard: ClipboardManager
-        val initial = "Café\n東京"
+        val initial = "First paragraph.\n\nCafé\n東京"
         val final = "Café\n東京 — 🏋🏽‍♀️ é\nFinal words."
         val text = androidx.compose.runtime.mutableStateOf(initial)
         val receipt = AnswerReceipt(1, ReadTally(), steps = listOf(AskStep("list_notes"), AskStep("save_note")))
@@ -51,9 +88,9 @@ class CoachAnswerTests {
         } }
         compose.onNodeWithText("Read nothing from your log").performClick()
         compose.onNodeWithText("Read your notes").assertIsDisplayed()
-        compose.onNodeWithText(initial).performTouchInput { longClick() }
+        compose.onNodeWithText("Café\n東京").performTouchInput { longClick() }
         compose.runOnIdle { text.value = final }
-        compose.onNodeWithText("Copy").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Copy answer").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(final, clipboard.getText()?.text) }
         compose.onNodeWithText("Read your notes").assertIsDisplayed()
         compose.onNodeWithText("Saved a note").assertIsDisplayed()
@@ -70,18 +107,18 @@ class CoachAnswerTests {
             Column { CoachQuestion(question); CoachAnswer(answer, null, emptyList(), 0) }
         } }
         compose.onNodeWithText(question).performTouchInput { longClick() }
-        compose.onNodeWithText("Copy").performClick()
+        compose.onNodeWithText("Copy question").performClick()
         compose.runOnIdle { assertEquals(question, clipboard.getText()?.text) }
         val message = compose.onNodeWithText("First paragraph.")
-        message.assert(hasText("Second paragraph — exact text."))
+        compose.onNodeWithText("Second paragraph — exact text.").assertIsDisplayed()
         val actions = message.fetchSemanticsNode().config[SemanticsActions.CustomActions]
         compose.runOnIdle {
-            assertEquals(listOf("Copy"), actions.map { it.label })
+            assertEquals(listOf("Copy answer"), actions.map { it.label })
             actions.single().action()
         }
         compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
         compose.onNodeWithText("First paragraph.").performTouchInput { longClick() }
-        compose.onNodeWithText("Copy").performClick()
+        compose.onNodeWithText("Copy answer").performClick()
         compose.runOnIdle { assertEquals(answer, clipboard.getText()?.text) }
     }
 
@@ -102,10 +139,10 @@ class CoachAnswerTests {
         val laid = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText("Your week", useUnmergedTree = true).fetchSemanticsNode()
             .config[SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
-        assertEquals(20.sp, laid.single().layoutInput.style.fontSize)
+        assertEquals(17.sp, laid.single().layoutInput.style.fontSize)
         assertEquals(FontWeight.Bold, laid.single().layoutInput.style.fontWeight)
         compose.onNodeWithText("Bold start").performTouchInput { longClick() }
-        compose.onNodeWithText("Copy").performClick()
+        compose.onNodeWithText("Copy answer").performClick()
         compose.runOnIdle {
             assertEquals("Your week\n\nBold start\n\n- Squat\n- Bench\n- Row\n\n1. Warm up\n2. Work", clipboard.getText()?.text)
         }
@@ -119,7 +156,8 @@ class CoachAnswerTests {
         compose.setContent { GymMaterial { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             CoachAnswer("Keep these exact words.\n\nNo invented summary.", AnswerReceipt(1, ReadTally(4, 3, 1), observations = listOf(summary, full, movement)), emptyList(), 4000)
         } } }
-        compose.onNodeWithText("Keep these exact words.").assertIsDisplayed().assert(hasText("No invented summary."))
+        compose.onNodeWithText("Keep these exact words.").assertIsDisplayed()
+        compose.onNodeWithText("No invented summary.").assertIsDisplayed()
         compose.onNodeWithText("From your log").assertDoesNotExist()
         compose.onNodeWithText("Working sets").assertDoesNotExist()
         compose.onNodeWithText("Read 3 workouts · 1 week").performScrollTo().performClick()

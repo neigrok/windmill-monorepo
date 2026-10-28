@@ -153,7 +153,13 @@ Signed-out History reads only the stable anonymous owner's local archive and cal
 endpoint. Signed-in archives remain retained and become visible only to that same authenticated owner;
 account and anonymous archives are never silently copied or merged. Read-only receipts use What Coach
 read; replies containing proposals, writes, routine drafts/results or unknown tools retain their
-existing receipt/control presentation and wording. Every ask declares `routineReview`, and new Coach routines
+existing receipt/control presentation and wording. Ordinary messages use native chat bubbles and
+Nunito typography; a long press opens the message's Copy action. Markdown tables keep structured
+cells and plain-text copy. The reveal stays mounted from the empty pending message through its
+terminal answer; Stop exposes all received text. Material3 decorates the existing state input, so
+selection and draft ownership remain in one place. Signed-out local History reuses the existing
+disabled composer state; its text/photo draft remains retained and no edit or Send door is enabled.
+Every ask declares `routineReview`, and new Coach routines
 remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
 server no longer holds or cannot write loses its Save. Confirmation receipts survive relaunch under their account,

@@ -20,7 +20,30 @@ class CoachMarkdownTests {
         is Heading -> block.spans
         is ListItem -> block.spans
         is Code -> listOf(CoachSpan(block.text, code = true))
+        is CoachBlock.Table -> block.header.cells.flatten() + block.rows.flatMap { it.cells.flatten() }
         Rule -> emptyList()
+    }
+
+    @Test fun tablesKeepInlineCellsEscapedPipesAndPlainCopyWithoutTheDivider() {
+        val markdown = "Intro\n| Movement | Sets | Load |\n| :--- | ---: | :---: |\n| **Incline** | 3 × 10 | 24 kg |\n| Row \\| neutral | `3 | 8` | 20 kg |"
+        fun cell(text: String) = listOf(CoachSpan(text))
+        assertEquals(listOf(paragraph("Intro"), CoachBlock.Table(
+            CoachTableRow(listOf(cell("Movement"), cell("Sets"), cell("Load"))),
+            listOf(CoachTableRow(listOf(listOf(CoachSpan("Incline", bold = true)), cell("3 × 10"), cell("24 kg"))),
+                CoachTableRow(listOf(cell("Row | neutral"), listOf(CoachSpan("3 | 8", code = true)), cell("20 kg")))),
+        )), CoachMarkdown.parse(markdown))
+        assertEquals("Intro\nMovement\tSets\tLoad\nIncline\t3 × 10\t24 kg\nRow | neutral\t3 | 8\t20 kg", CoachMarkdown.plain(markdown))
+        assertEquals(listOf(paragraph("A | B\n--- | nope\nC | D")), CoachMarkdown.parse("A | B\n--- | nope\nC | D"))
+    }
+
+    @Test fun anIncompleteTableRowPadsOnlyItsMissingCellsAndFencedPipesStayCode() {
+        val markdown = "Movement | Sets | Load\n--- | --- | ---\nBench | 3"
+        val expected = CoachBlock.Table(
+            CoachTableRow(listOf("Movement", "Sets", "Load").map { listOf(CoachSpan(it)) }),
+            listOf(CoachTableRow(listOf(listOf(CoachSpan("Bench")), listOf(CoachSpan("3")), emptyList()))),
+        )
+        assertEquals(listOf(expected), CoachMarkdown.parse(markdown))
+        assertEquals(listOf(Code("A | B\n--- | ---")), CoachMarkdown.parse("```\nA | B\n--- | ---\n```"))
     }
 
     @Test

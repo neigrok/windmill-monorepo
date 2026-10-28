@@ -59,7 +59,7 @@ class GymBackTests {
     // The rail is decided by what STANDS, and a receipt stands over a pushed session — so the rail is
     // down while the sheet is up and still down when it comes off, with nothing to flicker back.
     @Test
-    fun testTheRailStandsForTheThreeTabsAndForNothingElse() {
+    fun testTheRailStandsForTheTabsAndRetainedCoachRooms() {
         assertTrue(railStands(live = false, building = false, away = 0))
         assertFalse("a workout takes the whole frame",
                     railStands(live = true, building = false, away = 0))
@@ -67,5 +67,11 @@ class GymBackTests {
                     railStands(live = false, building = true, away = 0))
         assertFalse("and a pushed screen covers the rail too — a finished workout included",
                     railStands(live = false, building = false, away = 1))
+        assertTrue("History-selected and pushed Coach chats keep the full rail",
+                   railStands(live = false, building = false, away = 1, coach = true))
+        assertTrue("Coach still keeps the rail while a workout continues elsewhere",
+                   railStands(live = true, building = false, away = 1, coach = true))
+        assertFalse("a routine editor still owns the frame",
+                    railStands(live = false, building = true, away = 1, coach = true))
     }
 }

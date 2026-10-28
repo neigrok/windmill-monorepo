@@ -181,11 +181,10 @@ internal fun backMeans(
     else -> BackMeans.LeaveTheApp
 }
 
-// The rail belongs to the three tabs and to nothing else: a live session, a draft and any pushed
-// screen each take the whole frame, and a bar drawn empty would reserve height for nothing. A finish
-// needs no say here — the receipt is a sheet over the closed session, which is a pushed screen.
-internal fun railStands(live: Boolean, building: Boolean, away: Int): Boolean =
-    !live && !building && away == 0
+// Coach keeps the full three-tab rail while reading a selected chat. Training drafts and other
+// pushed screens retain their own frame; the logger owns its workout controls.
+internal fun railStands(live: Boolean, building: Boolean, away: Int, coach: Boolean = false): Boolean =
+    !building && (coach || !live && away == 0)
 
 // Saved as its NAME: a Bundle holding an entry this build does not have must land on home, not
 // crash the restore.
@@ -841,7 +840,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 Away.Bodyweight -> Bodyweight.title
                 null -> if (live) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
             }
-            val railUp = railStands(live, building != null, away.size)
+            val coachRoom = standing is Away.Coach || standing is Away.Thread || standing == null && tab == Tab.Coach
+            val railUp = railStands(live, building != null, away.size, coachRoom)
             val youInitial = account.user?.email?.take(1) ?: ""
             val loggerTransient = live && standing == null
             val engineSession = LocalGymEngineSession.current
@@ -875,11 +875,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                     onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
                                 ) { Text("Saved workouts need review (${importRefusals.size})", color = skin.alarmInk) }
                                 TabRail(
-                                    current = tab,
+                                    current = if (coachRoom) Tab.Coach else tab,
                                     onPick = { picked ->
                                         note = null
                                         if (picked == Tab.Coach) askSomethingNew()
-                                        else tab = picked
+                                        else { away = emptyList(); tab = picked }
                                     },
                                 )
                             } else {
@@ -980,6 +980,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         )
                         standing is Away.Coach -> AskScreen(
                             store = store,
+                            seat = youInitial,
                             thread = conversation,
                             conversationId = conversationId,
                             onOpenRoutine = { selectedRoutineId = it },
@@ -1017,6 +1018,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         )
                         standing is Away.Thread -> ThreadScreen(
                             threadId = standing.threadId,
+                            seat = youInitial,
+                            composerEnabled = account.isSignedIn,
                             onAskNew = { askSomethingNew() },
                             store = store,
                             origin = origin,
@@ -1045,7 +1048,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.
                         tab == Tab.Coach && !account.isSignedIn ->
-                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn)
+                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn,
+                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
                         tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
                         tab == Tab.Coach -> AskScreen(
                             store = store,

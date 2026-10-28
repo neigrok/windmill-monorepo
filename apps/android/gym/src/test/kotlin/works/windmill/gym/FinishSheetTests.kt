@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -312,12 +313,12 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
 
             // Waiting is drawn before any answer lands, in the exchange the room already renders.
             compose.onNodeWithText(FinishCoach.question).assertIsDisplayed()
-            compose.onNodeWithText(Ask.waiting).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
             // Fresh: the earlier exchange is gone from the screen and the id on the wire is a new one.
             compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
@@ -367,7 +368,7 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
             compose.runOnIdle { assertEquals("one tap, one ask", 1, server.calls.count { it == "ask" }) }
@@ -376,8 +377,20 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText(Ask.placeholder).performTextReplacement("And my squat?")
-            compose.onNodeWithContentDescription("Send").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodes(hasContentDescription("Question") and isEnabled()).fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithContentDescription("Question").performTextReplacement("And my squat?")
+            compose.runOnIdle {
+                val key = room.store.coach.selectedChatId!!
+                assertEquals("the enabled field persisted the follow-up draft", "And my squat?", room.store.coach.draft(key).text)
+                assertEquals(false, room.store.coach.isAsking(key))
+            }
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.runOnIdle {
+                val key = room.store.coach.selectedChatId!!
+                assertEquals("Send admits the follow-up on the original chat", listOf(FinishCoach.question, "And my squat?"), room.store.coach.chat(key)!!.exchanges.map { it.question })
+            }
             compose.waitUntil(10_000) { server.asked.size == 2 }
             compose.runOnIdle {
                 assertEquals(listOf(FinishCoach.question, "And my squat?"), server.asked.map { it.question })
@@ -400,7 +413,7 @@ class FinishSheetTests {
 
             askAnOpener()
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText(Ask.waiting).fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
             startAWorkout(room)
             finish()
@@ -409,7 +422,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
-            compose.onNodeWithText(Ask.waiting).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
             // The question, not the empty room's chips: the thread was not wiped.
             compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(1)
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(0)

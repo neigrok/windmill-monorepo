@@ -1,0 +1,145 @@
+[
+  {
+    "board": "08.1",
+    "name": "coach-empty",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "wait": "Question"
+      }
+    ]
+  },
+  {
+    "board": "08.10",
+    "name": "coach-markdown",
+    "account": "fixture",
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "## Thursday \u00b7 Push A\n\nKeep the same total work each week.\n\n- Bench Press \u2014 3 \u00d7 3 at 90 kg\n- Keep the final rep comfortable.\n\n| Movement | Sets | Load |\n| --- | --- | --- |\n| Incline Press | 3 \u00d7 10 | 24 kg |"
+        }
+      ]
+    ],
+    "steps": [
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "What should Thursday look like?"
+      },
+      {
+        "wait": "What should Thursday look like?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "24 kg"
+      }
+    ]
+  },
+  {
+    "board": "01.6",
+    "name": "coach-thinking",
+    "account": "fixture",
+    "model_timing": {
+      "start_delay_ms": 10000
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still useful when the total work fits your recovery."
+        }
+      ]
+    ],
+    "settle": false,
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Thursday still useful?"
+      },
+      {
+        "wait": "Is Thursday still useful?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait": "Coach is thinking"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Stop response"
+      },
+      {
+        "wait": "Question"
+      }
+    ]
+  },
+  {
+    "board": "08.11",
+    "name": "coach-streaming",
+    "account": "fixture",
+    "model_timing": {
+      "chunk_chars": 4,
+      "chunk_delay_ms": 300
+    },
+    "responses": [
+      [
+        {
+          "type": "text",
+          "text": "Thursday is still a useful day. Keep the same total work each week, and make the final rep comfortable."
+        }
+      ]
+    ],
+    "settle": false,
+    "steps": [
+      {
+        "tap": "Routines"
+      },
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "Question"
+      },
+      {
+        "text": "Is Thursday still a useful day?"
+      },
+      {
+        "wait": "Is Thursday still a useful day?"
+      },
+      {
+        "tap": "Send"
+      },
+      {
+        "wait_contains": "Thursday is still"
+      },
+      {
+        "wait": "Stop response"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Stop response"
+      },
+      {
+        "wait": "Question"
+      }
+    ]
+  }
+]

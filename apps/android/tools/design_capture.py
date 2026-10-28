@@ -26,6 +26,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE = "works.windmill.app"
+MODEL_FALLBACK = [{"type": "text", "text": "Your three training days are ready. Start with Push A, and keep the logged loads comfortable."}]
 SCENARIOS = [
     {"board": "02.7", "name": "empty-routines", "account": "empty", "steps": [{"wait": "No routines yet."}]},
     {"board": "02.1", "name": "routines", "account": "fixture", "steps": [{"tap": "Routines"}, {"wait": "Push A"}]},
@@ -57,8 +58,26 @@ def checked_build_config(android, expected):
         raise RuntimeError("Generated debug API origin differs from the requested local stack; refusing install.")
 
 
+def model_timing(scenario):
+    timing = scenario.get("model_timing", {})
+    if not isinstance(timing, dict) or set(timing) - {"start_delay_ms", "chunk_chars", "chunk_delay_ms"}:
+        raise ValueError("Model timing supports only start_delay_ms, chunk_chars and chunk_delay_ms.")
+    for key, low, high in (("start_delay_ms", 0, 10000), ("chunk_chars", 1, 4096), ("chunk_delay_ms", 0, 1000)):
+        if key in timing and (type(timing[key]) is not int or not low <= timing[key] <= high):
+            raise ValueError("Model timing needs bounded integer delays and chunk sizes.")
+    start, chars, delay = timing.get("start_delay_ms", 0), timing.get("chunk_chars"), timing.get("chunk_delay_ms", 0)
+    if timing:
+        responses = scenario.get("responses") or [MODEL_FALLBACK]
+        counts = [sum(max(1, (len(block["text"]) + chars - 1) // chars) if chars else 1
+                      for block in content if block["type"] == "text") for content in responses]
+        if sum(counts) > 256 or len(responses) * start + sum(max(0, count - 1) * delay for count in counts) > 10000:
+            raise ValueError("Model timing permits at most 256 text chunks and 10000 ms across a scenario.")
+    return start, chars, delay
+
+
 def validate_scenarios(scenarios):
     for scenario in scenarios:
+        model_timing(scenario)
         if not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]+|[a-z])|[A-Z][0-9]+)", scenario["board"]) or \
                 not re.fullmatch(r"[a-z0-9-]+", scenario["name"]) or scenario["account"] not in ("empty", "fixture"):
             raise ValueError("Recipes need a canonical board ID, a lowercase filename slug, and an empty or fixture account.")
@@ -276,8 +295,8 @@ class ModelFixture(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
         self.server.calls += 1
-        content = self.server.responses.pop(0) if self.server.responses else [
-            {"type": "text", "text": "Your three training days are ready. Start with Push A, and keep the logged loads comfortable."}]
+        content = self.server.responses.pop(0) if self.server.responses else MODEL_FALLBACK
+        start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
         stop_reason = "tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn"
         response = {"id": "msg_capture", "type": "message", "role": "assistant", "model": body.get("model", "fixture"),
                     "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25}}
@@ -286,26 +305,43 @@ class ModelFixture(BaseHTTPRequestHandler):
             for index, block in enumerate(content):
                 if block["type"] == "text":
                     start = {"type": "text", "text": ""}
-                    delta = {"type": "text_delta", "text": block["text"]}
+                    chunks = [block["text"][at:at + chunk_chars] for at in range(0, len(block["text"]), chunk_chars)] if chunk_chars else [block["text"]]
+                    deltas = [{"type": "text_delta", "text": chunk} for chunk in chunks or [""]]
                 elif block["type"] == "tool_use":
                     start = {**block, "input": {}}
-                    delta = {"type": "input_json_delta", "partial_json": json.dumps(block["input"])}
+                    deltas = [{"type": "input_json_delta", "partial_json": json.dumps(block["input"])}]
                 else:
                     raise ValueError("Capture model supports text and tool_use blocks.")
-                events.extend([{"type": "content_block_start", "index": index, "content_block": start},
-                               {"type": "content_block_delta", "index": index, "delta": delta},
-                               {"type": "content_block_stop", "index": index}])
+                events.append({"type": "content_block_start", "index": index, "content_block": start})
+                events.extend({"type": "content_block_delta", "index": index, "delta": delta} for delta in deltas)
+                events.append({"type": "content_block_stop", "index": index})
             events.extend([{"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": 25}},
                            {"type": "message_stop"}])
-            encoded = "".join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events).encode()
+            frames = [(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n".encode(),
+                       event.get("delta", {}).get("type") == "text_delta") for event in events]
             media = "text/event-stream"
         else:
-            encoded, media = json.dumps(response).encode(), "application/json"
+            frames, media = [(json.dumps(response).encode(), False)], "application/json"
+        encoded = b"".join(frame for frame, _ in frames)
         self.send_response(200)
         self.send_header("Content-Type", media)
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            if start_delay:
+                time.sleep(start_delay / 1000)
+            if not chunk_delay:
+                self.wfile.write(encoded)
+                return
+            saw_text = False
+            for frame, text in frames:
+                if text and saw_text:
+                    time.sleep(chunk_delay / 1000)
+                self.wfile.write(frame)
+                self.wfile.flush()
+                saw_text = saw_text or text
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 
 class MailFixture(BaseHTTPRequestHandler):
@@ -351,6 +387,7 @@ class Device:
         self.notification_clock = False
         self.tile_clock = False
         self.workout_clock = False
+        self.live_coach = False
 
     def prepare_hierarchy_capture(self):
         jdk = Path(os.environ["JAVA_HOME"]) / "bin"
@@ -432,7 +469,7 @@ class Device:
 
     def tree(self):
         self.run("shell", "rm", "-f", "/data/local/tmp/design-capture.xml")
-        if self.notification_clock or self.tile_clock or self.workout_clock:
+        if self.notification_clock or self.tile_clock or self.workout_clock or self.live_coach:
             self.run("shell", "CLASSPATH=/data/local/tmp/capture-tree.jar:/system/framework/uiautomator.jar",
                      "app_process", "/system/bin", "works.windmill.capture.CaptureTree")
         else:
@@ -442,12 +479,13 @@ class Device:
         except ET.ParseError:
             return ET.Element("unavailable")
 
-    def find(self, value, timeout=30, row=False):
+    def find(self, value, timeout=30, row=False, contains=False):
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             tree = self.tree()
             for node in tree.iter("node"):
-                if node.get("visible-to-user") != "false" and value in (node.get("text"), node.get("content-desc"), node.get("resource-id")):
+                labels = (node.get("text", ""), node.get("content-desc", ""), node.get("resource-id", ""))
+                if node.get("visible-to-user") != "false" and (any(value in label for label in labels) if contains else value in labels):
                     if not row:
                         return node
                     parents = {child: parent for parent in tree.iter() for child in parent}
@@ -594,6 +632,8 @@ class Device:
                 self.tap(step["tap"])
             elif "wait" in step:
                 self.find(step["wait"])
+            elif "wait_contains" in step:
+                self.find(step["wait_contains"], contains=True)
             elif "quick_settings" in step:
                 if step["quick_settings"] != "show":
                     raise ValueError("Quick Settings steps support show.")
@@ -705,6 +745,7 @@ def main():
     parser.add_argument("--emulator-port", type=int, default=5580)
     parser.add_argument("--scenarios", type=Path, help="JSON array of board/name/account/steps; each recipe is replayed after appearance switches.")
     parser.add_argument("--fixture", type=Path, help="Optional local exercises/routines JSON; replaces only this run's seeded program.")
+    parser.add_argument("--fresh-mode-fixture", action="store_true", help="Seed a fresh disposable account for Light instead of retaining Dark server history.")
     parser.add_argument("--profile-seconds", type=int, default=10)
     parser.add_argument("--baseline", action="store_true", help="Record an expected over-budget baseline without passing performance acceptance.")
     parser.add_argument("--sentry-dsn", default="", help="Optional local collector DSN; no vendor endpoint is accepted.")
@@ -807,7 +848,7 @@ def main():
         device = start_emulator(args.sdk, args.output, args.emulator_port, stack, auth_code=lambda: mail.code)
         if any(scenario.get("notification_clock") for scenario in scenarios):
             device.prepare_notification_capture()
-        elif any(scenario.get("tile_clock") or scenario.get("workout_clock") for scenario in scenarios):
+        elif any(scenario.get("tile_clock") or scenario.get("workout_clock") or scenario.get("model_timing") for scenario in scenarios):
             device.prepare_hierarchy_capture()
         device.run("install", apk)
         if any(scenario.get("tile_clock") for scenario in scenarios):
@@ -815,6 +856,9 @@ def main():
         manifest["sdk"] = int(device.run("shell", "getprop", "ro.build.version.sdk"))
         for account in ("empty", "fixture"):
             for mode, value in (("dark", "yes"), ("light", "no")):
+                if args.fresh_mode_fixture and account == "fixture" and mode == "light":
+                    fixture = Fixture(origin, database_url)
+                    fixture.seed(replacement)
                 mail.code = None
                 device.run("shell", "pm", "clear", PACKAGE)
                 device.run("shell", "pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
@@ -827,10 +871,12 @@ def main():
                     completions = sum(step.get("auth_code") == "valid" for step in scenario["steps"] + scenario.get("after", []))
                     sessions_before = int(fixture.sql("SELECT count(*) FROM sessions;")) if completions else 0
                     model.responses = json.loads(json.dumps(scenario.get("responses", [])).replace("$routine0", fixture.routines[0]))
+                    model.timing = model_timing(scenario)
                     manifest["step"] = f"{scenario['board']}-{scenario['name']}-{mode}"
                     device.notification_clock = scenario.get("notification_clock", False)
                     device.tile_clock = scenario.get("tile_clock", False)
                     device.workout_clock = scenario.get("workout_clock", False)
+                    device.live_coach = bool(scenario.get("model_timing"))
                     try:
                         if "viewport" in scenario:
                             device.viewport(scenario["viewport"])
@@ -859,6 +905,7 @@ def main():
                                 raise RuntimeError("The native code sign-in did not commit its session and spend its challenge.")
                             manifest["authCompletions"] += completions
                     finally:
+                        device.live_coach = False
                         try:
                             device.release_touch()
                         finally:
@@ -871,7 +918,8 @@ def main():
         manifest["modelCalls"] = model.calls
         manifest["step"] = "cold-start"
         device.tap("Routines")
-        device.run("shell", "run-as", PACKAGE, "touch", "files/design-capture-profile")
+        profile = json.dumps(fixture.routines).encode()
+        device.run("shell", "-T", "run-as", PACKAGE, "dd", "of=files/design-capture-profile", "bs=1", f"count={len(profile)}", input=profile)
         device.run("shell", "run-as", PACKAGE, "rm", "-f", "files/design-capture-ready")
         device.run("shell", "am", "force-stop", PACKAGE)
         started = time.monotonic()

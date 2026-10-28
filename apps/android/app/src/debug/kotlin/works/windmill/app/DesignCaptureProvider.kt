@@ -16,11 +16,17 @@ import java.io.File
 import java.net.URI
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 
 class DesignCaptureProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val application = context?.applicationContext as? Application ?: return false
-        if (!designCaptureAllowed() || !File(application.filesDir, "design-capture-profile").isFile) return false
+        if (!designCaptureAllowed()) return false
+        val expected = runCatching {
+            val values = JSONArray(File(application.filesDir, "design-capture-profile").readText())
+            List(values.length()) { values.get(it) as String }
+                .takeIf { it.none(String::isBlank) && it.distinct().size == it.size }?.toSet()
+        }.getOrNull() ?: return false
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) {
                 if (activity !is MainActivity) return
@@ -28,7 +34,7 @@ class DesignCaptureProvider : ContentProvider() {
                 result.delete()
                 activity.lifecycleScope.launch {
                     val store = (application as WindmillApplication).gym.store
-                    snapshotFlow { !store.isLoading && store.routines.map { it.name }.toSet() == setOf("Push A", "Pull A", "Legs") }
+                    snapshotFlow { !store.isLoading && store.routines.map { it.id }.toSet() == expected }
                         .first { it }
                     val view = activity.window.decorView
                     val listener = object : ViewTreeObserver.OnDrawListener {
