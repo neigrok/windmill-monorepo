@@ -11,6 +11,7 @@
     {"guarded": false, "held": true, "ordered": false, "removable": true, "timestamp": "recordedAt", "type": "weighin"}
   ],
   "rules": [
+    {"kind": "local", "name": "coach.import", "subject": "routine"},
     {"kind": "local", "name": "exercise.equipment", "spec": {"kind": "choice", "path": "exercise.equipment", "values": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"]}, "subject": "exercise"},
     {"codes": ["unknown-record", "record-dead"], "kind": "server", "name": "exercise.gone", "subject": "exercise"},
     {"kind": "local", "name": "exercise.name", "spec": {"kind": "text", "max": 60, "min": 1, "nfc": true, "path": "exercise.name", "trim": true, "unit": "chars"}, "subject": "exercise"},

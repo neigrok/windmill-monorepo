@@ -114,6 +114,18 @@ workout or chat identifier, question, routine name, amount or failure sentence e
 
 ## Coach archive and navigation
 
+The nonvisual signed-out onboarding transport uses `ai_installation` for installation issue/read/bind and sealed-state failures, and `gym.coachOnboarding` for request transport, archive persistence and atomic import failures. Binding runs after the existing authentication lifecycle in the application scope; its failure cannot invalidate an accepted account sign-in. Installation state is retained separately from account credentials on sign-out. Consumers of a reported outcome do not report it again.
+
+Onboarding attempts emit `gym_ask_started` and `gym_ask_outcome` with `state=anonymous`, bounded outcomes `answered|refused|capped|failed|cancelled`, `duration_ms` and `cap=allowance` only when applicable. `gym_coach_import` emits `started`, then `committed|replayed|refused|failed`; installation binding refusal/failure emits `ai_installation_outcome` with `action=bind`. Expected 401/409/429 refusals and the declared anonymous-unavailable or allowance 503 codes are events, not Issues. Unexpected accounting/server failures remain Issues. No credential, owner/chat/request/result/record ID, fingerprint, draft, photo or routine name is included.
+
+Terminal `provider_failed`, `invalid_result`, `internal_error`, `output_truncated`, `interrupted` and `unavailable` responses emit `failed`; their server failures create no duplicate client Issue. `result_expired`, model refusal, provider busy and installation policy refusals emit `refused`. Allowance refusals emit `capped`. A deleted originating chat emits `cancelled` and cannot be recreated by request persistence or a late reply.
+
+Unexpected HTTP 5xx responses also emit `failed`; transport reports their one client Issue and the
+store retains the original input. Declared anonymous-unavailable and allowance HTTP 503 responses
+retain their `refused` or `capped` outcomes without an Issue. A terminal binding/invalid-installation
+result updates the retained credential's state before another Send; bound requests can still recover
+their original result by GET.
+
 Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
 `action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
 Recreation restores the selected chat without a fresh-entry event. Ask transport retains

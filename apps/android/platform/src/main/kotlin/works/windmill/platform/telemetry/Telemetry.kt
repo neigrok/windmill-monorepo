@@ -51,11 +51,18 @@ object TelemetryPolicy {
             "outcome" to setOf("skipped", "completed", "back", "closed"),
         ),
     )
+    private val coachOnboardingEvents = mapOf(
+        "gym_coach_import" to mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed")),
+        "ai_installation_outcome" to mapOf("action" to setOf("bind"), "outcome" to setOf("refused", "failed")),
+    )
 
     fun eventName(name: String): Boolean = eventLabel.matches(name) &&
         (!name.startsWith("onboarding_") || name in onboardingEvents)
 
     fun eventProperties(name: String, properties: Map<String, String>): Map<String, String> {
+        coachOnboardingEvents[name]?.let { schema ->
+            return properties(properties.filter { (key, value) -> key in commonEventKeys || value in schema[key].orEmpty() })
+        }
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
                 "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
@@ -120,9 +127,12 @@ object TelemetryPolicy {
         else -> error.javaClass.simpleName.takeIf(label::matches) ?: "exception"
     }
 
-    fun report(error: Throwable): Boolean = when (error) {
+    fun report(error: Throwable, operation: String? = null): Boolean = when (error) {
         is CancellationException, is WindmillApiException.Offline -> false
-        is WindmillApiException.Refused -> error.status !in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
+        is WindmillApiException.Refused -> error.status !in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429) &&
+            !(error.status == 503 && operation in setOf("ai_installation", "gym.coachOnboarding") &&
+                error.refusal.code in setOf("anonymous_ai_unavailable", "unconfigured", "subject_exhausted",
+                    "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding"))
         else -> true
     }
 

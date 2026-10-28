@@ -175,7 +175,7 @@ object Ask {
     const val placeholder = "Ask about your training"
 
     // The server's own ceiling on one turn.
-    const val maxTurnBytes = 1000
+    const val maxTurnBytes = 8000
 
     const val fromLifter = "lifter"
 

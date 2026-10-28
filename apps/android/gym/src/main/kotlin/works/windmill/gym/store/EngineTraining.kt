@@ -44,12 +44,17 @@ import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.StatsProgress
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
 class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release) {
     companion object {
+        val rewriteDeviceValue: works.windmill.sync.engine.DeviceValueRewrite = { product, key, value, type, from, to ->
+            CoachRoutineImports.rewriteDeviceValue(product, key,
+                WorkoutImports.rewriteDeviceValue(product, key, value, type, from, to), type, from, to)
+        }
         val intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
             WorkoutImports.intentResultWrites(intent, result, epoch, gestureId, values) +
                 RemovalReceipts.intentResultWrites(intent, result, epoch, gestureId, values)

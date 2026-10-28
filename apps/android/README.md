@@ -60,7 +60,8 @@ Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code
 accepts a pasted magic link or token. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
-Android Keystore). The application builds one vault, and engine credentials use it too. The vault
+Android Keystore). Account and engine credentials share one vault. Installation access uses the
+same Keystore key through its own vault; its installation boundary owns failure reporting. Each vault
 loads its Keystore key once, and again after a failed seal or open. It keeps the last eight secrets
 it opened or sealed in memory, never a failure. A sealed value that a write removes, replaces or
 fails to store leaves that memory; the vault lists the last 32 such values and never keeps them
