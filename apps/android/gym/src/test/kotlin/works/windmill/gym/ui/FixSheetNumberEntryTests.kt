@@ -25,6 +25,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.FixOrigin
+import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.store.FixOutcome
 
 @RunWith(RobolectricTestRunner::class)
@@ -188,4 +191,31 @@ class FixSheetNumberEntryTests {
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -12.5)), saved) }
     }
+    @Test fun anInvalidSaveEmitsOneRefusalWithoutTheRawNumberOrNote() {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
+                error("validation is not a technical failure")
+            }
+        }
+        var saves = 0
+        val set = TrainingSet("set_1", "bench-press", weightKg = 75.0, reps = 8, completedAtMs = 0)
+        compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { GymMaterial {
+            FixSheet(set, "Private movement", 1, null, origin = FixOrigin.Workout,
+                onSave = { saves++; FixOutcome.Corrected(set) }, onDelete = {})
+        } } }
+        compose.onNodeWithText("Set note").performTextReplacement("private note")
+        val field = compose.onNodeWithContentDescription("Load, kg")
+        field.performClick().performTextReplacement("500.001")
+        field.performImeAction()
+        compose.runOnIdle { assertEquals(emptyList<Pair<String, Map<String, String>>>(), events) }
+        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        field.assertTextEquals("Load", "kg", "500.001").assertIsFocused()
+        compose.runOnIdle {
+            assertEquals(0, saves)
+            assertEquals(listOf("gym_action" to mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused")), events)
+        }
+    }
+
 }

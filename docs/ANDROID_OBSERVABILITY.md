@@ -15,7 +15,8 @@ product events or persistence boundaries. Their consumers own validation, write 
 content-free flow events. Changed/unchanged/refused edit results only control local feedback and
 IME completion; raw number text and refusal content are not sent by the components.
 The rack and Fix set validate native number buffers locally. Expected syntax and range refusals
-produce no issue or event. Accepted rack edits retain the `gym.editRack` unexpected-failure boundary;
+produce no Issue. Editing or IME validation produces no event; an explicit invalid Save fix emits
+one bounded `fix/refused` result. Accepted rack edits retain the `gym.editRack` unexpected-failure boundary;
 Fix set retains `gym.fixSet`. A successful explicit Log set still emits one `gym_set_logged` and
 no haptic. A failed controls write keeps the existing recovery sentence visible; automatic editor
 cleanup does not report the same failed storage again. Numeric input, selected text and refusal
@@ -37,6 +38,27 @@ Existing `gym.choose`, `gym.editRack` and `gym.acceptSet` boundaries retain thei
 Task 09’s local native intake records four starts, four logged sets and four finishes in each
 appearance, with two completed movement switches and two management opens per appearance.
 Those canonical windows contain no client errors; this verifies the local intake, not hosted delivery.
+
+## Set correction
+
+Fix set emits `gym_action` with `screen=workout|session`, `action=fix` and
+`outcome=ok|refused|failed`. The settled store job owns the result after a write starts, so closing or
+recreating the sheet cannot cancel the correction or suppress/duplicate its event. `ok` means the
+local engine or retained import source accepted the correction; it does not claim server sync.
+Expected missing rows, account changes and domain refusals emit `refused` without an Issue. Invalid
+numeric Save emits one `refused` from the sheet and does not call the store. Notes, effort, load,
+reps, workout/movement names and identifiers never enter properties.
+
+Unexpected correction, import or correction-read failures report under `gym.fixSet`. A publication
+failure after a committed correction reports the boundary once and preserves `ok`; an unwritable
+controls file retains the existing restart instruction. Late reads cannot publish into another
+account or workout. Set deletion retains the separate `gym.deleteSet` and `delete` contract below.
+Known failed controls are not written again by log adoption or automatic projection; unrelated
+catalogue, log, note and progress reads remain active. The installed-app probe delivers one `fix/ok`
+event and one content-free `gym.fixSet` Issue after a persisted correction’s controls publication
+fails. It produces no repeated `gym.refreshWorkout` or misattributed `sync_push` failures. The same
+window includes one `hello/unreachable` metric of unproven cause, without an Issue; later readback
+and the independent recovered edit succeed. Local receipt does not establish vendor delivery.
 
 ## Deletion actions
 

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.R
@@ -97,11 +98,11 @@ fun GymErrorButton(label: String, onClick: () -> Unit, modifier: Modifier = Modi
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun GymErrorTextButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, minimumHeight: Dp = 56.dp) {
     val error = MaterialTheme.colorScheme.error
     CompositionLocalProvider(LocalRippleConfiguration provides RippleConfiguration(color = error,
         rippleAlpha = RippleAlpha(draggedAlpha = 0.16f, focusedAlpha = 0.08f, hoveredAlpha = 0.08f, pressedAlpha = 0.12f))) {
-        TextButton(onClick, modifier.heightIn(min = 56.dp), enabled = enabled, shape = RoundedCornerShape(16.dp),
+        TextButton(onClick, modifier.heightIn(min = minimumHeight), enabled = enabled, shape = RoundedCornerShape(16.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
             colors = ButtonDefaults.textButtonColors(contentColor = error)) {
             Text(label, style = GymNativeType.button)

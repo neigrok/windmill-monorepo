@@ -1,0 +1,132 @@
+[
+  {
+    "board": "03.3",
+    "name": "fix-set",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Load, kg total"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "wait": "75 kg total \u00d7 8"
+      },
+      {
+        "tap": "75 kg total \u00d7 8"
+      },
+      {
+        "wait": "Bench Press \u00b7 Set 1"
+      },
+      {
+        "wait": "Set note"
+      },
+      {
+        "wait": "Save fix"
+      }
+    ]
+  },
+  {
+    "board": "03.3",
+    "name": "fix-set-keyboard",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "keyboard": "show"
+      },
+      {
+        "tap": "Load, kg total"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "-12.5"
+      },
+      {
+        "wait": "-12.5"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      }
+    ]
+  },
+  {
+    "board": "03.3",
+    "name": "fix-set-refusal",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Load, kg total"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "501"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Save fix"
+      },
+      {
+        "wait": "Over 500 kg \u2014 check the number."
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Share this workout"
+      },
+      {
+        "tap": "Back to Routines"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  }
+]

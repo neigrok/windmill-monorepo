@@ -58,13 +58,14 @@ object TelemetryPolicy {
     fun eventProperties(name: String, properties: Map<String, String>): Map<String, String> {
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
-                "routines", "session", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
+                "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
+                "session" -> mapOf("delete" to setOf("ok", "refused", "failed"), "fix" to setOf("ok", "refused", "failed"))
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))
                 "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
-                "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"))
+                "workout" -> mapOf("movement_switch" to setOf("ok"), "open_workout" to setOf("ok"), "fix" to setOf("ok", "refused", "failed"))
                 "tile" -> mapOf("open" to setOf("ok", "failed"), "routines" to setOf("ok", "failed"))
                 else -> emptyMap()
             }

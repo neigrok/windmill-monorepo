@@ -107,6 +107,12 @@ boards plus native keyboard, long-name/many-movement and single-movement variant
 loads are 24 kg each, 10 kg added and 75 kg total. These recipes retain exact numeric values and
 geometry while normalizing only the identified workout clock descriptions for settlement.
 
+The same compact-rack fixture with `--scenarios apps/android/tools/capture-recipes/fix-set.json`
+opens the actual logged row for 03.3, then captures the signed raw field with its native keyboard and
+an inline numeric refusal. It cancels that refused draft and ends the fixture workout. These
+recipes use the exact clock-only settlement option; native minus/Done interaction and the
+small-height/200% text check also require the installed-app acceptance pass.
+
 Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
 known animation phase; the manifest records that delay. This does not establish screen readiness.
 Transient recipes may set `settle: false` to capture a native pressed state or the 300 ms change

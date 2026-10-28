@@ -2,6 +2,8 @@ package works.windmill.gym.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,20 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,17 +53,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.NumberEntry
-import works.windmill.gym.domain.LoggedSetLimits
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Ladder
+import works.windmill.gym.domain.LoggedSetLimits
+import works.windmill.gym.domain.NumberEntry
 import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
+import works.windmill.platform.telemetry.LocalTelemetry
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FixSheet(
     set: TrainingSet,
@@ -72,9 +81,24 @@ fun FixSheet(
     onBusy: (Boolean) -> Unit = {},
     draftKey: String = set.id,
     onEntryCancel: ((() -> Unit)?) -> Unit = {},
+    exercise: Exercise? = null,
+    origin: FixOrigin? = null,
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
+    val telemetry = LocalTelemetry.current
+    val unit = works.windmill.gym.domain.sync.Readout.loadUnit(exercise?.equipment, exercise?.loadCount ?: 1)
+    val noteInteraction = remember(draftKey) { MutableInteractionSource() }
+    val noteFocused by noteInteraction.collectIsFocusedAsState()
+    val fieldColors = TextFieldDefaults.colors(
+        focusedContainerColor = skin.raised, unfocusedContainerColor = skin.raised,
+        disabledContainerColor = skin.raised, errorContainerColor = skin.raised,
+        focusedTextColor = skin.ink, unfocusedTextColor = skin.ink, disabledTextColor = skin.inkDim,
+        focusedIndicatorColor = skin.accent, unfocusedIndicatorColor = skin.inkDim,
+        focusedLabelColor = skin.accent, unfocusedLabelColor = skin.inkDim,
+        focusedTrailingIconColor = skin.inkDim, unfocusedTrailingIconColor = skin.inkDim,
+        cursorColor = skin.accent, errorIndicatorColor = skin.error, errorCursorColor = skin.error,
+    )
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var weightKg by rememberSaveable(draftKey) { mutableDoubleStateOf(set.weightKg) }
@@ -116,13 +140,17 @@ fun FixSheet(
             .verticalScroll(rememberScrollState()).imePadding()
             .padding(horizontal = GymLayout.gutter)
             .padding(bottom = GymLayout.sheetBottom),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Fix set", style = WindmillFont.display(26, FontWeight.ExtraBold).copy(lineHeight = 34.sp),
-            color = skin.ink, modifier = Modifier.semantics { heading() })
-        Text("$movement · Set $setNumber", style = WindmillFont.body(14).copy(lineHeight = 18.sp),
-            color = skin.inkDim)
-        NumberStepper(load.text, load::edit, "Load", "kg",
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Fix set", style = WindmillFont.display(28, FontWeight.Bold).copy(lineHeight = 36.sp),
+                color = skin.ink, modifier = Modifier.semantics { heading() })
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                exercise?.let { EquipmentIcon(it.equipment, tint = skin.inkDim) }
+                Text("$movement · Set $setNumber", style = WindmillFont.body(16).copy(lineHeight = 21.sp), color = skin.inkDim)
+            }
+        }
+        NumberStepper(load.text, load::edit, "Load", unit,
             onStep = { step ->
                 load.read()?.let { acceptLoad(Ladder.bump(it, if (step == NumberStep.Increase) 1 else -1, false)) }
                     ?: NumberEditResult.Refused
@@ -145,33 +173,19 @@ fun FixSheet(
             onCommit = { count.read()?.let(::acceptReps) ?: NumberEditResult.Refused },
             refusal = count.refusal, enabled = !busy, onFocusChange = count::focus,
             decreaseEnabled = count.reading.value != 1.0, increaseEnabled = count.reading.value != LoggedSetLimits.maxReps.toDouble())
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Effort", style = WindmillFont.body(14).copy(lineHeight = 18.sp), color = skin.inkDim,
-                modifier = Modifier.weight(1f))
-            Box {
-                FilledTonalButton(
-                    onClick = { effortOpen = true }, enabled = !busy,
-                    modifier = Modifier.widthIn(min = 128.dp).heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(WindmillRadius.lg),
-                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
-                ) {
-                    Text(rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
-                        style = WindmillFont.body(16, FontWeight.Bold))
-                }
-                DropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false },
-                    containerColor = skin.raised) {
-                    (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
-                        val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
-                        DropdownMenuItem(
-                            text = { Text(label, style = WindmillFont.body(16), color = skin.ink) },
-                            onClick = { rpe = value; effortOpen = false },
-                            modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value },
-                        )
-                    }
+        ExposedDropdownMenuBox(expanded = effortOpen, onExpandedChange = { if (!busy) effortOpen = it }) {
+            TextField(value = rpe?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated,
+                onValueChange = {}, readOnly = true, enabled = !busy, singleLine = true,
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                label = { Text("Effort", style = WindmillFont.body(12).copy(lineHeight = 16.sp)) }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(effortOpen) },
+                colors = fieldColors)
+            ExposedDropdownMenu(expanded = effortOpen, onDismissRequest = { effortOpen = false }, containerColor = skin.raised) {
+                (listOf<Double?>(null) + SetEffort.rpeBand).forEach { value ->
+                    val label = value?.let(SetEffort::rpeReading) ?: SetEffort.rpeUnrated
+                    DropdownMenuItem(text = { Text(label, style = WindmillFont.body(16), color = skin.ink) },
+                        onClick = { rpe = value; effortOpen = false },
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { selected = rpe == value })
                 }
             }
         }
@@ -181,21 +195,22 @@ fun FixSheet(
         }
         BasicTextField(
             value = note, onValueChange = { note = it }, enabled = !busy,
-            textStyle = WindmillFont.body(16).copy(lineHeight = 21.sp, color = skin.ink),
-            cursorBrush = SolidColor(skin.accent), maxLines = 6,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                .background(skin.raised, RoundedCornerShape(WindmillRadius.md))
-                .padding(10.dp).semantics {
-                    stateDescription = SetEffort.noteCaption
-                    if (tooLong) error(SetEffort.noteTooLong)
-                },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = skin.ink, lineHeight = 24.sp),
+            cursorBrush = SolidColor(skin.accent), maxLines = 6, interactionSource = noteInteraction,
+            modifier = Modifier.fillMaxWidth().semantics {
+                stateDescription = SetEffort.noteCaption
+                if (tooLong) error(SetEffort.noteTooLong)
+            },
             decorationBox = { field ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(SetEffort.noteLabel, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
-                    Box {
-                        if (note.isEmpty()) Text("Add a note", style = WindmillFont.body(16).copy(lineHeight = 21.sp),
-                            color = skin.inkDim)
-                        field()
+                Box(Modifier.heightIn(min = 56.dp)) {
+                    TextFieldDefaults.Container(!busy, tooLong, noteInteraction, Modifier.matchParentSize(), fieldColors)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(SetEffort.noteLabel, style = WindmillFont.body(12).copy(lineHeight = 16.sp),
+                            color = if (tooLong) skin.error else if (noteFocused) skin.accent else skin.inkDim)
+                        Box {
+                            if (note.isEmpty()) Text("Add a note", style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp), color = skin.inkDim)
+                            field()
+                        }
                     }
                 }
             },
@@ -210,8 +225,12 @@ fun FixSheet(
         Button(
             onClick = {
                 if (busy || tooLong) return@Button
-                val loadValue = load.read() ?: return@Button
-                val repsValue = count.read() ?: return@Button
+                val loadValue = load.read()
+                val repsValue = count.read()
+                if (loadValue == null || repsValue == null) {
+                    origin?.let { telemetry.event("gym_action", mapOf("screen" to it.screen, "action" to "fix", "outcome" to "refused")) }
+                    return@Button
+                }
                 acceptLoad(loadValue)
                 acceptReps(repsValue)
                 focus.clearFocus()
@@ -245,13 +264,10 @@ fun FixSheet(
                 disabledContainerColor = skin.accent.copy(alpha = 0.4f), disabledContentColor = skin.onAccent,
             ),
         ) { Text(if (busy) "Saving…" else "Save fix", style = WindmillFont.body(16, FontWeight.Bold)) }
-        TextButton(
-            onClick = onDelete, enabled = !busy,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            colors = ButtonDefaults.textButtonColors(contentColor = skin.ink),
-        ) { Text("Delete set", style = WindmillFont.body(16, FontWeight.Bold)) }
+        GymErrorTextButton("Delete set", onClick = onDelete, enabled = !busy,
+            modifier = Modifier.fillMaxWidth(), minimumHeight = 48.dp)
         routine?.let {
-            Text("$it keeps its planned targets.", style = WindmillFont.body(13).copy(lineHeight = 17.sp),
+            Text("$it keeps its planned targets.", style = WindmillFont.body(14).copy(lineHeight = 18.sp),
                 color = skin.inkDim)
         }
     }

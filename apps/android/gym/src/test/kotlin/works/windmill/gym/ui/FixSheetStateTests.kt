@@ -14,6 +14,17 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.FixOrigin
+import works.windmill.platform.telemetry.Telemetry
+import org.junit.Assert.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -172,6 +183,64 @@ class FixSheetStateTests {
             assertEquals(listOf(true, false), busy)
             assertEquals(listOf(SetFix(note = "controlled tempo")), attempts)
         }
+    }
+
+    @Test fun replacingTheSheetAfterItsWriteKeepsOneSettledResultAndTheSavedNote() {
+        val directory = java.nio.file.Files.createTempDirectory("fix-sheet").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        var hold = false
+        val waiting = ArrayDeque<Runnable>()
+        val reads = object : CoroutineDispatcher() {
+            override fun isDispatchNeeded(context: CoroutineContext) = hold
+            override fun dispatch(context: CoroutineContext, block: Runnable) { waiting.add(block) }
+        }
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        try {
+            EngineRoomFixture(directory, scope, telemetry = telemetry, readDispatcher = reads).use { room ->
+                val session = runBlocking { room.select(null); room.workout() }
+                var held by mutableStateOf(room.training.session(session.id)!!.sets.single())
+                var shown by mutableStateOf(true)
+                var saved = 0
+                events.clear()
+                compose.setContent { if (shown) GymMaterial {
+                    FixSheet(held, "Bench Press", 1, null, origin = FixOrigin.Session,
+                        onSave = { room.store.fixSet(session.id, held.id, it, FixOrigin.Session) },
+                        onSaved = { saved++ }, onDelete = {})
+                } }
+                compose.onNodeWithText("Set note").performTextInput("  exact note\n  ")
+                compose.runOnIdle { hold = true }
+                compose.onNodeWithText("Save fix").performScrollTo().performClick()
+                compose.onNodeWithText("Saving…").assertIsNotEnabled()
+                compose.runOnIdle {
+                    assertEquals(1, waiting.size)
+                    assertEquals("  exact note\n  ", room.training.session(session.id)!!.sets.single().note)
+                    shown = false
+                }
+                compose.waitForIdle()
+                compose.runOnIdle {
+                    hold = false
+                    while (waiting.isNotEmpty()) waiting.removeFirst().run()
+                }
+                compose.waitForIdle()
+                val persisted = room.engine.snapshot()
+                compose.runOnIdle { held = room.training.session(session.id)!!.sets.single(); shown = true }
+                compose.onNodeWithText("  exact note\n  ").assertIsDisplayed()
+                compose.onNodeWithText("Save fix").assertIsDisplayed()
+                compose.runOnIdle {
+                    assertEquals(0, saved)
+                    assertEquals(persisted, room.engine.snapshot())
+                    assertEquals(listOf("gym_action" to mapOf("screen" to "session", "action" to "fix", "outcome" to "ok")), events)
+                    assertTrue(failures.isEmpty())
+                    shown = false
+                }
+                compose.waitForIdle()
+            }
+        } finally { scope.cancel(); directory.deleteRecursively() }
     }
 
 }

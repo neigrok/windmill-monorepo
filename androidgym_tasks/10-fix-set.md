@@ -11,16 +11,14 @@
   - `Android / Menu` `342:2725` (the Effort dropdown)
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `FixSheet` (`ui/FixSheet.kt:69`) opens from a landed ledger row (`ui/LoggerScreen.kt`) or a set on workout detail (`ui/SessionScreen.kt`).
-  - *Fix set* (:123) and *{movement} · Set {n}* (:125).
-  - Load and reps use the shared `NumberStepper` with native signed-decimal and whole-number input (07), plus 56 dp ladder keys.
-  - *Effort* (:189), a `DropdownMenu` (:201): *Not rated*, *RPE 6* … *RPE 10* in half steps.
-  - The note field is a `BasicTextField` (:218) with *Add a note* (:232); its spoken state is *A record for you — not an instruction to Coach.* (`domain/Training.kt:555`, used at `ui/FixSheet.kt:225`).
-  - **Save fix** / *Saving…* (:276). Refusal *The log didn’t answer — that set wasn’t changed.* (:259) in `alarmInk` (:215).
-  - **Delete set** is a `TextButton` in **ink** (:277-281).
-  - Footer *{routine} keeps its planned targets.* (:283).
-- `SetFix` carries load, reps, effort and note changes; sets have no kind (06).
-- Fixing a set emits no event.
+- `FixSheet` opens from a landed rack row or workout detail. Its equipment subtitle and load unit use the same catalogue reading as the rack.
+- Load uses the 88 sp Display `NumberStepper`, the established ladder bands and native signed input; reps use the regular stepper. Raw buffers, caret, refusal and cancellation follow 07.
+- Effort is a filled exposed menu with *Not rated* and *RPE 6* … *RPE 10* in half steps.
+- Set note uses the native text editor with the M3 filled container, a fixed small label and *Add a note* placeholder. It preserves raw bytes and the spoken state *A record for you — not an instruction to Coach.*
+- Save fix is at least 64 dp; Delete set uses the M3 error role with a 48 dp minimum target and the immediate-delete path from 05. The routine footer remains.
+- A store-owned settled job reports one `gym_action` result for a live or historical fix. Expected refusals emit no Issue. Unexpected fix/import failures report under `gym.fixSet`.
+- Once the correction is persisted, a failed presentation refresh cannot change its result to failed. A controls-file failure retains the recovery sentence; account/workout guards prevent late publication into a different rack.
+- Affected Debug and Release gates pass 101 cases each. The final adapter ownership/accepted-result pass has 36 focused cases in each variant. Six API 37 Dark/Daylight captures and an IME-open Save preserve the exact signed load, note and effort. The final controls-fault probe retains the accepted correction, one successful fix event and one `gym.fixSet` Issue; restart and a separate recovered edit succeed. The final fault/observer regression passes eight cases in each variant.
 
 **Change**
 - Subtitle row: the equipment icon (08), then *{movement} · Set {n}*.
@@ -28,7 +26,7 @@
 - Reps: the reps stepper. Assisted load entry uses the native keyboard’s minus key as specified in 07. Preserve the approved sizing and the last committed values when an edit is cancelled.
 - The rack behind this sheet uses 09’s compact headerless ledger and visual position indicator; no main Add or paging arrows are reintroduced by the backdrop.
 - *Effort*: a filled `ExposedDropdownMenuBox` with the same options (*Not rated*, *RPE 6* … *RPE 10*).
-- Note: a filled `TextField`, label *Set note*, placeholder *Add a note*. The board draws no caption under it; keep the spoken state until 9n is ruled.
+- Note: a native text editor in the M3 filled field container, label *Set note*, placeholder *Add a note*. The board draws no caption under it; keep the spoken state until 9n is ruled.
 - **Save fix** stays the 64 dp primary.
 - **Delete set**: Text · Tone=Error (`TextButton` in `colorScheme.error`, 02/04). It deletes at once (05).
 - Footer *{routine} keeps its planned targets.* stays.

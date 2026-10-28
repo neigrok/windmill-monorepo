@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -29,6 +31,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import works.windmill.platform.design.LocalWindmillDark
+import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.FixOutcome
@@ -89,4 +93,39 @@ class FixSheetLayoutTests {
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(SetFix(weightKg = -499.99)), saved) }
     }
+    @Test fun deleteUsesTheMaterialErrorRoleInBothAppearancesAndKeepsItsTouchHeight() {
+        val dark = mutableStateOf(true)
+        val set = TrainingSet("set_1", "bench-press", weightKg = 75.0, reps = 8, completedAtMs = 0)
+        compose.setContent {
+            CompositionLocalProvider(LocalWindmillDark provides dark.value) {
+                GymMaterial { FixSheet(set, "Bench Press", 1, null,
+                    onSave = { FixOutcome.Corrected(set) }, onDelete = {}) }
+            }
+        }
+        for (isDark in listOf(true, false)) {
+            compose.runOnIdle { dark.value = isDark }
+            val button = compose.onNodeWithText("Delete set").performScrollTo()
+            assertTrue(button.getBoundsInRoot().height >= 48.dp)
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText("Delete set", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(if (isDark) GymSkin.Instrument.error else GymSkin.Daylight.error,
+                layouts.single().layoutInput.style.color)
+        }
+    }
+
+    @Test fun equipmentUnitsDescribeTheEditedLoadWithoutChangingItsValue() {
+        val equipment = mutableStateOf("barbell")
+        val set = TrainingSet("set_1", "movement", weightKg = -12.5, reps = 8, completedAtMs = 0)
+        compose.setContent {
+            GymMaterial { FixSheet(set, "Movement", 1, null,
+                onSave = { FixOutcome.Corrected(set) }, onDelete = {},
+                exercise = Exercise("movement", "Movement", equipment = equipment.value)) }
+        }
+        for ((kind, unit) in listOf("barbell" to "kg total", "dumbbell" to "kg each", "bodyweight" to "kg added", "machine" to "kg total", "legacy-cable" to "kg")) {
+            compose.runOnIdle { equipment.value = kind }
+            compose.onNodeWithContentDescription("Load, $unit").assertTextEquals("Load", unit, "-12.5")
+        }
+    }
+
 }

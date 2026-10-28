@@ -120,8 +120,8 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             compose.onNodeWithText("Set note").performTextInput("controlled tempo")
-            compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("520")
-            compose.onNodeWithContentDescription("Load, kg").performImeAction()
+            compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("520")
+            compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             restored.emulateSavedInstanceStateRestore()
             awaitText("520")
             compose.onNodeWithText("520").assertIsDisplayed()
@@ -131,7 +131,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("controlled tempo").assertIsDisplayed()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
             for (dismissal in listOf("scrim", "drag")) {
-                compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("520")
+                compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("520")
                 if (dismissal == "scrim") {
                     compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
                 } else {
@@ -175,7 +175,7 @@ class WorkoutRecoveryTests {
             }
             val live = room.store.session!!
             val original = room.store.sets.single()
-            val load = hasContentDescription("Load, kg") and hasAnyAncestor(isDialog())
+            val load = hasContentDescription("Load, kg total") and hasAnyAncestor(isDialog())
             holdReads = true
             restored.setContent {
                 if (showing) {
@@ -315,8 +315,8 @@ class WorkoutRecoveryTests {
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Load, kg").performClick().performTextReplacement("520")
-        compose.onNodeWithContentDescription("Load, kg").performImeAction()
+        compose.onNodeWithContentDescription("Load, kg total").performClick().performTextReplacement("520")
+        compose.onNodeWithContentDescription("Load, kg total").performImeAction()
         restored.emulateSavedInstanceStateRestore()
         awaitText("520")
         compose.onNodeWithText("520").assertIsDisplayed()
@@ -546,7 +546,7 @@ class WorkoutRecoveryTests {
             for (dismissal in listOf("back", "blur", "scrim", "drag")) {
                 val modal = compose.onNodeWithText("Fix set").fetchSemanticsNode().root
                 compose.onNode(hasText("60") and SemanticsMatcher("in the Fix dialog") { it.root == modal }).performClick()
-                compose.onNode(hasContentDescription("Load, kg") and SemanticsMatcher("in the Fix dialog") { it.root == modal })
+                compose.onNode(hasContentDescription("Load, kg total") and SemanticsMatcher("in the Fix dialog") { it.root == modal })
                     .performTextReplacement("520")
                 compose.onNodeWithText("520").assertIsDisplayed()
                 when (dismissal) {

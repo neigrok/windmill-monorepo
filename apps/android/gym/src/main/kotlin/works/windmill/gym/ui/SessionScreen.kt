@@ -68,6 +68,7 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.SetEffort
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
@@ -349,11 +350,13 @@ fun SessionScreen(
             WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
                 FixSheet(
                     set = row.set,
+                    exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
+                    origin = FixOrigin.Session,
                     movement = movement,
                     setNumber = row.number,
                     routine = standing.plan?.routine,
                     onSave = { fix ->
-                        val ended = store.fixSet(readId, row.id, fix)
+                        val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
                         when (ended) {
                             is FixOutcome.Corrected -> {
                                 detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {

@@ -709,6 +709,7 @@ class TrainingStore(
         }
         if (lastSetsWanted) loadLastSets()
         if (progressWanted) loadProgress(force = true)
+        if (!controls.writable) return
         drawFromControls()
         if (resumePending) resume() else readLastTime()
     }
@@ -1317,41 +1318,59 @@ class TrainingStore(
         return GymResult.Ok(detail)
     }
 
-    // The branch is WHOSE ROW IT IS. A refused import kept on this phone is corrected there and
-    // retried; every other row is corrected in the replica, the live workout's included, and stands
-    // at once, offline too. The log moves and the routine does not: a fix carries no target.
-    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): FixOutcome {
-        if (!workoutAuthorized) return FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing"))
-        val live = session?.takeIf { it.id == sessionId }
-        if (live != null && sets.none { it.id == setId }) return FixOutcome.Gone("that set is no longer on this device")
-        if (live == null) shelfDetail(sessionId)?.let { detail ->
-            val corrected = detail.sets.firstOrNull { it.id == setId }?.let(fix::corrected)
-                ?: return FixOutcome.Gone("that set is no longer on this device")
-            val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
-                ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
-            training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
-                detail.sets.map { if (it.id == setId) corrected else it }, deleted))
-            changedSet(sessionId, setId, corrected)
-            shelved = refusedImports()
-            return FixOutcome.Corrected(corrected)
-        }
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix, origin: FixOrigin? = null): FixOutcome {
         val seat = owner
-        return try {
-            val stored = training.fixSet(sessionId, setId, fix)
-            if (!workoutAuthorized || seat != owner) return FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing"))
-            changedSet(sessionId, setId, stored)
-            if (live != null) {
-                controls.store(stored, live.id)
-                drawFromControls()
-            } else rereadRow(sessionId)
-            FixOutcome.Corrected(stored)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.fixSet", refusing)
-            if ((refusing as? TrainingRefused)?.code == "unknown-record") FixOutcome.Gone("that set is no longer on the log")
-            else FixOutcome.Failed(WriteFailure(refusing))
-        }
+        val replica = controls.engineReplica
+        val liveId = session?.id
+        return scope.async(start = CoroutineStart.UNDISPATCHED) {
+            var fromShelf = false
+            val outcome = try { run correction@ {
+                if (!workoutAuthorized || seat != owner || replica == null || replica != controls.engineReplica || liveId != session?.id)
+                    return@correction FixOutcome.Failed(WriteFailure.Refused("the account changed while fixing"))
+                if (liveId == sessionId && sets.none { it.id == setId })
+                    return@correction FixOutcome.Gone("that set is no longer on this device")
+                if (liveId != sessionId) shelfDetail(sessionId)?.let { detail ->
+                    val corrected = detail.sets.firstOrNull { it.id == setId }?.let(fix::corrected)
+                        ?: return@correction FixOutcome.Gone("that set is no longer on this device")
+                    val deleted = training.imports.refusals().firstOrNull { it.id == sessionId }?.deletedSetIds
+                        ?: training.imports.pendingFinished().firstOrNull { it.session.id == sessionId }?.deleted.orEmpty()
+                    training.imports.replaceAndRetry(sessionId, SavedWorkout(detail.session,
+                        detail.sets.map { if (it.id == setId) corrected else it }, deleted),
+                        expectedReplica = replica, expectedAnonymous = seat == null)
+                    fromShelf = true
+                    return@correction FixOutcome.Corrected(corrected)
+                }
+                FixOutcome.Corrected(training.fixSet(sessionId, setId, fix, replica, seat == null))
+            } } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                reportFailure("gym.fixSet", failure)
+                if ((failure as? TrainingRefused)?.code == "unknown-record") FixOutcome.Gone("that set is no longer on the log")
+                else FixOutcome.Failed(WriteFailure(failure))
+            }
+            origin?.let {
+                telemetry.event("gym_action", mapOf("screen" to it.screen, "action" to "fix", "outcome" to when (outcome) {
+                    is FixOutcome.Corrected -> "ok"
+                    is FixOutcome.Gone -> "refused"
+                    is FixOutcome.Failed -> if (outcome.why is WriteFailure.Refused) "refused" else "failed"
+                }))
+            }
+            if (outcome is FixOutcome.Corrected && workoutAuthorized && seat == owner && replica == controls.engineReplica &&
+                training.anonymous == (seat == null) && liveId == session?.id) {
+                try {
+                    changedSet(sessionId, setId, outcome.set)
+                    if (liveId == sessionId) {
+                        controls.store(outcome.set, sessionId)
+                        drawFromControls()
+                    } else if (fromShelf) shelved = refusedImports()
+                    else rereadRow(sessionId, "gym.fixSet")
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    reportFailure("gym.fixSet", failure)
+                    if (!controls.writable) refuseWorkout()
+                }
+            }
+            outcome
+        }.await()
     }
 
     // A settled delete updates the replica and every retained read of this set.
@@ -1395,12 +1414,12 @@ class TrainingStore(
     // asks for ONE row, anchored on the one above it, because a session reached with `Load older` is
     // below the head; the answer is taken only if it IS the row asked for, since the cursor is a
     // position.
-    private suspend fun rereadRow(sessionId: String) {
+    private suspend fun rereadRow(sessionId: String, operation: String = "gym.rereadRow") {
         val seat = owner
         val at = logged.indexOfFirst { it.id == sessionId }
         if (at < 0) return
         val above = logged.getOrNull(at - 1)
-        val fresh = tried("gym.rereadRow") { readTraining { training.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) } }
+        val fresh = tried(operation) { readTraining { training.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) } }
             ?.singleOrNull()?.takeIf { it.id == sessionId } ?: return
         if (seat != owner) return
         logged = logged.map { if (it.id == sessionId) fresh else it }
@@ -1695,7 +1714,7 @@ class TrainingStore(
         val seat = owner
         val live = controls.session?.id
         val page = tried("gym.loadLog") {
-            training.recoverAcceptedSets(controls)
+            if (controls.writable) training.recoverAcceptedSets(controls)
             readTraining {
                 if (training.planUnreadable) telemetry.failure("gym.loadLog", IllegalStateException("unreadable-frozen-plan"))
                 training.sessions(limit = logPage, before = null, beforeId = null) to readDelivery()
@@ -1734,7 +1753,7 @@ class TrainingStore(
             older = Older.Failed
             return
         }
-        if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
+        if (!workoutAuthorized || seat != owner || live != controls.session?.id || !controls.writable) return
         if (open == null) {
             // The replica holds no open session, so whatever this phone was holding is over.
             controls.session?.let { controls.close(it.id) }
@@ -1750,7 +1769,7 @@ class TrainingStore(
         val seat = owner
         val live = controls.session?.id
         val detail = if (joined) tried("gym.loadLog") { readTraining { training.session(opened.id) } } else null
-        if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
+        if (!workoutAuthorized || seat != owner || live != controls.session?.id || !controls.writable) return
         if (joined && (detail == null || !detail.session.isOpen)) return
         controls.hold(detail?.session ?: opened)
         if (detail != null) {
@@ -1860,6 +1879,8 @@ fun WriteFailure(refusing: Throwable): WriteFailure = when (refusing) {
     is WindmillApiException.Refused -> WriteFailure.Refused(refusing.line)
     else -> WriteFailure.NoAnswer
 }
+
+enum class FixOrigin(val screen: String) { Workout("workout"), Session("session") }
 
 // A row the log no longer holds is not a fix that can be tried again: the row leaves the screen,
 // where a `Failed` leaves it standing with the sentence beside it.

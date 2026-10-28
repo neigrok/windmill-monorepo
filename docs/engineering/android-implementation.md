@@ -645,3 +645,46 @@ client errors; the combined run’s later deliberate fault is reported under tas
 failures remain in their manifests. The runtime scan has no ANR/fatal exception; no timing comparison
 is claimed. Long default histories finish after their final generated set while valid short
 histories retain forty minutes.
+
+## Task 10 — Fix set fields and settled results
+
+Fix set uses the same equipment-aware Display load and regular reps fields as the rack. The
+equipment subtitle, 28 sp heading, filled exposed Effort menu, fixed Set note label and placeholder
+follow the approved 03.3 boards. The note is a real native editor inside the M3 filled container;
+it retains raw bytes and the existing spoken caption. Delete uses the shared M3 error action at
+48 dp minimum, and Save remains at least 64 dp. Existing numeric buffers and cancellation remain
+with the sheet draft.
+
+The correction runs in the store's existing settled-job scope. The engine adapter checks replica
+and anonymous ownership inside its locked action load, delegates validation to CorrectSet, and
+returns the normalized accepted plan snapshot with its original set number. A post-commit owner
+switch cannot cause a reread from another replica or relabel the saved correction as failed.
+The result event is emitted once before guarded presentation refresh. A failed controls publication
+reports gym.fixSet once and retains the existing recovery sentence; a fresh store recovers the
+persisted correction. Expected validation, missing-row and owner refusals remain event-only.
+
+The simplification pass keeps one result mapping across live and imported fixes, uses the existing
+settled-job mechanism, and leaves pure validation in the domain action. The note composition stays
+local to its one consumer; shared error-button sizing gains only an optional minimum height.
+Affected Debug and Release gates each pass 101 cases with no failures/errors/skips. Tests include
+actual Compose sheet replacement after the write, exact note restoration, native buffer refusal,
+large-text/short-height reachability, equipment units and both error colors. The final ownership
+adapter gate passes 36 cases in each variant and covers a pre-lock account switch, same-replica anonymous adoption and a
+post-commit switch, including normalized returned values and exactly one event. Evidence is retained
+under `/private/tmp/windmill-android-task10`. Six real SDK/intake telemetry checks pass. The final eight-case Debug and Release fault gate
+adds a live observer, repeated delivery-shaped refresh, server sync and an unrelated note update;
+only the original controls failure reports, the note refreshes, and a fresh store restores the fix.
+
+Six API 37 Dark/Daylight captures are retained in the shared `candidate6` packet. A native signed
+load is saved with the IME still open after scrolling to Save; the exact note and RPE are preserved,
+with one successful event. Blur/cancellation preserve the prior set and emit no fix event. The
+final packet is `/private/tmp/windmill-android-workout-batch/final1`, APK SHA-256
+`33e1dca8cc80e5c13c514310287f8d96f3bce70a752f92455c0b351d3a5b0c8e`. It contains the controls guards
+and exact task 11 glyph; the candidate’s Fix/rack presentation sources are unchanged. A temporary
+directory blocks only the controls file’s atomic temp path: the corrected set persists, one
+`workout/fix/ok` and one `gym.fixSet/FileNotFoundException` arrive, and the existing restart sentence
+remains visible. No repeated refresh or sync-push errors occur during the six-second fault window.
+One `hello/unreachable` metric has an unproven cause; the window is not network-clean. Removing the
+fault and restarting restores the correction; a separate subsequent edit succeeds. The envelope
+has no raw exception value, user, request, message or fixture note. The candidate’s earlier cascade
+and all selector/setup failures remain separate evidence, not successful-action claims.

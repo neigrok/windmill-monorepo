@@ -6,6 +6,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -174,4 +175,28 @@ class FixSheetEffortTests {
         compose.onNodeWithText("Save fix").performClick()
         compose.runOnIdle { assertNull("and nothing was sent", saved()) }
     }
+    @Test fun theFilledNoteKeepsItsEmptyLabelAndRestoresExactDraftBytesWithEffort() {
+        val restoration = StateRestorationTester(compose)
+        val set = TrainingSet("set_1", "bench-press", weightKg = 75.0, reps = 8, completedAtMs = 0)
+        val notes = mutableListOf<SetFix>()
+        restoration.setContent { GymMaterial {
+            FixSheet(set, "Bench Press", 1, null,
+                onSave = { notes += it; FixOutcome.Corrected(it.corrected(set)) }, onDelete = {})
+        } }
+        compose.onNodeWithText("Set note").assertIsDisplayed()
+        compose.onNodeWithText("Add a note").assertIsDisplayed()
+        val raw = "  slow 🏋\nnext set  "
+        compose.onNodeWithText("Set note").performTextInput(raw)
+        compose.onNodeWithText("Add a note").assertDoesNotExist()
+        compose.onNodeWithText("Not rated").performClick()
+        compose.onNodeWithText("RPE 8.5").performScrollTo().performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText(raw).assertExists()
+        compose.onNodeWithText("RPE 8.5").assertExists()
+        compose.onNodeWithText("Set note").assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription, SetEffort.noteCaption))
+        compose.onNodeWithText("Save fix").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(SetFix(note = raw, rpe = 8.5, rpeNamed = true)), notes) }
+    }
+
 }

@@ -211,13 +211,33 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     }
     private fun storedSet(id: Id<EngineSet>): TrainingSet =
         read { it.repository(EngineSet).find(id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
-    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
-        val old = read { it.repository(EngineSet).find(Id(setId, EngineSet), ViewMode.drawn) }
-            ?.takeIf { it.sessionId.text == sessionId } ?: throw missing("That set is no longer on the log.")
-        val next = old.copy(weightKg = fix.weightKg ?: old.weightKg, reps = fix.reps ?: old.reps,
-            note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
-        apply(CorrectSet(next))
-        return storedSet(next.id)
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix,
+        expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): TrainingSet {
+        val accepted = apply(object : Action<TrainingState?, EngineSet?, GymRefusal> {
+            override val scope = EngineSet.scope
+            override val refusals = GymRefusal
+            override fun load(read: Reader): TrainingState? {
+                if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                return TrainingState(read)
+            }
+            override fun decide(loaded: TrainingState?, ids: IDSource): Decision<EngineSet?, GymRefusal> {
+                if (loaded == null) return Decision.Unchanged(null)
+                val old = loaded.drawnSets.firstOrNull { it.id.text == setId && it.sessionId.text == sessionId }
+                    ?: return Decision.Refuse(GymRefusal.Gone(Id(setId, EngineSet).ref, Refused.Path.predicted))
+                val next = old.copy(weightKg = fix.weightKg ?: old.weightKg, reps = fix.reps ?: old.reps,
+                    note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
+                return when (val decision = CorrectSet(next).decide(loaded, ids)) {
+                    is Decision.Write -> {
+                        val values = decision.plan.operations.single().values
+                        val saved = EngineSet.decode(Fields(EngineSet.type, old.id.record, values)).copy(setNumber = old.setNumber)
+                        Decision.Write(decision.plan, saved)
+                    }
+                    is Decision.Unchanged -> Decision.Unchanged(old)
+                    is Decision.Refuse -> decision
+                }
+            }
+        })
+        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The account changed. Open this again.")
     }
     suspend fun deleteSet(sessionId: String, setId: String,
         expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous) {

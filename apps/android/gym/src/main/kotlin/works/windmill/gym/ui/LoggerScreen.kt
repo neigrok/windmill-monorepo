@@ -112,6 +112,7 @@ import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.LiveLines
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillSpace
@@ -480,12 +481,17 @@ fun LoggerScreen(
                     WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
                         FixSheet(
                             set = set,
+                            exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
+                            origin = FixOrigin.Workout,
                             movement = Readout.movement(set.exerciseId, store.catalog),
                             setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
                             routine = store.session?.plan?.routine,
                             onSave = { fix ->
-                                if (sessionId == null) FixOutcome.Gone("that workout is no longer open")
-                                else store.fixSet(sessionId, set.id, fix)
+                                if (sessionId == null) {
+                                    telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
+                                    FixOutcome.Gone("that workout is no longer open")
+                                }
+                                else store.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
                             },
                             onSaved = { close(); say(null) },
                             onGone = { close(); say(it) },
