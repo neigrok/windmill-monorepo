@@ -1,6 +1,26 @@
 import Foundation
 import SwiftParser
 import SwiftSyntax
+import Synchronization
+
+// Recursive debug parsing and visitors need more than a small test/dispatch worker stack.
+enum SourceParser {
+  static let stackSize = 8 * 1024 * 1024
+
+  static func inspect<T: Sendable>(source: String, _ inspect: @escaping @Sendable (SourceFileSyntax) -> T) -> T {
+    let result = Mutex<T?>(nil)
+    let done = DispatchSemaphore(value: 0)
+    let thread = Thread {
+      let value = inspect(Parser.parse(source: source))
+      result.withLock { $0 = value }
+      done.signal()
+    }
+    thread.stackSize = stackSize
+    thread.start()
+    done.wait()
+    return result.withLock { $0! }
+  }
+}
 
 enum Checkout {
   static let iosRoot: URL = {
@@ -53,9 +73,12 @@ struct RunningBuild: Sendable {
     let module = URL(fileURLWithPath: info.paths.runtimeResourcePath).appending(path: "pm/ManifestAPI/PackageDescription.swiftmodule")
     let interfaces = try FileManager.default.contentsOfDirectory(atPath: module.path).filter { $0.hasSuffix(".swiftinterface") }.sorted()
     guard let interface = interfaces.first else { throw Unreadable(module.path, "no .swiftinterface") }
-    let names = DeclaredNames(viewMode: .sourceAccurate)
-    names.walk(Parser.parse(source: try String(contentsOf: module.appending(path: interface), encoding: .utf8)))
-    return names.found
+    let source = try String(contentsOf: module.appending(path: interface), encoding: .utf8)
+    return SourceParser.inspect(source: source) { tree in
+      let names = DeclaredNames(viewMode: .sourceAccurate)
+      names.walk(tree)
+      return names.found
+    }
   }
 
   static func scratchDirectory() throws -> URL {

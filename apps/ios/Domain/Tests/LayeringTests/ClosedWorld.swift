@@ -1,4 +1,3 @@
-import SwiftParser
 import SwiftSyntax
 
 // §2.4 item 4: every package, dependency, module and kind is §2.1's, where §2.1 puts it; one constant manifest; no link.
@@ -60,7 +59,7 @@ enum ClosedWorld {
 }
 
 // §2.4 item 4: a manifest is constant data: literals, PackageDescription calls, MainActor.self and its own top-level lets.
-struct ConstantManifest {
+struct ConstantManifest: Sendable {
   let apiNames: Set<String>
 
   static let allowedKinds: Set<SyntaxKind> = [
@@ -77,17 +76,18 @@ struct ConstantManifest {
   static let deniedNames: Set<String> = ["Context", "moduleAliases"]
 
   func findings(in source: String, file: String) -> [Finding] {
-    let tree = Parser.parse(source: source)
-    let lets = tree.statements.compactMap { $0.item.as(VariableDeclSyntax.self) }.flatMap(\.bindings)
-      .compactMap { $0.pattern.as(IdentifierPatternSyntax.self).map { Self.bare($0.identifier.text) } }
-    let names = apiNames.union(Self.literalTypes).subtracting(Self.deniedNames)
-    let walk = Walk(names: names, lets: Set(lets), converter: SourceLocationConverter(fileName: file, tree: tree))
-    walk.walk(tree)
-    let packages = tree.tokens(viewMode: .sourceAccurate).filter { token in
-      Self.bare(token.text) == "Package" && token.parent?.is(DeclReferenceExprSyntax.self) == true
+    SourceParser.inspect(source: source) { tree in
+      let lets = tree.statements.compactMap { $0.item.as(VariableDeclSyntax.self) }.flatMap(\.bindings)
+        .compactMap { $0.pattern.as(IdentifierPatternSyntax.self).map { Self.bare($0.identifier.text) } }
+      let names = apiNames.union(Self.literalTypes).subtracting(Self.deniedNames)
+      let walk = Walk(names: names, lets: Set(lets), converter: SourceLocationConverter(fileName: file, tree: tree))
+      walk.walk(tree)
+      let packages = tree.tokens(viewMode: .sourceAccurate).filter { token in
+        Self.bare(token.text) == "Package" && token.parent?.is(DeclReferenceExprSyntax.self) == true
+      }
+      let calls = packages.count == 1 ? [] : [(1, "manifest-syntax", "\(packages.count) Package(…) calls")]
+      return (walk.found + calls).map { Finding(file, line: $0.0, $0.1, $0.2) }
     }
-    let calls = packages.count == 1 ? [] : [(1, "manifest-syntax", "\(packages.count) Package(…) calls")]
-    return (walk.found + calls).map { Finding(file, line: $0.0, $0.1, $0.2) }
   }
 
   static func bare(_ text: String) -> String {

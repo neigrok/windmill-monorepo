@@ -34,6 +34,23 @@ bootstrap-to-exit/signal/exception transitions, the fixed deadline and failure-o
 App Tools checks pass; the workflow wiring is unchanged.
 Local Xcode 27.1 / Swift 6.4 probes verify a complete passing Swift Testing
 entry point, synthetic SIGBUS stop data with stack capture, and bounded timeout. Printed synthetic
-content is absent from debugger artifacts. This validates the diagnostic mechanism; it does not
-reproduce or explain the Xcode 26.3 CI Domain crash. The CI cause remains unresolved until a real
-failing stack is collected.
+content is absent from debugger artifacts. This validates the diagnostic mechanism. CI run 40669599594 captures an exception in
+SwiftParser 602.0.0's lexer and repeated collection-literal parsing on thread 49. It uses
+Xcode 26.3 / Swift 6.2.4; the local toolchain is Xcode 27.1 / Swift 6.4.
+
+LayeringTests runs each complete parse and syntax inspection on its own 8 MiB Foundation thread,
+returning only Sendable results. Source, manifest and PackageDescription inspections share this
+boundary. Files, parser depth, findings and parallel test scheduling remain unchanged. Recursive
+parser and visitor stack use is documented in the pinned
+[parser](https://github.com/swiftlang/swift-syntax/blob/602.0.0/Sources/SwiftParser/Parser.swift)
+and [visitor](https://github.com/swiftlang/swift-syntax/blob/602.0.0/Sources/SwiftSyntax/generated/SyntaxVisitor.swift).
+
+The unmodified 94,852-byte generated Coach catalogue has SHA256
+`dfa24b8344884d50b13cc3f5a1102fc2bae6a22c6d9f46919327cd57ecd9ee4b`. Local probes compile all 46
+SwiftParser 602 sources with `-Onone -DDEBUG`: a 274,432-byte actual thread stack exits with SIGBUS;
+536,576-byte, 1,060,864-byte and 8,400,896-byte stacks parse all 20,602 tokens without syntax errors,
+round-trip the full source and complete its import visitor. Local Swift Testing workers measure
+536,576 bytes. This reproduces stack exhaustion locally; it does not establish the CI compiler's
+exact threshold. The regression inspects the full catalogue from a 256 KiB caller and checks
+forbidden import/token findings appended after it. The complete unchanged Domain CI gate remains
+required to confirm the correction on Xcode 26.3.

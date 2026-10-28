@@ -1,5 +1,4 @@
 import Foundation
-import SwiftParser
 import SwiftSyntax
 
 // §2.3 over each file dump-package assigns a module: imports by syntax, names and the lint by token, literal text skipped.
@@ -74,7 +73,7 @@ enum SourceRules {
 }
 
 // §2.3 for one module: its row of the table, and the layer rules on UI frameworks, storage and Combine names.
-struct ModuleSourceRules {
+struct ModuleSourceRules: Sendable {
   let module: String
   let declaredDependencies: Set<String>
   let packageModules: Set<String>
@@ -84,12 +83,13 @@ struct ModuleSourceRules {
   var bansUserInterface: Bool { Layers.row(of: module).map { SourceRules.noUserInterfaceLayers.contains($0.layer) } ?? false }
 
   func findings(in text: String, file: String) -> [Finding] {
-    let tree = Parser.parse(source: text)
-    let converter = SourceLocationConverter(fileName: file, tree: tree)
-    let tokens = isNamed || bansUserInterface ? tokenFindings(in: tree, file: file, converter: converter) : []
-    let pinned = module != SourceRules.nfcModule || text == SourceRules.nfcSource
-    let pin = pinned ? [] : [Finding(file, "nfc-pin", "the text is not §2.3's constant")]
-    return importFindings(in: tree, file: file, converter: converter) + tokens + pin
+    SourceParser.inspect(source: text) { tree in
+      let converter = SourceLocationConverter(fileName: file, tree: tree)
+      let tokens = isNamed || bansUserInterface ? tokenFindings(in: tree, file: file, converter: converter) : []
+      let pinned = module != SourceRules.nfcModule || text == SourceRules.nfcSource
+      let pin = pinned ? [] : [Finding(file, "nfc-pin", "the text is not §2.3's constant")]
+      return importFindings(in: tree, file: file, converter: converter) + tokens + pin
+    }
   }
 
   func importFindings(in tree: SourceFileSyntax, file: String, converter: SourceLocationConverter) -> [Finding] {

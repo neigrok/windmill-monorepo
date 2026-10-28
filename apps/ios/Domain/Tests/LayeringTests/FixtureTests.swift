@@ -36,6 +36,34 @@ import Testing
     #expect(findings.sorted().map(\.withoutFile) == appCase.expected)
   }
 
+  @Test func completeCatalogueInspectionFromSmallCallerStack() async throws {
+    let file = "Domain/Sources/GymDomain/Coach/Catalog.generated.swift"
+    let source = try String(contentsOf: Checkout.iosRoot.appending(path: file), encoding: .utf8)
+    let importLine = source.components(separatedBy: "\n").count + 1
+    let annotated = source + "\nimport SwiftUI\nlet stackProbe = Task.self\n"
+    let result = await withCheckedContinuation { continuation in
+      let caller = Thread {
+        let callerStack = pthread_get_stacksize_np(pthread_self())
+        let parsed = SourceParser.inspect(source: source) { tree in
+          (pthread_get_stacksize_np(pthread_self()), tree.hasError, tree.description == source)
+        }
+        let rules = ModuleSourceRules(module: "GymDomain", declaredDependencies: [], packageModules: [])
+        let findings = rules.findings(in: annotated, file: file)
+        continuation.resume(returning: (callerStack, parsed, findings))
+      }
+      caller.stackSize = 256 * 1024
+      caller.start()
+    }
+    #expect(result.0 < SourceParser.stackSize)
+    #expect(result.1.0 >= SourceParser.stackSize)
+    #expect(result.1.1 == false)
+    #expect(result.1.2 == true)
+    #expect(result.2 == [
+      Finding(file, line: importLine, "import", "SwiftUI"),
+      Finding(file, line: importLine + 1, "token", "Task"),
+    ])
+  }
+
   // The probe app's row names the engine's package alone, placed from the spec's own directory; no remote package.
   @Test func probeAppNamesTheEngineAlone() {
     let spec = JSONValue.object([
