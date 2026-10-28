@@ -809,12 +809,13 @@ the sole composed difference is the additional verified NumberStepper paragraph 
 The integration gate passes 1,320 gym cases (1,303 pass and 17 opt-in LiveWire skip), 134 platform,
 48 App and 46 tool cases, with zero failures/errors; Debug assembles. The tool gate uses disposable
 loopback fixtures. Scoped Figma production prefixes preserve explicit exclusions for postponed
-proposal/action visuals. The remaining release scope contains 20 numbered tasks.
+proposal/action visuals.
 
 The acceptance packet attributes Sentry envelopes by Android SDK/release as well as time; a shared
 collector can receive another backend's probes during native verification. Exact owned resources
 are cleaned while evidence remains available. These checks add no production storage or telemetry
 framework. Both coordinated distributions and their compatibility cutoff remain pending.
+
 ## Task 14 · Finish receipt and confirmed workout discard
 
 The receipt derives duration, count, equipment-aware volume and performed rows from the committed
@@ -859,8 +860,50 @@ separate Keep action. Additional lifecycle checks freeze old saved state through
 restore a fresh engine/store after discard, cancel a Share exit before sign-in, replay completed and
 pending admissions, recover a failed draft write and reject replacement owners. Focused source
 verification passes 156 gym and 10 platform cases with zero failures, errors or skips; app Debug
-compilation passes. Native appearance comparison and local event/failure arrival remain pending.
+compilation passes. Installed acceptance on source `be458a86` produces 14 paired captures with no
+capture failures. Normal facts share one surface; enlarged text keeps actions pinned beneath a
+scrollable body. Two saved Share exits survive recreation before sign-in and each admits one
+matching chat/question after authentication and the account-data decision.
+
+With the isolated backend paused, a published workout deletes locally, stays absent through a cold
+restart and disappears from the server after delivery resumes. An unpublished create/finish/delete
+also stays absent after restart. Its five ready intents drain in causal order and the final server
+projection is absent; create/delete elision is not established.
+
+The isolated intake receives 294 bounded events. Later isolated discard blocks each contain a
+shown/accepted pair. Whole-run totals include an earlier obstruction/helper interval and do not
+establish one opening per terminal result; exact-once discard remains covered by deterministic
+prompt/job identity tests. Two paused-backend transport timeouts match local Android Sentry receipts
+by SDK, release, fixed operation/route, failure kind and exact bounded duration. Privacy checks and
+app-scoped runtime checks pass, with no product fatal error or ANR.
+
+Native pre-acceptance SQLite failure remains unverified because the external helper never acquired
+a lock. Deterministic tests cover retained detail/error and static reporting. Post-acceptance
+publication failure is also tested at the gateway/store boundary only; a deduplicated no-op write
+does not establish that fault. No native discard storage-failure Issue delivery is claimed. The
+owned rig is stopped, its retired AVD removed and all acceptance evidence retained.
 
 Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
-Its full-editor proposal shows the unit below a realistic signed load at narrow width and enlarged
-text. Human approval remains pending; that proposed layout is not implemented or marked production.
+The human-approved [02.19 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
+is Ready for dev on the canonical Android page. It keeps a realistic signed load visible at narrow
+width and enlarged text. Implementation belongs to task 18; the older full-width/buttons-below
+fallback remains unapproved.
+
+## Shared load and Finish integration observations
+
+Root matches all 32 task-14 paths against its source commit except the composed current-state
+observations, and all 256 final shared-load paths against the developer packet. The combined Android
+gate passes 1,357 gym cases with 17 opt-in LiveWire skips, 138 platform and 48 App cases, with zero
+failures/errors; Debug assembles. All ten backend targets pass against two fresh isolated databases:
+domain 2,308/2,336 with 28 deliberate role/pattern skips, MCP 341/341, sync 765/765 and adapters
+1,360/1,360, with zero stopped cases or assertions. Both databases are removed.
+
+The composed native receipt displays the complete maximum finite exponent, an unavailable-volume
+dash and true zero separately. The iOS and web source trees match their full verified developer
+trees; supported Xcode 26.3 CI additionally runs before main shipment. Source schema 10/minimum 10
+does not activate the production compatibility cutoff or publish either distribution.
+
+The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
+and sender readiness at their shared boundaries. Native receipt integration uses existing text
+wrapping and unavailable slots. Fault evidence is named by the boundary actually exercised; no
+production injection hook or extra telemetry framework is introduced for acceptance.
