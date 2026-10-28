@@ -2,8 +2,10 @@
 
 #include "platform/adapters/json/JsonText.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
+#include "platform/domain/sync/Jcs.h"
 #include "test/testing.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -48,6 +50,29 @@ TEST(gym_ability_catalog_offers_appendix_c_minus_withheld_and_seats_each_ability
   CHECK(catalog.find("propose_routine_removal")->cls == AbilityClass::remove);
   CHECK(catalog.find("propose_routine_removal")->agent == AgentRule::proposes);
   CHECK_FALSE(catalog.find("get_record"));
+}
+
+// catalog.json is the catalog of record: every ability the C++ table holds carries its class, agent and seats.
+TEST(gym_ability_catalog_class_agent_and_seats_are_catalog_json_s) {
+  const Json::Value catalog = sync::parseJson(catalogText());
+  std::map<std::string, Json::Value> pinned;
+  for (const Json::Value& ability : catalog["abilities"]) pinned.emplace(ability["name"].asString(), ability);
+  for (const Ability& ability : gymAbilityCatalog().abilities()) {
+    const auto found = pinned.find(ability.name());
+    if (found == pinned.end()) {
+      ::testing::fail(("catalog.json holds no " + ability.name()).c_str(), __FILE__, __LINE__);
+      continue;
+    }
+    Json::Value table(Json::objectValue);
+    table["class"] = std::string(nameOf(ability.cls));
+    table["agent"] = std::string(nameOf(ability.agent));
+    table["seats"] = ability.seats == AbilitySeats::bound ? "bound" : "any";
+    Json::Value json(Json::objectValue);
+    for (const char* field : {"class", "agent", "seats"}) json[field] = found->second[field];
+    if (table != json)
+      ::testing::fail((ability.name() + " drifts from catalog.json: the table says " + dump(table) + ", catalog.json " + dump(json)).c_str(),
+                      __FILE__, __LINE__);
+  }
 }
 
 TEST(gym_ability_catalog_marks_the_phone_creates_whose_ids_the_server_mints) {

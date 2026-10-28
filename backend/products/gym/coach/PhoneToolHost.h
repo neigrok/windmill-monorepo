@@ -31,6 +31,8 @@ public:
   bool interrupted() const { return interrupted_; }
   const std::map<std::string, int>& callsByName() const { return callsByName_; }
   const std::map<std::string, int>& refusalsByCode() const { return gate_.refusals(); }
+  // The calls the phone answered `ok: false`, by code; a code that is not a lowercase slug counts as `other`.
+  const std::map<std::string, int>& phoneRefusalsByCode() const { return phoneRefusals_; }
   int batches() const { return batches_; }
 
 private:
@@ -42,6 +44,7 @@ private:
   bool interrupted_ = false;
   int batches_ = 0;
   std::map<std::string, int> callsByName_;
+  std::map<std::string, int> phoneRefusals_;
 };
 
 }

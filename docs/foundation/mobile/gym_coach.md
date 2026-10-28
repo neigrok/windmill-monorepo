@@ -639,7 +639,11 @@ A phone sends one `coach_turn` event per turn that opened: state, seat, the code
 ended on, ability calls and refusals as counts, answer bytes and duration; and one `coach_ability`
 event per ability call it ran: the catalog name and the outcome (`ok` or the refusal code). Neither
 carries text, pictures, results or ids. iOS sends both
-([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)); Android sends neither.
+([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)): `coach_turn` with its ability calls,
+refusals and answer bytes as counts, and a `coach_ability` for every call its executor ran, the
+four context reads included. Android sends neither. The server logs its own side of a turn
+(`coach_turn` and `coach_batch` lines, `backend/OBSERVABILITY.md`), the calls a phone refused
+counted by code.
 
 ---
 

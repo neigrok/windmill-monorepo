@@ -11,9 +11,8 @@
 #include <vector>
 
 // The ability catalog a Coach turn gates on (gym_coach.md §3): each declared tool, with the class,
-// agent rule and seats Appendix C gives it. The declarations are `gymToolCatalog()`'s; this file
-// is the one place the appendix is written in code, so the catalog JSON can replace it with no
-// caller change.
+// agent rule and seats Appendix C gives it. The declarations are `gymToolCatalog()`'s, pinned to
+// catalog.json by CatalogContractTest; AbilityCatalogTest pins the class, agent and seats.
 
 namespace wm::gym::coach {
 
@@ -56,7 +55,7 @@ private:
   std::vector<Ability> abilities_;
 };
 
-// The catalog of record until catalog.json pins it: Appendix C over gymToolCatalog().
+// Appendix C over gymToolCatalog(), held to catalog.json, the catalog of record.
 const AbilityCatalog& gymAbilityCatalog();
 
 // G-3: the first way `value` breaks `schema` — type, required, additionalProperties, enum, bounds,

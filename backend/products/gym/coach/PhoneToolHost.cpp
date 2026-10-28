@@ -2,6 +2,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <utility>
@@ -18,6 +19,13 @@ ToolResult refused(const std::string& code, const std::string& message) {
 ToolResult resultFor(const TurnCallResult& answer) {
   if (answer.ok) return ToolResult::json(answer.result);
   return refused(answer.code, "the phone refused this call.");
+}
+
+// A phone's code reaches the logs only as a bounded label: a lowercase slug, or `other`.
+std::string loggedCode(const std::string& code) {
+  const bool slug = !code.empty() && code.size() <= 48 && code.front() >= 'a' && code.front() <= 'z' &&
+                    std::all_of(code.begin(), code.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'; });
+  return slug ? code : "other";
 }
 
 }  // namespace
@@ -63,6 +71,7 @@ std::vector<ToolResult> PhoneToolHost::callTools(const std::vector<ToolCall>& ca
   }
 
   std::string outcome = "answered";
+  int phoneRefused = 0;
   const std::optional<TurnBatch> batch = phone.empty() ? std::nullopt : turn_.sendBatch(std::move(phone));
   if (!phone.empty() && !batch) {
     for (const std::size_t index : phoneIndex) answered[index] = refused(gate::stopped, "Coach was stopped before this action.");
@@ -77,14 +86,19 @@ std::vector<ToolResult> PhoneToolHost::callTools(const std::vector<ToolCall>& ca
         answered[index] = refused(outcome, "the phone did not answer this call.");
     } else {
       for (std::size_t at = 0; at < results->size(); ++at) {
-        answered[phoneIndex[at]] = resultFor((*results)[at]);
-        gate_.settle(*admitted[phoneIndex[at]], (*results)[at].ok);
+        const TurnCallResult& result = (*results)[at];
+        answered[phoneIndex[at]] = resultFor(result);
+        gate_.settle(*admitted[phoneIndex[at]], result.ok);
+        if (result.ok) continue;
+        ++phoneRefused;
+        ++phoneRefusals_[loggedCode(result.code)];
       }
+      if (phoneRefused == static_cast<int>(results->size())) outcome = "refused";
     }
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
     LOG_INFO << "coach_batch turn=" << turn_.id() << " batch=" << batch->number << " seat=" << std::string(nameOf(turn_.principal().seat))
              << " calls=" << batch->calls.size() << " server=" << server << " refused=" << refusedCalls
-             << " outcome=" << outcome << " duration_ms=" << elapsed.count();
+             << " phone_refused=" << phoneRefused << " outcome=" << outcome << " duration_ms=" << elapsed.count();
   }
 
   std::vector<ToolResult> out;
