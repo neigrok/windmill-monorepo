@@ -1,6 +1,6 @@
 # Record: Edit movement in the overflow, Earlier records, no set kinds, workouts
 
-**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. Record drilldown is preserved; additional equipment visuals remain gated by 08.
+**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. The four linked Record frames are 🔨 In dev. Equipment presentation reuses shipped tasks 08/20; no new glyphs are introduced.
 
 **Figma:**
 - 05.6 Record, Edit movement in the overflow: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30001) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-31197)
@@ -10,27 +10,40 @@
   - `Android / Menu` `342:2725`
   - `Android / Equipment icon` `337:2025`
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `ui/RecordScreen.kt:72`: the bar's trailing action is the text *Rename*, shown once the record has loaded.
-- The subhead is the equipment word, capitalised from the wire (`domain/Record.kt:34`): *Barbell*, *Dumbbell*, …
-- *Recent sets* append the kind wire for a non-working set: *{w} × {r} warmup* (`domain/Record.kt:42`).
-- The window line reads *Last 12 weeks · 6 sessions* (`ui/RecordScreen.kt:193`, `Readout.sessionCount` at `domain/Readout.kt:192`). Gap labels say *No session · a – b* (`ui/RecordScreen.kt:192`); TalkBack actions say *Earlier session* / *Later session* / *Session estimates* (`ui/DatedPlot.kt:138,145,218`).
-- *Personal records* (`ui/RecordScreen.kt:133-142`, from `domain/Record.kt:35-38`) lists every record newest first, the standing best included and tinted.
-- Tap to inspect already ships: *95 kg est · 9 Oct · 75 × 8* (`progressReading`, `domain/Progress.kt:140-143`).
-- Defects seen on the emulator:
-  - Two workouts on one day draw a vertical spike in the chart (`progressSeries`, `domain/Progress.kt:145-150`, one point per workout).
-  - A free workout that stayed on the phone after a refused import still feeds the chart.
+**Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/RecordScreen.kt` uses the native More icon and shared menu with one *Edit movement* item.
+  It opens task 20's approved editor, retaining its draft, account guard and dismissal behavior.
+- `domain/Record.kt` names Dumbbells in the plural. The header reuses the existing equipment glyphs;
+  Cable/Kettlebell labels remain, and Other is text-only. Recent sets contain no set-kind suffix.
+- **Earlier records** lists only superseded bests, newest first. The shared `ProgressRecords` read
+  supplies their identities: the first estimate is a baseline, and a new best must beat the previous
+  best as both are stated to 0.1 kg. The standing best remains in its tile; an empty earlier list has
+  no heading.
+- Record and its chart accessibility say *workout*. The shared `Readout.sessionCount` also supplies
+  the Log moment's count; no other Log composition changes belong to this task.
+- `progressSeries` keeps one strongest estimate per local day, with earliest time then ID resolving
+  exact ties. The default readout resolves the last plotted point, including a later weaker workout
+  on that same day. Daily aggregation leaves every factual workout and Log moment intact.
+- A new-best moment passes its exact workout identity into Record. A retained point is selected;
+  an older retained point opens the All window. A workout collapsed by the daily-best rule creates
+  no initial chart selection and never substitutes another point for the requested workout.
+- `store/EngineTraining.kt` excludes refused imports from progress while retaining their factual
+  detail and retry path. Chart inspection is a read and emits no values or workout identifiers.
 
-**Change**
-- Bar: replace the text *Rename* with an M3 `IconButton` ⋮ (`Icons.Rounded.MoreVert`, *More*), whose `DropdownMenu` (04) holds one item, *Edit movement* with `Icons.Outlined.Edit`. It opens the sheet from 20.
-- Subhead: use 08’s equipment-aware presentation. The approved icon examples cover Barbell, Dumbbells, Bodyweight and Machine; preserve Cable/Kettlebell labels and existing presentation until their new visual variants are approved. Never hide or rename a supported equipment value.
-- *Personal records* becomes **Earlier records**: newest first, without the standing best, which is the *Best e1RM* tile. Rows as 05.6 draws them: *75 × 8 · e1RM 95* / *9 Oct*, *70 × 8 · e1RM 88.7* / *11 Aug*. The section shows only when an earlier record exists. What counts as a record follows the shared vectors (`ProgressRecords`, ledger 9p).
-- *Recent sets* print *{w} × {r}* only (the suffix goes with 06).
-- Every *session* on this screen says *workout*: *Last 12 weeks · 6 workouts*, *No workout · a – b*, *Earlier workout*, *Later workout*, *Workout estimates*. Change `Readout.sessionCount` itself, so the Log's moment (22) reads the same.
-- 05.7: the Record opened from a *new best* moment on The log (22) rings that workout's point and shows its readout; otherwise no change.
-- Fix the chart's reads:
-  - One point per day: keep that day's best estimate. Put the rule in `progressSeries` with a test.
-  - Leave out workouts that are refused imports still on the phone.
+**Verification state**
+- Focused Debug: 48 cases pass, including shared-record projection, daily ties/timezone, later-weaker
+  default readout, exact/collapsed focus, edit-menu navigation and refused-import persistence.
+- Full gym Debug passes 1261 cases with 17 opt-in LiveWire skips. The final ring-clipping correction
+  passes all 11 focused chart/Record UI cases in both Debug and Release. The edge-paint regression
+  fails with the old clip allowance and passes with the scoped Inspect margin. Capture tools pass
+  22 cases.
+- `record-fixture.json` seeds six factual workouts through the existing MCP import door. The final
+  `record.json` native run captures 05.6 unselected and 05.7 selected in both appearances, with a
+  complete ring at the last point. Four bounded movement-view events reach first-party intake;
+  all 18 sets and six finished workouts remain, and menu/editor cancellation writes no edit.
+- Native cold readiness is 1631 ms with no ANR/fatal error. This is a local sample, not a controlled
+  performance comparison. The optional interior scrub was not reached after the rig entered its
+  final live workout; deterministic scrub/identity coverage supplies that check.
 
 **Out of scope:**
 - The Edit movement sheet (20).

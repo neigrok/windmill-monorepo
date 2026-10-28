@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -70,7 +71,7 @@ def read_fixture(path):
     if path is None:
         return None
     fixture = json.loads(path.read_text())
-    if not isinstance(fixture, dict) or set(fixture) != {"exercises", "routines"} or \
+    if not isinstance(fixture, dict) or not {"exercises", "routines"}.issubset(fixture) or set(fixture) - {"exercises", "routines", "history"} or \
             not isinstance(fixture["exercises"], list) or not isinstance(fixture["routines"], list) or not fixture["routines"]:
         raise ValueError("Capture fixtures need exercises and nonempty routines arrays.")
     for exercise in fixture["exercises"]:
@@ -82,6 +83,22 @@ def read_fixture(path):
                 not isinstance(routine["entries"], list) or not routine["entries"] or \
                 any(not isinstance(entry, dict) or not isinstance(entry.get("exerciseId"), str) for entry in routine["entries"]):
             raise ValueError("Capture routines need a name and explicit movement entries.")
+    if "history" in fixture:
+        history = fixture["history"]
+        if not isinstance(history, list) or not 1 <= len(history) <= 40:
+            raise ValueError("Capture history needs between 1 and 40 workouts.")
+        for workout in history:
+            if not isinstance(workout, dict) or set(workout) != {"routine", "daysAgo", "minutesAgo", "weightKg", "reps"}:
+                raise ValueError("Capture history needs explicit routine, daysAgo, minutesAgo, weightKg and reps.")
+            if type(workout["routine"]) is not int or not 0 <= workout["routine"] < len(fixture["routines"]) or \
+                    type(workout["daysAgo"]) is not int or not 0 <= workout["daysAgo"] <= 3650 or \
+                    type(workout["minutesAgo"]) is not int or not 0 <= workout["minutesAgo"] < 1440 or \
+                    workout["daysAgo"] * 1440 + workout["minutesAgo"] < 40:
+                raise ValueError("Capture history needs an existing routine and a past, bounded 40-minute workout.")
+            kg = workout["weightKg"]
+            if type(kg) not in (int, float) or not math.isfinite(kg) or not -500 <= kg <= 500 or \
+                    abs(kg * 100 - round(kg * 100)) > 1e-7 or type(workout["reps"]) is not int or not 1 <= workout["reps"] <= 500:
+                raise ValueError("Capture history needs a load from -500 to 500 kg in hundredths and 1 to 500 reps.")
     return fixture
 
 
@@ -209,14 +226,18 @@ class Fixture:
             self.routines.append(routine_id)
             self.mcp("gym_create_routine", {"id": routine_id, "name": routine["name"], "position": position,
                                            "entries": routine["entries"]})
-        for index in range(12):
-            routine = index % len(program)
-            started = self.now - (28 - index * 2) * 86400000
+        history = replacement.get("history") if replacement is not None else None
+        if history is None:
+            history = [{"routine": index % len(program), "daysAgo": 28 - index * 2, "minutesAgo": 0,
+                        "weightKg": 30 + index * 2.5, "reps": 8} for index in range(12)]
+        for index, workout in enumerate(history):
+            routine = workout["routine"]
+            started = self.now - workout["daysAgo"] * 86400000 - workout["minutesAgo"] * 60000
             session = "ses_" + prefix + str(index)
             self.mcp("gym_import_session", {"id": session, "startedAt": started, "finishedAt": started + 2400000,
                 "routineId": self.routines[routine], "sets": [
                     {"id": f"set_{prefix}{index}_{movement}_{number}", "exerciseId": entry["exerciseId"],
-                     "weightKg": 30 + index * 2.5, "reps": 8, "completedAt": started + (movement * 3 + number + 1) * 120000}
+                     "weightKg": workout["weightKg"], "reps": workout["reps"], "completedAt": started + (movement * 3 + number + 1) * 120000}
                     for movement, entry in enumerate(program[routine]["entries"]) for number in range(3)]})
         stamp = f"{self.now}:0:r_capture00000"
         rows = []

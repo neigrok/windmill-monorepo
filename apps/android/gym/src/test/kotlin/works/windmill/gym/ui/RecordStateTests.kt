@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.*
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import kotlinx.coroutines.*
@@ -34,7 +36,8 @@ class RecordStateTests {
             val store = store(room)
             compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
             compose.onNodeWithText("Nothing logged for this movement yet. The first set you log lands here.").assertIsDisplayed()
-            compose.onNodeWithText("Rename").performClick()
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Edit movement").performClick()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("N".repeat(61))
             compose.onNodeWithContentDescription("Movement name").assertTextContains("N".repeat(61))
             compose.onNodeWithText("Use 60 characters or fewer.").assertIsDisplayed()
@@ -53,7 +56,8 @@ class RecordStateTests {
             val store = store(room)
             val renamed = movement.copy(name = "Paused Bench", aliases = listOf("Bench Press"))
             compose.setContent { GymMaterial { RecordScreen(movement.id, store, "The log", {}) } }
-            compose.onNodeWithText("Rename").performClick()
+            compose.onNodeWithContentDescription("More").performClick()
+            compose.onNodeWithText("Edit movement").performClick()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("Paused Bench")
             compose.onNodeWithText("Save").performClick()
             compose.onNodeWithText("Paused Bench").assertIsDisplayed()
@@ -63,6 +67,39 @@ class RecordStateTests {
                 assertEquals(listOf(renamed), store.catalog.filter { it.id == movement.id })
                 assertEquals(listOf(renamed), room.training.catalogue().filter { it.id == movement.id })
             }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun aLaterWeakerWorkoutDoesNotReplaceTheDailyChartReadoutOrGainAnInspectionRing() {
+        val now = java.time.Instant.parse("2026-10-22T15:00:00Z").toEpochMilli()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking {
+                room.now = now
+                room.select(null)
+                for ((index, days) in listOf(28, 21, 14, 0, 0).withIndex()) {
+                    val at = now - days * 86_400_000L - if (index == 4) 1_800_000 else 3_600_000
+                    val id = "workout$index"
+                    room.training.startSession(SessionStart(id, at))
+                    room.training.appendSet(id, SetWrite("set$index", "bench-press", if (index == 4) 85.0 else 60.0 + index * 10, 1, at + 1_000))
+                    room.training.finishSession(id, at + 60_000)
+                }
+                room.store.refreshEngine()
+            }
+            var focus by mutableStateOf<String?>(null)
+            compose.setContent { GymMaterial { RecordScreen("bench-press", room.store, "The log", {},
+                focusSessionId = focus, now = { now }) } }
+            compose.onNodeWithText("90 kg est · today · 90 × 1").assertIsDisplayed()
+            compose.onNodeWithText("85 kg est · today · 85 × 1").assertDoesNotExist()
+            val winner = compose.onNodeWithContentDescription("90 kg est · today · 90 × 1, standing best", useUnmergedTree = true)
+            winner.assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
+            compose.runOnIdle { focus = "workout4" }
+            winner.assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
+            compose.onNodeWithText("90 kg est · today · 90 × 1").assertIsDisplayed()
+            compose.runOnIdle { focus = "workout3" }
+            winner.assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+            compose.runOnIdle { assertEquals((0..4).map { "workout$it" }, room.store.progress!!.sessions.map { it.sessionId }) }
         } } finally { scope.cancel() }
     }
 }

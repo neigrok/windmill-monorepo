@@ -914,6 +914,7 @@ class WorkoutImportsTests {
             WorkoutImports(engine).prepare(finished())
             engine.signIn("A", emptyMap())
             pull(engine, server)
+            assertEquals(listOf("session01"), EngineTraining(engine).progress().sessions.map { it.sessionId })
             val request = engine.nextPush()!!
             server.refuse(code = "session-overlap")
             val reply = server.push(request, Credential.Account("A"), 100_000)
@@ -922,8 +923,11 @@ class WorkoutImportsTests {
             engine.onPushResponse(request, SyncResponse(reply.status, reply.body), timing)
             assertEquals("session-overlap", WorkoutImports(engine).refusals().single().code)
             assertEquals(source, sources(engine).single().member("source"))
+            assertEquals(emptyList<works.windmill.gym.domain.ProgressSession>(), EngineTraining(engine).progress().sessions)
+            assertEquals(listOf("session01"), EngineTraining(engine).details().map { it.session.id })
             engine(engine.snapshot()).use { reopened ->
                 assertEquals("session-overlap", WorkoutImports(reopened).refusals().single().code)
+                assertEquals(emptyList<works.windmill.gym.domain.ProgressSession>(), EngineTraining(reopened).progress().sessions)
                 WorkoutImports(reopened).retry("session01")
                 assertNotEquals(priorGesture, sources(reopened).single().member("gestureId"))
                 assertEquals(source, sources(reopened).single().member("source"))

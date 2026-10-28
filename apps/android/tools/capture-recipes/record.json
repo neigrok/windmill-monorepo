@@ -1,0 +1,83 @@
+[
+  {
+    "board": "05.6",
+    "name": "record-overflow",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Record · Bench Press 80 × 8"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "wait": "Estimated strength"
+      },
+      {
+        "tap": "More"
+      },
+      {
+        "wait": "Edit movement"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Edit movement"
+      },
+      {
+        "wait": "Movement name"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "More"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "New routine"
+      }
+    ]
+  },
+  {
+    "board": "05.7",
+    "name": "record-inspected",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Bench Press · new best"
+      },
+      {
+        "tap": "Open record ›"
+      },
+      {
+        "wait": "Estimated strength"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "tap": "Routines"
+      },
+      {
+        "wait": "New routine"
+      }
+    ]
+  }
+]

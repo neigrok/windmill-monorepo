@@ -375,7 +375,9 @@ Coach routine confirmation runs in the training store's scope, so leaving Coach 
 
 ### Standalone movement edit
 
-Record opens the approved editor without changing its navigation route. Save emits `gym_action`
+Record opens the approved editor through More → Edit movement without changing its navigation route.
+The Record route retains `gym_screen_viewed` with `screen=movement`; progress read failures retain
+`gym.loadProgress`. Chart inspection and aggregation emit no values or workout identifiers. Save emits `gym_action`
 with `screen=record`, `action=edit` and `outcome=ok|refused|failed`. An unchanged form cannot submit;
 dismissal writes nothing. Expected name, stale-state and account-change refusals remain visible in
 the sheet and do not create Sentry Issues. Unexpected storage failures report under the static
@@ -386,3 +388,11 @@ The local native recipe delivers four `record/edit/ok` events through `POST /v1/
 the three bounded labels and common application metadata. Backend sync/event write receipts arrive
 without fixture names. Store boundary tests verify the refused/failed outcomes and a single static
 `gym.editExercise` report for an unexpected commit failure; the live capture does not inject one.
+
+### Record progress reads
+
+The Record native recipe reaches first-party intake with four `gym_screen_viewed` events carrying
+`screen=movement` plus common app metadata. Ordinary navigation and Log moment focus emit no
+workout identity, estimate or load. Opening the menu/editor and cancelling writes no edit; the
+accepted local fixture retains all 18 sets and six finished workouts. Existing progress failures
+stay at `gym.loadProgress`; the native capture does not inject a storage failure.

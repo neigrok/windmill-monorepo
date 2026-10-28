@@ -432,7 +432,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             @Suppress("UNREACHABLE_CODE") error("The receipt loop returns or is cancelled.")
         } ?: throw TrainingUnanswered
     }
-    fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow(), complete = anonymous || firstPullComplete)
+    fun progress(): StatsProgress = read {
+        val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
+        StatsProgress.of(details().filterNot { it.session.id in refused }, engine.physNow(), complete = anonymous || firstPullComplete)
+    }
     fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }
         ?.let { MovementRecord.of(it, details()) }
     fun settings(): GymPreferences = read { reader ->

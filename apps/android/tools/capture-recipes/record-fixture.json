@@ -1,0 +1,80 @@
+{
+  "exercises": [],
+  "routines": [
+    {
+      "name": "Push A",
+      "entries": [
+        {
+          "exerciseId": "bench-press",
+          "sets": [
+            {
+              "reps": 8,
+              "weightKg": 80
+            }
+          ],
+          "restSeconds": 120
+        }
+      ]
+    },
+    {
+      "name": "Pull A",
+      "entries": [
+        {
+          "exerciseId": "barbell-row"
+        }
+      ]
+    },
+    {
+      "name": "Legs",
+      "entries": [
+        {
+          "exerciseId": "back-squat"
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "routine": 0,
+      "daysAgo": 56,
+      "minutesAgo": 120,
+      "weightKg": 70,
+      "reps": 8
+    },
+    {
+      "routine": 0,
+      "daysAgo": 42,
+      "minutesAgo": 120,
+      "weightKg": 68,
+      "reps": 8
+    },
+    {
+      "routine": 0,
+      "daysAgo": 28,
+      "minutesAgo": 120,
+      "weightKg": 75,
+      "reps": 8
+    },
+    {
+      "routine": 0,
+      "daysAgo": 14,
+      "minutesAgo": 120,
+      "weightKg": 72,
+      "reps": 8
+    },
+    {
+      "routine": 0,
+      "daysAgo": 0,
+      "minutesAgo": 180,
+      "weightKg": 80,
+      "reps": 8
+    },
+    {
+      "routine": 0,
+      "daysAgo": 0,
+      "minutesAgo": 60,
+      "weightKg": 60,
+      "reps": 8
+    }
+  ]
+}

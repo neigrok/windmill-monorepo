@@ -14,7 +14,10 @@
         "tap": "Back Squat"
       },
       {
-        "tap": "Rename"
+        "tap": "More"
+      },
+      {
+        "tap": "Edit movement"
       },
       {
         "wait": "Movement name"
@@ -57,10 +60,13 @@
         "tap": "Save"
       },
       {
-        "wait": "Rename"
+        "wait": "More"
       },
       {
-        "tap": "Rename"
+        "tap": "More"
+      },
+      {
+        "tap": "Edit movement"
       },
       {
         "wait": "Other"
@@ -87,7 +93,7 @@
         "tap": "Save"
       },
       {
-        "wait": "Rename"
+        "wait": "More"
       },
       {
         "key": "KEYCODE_BACK"
@@ -124,7 +130,10 @@
         "tap": "Back Squat"
       },
       {
-        "tap": "Rename"
+        "tap": "More"
+      },
+      {
+        "tap": "Edit movement"
       },
       {
         "wait": "Movement name"
@@ -144,7 +153,7 @@
         "key": "KEYCODE_BACK"
       },
       {
-        "wait": "Rename"
+        "wait": "More"
       },
       {
         "tap": "Back to Legs"
@@ -181,7 +190,10 @@
         "tap": "Back Squat"
       },
       {
-        "tap": "Rename"
+        "tap": "More"
+      },
+      {
+        "tap": "Edit movement"
       },
       {
         "wait": "Movement name"
@@ -240,7 +252,7 @@
         "key": "KEYCODE_BACK"
       },
       {
-        "wait": "Rename"
+        "wait": "More"
       },
       {
         "tap": "Back to Legs"

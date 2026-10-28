@@ -267,7 +267,7 @@ object Ask {
         val parts = mutableListOf<String>()
         if (read.sets > 0) parts += Readout.setCount(read.sets)
         if (read.weeks > 0) parts += Readout.weekCount(read.weeks)
-        if (read.sessions > 0) parts += Readout.sessionCount(read.sessions)
+        if (read.sessions > 0) parts += if (read.sessions == 1) "1 session" else "${read.sessions} sessions"
         return "read ${parts.joinToString(" · ")}"
     }
 }

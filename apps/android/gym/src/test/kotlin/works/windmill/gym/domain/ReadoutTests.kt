@@ -9,6 +9,11 @@ import org.junit.Test
 
 class ReadoutTests {
     @Test
+    fun workoutCountsUseTheSameWordForEveryCardinality() {
+        assertEquals(listOf("0 workouts", "1 workout", "2 workouts"), (0..2).map(Readout::sessionCount))
+    }
+
+    @Test
     fun aWorkoutWithoutARoutineHasOneSharedTitle() {
         assertEquals("Free workout", Readout.noRoutine)
     }

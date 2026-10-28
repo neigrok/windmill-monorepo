@@ -6,17 +6,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -64,7 +68,7 @@ class DatedPlotTests {
             assertEquals(1, navigations)
             assertEquals(emptyList<String>(), actions)
         }
-        compose.onNodeWithContentDescription("Session estimates").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Workout estimates").assertDoesNotExist()
     }
 
     @Test
@@ -118,7 +122,7 @@ class DatedPlotTests {
         }
         fun firstVisible(): Int = compose.onAllNodes(pointLabel, useUnmergedTree = true).fetchSemanticsNodes()
             .minOf { it.config[SemanticsProperties.ContentDescription].single().removePrefix("Point ").toInt() }
-        val plot = compose.onNodeWithContentDescription("Session estimates")
+        val plot = compose.onNodeWithContentDescription("Workout estimates")
         compose.mainClock.autoAdvance = false
         plot.performTouchInput {
             down(Offset(width * .5f, height * .5f))
@@ -129,7 +133,7 @@ class DatedPlotTests {
         val released = firstVisible()
         compose.mainClock.advanceTimeBy(120)
         assertTrue(firstVisible() < released)
-        val earlier = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Earlier session" }
+        val earlier = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Earlier workout" }
         compose.runOnIdle { assertTrue(earlier.action()) }
         compose.mainClock.autoAdvance = true
         val selected = compose.onNodeWithContentDescription("Point 59", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -170,14 +174,14 @@ class DatedPlotTests {
             }
         }
         compose.onNodeWithContentDescription("Point 15", useUnmergedTree = true).assertDoesNotExist()
-        val plot = compose.onNodeWithContentDescription("Session estimates")
+        val plot = compose.onNodeWithContentDescription("Workout estimates")
         plot.performTouchInput { swipe(Offset(width * .45f, height * .5f), Offset(width * .95f, height * .5f), 500) }
         compose.onNodeWithContentDescription("Point 15", useUnmergedTree = true).assertExists()
-        val earlier = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Earlier session" }
+        val earlier = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Earlier workout" }
         compose.runOnIdle { assertTrue(earlier.action()) }
         compose.runOnIdle { assertEquals("29", reads.last()) }
         compose.onNodeWithContentDescription("Point 29", useUnmergedTree = true).assertExists()
-        val later = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Later session" }
+        val later = plot.fetchSemanticsNode().config[SemanticsActions.CustomActions].single { it.label == "Later workout" }
         compose.runOnIdle { assertTrue(later.action()) }
         compose.runOnIdle { assertEquals("30", reads.last()) }
     }
@@ -198,7 +202,7 @@ class DatedPlotTests {
                 }
             }
         }
-        compose.onNodeWithContentDescription("Session estimates").performTouchInput {
+        compose.onNodeWithContentDescription("Workout estimates").performTouchInput {
             swipe(Offset(width * .6f, height * .75f), Offset(width * .6f, height * .25f), 250)
         }
         compose.runOnIdle { assertTrue(offset > 0); assertTrue(reads.all { it == null }) }
@@ -238,4 +242,55 @@ class DatedPlotTests {
         compose.runOnIdle { assertEquals(listOf(point.id), selections) }
         assertFalse(plot.fetchSemanticsNode().config.contains(SemanticsActions.CustomActions))
     }
+    @Test
+    fun inspectionRingIsPaintedBeyondBothHorizontalEdgeDots() {
+        val points = listOf(DatedPoint("first", 0, 60.0, "First"), DatedPoint("last", 86_400_000, 70.0, "Last"))
+        var selected by mutableStateOf("first")
+        var accent = Color.Transparent
+        lateinit var view: android.view.View
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                GymMaterial {
+                    accent = LocalGymColors.current.accent
+                    view = LocalView.current
+                    Box(Modifier.width(300.dp).padding(16.dp)) {
+                        DatedPlot(DatedSeries(points, 0, 86_400_000, ZoneOffset.UTC, 21),
+                            interaction = PlotInteraction.Inspect, initialPointId = selected)
+                    }
+                }
+            }
+        }
+        for ((id, description, direction) in listOf(Triple("first", "First", -1), Triple("last", "Last", 1))) {
+            compose.runOnIdle { selected = id }
+            val dot = compose.onNodeWithContentDescription(description, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+            compose.runOnIdle { view.draw(android.graphics.Canvas(bitmap)) }
+            val x = dot.left.toInt()
+            val y = dot.top.toInt()
+            val arc = (8..11).flatMap { offset -> (-4..4).map { dy -> Color(bitmap.getPixel(x + direction * offset, y + dy)) } }
+            assertTrue("The $id inspection ring must remain visible beyond its edge dot", arc.any {
+                kotlin.math.abs(it.red - accent.red) < .1 && kotlin.math.abs(it.green - accent.green) < .1 &&
+                    kotlin.math.abs(it.blue - accent.blue) < .1 && it.alpha > .9
+            })
+        }
+    }
+
+    @Test
+    fun requestedPointIsSelectedExactlyAndACollapsedWorkoutSelectsNothing() {
+        val points = (0..3).map { DatedPoint("$it", it * 86_400_000L, 60.0 + it, "Point $it") }
+        var requested by mutableStateOf<String?>("1")
+        compose.setContent {
+            GymMaterial { DatedPlot(DatedSeries(points, 0, points.last().atMs, ZoneOffset.UTC, 21),
+                interaction = PlotInteraction.Inspect, initialPointId = requested) }
+        }
+        val plot = compose.onNodeWithContentDescription("Workout estimates")
+        plot.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Point 1"))
+        compose.onNodeWithContentDescription("Point 1", useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        compose.runOnIdle { requested = "collapsed-workout" }
+        plot.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Point 3"))
+        for (point in points) compose.onNodeWithContentDescription(point.label, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
+    }
+
 }

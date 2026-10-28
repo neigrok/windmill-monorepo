@@ -85,12 +85,21 @@ node and value except exact app-package descriptions `Workout time, …`, `Since
 text, geometry and any similar label in another package must still settle. The pressed and 300 ms
 changed states use transient-frame capture; they do not skip the actual user action.
 
-`--scenarios apps/android/tools/capture-recipes/edit-movement.json` opens the standalone Record
-editor and captures Barbell, Dumbbells, Other and the three-choice menu in both appearances. It saves
+`--scenarios apps/android/tools/capture-recipes/edit-movement.json` opens More → Edit movement on Record
+and captures the standalone editor and captures Barbell, Dumbbells, Other and the three-choice menu in both appearances. It saves
 Other through the native form, reopens the accepted value, then restores Barbell before the next
 appearance. The final native acceptance also checks draft cancellation, name refusal and small-height
 keyboard reachability on that same isolated account. The recipe includes 320 × 480 dp keyboard-up
 and 200% text refusal captures in both appearances; its after-steps discard these drafts.
+
+`--fixture apps/android/tools/capture-recipes/record-fixture.json` with
+`--scenarios apps/android/tools/capture-recipes/record.json` captures the Record overflow and a
+retained point opened from a Log new-best moment in both appearances. Optional fixture `history`
+contains 1–40 explicit workouts: zero-based `routine`, integer `daysAgo` (0–3650), integer
+`minutesAgo` (0–1439), `weightKg` (−500–500 in hundredths), and integer `reps` (1–500). Each workout
+lasts 40 minutes and must finish by the fixture clock. The supported `gym_import_session` door
+writes the same three-set shape for each movement; omitting history preserves the default seed.
+The Record fixture has six factual workouts, five daily chart points and two earlier records.
 
 Transient recipes may use `frame_delay_ms` (0–1000, only with `settle: false`) to select a
 known animation phase; the manifest records that delay. This does not establish screen readiness.

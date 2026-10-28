@@ -75,4 +75,23 @@ class ProgressTests {
         assertEquals(100.0, progress.sessionEstimate("s4"))
     }
 
+    @Test
+    fun dailyChartPointsKeepTheBestEstimateAndStableTiesInTheChosenZone() {
+        val zone = ZoneId.of("Asia/Dubai")
+        val first = java.time.Instant.parse("2026-01-01T22:00:00Z").toEpochMilli()
+        val now = java.time.Instant.parse("2026-01-03T12:00:00Z").toEpochMilli()
+        val rows = listOf(Triple("baseline", first - 7 * 86_400_000, 90.0), Triple("earlier", first, 100.0), Triple("winner", first + 3_600_000, 120.0),
+            Triple("tie", first + 7_200_000, 120.0), Triple("tomorrow", first + 86_400_000, 110.0))
+        val details = rows.reversed().map { (id, at, kg) -> SessionDetail(Session(id, at, at + 1),
+            listOf(TrainingSet("set-$id", "bench", weightKg = kg, reps = 1, completedAtMs = at))) }
+        val progress = StatsProgress.of(details, now).movement("bench")
+        val series = progressSeries(progress, now, zone, all = true)
+        assertEquals(listOf(Triple("baseline", first - 7 * 86_400_000, 90.0), Triple("winner", first + 3_600_000, 120.0), Triple("tomorrow", first + 86_400_000, 110.0)),
+            series.ordered.map { Triple(it.id, it.atMs, it.value) })
+        assertEquals(listOf("baseline", "earlier", "winner", "tie", "tomorrow"), progress.sessions.map { it.id })
+        assertEquals(listOf("earlier", "winner"), StatsProgress.of(details, now).newBests.map { it.sessionId })
+        assertNull(series.ordered.firstOrNull { it.id == "earlier" })
+        assertEquals("winner", series.ordered.first { it.id == "winner" }.id)
+    }
+
 }

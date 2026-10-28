@@ -58,7 +58,7 @@ fun LogScreen(
     onOpenBodyweight: () -> Unit,
     onShareSession: (String) -> Unit,
     onDiscardSession: (String) -> Unit,
-    onOpenMovement: (String) -> Unit = {},
+    onOpenMovement: (String, String) -> Unit = { _, _ -> },
     now: () -> Long = System::currentTimeMillis,
 ) {
     val skin = LocalGymColors.current
@@ -135,7 +135,7 @@ fun LogScreen(
                                         onToggle = {
                                             if (entry is LogEntry.Moment.Weight) onOpenBodyweight()
                                             else openMoment = entry.key.takeUnless { openMoment == it }
-                                        }, onOpenRecord = { if (entry is LogEntry.Moment.Best) onOpenMovement(entry.best.exerciseId) })
+                                        }, onOpenRecord = { if (entry is LogEntry.Moment.Best) onOpenMovement(entry.best.exerciseId, entry.best.sessionId) })
                                 }
                             }
                         }

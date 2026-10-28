@@ -43,6 +43,66 @@ class DesignCaptureTests(unittest.TestCase):
                 with self.subTest(fixture=invalid), self.assertRaises(ValueError):
                     capture.read_fixture(path)
 
+    def test_history_rejects_unbounded_dates_indices_and_nonfinite_loads_before_seeding(self):
+        workout = {"routine": 0, "daysAgo": 1, "minutesAgo": 0, "weightKg": -5.25, "reps": 8}
+        fixture = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}],
+                   "history": [workout]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(json.dumps(fixture))
+            self.assertEqual(fixture, capture.read_fixture(path))
+            invalid = [[], [workout] * 41, [{**workout, "extra": 1}]]
+            for key, values in {"routine": [-1, 1, 0.5, True], "daysAgo": [-1, 3651, 1.5, True],
+                                "minutesAgo": [-1, 1440, 1.5, True], "weightKg": [-500.01, 500.01, .001, float("nan"), float("inf"), True],
+                                "reps": [0, 501, 1.5, True]}.items():
+                invalid.extend([[{**workout, key: value}] for value in values])
+            invalid.append([{**workout, "daysAgo": 0, "minutesAgo": 39}])
+            for history in invalid:
+                path.write_text(json.dumps({**fixture, "history": history}))
+                with self.subTest(history=history), self.assertRaises(ValueError):
+                    capture.read_fixture(path)
+
+    def test_history_imports_exact_past_workouts_through_the_supported_mcp_door(self):
+        imports = []
+        class LocalFixture(capture.Fixture):
+            def sql(self, query):
+                return ""
+
+            def request(self, path, body=None, token=None, headers=None):
+                replies = {"/v1/mcp-keys": {"token": "fixture-only"}, "/mcp": {},
+                           "/v1/gym/exercises": [{"id": "bench-press", "name": "Bench Press"}],
+                           "/v1/sync/hello": {"schema": 9}, "/v1/gym/bodyweight": {"entries": [None] * 6},
+                           "/v1/gym/notes": {"notes": [None] * 2}}
+                return {"Mcp-Session-Id": "fixture-session"}, replies[path]
+
+            def mcp(self, name, arguments):
+                if name == "gym_import_session":
+                    imports.append(arguments)
+
+            def push(self, rows, schema):
+                pass
+
+        fixture = LocalFixture("http://127.0.0.1:8104", "unused")
+        fixture.now = 1800000000000
+        program = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}],
+                   "history": [{"routine": 0, "daysAgo": 2, "minutesAgo": 60, "weightKg": -5.25, "reps": 8},
+                               {"routine": 0, "daysAgo": 0, "minutesAgo": 40, "weightKg": 20, "reps": 10}]}
+        fixture.seed(program)
+        prefix = "capture" + fixture.account.replace("-", "")[:12]
+        expected = []
+        for index, workout in enumerate(program["history"]):
+            started = fixture.now - workout["daysAgo"] * 86400000 - workout["minutesAgo"] * 60000
+            expected.append({"id": "ses_" + prefix + str(index), "startedAt": started, "finishedAt": started + 2400000,
+                             "routineId": "rt_" + prefix + "0", "sets": [
+                                 {"id": f"set_{prefix}{index}_0_{number}", "exerciseId": "bench-press",
+                                  "weightKg": workout["weightKg"], "reps": workout["reps"],
+                                  "completedAt": started + (number + 1) * 120000} for number in range(3)]})
+        self.assertEqual(expected, imports)
+        imports.clear()
+        fixture.seed({key: value for key, value in program.items() if key != "history"})
+        self.assertEqual([(fixture.now - (28 - index * 2) * 86400000, 30 + index * 2.5, 8)
+                          for index in range(12)], [(item["startedAt"], item["sets"][0]["weightKg"], item["sets"][0]["reps"]) for item in imports])
+
     def test_fixture_push_retains_identity_and_advances_only_acknowledged_prefixes(self):
         requests = []
         class PushHandler(capture.BaseHTTPRequestHandler):

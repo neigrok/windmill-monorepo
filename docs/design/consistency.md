@@ -254,8 +254,8 @@ and Android disagree.
   owner ruled (2026-10-22) that Android follows iOS: once, by the dot or the moment, and the Record
   lists *Earlier records* (Android 05.1, 05.6). What counts as a new best is ruled for every surface by the shared
   vectors (`packages/api-contract/gym/domain/training-reads.json`, `ProgressRecords`): a movement's first estimate is its baseline, and a new best beats
-  the best before it as the log states both, to 0.1 kg. Android drifts: `LogTimeline.kt:52` weaves a
-  moment for every exact record step (`newBests`), the first estimate's included. Two iOS reads still compare exact estimates: the Record's **Earlier
+  the best before it as the log states both, to 0.1 kg. Android Record uses the shared superseded-record
+  identities for Earlier records, excluding the standing best. Two iOS reads still compare exact estimates: the Record's **Earlier
   records** and *Best e1RM* walk `MovementProgress.records`, so a step the log does not call a new
   best can stand there at the same stated value as the best before it; and the receipt's *Personal
   record* is the server's (`Review.cpp` `recordFor`), which needs a prior estimate but compares
@@ -717,20 +717,20 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   ledger rows, inline load units and visual position markers instead of visible counts or arrows.
   Add movement lives in This workout. Weigh-in uses a native decimal keyboard and date picker;
   task 24 still needs its approved compact sheet, calendar and IME-state implementation.
-- **11e · Equipment, units and Edit movement (owner rulings, 2026-10-22).** The movement header
-  carries the equipment icon; loads read *kg each* (dumbbells), *kg total* (barbell, machine) or *kg
-  added* (bodyweight). Renaming renames the movement in history, and *Edit movement* holds the name and
-  equipment, with *Dumbbells lifted: One / Two*. Stored equipment also includes cable and kettlebell;
-  editing a name must preserve either value and its load interpretation. Tasks 08/19/20 distinguish
-  creation choices from stored types and name any missing approved icon/menu states. Routine summary,
-  editor, finish receipt and workout detail use equipment-aware units with a preceding space;
-  one dumbbell, cable, kettlebell and missing equipment keep plain *kg*. Coach presentation and the
-  rack retain their own formatter. The four approved equipment glyphs are available for later
-  placement; Cable/Kettlebell glyphs remain gated. Create movement offers four radio options and no count (`ui/MovementPicker.kt:411-431`;
-  `store/TrainingStore.kt:1154-1166` passes none), the picker says *Dumbbell* where the form says
-  *Dumbbells*, and the Record offers *Rename movement*, name only (`ui/RenameSheet.kt`). The model
-  (`domain/Training.kt:38-45`, `loadCount`) is already on main. Boards 02.9 `1253:29027`, 05.6
-  `1252:30001`, 05.9 `1253:6349`, 05.10 `1253:6469`, the racks under 11d.
+- **11e · Equipment, units and Edit movement.** Routine summary, editor, finish receipt and
+  workout detail use equipment-aware units with a preceding space: *kg each* for paired dumbbells,
+  *kg total* for barbell/machine, *kg added* for bodyweight, and *kg* for one dumbbell, cable,
+  kettlebell, Other or unknown equipment. Coach presentation retains its own formatter.
+  Standalone Edit movement uses plain **Barbell / Dumbbells / Other**, implicit 1/2/1, without a
+  count selector or Name/Equipment hints. Its approved section is `1548:7642`; unchanged and
+  name-only edits preserve legacy raw equipment/count and all historical loads. Record opens it
+  through More → Edit movement and uses the existing equipment glyphs; Cable/Kettlebell retain
+  their labels, and Other has no glyph. The combined/create editors' reconciled drawings share
+  this control; tasks 18/19 own their implementation.
+  Record draws one strongest point per local day and defaults its readout to that plotted point.
+  The static 05.6/05.7 specimens still include a same-day vertical segment; the task's explicit
+  daily-best rule governs live data. A Log link to a collapsed workout leaves the chart unselected
+  while keeping the factual workout identity. Boards 05.6 `1252:30001`, 05.7 `1252:30215`.
 - **11f · New routine is a FAB (owner ruling, 2026-10-22).** Routines uses the shared M3 FAB (+),
   bottom-end 16 dp above navigation, with its accessible *New routine* label at every text scale.
   The root bar holds only title/account; the paired 03/17 native check verifies full/empty Dark and

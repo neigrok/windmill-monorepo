@@ -74,7 +74,7 @@ class RecordTests {
         val record = MovementRecord(exercise = squat, recentDays = listOf(RecordDay(detail.session.id, today, detail.sets)))
         assertEquals(Record.Page("Back Squat", "Barbell",
             listOf(Record.Tile("Best e1RM", "116.7", "kg · today", true), Record.Tile("Heaviest", "120", "kg · 12 reps", false)),
-            listOf(Record.Best("100 × 5", "e1RM 116.7", "today", true)),
+            emptyList(),
             listOf(Record.Day("today", "100 × 5 · 120 × 12")), null, null), Record.page(record, today, progress))
     }
 
@@ -89,4 +89,20 @@ class RecordTests {
         assertEquals("Nothing logged for this movement yet. The first set you log lands here.",
             Record.page(MovementRecord(chin), today, MovementProgress(chin.id, emptyList())).nothingYet)
     }
+    @Test
+    fun earlierRecordsUseTheSharedStatedStepsWithoutRepeatingTheStandingBest() {
+        val rows = listOf(46.0 to 8, 50.0 to 5, 51.5 to 4, 55.0 to 4).mapIndexed { index, (weight, reps) ->
+            val at = today - (3 - index) * 86_400_000L
+            session("workout$index", at, listOf(set("set$index", weight, reps, at)))
+        }
+        val progress = StatsProgress.of(rows, today).movement(squat.id)
+        assertEquals(listOf("workout0", "workout2"), progress.earlierRecords.map { it.id })
+        val page = Record.page(MovementRecord.of(squat, rows), today, progress)
+        assertEquals(listOf(Record.Best("51.5 × 4", "e1RM 58.4", "10 Aug"),
+            Record.Best("46 × 8", "e1RM 58.3", "8 Aug")), page.records)
+        assertEquals(Record.Tile("Best e1RM", "62.3", "kg · today", true), page.tiles.first())
+        assertEquals(emptyList<Record.Best>(), Record.page(MovementRecord.of(squat, rows.take(2)), today,
+            StatsProgress.of(rows.take(2), today).movement(squat.id)).records)
+    }
+
 }

@@ -205,7 +205,7 @@ private sealed interface Away {
     @Serializable
     data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
     @Serializable
-    data class Movement(val exerciseId: String) : Away
+    data class Movement(val exerciseId: String, val focusSessionId: String? = null) : Away
     @Serializable
     data class Coach(val seed: String = "") : Away
     @Serializable
@@ -994,6 +994,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         )
                         standing is Away.Movement -> RecordScreen(
                             exerciseId = standing.exerciseId,
+                            focusSessionId = standing.focusSessionId,
                             store = store,
                             backTo = beneath,
                             onBack = { back() },
@@ -1115,7 +1116,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             seat = youInitial,
                             onOpenSession = { look(Away.Session(it)) },
                             onOpenBodyweight = { look(Away.Bodyweight) },
-                            onOpenMovement = { look(Away.Movement(it)) },
+                            onOpenMovement = { exercise, session -> look(Away.Movement(exercise, session)) },
                             onShareSession = { shareWorkout(it) },
                             onDiscardSession = { discard(it) },
                         ) }

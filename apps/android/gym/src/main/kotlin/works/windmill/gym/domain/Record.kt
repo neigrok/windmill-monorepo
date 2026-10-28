@@ -2,7 +2,7 @@ package works.windmill.gym.domain
 
 object Record {
     data class Tile(val label: String, val value: String, val caption: String, val loud: Boolean)
-    data class Best(val effort: String, val estimate: String, val day: String, val standing: Boolean)
+    data class Best(val effort: String, val estimate: String, val day: String)
     data class Day(val day: String, val sets: String)
     data class Page(
         val name: String,
@@ -31,11 +31,14 @@ object Record {
             }
         }
         return Page(record.exercise.name,
-            record.exercise.equipment.replaceFirstChar { it.titlecase() }, tiles,
-            progress.records.asReversed().map { point ->
+            when (record.exercise.equipment) {
+                "dumbbell" -> "Dumbbells"
+                else -> record.exercise.equipment.replaceFirstChar { it.titlecase() }
+            }, tiles,
+            progress.earlierRecords.asReversed().map { point ->
                 val fact = point.fact.estimate!!
                 Best(Readout.effort(fact.weightKg, fact.reps), Readout.estimate(fact.e1rm),
-                    Readout.briefDay(point.startedAt, now), point.id == best?.id)
+                    Readout.briefDay(point.startedAt, now))
             }, record.recentDays.map { day ->
                 Day(Readout.briefDay(day.startedAtMs, now), day.sets.joinToString(" · ") { set ->
                     Readout.effort(set.weightKg, set.reps)

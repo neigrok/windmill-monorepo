@@ -195,7 +195,7 @@ object Readout {
 
     fun routineCount(count: Int): String = if (count == 1) "1 routine" else "$count routines"
 
-    fun sessionCount(count: Int): String = if (count == 1) "1 session" else "$count sessions"
+    fun sessionCount(count: Int): String = if (count == 1) "1 workout" else "$count workouts"
 
     // A week is the server's Monday-UTC bucket (`date_trunc('week')`); this only spells the count.
     fun weekCount(count: Int): String = if (count == 1) "1 week" else "$count weeks"
