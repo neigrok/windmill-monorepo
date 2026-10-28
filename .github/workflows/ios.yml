@@ -141,6 +141,11 @@ jobs:
           set -o pipefail
           swift test --explicit-target-dependency-import-check error 2>&1 | tee "$RUNNER_TEMP/domain-tests.log"
 
+      - name: Reproduce failed Domain tests under LLDB
+        if: ${{ failure() && steps.domain_tests.outcome == 'failure' }}
+        timeout-minutes: 7
+        run: python3 ../App/Tools/domain_ci_debugger.py --output "$RUNNER_TEMP/domain-test-diagnostics"
+
       - name: Collect failed Domain test diagnostics
         if: ${{ failure() && steps.domain_tests.outcome == 'failure' }}
         timeout-minutes: 2
@@ -166,7 +171,7 @@ jobs:
           keys = ("procName", "procPath", "procLaunch", "captureTime", "cpuType", "osVersion",
                   "exception", "termination", "faultingThread", "threads", "usedImages")
           for attempt in range(5):
-              candidates = [path for pattern in ("WindmillDomainPackageTests-*.ips", "xctest-*.ips")
+              candidates = [path for pattern in ("WindmillDomainPackageTests-*.ips", "xctest-*.ips", "swiftpm-testing-helper-*.ips")
                             for path in reports.glob(pattern) if not path.is_symlink() and path.is_file()]
               for path in sorted(candidates, key=lambda item: item.stat().st_mtime, reverse=True)[:30]:
                   try:
@@ -180,7 +185,7 @@ jobs:
                       if not isinstance(report, dict):
                           continue
                       process = report.get("procName")
-                      domain = process == "WindmillDomainPackageTests" or (process == "xctest" and any(
+                      domain = process == "WindmillDomainPackageTests" or (process in ("xctest", "swiftpm-testing-helper") and any(
                           isinstance(image, dict) and "/WindmillDomainPackageTests.xctest/" in image.get("path", "")
                           for image in report.get("usedImages", [])))
                       if not domain:
