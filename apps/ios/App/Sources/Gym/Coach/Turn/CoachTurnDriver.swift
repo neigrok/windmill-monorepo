@@ -228,6 +228,8 @@ nonisolated struct TurnInterrupted: Error {}
               try await answer(batch, running, tally: &tally)
             case .done(let state, let truncated):
               end(running, state: state, truncated: truncated, code: nil, tally: tally, started: started); return
+            case .error(let code) where code == TurnRefusal.streamReplaced:
+              throw TurnWireFault.streamReplaced
             case .error(let code):
               end(running, state: .failed, truncated: false, code: code, tally: tally, started: started); return
             }
@@ -243,8 +245,9 @@ nonisolated struct TurnInterrupted: Error {}
         } catch is CancellationError {
           throw CancellationError()
         } catch {
-          // Coach §4.5: a dropped stream resumes after 1, 2, 4 and 8 beats; a fifth loss ends the turn interrupted.
-          let dropped = (error as? TurnWireFault) == .endedWithoutTerminal || !(error is TurnWireFault)
+          // Coach §4.5: a dropped stream, or one another stream of this turn replaced, resumes after 1, 2, 4 and 8 beats; a
+          // fifth loss ends the turn interrupted.
+          let dropped = [.endedWithoutTerminal, .streamReplaced].contains(error as? TurnWireFault) || !(error is TurnWireFault)
           guard reconnects < 4, dropped else { report(dropped ? "transport" : "decode", error); throw TurnInterrupted() }
           reconnects += 1
           reconnecting = true

@@ -124,13 +124,15 @@ nonisolated struct TurnRefusal: Error, Equatable, Sendable {
   let code: String
 
   static let turnUnknown = "coach-turn-unknown"
+  // The closing error of a stream another stream of the same turn took over (§6.5): the turn runs on, this stream is done.
+  static let streamReplaced = "coach-stream-replaced"
   static let allowanceCodes: Set<String> = ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted",
                                             "funding_required", "debt_outstanding", "device_bound", "invalid_installation"]
 }
 
 // The wire's own faults: a frame or an answer the stream cannot be read as.
 nonisolated enum TurnWireFault: Error, Equatable, Sendable {
-  case unknownEvent, unknownState, notAStream, lineTooLong, endedWithoutTerminal
+  case unknownEvent, unknownState, notAStream, lineTooLong, endedWithoutTerminal, streamReplaced
 }
 
 nonisolated enum TurnAnswer: Equatable, Sendable {

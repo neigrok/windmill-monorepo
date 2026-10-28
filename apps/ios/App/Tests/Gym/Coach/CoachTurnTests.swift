@@ -359,18 +359,20 @@ nonisolated final class TurnFixtureProtocol: URLProtocol, @unchecked Sendable {
       let batch = (try? body?.member("batch").asInteger()) ?? 0
       let answer: (Int, JSON) = Self.state.withLock { script in
         // The same body again is a replay; a batch answered while the stream is down is taken, since the batch waits on the
-        // server whatever the stream does, and the script moves on only where it awaited these results.
+        // server whatever the stream does, and the script moves on only where it awaited these results. A batch the server
+        // timed out answers coach-turn-order, and the turn ends interrupted behind it.
         if script.answered.contains(batch) {
           if script.pending == "results:\(batch)" { script.pending = nil; return (204, [:]) }
           return (-204, [:])
         }
-        guard script.pending == "results:\(batch)" || script.pending == "timeout" || script.pending == "resume" else { return (409, ["error": "order", "code": "coach-turn-order"]) }
+        if script.pending == "timeout" { script.pending = nil; return (409, ["error": "order", "code": "coach-turn-order"]) }
+        guard script.pending == "results:\(batch)" || script.pending == "resume" else { return (409, ["error": "order", "code": "coach-turn-order"]) }
         script.answered.insert(batch)
         if script.pending != "resume" { script.pending = nil }
         return (script.pending == "resume" ? -200 : 200, ["batch": JSON(batch)])
       }
       respond(abs(answer.0), answer.1)
-      if answer.0 > 0 { advance() }
+      if answer.0 > 0 || answer.0 == 409 { advance() }
       return
     }
     if path.hasSuffix("/stop") {

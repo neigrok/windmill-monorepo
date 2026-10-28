@@ -53,7 +53,8 @@ does not mount `POST /v1/gym/coach/turns`, so a send meets the server's 404 page
 under operation `gym_coach_turn`, `gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no
 composer and no retry. A turn stream that drops resumes after 1, 2, 4 and 8 beats through `GET …/turns/{turnId}`; a fifth
 loss ends the turn `interrupted` and reports once under `gym_coach_turn` (kind transport), a frame the phone cannot read
-reports as decode, a 5xx as http, and a `coach-turn-unknown` on resume is an expected refusal that ends the turn interrupted.
+reports as decode, a 5xx as http, a `coach-turn-unknown` on resume is an expected refusal that ends the turn interrupted,
+and a stream's closing `error coach-stream-replaced` (another stream of the turn took over) resumes like a drop.
 Known USD allowance refusal codes at status 503 are also expected refusals; accounting failures remain
 reportable. The typed allowance state retains partial creation receipts and the editable draft without
 an automatic retry. Amounts, reset timestamps and request IDs never enter telemetry.

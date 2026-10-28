@@ -56,7 +56,7 @@ nonisolated enum TelemetryPrivacy {
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
     "seat": ["anon", "bound"],
     "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "revoke_share"],
-    "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "unauthenticated", "invalid_network"],
+    "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "unauthenticated", "invalid_network"],
     "surface": ["activity", "control", "shortcut"],
     "intent": ["start_workout", "open_workout"],
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
