@@ -30,8 +30,7 @@ verbs, auth states, interaction states and scale.
 - **Closed is the wrong word, and the state has four names.** Column *Closed* carries a lock
   glyph; the empty state says *No ready nodes*; the completion toast says *1 node ready*; the reset
   toast says *2 nodes blocked*; canon names the tiers locked · available · complete. On every board
-  the owner is borrowing from, Closed means finished. Rename to **Locked · Ready · Done** (Ready
-  matches the toasts and the tier; Up next promises an order the sort does not deliver) and use one
+  the owner is borrowing from, Closed means finished. Ruled 2026-10-28: **Locked · Up next · Done**, and one
   word per state in every toast, empty state, the Graph's status line and MCP responses.
   Mobile 183:1503, 183:1795, 185:1885, 185:2196; desktop 184:1543, 193:1494, 294:9153.
 - **Node replaces the shipped step.** *Search nodes*, *New node*, *Needs 2 nodes*, *Open node page*.
@@ -73,8 +72,8 @@ Shared
   2026-10-25 answer to a dot that reserved a card row, so this is a ruling, not a slip: canon says
   borders are neutral, tier is carried by treatment and locked is dimmed, and on the board a locked
   olive card and a done olive card are equally bright while the loudest signal (hue) carries the
-  least important fact (kind). Recommended: neutral border, kind as a small marker inside the title
-  row, locked at the dimmed tier. No hover, focus, pressed or selected card state is drawn on either
+  least important fact (kind). Ruled 2026-10-28: a 4px leading rail (as 306:4743), neutral border,
+  locked at the dimmed tier. No hover, focus, pressed or selected card state is drawn on either
   surface, and the brand focus ring will collide with a coloured border; add a card state sheet.
 - **The right-side glyph duplicates the column** (chevron / lock / check) and makes locked and done
   cards look untappable. One glyph rule: state only, or chevron on all.
@@ -127,18 +126,19 @@ icon is a waveform; captions that explain a heading (*Recent activity for this n
 adjacent glyph (*Finish Read the wind to unlock.*); 294:9949 calls a four-step drawing *Full
 roadmap* on an eight-step roadmap.
 
-## Owner decisions
+## Owner rulings (2026-10-28)
 
-1. **Column names.** Locked · Ready · Done (recommended: matches the tiers and the toasts) or
-   Locked · Up next · Done.
-2. **Where the phone's control band lives on native.** Canon puts controls in the bottom band; the
-   skeptic notes that on native the bottom edge is the superapp tab bar. Recommended: inside a
-   roadmap the shell tab bar yields, as Gym's open session does, and the segments + search band owns
-   the bottom. The alternative (segments under the title, platform search) means two mobile designs.
-3. **Activity overlay in the board's first wave.** The skeptic and the desktop review both read it
-   as chrome creep that invites checking rather than doing; the node's History tab covers the owner
-   case. Recommended: defer it from the board's first wave. Workspace stays, it is a shipped feature.
-4. **Completion gesture on phones.** Leading swipe on Ready cards, or page-only.
+1. **Column names: Locked · Up next · Done.** One word per state in every toast, empty state, the
+   Graph status line and MCP responses: *locked*, *up next*, *done*.
+2. **Where the phone's control band lives on native.** Open; the owner asked for the trade-off to
+   be laid out. Canon puts controls in the bottom band; on native the bottom edge is the superapp
+   tab bar. The iOS gym already hides that tab bar inside a room
+   (`apps/ios/App/Sources/Gym/Components/GymChrome.swift`, `toolbar(.hidden, for: .tabBar)`).
+3. **Activity overlay leaves the board's first wave.** The node's History tab covers the owner
+   case. Workspace stays, it is a shipped feature.
+4. **Kind colour is a left rail on the card, not a perimeter border.** A 4px rail on the card's
+   leading edge, the same element the node-detail identity already uses (306:4743), so colour costs
+   no row and no border. Borders go neutral; the locked tier is dimmed as canon says.
 
 ## Native-foundation decisions to pin now
 
