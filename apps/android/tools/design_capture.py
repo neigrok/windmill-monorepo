@@ -539,11 +539,11 @@ class Device:
             previous = current
         raise RuntimeError("The capture screen did not settle.")
 
-    def tap(self, value):
+    def tap(self, value, contains=False):
         previous = None
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            node = self.find(value, timeout=max(.1, deadline - time.monotonic()))
+            node = self.find(value, timeout=max(.1, deadline - time.monotonic()), contains=contains)
             current = node.get("bounds", "")
             if current == previous:
                 bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", current)
@@ -637,6 +637,8 @@ class Device:
         for step in steps:
             if "tap" in step:
                 self.tap(step["tap"])
+            elif "tap_contains" in step:
+                self.tap(step["tap_contains"], contains=True)
             elif "wait" in step:
                 self.find(step["wait"])
             elif "wait_contains" in step:

@@ -158,7 +158,8 @@ fun LogScreen(
         }
     }
     if (weighingIn) ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false), containerColor = skin.surface, scrimColor = skin.scrim) {
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false), containerColor = skin.surface, scrimColor = skin.scrim,
+        dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         WindmillSheetWindow()
         formState.SaveableStateProvider("weigh-in") {
             WindmillSheetBack(onDismiss = { close() }) {

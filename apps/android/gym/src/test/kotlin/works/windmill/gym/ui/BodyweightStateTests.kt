@@ -4,6 +4,7 @@ import android.os.Looper
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -97,7 +98,7 @@ class BodyweightStateTests {
         compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.fullDay(day)).assertIsDisplayed()
         compose.onNodeWithText(Bodyweight.fullDay(day)).performClick()
-        compose.onNodeWithText("Keep it").performClick()
+        compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("82,4.5").assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<Pair<String, Double>>(), saved) }
     }
@@ -148,4 +149,28 @@ class BodyweightStateTests {
             } }
         } } finally { scope.cancel() }
     }
+    @Test fun aLegacyCorrectionKeepsItsUnknownTimestampAndFixedKeyAcrossRecreation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(temporary.newFolder(), scope).use { room ->
+            val day = LocalDate.now().minusDays(3)
+            room.now = System.currentTimeMillis()
+            runBlocking {
+                room.select(null)
+                room.engine.commit(works.windmill.sync.core.ScopeRef(works.windmill.sync.schema.Gym.scope),
+                    works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.put(works.windmill.sync.schema.Gym.Types.weighin,
+                        works.windmill.sync.core.RecordID(day.toString()), true,
+                        mapOf("kg" to works.windmill.sync.core.Json.of(82.4), "recordedAt" to works.windmill.sync.core.Json.Null)))))
+                room.store.refreshEngine()
+            }
+            val restored = StateRestorationTester(compose)
+            restored.setContent { GymMaterial { BodyweightScreen(room.store, "The log", {}, {}) } }
+            compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
+            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
+            restored.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("82,45").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Date, ${Bodyweight.fullDay(day)}").assertHasNoClickAction()
+            assertEquals(listOf(WeighIn(day.toString(), 82.4, null)), room.training.weighins())
+        } } finally { scope.cancel() }
+    }
+
 }

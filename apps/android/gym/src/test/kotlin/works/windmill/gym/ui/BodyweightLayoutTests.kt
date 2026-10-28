@@ -75,8 +75,8 @@ class BodyweightLayoutTests {
             }
             assertEquals(label.length, layout.getLineEnd(layout.lineCount - 1))
         }
-        compose.onNodeWithText(Bodyweight.save).performClick()
         compose.onNodeWithText(Bodyweight.deleteRow).performClick()
+        compose.onNodeWithText(Bodyweight.save).performClick()
         compose.runOnIdle {
             assertEquals(listOf(day.toString() to 82.45), saved)
             assertEquals(1, deletes)

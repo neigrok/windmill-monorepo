@@ -544,6 +544,9 @@ class TrainingStore(
             if (!workoutAuthorized) workoutFacts.value = null
             return
         }
+        val sameWeightSeat = seated?.let {
+            it.origin == account.origin && it.user?.id == account.user?.id && it.identityRevision == account.identityRevision
+        } == true
         val arriving = seated != account
         seated = account
         owner = account.user?.id
@@ -581,7 +584,7 @@ class TrainingStore(
             closedDetails = emptyMap()
             for (clock in clocks.values) clock.cancel()
             clocks.clear()
-            withheld = emptyList()
+            withheld = if (sameWeightSeat) withheld.filter { it.receipt != null } else emptyList()
             deleteRefused = null
             deletedSets = emptySet()
             notebook = emptyList()
@@ -597,6 +600,7 @@ class TrainingStore(
             controls.adopt(owner)
             projectEngineReplica(force = arriving || isLoading)
             if (seated != account) return
+            if (arriving && sameWeightSeat) refreshHeldWeights()
             preferences = training.settings()
             catalog = training.catalogue()
             readProgram()

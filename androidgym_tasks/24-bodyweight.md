@@ -11,13 +11,14 @@
   - `Android / Button` `210:181` (Text · Tone=Error)
   - `Android / Top app bar` `342:2953`
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `BodyweightScreen` (`ui/BodyweightScreen.kt:225-350`):
-  - The window toggle *90 days* / *All* is an M3 `SingleChoiceSegmentedButtonRow` re-skinned to look custom: no border, 16 dp corners, `raised` fill on the chosen one (:269-279).
-  - The chart card, *90 days · 7 weigh-ins*, and *Every weigh-in* rows (weight, date, chevron; :302-315) match the board.
-  - Rows do not swipe. A tap opens the weigh-in sheet to correct it.
-- The correct sheet (`WeighInSheet`, :94-214): *Weigh in*, the weight, a fixed date, *Save weight*, and *Delete weigh-in* as a `TextButton` in ink (:206-211).
-- Delete is held: the sheet closes and *Weigh-in deleted.* shows with *Undo* for nine seconds (:344; `store/WithheldDelete.kt:80`). A failed delete after the window reports nothing to the lifter (`store/TrainingStore.kt:1233` reports `gym.deleteWeighIn`).
+**Current source** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/BodyweightScreen.kt` contains the compact responsive Weigh-in form, with a shared 24 dp handle, native outlined field and error roles, inline Date row for new entries, fixed Date key for corrections, and error-toned Delete weigh-in. The form owns nav/IME padding once; both modal hosts disable their extra content insets.
+- Save and IME Done use the same validated submission gate. Invalid/empty/out-of-range values cannot submit; the same refusal remains retryable without losing typed weight.
+- The native `DatePickerDialog` stages its own selection and mode, retained through recreation. Use date commits to the form; Cancel, Back and outside dismissal keep the prior date. Future days and years remain disabled. Confirming the calendar does not save a weight.
+- Bodyweight retains its ordinary chart and Every weigh-in drilldown, uses the standard M3 outlined segmented row/check, and routes row swipe plus correction Delete through the same durable held-delete path as the Log.
+- The engine owns the original nine-foreground-second deadline, rewrite/expiry guards and account/restart release. A fresh same-origin/user/identityRevision Account wrapper retains only current engine-backed weight receipts; reconnect revalidates the replica, offer and exact deadline inside the guarded connection pipeline. Released, expired or foreign offers cannot renew Undo. Failed holds retain the row with an honest error, and refused released deletes restore the authoritative fact and notice.
+- Compact/calendar/cross-screen/state checks pass, and the held-weight lifecycle suite passes 15 cases without skips, including fresh wrappers, changed origin/revision, released/expired offers, owner changes and reported reconnect read failure. The composed capture-tool suite passes 31 cases.
+- Installed paired ordinary states and changed-date Cancel/Use/reopen/recreation pass. Native Save reaches the selected day with all six prior facts unchanged. Recreation retains the exact original engine deadline; Bodyweight→Log Undo restores the row while all server facts remain unchanged. The review packet retains timing/fixture qualifications and bounded intake receipts. Unexpected failure branches are deterministic unit coverage; no native unexpected Issue is claimed. No production status is claimed.
 
 **Change**
 - Implement the approved compact Weigh-in composition: normal sheet about 314 dp, inline-error example 340 dp, with responsive height/scrolling rather than an unconditional fixed height. Weight, Date and **Save weight** fit above the Decimal IME; remove excess bottom padding and any additional backing panel. Preserve native status/navigation insets and 48 dp minimum targets. The canonical 360×800 compact example is the minimum screenshot check, not permission to clip larger text.

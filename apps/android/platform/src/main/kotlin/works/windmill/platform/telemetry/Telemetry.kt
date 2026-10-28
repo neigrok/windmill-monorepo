@@ -67,7 +67,8 @@ object TelemetryPolicy {
                 "note_editor" -> mapOf("delete" to setOf("ok", "refused", "failed"), "save" to setOf("ok", "refused", "failed"))
                 "record" -> mapOf("edit" to setOf("ok", "refused", "failed"))
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
-                    "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"))
+                    "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"),
+                    "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"))
                 "coach" -> listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "jump_latest")
                     .associateWith { setOf("ok") } + mapOf("copy" to setOf("ok", "failed"))
                 "threads" -> mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"))

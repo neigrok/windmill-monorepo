@@ -49,7 +49,8 @@ class AndroidTelemetryTest {
             Triple("session", "fix", "ok"), Triple("session", "fix", "refused"), Triple("session", "fix", "failed"),
             Triple("bodyweight", "delete", "held"), Triple("bodyweight", "delete", "closed"),
             Triple("bodyweight", "undo", "ok"), Triple("bodyweight", "undo", "closed"),
-            Triple("bodyweight", "cancel", "rewritten"), Triple("notification", "log_set", "ok"),
+            Triple("bodyweight", "cancel", "rewritten"), Triple("bodyweight", "calendar_open", "ok"),
+            Triple("bodyweight", "calendar_confirm", "ok"), Triple("bodyweight", "calendar_cancel", "ok"), Triple("notification", "log_set", "ok"),
             Triple("notification", "open", "refused"), Triple("tile", "open", "ok"), Triple("tile", "routines", "failed"),
         )
         for ((screen, action, outcome) in valid) {

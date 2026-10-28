@@ -1,0 +1,373 @@
+[
+  {
+    "board": "06.1",
+    "name": "weigh-in-compact-ime",
+    "account": "fixture",
+    "viewport": {
+      "width": 1080,
+      "height": 2400,
+      "density": 480
+    },
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Weigh in"
+      },
+      {
+        "tap": "weight in kilograms"
+      },
+      {
+        "text": "81.4"
+      },
+      {
+        "wait": "Save weight"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.1",
+    "name": "weigh-in-calendar",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Weigh in"
+      },
+      {
+        "tap": "weight in kilograms"
+      },
+      {
+        "text": "81.4"
+      },
+      {
+        "tap_contains": "Date,"
+      },
+      {
+        "wait": "Use date"
+      },
+      {
+        "wait": "Cancel"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.1",
+    "name": "weigh-in-confirmed-date",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Weigh in"
+      },
+      {
+        "tap": "weight in kilograms"
+      },
+      {
+        "text": "81.4"
+      },
+      {
+        "tap_contains": "Date,"
+      },
+      {
+        "wait": "Use date"
+      },
+      {
+        "tap": "Use date"
+      },
+      {
+        "wait": "Save weight"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.1",
+    "name": "weigh-in-cancelled-date",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Weigh in"
+      },
+      {
+        "tap": "weight in kilograms"
+      },
+      {
+        "text": "81.4"
+      },
+      {
+        "tap_contains": "Date,"
+      },
+      {
+        "wait": "Use date"
+      },
+      {
+        "tap": "Cancel"
+      },
+      {
+        "wait": "Save weight"
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.1",
+    "name": "weigh-in-inline-error",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "Weigh in"
+      },
+      {
+        "tap": "weight in kilograms"
+      },
+      {
+        "text": "400.01"
+      },
+      {
+        "wait": "Between 20 and 400 kg \u2014 check the number."
+      }
+    ],
+    "after": [
+      {
+        "keyboard": "hide"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.2",
+    "name": "bodyweight",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "wait": "90 days"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.2",
+    "name": "bodyweight-swipe",
+    "account": "fixture",
+    "settle": false,
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "80 kg",
+          "at": [
+            0.95,
+            0.5
+          ],
+          "row": true
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.65,
+            0.5
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.2",
+    "name": "bodyweight-undo",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "80 kg",
+          "at": [
+            0.95,
+            0.5
+          ],
+          "row": true
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.05,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Undo"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Undo"
+      },
+      {
+        "wait": "80 kg"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  },
+  {
+    "board": "06.3",
+    "name": "weigh-in-correction",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "tap": "80 kg"
+      },
+      {
+        "wait": "Delete weigh-in"
+      },
+      {
+        "keyboard": "hide"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Every weigh-in"
+      },
+      {
+        "tap": "Back to The log"
+      },
+      {
+        "wait": "Weigh in"
+      }
+    ]
+  }
+]

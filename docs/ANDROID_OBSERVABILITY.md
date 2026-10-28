@@ -172,6 +172,20 @@ write observations cover queue and server progress. Technical hold or Undo failu
 `gym.deleteWeighIn`. Accepted holds and Undo update their exact receipt projection; whole-record
 saves use the domain action's accepted values, so no follow-up read can relabel a successful write.
 Background/restart/account release never emits a new user action.
+A same-origin/user/identityRevision wrapper reconnect retains only engine-backed weight receipts and
+revalidates the current replica, offer and original deadline inside the connection pipeline. It emits
+no new user action. Unexpected offer-read failure retains the static `gym.connect` boundary; missing
+offers and expected ownership changes are not Issues.
+
+The native Weigh-in calendar emits `gym_action` with `screen=bodyweight`,
+`action=calendar_open|calendar_confirm|calendar_cancel` and `outcome=ok`. Confirm changes the
+staged form date only; it emits no save. Cancel, Back and outside dismissal share one cancel step.
+The form derives validation without a write or Issue, disables invalid Save/IME submission, and
+retains an identical refusal for retry. `gym_bodyweight_saved` remains one event per accepted
+local save. Delete holds, Undo and rewritten holds retain the existing finite outcomes above;
+released-delete admission/refusal is observed by the engine/sync write boundary. A refusal restores
+the authoritative row and keeps its visible notice; no delete success is inferred from hiding it.
+
 
 The telemetry policy accepts only these finite screen/action/outcome combinations and the existing
 notification/tile and Coach combinations. Names, note text, dates, weights, record/receipt IDs and raw failure

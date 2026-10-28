@@ -12,8 +12,12 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.platform.Account
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.start
@@ -204,6 +208,96 @@ class HeldWeightLifecycleTests {
             assertEquals(emptyList<Any>(), room.engine.undoOffers())
         }
     }
+    @Test fun aFreshSameIdentityAccountKeepsTheExactEngineWeightReceiptAndRemainingDeadline() = runTest {
+        for (owner in listOf(null, "u1")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(owner)
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            val original = room.store.bodyweight.single()
+            room.store.withhold(Deletion.Bodyweight(original.dateLocal))
+            runCurrent()
+            val hold = room.store.withheld.single()
+            val outbox = room.outbox()
+            room.now += 3_000
+            room.store.connect(room.account())
+            runCurrent()
+            assertEquals(listOf(hold), room.store.withheld)
+            assertEquals(hold, room.store.holding)
+            assertEquals(listOf(original), room.store.allWeighIns)
+            assertEquals(emptyList<Any>(), room.store.bodyweight)
+            assertEquals(outbox, room.outbox())
+            assertEquals(hold.untilMs, room.engine.undoOffers().single().releaseAt)
+            assertEquals(hold, room.store.keepWithheld())
+            assertEquals(listOf(original), room.store.bodyweight)
+            assertEquals(emptyList<Any>(), room.engine.undoOffers())
+        }
+    }
+
+    @Test fun aReconnectReadFailureStaysInsideTheReportedConnectionBoundary() = runTest {
+        var failRead = false
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry, createEngine = { snapshot, clock ->
+            Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock {
+                override fun now(): Long {
+                    if (failRead) { failRead = false; throw IllegalStateException("controlled clock read failure") }
+                    return clock.now()
+                }
+            })
+        }).use { room ->
+            room.select("u1")
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            runCurrent()
+            val held = room.store.withheld
+            val before = room.outbox()
+            failRead = true
+            room.store.connect(room.account())
+            runCurrent()
+            assertEquals(listOf("gym.connect"), failures)
+            assertEquals(held, room.store.withheld)
+            assertEquals(before, room.outbox())
+        }
+    }
+
+    @Test fun aFreshAccountCannotRenewAReleasedOrExpiredEngineOffer() = runTest {
+        for (expire in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("u1")
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            runCurrent()
+            val hold = room.store.withheld.single()
+            if (expire) room.now = hold.untilMs else room.engine.releaseHeld(all = true)
+            room.store.connect(room.account())
+            runCurrent()
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertNull(room.store.holding)
+            assertNull(room.store.keepWithheld())
+            assertEquals(emptyList<Any>(), room.engine.undoOffers())
+        }
+    }
+
+    @Test fun aChangedOriginOrIdentityRevisionCannotCarryTheWeightUndoReceipt() = runTest {
+        for (changeOrigin in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("u1")
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            runCurrent()
+            val before = room.outbox()
+            val account = room.account()
+            val replacement = Account(if (changeOrigin) "https://other.example" else account.origin,
+                account.user, identityRevision = if (changeOrigin) account.identityRevision else account.identityRevision + 1)
+            room.store.connect(replacement)
+            runCurrent()
+            assertEquals(emptyList<WithheldDelete>(), room.store.withheld)
+            assertNull(room.store.holding)
+            assertNull(room.store.keepWithheld())
+            assertEquals(before, room.outbox())
+        }
+    }
+
     @Test fun aDisposedRowCannotCancelItsSettledDeleteOrLoseItsResultEvent() = runTest {
         var holdReads = false
         val reads = mutableListOf<Runnable>()
@@ -277,6 +371,30 @@ class HeldWeightLifecycleTests {
                 assertTrue(events.all { it.first == "gym_action" && it.second["outcome"] == "refused" })
                 assertTrue(events.none { it.second.values.any { value -> value.contains("PRIVATE") } })
             }
+        }
+    }
+
+    @Test fun aRefusedReleasedDeleteRestoresTheAuthoritativeRowAndKeepsItsNotice() = runTest {
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            val server = EngineRoomFixture.server()
+            room.select("u1"); room.pull(server)
+            assertNull(room.store.weighIn("2026-09-01", 81.25))
+            room.sync(server); room.store.refreshEngine()
+            val original = room.store.bodyweight
+            room.store.withhold(Deletion.Bodyweight("2026-09-01"))
+            runCurrent()
+            assertEquals(emptyList<Any>(), room.store.bodyweight)
+            server.refuse(code = "forbidden")
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(original, room.store.bodyweight)
+            assertEquals(emptyList<Any>(), room.engine.undoOffers())
+            assertEquals(listOf("That change could not be saved."), room.store.refusals.map { it.reason })
+            assertEquals(emptyList<String>(), failures)
         }
     }
 

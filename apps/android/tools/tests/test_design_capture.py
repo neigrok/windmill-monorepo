@@ -29,6 +29,21 @@ class DesignCaptureTests(unittest.TestCase):
                 self.assertEqual(request.get_header("Sync-schema"), schema if path.startswith("/v1/gym/") else None)
                 self.assertEqual(request.get_header("Authorization"), "Bearer fixture")
 
+    def test_partial_label_tap_uses_the_existing_bounded_find_and_waits_for_stable_bounds(self):
+        class Device(capture.Device):
+            def __init__(self):
+                self.calls = []
+                self.finds = []
+            def find(self, value, timeout=30, row=False, contains=False):
+                self.finds.append((value, contains))
+                return capture.ET.Element("node", {"bounds": "[10,20][110,80]"})
+            def run(self, *arguments, **kwargs):
+                self.calls.append(arguments)
+        device = Device()
+        device.steps([{"tap_contains": "Date,"}])
+        self.assertEqual([("Date,", True), ("Date,", True)], device.finds)
+        self.assertEqual([("shell", "input", "tap", "60", "50")], device.calls)
+
     def test_transient_frame_delay_is_explicit_and_bounded(self):
         scenario = {"board": "03.11", "name": "rack-changed", "account": "fixture", "settle": False}
         for delay in [0, 180, 1000]:
@@ -497,7 +512,7 @@ class DesignCaptureTests(unittest.TestCase):
             def __init__(self):
                 self.positions = iter(["[0,0][100,100]", "[20,80][120,180]", "[20,80][120,180]"])
                 self.calls = []
-            def find(self, value, timeout=30):
+            def find(self, value, timeout=30, contains=False):
                 return ET.Element("node", {"bounds": next(self.positions)})
             def run(self, *args):
                 self.calls.append(args)

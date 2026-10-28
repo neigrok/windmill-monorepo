@@ -65,7 +65,7 @@ class LogStateTests {
             compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(1))).performClick()
             compose.onNodeWithText("Tuesday, September 15, 2026").assertIsEnabled().performClick()
-            compose.onNodeWithText("Use this day").performClick()
+            compose.onNodeWithText("Use date").performClick()
             compose.onNodeWithText(Bodyweight.fullDay(day.plusDays(2))).assertIsDisplayed()
             compose.onNodeWithContentDescription(weightField).performTextReplacement("82.45")
             val saving = compose.runOnIdle { room.now }
