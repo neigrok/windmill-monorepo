@@ -63,9 +63,12 @@ std::vector<ToolResult> PhoneToolHost::callTools(const std::vector<ToolCall>& ca
   }
 
   std::string outcome = "answered";
-  if (!phone.empty()) {
+  const std::optional<TurnBatch> batch = phone.empty() ? std::nullopt : turn_.sendBatch(std::move(phone));
+  if (!phone.empty() && !batch) {
+    for (const std::size_t index : phoneIndex) answered[index] = refused(gate::stopped, "Coach was stopped before this action.");
+  }
+  if (batch) {
     ++batches_;
-    const TurnBatch batch = turn_.sendBatch(std::move(phone));
     const std::optional<std::vector<TurnCallResult>> results = turn_.awaitResults(resultTimeout_);
     if (!results) {
       outcome = turn_.stopRequested() ? "stopped" : "timeout";
@@ -79,8 +82,8 @@ std::vector<ToolResult> PhoneToolHost::callTools(const std::vector<ToolCall>& ca
       }
     }
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
-    LOG_INFO << "coach_batch turn=" << turn_.id() << " batch=" << batch.number << " seat=" << std::string(nameOf(turn_.principal().seat))
-             << " calls=" << batch.calls.size() << " server=" << server << " refused=" << refusedCalls
+    LOG_INFO << "coach_batch turn=" << turn_.id() << " batch=" << batch->number << " seat=" << std::string(nameOf(turn_.principal().seat))
+             << " calls=" << batch->calls.size() << " server=" << server << " refused=" << refusedCalls
              << " outcome=" << outcome << " duration_ms=" << elapsed.count();
   }
 

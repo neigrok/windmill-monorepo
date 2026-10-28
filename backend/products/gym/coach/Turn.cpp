@@ -87,6 +87,8 @@ bool resultShape(const Json::Value& result, TurnCallResult& out) {
   if (!result.isObject() || !result["callId"].isString() || !result["ok"].isBool()) return false;
   out.callId = result["callId"].asString();
   out.ok = result["ok"].asBool();
+  for (const std::string& key : result.getMemberNames())
+    if (key != "callId" && key != "ok" && key != (out.ok ? "result" : "code")) return false;
   if (out.ok) {
     if (!result["result"].isObject()) return false;
     const std::optional<std::string> bytes = canonical(result["result"]);
@@ -160,7 +162,7 @@ TurnOpenRead readTurnOpen(const Json::Value& body) {
 TurnResultsRead readTurnResults(const Json::Value& body) {
   TurnResultsRead out;
   if (!body.isObject() || !body["batch"].isInt() || body["batch"].asInt() < 1 || !body["results"].isArray() ||
-      body.size() != 2) {
+      body["results"].size() > kMaxAbilityCalls || body.size() != 2) {
     out.code = kBadRequest;
     return out;
   }
@@ -188,8 +190,9 @@ void Turn::appendText(const std::string& delta) {
   publish("text", data, false);
 }
 
-TurnBatch Turn::sendBatch(std::vector<TurnCall> calls) {
+std::optional<TurnBatch> Turn::sendBatch(std::vector<TurnCall> calls) {
   std::lock_guard lock(mutex_);
+  if (stopRequested_) return std::nullopt;
   TurnBatch batch{++batches_, std::move(calls)};
   pending_ = batch;
   pendingResults_.reset();
@@ -200,7 +203,6 @@ TurnBatch Turn::sendBatch(std::vector<TurnCall> calls) {
 std::optional<std::vector<TurnCallResult>> Turn::awaitResults(std::chrono::milliseconds timeout) {
   std::unique_lock lock(mutex_);
   results_.wait_for(lock, timeout, [this] { return pendingResults_.has_value() || stopRequested_; });
-  if (pending_) closed_.insert(pending_->number);
   pending_.reset();
   if (!pendingResults_) return std::nullopt;
   std::vector<TurnCallResult> results = std::move(*pendingResults_);
@@ -217,7 +219,6 @@ void Turn::end(TurnState state, bool truncated, Json::Value allowance, std::stri
   allowance_ = std::move(allowance);
   errorCode_ = std::move(errorCode);
   endedAtMs_ = endedAtMs;
-  if (pending_) closed_.insert(pending_->number);
   pending_.reset();
   publish(state_ == TurnState::failed ? "error" : "done", terminalData(), true);
   results_.notify_all();
@@ -229,7 +230,6 @@ ResultsAnswer Turn::answer(int batch, std::vector<TurnCallResult> results, const
   std::lock_guard lock(mutex_);
   const auto earlier = answeredDigests_.find(batch);
   if (earlier != answeredDigests_.end()) return earlier->second == bodyDigest ? ResultsAnswer::replay : ResultsAnswer::order;
-  if (closed_.count(batch)) return ResultsAnswer::replay;
   if (!pending_ || pending_->number != batch || answered()) return ResultsAnswer::order;
   if (results.size() != pending_->calls.size()) return ResultsAnswer::order;
   std::vector<TurnCallResult> ordered;
@@ -258,6 +258,11 @@ bool Turn::stopRequested() const {
 
 void Turn::attach(std::shared_ptr<TurnSink> sink, bool resume) {
   std::lock_guard lock(mutex_);
+  if (sink_ && sink_ != sink) {
+    Json::Value replaced(Json::objectValue);
+    replaced["code"] = "coach-stream-replaced";
+    publish("error", replaced, true);
+  }
   sink_ = std::move(sink);
   if (resume) {
     publish("snapshot", snapshotUnlocked(), false);

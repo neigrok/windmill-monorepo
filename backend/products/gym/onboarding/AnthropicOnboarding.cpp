@@ -167,10 +167,10 @@ OnboardingAnswer AnthropicOnboarding::generate(const AiInstallationPrincipal& in
   try {
     reply = messages_->send(request);
   } catch (...) {
-    budget_->finish(*admission.reservation, request.model, Json::Value(), false);
+    budget_->finish(*admission.reservation, request.model, Json::Value(), AiCallEnd::uncertain);
     throw;
   }
-  budget_->finish(*admission.reservation, request.model, reply.usage, reply.usageComplete);
+  budget_->finish(*admission.reservation, request.model, reply.usage, reply.usageComplete ? AiCallEnd::settled : AiCallEnd::uncertain);
   spend.outcome = reply.outcome;
   spend.tokens = reply.tokens;
   meterSpend(spend, nullptr, usage_);

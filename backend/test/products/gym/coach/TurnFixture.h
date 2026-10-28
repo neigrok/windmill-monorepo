@@ -36,7 +36,9 @@ struct ScriptedModel : CoachModel {
   bool started = false;
   std::size_t index = 0;
   std::vector<Json::Value> requests;
+  std::function<void(int)> beforeReply;  // runs inside the round, after the request was taken
   std::function<void(int)> afterCall;
+  std::function<bool()> continueRun;     // what the service asked the stream to keep checking
 
   bool configured() const override { return wired; }
 
@@ -47,7 +49,8 @@ struct ScriptedModel : CoachModel {
   }
 
   ModelCall open(const TurnPrincipal&, const std::string&, std::function<void(const std::string&)> text,
-                 std::function<bool()>, std::function<void(const std::string&)> refused) override {
+                 std::function<bool()> keepStreaming, std::function<void(const std::string&)> refused) override {
+    continueRun = std::move(keepStreaming);
     return [this, text, refused](const Json::Value& request) -> std::optional<Json::Value> {
       Json::Value reply;
       int number = 0;
@@ -58,6 +61,7 @@ struct ScriptedModel : CoachModel {
         if (index < static_cast<std::size_t>(replies.size())) reply = replies[static_cast<Json::ArrayIndex>(index)];
         number = static_cast<int>(++index);
       }
+      if (beforeReply) beforeReply(number);
       std::optional<Json::Value> out;
       if (reply.isObject() && reply.isMember("refused")) {
         refused(reply["refused"].asString());

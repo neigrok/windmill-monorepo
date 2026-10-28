@@ -198,6 +198,17 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::function<void()> onDenied, std::shared_ptr<AiCallBudget> budget,
                   std::function<void(const std::string&)> onBudgetDenied, int minOutputTokens,
                   std::shared_ptr<const AiInstallationPrincipal> installation) {
+  return metered([inner = std::move(inner)](const Json::Value& request) { return ModelRound{inner(request), false}; },
+                 std::move(frame), std::move(fuse), std::move(usage), std::move(report), std::move(onDenied),
+                 std::move(budget), std::move(onBudgetDenied), minOutputTokens, std::move(installation));
+}
+
+ModelCall metered(ModelRoundCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
+                  std::shared_ptr<UsageSink> usage,
+                  std::function<void(const std::string&, const std::string&)> report,
+                  std::function<void()> onDenied, std::shared_ptr<AiCallBudget> budget,
+                  std::function<void(const std::string&)> onBudgetDenied, int minOutputTokens,
+                  std::shared_ptr<const AiInstallationPrincipal> installation) {
   auto turn = std::make_shared<int>(0);
   return [inner = std::move(inner), frame = std::move(frame), fuse = std::move(fuse),
           usage = std::move(usage), report = std::move(report), onDenied = std::move(onDenied),
@@ -234,18 +245,20 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
       if (reservation->outputBudget)
         outbound["max_tokens"] = *reservation->outputBudget->tokensFor(reservation->amountNanos);
     }
-    std::optional<Json::Value> reply;
+    ModelRound round;
     try {
-      reply = inner(outbound);
+      round = inner(outbound);
     } catch (...) {
-      if (reservation) budget->finish(*reservation, spend.model, {}, false);
+      if (reservation) budget->finish(*reservation, spend.model, {}, AiCallEnd::uncertain);
       throw;
     }
+    const std::optional<Json::Value>& reply = round.reply;
     if (reservation) {
       const std::string reason = reply && (*reply)["stop_reason"].isString()
           ? (*reply)["stop_reason"].asString() : std::string();
       const bool complete = reason == "end_turn" || reason == "tool_use" || reason == "max_tokens" || reason == "refusal";
-      budget->finish(*reservation, spend.model, reply ? (*reply)["usage"] : Json::Value(), complete);
+      const AiCallEnd end = complete ? AiCallEnd::settled : round.unconsumed ? AiCallEnd::unconsumed : AiCallEnd::uncertain;
+      budget->finish(*reservation, spend.model, reply ? (*reply)["usage"] : Json::Value(), end);
     }
     if (!reply) {
       spend.outcome = AiOutcome::transport;

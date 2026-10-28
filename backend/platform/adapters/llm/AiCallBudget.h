@@ -15,6 +15,8 @@ std::optional<long long> anthropicReservationNanos(const Json::Value& request);
 std::optional<AiOutputBudget> anthropicOutputBudget(const Json::Value& request, int minOutputTokens);
 std::optional<long long> anthropicActualNanos(const std::string& model, const Json::Value& usage);
 
+enum class AiCallEnd { settled, unconsumed, uncertain };
+
 struct AiCallAdmission {
   std::optional<AiBudgetReservation> reservation;
   std::string refusal;
@@ -30,8 +32,10 @@ public:
   AiCallAdmission begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens = 0);
   AiCallAdmission beginInstallation(const AiInstallationPrincipal& principal, const AiSpend& spend,
                                     const Json::Value& request, int minOutputTokens = 1024);
+  // `settled` books the vendor's reported usage; `unconsumed` books zero — the vendor answered an
+  // error before any message began; `uncertain` keeps the hold — the send is ambiguous.
   void finish(const AiBudgetReservation& reservation, const std::string& model,
-              const Json::Value& usage, bool complete);
+              const Json::Value& usage, AiCallEnd end);
 
 private:
   AiCallAdmission admit(const AiBudgetPrincipal& principal, const AiSpend& spend,

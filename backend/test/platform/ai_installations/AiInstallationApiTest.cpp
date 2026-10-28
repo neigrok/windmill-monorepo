@@ -265,7 +265,7 @@ TEST(ai_installation_budget_is_explicit_and_keeps_legacy_anonymous_calls_closed)
   charged["output_tokens"] = 200;
   charged["cache_read_input_tokens"] = 0;
   charged["cache_creation_input_tokens"] = 0;
-  budget.finish(*admission.reservation, spend.model, charged, true);
+  budget.finish(*admission.reservation, spend.model, charged, AiCallEnd::settled);
   CHECK_EQ(rows.reservations.at(admission.reservation->id).actualNanos, std::optional<long long>{5'500'000});
   CHECK_EQ(installations.bind(*issued.principal, UserId{"44444444-4444-4444-4444-444444444444"}), AiBudgetCode::Ok);
   CHECK_EQ(budget.beginInstallation(*issued.principal, spend, messagesBody(request), 1024).refusal, std::string{"device_bound"});

@@ -247,6 +247,8 @@ The model's reasoning and every assistant content block stay on the server.
 ### §4.5 Stop, disconnect and resume
 
 - **Stop** ends the turn `stopped` before the next model call or batch. No further batch is sent.
+  The model call in flight is never cancelled: it finishes, its tool calls are discarded, and it
+  settles at its actual usage. A round that ends talking completes the turn.
 - **Disconnect.** The server keeps running the current model call and buffers its text. A pending
   batch waits up to `CALL_RESULT_TIMEOUT`.
 - **Resume.** After a reconnect or a return to the foreground, the phone reads the turn stream
@@ -372,8 +374,11 @@ closes.
               { "callId": "…", "ok": false, "code": "record-dead" }] }
 ```
 
-The results answer exactly the batch's `callId`s, each within `TOOL_RESULT_BYTES`. The same body
-again answers `204`. Any other body is refused `coach-turn-order`.
+The results answer exactly the batch's `callId`s, each result carrying exactly its keys and within
+`TOOL_RESULT_BYTES`; the body holds at most `MAX_ABILITY_CALLS` results and
+`MAX_ABILITY_CALLS × TOOL_RESULT_BYTES + 16 KiB`. The body that answered a batch, sent again,
+answers `204`. Any other body — including one for a batch that timed out — is refused
+`coach-turn-order`.
 
 ### §6.5 Codes
 
@@ -397,6 +402,7 @@ again answers `204`. Any other body is refused `coach-turn-order`.
 | `coach-replica-syncing` | Local only: the replica's history is still arriving. |
 | `coach-busy` | The process is at capacity or its cost fuse is open. |
 | `coach-vendor-error` | The vendor failed. |
+| `coach-stream-replaced` | Another stream took over this turn; sent as the closing `error` of the stream it replaced. |
 
 ---
 
@@ -471,8 +477,12 @@ funded grant; actual cost can exceed an estimate and is recorded in full. The pr
 additional safeguard.
 
 A principal may have one unresolved free call or two unresolved paid calls. Reservations,
-dispatched calls and uncertain calls all occupy slots. The backend enforces this across processes,
-tier changes and permanent device binding. Product burst protection remains separate.
+dispatched calls and uncertain calls all occupy slots. A vendor error answered before the message
+started consumed nothing and settles at zero; only a send the vendor may have taken stays uncertain.
+The backend enforces this across processes, tier changes and permanent device binding. Product burst
+protection remains separate. A process runs two model calls at once; a turn holds that capacity only
+while its round streams, never while it waits on its phone, and at most 64 turns are alive in a
+process in any state. Both bounds refuse an open `coach-busy`.
 
 Each budget emits a durable owner-email alert when settled plus held usage crosses 50%, 80% or 95%.
 Alert enqueue is atomic with the budget write, and delivery uses leased claims and retry. The

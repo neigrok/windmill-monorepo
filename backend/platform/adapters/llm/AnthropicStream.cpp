@@ -167,7 +167,7 @@ Json::Value AnthropicMessageStream::diagnostic(int httpStatus, int curlCode, boo
   return result;
 }
 
-std::optional<Json::Value> streamAnthropicMessage(
+ModelRound streamAnthropicMessage(
     const std::string& apiKey, const std::string& baseUrl, const Json::Value& request,
     const std::function<void(const std::string&)>& text,
     const std::function<bool()>& continueRun,
@@ -229,7 +229,8 @@ std::optional<Json::Value> streamAnthropicMessage(
   auto message = transfer.parser.finish(transfer.stopped ? "cancelled" : "transport_error");
   if (message && (result != CURLE_OK || status < 200 || status >= 300))
     (*message)["stop_reason"] = transfer.stopped ? "cancelled" : "transport_error";
-  return message;
+  const bool unconsumed = !message && !details["messageStarted"].asBool() && status >= 400;
+  return ModelRound{std::move(message), unconsumed};
 }
 
 }

@@ -13,7 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -37,6 +36,8 @@ constexpr std::size_t kContextReadBytes = 64 * 1024;
 constexpr std::size_t kModelPictureBytes = 1024 * 1024;
 constexpr std::size_t kToolResultBytes = 16 * 1024;
 constexpr std::size_t kOpenBodyBytes = 4 * 1024 * 1024;
+// A results body answers at most one batch of MAX_ABILITY_CALLS results, each within its bound.
+constexpr std::size_t kResultsBodyBytes = kMaxAbilityCalls * kToolResultBytes + 16 * 1024;
 constexpr std::chrono::seconds kCallResultTimeout{60};
 constexpr std::chrono::minutes kTurnLinger{10};
 // D-8: a turn id seeds every record id the turn mints (G-7), so it fits the gym seed bound.
@@ -122,8 +123,8 @@ struct TurnCallResult {
   std::string code;
 };
 
-// §6.4: a results body in shape, every result within TOOL_RESULT_BYTES; `code` is
-// `coach-bad-request` otherwise.
+// §6.4: a results body in shape — no more results than a batch can hold, each carrying exactly
+// its keys and within TOOL_RESULT_BYTES; `code` is `coach-bad-request` otherwise.
 struct TurnResultsRead {
   int batch = 0;
   std::vector<TurnCallResult> results;
@@ -137,8 +138,8 @@ struct TurnSink {
   virtual void send(const std::string& event, const Json::Value& data, bool terminal) = 0;
 };
 
-// What the service answers a results body with: a batch that nothing waits for is a `replay`
-// (204), one that does not answer the pending batch is out of `order` (409).
+// What the service answers a results body with (§6.4): the body that answered a batch, sent again,
+// is a `replay` (204); any other body that does not answer the pending batch is out of `order` (409).
 enum class ResultsAnswer { accepted, replay, order };
 
 // The record of one running or lingering turn. Every method is safe from any thread: the loop
@@ -155,8 +156,9 @@ public:
 
   // The loop's side.
   void appendText(const std::string& delta);
-  // Numbers the batch, holds it pending and sends it as one `calls` event.
-  TurnBatch sendBatch(std::vector<TurnCall> calls);
+  // Numbers the batch, holds it pending and sends it as one `calls` event — or nothing once Stop
+  // was requested: the check and the send are one step under the lock, so no batch follows a Stop.
+  std::optional<TurnBatch> sendBatch(std::vector<TurnCall> calls);
   // Blocks until the pending batch is answered, Stop is requested, or `timeout` passes; the
   // results come back in the batch's call order. Nullopt is a timeout or a Stop.
   std::optional<std::vector<TurnCallResult>> awaitResults(std::chrono::milliseconds timeout);
@@ -167,8 +169,9 @@ public:
   ResultsAnswer answer(int batch, std::vector<TurnCallResult> results, const std::string& bodyDigest);
   void requestStop();
   bool stopRequested() const;
-  // Replaces the stream. A resume opens with `snapshot`; a fresh open catches up on what streamed
-  // before the stream attached. An ended turn then gets its terminal frame and closes.
+  // Replaces the stream: another stream still open hears `error coach-stream-replaced` and closes
+  // first. A resume opens with `snapshot`; a fresh open catches up on what streamed before the
+  // stream attached. An ended turn then gets its terminal frame and closes.
   void attach(std::shared_ptr<TurnSink> sink, bool resume);
 
   TurnState state() const;
@@ -199,7 +202,6 @@ private:
   std::optional<TurnBatch> pending_;
   std::optional<std::vector<TurnCallResult>> pendingResults_;
   std::map<int, std::string> answeredDigests_;  // batch number → the body digest that answered it
-  std::set<int> closed_;                        // batches nothing waits for any more
 };
 
 }

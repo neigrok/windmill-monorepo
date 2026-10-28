@@ -89,7 +89,8 @@ std::vector<MovementSeries::Point> MovementSeries::records() const {
   std::vector<Point> records;
   for (const Point& point : points)
     if (point.fact.estimate &&
-        (records.empty() || point.fact.estimate->estimate.score > records.back().fact.estimate->estimate.score))
+        (records.empty() || Estimate::stated(point.fact.estimate->estimate.e1rm) >
+                                Estimate::stated(records.back().fact.estimate->estimate.e1rm)))
       records.push_back(point);
   return records;
 }

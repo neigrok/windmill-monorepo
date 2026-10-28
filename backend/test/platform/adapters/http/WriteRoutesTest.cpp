@@ -202,6 +202,20 @@ TEST(write_http_coach_routine_confirmation_refusals_log_their_codes) {
            std::string("failed"));
 }
 
+TEST(write_http_coach_turn_refusals_log_their_codes_and_a_vendor_failure_stays_an_issue) {
+  const std::string open = "gym.coach.turn.open";
+  for (const char* code : {"coach-busy", "anonymous_ai_unavailable", "concurrency_exhausted", "free_day_exhausted",
+                           "free_month_exhausted", "funding_required", "debt_outstanding"})
+    CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", code), open), std::string(code));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k409Conflict, "private", "coach-turn-order"), "gym.coach.turn.results"),
+           std::string("coach-turn-order"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k426UpgradeRequired, "private", "coach-update-required"), open),
+           std::string("coach-update-required"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "coach-vendor-error"), open), std::string("failed"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "ai_accounting_unavailable"), open), std::string("failed"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "private", "coach-busy"), "gym.write"), std::string("failed"));
+}
+
 TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issues) {
   HttpWriteCapture capture;
   installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));

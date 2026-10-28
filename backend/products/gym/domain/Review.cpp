@@ -78,13 +78,14 @@ std::vector<ProgressSet> atLoad(const std::vector<ProgressSet>& sets, double wei
 }
 
 // The three record rules for one movement. Each needs a mark to have been PASSED, so a first session claims nothing.
+// An estimate beats the one before it as stated to a tenth, the way every phone compares them.
 std::vector<Candidate> recordsFor(const ExerciseId& exercise, const std::vector<ProgressSet>& today,
                                   const std::vector<ProgressSet>& standing) {
   std::vector<Candidate> earned;
 
   const std::optional<MovementSeries::Point> now = MovementSeries{progressSessions(today), exercise}.best();
   const std::optional<MovementSeries::Point> before = MovementSeries{progressSessions(standing), exercise}.best();
-  if (now && before && now->fact.estimate->estimate.score > before->fact.estimate->estimate.score) {
+  if (now && before && Estimate::stated(now->fact.estimate->estimate.e1rm) > Estimate::stated(before->fact.estimate->estimate.e1rm)) {
     const EstimatedFact& set = *now->fact.estimate;
     earned.push_back(candidateOf(PersonalRecord{RecordKind::e1rm, exercise, set.estimate.e1rm, set.performed.weightKg,
                                                 set.performed.reps, before->fact.estimate->estimate.e1rm,

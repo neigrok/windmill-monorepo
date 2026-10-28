@@ -251,16 +251,16 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   }
 
   std::string transcript;
-  const AskCall call = [this, &control, &transcript, &refusal](const Json::Value& request) {
-    auto reply = streamAnthropicMessage(apiKey_, baseUrl_, request, [&](const std::string& text) {
+  const ModelRoundCall call = [this, &control, &transcript, &refusal](const Json::Value& request) {
+    ModelRound round = streamAnthropicMessage(apiKey_, baseUrl_, request, [&](const std::string& text) {
       if (control.text) control.text(transcript + text);
     }, control.continueRun, [&](const Json::Value& diagnostic) {
       if (diagnostic["httpStatus"].asInt() == 429 || diagnostic["httpStatus"].asInt() == 529 ||
           diagnostic["providerError"].asString() == "rate_limit_error")
         refusal = "rate_limited";
     });
-    if (reply) appendToolRoundText(transcript, *reply);
-    return reply;
+    if (round.reply) appendToolRoundText(transcript, *round.reply);
+    return round;
   };
 
   // One row per turn, one run id across the exchange.

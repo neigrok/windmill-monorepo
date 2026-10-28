@@ -201,6 +201,10 @@ void TurnApi::resume(const drogon::HttpRequestPtr& request, HttpCallback&& reply
 }
 
 void TurnApi::results(const drogon::HttpRequestPtr& request, HttpCallback&& reply, const std::string& turnId) {
+  if (request->body().size() > kResultsBodyBytes) {
+    reply(privateResponse(error(drogon::k413RequestEntityTooLarge, "Coach could not take this message.", "coach-bad-request")));
+    return;
+  }
   onWorker(request, std::move(reply), [this, request, turnId](HttpCallback&& reply) {
     const Access access = principalOf(request);
     if (!access.principal) { reply(refusal(access.refusal)); return; }

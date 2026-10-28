@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/adapters/llm/AnthropicClient.h"
+
 #include <json/json.h>
 #include <functional>
 #include <optional>
@@ -34,7 +36,9 @@ private:
   bool invalid_ = false;
 };
 
-std::optional<Json::Value> streamAnthropicMessage(
+// The round's reply, or none; `unconsumed` when the vendor answered an error status before the
+// message started, so nothing was billed.
+ModelRound streamAnthropicMessage(
     const std::string& apiKey, const std::string& baseUrl, const Json::Value& request,
     const std::function<void(const std::string&)>& text,
     const std::function<bool()>& continueRun,

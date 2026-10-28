@@ -78,6 +78,7 @@ TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog
 TurnService::~TurnService() { stop(); }
 
 void TurnService::stop() {
+  stopping_ = true;
   {
     std::lock_guard lock(registryMutex_);
     for (auto& [id, turn] : turns_) turn->requestStop();
@@ -152,8 +153,13 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
   }
   if (!refusal.empty()) return {nullptr, false, refusal};
 
-  if (running_.fetch_add(1) >= 2) {
-    --running_;
+  // The open takes the first round's vendor slot; `run` releases it when that round ends.
+  if (live_.fetch_add(1) >= kMaxLiveTurns) {
+    --live_;
+    return {nullptr, false, "coach-busy"};
+  }
+  if (!vendorRounds_.try_acquire()) {
+    --live_;
     return {nullptr, false, "coach-busy"};
   }
   auto turn = std::make_shared<Turn>(principal, std::move(open), now);
@@ -161,7 +167,8 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
     std::lock_guard lock(registryMutex_);
     const auto seen = turns_.find(turn->id());
     if (seen != turns_.end()) {
-      --running_;
+      vendorRounds_.release();
+      --live_;
       const Turn& held = *seen->second;
       if (held.principal().id() != principal.id() || held.open().digest != turn->open().digest) return {nullptr, false, "coach-turn-conflict"};
       return {seen->second, true, {}};
@@ -169,7 +176,8 @@ TurnAdmission TurnService::open(const TurnPrincipal& principal, TurnOpen open) {
     turns_[turn->id()] = turn;
   }
   if (!workers_.post([this, turn] { run(turn); })) {
-    --running_;
+    vendorRounds_.release();
+    --live_;
     std::lock_guard lock(registryMutex_);
     turns_.erase(turn->id());
     return {nullptr, false, "coach-busy"};
@@ -193,6 +201,7 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
   bool truncated = false;
   std::string errorCode;
   int modelCalls = 0;
+  bool slotHeld = true;  // the open took the first round's slot
   try {
     std::string refusedCode;
     std::size_t sentOfReply = 0;
@@ -203,12 +212,28 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
       sentOfReply = soFar.size();
       turn->appendText(delta);
     };
-    const auto continueRun = [&] { return !turn->stopRequested() && !host.interrupted(); };
-    const ModelCall call = model_->open(principal, turn->id(), text, continueRun,
+    // §4.5: Stop ends the turn before the next model call or batch and never cuts the round in
+    // flight, which settles at its actual usage. Only shutdown cuts a stream.
+    const auto continueRun = [&] { return !stopping_ && !turn->stopRequested() && !host.interrupted(); };
+    const ModelCall call = model_->open(principal, turn->id(), text, [this] { return !stopping_; },
                                         [&](const std::string& code) { refusedCode = code; });
-    const ModelCall round = [&](const Json::Value& request) {
+    const ModelCall round = [&](const Json::Value& request) -> std::optional<Json::Value> {
+      if (!slotHeld && !vendorRounds_.try_acquire_for(resultTimeout_)) {
+        refusedCode = "coach-busy";
+        return std::nullopt;
+      }
+      slotHeld = true;
       sentOfReply = 0;
-      std::optional<Json::Value> reply = call(request);
+      std::optional<Json::Value> reply;
+      try {
+        reply = call(request);
+      } catch (...) {
+        vendorRounds_.release();
+        slotHeld = false;
+        throw;
+      }
+      vendorRounds_.release();
+      slotHeld = false;
       if (reply) ++modelCalls;
       return reply;
     };
@@ -255,13 +280,14 @@ void TurnService::run(const std::shared_ptr<Turn>& turn) {
     if (failures_) failures_->report("gym", "coach_turn.loop", "the model loop threw");
   }
 
+  if (slotHeld) vendorRounds_.release();  // a turn stopped before its first call still holds the open's slot
   Json::Value allowed;
   try {
     allowed = allowance(principal);
   } catch (const std::exception&) {
     if (failures_) failures_->report("gym", "coach_turn.loop", "allowance unavailable after the turn");
   }
-  --running_;  // the slot opens before the stream hears the end, so a waiting open finds it
+  --live_;  // the turn leaves the count before the stream hears the end, so a waiting open finds room
   turn->end(state, truncated, allowed, errorCode, clock_.nowMs());
 
   const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);

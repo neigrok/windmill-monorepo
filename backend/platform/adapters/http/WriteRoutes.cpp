@@ -42,7 +42,9 @@ const std::set<std::string> refusalCodes{
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
-    "checkout_closed", "clock-ahead", "coach-draft-invalid", "coach-draft-not-found", "compose-unavailable",
+    "checkout_closed", "clock-ahead", "coach-bad-request", "coach-busy", "coach-draft-invalid", "coach-draft-not-found",
+    "coach-rate-limited", "coach-turn-conflict", "coach-turn-order", "coach-turn-unknown", "coach-update-required",
+    "compose-unavailable",
     "concurrency_exhausted", "debt_outstanding",
     "device_bound", "device_verification_required", "expired", "free_day_exhausted", "free_month_exhausted",
     "funding_account_mismatch", "funding_binding_pending", "funding_conflict", "funding_required", "funding_unconfigured",
@@ -172,7 +174,9 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
       code == "anonymous_ai_unavailable") return code;
   if (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
       code.rfind("journal-", 0) == 0 || code == "ask-busy" || code == "ask-not-configured") return code;
-  const bool aiRequest = operation == "gym.POST.v1.gym.ask" || operation == "roadmap.POST.v1.trees.id.tend" ||
+  const bool coachTurn = operation.rfind("gym.coach.turn.", 0) == 0;
+  if (coachTurn && (code == "coach-busy" || code == "anonymous_ai_unavailable")) return code;
+  const bool aiRequest = coachTurn || operation == "gym.POST.v1.gym.ask" || operation == "roadmap.POST.v1.trees.id.tend" ||
       operation == "roadmap.POST.v1.compose" || operation == "journal.POST.v1.journal.transcribe";
   if (aiRequest && aiAllowanceRefusalCodes.count(code)) return code;
   if (operation == "roadmap.POST.v1.compose" && code == "compose-unavailable") return code;

@@ -109,7 +109,8 @@ struct MovementSeries {
   std::optional<Point> best() const;
   // The heaviest load, then the most reps at it.
   std::optional<Point> heaviest() const;
-  // Every estimate that beat each one before it, oldest first. The first estimate is the baseline and leads the list.
+  // Every estimate that beat each one before it as stated to a tenth, oldest first. The first estimate is the
+  // baseline and leads the list.
   std::vector<Point> records() const;
 };
 

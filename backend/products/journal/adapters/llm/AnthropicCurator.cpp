@@ -284,10 +284,10 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
   try {
     reply = transport_->send(request);
   } catch (...) {
-    if (reservation) budget_->finish(*reservation, model_, {}, false);
+    if (reservation) budget_->finish(*reservation, model_, {}, AiCallEnd::uncertain);
     throw;
   }
-  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete);
+  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete ? AiCallEnd::settled : AiCallEnd::uncertain);
   spend.outcome = reply.outcome;
   spend.tokens = reply.tokens;
   meterSpend(spend, fuse_, usage_);

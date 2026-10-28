@@ -250,15 +250,16 @@ AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, const Ai
 }
 
 void AiCallBudget::finish(const AiBudgetReservation& reservation, const std::string& model,
-                          const Json::Value& usage, bool complete) {
+                          const Json::Value& usage, AiCallEnd end) {
   WriteObservation observation{"ai.call.account", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
-    const auto amount = complete ? anthropicActualNanos(model, usage) : std::nullopt;
+    const auto amount = end == AiCallEnd::settled ? anthropicActualNanos(model, usage)
+                      : end == AiCallEnd::unconsumed ? std::optional<long long>{0} : std::nullopt;
     const auto result = amount ? budgets_->settle(reservation.id, *amount) : budgets_->markUncertain(reservation.id);
     if (result.code != AiBudgetCode::Ok && result.code != AiBudgetCode::Replay)
       throw std::runtime_error("AI accounting transition refused");
-    observation.finish(amount ? "settled" : "uncertain");
+    observation.finish(!amount ? "uncertain" : end == AiCallEnd::unconsumed ? "unconsumed" : "settled");
   } catch (const std::exception& error) {
     observation.fail(error);
   } catch (...) {

@@ -275,7 +275,7 @@ TEST(coach_turn_first_content_is_one_user_message_with_a_cache_point_on_its_last
   h.service->stop();
 }
 
-TEST(coach_turn_capacity_is_two_running_turns_and_the_third_is_busy) {
+TEST(coach_turn_capacity_is_two_vendor_rounds_and_a_third_open_is_busy) {
   Harness h;
   h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"a"}]},
                                {"stop_reason":"end_turn","content":[{"type":"text","text":"b"}]},
@@ -362,8 +362,149 @@ TEST(coach_turn_results_are_read_in_shape_and_within_their_byte_bound) {
   big["results"][0]["result"]["blob"] = std::string(16 * 1024, 'x');
   CHECK_EQ(readTurnResults(big).code, std::string("coach-bad-request"));
   for (const char* body : {R"({"batch":0,"results":[]})", R"({"batch":1})", R"({"batch":1,"results":[{"callId":"a","ok":true}]})",
-                           R"({"batch":1,"results":[{"callId":"a","ok":false}]})", R"({"batch":1,"results":[],"more":1})"})
+                           R"({"batch":1,"results":[{"callId":"a","ok":false}]})", R"({"batch":1,"results":[],"more":1})",
+                           R"({"batch":1,"results":[{"callId":"a","ok":false,"code":"x","result":{}}]})",
+                           R"({"batch":1,"results":[{"callId":"a","ok":false,"code":"x","padding":"y"}]})",
+                           R"({"batch":1,"results":[{"callId":"a","ok":true,"result":{},"extra":1}]})"})
     CHECK_EQ(readTurnResults(parse(body)).code, std::string("coach-bad-request"));
+  Json::Value crowded = parse(R"({"batch":1,"results":[]})");
+  for (int at = 0; at <= kMaxAbilityCalls; ++at) crowded["results"].append(parse(R"({"callId":"a","ok":true,"result":{}})"));
+  CHECK_EQ(readTurnResults(crowded).code, std::string("coach-bad-request"));
+  CHECK_EQ(kResultsBodyBytes, 208u * 1024u);
+}
+
+// §6.4: the body that answered a batch is a replay when sent again; a batch nothing waits for any
+// more — timed out, or answered by another body — refuses every other body as out of order.
+TEST(coach_turn_results_replay_only_the_body_that_answered_and_refuse_every_other) {
+  Harness h;
+  Turn turn(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_replay_000001","question":"Hi"})")), 1);
+  auto recorder = std::make_shared<Recorder>();
+  turn.attach(recorder, false);
+  REQUIRE(turn.sendBatch({TurnCall{"toolu_1", "list_routines", Json::Value(Json::objectValue)}}));
+  CHECK_FALSE(turn.awaitResults(std::chrono::milliseconds(10)));
+  const Json::Value late = parse(R"({"batch":1,"results":[{"callId":"toolu_1","ok":true,"result":{"routines":[]}}]})");
+  CHECK(turn.answer(1, resultsOf(late), digestOf(late)) == ResultsAnswer::order);
+
+  REQUIRE(turn.sendBatch({TurnCall{"toolu_2", "list_notes", Json::Value(Json::objectValue)}}));
+  const Json::Value answered = parse(R"({"batch":2,"results":[{"callId":"toolu_2","ok":true,"result":{"notes":[]}}]})");
+  const Json::Value other = parse(R"({"batch":2,"results":[{"callId":"toolu_2","ok":false,"code":"record-dead"}]})");
+  CHECK(turn.answer(2, resultsOf(answered), digestOf(answered)) == ResultsAnswer::accepted);
+  REQUIRE(turn.awaitResults(std::chrono::milliseconds(10)));
+  CHECK(turn.answer(2, resultsOf(answered), digestOf(answered)) == ResultsAnswer::replay);
+  CHECK(turn.answer(2, resultsOf(other), digestOf(other)) == ResultsAnswer::order);
+  CHECK(turn.answer(1, resultsOf(late), digestOf(late)) == ResultsAnswer::order);
+}
+
+// The check for Stop and the send of a batch are one step: a Stop that lands first means no batch
+// is sent, and the stream never hears `calls`.
+TEST(coach_turn_sends_no_batch_once_stop_was_requested) {
+  Harness h;
+  Turn turn(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_stoprace_00001","question":"Hi"})")), 1);
+  auto recorder = std::make_shared<Recorder>();
+  turn.attach(recorder, false);
+  turn.requestStop();
+  CHECK_FALSE(turn.sendBatch({TurnCall{"toolu_1", "create_routine", Json::Value(Json::objectValue)}}));
+  CHECK(recorder->snapshot().empty());
+  CHECK_FALSE(turn.snapshot().isMember("calls"));
+}
+
+// §6.5 coach-stream-replaced: a second stream takes over, and the first closes with a terminal
+// frame that says so; re-attaching the same stream says nothing.
+TEST(coach_turn_closes_a_replaced_stream_with_an_error_frame) {
+  Harness h;
+  Turn turn(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_replaced_00001","question":"Hi"})")), 1);
+  auto first = std::make_shared<Recorder>();
+  auto second = std::make_shared<Recorder>();
+  turn.attach(first, false);
+  turn.appendText("So far");
+  turn.attach(second, false);
+  CHECK_EQ(Replay::dumpAll(first->snapshot()),
+           std::string(R"([{"data":{"delta":"So far"},"event":"text"},{"data":{"code":"coach-stream-replaced"},"event":"error"}])"));
+  CHECK(first->isClosed());
+  turn.attach(second, true);
+  CHECK_EQ(Replay::dumpAll(second->snapshot()),
+           std::string(R"([{"data":{"delta":"So far"},"event":"text"},{"data":{"state":"running","text":"So far"},"event":"snapshot"}])"));
+  CHECK_FALSE(second->isClosed());
+}
+
+// §4.5: Stop never cuts the round in flight — the stream is only asked about shutdown — so the
+// round settles at its actual usage. A round that ends talking completes the turn; one that ends
+// asking for tools has them discarded and the turn ends `stopped` with no batch sent.
+TEST(coach_turn_stop_lets_the_round_in_flight_finish_and_discards_what_it_asked_for) {
+  {
+    Harness h;
+    h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Rest."}]}])");
+    const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_stop_talking_01","question":"Hi"})")));
+    REQUIRE(admission.turn);
+    auto recorder = std::make_shared<Recorder>();
+    admission.turn->attach(recorder, false);
+    h.model->beforeReply = [turn = admission.turn](int) { turn->requestStop(); };
+    h.model->start();
+    REQUIRE(recorder->waitFor(2));
+    CHECK(h.model->continueRun());
+    std::vector<Json::Value> frames;
+    for (const Json::Value& frame : recorder->snapshot()) frames.push_back(withoutAllowance(frame));
+    CHECK_EQ(Replay::dumpAll(frames),
+             std::string(R"([{"data":{"delta":"Rest."},"event":"text"},{"data":{"state":"completed"},"event":"done"}])"));
+    h.service->stop();
+  }
+  {
+    Harness h;
+    h.model->replies = parse(R"([{"stop_reason":"tool_use","content":[{"type":"text","text":"On it."},
+      {"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]}])");
+    const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_stop_asking_001","question":"Hi"})")));
+    REQUIRE(admission.turn);
+    auto recorder = std::make_shared<Recorder>();
+    admission.turn->attach(recorder, false);
+    h.model->beforeReply = [turn = admission.turn](int) { turn->requestStop(); };
+    h.model->start();
+    REQUIRE(recorder->waitFor(2));
+    std::vector<Json::Value> frames;
+    for (const Json::Value& frame : recorder->snapshot()) frames.push_back(withoutAllowance(frame));
+    CHECK_EQ(Replay::dumpAll(frames),
+             std::string(R"([{"data":{"delta":"On it."},"event":"text"},{"data":{"state":"stopped"},"event":"done"}])"));
+    CHECK_EQ(h.model->requests.size(), 1u);
+    h.service->stop();
+  }
+}
+
+// §7.3 as the process keeps it: two turns waiting on silent phones hold no vendor slot, so a third
+// open is admitted and runs while they wait.
+TEST(coach_turn_waiting_on_a_phone_holds_no_vendor_slot) {
+  Harness h;
+  h.model->replies = parse(R"([{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
+                               {"stop_reason":"tool_use","content":[{"type":"tool_use","id":"toolu_1","name":"list_routines","input":{}}]},
+                               {"stop_reason":"end_turn","content":[{"type":"text","text":"Third."}]}])");
+  const auto body = [](const char* id) {
+    Json::Value body = parse(R"({"catalog":"catalog/1","turnId":"","question":"Hi","history":[],"context":[],"pictures":[]})");
+    body["turnId"] = id;
+    return openOf(body);
+  };
+  const TurnAdmission first = h.service->open(h.bound(), body("tn_waiting_000001"));
+  const TurnAdmission second = h.service->open(h.bound(), body("tn_waiting_000002"));
+  REQUIRE(first.turn);
+  REQUIRE(second.turn);
+  CHECK_EQ(h.service->open(h.bound(), body("tn_waiting_000003")).code, std::string("coach-busy"));
+  auto firstStream = std::make_shared<Recorder>();
+  auto secondStream = std::make_shared<Recorder>();
+  first.turn->attach(firstStream, false);
+  second.turn->attach(secondStream, false);
+  h.model->start();
+  REQUIRE(firstStream->waitFor(1));
+  REQUIRE(secondStream->waitFor(1));
+  CHECK_EQ(firstStream->snapshot()[0]["event"].asString(), std::string("calls"));
+  CHECK_EQ(secondStream->snapshot()[0]["event"].asString(), std::string("calls"));
+  const TurnAdmission third = h.service->open(h.bound(), body("tn_waiting_000003"));
+  REQUIRE(third.turn);
+  auto thirdStream = std::make_shared<Recorder>();
+  third.turn->attach(thirdStream, false);
+  REQUIRE(thirdStream->waitFor(2));
+  CHECK_EQ(std::string(nameOf(third.turn->state())), std::string("completed"));
+  REQUIRE(firstStream->waitFor(2));
+  REQUIRE(secondStream->waitFor(2));
+  CHECK_EQ(std::string(nameOf(first.turn->state())), std::string("interrupted"));
+  CHECK_EQ(std::string(nameOf(second.turn->state())), std::string("interrupted"));
+  h.service->stop();
 }
 
 // B-2: an anonymous turn runs on the onboarding model, and its first round — the full prompt and

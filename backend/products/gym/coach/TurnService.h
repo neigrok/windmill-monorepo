@@ -16,14 +16,24 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <semaphore>
 #include <string>
 
 // The turn service (gym_coach.md §4.2, §4.5, §6.2): admits an open in the spec's order, runs the
-// model loop on a bounded worker with the phone as tool host, keeps each turn in memory for
-// TURN_LINGER after it ends, and answers Stop, results and resumes against that registry. Nothing
-// here touches Postgres but the allowance reads the platform owns.
+// model loop on a worker with the phone as tool host, keeps each turn in memory for TURN_LINGER
+// after it ends, and answers Stop, results and resumes against that registry. Nothing here touches
+// Postgres but the allowance reads the platform owns.
+//
+// Capacity (§7.3): the process runs at most `kVendorRounds` model calls at once, and a turn holds
+// that slot only while its round streams — a turn waiting on its phone holds none, so a silent
+// phone cannot answer `coach-busy` to everyone. `kMaxLiveTurns` bounds the turns alive in any
+// state; both bounds refuse an open with `coach-busy`, and a round that finds no slot free within
+// CALL_RESULT_TIMEOUT ends its turn `failed` on it.
 
 namespace wm::gym::coach {
+
+constexpr int kVendorRounds = 2;
+constexpr int kMaxLiveTurns = 64;
 
 // `turn` set: admitted, running or — `resumed` — already open under the same body. `code` set: refused.
 struct TurnAdmission {
@@ -70,8 +80,10 @@ private:
   std::chrono::milliseconds resultTimeout_;
   std::mutex registryMutex_;
   std::map<std::string, std::shared_ptr<Turn>> turns_;
-  std::atomic<int> running_{0};
-  WorkerPool workers_{"gym-coach-turn", 2, 2};
+  std::atomic<bool> stopping_{false};
+  std::atomic<int> live_{0};
+  std::counting_semaphore<kVendorRounds> vendorRounds_{kVendorRounds};
+  WorkerPool workers_{"gym-coach-turn", kMaxLiveTurns, kMaxLiveTurns};
 };
 
 }

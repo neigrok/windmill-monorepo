@@ -232,6 +232,25 @@ TEST(gym_series_best_keeps_the_earliest_session_on_an_equal_score) {
   CHECK_EQ(series.heaviest()->session, kSecond);
 }
 
+// The ladder compares estimates as stated to a tenth, the way every phone does: 116.7 x 1 scores above 100 x 5
+// (116.667) and is the exact best, yet states the same 116.7 and is no step; 116.8 x 1 is.
+TEST(gym_series_records_step_only_on_a_stated_improvement) {
+  const MovementSeries series{
+      progressSessions({benched(kFirst, 1'000, "set_00000001", 100, 5), benched(kSecond, 2'000, "set_00000002", 116.7, 1),
+                        benched(SessionId{"ses_00000003"}, 3'000, "set_00000003", 116.8, 1)}),
+      kBench};
+
+  std::vector<SessionId> steps;
+  for (const MovementSeries::Point& point : series.records()) steps.push_back(point.session);
+  CHECK_EQ(steps, (std::vector<SessionId>{kFirst, SessionId{"ses_00000003"}}));
+  CHECK_EQ(series.best()->session, SessionId{"ses_00000003"});
+  const MovementSeries tied{progressSessions({benched(kFirst, 1'000, "set_00000001", 100, 5),
+                                              benched(kSecond, 2'000, "set_00000002", 116.7, 1)}),
+                            kBench};
+  CHECK_EQ(tied.records().size(), 1u);
+  CHECK_EQ(tied.best()->session, kSecond);
+}
+
 // The ladder leads with the baseline and takes a step only on a higher score; a heavier set with no estimate is the
 // heaviest and no step.
 TEST(gym_series_records_lead_with_the_baseline_and_step_on_a_higher_score) {

@@ -106,6 +106,15 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
 // One tool-loop turn: request body in, parsed reply out, nullopt on any transport or parse failure.
 using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& request)>;
 
+// One vendor round as the ledger reads it: the reply, or none — and, with none, whether the vendor
+// is known to have consumed nothing (it answered an error before any message began), so the round
+// settles at zero instead of staying held as an ambiguous send.
+struct ModelRound {
+  std::optional<Json::Value> reply;
+  bool unconsumed = false;
+};
+using ModelRoundCall = std::function<ModelRound(const Json::Value& request)>;
+
 class AiInstallationPrincipal;
 
 // Wrap a tool loop's model call so every turn is metered; it must be invoked exactly once per turn.
@@ -115,6 +124,15 @@ class AiInstallationPrincipal;
 // onDenied names each refused invocation, including trips already reported.
 // The budget admits each round for `frame.user`'s account, or for `installation` — the anonymous
 // principal of a signed-out phone — when one is given and the frame names no account.
+ModelCall metered(ModelRoundCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
+                  std::shared_ptr<UsageSink> usage,
+                  std::function<void(const std::string& where, const std::string& detail)> report,
+                  std::function<void()> onDenied = {},
+                  std::shared_ptr<AiCallBudget> budget = nullptr,
+                  std::function<void(const std::string&)> onBudgetDenied = {},
+                  int minOutputTokens = 0,
+                  std::shared_ptr<const AiInstallationPrincipal> installation = nullptr);
+// The same over a call that cannot tell an unconsumed round apart: every failed send stays held.
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string& where, const std::string& detail)> report,

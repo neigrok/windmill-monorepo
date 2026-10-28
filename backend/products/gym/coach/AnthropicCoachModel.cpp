@@ -25,7 +25,7 @@ ModelCall AnthropicCoachModel::open(const TurnPrincipal& principal, const std::s
   const std::shared_ptr<const AiInstallationPrincipal> installation =
       principal.installation ? std::make_shared<const AiInstallationPrincipal>(*principal.installation) : nullptr;
 
-  const ModelCall stream = [apiKey = apiKey_, baseUrl = baseUrl_, text = std::move(text), continueRun,
+  const ModelRoundCall stream = [apiKey = apiKey_, baseUrl = baseUrl_, text = std::move(text), continueRun,
                             refused](const Json::Value& request) {
     return streamAnthropicMessage(apiKey, baseUrl, request, text, continueRun, [&](const Json::Value& diagnostic) {
       const int status = diagnostic["httpStatus"].asInt();

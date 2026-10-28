@@ -376,7 +376,7 @@ TEST(ai_call_budget_settles_complete_usage_and_keeps_missing_or_partial_usage_re
   usage["cache_creation_input_tokens"] = 400;
   const auto complete = budget->begin(spend, request);
   REQUIRE(complete.reservation);
-  budget->finish(*complete.reservation, spend.model, usage, true);
+  budget->finish(*complete.reservation, spend.model, usage, AiCallEnd::settled);
   CHECK(repository.reservations.at(complete.reservation->id).state == AiBudgetState::Settled);
   CHECK_EQ(repository.reservations.at(complete.reservation->id).actualNanos, std::optional<long long>{3'260'000});
   request["max_tokens"] = 200;
@@ -385,14 +385,14 @@ TEST(ai_call_budget_settles_complete_usage_and_keeps_missing_or_partial_usage_re
   const auto actual = parse(R"({"input_tokens":1000,"output_tokens":200,
       "cache_read_input_tokens":0,"cache_creation_input_tokens":0})");
   REQUIRE(underestimated.reservation->amountNanos < 4'000'000);
-  budget->finish(*underestimated.reservation, spend.model, actual, true);
+  budget->finish(*underestimated.reservation, spend.model, actual, AiCallEnd::settled);
   CHECK(repository.reservations.at(underestimated.reservation->id).state == AiBudgetState::Settled);
   CHECK_EQ(repository.reservations.at(underestimated.reservation->id).actualNanos, std::optional<long long>{4'000'000});
   request["max_tokens"] = 16'000;
   for (const bool missing : {false, true}) {
     const auto incomplete = budget->begin(spend, request);
     REQUIRE(incomplete.reservation);
-    budget->finish(*incomplete.reservation, spend.model, missing ? Json::Value() : usage, false);
+    budget->finish(*incomplete.reservation, spend.model, missing ? Json::Value() : usage, AiCallEnd::uncertain);
     CHECK(repository.reservations.at(incomplete.reservation->id).state == AiBudgetState::Uncertain);
     CHECK_FALSE(repository.reservations.at(incomplete.reservation->id).actualNanos);
     CHECK_EQ(repository.reservations.at(incomplete.reservation->id).amountNanos, incomplete.reservation->amountNanos);
@@ -401,7 +401,7 @@ TEST(ai_call_budget_settles_complete_usage_and_keeps_missing_or_partial_usage_re
   CHECK_FALSE(anthropicActualNanos(spend.model, usage));
   const auto partial = budget->begin(spend, request);
   REQUIRE(partial.reservation);
-  budget->finish(*partial.reservation, spend.model, usage, true);
+  budget->finish(*partial.reservation, spend.model, usage, AiCallEnd::settled);
   CHECK(repository.reservations.at(partial.reservation->id).state == AiBudgetState::Uncertain);
   CHECK_FALSE(repository.reservations.at(partial.reservation->id).actualNanos);
   struct ReporterScope {
@@ -467,4 +467,39 @@ TEST(ai_call_budget_admits_small_free_requests_but_refuses_large_requests_and_un
   CHECK_EQ(budget.begin(spend, request).refusal, std::string{"funding_required"});
   CHECK_EQ(repository.reservations.size(), 1u);
   CHECK(failures.reports.empty());
+}
+
+// A vendor that answers an error before any message began consumed nothing: the round settles at
+// zero and the principal's slot opens. A send the vendor may have taken stays held as uncertain.
+TEST(ai_call_budget_settles_an_unconsumed_round_at_zero_and_holds_an_ambiguous_one) {
+  FakeAiBudgetRepository repository;
+  AiBudgetLimits limits;
+  auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [] { return 1'792'000'000'000LL; });
+  FakeAuthRepository accounts;
+  const auto user = accounts.createUser(Email{"sam@example.com"}, "Sam");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, "sam@example.com"};
+  Failures failures;
+  auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
+  AiSpend spend;
+  spend.user = user.id;
+  spend.model = "claude-sonnet-5";
+  Json::Value request;
+  request["model"] = spend.model;
+  request["max_tokens"] = 2'000;
+  request["messages"] = parse(R"([{"role":"user","content":"Hi"}])");
+  bool unconsumed = true;
+  auto call = metered([&](const Json::Value&) { return ModelRound{std::nullopt, unconsumed}; }, spend, {}, {}, {}, {}, budget);
+  CHECK_FALSE(call(request));
+  REQUIRE_EQ(repository.reservations.size(), 1u);
+  const auto& refused = repository.reservations.begin()->second;
+  CHECK(refused.state == AiBudgetState::Settled);
+  CHECK_EQ(refused.actualNanos, std::optional<long long>{0});
+  unconsumed = false;
+  CHECK_FALSE(call(request));
+  REQUIRE_EQ(repository.reservations.size(), 2u);
+  int held = 0;
+  for (const auto& [id, row] : repository.reservations) held += row.state == AiBudgetState::Uncertain ? 1 : 0;
+  CHECK_EQ(held, 1);
 }
