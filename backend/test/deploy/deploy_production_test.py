@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -467,6 +468,16 @@ class DeployWorkflowTest(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr), (code, "", error))
         release = next(line.strip() for line in text.splitlines() if line.strip().startswith("SENTRY_RELEASE:"))
         self.assertEqual(release, "SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}")
+
+    def test_backend_readiness_probes_admit_the_current_schema_without_pinning_an_old_client(self):
+        root = SCRIPT.parents[2]
+        workflow = (root / ".github/workflows/backend.yml").read_text()
+        probes = [line for line in workflow.splitlines() if "curl " in line and "/v1/sync/hello" in line]
+        self.assertEqual(len(probes), 4)
+        versions = [int(re.search(r"Sync-Schema: (\d+)", line).group(1)) for line in probes]
+        registries = [json.loads(path.read_text()) for path in (root / "packages/api-contract/sync").glob("*.registry.json")]
+        minimum = max(registry["minVersion"] for registry in registries)
+        self.assertTrue(all(version >= minimum for version in versions), (versions, minimum))
 
     def test_backend_image_context_contains_the_sync_metadata_helper(self):
         backend = SCRIPT.parents[1]

@@ -594,3 +594,10 @@ The web persisted-restart fixture explicitly checks schema 9/minimum 9. Its comp
 the bounded test log and no crash report; the signal-10 cause remains unresolved. The outstanding
 iOS nightly bounce case passes locally on iPhone 17/iOS 26.5 with Xcode 27.1, one case with zero
 skips/runtime warnings. Full nightly 40661042534 checks the CI toolchain separately.
+
+Backend CI's probe, production and optional Coach readiness requests advertise a version high
+enough for the registry minimum. Explicit older-client refusal checks remain intact. The three
+deployment-workflow checks and YAML parsing pass; the admission regression compares all four
+probe headers with the current registries. CI 40659885808 passes the five Postgres targets and
+479 deployment-conformance cases before the obsolete readiness header refuses, so the workflow
+repair changes neither server validation nor the held production cutoff.

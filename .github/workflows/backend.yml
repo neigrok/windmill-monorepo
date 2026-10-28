@@ -150,7 +150,7 @@ jobs:
         run: |
           docker run -d --name probe --network host -e DATABASE_URL="$WM_SYNC_DATABASE_URL" -e PORT=18613 windmill-backend-build build/windmill_server_probe
           for ((attempt=0; attempt<50; attempt++)); do
-            curl -sf -o /dev/null -H 'Sync-Schema: 2' http://127.0.0.1:18613/v1/sync/hello && exit 0
+            curl -sf -o /dev/null -H 'Sync-Schema: 2147483647' http://127.0.0.1:18613/v1/sync/hello && exit 0
             sleep 0.2
           done
           docker logs probe
@@ -164,7 +164,7 @@ jobs:
           docker run -d --name server --network host -e DATABASE_URL="$WM_DEPLOYMENT_DATABASE_URL" \
             -e PORT=18614 windmill-backend-build build/windmill_server
           for ((attempt=0; attempt<50; attempt++)); do
-            curl -sf -o /dev/null -H 'Sync-Schema: 4' http://127.0.0.1:18614/v1/sync/hello && exit 0
+            curl -sf -o /dev/null -H 'Sync-Schema: 2147483647' http://127.0.0.1:18614/v1/sync/hello && exit 0
             sleep 0.2
           done
           docker logs server
@@ -235,7 +235,7 @@ jobs:
             -e AMPLITUDE_API_KEY=local-telemetry-fixture -e AMPLITUDE_HOST=localhost:9443 \
             windmill-coach-live build/windmill_server
           for ((attempt=0; attempt<50; attempt++)); do
-            if curl -sf -o /dev/null -H 'Sync-Schema: 6' http://127.0.0.1:8088/v1/sync/hello; then
+            if curl -sf -o /dev/null -H 'Sync-Schema: 2147483647' http://127.0.0.1:8088/v1/sync/hello; then
               python3 backend/test/e2e/coach_live.py verify --evidence "$RUNNER_TEMP/coach-live"
               exit $?
             fi
@@ -317,7 +317,7 @@ jobs:
             -e AMPLITUDE_API_KEY=local-telemetry-fixture -e AMPLITUDE_HOST=localhost:9443 \
             windmill-anonymous-coach-live build/windmill_server
           for ((attempt=0; attempt<50; attempt++)); do
-            if curl -sf -o /dev/null -H 'Sync-Schema: 6' http://127.0.0.1:8088/v1/sync/hello; then
+            if curl -sf -o /dev/null -H 'Sync-Schema: 2147483647' http://127.0.0.1:8088/v1/sync/hello; then
               python3 backend/test/e2e/anonymous_coach.py verify --provider anthropic --evidence "$RUNNER_TEMP/anonymous-coach-live"
               exit $?
             fi
