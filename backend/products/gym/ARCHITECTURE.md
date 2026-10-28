@@ -55,8 +55,9 @@ onboarding/   Onboarding (pure bounds + repository port) · PgOnboardingReposito
 coach/        the phone Coach's turn wire (docs/foundation/mobile/gym_coach.md): Turn (the open
               body, the in-memory record) · AbilityCatalog (Appendix C over the declarations, the
               schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
-              stream; R2 shares on GymTools) · CoachModel + AnthropicCoachModel (the metered
-              round) · TurnService (admission, the loop, Stop, linger) · TurnApi (the SSE routes)
+              stream; a bound turn's shares on GymTools) · CoachModel + AnthropicCoachModel (the
+              metered round) · TurnService (admission, the loop, Stop, linger) · TurnApi (the SSE
+              routes)
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 

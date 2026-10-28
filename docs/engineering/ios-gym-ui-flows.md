@@ -41,17 +41,15 @@ design; the revised entry contract is in their caption.
 | Receipt | Receipt `1182:4744/4871`; early finish `1182:4789/4902`; first receipt `1283:39725/39776`; top-corner menu `1370:38831/38934`; discard `1370:38879/38982`. |
 | Routines | Builder `1149:2200/2353`; picker `1181:4379/4589`; editor `1181:4473`/`1367:10387`; creation `1367:9840/10456`; per-set `1367:9998/10599`; refusal `1367:10145/10719`; unsaved `1367:10295/10863`; equipment disclosure `1371:39283/39362`. |
 
-The Coach requirement is explicitly **fresh chat on deliberate entry**. `CoachWorkspace` separates
-visible selection from the request-owning `CoachConversation`. `CoachDraftStore` persists a versioned
-owner/replica archive in its protected, backup-excluded file; each entry retains its transcript,
-composer and photos. Owner-wide setup and rejection marks stay separate from conversation content.
-Signed-out History uses the same local archive; signed-in History merges owner-matched server rows.
-Opening a cached server row refreshes its turns with a read-only request, retaining its draft. Offline
-refresh leaves the cached conversation usable. No-op navigation preserves its local History date.
+The Coach requirement is explicitly **fresh chat on deliberate entry**. One `CoachConversation` serves
+the room. Its messages are the engine's `thread` and `message` records
+([gym_coach.md](../foundation/mobile/gym_coach.md) §9.1). Beside them, `CoachDraftStore` keeps a
+per-owner archive in its protected, backup-excluded file: each conversation's composer draft and
+photo, the drafts a signed-out start left and the onboarding answers earlier versions kept.
+Owner-wide setup and rejection marks stay separate from conversation content.
 
-History retains each nonempty conversation, including drafts, answering/interrupted requests and
-unsaved results. It is available anonymously from the local archive. An empty visit creates no History
-row and sends no network request. Foreground resume, keyboard/photo transitions, History selection and
+History lists every engine conversation beside the local drafts, signed out and signed in, including
+answering and interrupted turns. An empty visit creates no History row and sends no network request. Foreground resume, keyboard/photo transitions, History selection and
 context handoffs retain their explicitly chosen conversation. A fresh empty selection persists as
 empty across relaunch while all nonempty prior entries remain in History.
 

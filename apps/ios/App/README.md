@@ -167,7 +167,7 @@ installation credential in device-only Keychain storage and applies installation
 budgets; an unreadable or rejected credential never creates a replacement. The abilities that need the
 account (`save_note`, the shares) are refused `seat-required` on the phone, and the newest answer that
 met one offers Sign in under it. A picture leaves the phone only as its model copy inside the open
-request, signed in too, until the picture store moves (ruling R8). Open and Start work before sign-in
+request, on every seat. Open and Start work before sign-in
 once a routine is created. Keep uses existing account adoption; usage binds before the account's seat is
 used, independently of Add/Discard. A binding outage leaves authentication and manual Gym available.
 Local drafts and archived answers transfer to the account archive on Add or empty-account adoption and

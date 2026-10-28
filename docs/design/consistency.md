@@ -85,9 +85,9 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
-  (boards 01.1–01.2) offers saving notes only after sign-in; `../foundation/mobile/gym_coach.md`
-  Appendix C gives `save_note` `seats: any`, so a signed-out Coach turn could write one. Rule which
-  holds.
+  (boards 01.1–01.2) offers saving notes only after sign-in. `../foundation/mobile/gym_coach.md`
+  Appendix C gives `save_note` `seats: bound` to match, so a signed-out Coach turn is not offered it.
+  Rule whether Notes opens signed out, which would make `save_note` `seats: any`.
 - **7i · A weight at the bound.** Web and Android refuse 19.996 kg against the 20 kg minimum. Under
   the engine a commit rounds to the quantum (0.01) and admission checks the rounded value (A.2
   `weighin` `kg` 20–400; engine §7.1 step 4), so 19.996 is saved as 20.00. Rule whether the sheet
@@ -319,8 +319,8 @@ and Android disagree.
   list behind the read receipt. iOS draws no step list: the receipt row opens *What Coach read*
   (board 08.5), and the table's words stand where iOS says what Coach did — the receipt's *Read your
   movement history* for a totals-only read and *Read nothing from your log*, *Also read your notes.*
-  under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note* / *Could
-  not confirm a note save*, which iOS draws as a card under the answer (10v). The words
+  under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note*, which iOS
+  draws as a card under the answer (10v). The words
   differ too: the return receipt on boards 08.12–08.13 reads *Applied · Push A · 4 changes*,
   *Applied · Push A · routine removed* and *Rejected · Push A.*; the web's `receiptLine` still says
   *Turned down* (10v); iOS's card and History share one word per outcome — *Applied*, *Removed*,
@@ -414,11 +414,11 @@ and Android disagree.
     added are built on iOS from the domain's `ProposalDiff`, whose vectors Android's and the web's
     domains also pass; no Android or web screen draws them yet.
   - 08.4 gives a conversation that proposed and created nothing a second line — *Changed a movement*, or the answer's
-    first words — but the thread list the server sends carries only the question and a proposal or creation outcome, so
-    iOS shows those rows on one line.
-  - 08.31's **Sign in** under a signed-out answer needs the onboarding answer to say it needs an account: iOS reads
-    `needsAccount` from it, which the backend's onboarding schema and prompt do not produce yet, so the button shows only
-    on the simulator fixture.
+    first words; iOS History draws such a row on one line unless its latest turn did not complete.
+  - 08.31's **Sign in** under a signed-out answer shows when one of the answer's calls was refused for needing an
+    account, or when an onboarding answer an earlier version kept says `needsAccount`. The server sends an `anon` turn
+    no call that needs an account, and the backend's onboarding schema and prompt do not produce `needsAccount`, so the
+    button shows only on the simulator fixture.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
   - `ios/ios-redesign.md` §2 (the `gym/alarm-fill` row, the brick line under the table, white on
@@ -433,11 +433,10 @@ and Android disagree.
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
-    - 08.9, 08.25 and 08.26: *Changed a movement* and *Saved a note* stand alone on their cards, without the boards'
-      *Changed* block or note text. The answer's steps name only the tool (`tool`, `failed`), so the phone cannot tell
-      Coach's write from the lifter's later edit. Owner ruling (2026-10-22): the cards gain their content with the
-      local Coach, whose abilities run on the phone's replica ([gym_coach.md](../foundation/mobile/gym_coach.md)),
-      not before.
+    - 08.9, 08.25 and 08.26: the *Saved a note* card carries the note's title and body, read from the record the
+      call created. No movement card is drawn: Coach is not offered `update_exercise` (withheld,
+      [gym_coach.md](../foundation/mobile/gym_coach.md) B-1), so 08.9 and 08.26 are unreachable, and a
+      `create_exercise` call draws no card.
 - **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
   trailing swipe slides the row and reveals a round red trash circle with no text label, drawn with
   the local component `_Gym / Swipe actions` (`1190:172`). iOS draws it with one shared modifier,
@@ -908,12 +907,12 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 
 ### Coach on the client
 
-Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md). It and the product differ in
-these places.
+Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md), implemented on the backend and
+iOS. It and the product differ in these places.
 
 - **6p · Android signed-out Coach.** Android's Coach is account-only (*Coach reads your log, so it
-  needs you signed in.*, `coach/AskScreen.kt:268-278`); it calls neither `/v1/gym/coach/onboarding`
-  nor `/v1/ai/installations`. The owner decided on 2026-09-26 that Android carries signed-out Coach;
+  needs you signed in.*, `coach/AskScreen.kt` `AskSignedOutStance`); it calls neither
+  `/v1/gym/coach/onboarding`, the turn routes nor `/v1/ai/installations`. The owner decided on 2026-09-26 that Android carries signed-out Coach;
   Android journey 01 draws it (11h), with no allowance indicator (owner ruling 2026-10-22). The
   approved launch identity is a server-issued installation credential with IP and global budgets;
   the identity does not guarantee protection against installation resets.

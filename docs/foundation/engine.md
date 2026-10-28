@@ -42,7 +42,7 @@ echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minim
 **Outside the engine** (none of these is a synced record):
 - Presence and remote cursors, carried as ephemeral live-socket messages (§9.5).
 - The global gym exercise seed catalog.
-- Gym's Coach conversations, until the phone Coach binds them (A.2).
+- The server Coach's legacy gym conversations (`gym_ask_*`, A.2).
 - Gym session shares and log shares; the roadmap share page, images and gallery; the roadmap
   home-list done/total read.
 - Journal echoes, spans, nudges, voice and curation.

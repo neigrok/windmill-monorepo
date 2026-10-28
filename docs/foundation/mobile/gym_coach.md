@@ -6,11 +6,13 @@ code can cite them.
 
 ## §0 Status and scope
 
-**Status:** Specified; not yet implemented. The running Coach is described in
-[gym-coach-contract.md](../../gym-coach-contract.md): the server reads and writes the log itself.
-Anonymous iOS onboarding is a narrower flow: one installation-authenticated request produces a
-bounded routine document for atomic local import. It does not implement the phone tool-host
-protocol specified here. Its installation identity follows §8.
+**Status:** Implemented on the backend and iOS. The backend serves the turn routes (§6.1), and
+iOS runs every Coach turn, signed out and signed in, as the tool host over its replica. Android and
+the web keep the server Coach of [gym-coach-contract.md](../../gym-coach-contract.md): the server
+reads and writes the log itself. Anonymous onboarding (`POST /v1/gym/coach/onboarding`) is a
+separate, narrower route: one installation-authenticated request produces a bounded routine
+document for atomic local import. No client sends it new requests; iOS draws the onboarding answers
+earlier versions kept and imports the routines they drafted. Its installation identity follows §8.
 
 **Adoption:**
 
@@ -47,8 +49,12 @@ read last time. An ability has a name, an input schema, a result schema, a rule,
 agent rule.
 
 **D-2 Catalog.** The set of abilities, declared once in `packages/api-contract/gym/catalog.json`.
-It is code-generated into every executor, the server's model tool list, the MCP tool list and every
-client's step-line phrases. Appendix C lists its abilities.
+The server's tool declarations (`gymToolCatalog()`), which give the model tool list and the MCP tool
+list, are written in C++ and pinned to it by test: each tool's name, description and input schema
+byte-equal as JCS, and its class and agent rule against the tool's access level
+(`CatalogContractTest.cpp`). An ability the server declares no tool for is marked
+`"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)
+and pinned to the checked-in file by test (`GymCatalogGenTests`). Appendix C lists its abilities.
 
 **D-3 Catalog version.** `catalog/N`. It increments when an ability's name, input, result, class,
 agent rule or rule changes. Model-facing descriptions and phrases change without an increment.
@@ -96,9 +102,9 @@ nothing anonymously.
    a phone, Coach on the web, or the lifter's own model over MCP.
 2. **Signed out is the phones.** Web and MCP require an account. Signed out, every ability is
    reachable through the phone UI and the phone Coach, against the `anon` replica.
-3. **Abilities run where the data is.** A phone turn runs every ability on the phone's replica. The
-   server never reads or writes a phone's log for a phone turn; it sees only the results the phone
-   returns.
+3. **Abilities run where the data is.** A phone turn runs every ability on the phone's replica but
+   the shares, which are server records (§4.3). The server never reads or writes a phone's log for
+   a phone turn; it sees only the results the phone returns.
 4. **The server runs the loop and keeps the words.** The server owns the system prompt, the tool
    list, the model id, the limits and the model's side of the conversation. A client sends a
    question, pictures, earlier conversation text, context reads and ability results. It never
@@ -179,6 +185,15 @@ executor, and the Kotlin and Swift replica executors. CI compares the SHA-256 of
 The corpus MUST include ties, empty pages, a 10,000-set history, fractional loads, and text with
 emoji and combining marks.
 
+The corpora hold `abilities/` (17 files), `rules/bodyweight.json` and `turns/`; no case holds a
+10,000-set history yet. The server executor writes the `abilities/` expectations and claims every
+case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
+`domain/training-reads.json`, apart from the cases its test lists as other rules. The Swift replica
+executor claims every `abilities/` case; the share cases, which run on the server executor (§4.3),
+it checks as refused on the phone. The Swift, Kotlin and web domain suites claim
+`rules/bodyweight.json`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
+Android runs no replica executor. The server loop and the iOS turn driver replay `turns/`.
+
 ---
 
 ## §4 The turn
@@ -235,6 +250,9 @@ The model's reasoning and every assistant content block stay on the server.
    the call on the Coach message: name, minted ids and outcome.
 3. The phone posts the batch's results in one request (§6.4).
 4. A batch unanswered for `CALL_RESULT_TIMEOUT` ends the turn `interrupted`.
+5. The shares (`share_session`, `share_log`, `revoke_share`) are server records. In a `bound` turn
+   the server runs them on the server executor and never sends them in a batch; an `anon` turn is
+   offered none.
 
 ### §4.4 End
 
@@ -300,7 +318,9 @@ and the model continues.
   replays its create.
 - **G-8 Stop.** After Stop, every remaining call is refused.
 
-The executor refuses whatever its rule refuses (INV-1). The replica executor re-checks G-3.
+The gate sends an admitted share (§4.3 step 5) to the server executor and every other admitted call
+to the turn's tool host. The executor refuses whatever its rule refuses (INV-1). The replica executor
+re-checks G-3.
 
 The system prompt treats pictures, pasted text and ability results as data, never as instructions.
 Notes are directive ([brand foundations](../../design/brand-foundations.md), Gym).
@@ -497,8 +517,8 @@ content. These operational alerts are not customer upgrade messages.
 It never logs a question, answer, picture, history, context or ability result. Anonymous onboarding
 persists an input digest and a validated routine result for request recovery, without the input
 text or image. Its result expires after seven days; a compact replay tombstone prevents redispatch.
-The phone keeps its conversation and photos locally. The broader turn protocol's conversation
-records described in §9.1 remain specified work.
+Conversations are gym records (§9.1); the server holds a `bound` seat's as it holds the rest of
+the account's gym records. Pictures stay on the phone (§9.3).
 Error records carry the code, sizes, `turnId` and model call number only. `ANON_RETENTION_DAYS` applies to expendable operational records. The lifetime allowance and
 permanent binding must survive record cleanup and account erasure without allowing a fresh grant.
 
@@ -510,7 +530,8 @@ permanent binding must survive record cleanup and account erasure without allowi
 
 1. `POST /v1/ai/installations` issues a 256-bit opaque credential and its lifetime USD allowance.
 2. The client stores the credential securely and sends it in `X-Windmill-Installation` for
-   installation reads and anonymous onboarding. The server stores only a digest of the token.
+   installation reads, anonymous onboarding and `anon` turns. The server stores only a digest of
+   the token.
 3. `GET /v1/ai/installations/current` reads binding and allowance without issuing a replacement.
 4. After verified sign-in, `POST /v1/ai/installations/bind` carries both the account credential and
    installation credential. Binding attributes usage independently of Add/Discard content choices.
@@ -592,15 +613,13 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
 - The phone stores the original, within `PICTURE_BYTES` and `PICTURE_EDGE`.
 - The **model copy** is a JPEG with a long edge of at most `MODEL_PICTURE_EDGE` and at most
   `MODEL_PICTURE_BYTES`, made once and stored beside the original.
-- **Signed out**, a picture leaves the phone only as the model copy inside an open request. Its
+- On every seat, a picture leaves the phone only as the model copy inside an open request. Its
   `pictures` entry is `localOnly: true`, and a later sign-in does not upload it. Another device
   draws it as a picture held on the phone that sent it.
-- **Signed in**, the original is also uploaded to the account's private picture store, and the
-  message references it.
-- A `pictures` entry is `{id, mediaType, localOnly?}`. Its `id` names the picture in the store, or
-  on the phone that sent it when `localOnly`.
+- A `pictures` entry is `{id, mediaType, localOnly?}`. Its `id` names the picture on the phone that
+  sent it, in that phone's `picture:<id>` device row.
 - Copy about a sent picture says that a copy goes to the model vendor to read for the answer, that
-  Windmill stores none when signed out, and the vendor's retention as verified at release.
+  Windmill stores none, and the vendor's retention as verified at release.
 
 ---
 
@@ -616,8 +635,11 @@ the server Coach's legacy conversations stay in the gym backend's Coach tables a
 
 ### §10.2 Telemetry
 
-A phone sends one `coach_turn` event per turn: state, model calls, ability calls by name, refusals
-by code, duration and bytes. It never carries text, pictures or results.
+A phone sends one `coach_turn` event per turn that opened: state, seat, the code a failed turn
+ended on, ability calls and refusals as counts, answer bytes and duration; and one `coach_ability`
+event per ability call it ran: the catalog name and the outcome (`ok` or the refusal code). Neither
+carries text, pictures, results or ids. iOS sends both
+([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)); Android sends neither.
 
 ---
 
@@ -700,6 +722,8 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 
 ## Appendix C: The catalog
 
+`save_note` is `bound`: signed out, Notes is a sign-in door on the phone (ledger 7g).
+
 | Ability | Class | Agent | Seats | UI |
 |---|---|---|---|---|
 | `list_routines` | read | runs | any | Routines |
@@ -716,7 +740,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `get_preferences` | read | runs | any | Settings |
 | `create_routine` | add | runs | any | routine editor |
 | `create_exercise` | add | runs | any | movement editor |
-| `save_note` | add | runs | any | Notes, new note |
+| `save_note` | add | runs | bound | Notes, new note |
 | `share_session` | add | runs | bound | Share |
 | `share_log` | add | runs | bound | Share log |
 | `propose_routine_change` | change | proposes | any | routine editor |
@@ -730,7 +754,7 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `finish_session` | change | withheld (B-1) | any | Finish |
 | `fix_set` | change | withheld (B-1) | any | set editor |
 | `correct_session` | change | withheld (B-1) | any | workout correction |
-| `rename_exercise` | change | withheld (B-1) | any | movement editor |
+| `update_exercise` | change | withheld (B-1) | any | movement editor |
 | `edit_note` | change | withheld (B-1) | any | Notes |
 | `reorder_notes` | change | withheld (B-1) | any | Notes |
 | `set_preferences` | change | withheld (B-1) | any | Settings |
