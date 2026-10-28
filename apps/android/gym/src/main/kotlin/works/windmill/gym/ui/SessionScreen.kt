@@ -100,6 +100,7 @@ object Performed {
         val movement: String,
         val against: Against,
         val rows: List<Row>,
+        val equipment: String? = null,
     )
 
     fun movements(
@@ -113,12 +114,14 @@ object Performed {
 
         return order.map { exerciseId ->
             val mine = performed.filter { it.exerciseId == exerciseId }
-            val against = planned(plan, exerciseId, catalog.find { it.id == exerciseId })
+            val exercise = catalog.find { it.id == exerciseId }
+            val against = planned(plan, exerciseId, exercise)
             val opening = mine.firstOrNull()?.id
             Movement(
                 id = exerciseId,
                 movement = Readout.movement(exerciseId, catalog),
                 against = against,
+                equipment = exercise?.equipment,
                 rows = mine.mapIndexed { index, set ->
                     val slot = index
                     Row(
@@ -264,10 +267,10 @@ fun SessionScreen(
             contentPadding = PaddingValues(
                 start = GymLayout.gutter,
                 end = GymLayout.gutter,
-                top = GymLayout.contentTop,
+                top = 4.dp,
                 bottom = GymLayout.scrollTail,
             ),
-            verticalArrangement = Arrangement.spacedBy(GymLayout.cardGap),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             item("head") { SessionHead(standing) }
             val held = movements
@@ -294,40 +297,18 @@ fun SessionScreen(
                     )
                 }
             }
-            if (read) {
-                item("review") {
-                    Column(Modifier.padding(top = WindmillSpace.x2)) {
-                        ReviewRemarks(review, store.catalog)
-                    }
-                }
+            if (read && (review == null || Finish.recordSentence(review?.record, store.catalog) != null ||
+                    Finish.comparison(review?.against, store.catalog) != null)) {
+                item("review") { ReviewRemarks(review, store.catalog) }
             }
-            item("share") {
-                Column(Modifier.padding(top = WindmillSpace.x2)) {
+            item("actions") {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(skin.raised, RoundedCornerShape(16.dp))
                         .clickable(role = Role.Button) { shareOpen = true }, contentAlignment = Alignment.Center) {
                         Text("Share this workout", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                     }
-                }
-            }
-            // The drawn door into the act the log row's long press also reaches: a gesture may
-            // replace a control and may never be the only way to an action (gesture law 1, `docs/design/guidelines/system-architecture.md` §3). It
-            // asks nothing first — the window and its transient ARE the way back, and a confirmation
-            // over an act that has an undo is a tap that buys nothing (Law 2). Same words, same
-            // window, same undo as every other door into it.
-            item("discard") {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = WindmillSpace.x2)
-                        .heightIn(min = GymTap.row)
-                        .clickable(role = Role.Button, onClick = { onDiscard(readId) }),
-                ) {
-                    Text(
-                        Finish.discard,
-                        style = WindmillFont.body(16, FontWeight.SemiBold),
-                        color = skin.alarmInk,
-                    )
+                    GymErrorTextButton("Discard workout", onClick = { onDiscard(readId) },
+                        modifier = Modifier.fillMaxWidth())
                 }
             }
         }
@@ -398,13 +379,14 @@ fun SessionScreen(
 @Composable
 private fun SessionHead(summary: SessionSummary) {
     val skin = LocalGymColors.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(headLine(summary), style = WindmillFont.body(14), color = skin.inkDim)
-        Text("Volume", style = WindmillFont.body(12), color = skin.inkDim)
-        Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—", style = WindmillFont.display(32, FontWeight.ExtraBold), color = skin.ink)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(headLine(summary), style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+        Text("Volume", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+        Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—",
+            style = WindmillFont.display(34, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = skin.ink)
         val count = summary.workingSetCount?.let { "$it working ${if (it == 1) "set" else "sets"}" } ?: Readout.setCount(summary.setCount)
-        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(14), color = skin.inkDim)
-        if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12), color = skin.inkDim)
+        Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+        if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkFaint)
         if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillFont.body(13), color = skin.inkDim)
     }
 }
@@ -418,20 +400,22 @@ private fun MovementCard(
 ) {
     val skin = LocalGymColors.current
     Column(
-        verticalArrangement = Arrangement.spacedBy(WindmillSpace.x2),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = GymTap.minimum)
                 .clickable(role = Role.Button, onClickLabel = "open this movement") { onOpenMovement(movement.id) },
         ) {
-            Text(movement.movement, style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                movement.equipment?.let { EquipmentIcon(it, Modifier.size(20.dp), tint = skin.inkDim) }
+                Text(movement.movement, style = WindmillFont.body(18, FontWeight.Bold).copy(lineHeight = 24.sp),
+                    color = skin.ink, modifier = Modifier.weight(1f))
+            }
             when (val against = movement.against) {
-                is Performed.Against.Plan -> Text(against.line, style = WindmillFont.body(13), color = skin.inkDim)
-                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillFont.body(13), color = skin.inkDim)
+                is Performed.Against.Plan -> Text(against.line, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
+                Performed.Against.Unplanned -> Text("not in the plan", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
                 Performed.Against.Silent -> Unit
             }
         }
@@ -466,25 +450,25 @@ private fun SetRow(set: Performed.Row, onFix: (String) -> Unit) {
     val pressing = remember { MutableInteractionSource() }
     val pressed by pressing.collectIsPressedAsState()
     val largeText = LocalDensity.current.fontScale > 1.3f
-    Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
         .background(if (pressed) skin.raised else skin.surface)
         .clickable(interactionSource = pressing, indication = null, role = Role.Button,
             onClickLabel = "fix this set") { onFix(set.id) }
-        .padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+        .padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Text(set.number.toString(), style = GymType.numeral(14), color = skin.inkDim,
-                modifier = Modifier.widthIn(min = 24.dp))
+            Text(set.number.toString(), style = GymType.numeral(12).copy(lineHeight = 16.sp), color = skin.inkFaint,
+                modifier = Modifier.widthIn(min = 8.dp))
             BasicText(set.effort, maxLines = 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
-                style = GymType.numeral(18).copy(color = skin.ink), modifier = Modifier.weight(1f))
-            if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(13), color = skin.inkDim) }
+                style = GymType.numeral(18).copy(color = skin.ink, lineHeight = 24.sp), modifier = Modifier.weight(1f))
+            if (!largeText) set.note?.let { Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim) }
         }
         if (largeText) set.note?.let {
-            Text(it.text, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 36.dp))
+            Text(it.text, style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim, modifier = Modifier.padding(start = 24.dp))
         }
         SetEffort.line(set.set.rpe, set.set.note)?.let {
-            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 36.dp))
+            Text(it, style = WindmillFont.body(13), color = skin.inkDim, modifier = Modifier.padding(start = 24.dp))
         }
     }
 }

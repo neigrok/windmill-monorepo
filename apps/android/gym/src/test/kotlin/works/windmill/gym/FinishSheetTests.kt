@@ -673,7 +673,7 @@ class FinishSheetTests {
             }
             compose.onNodeWithText("Discard this workout?").assertDoesNotExist()
             compose.onNodeWithText("This workout couldn’t be deleted on this phone. It is still saved.").assertIsDisplayed()
-            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard workout").performScrollTo().performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { outcomes.size == 2 } }
             compose.runOnIdle {
@@ -765,7 +765,7 @@ class FinishSheetTests {
             }
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithText("The account changed. Open this again.").assertIsDisplayed()
-            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard workout").performScrollTo().performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { events.size == 2 } }
             compose.runOnIdle {

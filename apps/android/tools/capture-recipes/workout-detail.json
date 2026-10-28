@@ -1,0 +1,187 @@
+[
+  {
+    "board": "05.3",
+    "name": "workout-detail",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Reps, reps"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "6"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Load, kg total"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "80"
+      },
+      {
+        "key": "KEYCODE_ENTER"
+      },
+      {
+        "tap": "Reps, reps"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "8"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Load, kg total"
+      },
+      {
+        "key": "KEYCODE_MOVE_END"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "key": "KEYCODE_DEL"
+      },
+      {
+        "text": "47.5"
+      },
+      {
+        "keyboard": "hide"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Overhead Press"
+      },
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Well done."
+      },
+      {
+        "tap": "Done"
+      },
+      {
+        "wait": "2455 kg"
+      }
+    ]
+  },
+  {
+    "board": "05.3",
+    "name": "workout-detail-bottom",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "swipe": [
+          400,
+          1500,
+          400,
+          450,
+          300
+        ]
+      },
+      {
+        "wait": "Discard workout"
+      }
+    ]
+  },
+  {
+    "board": "05.14",
+    "name": "detail-discard-dialog",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Discard workout"
+      },
+      {
+        "wait": "Discard this workout?"
+      },
+      {
+        "wait": "This deletes the workout and its 5 sets. You can\u2019t undo this."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "wait": "Discard workout"
+      },
+      {
+        "tap": "Discard workout"
+      },
+      {
+        "tap": "Discard"
+      },
+      {
+        "wait": "The log"
+      },
+      {
+        "tap": "Routines"
+      }
+    ]
+  }
+]

@@ -949,3 +949,34 @@ The simplification pass keeps decimal normalization, exact estimate ordering, ch
 and sender readiness at their shared boundaries. Native receipt integration uses existing text
 wrapping and unavailable slots. Fault evidence is named by the boundary actually exercised; no
 production injection hook or extra telemetry framework is introduced for acceptance.
+
+## Task 23 · Workout detail and complete comparison efforts
+
+The detail body uses the approved compact head, equipment glyphs, movement spacing and grouped
+Share/Discard actions. Discard uses the native error-text button and the room's single confirmation;
+the existing application-owned deletion, retained-detail failure and immediate local acceptance
+remain its boundary. Set swipe behavior and ground remain shared with task 05. Empty review output
+adds no blank list item before the actions; a missing review still shows its existing failure line.
+
+The actual Android read path is `EngineTraining.review` → app-local `Review.of(detail, history)`.
+Its grouped effort counts every set and carries minimum/maximum reps plus minimum load; the existing
+top load and its reps remain the comparison predicate. The formatter draws both endpoints directly,
+including negative assistance and mixed zero/load ranges, without subtracting extreme signed loads.
+Only an all-zero effort omits its load. Bounds serialize with the existing review/receipt state;
+legacy scalar JSON defaults to its single rep/load values. No shared wire or sync field changes.
+
+The affected source gate passes 87 gym cases with zero failures, errors or skips and app Debug
+compilation. Table-driven vectors cover mixed loads/reps, zero and assistance, previous work and
+saved review/receipt round trips. Stored Cable/Kettlebell and Other equipment retain their load
+semantics. Existing glyph assets are reused at the approved 20 dp header slot; both source PNGs
+are nonempty 96 × 96 assets. The capture recipe targets the approved five-set, 2,455 kg example.
+Native appearance, event delivery and runtime acceptance remain pending.
+
+The shared read still has a separate top-set representation: Kotlin
+`gym/domain/…/sync/TrainingHistory.kt`'s local `best`, Swift
+`apps/ios/Domain/Sources/GymDomain/TrainingHistory.swift`'s `best`, and backend
+`backend/products/gym/domain/Review.cpp`'s `topSetOf` count sets at the top load.
+`apps/ios/App/Sources/Gym/Workout/WorkoutReceipt.swift`'s `Effort.reading` renders the scalar tuple.
+The shared `packages/api-contract/gym/domain/training-reads.json` corpus preserves that shape.
+Those verified paths require a separately coordinated all-set/range contract update; this Android
+detail change does not claim to correct them.

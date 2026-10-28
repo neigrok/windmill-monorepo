@@ -131,11 +131,7 @@ object Finish {
         )
     }
 
-    // The plan reads in the readout formula and the effort — the top set and how many of them — in the
-    // same shape. The top set stands against the plan's own top set, and `now.sets` counts only the
-    // sets at the TOP LOAD, so short is read on reps alone, at a load that did not go up. An open line
-    // is nothing to measure against, so the row falls through to last time. review.js `detailOf`'s
-    // rule.
+    // The top set determines the comparison; the performed summary includes every set.
     private fun detail(movement: AgainstMovement): String {
         val planned = movement.planned
         val top = planned?.top
@@ -151,9 +147,12 @@ object Finish {
 
     // `{sets} × {reps} · {load}`: zero added load reads as bodyweight; a band-assisted −20 keeps its load.
     private fun effort(effort: Effort): String {
-        val count = "${effort.sets} × ${effort.reps}"
-        if (effort.weightKg == 0.0) return count
-        return "$count · ${Readout.weight(effort.weightKg)}"
+        val reps = if (effort.minReps == effort.maxReps) "${effort.minReps}" else "${effort.minReps}–${effort.maxReps}"
+        val count = "${effort.sets} × $reps"
+        if (effort.minWeightKg == 0.0 && effort.weightKg == 0.0) return count
+        val load = if (effort.minWeightKg == effort.weightKg) Readout.weight(effort.weightKg)
+            else "${Readout.weight(effort.minWeightKg)}–${Readout.weight(effort.weightKg)}"
+        return "$count · $load"
     }
 }
 

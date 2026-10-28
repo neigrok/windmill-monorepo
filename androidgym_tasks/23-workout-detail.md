@@ -10,15 +10,11 @@
   - `Android / Equipment icon` `337:2025`
   - `Android / Button` `210:181` (Text · Tone=Error)
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `SessionScreen` (`ui/SessionScreen.kt`):
-  - Title: the routine, or *Free session* (:258, `Readout.noRoutine`).
-  - Head: date and duration, *Volume*, the total, sets and movements, *Plan saved at start* (`SessionHead`, :395-406).
-  - Movement card (`MovementCard`, :409): the name with no equipment icon (:427), then *Plan {target}* from `Readout.targetWithUnit`, which prints *3 × 8 · 75kg* (:167; `domain/Readout.kt:51-52`).
-  - A non-working set's note is the raw kind wire, *warmup* / *drop* / *failure* (:128).
-  - The comparison block (`ReviewRemarks`, :296).
-  - *Share this workout* (:304) and *Discard session* in alarm ink with no confirmation (:313-328). Discard is held nine seconds behind *Undo* (`GymRoom.kt:643-647`).
-- Defect: the comparison undercounts. Bench at 75 × 8, 75 × 6, 80 × 8 reads *3 × 8 · 75 → 1 × 8 · 80*: the effort counts only sets at the top load (`effort`, `domain/Training.kt:449-452`), so it reads as if one set was done.
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/SessionScreen.kt` keeps the routine title, saved plan, detail-set fixes and swipe deletion. Movement headers use the existing equipment glyph and the stored load basis. The shared native error-text button opens the room-owned single confirmation with **Discard workout**.
+- `domain/Training.kt` derives each Android-local comparison effort from every performed set. It retains the scalar top set for comparison predicates and legacy decode, plus serialized rep/load bounds for the displayed range and recreation.
+- `ui/FinishScreen.kt` formats the full effort range for `ReviewRemarks`, whose reader is workout detail. The Finish receipt retains its own approved fact/action presentation.
+- The affected source gate passes 87 gym checks with no failures, errors or skips; app Debug compilation passes. `tools/capture-recipes/workout-detail.json` and `workout-detail-fixture.json` cover the five-set example and paired top/bottom/dialog frames. Native execution and appearance review are pending.
 
 **Change**
 - The title is the routine; a workout with no routine reads `Readout.noRoutine` (13).

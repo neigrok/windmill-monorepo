@@ -306,7 +306,14 @@ data class PersonalRecord(
 )
 
 @Serializable
-data class Effort(val sets: Int, val reps: Int, val weightKg: Double)
+data class Effort(
+    val sets: Int,
+    val reps: Int,
+    val weightKg: Double,
+    val minReps: Int = reps,
+    val maxReps: Int = reps,
+    val minWeightKg: Double = weightKg,
+)
 
 // What the frozen plan asked of this movement: its scheme, or nothing. A line that decided at the
 // rack rides as `"planned": {}` — an open line, with no set to stand against.
@@ -417,7 +424,9 @@ private fun earned(detail: SessionDetail, history: List<SessionDetail>): Persona
 }
 private fun effort(sets: List<TrainingSet>): Effort? {
     val top = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps })) ?: return null
-    return Effort(sets.count { it.weightKg == top.weightKg }, top.reps, top.weightKg)
+    return Effort(sets.size, top.reps, top.weightKg,
+        minReps = sets.minOf { it.reps }, maxReps = sets.maxOf { it.reps },
+        minWeightKg = sets.minOf { it.weightKg })
 }
 
 // One closed session's sets of a movement.

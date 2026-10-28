@@ -298,6 +298,8 @@ class TrainingWireTests {
     }
 }
 
+
+
 class ReviewEstimateTests {
     private fun detail(id: String, at: Long, weight: Double, reps: Int) = SessionDetail(
         Session(id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
@@ -362,6 +364,35 @@ class ReviewEstimateTests {
             93.33333333333333, before.sets.first().completedAtMs), record)
         val excluded = improved.copy(sets = improved.sets.map { it.copy(rpe = 6.5) })
         assertNull(Review.of(excluded, listOf(before, excluded)).stats.topE1rm)
+    }
+}
+
+class ReviewEffortTests {
+    @Test
+    fun everyPerformedSetContributesToTheComparisonCountAndBounds() {
+        val vectors = listOf(
+            listOf(75.0 to 8, 75.0 to 6, 80.0 to 8) to Effort(3, 8, 80.0, minReps = 6, maxReps = 8, minWeightKg = 75.0),
+            listOf(60.0 to 12, 80.0 to 5, 100.0 to 1) to Effort(3, 1, 100.0, minReps = 1, maxReps = 12, minWeightKg = 60.0),
+            listOf(0.0 to 8, 0.0 to 6, 0.0 to 8) to Effort(3, 8, 0.0, minReps = 6, maxReps = 8),
+            listOf(-20.0 to 8, -10.0 to 6, 0.0 to 8) to Effort(3, 8, 0.0, minReps = 6, maxReps = 8, minWeightKg = -20.0),
+        )
+        for ((performed, expected) in vectors) {
+            fun detail(id: String, at: Long, facts: List<Pair<Double, Int>>) = SessionDetail(
+                Session(id = id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
+                facts.mapIndexed { index, (weight, reps) ->
+                    TrainingSet(id = "$id$index", exerciseId = "bench-press", weightKg = weight, reps = reps, completedAtMs = at + index + 1)
+                } + TrainingSet(id = "$id-other", exerciseId = "row", weightKg = 0.0, reps = 1, completedAtMs = at + 10),
+            )
+            val before = detail("before", 1_000, listOf(50.0 to 5, 55.0 to 6, 60.0 to 4))
+            val current = detail("now", 100_000, performed)
+            val review = Review.of(current, listOf(before, current))
+            assertEquals(performed.toString(), listOf(
+                AgainstMovement("bench-press", expected, Effort(3, 4, 60.0, minReps = 4, maxReps = 6, minWeightKg = 50.0)),
+                AgainstMovement("row", Effort(1, 1, 0.0), Effort(1, 1, 0.0)),
+            ), review.against?.movements)
+            val saved = WindmillJson.encodeToString(Review.serializer(), review)
+            assertEquals(review, WindmillJson.decodeFromString(Review.serializer(), saved))
+        }
     }
 }
 

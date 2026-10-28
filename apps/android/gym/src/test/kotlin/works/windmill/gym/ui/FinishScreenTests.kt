@@ -46,6 +46,27 @@ private fun straight(sets: Int, reps: Int? = null, weightKg: Double? = null): Li
     List(sets) { SetTarget(reps, weightKg) }
 
 class FinishTests {
+    @Test
+    fun comparisonDrawsEverySetAndFiniteRangeWithoutSubtractingEndpoints() {
+        val vectors = listOf(
+            Effort(3, 8, 80.0, minReps = 6, maxReps = 8, minWeightKg = 75.0) to "3 × 6–8 · 75–80",
+            Effort(3, 1, 100.0, minReps = 1, maxReps = 12, minWeightKg = 60.0) to "3 × 1–12 · 60–100",
+            Effort(3, 8, 0.0, minReps = 6, maxReps = 8) to "3 × 6–8",
+            Effort(3, 8, 0.0, minReps = 6, maxReps = 8, minWeightKg = -20.0) to "3 × 6–8 · −20–0",
+            Effort(2, 8, Double.MAX_VALUE, minWeightKg = -Double.MAX_VALUE) to
+                "2 × 8 · ${Readout.weight(-Double.MAX_VALUE)}–${Readout.weight(Double.MAX_VALUE)}",
+        )
+        for ((effort, expected) in vectors) {
+            val review = Review(ReviewStats(60_000, effort.sets), against = Against("before", startedAtMs = 1,
+                movements = listOf(AgainstMovement("back-squat", effort))))
+            val ended = FinishedSession(Session("now", startedAtMs = 2, finishedAtMs = 3), sets = emptyList(), review = review)
+            val saved = works.windmill.platform.net.WindmillJson.encodeToString(FinishedSession.serializer(), ended)
+            val restored = works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved)
+            assertEquals(ended, restored)
+            assertEquals(listOf(expected), Finish.comparison(restored.review?.against, catalog)?.rows?.map { it.detail })
+        }
+    }
+
     @Test fun volumeKeepsOrdinaryGroupingAndUsesCompleteFiniteScientificReadouts() {
         assertEquals(listOf("0", "2,505", "1,234.56", "—", "—"),
             listOf(0.0, 2505.0, 1234.56, null, Double.POSITIVE_INFINITY).map(Finish::volume))
@@ -251,6 +272,7 @@ class FinishTests {
         assertNull(Finish.comparison(null, catalog))
     }
 }
+
 
 class RecordEstimateFormattingTests {
     private fun workout(id: String, at: Long, load: Double, reps: Int) = works.windmill.gym.domain.SessionDetail(

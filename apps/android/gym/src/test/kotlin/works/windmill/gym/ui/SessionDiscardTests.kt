@@ -103,7 +103,7 @@ class SessionDiscardTests {
         try { store(scope).use { room ->
             screen(room)
 
-            compose.onNodeWithText(Finish.discard).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Discard workout").performScrollTo().assertIsDisplayed()
             compose.runOnIdle {
                 assertEquals("and this is NOT the slight session the finish screen draws it for",
                     Review.slightSets, room.store.recent.single().workingSetCount)
@@ -118,12 +118,12 @@ class SessionDiscardTests {
             val workout = room.store.recent.single()
             screen(room)
             val before = room.engine.snapshot()
-            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard workout").performScrollTo().performClick()
             compose.onNodeWithText("Discard this workout?").assertIsDisplayed()
             compose.onNodeWithText("This deletes the workout and its 4 sets. You can’t undo this.").assertIsDisplayed()
             compose.onNodeWithText("Cancel").performClick()
             compose.runOnIdle { assertEquals(before, room.engine.snapshot()) }
-            compose.onNodeWithText(Finish.discard).performScrollTo().performClick()
+            compose.onNodeWithText("Discard workout").performScrollTo().performClick()
             compose.onNodeWithText("Discard").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("Discard this workout?").fetchSemanticsNodes().isEmpty() }
             compose.runOnIdle {

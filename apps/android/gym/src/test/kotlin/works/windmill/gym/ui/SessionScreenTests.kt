@@ -31,6 +31,18 @@ class SessionScreenTests {
         (movement.against as? Performed.Against.Plan)?.line
 
     @Test
+    fun movementHeadersRetainStoredEquipmentAndItsLoadBasis() {
+        val choices = listOf("barbell", "dumbbell", "other", "cable", "kettlebell")
+        val catalogue = choices.map { Exercise(id = it, name = it, equipment = it) }
+        val movements = Performed.movements(choices.mapIndexed { index, equipment ->
+            set("set$index", equipment, -20.0, 8, index.toLong())
+        }, catalogue, plan(*choices.map { PlanEntry(exerciseId = it, sets = List(3) { SetTarget(8, -20.0) }) }.toTypedArray()))
+        assertEquals(choices, movements.map { it.equipment })
+        assertEquals(listOf("Plan 3 × 8 · −20 kg total", "Plan 3 × 8 · −20 kg each", "Plan 3 × 8 · −20 kg",
+            "Plan 3 × 8 · −20 kg", "Plan 3 × 8 · −20 kg"), movements.map(::line))
+    }
+
+    @Test
     fun setsAreGroupedByMovementInTheOrderTheyWereFirstTouched() {
         val movements = Performed.movements(listOf(
             set("s4", "row", 60.0, 10, at = 4_000),
