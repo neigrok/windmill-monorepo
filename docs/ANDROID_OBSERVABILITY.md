@@ -72,6 +72,27 @@ fails. It produces no repeated `gym.refreshWorkout` or misattributed `sync_push`
 window includes one `hello/unreachable` metric of unproven cause, without an Issue; later readback
 and the independent recovered edit succeed. Local receipt does not establish vendor delivery.
 
+## Finish and workout discard
+
+Finish emits `gym_action` with `screen=finish`, `action=done|keep` and `outcome=ok`.
+The shared workout confirmation emits `action=discard`, `state=shown` on opening and
+`outcome=cancelled` on Cancel or dismissal. A confirmed application-owned store job emits one
+`outcome=ok|refused|failed` with `screen=finish|session|log`, including when its presenting UI leaves.
+A pre-acceptance failure preserves the workout. `ok` means the local deletion was accepted; a later
+projection failure reports `gym.discard` without changing that accepted result. Expected refusals
+create no Issue. There is no workout hold or Undo at these room doors; weight recovery is separate.
+
+The first anonymous receipt marker reports unexpected phone storage failure at `gym.finishReceipt`.
+Keep starts ordinary sign-in and queues no question. Share retains one local request identity through
+its matching owner-bound sign-in result and account-data decision; cancellation or replacement
+retires that intent. The final account and store seat must match the result before admission. The saved attempt also owns
+its exit phase and local chat identity. Replaying that state reopens the same chat without another
+fresh-entry or History event; a recorded request is not submitted again. Its admitted question retains
+`gym_ask_started`, `gym_ask_outcome` and the `gym.ask` boundary. Restored receipts reconcile against
+the current local replica through `gym.loadLog`; unread absence is expected and creates no Issue.
+Sign-in results contain at most one active attempt and one consumable result. No local user ID, attempt, request,
+workout or chat identifier, question, routine name, amount or failure sentence enters telemetry.
+
 ## Coach archive and navigation
 
 Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
@@ -343,6 +364,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
+| Finish actions | `gym_action` | screen: `finish`; action: `done`, `keep`; outcome: `ok` |
+| Workout discard | `gym_action` | screen: `finish`, `session`, `log`; action: `discard`; state: `shown`, or outcome: `ok`, `cancelled`, `refused`, `failed` |
 | Workout navigation | `gym_action` | screen: `workout`; action: `movement_switch`, `open_workout`; outcome: `ok` |
 | Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |
 | Quick Settings tile | `gym_action` | screen: `tile`; action: `routines`, `open`; outcome: `ok`, `failed` |

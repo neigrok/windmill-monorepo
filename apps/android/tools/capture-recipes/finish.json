@@ -1,0 +1,247 @@
+[
+  {
+    "board": "03.15",
+    "name": "first-workout-signed-out",
+    "account": "empty",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "New routine"
+      },
+      {
+        "tap": "Routine name"
+      },
+      {
+        "text": "Push A"
+      },
+      {
+        "tap": "Add movement"
+      },
+      {
+        "tap": "Search movements"
+      },
+      {
+        "text": "Bench"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Save"
+      },
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Only on this phone \u00b7 Keep it"
+      },
+      {
+        "wait": "Done"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Done"
+      },
+      {
+        "tap": "Back to Routines"
+      }
+    ]
+  },
+  {
+    "board": "Z1",
+    "name": "zero-set-finish",
+    "account": "empty",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "No sets logged"
+      },
+      {
+        "wait": "This workout has ended."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Done"
+      },
+      {
+        "wait": "Routines"
+      }
+    ]
+  },
+  {
+    "board": "03.7",
+    "name": "finish-receipt",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Bench Press"
+      },
+      {
+        "tap": "Incline Dumbbell Press"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Well done."
+      },
+      {
+        "wait": "Done"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Done"
+      },
+      {
+        "tap": "Back to Routines"
+      }
+    ]
+  },
+  {
+    "board": "03.8",
+    "name": "ended-early",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "Push A"
+      },
+      {
+        "tap": "Start workout"
+      },
+      {
+        "wait": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Log set"
+      },
+      {
+        "tap": "Finish"
+      },
+      {
+        "wait": "Ended early."
+      },
+      {
+        "wait": "Done"
+      }
+    ]
+  },
+  {
+    "board": "03.8",
+    "name": "ended-early-large",
+    "account": "fixture",
+    "workout_clock": true,
+    "viewport": {
+      "width": 640,
+      "height": 1280,
+      "density": 320,
+      "fontScale": 2
+    },
+    "steps": [
+      {
+        "wait": "Ended early."
+      },
+      {
+        "wait": "Done"
+      }
+    ]
+  },
+  {
+    "board": "03.14",
+    "name": "discard-dialog",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {
+        "tap": "More"
+      },
+      {
+        "tap": "Discard"
+      },
+      {
+        "wait": "Discard this workout?"
+      },
+      {
+        "wait": "This deletes the workout and its 2 sets. You can\u2019t undo this."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "tap": "Done"
+      },
+      {
+        "tap": "Back to Routines"
+      }
+    ]
+  }
+]

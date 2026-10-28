@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import works.windmill.platform.you.YouDestination
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.serialization.Serializable
 import works.windmill.platform.telemetry.Telemetry
@@ -36,7 +37,51 @@ data class User(val id: String, val email: String, val name: String = "")
 
 // The shell's account sheet, opened on its overview or straight on sign-in, and the rows the room
 // in front adds under You.
-class ShellActions(val openYou: () -> Unit, val openSignIn: () -> Unit = openYou) {
+data class SignInResult(val id: String, val userId: String?) {
+    val completed: Boolean get() = userId != null
+}
+
+class SignInAttempts(active: String? = null, result: SignInResult? = null) {
+    var active by mutableStateOf(active)
+        private set
+    var result by mutableStateOf(result)
+        private set
+
+    fun begin(id: String) {
+        active = id
+        result = null
+    }
+
+    fun complete(userId: String) {
+        val id = active ?: return
+        result = SignInResult(id, userId)
+        active = null
+    }
+
+    fun cancel() {
+        val id = active ?: result?.id
+        result = id?.let { SignInResult(it, null) }
+        active = null
+    }
+
+    fun consume(id: String) {
+        if (result?.id == id) result = null
+    }
+
+    companion object {
+        val Saver = listSaver<SignInAttempts, String>(
+            save = { listOf(it.active.orEmpty(), it.result?.id.orEmpty(), it.result?.userId.orEmpty()) },
+            restore = { SignInAttempts(it[0].ifEmpty { null }, it[1].takeIf(String::isNotEmpty)?.let { id -> SignInResult(id, it[2].ifEmpty { null }) }) },
+        )
+    }
+}
+
+class ShellActions(
+    val openYou: () -> Unit,
+    val openSignIn: () -> Unit = openYou,
+    val openSignInForResult: (String) -> Unit = { openSignIn() },
+    val signInAttempts: SignInAttempts = SignInAttempts(),
+) {
     var destinations: List<YouDestination> by mutableStateOf(emptyList())
         private set
 

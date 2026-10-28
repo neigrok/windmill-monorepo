@@ -81,6 +81,11 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.coach.Threads
 import works.windmill.gym.coach.AskOutcome
 import works.windmill.gym.store.Deletion
+import works.windmill.gym.store.Seat
+import works.windmill.gym.store.FinishReceipts
+import works.windmill.gym.ui.WorkoutDiscardDialog
+import works.windmill.gym.ui.WorkoutDiscardPrompt
+import works.windmill.gym.store.WriteFailure
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
@@ -97,6 +102,7 @@ import works.windmill.gym.ui.FinishScreen
 import works.windmill.gym.ui.FinishedSession
 import works.windmill.gym.ui.GymMaterial
 import works.windmill.gym.ui.GymChrome
+import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.GymSnackbarHost
 import works.windmill.gym.ui.GymNativeType
@@ -263,6 +269,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val shell = LocalShellActions.current
+    val finishReceipts = remember(context, telemetry) { FinishReceipts(context.getSharedPreferences("gym-receipts", 0), telemetry) }
+    var queuedFinishShare by rememberSaveable { mutableStateOf<String?>(null) }
+    var queuedFinishShareOwner by rememberSaveable { mutableStateOf<String?>(null) }
+    var finishShareReady by rememberSaveable { mutableStateOf(false) }
+    var discardPrompt by remember { mutableStateOf<WorkoutDiscardPrompt?>(null) }
+    var discarding by remember { mutableStateOf(false) }
     val notificationPrefs = remember(context) { context.getSharedPreferences("workout-notifications", 0) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         notifications?.refreshCapabilities()
@@ -360,7 +372,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // mutex, and a cancelled job completes too — so without both guards a double tap would run the
     // door's continuation twice, the second wiping what the first had just begun.
     fun closeFinish(then: () -> Unit = {}) {
-        if (closingFinish) return
+        if (closingFinish || queuedFinishShare != null) return
+        if (finished == null) { then(); return }
         closingFinish = true
         scope.launch { finishSheet.hide() }.invokeOnCompletion { cause ->
             closingFinish = false
@@ -458,6 +471,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             seat = standing ?: ""
             receipts = emptyMap()
             finished = null
+            discardPrompt = null
             building = null
             selectedRoutineId = null
             reviewing = null
@@ -588,11 +602,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 is FinishOutcome.Closed -> {
                     if (owner != currentAccount.user?.id) return@launch
                     sessionStates.removeState("workout:${ended.detail.session.id}")
-                    haptics.finished()
+                    if (ended.detail.sets.isNotEmpty()) haptics.finished()
                     away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail))
                     pruneReceipts()
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
-                        reviewRead = false)
+                        reviewRead = false, suggestsKeep = ended.detail.sets.isNotEmpty() &&
+                            finishReceipts.suggestsKeep(ended.detail.session.id, !currentAccount.isSignedIn))
                 }
                 is FinishOutcome.Failed ->
                     note = ended.why.line("the session is still open")
@@ -601,9 +616,20 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     }
 
     val receipt = finished?.let { store.retainedSession(SessionDetail(it.session, it.sets)) }
-    LaunchedEffect(receipt, account.resolved) {
-        if (!account.resolved || account.user?.id.orEmpty() != seat) return@LaunchedEffect
-        val detail = receipt ?: return@LaunchedEffect
+    LaunchedEffect(receipt, account.resolved, store.accountReady, store.replicaReadRevision) {
+        if (!account.resolved || account.user?.id.orEmpty() != seat || !store.accountReady) return@LaunchedEffect
+        val saved = receipt ?: return@LaunchedEffect
+        val detail = when (val read = store.finishedSession(saved.session.id)) {
+            is GymResult.Failed -> return@LaunchedEffect
+            is GymResult.Ok -> read.value
+        }
+        if (detail == null) {
+            finishStates.removeState(saved.session.id)
+            finished = null
+            away = emptyList()
+            tab = Tab.Log
+            return@LaunchedEffect
+        }
         finished = finished?.copy(session = detail.session, sets = detail.sets)
         if (away.isEmpty()) away = listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail))
         val owner = currentAccount.user?.id
@@ -613,15 +639,15 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
     }
 
-    // THE act, behind both of its doors: the log row's long press and the session review screen. A
-    // withheld delete and not a dialog — Law 2 gives a destructive act an undo, never a
-    // confirmation. Nothing is told for nine seconds, so the screen leaves at once and the row is
-    // off the log while the window is open. A review screen for a session the room no longer has
-    // cannot stand, so it goes with it.
-    fun discard(sessionId: String) {
+    fun discard(sessionId: String, source: String, snapshot: SessionDetail? = null) {
+        if (discardPrompt != null || discarding || queuedFinishShare != null) return
+        val standing = (away.lastOrNull() as? Away.Session)?.takeIf { it.summary.id == sessionId }
+        val detail = snapshot ?: standing?.detail?.let(store::retainedSession)
+        val summary = detail?.let { SessionSummary(it.session, it.sets, store.catalog) }
+            ?: store.allSessions.firstOrNull { it.id == sessionId } ?: standing?.summary ?: return
         note = null
-        store.withhold(Deletion.Session(sessionId))
-        if ((away.lastOrNull() as? Away.Session)?.summary?.id == sessionId) back()
+        discardPrompt = WorkoutDiscardPrompt(summary, detail, source, store.workoutReplica, store.accountKey == Seat.anonymous)
+        telemetry.event("gym_action", mapOf("screen" to source, "action" to "discard", "state" to "shown"))
     }
 
     fun openCoachChat(id: String, action: String) {
@@ -656,6 +682,55 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         away = emptyList()
         receipts = emptyMap()
         tab = Tab.Coach
+    }
+
+    LaunchedEffect(queuedFinishShare, finishShareReady, account.resolved, account.user?.id,
+        account.identityRevision, store.accountReady, shell.signInAttempts.active, shell.signInAttempts.result) {
+        val request = queuedFinishShare ?: return@LaunchedEffect
+        val result = shell.signInAttempts.result?.takeIf { it.id == request }
+        val owner = queuedFinishShareOwner ?: result?.userId
+        val superseded = owner == null &&
+            (shell.signInAttempts.active?.let { it != request } == true || shell.signInAttempts.result?.let { it.id != request } == true)
+        if (result?.completed == false || superseded || owner != null && account.resolved && account.user?.id != owner) {
+            queuedFinishShare = null
+            queuedFinishShareOwner = null
+            finishShareReady = false
+            shell.signInAttempts.consume(request)
+            return@LaunchedEffect
+        }
+        if (!finishShareReady) {
+            closingFinish = true
+            try {
+                if (finished != null) launch { finishSheet.hide() }.join()
+                if (queuedFinishShare != request) return@LaunchedEffect
+                finished?.let { finishStates.removeState(it.session.id) }
+                finished = null
+                finishShareReady = true
+                if (!currentAccount.isSignedIn && shell.signInAttempts.active != request &&
+                    shell.signInAttempts.result?.id != request) shell.openSignInForResult(request)
+            } finally { closingFinish = false }
+            return@LaunchedEffect
+        }
+        if (!account.resolved || !account.isSignedIn || !store.accountReady) return@LaunchedEffect
+        if (owner == null || account.user?.id != owner || store.accountKey != Seat.of(owner)) return@LaunchedEffect
+        val authenticatedOwner = owner
+        queuedFinishShareOwner = authenticatedOwner
+        try {
+            val chat = store.coach.freshChat(FinishCoach.question, id = request)
+            away = emptyList()
+            receipts = emptyMap()
+            tab = Tab.Coach
+            if (!store.coach.hasRequest(chat, request) &&
+                !store.coach.submit(chat, FinishCoach.question, requestId = request, authenticatedOwner = authenticatedOwner)) {
+                note = "Your message couldn’t be saved. Try again."
+            }
+        } catch (_: Exception) {
+            note = "Your message couldn’t be saved. Try again."
+        }
+        queuedFinishShare = null
+        queuedFinishShareOwner = null
+        finishShareReady = false
+        shell.signInAttempts.consume(request)
     }
 
     // The save lives here rather than on the builder: the builder's composition dies the moment the
@@ -763,9 +838,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 }
             }
 
-            // The receipt for the workout just closed, over the workout itself. Dismissing it — back, the
-            // scrim, the handle — decides nothing and writes nothing: the session was closed and saved
-            // before this rose, and what is underneath is its own detail page.
             finished?.let { original ->
                 val canonical = store.retainedSession(SessionDetail(original.session, original.sets))
                 val ended = original.copy(session = canonical.session,
@@ -774,42 +846,82 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     onDismissRequest = {
                         finishStates.removeState(original.session.id)
                         finished = null
+                        if (ended.sets.isEmpty()) { away = emptyList(); tab = Tab.Routines }
                     },
                     sheetState = finishSheet,
+                    contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
                     containerColor = skin.surface,
                     scrimColor = skin.scrim,
+                    dragHandle = if (ended.sets.isEmpty()) null else { {
+                        Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            Box(Modifier.size(32.dp, 4.dp).background(skin.inkFaint, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+                        }
+                    } },
                 ) {
                     WindmillSheetWindow()
                     finishStates.SaveableStateProvider(original.session.id) {
-                    FinishScreen(
-                        finished = ended,
-                        catalog = store.catalog,
-                        // Offered only where Coach itself is: an account, and a deployment that has one.
-                        // Behind the sheet's own exit, because the tab switch redraws the rail and it would
-                        // come back up through a sheet still descending. Then a FRESH conversation, and the
-                        // one line through the same send a typed question takes — so the thread is titled
-                        // by it, the ceilings count it, and every refusal is drawn by the exchange itself.
-                        // Behind an ask still in flight nothing is reset and nothing is sent: `ask` would
-                        // drop the line on the floor, so the tap lands on the Coach tab where the stalled
-                        // exchange is already drawn waiting.
-                        onShareWithCoach = if (account.isSignedIn && !askAbsent) {
-                            {
-                                closeFinish {
-                                    if (asking) {
-                                        away = emptyList()
-                                        tab = Tab.Coach
-                                        return@closeFinish
-                                    }
-                                    askSomethingNew()
-                                    ask(question = FinishCoach.question)
+                        FinishScreen(
+                            finished = ended,
+                            catalog = store.catalog,
+                            onDone = {
+                                if (!closingFinish && queuedFinishShare == null) {
+                                    telemetry.event("gym_action", mapOf("screen" to "finish", "action" to "done", "outcome" to "ok"))
+                                    closeFinish { if (ended.sets.isEmpty()) { away = emptyList(); tab = Tab.Routines } }
                                 }
-                            }
-                        } else {
-                            null
-                        },
-                    )
+                            },
+                            onDiscard = { discard(ended.session.id, "finish", SessionDetail(ended.session, ended.sets)) },
+                            onKeep = if (ended.suggestsKeep && !account.isSignedIn) { {
+                                if (!closingFinish && queuedFinishShare == null) {
+                                    telemetry.event("gym_action", mapOf("screen" to "finish", "action" to "keep", "outcome" to "ok"))
+                                    closeFinish { shell.openSignIn() }
+                                }
+                            } } else null,
+                            onShareWithCoach = if (!askAbsent) { {
+                                if (!closingFinish && queuedFinishShare == null && finished?.session?.id == ended.session.id) {
+                                    val request = Ids.thread()
+                                    queuedFinishShare = request
+                                    queuedFinishShareOwner = currentAccount.user?.id
+                                }
+                            } } else null,
+                        )
                     }
                 }
+            }
+
+            discardPrompt?.let { prompt ->
+                WorkoutDiscardDialog(prompt.summary.setCount, busy = discarding,
+                    onCancel = {
+                        if (!discarding && discardPrompt === prompt) {
+                            telemetry.event("gym_action", mapOf("screen" to prompt.screen, "action" to "discard", "outcome" to "cancelled"))
+                            discardPrompt = null
+                        }
+                    },
+                    onDiscard = {
+                        if (!discarding && discardPrompt === prompt) {
+                            discarding = true
+                            val owner = currentAccount.user?.id
+                            scope.launch {
+                                try {
+                                    val failure = store.discardWorkout(prompt.summary.id, prompt.screen, prompt.replica, prompt.anonymous)
+                                    if (owner != currentAccount.user?.id) return@launch
+                                    discardPrompt = null
+                                    if (failure != null) {
+                                        val line = when (failure) {
+                                            WriteFailure.NoAnswer -> "This workout couldn’t be deleted on this phone. It is still saved."
+                                            else -> failure.line("the workout is still saved")
+                                        }
+                                        closeFinish {
+                                            away = listOf(Away.Session(prompt.summary, prompt.detail))
+                                            note = line
+                                        }
+                                        return@launch
+                                    }
+                                    closeFinish { away = emptyList(); tab = Tab.Log }
+                                } finally { discarding = false }
+                            }
+                        }
+                    },
+                )
             }
 
             if (building == null) selectedRoutineId?.let { id ->
@@ -958,7 +1070,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onDone = { back() },
                         )
                         standing is Away.Session -> sessionStates.SaveableStateProvider(standing.summary.id) {
-                        SessionScreen(
+                        if (finished?.let { it.session.id == standing.summary.id && it.sets.isEmpty() } == true) {
+                            GymScreen(title = standing.summary.plan?.routine ?: Readout.noRoutine,
+                                onBack = { back() }, backTo = beneath) { }
+                        } else SessionScreen(
                             summary = standing.summary,
                             seed = standing.detail,
                             store = store,
@@ -967,7 +1082,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onBack = { back() },
                             say = { note = it },
                             onOpenMovement = { look(Away.Movement(it)) },
-                            onDiscard = { discard(it) },
+                            onDiscard = { discard(it, "session") },
                             onDraftOpen = { pushedDraftOpen = it },
                         )
                         }
@@ -1043,7 +1158,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onOpenBodyweight = { look(Away.Bodyweight) },
                             onOpenMovement = { exercise, session -> look(Away.Movement(exercise, session)) },
                             onShareSession = { shareWorkout(it) },
-                            onDiscardSession = { discard(it) },
+                            onDiscardSession = { discard(it, "log") },
                         ) }
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.

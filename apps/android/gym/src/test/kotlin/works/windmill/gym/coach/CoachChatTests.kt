@@ -46,6 +46,57 @@ class CoachChatTests {
         assertArrayEquals(byteArrayOf(1, 2, 3), LocalCoach(file).photoFile("alice", photo.id).readBytes())
     }
 
+    @Test fun aStableChatReopensOnlyItsOwnersExistingContentWithoutFreshOrHistoryEvents() = runTest {
+        var owner: String? = "alice"
+        val actions = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {
+                if (name == "gym_action") properties["action"]?.let(actions::add)
+            }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { error("Unexpected $operation") }
+        }
+        val file = File(tmp.root, "stable-chat")
+        val disk = LocalCoach(file)
+        val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry, System::nanoTime, backgroundScope)
+        val id = store.freshChat("Original draft", id = "stable-share")
+        store.keepPosition(id, 88, false)
+        val original = store.chat(id)
+        val other = store.freshChat("Other draft")
+        val before = actions.toList()
+        assertEquals(id, store.freshChat("Replacement must not overwrite", id))
+        assertEquals(original, store.chat(id))
+        assertEquals(CoachDraft("Original draft"), store.draft(id))
+        assertEquals(CoachDraft("Other draft"), store.draft(other))
+        assertEquals(id, store.selectedChatId)
+        assertEquals(before, actions)
+        val cold = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, LocalCoach(file), telemetry, System::nanoTime, backgroundScope)
+        assertEquals(id, cold.selectedChatId)
+        assertEquals(id, cold.freshChat("Ignored replacement", id))
+        assertEquals(original, cold.chat(id))
+        assertEquals(before, actions)
+        owner = "bob"
+        assertEquals(id, cold.freshChat("Bob draft", id))
+        assertEquals(CoachDraft("Bob draft"), cold.draft(id))
+        owner = "alice"
+        assertEquals(CoachDraft("Original draft"), cold.draft(id))
+        assertEquals(before + "fresh_entry", actions)
+    }
+
+    @Test fun aDurablePendingRequestIsKnownBeforeItsChatHasResumed() = runTest {
+        var owner: String? = "alice"
+        val disk = LocalCoach(File(tmp.root, "pending-share"))
+        disk.saveChat("alice", LocalChat("share"), select = true)
+        disk.keep("alice", AskQuestion("share", "Check my last workout.", "share"))
+        val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, disk, Telemetry.None, System::nanoTime, backgroundScope)
+        assertEquals(emptyList<AskExchange>(), store.chat("share")!!.exchanges)
+        assertTrue(store.hasRequest("share", "share"))
+        assertFalse(store.hasRequest("other", "share"))
+        assertFalse(store.hasRequest("share", "other"))
+        owner = "bob"
+        assertFalse(store.hasRequest("share", "share"))
+        assertEquals(listOf(AskQuestion("share", "Check my last workout.", "share")), disk.pending("alice"))
+    }
+
     @Test fun aReplyArrivesInItsOriginWhileANewChatKeepsItsOwnDraft() = runTest {
         val started = CompletableDeferred<AskQuestion>()
         val release = CompletableDeferred<Unit>()

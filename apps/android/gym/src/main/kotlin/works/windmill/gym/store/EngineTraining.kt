@@ -263,7 +263,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
         return session(sessionId)?.session ?: throw missing("That workout is no longer on the log.")
     }
-    suspend fun discardSession(sessionId: String) { apply(DiscardSession(Id(sessionId, EngineSession))) }
+    suspend fun discardSession(sessionId: String, expectedReplica: String = engine.activeReplica(),
+        expectedAnonymous: Boolean = anonymous) {
+        remove(DiscardSession(Id(sessionId, EngineSession)), expectedReplica, expectedAnonymous, release = true)
+    }
     // Before a sign-in, every signed-out workout is retained in the import journal for the account.
     fun prepareAdoption() {
         if (!anonymous) return
@@ -337,6 +340,14 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             }
     }
     fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
+    fun restoredSession(id: String): SessionDetail? = read { reader ->
+        session(id)?.let { return@read it }
+        val record = reader.repository(EngineSession).record(Id(id, EngineSession), ViewMode.drawn)
+        if (record?.isHeld == true) throw TrainingUnanswered
+        if (imports.discardedWorkout(id)) return@read null
+        if (!reader.isAnonymous && !reader.firstPullComplete() && record?.life?.isAlive != false) throw TrainingUnanswered
+        null
+    }
     fun review(sessionId: String): Review = Review.of(
         session(sessionId) ?: throw missing("That workout is no longer on the log."), details())
     fun lastTime(exerciseId: String): LastTime {

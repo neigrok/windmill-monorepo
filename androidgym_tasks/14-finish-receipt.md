@@ -11,16 +11,13 @@
 - Components (Design System library, Android page): `Android / Button` `210:181` (Tonal for Share with Coach; native top-end menu for Discard; Filled for Done; Filled · Tone=Error in the dialog).
 - The approved Android revision above governs layout. The iOS receipt is behavioral context; do not copy an older bottom Discard row.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- `FinishScreen` (`ui/FinishScreen.kt:232-312`) in a `ModalBottomSheet` (`GymRoom.kt:869-919`). Underneath is the workout detail.
-  - *Well done.*, or *Ended early.* under 4 working sets (:259; `domain/Training.kt:382`).
-  - *{routine | Free session} · Workout saved* (:261). Tiles *Sets*, *kg lifted*, *Movements* (:265-267), always plural.
-  - The personal record line (`RecordLine`, :192), then the movement rows with a ✓ (:280-292).
-  - *Against plan* / *Against last {routine}* / *Performed* (:89-103, drawn by `ReviewRemarks`).
-  - **Share with Coach** with *Sends Coach one line — “Check my last session.” — and opens the answer.* (`FinishCoach`, :147-149), shown only signed in and where Coach exists (`GymRoom.kt:900-913`). It scrolls with the content.
-  - The receipt draws no discard and no **Done** (`Finish.discard`, :61-64): it ends when the sheet is swiped down. *Discard session* lives on the log row and workout detail, held for 9 s with an Undo (`GymRoom.kt:643-647`).
-- Signed out, nothing on the receipt suggests signing in.
-- Defect: finishing a workout with no set saves it and offers Share with Coach (`TrainingStore.finish`, `store/TrainingStore.kt:779`).
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+- `ui/FinishScreen.kt` presents the committed duration, all-set count, equipment-aware volume, optional record and performed movements. The crowned tonal Share and filled Done actions stay below the scroll body; the native overflow owns Discard.
+- `GymRoom.kt` opens the shared `ui/ConfirmDialog.kt` workout confirmation. The store owns a confirmed deletion and its outcome; cancellation keeps the saved workout. Weight Undo remains separate.
+- `store/FinishReceipts.kt` records the first anonymous receipt on this phone. Keep opens ordinary sign-in. Share owns a separate saved request identity, waits for its matching sign-in completion and the account-data decision, and submits once through the owner-scoped Coach archive. A cancelled or superseded sign-in retires that Share intent. The saved exit phase resumes after recreation; an old queued snapshot reopens its original chat without duplicating an admitted request or a fresh-entry event.
+- Restored receipts reconcile against the current local replica. Proven absence clears both receipt and workout detail and opens the root Log; an unread account replica waits for its first pull.
+- The approved Z.1 terminal has only its ended-workout copy and Done to Routines.
+- Source and focused tests are in review. Native appearance and local event/failure arrival remain pending. Local durable-write failure dismisses the overlays onto the retained workout detail and its existing failure presentation.
 
 **Change**
 - 03.7, the approved Android receipt:
@@ -40,7 +37,7 @@
   - **Keep it** opens the sign-in step (Shell · Android 15a, task 27).
   - Shown only on the receipt of the first finished workout on this phone while signed out; a once-only flag on this phone records that it was shown. Later receipts never show it, and ordinary training screens have no standing sign-up prompt (17/27). Preserve user-invoked account sign-in, signed-out Share with Coach and account-required Coach routes, including the bound-installation stance in 36/38.
   - Signed out, **Share with Coach** is drawn as well. Follow iOS (`apps/ios/App/Sources/Gym/GymRoom.swift:205`): it opens the sign-in step, and the question is sent once the lifter is signed in. Where this Windmill has no Coach it is not drawn, as today.
-- A workout with no set uses the [approved Z.1 terminal surface](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3462): *No sets logged* / *This workout has ended.* / **Done** → Routines. It has no saved-workout claim, totals, celebration, sign-in offer or Share with Coach. Design prerequisite `android-gym-empty-finish-design` is human-approved 2026-10-25; the `android-empty-workout-finish` implementation follow-up remains separate.
+- A workout with no set uses the [approved Z.1 terminal surface](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458): *No sets logged* / *This workout has ended.* / **Done** → Routines. It has no saved-workout claim, totals, celebration, sign-in offer or Share with Coach. Design prerequisite `android-gym-empty-finish-design` is human-approved 2026-10-25; the terminal implementation is included here.
 - Delete `Finish.discard` *Discard session* after all workout callers migrate. Remove only the workout hold caller; retain `store/WithheldDelete.kt` and weight Undo as specified by 05/24.
 
 **Out of scope:** the log row swipe (22); workout detail and its comparison (23); *Save a routine* (13); Inspect (25).
