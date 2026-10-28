@@ -4,14 +4,20 @@ import android.os.Looper
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getBoundsInRoot
+import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +53,13 @@ class NotesScreenTests {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private class Recorder : Telemetry {
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+        override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+    }
 
     // The notebook is the account's: another phone writes it, and the room signs in and pulls it.
     private fun signedIn(room: EngineRoomFixture, vararg notes: Pair<String, NoteWrite>): ModelServer {
@@ -89,7 +102,7 @@ class NotesScreenTests {
             }
 
             compose.onNodeWithText(Notes.honesty).assertIsDisplayed()
-            compose.onNodeWithText(Notes.sub).assertIsDisplayed()
+            compose.onNodeWithText("what you write for Coach").assertDoesNotExist()
             compose.onNodeWithText("What I am training for").performClick()
             compose.onNodeWithText(Notes.add).assertIsDisplayed()
 
@@ -124,7 +137,7 @@ class NotesScreenTests {
             compose.onNodeWithText("line 0").assertIsDisplayed()
             assertTrue("a handle before the title: x=${titleX("note 0")}", titleX("note 0") >= pastTheRail)
             compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(Notes.full))
-            compose.onNodeWithText(Notes.topWins).assertIsDisplayed()
+            compose.onNodeWithText("Top note wins.").assertDoesNotExist()
             compose.onNodeWithText("10 of 10 notes. Delete one to add another.").assertIsDisplayed()
             compose.onNodeWithText(Notes.add).assertDoesNotExist()
         } } finally { scope.cancel() }
@@ -235,7 +248,7 @@ class NotesScreenTests {
             }
 
             compose.onNodeWithText("note 0").assertIsDisplayed()
-            compose.onNodeWithText(Notes.topWins).assertDoesNotExist()
+            compose.onNodeWithText("Top note wins.").assertDoesNotExist()
             assertTrue("no handle before the title: x=${titleX("note 0")}", titleX("note 0") < pastTheRail)
         } } finally { scope.cancel() }
     }
@@ -277,9 +290,8 @@ class NotesScreenTests {
     private fun dragBelowTheNextRow(title: String) {
         val row = compose.onNodeWithText(title).fetchSemanticsNode()
         val step = row.size.height * 1.4f / 7
-        val handleX = with(compose.density) { 16.dp.toPx() }
-        compose.onNodeWithText(title).performTouchInput {
-            down(Offset(handleX, centerY))
+        compose.onNodeWithContentDescription("Reorder $title").performTouchInput {
+            down(center)
             advanceEventTime(viewConfiguration.longPressTimeoutMillis + 200)
             repeat(7) { moveBy(Offset(0f, step)) }
             up()
@@ -431,4 +443,126 @@ class NotesScreenTests {
             assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
         } } finally { scope.cancel() }
     }
+    @Test
+    fun aHandleSwipeAndCancelledReorderDoNotDeleteOrSaveAnOrder() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            threeNotes(room)
+            compose.setContent { GymMaterial { NotesScreen(room.store, true, "Coach", {}, { _, _ -> }, {}, {}) } }
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+            compose.runOnIdle { telemetry.events.clear() }
+            val handle = compose.onNodeWithContentDescription("Reorder note 0")
+            handle.performTouchInput { swipe(center, Offset(-250f, centerY)) }
+            compose.runOnIdle {
+                assertEquals(listOf("note_000", "note_001", "note_002"), room.store.notes.map { it.id })
+                assertTrue(telemetry.events.isEmpty())
+            }
+            val rowHeight = compose.onNodeWithText("note 0").fetchSemanticsNode().size.height
+            handle.performTouchInput {
+                down(center)
+                advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+                repeat(7) { moveBy(Offset(0f, rowHeight * 1.4f / 7)) }
+            }
+            assertEquals(listOf("note 1", "note 0", "note 2"), drawnOrder("note 0", "note 1", "note 2"))
+            handle.performTouchInput { cancel() }
+            assertEquals(listOf("note 0", "note 1", "note 2"), drawnOrder("note 0", "note 1", "note 2"))
+            compose.runOnIdle {
+                assertEquals(listOf("note_000", "note_001", "note_002"), room.training.notes().map { it.id })
+                assertEquals(emptyList<Json>(), room.outbox())
+                assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
+                assertEquals(emptyList<String>(), telemetry.failures)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun aFailedBodySwipeRestoresTheRowAndItsRetryEmitsOneResultEach() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            threeNotes(room)
+            compose.setContent { GymMaterial { NotesScreen(room.store, true, "Coach", {}, { _, _ -> }, {}, {}) } }
+            val row = compose.onNodeWithText("note 0").assertIsDisplayed()
+            val left = row.getBoundsInRoot().left
+            compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
+            row.performTouchInput { swipeLeft() }
+            compose.onNodeWithText("the log didn’t answer — that note is still here").assertIsDisplayed()
+            assertEquals(left, row.getBoundsInRoot().left)
+            compose.runOnIdle {
+                assertEquals(listOf("note_000", "note_001", "note_002"), room.training.notes().map { it.id })
+                assertEquals(emptyList<Json>(), room.outbox())
+                assertEquals(listOf("gym_action" to mapOf("screen" to "notes", "action" to "delete", "outcome" to "failed")), telemetry.events)
+                assertEquals(listOf("gym.deleteNote"), telemetry.failures)
+            }
+            row.performTouchInput { swipeLeft() }
+            compose.onNodeWithText("note 0").assertDoesNotExist()
+            compose.runOnIdle {
+                assertEquals(listOf("note_001", "note_002"), room.training.notes().map { it.id })
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertEquals(emptyList<Any>(), room.store.withheld)
+                assertEquals(listOf(
+                    "gym_action" to mapOf("screen" to "notes", "action" to "delete", "outcome" to "failed"),
+                    "gym_action" to mapOf("screen" to "notes", "action" to "delete", "outcome" to "ok"),
+                ), telemetry.events)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun theEditorKeepsAFailedDeleteOpenAndReportsItsOwnOriginOncePerAttempt() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            signedIn(room, "note_001" to NoteWrite("Private title", "Private body"))
+            var done = 0
+            compose.setContent { GymMaterial { NoteEditorScreen(
+                Note("note_001", title = "Private title", body = "Private body"), "", room.store, "Notes", {}, { done++ }) } }
+            compose.onNodeWithText(Notes.save).assertIsNotEnabled()
+            compose.runOnIdle { telemetry.events.clear(); room.engine.failNextCommit() }
+            compose.onNodeWithText(Notes.delete).performScrollTo().performClick()
+            compose.onNodeWithText("the log didn’t answer — that note is still here").assertIsDisplayed()
+            compose.runOnIdle {
+                assertEquals(0, done)
+                assertEquals(listOf("note_001"), room.training.notes().map { it.id })
+                assertEquals(listOf("gym_action" to mapOf("screen" to "note_editor", "action" to "delete", "outcome" to "failed")), telemetry.events)
+                assertEquals(listOf("gym.deleteNote"), telemetry.failures)
+            }
+            compose.onNodeWithText(Notes.delete).performClick()
+            compose.runOnIdle {
+                assertEquals(1, done)
+                assertEquals(emptyList<Note>(), room.training.notes())
+                assertEquals(listOf("ready"), room.outbox().map { it.member("state").str() })
+                assertEquals(listOf(
+                    "gym_action" to mapOf("screen" to "note_editor", "action" to "delete", "outcome" to "failed"),
+                    "gym_action" to mapOf("screen" to "note_editor", "action" to "delete", "outcome" to "ok"),
+                ), telemetry.events)
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test
+    fun noteSaveResultsEmitOnlyTheirBoundedLabels() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val telemetry = Recorder()
+        try { EngineRoomFixture(tmp.newFolder(), scope, telemetry = telemetry).use { room ->
+            signedIn(room)
+            runBlocking {
+                assertTrue(room.store.saveNote("note_001", NoteWrite("Private title", "Private body")) is GymResult.Ok)
+                val refused = room.store.saveNote("note_001", NoteWrite("x".repeat(61), "Private refused body"))
+                assertTrue(refused is GymResult.Failed && refused.why is works.windmill.gym.store.WriteFailure.Refused)
+                room.engine.failNextCommit()
+                val failed = room.store.saveNote("note_001", NoteWrite("Private replacement", "Private failed body"))
+                assertTrue(failed is GymResult.Failed && failed.why !is works.windmill.gym.store.WriteFailure.Refused)
+                assertEquals(listOf("gym.saveNote"), telemetry.failures)
+                assertEquals(listOf(
+                    "gym_action" to mapOf("screen" to "note_editor", "action" to "save", "outcome" to "ok"),
+                    "gym_action" to mapOf("screen" to "note_editor", "action" to "save", "outcome" to "refused"),
+                    "gym_action" to mapOf("screen" to "note_editor", "action" to "save", "outcome" to "failed"),
+                ), telemetry.events)
+                assertEquals(listOf(Note("note_001", title = "Private title", body = "Private body")), room.training.notes())
+            }
+        } } finally { scope.cancel() }
+    }
+
 }

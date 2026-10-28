@@ -51,10 +51,10 @@ class NotesLayoutTests {
             }
             compose.onNodeWithContentDescription("Title field").performScrollTo()
                 .performTextReplacement("Training notes for autumn races")
-            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement("é".repeat(251))
+            compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("é".repeat(251))
             compose.onNodeWithText(Notes.save).assertIsDisplayed().assertIsEnabled().performClick()
             compose.onNodeWithText("a note runs to 500 bytes").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement("Short answers.\nKeep the date and number.")
+            compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("Short answers.\nKeep the date and number.")
             compose.onNodeWithText(Notes.honesty).performScrollTo().assertIsDisplayed()
             val save = compose.onNodeWithText(Notes.save).assertIsDisplayed()
             assertTrue(save.getBoundsInRoot().height >= 48.dp)

@@ -31,7 +31,9 @@ import works.windmill.platform.net.WindmillJson
 class AndroidTelemetryTest {
     @Test fun deletionActionsKeepOnlyTheirBoundedLabelsAndPreserveNotificationAndTileEvents() {
         val valid = listOf(
-            Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"),
+            Triple("routines", "delete", "ok"), Triple("session", "delete", "refused"), Triple("notes", "delete", "failed"), Triple("note_editor", "delete", "ok"),
+            Triple("note_editor", "delete", "refused"), Triple("note_editor", "delete", "failed"),
+            Triple("note_editor", "save", "ok"), Triple("note_editor", "save", "refused"), Triple("note_editor", "save", "failed"),
             Triple("bodyweight", "delete", "held"), Triple("bodyweight", "delete", "closed"),
             Triple("bodyweight", "undo", "ok"), Triple("bodyweight", "undo", "closed"),
             Triple("bodyweight", "cancel", "rewritten"), Triple("notification", "log_set", "ok"),

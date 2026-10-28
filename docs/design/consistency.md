@@ -275,8 +275,8 @@ and Android disagree.
   The workout bar has no settings action; its trailing slot awaits task 45's Hide behaviour.
 - **9s · Notes' lines (owner ruling, 2026-10-22; Android build).** Both phones head Notes with *Any
   agent you connect can read these too.* only: no subtitle and no *Top note wins.* (iOS 09.1; Android
-  09.1 `1254:39045`). Android shows the subtitle *what you write for Coach* and *Top note wins.*
-  (`ui/NotesScreen.kt:89,116`, `domain/Notes.kt:37,40`).
+  09.1 `1254:39045`). Android's task 26 implementation uses that single line and removes both
+  obsolete strings from `ui/NotesScreen.kt` and `domain/Notes.kt`.
 - **9t · Connected log with a connection.** On Android (`ConnectedLogScreen.kt`) the level rows and the caption stay on screen in both states, **How this works** opens in place,
   and a *Manage connections* row joins once something is connected. On iOS (board 09.3) a connected screen leads with **Connected**, each row opening the shell's connection
   settings, puts the level rows, the caption and the five lines behind one **How this works** door
@@ -691,7 +691,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | The log row | `ui/LogScreen.kt:241-267`, no swipe; long-press *Discard session*, held | 05.2 `1252:27527` | swipe + *Discard this workout?* |
   | Receipt and workout detail Discard | `ui/SessionScreen.kt:313-328`, no confirmation, held | 03.14 `1283:41920`, 05.3 `1252:27642` | confirm once |
   | Bodyweight | `ui/BodyweightScreen.kt`, no swipe; *Delete weigh-in* uses a durable nine-second hold | 06.2 `1254:32141`, 06.3 `1254:32246` | shared swipe, nine-second held delete and Undo |
-  | Notes | `ui/NotesScreen.kt`, no swipe; immediate *Delete note* in the editor | 09.1 `1254:39045`, 09.2 `1254:39104` | swipe remains task 26 |
+  | Notes | `ui/NotesScreen.kt`, shared row swipe and immediate error-role editor deletion | 09.1 `1254:39045`, 09.2 `1254:39104` | verified in Dark/Daylight; handle reorder stays separate |
   | Coach History | `coach/ThreadsScreen.kt:164-187`, held, *Conversation deleted.* | 08.4 `1253:28552`, 08.34 `1254:31663` | *Delete this conversation?* |
 
   The refusal notice's swipe (`ui/RefusalBanner.kt:52-89`) dismisses a notice, not a record, and

@@ -63,6 +63,11 @@ including the fixed New routine FAB, in both appearances and at 320 dp / 200% te
 opens and leaves a new routine draft without saving. The selector matches the FAB's content
 description, so existing editor recipes keep the same New routine target.
 
+`--scenarios apps/android/tools/capture-recipes/notes.json` captures the Notes row mid-swipe and
+outlined note editor in both appearances using the default two synthetic notes. The row returns
+to its starting position before release, so the canonical capture does not delete it. Supplemental
+acceptance checks real handle reorder, save/delete readback, and 320 dp/200% keyboard clearance.
+
 `--scenarios apps/android/tools/capture-recipes/native-parts.json` opens a debug-only native-control
 specimen guarded by the same local-origin check. The wide 1460 × 426 board is component-specimen
 evidence; portrait recipes exercise actual phone width, signed Display values and inline refusals.

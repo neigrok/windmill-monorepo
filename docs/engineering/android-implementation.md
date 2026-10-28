@@ -526,3 +526,51 @@ No app ANR/fatal appears in the retained runtime log. A transient hierarchy comm
 display changes, then succeeded; system Play/GMS warnings remain in the log. No performance or
 hosted-vendor-delivery claim is made. The runner exits normally, owned ports close, and its
 disposable database and private credential file are removed.
+
+
+## Task 26 · Notes and its editor
+
+Notes uses the single approved honesty line, 20 dp gutter and shared card/swipe anatomy. The row
+has 12 dp padding, 15/22 title and 13/18 preview type; its 68 dp minimum grows with content. Exact
+24 dp drag/chevron assets come from the approved flow, with the handle's 48 dp interaction area.
+The existing Add button remains. The editor uses 4 dp outlined Title/Note fields with 56/240 dp
+minima, the pushed Note bar and the shared error text Delete button. Clean Save is disabled.
+Signed-out Notes and Connected log remain task 51.
+
+The simplification pass keeps gesture ownership in one local loop: the handle consumes Initial-pass
+movement before the parent swipe can claim it. A pre-consumed cancellation never settles an order;
+only a normal release calls the existing save, and finally always clears the optimistic projection.
+No gesture abstraction or additional persistence layer is introduced. List failures restore the row
+and show the existing refusal sentence inline; the editor stays open on deletion failure. The
+application-owned settled delete, receipt release and technical reporting remain task 05's paths.
+
+A typed note-delete origin selects notes or note_editor for the existing single result event. The
+single store-owned save boundary emits gym_action with screen=note_editor, action=save and one of
+ok/refused/failed. The telemetry policy permits only those finite combinations. Full assertions
+cover success, refusal, failed commit and retry without content or identities. The final Debug gate
+passes 51 gym cases and six telemetry cases, with zero failures/errors/skips. All 38 Android tool
+tests pass. XML and logs are under /private/tmp/windmill-android-task26/tests.
+
+Installed API 37 verification uses main a384dd25 plus task 26. Four canonical captures cover the
+list swipe and outlined editor in Dark and Daylight. Native handle reorder emits one gym_note_moved
+and readback confirms the new order. At 320×640 dp/200% text, Save remains visible above the real
+keyboard and Delete is fully reachable by scrolling. The earlier source-verified visual APK is
+2d4fbb2dde5a8251514593e45460b8f1e6eb90dcbcc32b0efdfc016d7f7f1d40. The final telemetry-only APK is
+adb658008d084ed8f0c717615eda9eb46c7baf23ad72aac7fb94b5e84bd9b72f; only four boundary/test hashes
+differ and every visual source hash is identical. One save with that final APK persists the exact
+synthetic fields and emits one note_editor/save/ok. The editor-delete and list-delete checks emit
+one result each with their correct origins; final server readback holds exactly one surviving note.
+All 127 structured local backend observations succeed. Six local Sentry session envelopes arrive
+with no exception event, and the app runtime scan contains no app ANR or fatal exception.
+
+Evidence is /private/tmp/windmill-android-task26/native1. Failed manual input selectors are excluded:
+the first helper truncated spaces, and a later fixed-length replacement retained a prefix; actual
+readback confirms the displayed values were saved. A private app_process SQLite helper did not
+produce a controlled storage refusal, so that native failure attempt is excluded. Deterministic
+list/editor/save fault tests verify unchanged records, visible recovery, one boundary report and
+one bounded result per attempt. Native failure delivery, spoken TalkBack, hosted vendor delivery
+and performance are not claimed by this phase. The standard Dark captures retain the existing
+58 px window-inset variation seen in task 17; no cause or product layout fix is claimed. Relative
+Notes row/field geometry, colors and static assets are reviewed against canon. The owned runner
+exits normally; emulator/backend/model ports close, the disposable database is removed and private
+credentials are deleted.

@@ -78,22 +78,23 @@ class NotesStateTests {
             val restored = StateRestorationTester(compose)
             var done = 0
             restored.setContent { GymMaterial { NoteEditorScreen(null, "What I am training for", room.store, "Notes", {}, { done++ }) } }
+            compose.onNodeWithContentDescription("Title field").performClick()
             compose.onNodeWithText("What I am training for").assertIsDisplayed()
             compose.onNodeWithText(Notes.save).assertIsNotEnabled()
             val title = "  " + "🏋".repeat(61) + "  "
             val body = "\n" + "é".repeat(251) + "\n"
             compose.onNodeWithContentDescription("Title field").performTextReplacement(title)
-            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement(body)
+            compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement(body)
             compose.onNodeWithText(Notes.save).assertIsEnabled().performClick()
             compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
             restored.emulateSavedInstanceStateRestore()
-            compose.onNodeWithContentDescription("Title field").assertTextEquals(title)
-            compose.onNodeWithContentDescription("Body field").assertTextEquals(body)
+            compose.onNodeWithContentDescription("Title field").assertTextEquals("Title", title)
+            compose.onNodeWithContentDescription("Note field").assertTextEquals("Note", body)
             compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Title field").performScrollTo().performTextReplacement("🏋".repeat(60))
             compose.onNodeWithText(Notes.save).performClick()
             compose.onNodeWithText("a note runs to 500 bytes").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement("é".repeat(250))
+            compose.onNodeWithContentDescription("Note field").performScrollTo().performTextReplacement("é".repeat(250))
             compose.onNodeWithText(Notes.save).performClick()
             compose.runOnIdle {
                 assertEquals(1, done)

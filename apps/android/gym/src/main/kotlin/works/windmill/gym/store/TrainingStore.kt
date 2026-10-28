@@ -1099,7 +1099,7 @@ class TrainingStore(
 
     suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> {
         val seat = owner
-        return notebookWrite.withLock {
+        val result: GymResult<Note> = notebookWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
             try {
                 val written = training.writeNote(id, write)
@@ -1115,6 +1115,12 @@ class TrainingStore(
                 GymResult.Failed(WriteFailure(refusing))
             }
         }
+        telemetry.event("gym_action", mapOf("screen" to "note_editor", "action" to "save",
+            "outcome" to when (result) {
+                is GymResult.Ok -> "ok"
+                is GymResult.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+            }))
+        return result
     }
 
     // A note already gone answers as success: the row goes either way.
@@ -1404,7 +1410,7 @@ class TrainingStore(
         val screen = when (deletion) {
             is Deletion.Routine -> "routines"
             is Deletion.Set -> "session"
-            is Deletion.Note -> "notes"
+            is Deletion.Note -> deletion.origin.screen
             else -> error("this resource requires its recovery flow")
         }
         val seat = owner

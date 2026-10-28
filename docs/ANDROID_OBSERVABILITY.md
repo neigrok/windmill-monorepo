@@ -29,11 +29,17 @@ local collector/intake evidence; no hosted delivery claim is made.
 ## Deletion actions
 
 Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
-`screen=routines|session|notes`, `action=delete`, `outcome=ok|refused|failed`. Row disposal does not
+`screen=routines|session|notes|note_editor`, `action=delete`, `outcome=ok|refused|failed`. Row disposal does not
 cancel that job or suppress its result. `ok` means the exact local receipt was released to the queue;
 server acceptance remains the sync result. Expected account changes and domain refusals are events,
 not Sentry issues. Unexpected failures report once at `gym.dropRoutine`, `gym.deleteSet` or
 `gym.deleteNote`. A release failure that cannot undo its exact receipt is unconfirmed, not restored.
+
+Notes saves emit one store-owned `gym_action` result with `screen=note_editor`, `action=save` and
+`outcome=ok|refused|failed`. Save/delete use their final local result; expected refusals are not
+Issues. Unexpected failures retain `gym.saveNote`, `gym.deleteNote` and `gym.reorderNotes`.
+List and editor deletes retain their separate bounded screen labels. A cancelled handle drag
+rolls back its temporary order and emits no `gym_note_moved`.
 
 Weight actions use `screen=bodyweight`: `delete` has `held|closed|refused|failed`, `undo` has
 `ok|closed|failed`, and `cancel` has `rewritten`. `held` means a durable engine Undo offer exists;
@@ -253,6 +259,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Notification actions | `gym_action` | screen: `notification`; action: `log_set`, `open`; outcome: `ok`, `refused` |
 | Quick Settings tile | `gym_action` | screen: `tile`; action: `routines`, `open`; outcome: `ok`, `failed` |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
+| Notes editor | `gym_action` | screen: `note_editor`; action: `save`, `delete`; outcome: `ok`, `refused`, `failed` |
+| Notes list | `gym_action` | screen: `notes`; action: `delete`; outcome: `ok`, `refused`, `failed` |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action, state, outcome |

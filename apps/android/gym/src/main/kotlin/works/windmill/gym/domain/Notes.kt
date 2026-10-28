@@ -34,11 +34,6 @@ object Notes {
 
     // The head, and nothing else in it.
     const val honesty = "Any agent you connect can read these too."
-    const val sub = "what you write for Coach"
-
-    // The one caption on the screen: the handle shows the drag, this says what the order means.
-    const val topWins = "Top note wins."
-
     const val add = "Add a note"
     const val full = "10 of 10 notes. Delete one to add another."
 
@@ -50,7 +45,7 @@ object Notes {
     const val titlePlaceholder = "How I want to be talked to"
     const val bodyPlaceholder = "Write a note for Coach"
     const val save = "Save"
-    // One tap. The note leaves the editor and the window holds it, with Undo on the room's transient.
+    // The settled delete queues immediately without Undo.
     const val delete = "Delete note"
 
     fun bytes(body: String): Int = body.toByteArray(Charsets.UTF_8).size

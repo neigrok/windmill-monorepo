@@ -8,13 +8,12 @@
   - `Android / Button` `210:181` (Text · Tone=Error)
   - `Android / Top app bar` `342:2953` (Pushed, with the optional text action *Save*)
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Notes (`ui/NotesScreen.kt:42-132`): *what you write for Coach* / *Any agent you connect can read these too.* (`domain/Notes.kt:36-37`); rows with a reorder handle (long-press drag, two or more notes), the title, the first line or *empty · tap to write*, a chevron (:173-217); *Top note wins.* (`domain/Notes.kt:40`); a bottom *Add a note* on `raised`.
-  - Rows do not swipe. A note is deleted only from its editor.
-- Note editor (`NoteEditorScreen`, `ui/NotesScreen.kt:224-282`):
-  - Title *New note* or *Note*; the bar's *Save* / *Saving…* is a `TextButton` in the accent (:253-260).
-  - Fields are a label above a borderless `raised` `OutlinedTextField` (`NoteField`, :285-300): *Title* and *Body* (new) or *Note* (existing), placeholders *How I want to be talked to* and *Write a note for Coach*.
-  - *Delete note* in alarm ink (:276-279). It is held: the editor closes and *Note deleted.* shows with *Undo* for nine seconds (`store/WithheldDelete.kt:67`).
+**Implementation status**
+- Notes has the single approved honesty line, 20 dp gutter, card rows and the existing reorder handle. The subtitle and *Top note wins.* are removed. Rows use the shared immediate error-ground swipe without Undo; the 48 dp handle consumes its own gesture before the row swipe can start.
+- The editor uses the shared pushed bar with *Note*, a disabled clean-state *Save*, outlined *Title* and *Note* fields at 56/240 dp minima, and the shared error text button. Save and Delete retain the existing storage/failure boundaries.
+- A cancelled drag rolls back its temporary order and emits no reorder event. A failed swipe restores its row and shows the existing refusal sentence inline; editor delete failures keep the editor open. Both retry paths retain one result per attempt.
+- Save and delete emit bounded `gym_action` results with `screen=note_editor`; list deletion uses `screen=notes`. Successful reorder keeps `gym_note_moved` and unchanged drops emit nothing.
+- The final relevant gate passes 51 gym and six telemetry cases with no failures or skips; all 38 Android tool tests pass. API 37 native evidence covers both appearances, real handle reorder, Save and editor/list deletion, plus Save above the real IME and scrolled Delete at 320 dp/200% text. Evidence and qualifications are recorded in `docs/engineering/android-implementation.md`.
 
 **Change**
 - Head: one line, *Any agent you connect can read these too.* Delete the subtitle *what you write for Coach* (`Notes.sub`) and the footer *Top note wins.* (`Notes.topWins`, `ui/NotesScreen.kt:116`). The reorder handle stays.
@@ -34,9 +33,9 @@
 **Done when**
 - Screenshots of 09.1 (one row mid-swipe) and 09.2 match in Dark and Daylight, signed in; the rig (01) adds `09.1-notes-swipe-delete-dark/light` and `09.2-note-editor-dark/light`.
 - `gym_note_moved` still fires after a reorder; `gym_screen_viewed` `notes` / `note_editor` still fire.
-- A note delete emits nothing today. Add `gym_action` with `screen=notes` (swipe) or `note_editor` (button), `action=delete`, `outcome=ok` / `refused` / `failed`; no title or text.
+- Note deletion emits `gym_action` with `screen=notes` (swipe) or `note_editor` (button), `action=delete`, `outcome=ok` / `refused` / `failed`. Editor saves emit the same bounded outcomes with `screen=note_editor`, `action=save`; no title, text or record identity.
 - Failures still report as `gym.deleteNote`, `gym.saveNote`, `gym.reorderNotes`.
-- Tests: `ui/NotesScreenTests.kt`, `ui/NotesStateTests.kt`, `ui/NotesLayoutTests.kt`, `ui/EngineNotesScreenTests.kt`, `store/WithheldWindowTests.kt` (the note case goes).
+- Tests: `ui/NotesScreenTests.kt`, `ui/NotesStateTests.kt`, `ui/NotesLayoutTests.kt`, `ui/EngineNotesScreenTests.kt`, `store/WithheldWindowTests.kt` (the weigh-in Undo contract remains intact).
 
 **Depends on:** 02, 03, 04, 05.
 

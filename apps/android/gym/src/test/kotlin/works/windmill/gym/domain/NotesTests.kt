@@ -29,13 +29,10 @@ class NotesTests {
     @Test
     fun theWordsOnTheScreenAreTheBriefs() {
         assertEquals("Any agent you connect can read these too.", Notes.honesty)
-        assertEquals("what you write for Coach", Notes.sub)
-        assertEquals("Top note wins.", Notes.topWins)
         assertEquals("Add a note", Notes.add)
         assertEquals("10 of 10 notes. Delete one to add another.", Notes.full)
         assertEquals(listOf("How I want to be talked to", "What I am training for"), Notes.placeholders)
         assertEquals("Notes live with your account, so they need you signed in.", Notes.signedOut)
-        // One tap and a way back on the transient: the note's delete asks nothing.
         assertEquals("Delete note", Notes.delete)
         assertEquals("How I want to be talked to", Notes.titlePlaceholder)
         assertEquals("Write a note for Coach", Notes.bodyPlaceholder)

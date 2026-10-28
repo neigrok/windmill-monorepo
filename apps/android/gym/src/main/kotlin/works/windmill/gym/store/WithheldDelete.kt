@@ -40,7 +40,9 @@ sealed interface Deletion {
         override val stillThere: String get() = "that session is still on the log"
     }
 
-    data class Note(val noteId: String) : Deletion {
+    data class Note(val noteId: String, val origin: Origin = Origin.List) : Deletion {
+        enum class Origin(val screen: String) { List("notes"), Editor("note_editor") }
+
         override val subjectId: String get() = noteId
         override val line: String get() = "Note deleted."
         override val stillThere: String get() = "that note is still here"

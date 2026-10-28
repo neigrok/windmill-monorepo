@@ -1,0 +1,87 @@
+[
+  {
+    "board": "09.1",
+    "name": "notes-swipe-delete",
+    "account": "fixture",
+    "settle": false,
+    "steps": [
+      {
+        "tap": "Coach"
+      },
+      {
+        "tap": "More"
+      },
+      {
+        "tap": "Notes"
+      },
+      {
+        "wait": "Barbells and dumbbells are available."
+      },
+      {
+        "touch": {
+          "phase": "down",
+          "target": "Barbells and dumbbells are available.",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.25,
+            0.5
+          ]
+        }
+      }
+    ],
+    "after": [
+      {
+        "touch": {
+          "phase": "move",
+          "at": [
+            0.95,
+            0.5
+          ]
+        }
+      },
+      {
+        "touch": {
+          "phase": "up"
+        }
+      },
+      {
+        "wait": "Equipment"
+      }
+    ]
+  },
+  {
+    "board": "09.2",
+    "name": "note-editor",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "Training week"
+      },
+      {
+        "wait": "Note field"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "Training week"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "wait": "More"
+      }
+    ]
+  }
+]
