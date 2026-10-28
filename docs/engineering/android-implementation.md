@@ -912,10 +912,13 @@ bounded 30 seconds, preserving one tap, the existing ledger identities and exact
 UI accounting requires every selected method to start and finish exactly once. Only the named
 finite-load fixture probe may skip, with its exact missing-fixture reason; requesting that fixture
 forbids the skip. Four checker tests pass, and replaying the CI logs accounts for four mandatory
-integration passes plus that one fixture skip and seven shell passes. The corrected supported CI
-run remains pending before shared-load shipment. Its shell failure occurs before the Log action:
-SpringBoard remains on Home with an active workout Island, and the pull-down does not establish
-Notification Center. The cause is unproven; no gesture or product fix is claimed.
+integration passes plus that one fixture skip and seven shell passes. Supported run `40759270882`
+passes four jobs; its shell failure occurs before the Log action: SpringBoard remains on Home
+with an active workout Island, and the pull-down does not establish Notification Center. The
+cause is unproven; no gesture or product fix is claimed. Final-source run `40764861345` passes
+packages/builds and gym/journal UI. It fails the Coach chunk-coalescing unit assertion and the
+offline local-control readiness check; gym integration is cancelled. The Live Activity case passes
+in that run. Those two failures remain under diagnosis before shared-load shipment.
 
 The current-main backend passes all ten targets: domain 2,314/2,342 with 28 deliberate skips,
 MCP 341, sync 765 and adapters 1,365, with no stopped cases or assertions. Both fresh databases
@@ -933,6 +936,14 @@ The Finish observer waits for actual request registration before its exact two-q
 that focused case passes. Task 14 is shipped on main as `ee70d13c` and its ten canonical frames are
 marked in production. The separate Target-summary overlap fix is postponed by the human; its
 proposal remains unapproved and the known 320 dp / 200% overlap is outside this release's scope.
+
+The task-14 main CI run has two Debug Finish fixture timeouts; all 27 Release cases pass. The
+separate follow-up uses the application's immediate Main dispatcher and explicitly pumps Main
+at the controlled read and transport-entry barriers. It preserves the ten-second bounds and
+exact one-close/two-question/distinct-chat assertions. A paired local run passes all 27 cases in
+each variant with overlapping execution and no skips. Its evidence is
+`/private/tmp/android-task14-fixture-variants/summary.json`. The same follow-up corrects the
+existing discard sentence to say `1 set`; it adds no workflow or observability boundary.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at their shared boundaries. Native receipt integration uses existing text

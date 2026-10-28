@@ -18,7 +18,7 @@ Tasks **29–35, 41–42 and 44 are postponed at the user's request**. Preserve 
 
 Tasks 28 and 37 remain active for ordinary chat bubbles, composer/chrome, History and chat lifecycle. Task 37's active prerequisites are 04, 05 and 28; task 30's outcome-word changes are deferred. Keep tool-write content in its current presentation while task 35 waits. Task 49 remains active because its chips and retained draft feed chat input rather than presenting tool-action outputs.
 
-U/P additional proposals are deferred from the current release scope and remain unapproved. A/B recovery proposals still require human approval. Z zero-set Finish and D account-deletion recovery are ✅ Ready for dev, human-approved 2026-10-25; D’s backend receipt/recovery prerequisite is deployed in `ac1e0c75`; Android task 48 remains pending.
+U/P additional proposals are deferred from the current release scope and remain unapproved. A and B.2 recovery proposals still require human approval. The two canonical 08.6b signed-out access screens are ✅ Ready for dev, human-approved 2026-10-28. Z zero-set Finish is 🚀 In production with task 14. D account-deletion recovery is ✅ Ready for dev, human-approved 2026-10-25; its backend receipt/recovery prerequisite is deployed in `ac1e0c75`; Android task 48 remains pending.
 
 ## Task matrix
 
@@ -37,7 +37,7 @@ U/P additional proposals are deferred from the current release scope and remain 
 | 11 | Ready | [03.4 This workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29834). |
 | 12 | Removal | No replacement drawing; delete the heavier-than-plan offer and implicit retargeting. |
 | 13 | Scoped | No replacement drawing for removal of free-workout start/save. Preserve the external no-routine picker; gate N applies only if replacing it. |
-| 14 | Ready | [03.7 Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362), ended-early receipts and [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) are ready. Z is human-approved 2026-10-25. |
+| 14 | Ready | [03.7 Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362), ended-early receipts and [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) are 🚀 In production. Z is human-approved 2026-10-25. |
 | 15 | Ready | [04.2 Notification](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46754), plus ready Live Update and lock-screen twins. |
 | 16 | Ready | [04.1 Quick Settings tile](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46694). |
 | 17 | Scoped | [02.1 Routines](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27415); retain the existing MCP proposal review route under gate M. |
@@ -83,12 +83,12 @@ U/P additional proposals are deferred from the current release scope and remain 
 |---|---|---|
 | S · resolved | `android-gym-signed-load-input-design` | Native keyboard minus interaction is human-approved on 2026-10-25. Keep existing board sizing and verify negative decimal input in rack, Fix set and combined editor on the target emulator. No added app-level sign control. |
 | E | `android-gym-equipment-variants-design` | Cable/Kettlebell chooser, icon and load-basis states. Existing stored values and current presentation remain valid; four approved creation examples do not narrow saved-record support. |
-| Z · approved | `android-gym-empty-finish-design` | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is ✅ Ready for dev, human-approved 2026-10-25. No saved-workout or Coach-sharing claim. |
+| Z · approved | `android-gym-empty-finish-design` | [Zero-set Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production, human-approved 2026-10-25. No saved-workout or Coach-sharing claim. |
 | N | `android-gym-no-routine-picker-design` | External/no-routine workout entry only if replacing its existing picker; task 13's routine-start cleanup proceeds. |
 | M | `android-gym-mcp-proposal-row-design` | Review entry and destination for a proposal with no Coach conversation. Keep its functioning review path until a replacement is approved. |
 | U · deferred from release scope, unapproved | `android-coach-uncertain-apply-design` | Awaiting confirmation, Check again and resolved Apply/removal states; no opposing decision while unresolved. Existing failure boards only establish proven no-write failures. |
 | P · deferred from release scope, unapproved | `android-coach-partial-drafts-design` | Pending, saved and refused account drafts together; Retry/Reject scoped to unresolved work and durable per-draft receipts. |
-| B · unapproved | `android-coach-bound-installation-design` | Signed-out bound installation with Sign in and retained local History, no anonymous Send; recovery of already-submitted requests. |
+| B · access approved; recovery unapproved | `android-coach-bound-installation-design` | Canonical 08.6b signed-out access retains History and Sign in with no anonymous Send; human-approved 2026-10-28. B.2 recovery of already-submitted requests remains unapproved. |
 | A · unapproved | Consistency ledger 6t | Anonymous provider refusal, truncated output, invalid/unavailable installation credentials, waiting versus local saving, and truthful Stop waiting copy. Task 38 must retain the originating draft. |
 | D · approved | `android-account-delete-recovery-design` | [D1–D5 recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754) is ✅ Ready for dev, human-approved 2026-10-25. The `account-delete-reconciliation` backend contract is deployed in `ac1e0c75`; task 48 still owns Android integration and acceptance. |
 
@@ -102,12 +102,12 @@ The [extra sign-control proposal](https://www.figma.com/design/vdmdiKWrmZoS1Ftcv
 is **💡 Withdrawn**. Its 14 frames are not approved and do not supply implementation sizing or controls.
 
 The [Gym recovery packet](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1488-3458)
-contains deferred U/P drafts, unapproved B drafts and the approved Z zero-set Finish.
+contains deferred U/P drafts, unapproved B.2 recovery drafts and the approved Z zero-set Finish.
 [Anonymous refusals and access](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5069),
 [anonymous waiting and local saving](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1494-5070)
 and [Shell deletion recovery](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=116-754)
-complete the recovery handoffs. D and Z are **✅ Ready for dev**, human-approved 2026-10-25.
-U/P are deferred from this release scope and remain unapproved. A/B remain **💡 Needs human review**
-and do not authorize visual implementation. E, N and M retain their existing supported
+complete the recovery handoffs. D is **✅ Ready for dev** and Z is **🚀 In production**, both human-approved 2026-10-25.
+U/P are deferred from this release scope and remain unapproved. A and B.2 remain **💡 Needs human review**
+and do not authorize visual implementation. The approved 08.6b access screens are on the Android design page. E, N and M retain their existing supported
 presentation/routes; no optional replacement is part of this review. Ready portions, domain logic
 and transport work remain independent.
