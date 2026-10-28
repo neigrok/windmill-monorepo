@@ -196,6 +196,11 @@ class PostgresTest(ToolTest):
         process.send_signal(signal.SIGTERM)
         process.communicate(timeout=5)
         self.assertEqual(process.returncode, -signal.SIGTERM)
+        deadline = time.monotonic() + 10
+        while self.sql("SELECT count(*) FROM pg_stat_activity "
+                       f"WHERE application_name = '{application}';") != "0":
+            self.assertLess(time.monotonic(), deadline, "terminated tool's Postgres session still holds its transaction")
+            time.sleep(0.05)
         self.assertEqual(self.state(), f"{BEFORE}|0")
         self.completion(self.invoke(BEFORE, AFTER), 0, "ok")
         self.assertEqual(self.state(), f"{AFTER}|1")
