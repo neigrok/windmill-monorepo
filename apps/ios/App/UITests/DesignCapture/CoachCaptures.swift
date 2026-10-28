@@ -32,20 +32,8 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
-  // 01.17: before it drafts, Coach asks two things and the chips fill the composer; 01.18: a draft a signed-out start left
-  // on this phone waits under the greeting.
+  // 01.18: a draft a signed-out start left on this phone waits under the greeting.
   func testSetupStates() {
-    captureBoard("01.17-coach-choices") { look in
-      let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture", "-coach-choices"])
-      openGymFromJournal(app, opensOn: .coach)
-      XCTAssertTrue(app.descendants(matching: .any)["coach-capabilities"].waitForExistence(timeout: 15))
-      ask("Build me a program to get stronger.", app)
-      let three = app.buttons["coach-choice-days-three"]
-      XCTAssertTrue(three.waitForExistence(timeout: 15)); three.tap()
-      app.buttons["coach-choice-equipment-dumbbells"].tap()
-      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForValue("3 days. Dumbbells.", timeout: 5))
-      return app
-    }
     captureBoard("01.18-draft-kept") { look in
       let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture", "-coach-kept-draft"])
       openGymFromJournal(app, opensOn: .coach)
@@ -82,7 +70,7 @@ final class CoachCaptures: DesignCapture {
 
   func testConversation() {
     for look in Look.both {
-      let app = launchSignedInCoach(look)
+      let app = launchSignedInCoach(look, arguments: ["-coach-draft-photo"])
       app.buttons["you"].tap()
       reach(app.buttons["settings-connected-log"], app).tap()
       XCTAssertTrue(app.staticTexts["Claude Desktop"].waitForExistence(timeout: 5))
@@ -208,7 +196,7 @@ final class CoachCaptures: DesignCapture {
 
   func testThinking() {
     captureBoard("01.6-coach-thinking") { look in
-      let app = launchSignedInCoach(look, arguments: ["-coach-thinking"])
+      let app = launchSignedInCoach(look, arguments: ["-coach-thinking", "-coach-draft-photo"])
       ask("My program, 3 days a week", app)
       XCTAssertTrue(app.buttons["Enlarge photo"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.descendants(matching: .any)["coach-typing"].exists)
@@ -309,27 +297,18 @@ final class CoachCaptures: DesignCapture {
     return app
   }
 
-  // Each card says what Coach did and nothing it read back from the log, though the fixture wrote it there.
+  // The note's card reads the record the turn's call created: what Coach did, then the note's own title and body.
   func testWriteReceipts() {
-    captureBoard("08.9-coach-changed-load-basis", settle: 2) { look in
-      let app = askWrite("load-basis", "Pull-ups are bodyweight for me. I add a 10 kg belt.", "coach-updated-movement", look)
-      XCTAssertEqual(app.descendants(matching: .any)["coach-updated-movement"].label, "Changed a movement")
-      return app
-    }
     captureBoard("08.25-coach-saved-note", settle: 2) { look in
       let app = askWrite("note", "My left shoulder hurts on wide-grip bench.", "coach-saved-note", look)
-      XCTAssertEqual(app.buttons["coach-saved-note"].label, "Saved a note")
+      XCTAssertTrue(app.buttons["coach-saved-note"].label.hasPrefix("Saved a note"))
+      XCTAssertTrue(app.buttons["coach-saved-note"].label.contains("Shoulder"))
       return app
     }
     captureBoard("08.32-copy-menu", settle: 1) { look in
-      let app = askWrite("load-basis", "Pull-ups are bodyweight for me. I add a 10 kg belt.", "coach-updated-movement", look)
+      let app = askWrite("note", "My left shoulder hurts on wide-grip bench.", "coach-saved-note", look)
       app.descendants(matching: .any)["coach-answer"].firstMatch.press(forDuration: 1)
       XCTAssertTrue(app.buttons["Copy answer"].waitForExistence(timeout: 5))
-      return app
-    }
-    captureBoard("08.26-coach-changed-movement", settle: 2) { look in
-      let app = askWrite("movement-details", "Incline DB is really dumbbells, one in each hand.", "coach-updated-movement", look)
-      XCTAssertEqual(app.descendants(matching: .any)["coach-updated-movement"].label, "Changed a movement")
       return app
     }
   }
@@ -353,7 +332,7 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
       ask("What should Thursday look like?", app)
       XCTAssertTrue(app.descendants(matching: .any)["coach-daily-cap"].waitForExistence(timeout: 10))
-      XCTAssertTrue(app.staticTexts["You can ask again in about 2 hours."].exists)
+      XCTAssertTrue(app.staticTexts["You can ask again later."].exists)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "What should Thursday look like?", "The refused question stays in the field")
       return app
@@ -361,7 +340,7 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.31-coach-change-needs-account") { look in
       let app = XCUIApplication()
       app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
-                             "-coach-fixture", "-coach-needs-account", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+                             "-coach-fixture", "-coach-board", "needs-account", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
       app.launch()
       let field = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(field.waitForExistence(timeout: 30))
@@ -377,7 +356,7 @@ final class CoachCaptures: DesignCapture {
     captureBoard("01.10-coach-allowance-signed-out") { look in
       let app = XCUIApplication()
       app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
-                             "-coach-fixture", "-coach-allowance-spent", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+                             "-coach-fixture", "-coach-board", "squats", "-coach-allowance-spent", "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
       app.launch()
       XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 30))
       ask("How heavy should I start squats?", app)
@@ -412,12 +391,16 @@ final class CoachCaptures: DesignCapture {
     }
   }
 
-  // A signed-in gym with no routines asks for a program and gets Coach's drafts on one card.
+  // A signed-in gym with no routines holds the signed-out answer an earlier version archived: Coach's drafts on one card.
   func askDrafts(_ look: Look, arguments: [String] = []) -> XCUIApplication {
-    let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture"] + arguments)
-    openGymFromJournal(app, opensOn: .coach)
-    XCTAssertTrue(app.descendants(matching: .any)["coach-capabilities"].waitForExistence(timeout: 15))
-    ask("My program, 3 days a week", app)
+    let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture", "-coach-archived-answer"] + arguments)
+    openGymFromJournal(app, opensOn: .routines)
+    open(.coach, app)
+    // Entering the tab opens a fresh canvas; the archived answer is reopened from History.
+    let history = app.buttons["coach-history"]
+    XCTAssertTrue(history.waitForExistence(timeout: 15)); history.tap()
+    let archived = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "My program")).firstMatch
+    XCTAssertTrue(archived.waitForExistence(timeout: 10)); archived.tap()
     let apply = app.buttons["coach-save-routines"]
     XCTAssertTrue(apply.waitForExistence(timeout: 15))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
@@ -440,13 +423,13 @@ final class CoachCaptures: DesignCapture {
     captureBoard("01.8-coach-drafts-saved") { look in
       let app = askDrafts(look)
       app.buttons["coach-save-routines"].tap()
-      XCTAssertTrue(app.buttons["coach-created-setup-operation-C"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.buttons["coach-created-setup-operation-2"].waitForExistence(timeout: 15))
       return app
     }
     captureBoard("01.9-coach-routine-summary") { look in
       let app = askDrafts(look)
       app.buttons["coach-save-routines"].tap()
-      let first = app.buttons["coach-created-setup-operation-A"]
+      let first = app.buttons["coach-created-setup-operation-0"]
       XCTAssertTrue(first.waitForExistence(timeout: 15)); first.tap()
       XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10))
       return app
@@ -461,10 +444,6 @@ final class CoachCaptures: DesignCapture {
       app.launch()
       XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 30))
       ask("Build me a three day full body program", app)
-      let apply = app.buttons["coach-save-routines"]
-      XCTAssertTrue(apply.waitForExistence(timeout: 30))
-      for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
-      apply.tap()
       XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch.waitForExistence(timeout: 30))
       app.buttons["you"].tap()
       XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10)); app.buttons["email-sign-in"].tap()

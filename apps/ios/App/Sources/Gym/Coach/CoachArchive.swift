@@ -1,28 +1,66 @@
 import Foundation
 import CryptoKit
 
+// What this phone keeps of a conversation beside the engine's records: the composer's draft, the drafts a signed-out start
+// left, the signed-out onboarding answers of earlier versions, and the owner-wide setup marks. The conversation's messages
+// are engine records (Coach §9.1), found by `conversation`, the engine thread the room is on.
+nonisolated struct CoachSaved: Codable, Equatable {
+  var adoptedSources: [String]?
+  var rejectedDrafts: [String]?
+  var phoneDrafts: [CoachPhoneDraft]?
+  var onboarding: [CoachOnboardingRecord]?
+  var acceptedFirstMessage: Bool?
+  var setupChoice: CoachSetupChoice?
+  // The archive's key: the engine thread once a turn opened one, a local id before.
+  var threadId = UUID().uuidString
+  var conversation: String?
+  var text = ""
+  var photo: CoachAttachment?
+  var photoData: Data?
+  // Owner-wide setup and decision marks; each conversation keeps its own draft and onboarding answers.
+  var carried: CoachSaved {
+    var next = CoachSaved()
+    next.acceptedFirstMessage = acceptedFirstMessage; next.adoptedSources = adoptedSources
+    next.rejectedDrafts = rejectedDrafts; next.setupChoice = setupChoice
+    return next
+  }
+  var hasContent: Bool { !text.isEmpty || photo != nil || conversation != nil || !(onboarding ?? []).isEmpty || !(phoneDrafts ?? []).isEmpty }
+}
+
+nonisolated struct CoachPhoneDraft: Codable, Equatable {
+  let text: String
+  let photo: CoachAttachment?
+  let photoData: Data?
+  var setupChoice: CoachSetupChoice?
+}
+
+// A question handed to Coach from elsewhere in the room, for the account it was asked under.
+nonisolated struct CoachHandoff: Identifiable, Equatable {
+  var id = UUID()
+  let account: String?
+  let question: String
+  var send = false
+}
+
 nonisolated struct CoachArchive: Codable {
   struct Entry: Codable, Identifiable {
     var saved: CoachSaved
     var updatedAt: Int64
     var id: String { saved.threadId }
     var headline: String {
-      let text = saved.thread?.headline ?? saved.request?.question ?? saved.onboarding?.first?.request.question ?? saved.text
+      let text = saved.onboarding?.first?.request.question ?? saved.text
       return text.isEmpty ? "Photo conversation" : String(text.prefix(160))
     }
+    // What the row says of a conversation held on this phone alone: a draft, or what its signed-out answers created.
     var state: String {
-      if let request = saved.request, saved.generation?.terminal != true, saved.thread?.generation?.terminal != true,
-         saved.allowance == nil, request.thread == id { return "Interrupted" }
       if let record = saved.onboarding?.last, !record.finished { return "Interrupted" }
       if !saved.text.isEmpty || saved.photo != nil { return "Draft" }
       let routines = (saved.onboarding ?? []).flatMap(\.results).filter { $0.kind == "routine-created" }.count
       return routines > 0 ? "Created \(routines) \(routines == 1 ? "routine" : "routines")" : "Conversation"
     }
-    var remote: Bool { saved.thread != nil || saved.request != nil || saved.generation != nil || !saved.exchanges.isEmpty }
   }
   var version = 1
   var selected: String?
-  var pending: String?
   var shared = CoachSaved()
   var entries: [Entry] = []
 
@@ -39,8 +77,6 @@ nonisolated struct CoachArchive: Codable {
     let unchanged = previousContent == saved
     entries.removeAll { $0.id == saved.threadId }
     if saved.hasContent { entries.append(Entry(saved: saved, updatedAt: unchanged ? previous?.updatedAt ?? at : at)) }
-    if saved.hasPendingRequest { pending = saved.threadId }
-    else if pending == saved.threadId { pending = nil }
     if select { selected = saved.hasContent ? saved.threadId : nil }
     entries.sort { $0.updatedAt == $1.updatedAt ? $0.id > $1.id : $0.updatedAt > $1.updatedAt }
   }
@@ -50,17 +86,6 @@ nonisolated struct CoachArchive: Codable {
     saved.adoptedSources = shared.adoptedSources
     saved.rejectedDrafts = Array(Set((saved.rejectedDrafts ?? []) + (shared.rejectedDrafts ?? []))).sorted()
     return saved
-  }
-}
-
-extension CoachSaved {
-  nonisolated var hasPendingRequest: Bool {
-    if let record = onboarding?.last, !record.finished, !record.stopped { return true }
-    return request != nil && allowance == nil && (generation ?? thread?.generation)?.terminal != true
-  }
-  nonisolated var hasContent: Bool {
-    !text.isEmpty || photo != nil || request != nil || thread != nil || generation != nil || !exchanges.isEmpty
-      || !(onboarding ?? []).isEmpty || !(phoneDrafts ?? []).isEmpty
   }
 }
 
@@ -79,10 +104,7 @@ struct CoachDraftStore {
     if object?["version"] != nil {
       let archive = try JSONDecoder().decode(CoachArchive.self, from: data)
       let ids = Set(archive.entries.map(\.id))
-      guard archive.version == 1, ids.count == archive.entries.count,
-            archive.selected.map(ids.contains) ?? true,
-            archive.pending.map({ id in archive.entries.contains { $0.id == id && $0.saved.hasPendingRequest } }) ?? true
-      else { throw CocoaError(.fileReadCorruptFile) }
+      guard archive.version == 1, ids.count == archive.entries.count, archive.selected.map(ids.contains) ?? true else { throw CocoaError(.fileReadCorruptFile) }
       return archive
     }
     let saved = try JSONDecoder().decode(CoachSaved.self, from: data)
@@ -106,7 +128,6 @@ struct CoachDraftStore {
     var archive = try archive(account)
     archive.entries.removeAll { $0.id == id }
     if archive.selected == id { archive.selected = nil }
-    if archive.pending == id { archive.pending = nil }
     if let replacement { archive.put(replacement, select: true, at: Int64(Date().timeIntervalSince1970 * 1000)) }
     try writeArchive(archive, account: account)
   }
@@ -118,13 +139,7 @@ struct CoachDraftStore {
       var target = try archive(account)
       if target.shared.adoptedSources?.contains(source) != true {
         let existing = Set(target.entries.map(\.id))
-        target.entries += local.entries.filter { !existing.contains($0.id) }.map { entry in
-          var entry = entry
-          if let index = entry.saved.onboarding?.indices.last, entry.saved.onboarding?[index].finished == false {
-            entry.saved.onboarding?[index].stopped = true
-          }
-          return entry
-        }
+        target.entries += local.entries.filter { !existing.contains($0.id) }
         target.shared.acceptedFirstMessage = target.shared.acceptedFirstMessage == true || local.shared.acceptedFirstMessage == true
         target.shared.rejectedDrafts = Array(Set((target.shared.rejectedDrafts ?? []) + (local.shared.rejectedDrafts ?? []))).sorted()
         target.shared.adoptedSources = Array(Set((target.shared.adoptedSources ?? []) + [source])).sorted()

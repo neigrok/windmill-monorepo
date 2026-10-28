@@ -24,10 +24,10 @@ import XCTest
     XCTFail("The Coach control did not become visible above the composer.")
   }
 
-  // Signed out, Coach greets, drafts routines from one question and the lifter applies them; Keep your routines signs in,
-  // the same conversation goes on, and the next question gets a change to the routine it created. With
-  // WM_ANONYMOUS_COACH_SERVER the signed-out half runs against that backend.
-  func testSignedOutCoachDraftsKeepsAndContinuesSignedIn() throws {
+  // Signed out, Coach greets and creates routines from one question on this phone; Keep your routines signs in, the same
+  // conversation goes on, and the next question gets a change to the routine it created. With WM_ANONYMOUS_COACH_SERVER
+  // the signed-out half runs against that backend, and the captures include History and Routines.
+  func testSignedOutCoachCreatesRoutinesKeepsAndContinuesSignedIn() throws {
     let server = ProcessInfo.processInfo.environment["WM_ANONYMOUS_COACH_SERVER"]
     let app = XCUIApplication()
     app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", server ?? "https://gym.invalid",
@@ -50,18 +50,28 @@ import XCTest
     XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertEqual(question.value as? String, "Build a short full body routine for three days each week")
     app.buttons["coach-send"].tap()
-    let apply = app.buttons["coach-save-routines"]
-    XCTAssertTrue(apply.waitForExistence(timeout: 30))
-    XCTAssertTrue(app.buttons["coach-reject-routines"].exists)
-    reveal(apply, in: app); apply.tap()
     let created = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "coach-created-")).firstMatch
-    XCTAssertTrue(created.waitForExistence(timeout: 30))
-    XCTAssertTrue(app.descendants(matching: .any)["coach-read-receipt"].exists)
+    XCTAssertTrue(created.waitForExistence(timeout: 60))
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 30))
+    let receipt = app.descendants(matching: .any)["coach-read-receipt"]
+    XCTAssertTrue(receipt.waitForExistence(timeout: 10))
+    reveal(receipt, in: app); try capture(app, "anonymous-transcript")
+    reveal(created, in: app); try capture(app, "anonymous-created")
+    if server != nil {
+      app.buttons["coach-history"].tap()
+      XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Build a short full body routine")).firstMatch.waitForExistence(timeout: 10))
+      try capture(app, "anonymous-history")
+      app.navigationBars["History"].buttons.element(boundBy: 0).tap()
+      app.tabBars.buttons["Routines"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
+      try capture(app, "anonymous-routines")
+      return
+    }
     let keep = app.buttons["coach-keep-routines"]
-    reveal(keep, in: app); try capture(app, "anonymous-created")
+    reveal(keep, in: app)
     keep.tap()
     XCTAssertTrue(app.staticTexts["Keep your routines"].waitForExistence(timeout: 10))
-    if server != nil { return }
     app.buttons["email-sign-in"].tap()
     let address = app.textFields["email-address"]
     XCTAssertTrue(address.waitForExistence(timeout: 5)); address.typeText("after-sign-in-" + UUID().uuidString.prefix(8).lowercased() + "@example.com")

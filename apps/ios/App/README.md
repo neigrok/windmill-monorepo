@@ -91,10 +91,10 @@ An inactive scene persists Journal drafts while Gym live sync and REST work cont
 Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
-client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
+client handle for shares and Connected log; Coach speaks the turn wire through `coachTurns`, and engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and Coach, account-only proposal review, Notes and Connected log.
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
-routine or its editor. Coach has a direct History button for local conversations and signed-in server history;
+routine or its editor. Coach has a direct History button, listing the engine's conversations beside this phone's drafts;
 Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
@@ -126,60 +126,53 @@ The content-sized weigh-in sheet preserves the typed weight while a native graph
 stages another day; Back cancels the date change and checkmark accepts it without saving the weight.
 The calendar dismisses the keyboard and expands within the same sheet. Correction keeps its day fixed.
 
-Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
-account- or replica-scoped versioned Coach archive. Deliberately entering the Coach tab opens a fresh
-canvas; History restores each nonempty chat, draft or interrupted request. An answer stays with its
-original conversation while a fresh draft waits for that request to settle. Empty visits create no
-archive row or network request, and foreground or photo-picker returns retain the selected chat.
-A fresh draft shows Answer in progress and View chat while the prior request owns Send. Signed-in
-History refreshes cached server turns without resending and keeps the local draft usable offline.
-The archive migrates the legacy file and applies adoption or deletion to all conversations for the
-captured owner. Coach keeps the full tab bar while scrolling; the composer has no backing panel.
-Every new routine is a draft, and an answer's drafts
-stand on one card under it: *3 NEW ROUTINES*, each routine a heading that opens in place to its
-movements as added blocks, then **Apply**, the only creation path, and **Reject**, which drops the drafts
-on this phone with no server call and leaves *Rejected · 3 routines*, which stays through a new chat, an
-opened or deleted conversation and the adoption of a signed-out conversation. A movement the phone does not know
-yet reads *New movement*. Every signed-in ask sends `routineReview: true`. Signed-in Apply replays each
-exact server-held document using its request and operation identity; a draft that arrived without its
-request cannot be applied. A draft the server no longer holds, or cannot write, says so and retires
-Apply; a signed-out, busy or unanswered confirmation keeps Apply for another try, and an account change
-during the save says so without claiming a failure. Anonymous results commit all routines and the
-replay receipt in one domain action only after Apply; a retained result can also be applied after
-account adoption. After sign-in and *Add* the adopted conversation stays on screen, without the Sign in
-under an answer that needed an account or the signed-out allowance's refusal, and the next question
-goes to signed-in Coach, which can answer it with a change to a routine the conversation created. Creation links appear after that save succeeds. Existing routine changes are decided
-on their proposal card.
+A conversation's messages are engine records (`thread`, `message`; Coach §9.1) that sync for an account and
+stay on the phone signed out. Each turn runs on this phone (`Coach/Turn/`): admitted locally (a connection, no
+workout open, the replica's first pull, 8,000 bytes, one picture), recorded in one engine gesture as the lifter
+message and the running Coach message, opened over `POST /v1/gym/coach/turns` with the four context reads, the
+newest completed turns and the pictures' model copies, its batches of ability calls run on the replica through
+`GymDomain.AbilityExecutor` and answered on `…/results`, its text streamed onto the Coach message in
+coalesced commits, and ended with its state and the receipt its calls derive. A dropped stream resumes from the
+server's `snapshot` after 1, 2, 4 and 8 beats; a turn the process died under ends interrupted at engine start;
+only the replica named on the message writes it, and another phone shows the turn as answering elsewhere.
+Draft text and photos, the drafts a signed-out start left, the signed-out onboarding answers earlier
+versions kept and the acceptance marks live in an account- or replica-scoped Coach archive, out of
+backups. Deliberately entering the Coach tab opens a fresh canvas; History lists every conversation
+and draft. A fresh draft shows Answer in progress and View chat while a turn runs on another
+conversation. The archive applies adoption or deletion to all conversations for the captured owner.
+Coach keeps the full tab bar while scrolling; the composer has no backing panel.
+Signed in or out, `create_routine` lands on the replica under the turn and is drawn as one receipt per
+routine created. The drafts card (*3 NEW ROUTINES*, each routine a heading that opens in place to its
+movements as added blocks, then **Apply** and **Reject**) stands only under an archived signed-out
+onboarding answer of an earlier version: Apply commits its routines and the replay receipt in one domain
+action (`ImportCoachRoutines`), and Reject drops them on this phone with *Rejected · 3 routines*, which stays
+through a new chat, an opened or deleted conversation and adoption. A movement the phone does not know
+yet reads *New movement*. After sign-in and *Add* the adopted conversation stays on screen, and the next
+question goes to the account's seat, which can answer it with a change to a routine the conversation
+created. Existing routine changes are decided on their proposal card.
 
-Allowance refusals preserve drafts and retained results, with no balance indicator. The refused
-question stays in the field, and the refusal is drawn once, centred in the conversation — *You have
-used all of your AI allowance.*, then *You can use Coach again on Nov 1 at 12:00 AM.* — and only the
-refusal the conversation ends on offers recovery. The reset line stands only where a reset brings
-Coach back: a spent allowance at its period's end, a shared free pool when its day or month turns. A
-request too large for what remains, or an allowance a request in progress still holds, says so and
-names no time. Signed out, *Sign in to
-continue.* and Sign in appear only where the phone's own AI access is used up or belongs to an
-account; shared free-pool, concurrency and rate refusals offer nothing to do. Signed in there is no
-upgrade while paid plans are closed (01.12 is not built). The day's cap reads *You can ask again
-in about 2 hours.*, the wait to the server's `retryAtMs` rounded (*in a minute* under one, then the nearest minute,
-five minutes or hour; *later* where the server names no moment), with *Use your own AI agent*; a ceiling receives the actual refusal and any
-server-provided reset time. A capped or refused question is never sent again on its own: it stays in
-the field, and only Send asks again, with what the field then holds. The day's cap and the ceiling
-lapse when Coach opens again, so that Send asks the server afresh. An unchanged deliberate Send after an
-interruption or an allowance refusal preserves its original request identity.
+Allowance refusals keep the draft, with no balance indicator: a refusal before the stream withdraws the
+turn's records so the refused question stays in the field, and the refusal is drawn once, centred in
+the conversation — the sentence for its code, *You have used all of your AI allowance.* — with *Sign in
+to continue.* and Sign in only signed out, where the phone's own AI access is used up or belongs to an
+account; shared free-pool, concurrency and rate refusals offer nothing to do. A turn the allowance
+refuses mid-way ends failed with its partial text and the same sentence. The reset line of an
+archived signed-out answer stands where its allowance named a reset. Signed in there is no upgrade
+while paid plans are closed (01.12 is not built). `coach-rate-limited` reads *You can ask again later.*,
+since the turn wire names no moment, with *Use your own AI agent*. A capped or refused question is never
+sent again on its own: it stays in the field, and only Send asks again, with what the field then holds.
 
-Anonymous Coach accepts bounded conversation text, up to twelve prior text messages within 16 KB,
-and one inline photo. Each call returns an assistant message and zero to three public-catalogue
-routine drafts. The server issues a separate installation credential in device-only Keychain storage
-and applies installation, IP and shared budgets. An unreadable or rejected credential never creates
-a replacement. The phone retains immutable requests and resumes the same result after interruption.
-Stop waiting cancels the phone wait without promising cancellation of provider spending. Open and
-Start work before sign-in after a routine is saved. Keep uses existing account adoption; usage binds
-before signed-in Coach dispatch independently of Add/Discard. A binding outage leaves authentication
-and manual Gym available. Local records transfer to the account archive on Add or empty-account
-adoption and are removed on explicit Discard. An authenticated bind returning invalid_installation
-permits account Coach; other authentication, transport and accounting failures block dispatch until
-recovered. Work from a previous account/replica cannot publish into the active seat.
+Signed out, Coach is the same turn against the `anon` replica (Coach §8): the server issues a separate
+installation credential in device-only Keychain storage and applies installation, IP and shared
+budgets; an unreadable or rejected credential never creates a replacement. The abilities that need the
+account (`save_note`, the shares) are refused `seat-required` on the phone, and the newest answer that
+met one offers Sign in under it. A picture leaves the phone only as its model copy inside the open
+request, signed in too, until the picture store moves (ruling R8). Open and Start work before sign-in
+once a routine is created. Keep uses existing account adoption; usage binds before the account's seat is
+used, independently of Add/Discard. A binding outage leaves authentication and manual Gym available.
+Local drafts and archived answers transfer to the account archive on Add or empty-account adoption and
+are removed on explicit Discard; the conversation records move with the replica. Work from a previous
+account/replica cannot publish into the active seat.
 
 The live workout uses a compact ledger with up to three 44-point rows at default text size;
 accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
@@ -239,35 +232,32 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `update-required` board signs in against a model server that answers 426 (and keeps answering it across
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
-`GymAnonymousCoachFlowTests` runs one flow in the standard Coach UI through the deterministic installation/Coach
-transport fixture and real local engine: signed out, Coach drafts routines and the lifter applies them, Keep your
-routines signs in, and the same conversation goes on. Set `TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for its signed-out
-half against an isolated backend and `TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
-`TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
-to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP, in a fresh keychain
-service each run unless `TEST_RUNNER_WM_ANONYMOUS_COACH_KEYCHAIN` names one. Without those variables, the
-photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
+`GymAnonymousCoachFlowTests` runs one flow in the standard Coach UI through the deterministic installation and turn
+fixture and the real local engine: signed out, one question creates three routines on the phone, Keep your routines
+signs in, and the same conversation goes on. Set `TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for its signed-out half
+against an isolated backend and `TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. `CoachTurnTests` replays every
+exchange of `packages/api-contract/gym/turns/` against a scripted server as the phone. Neither standard suite skips tests.
 
-Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
-proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
-the change. Startup prepares the account and fixture before publishing the app model. Scenarios prefixed
-`gym-e2e-anonymous` remain anonymous until the test signs in through the account flow; view-time preparation
-can seed an existing account but cannot sign in. Add `-coach-setup-fixture` for an empty signed-in account
-and scripted routine setup. `-coach-removal` makes the proposal a removal and the conversation one that
-asks for it from your totals,
-`-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
-`-coach-out-of-date` has a newer proposal replace it,
+Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and notes, and a
+scripted Coach server over the turn wire whose batch of ability calls the phone's executor runs for real — the default
+conversation reads that workout and proposes a change to Push A. Startup prepares the account and fixture before
+publishing the app model. Scenarios prefixed `gym-e2e-anonymous` remain anonymous until the test signs in through the
+account flow; view-time preparation can seed an existing account but cannot sign in. Add `-coach-setup-fixture` for an
+empty signed-in account, and `-coach-archived-answer` beside it for one holding an archived signed-out answer with routine
+drafts. `-coach-removal` makes the
+conversation one that proposes the routine's removal from your totals, `-coach-created` one that creates the routine
+and saves a note, `-coach-out-of-date` has a newer proposal replace the turn's once the answer settles,
 `-coach-decision-stall` leaves a card's Apply unanswered past its 15-second wait, `-coach-decision-unreachable` leaves every push
-four seconds in flight, then unanswered,
-`-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer, `-coach-thinking` holds it before its
-first word under a program screenshot, `-coach-board <name>` (`CoachBoard.all`) seeds the routines and proposals of a
-proposal board and answers its questions, `-coach-draft-photo` puts a program screenshot in the composer, `-coach-daily-cap` refuses every question after the first
-with the day's cap, `-coach-needs-account` answers a signed-out question with one that needs an account, `-coach-allowance-spent` answers the first question and refuses the next
-with a spent allowance, `-coach-history` lists four conversations in History, `-coach-one-draft` makes the setup fixture's drafts
-one routine, `-coach-choices` has the setup fixture ask two things before it drafts, `-coach-kept-draft` keeps a signed-out
-start's draft on the phone beside the account's own, `-coach-board after-sign-in` answers a signed-in *Swap chin-ups for pulldowns* with a
-change to *Full body B*,
-`-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
+four seconds in flight, then unanswered, `-coach-markdown` answers in Markdown, `-coach-streaming` holds Coach mid-answer,
+`-coach-thinking` holds it before its first word, `-coach-board <name>` (`CoachBoard.all`) seeds the routines of a board and
+answers its questions with the proposals, routines and note the board names, `-coach-draft-photo` puts a program screenshot
+in the composer, `-coach-daily-cap` refuses every question after the first `coach-rate-limited`, `-coach-board needs-account`
+answers a signed-out question with a note the phone refuses `seat-required`, `-coach-allowance-spent` answers the first
+question and refuses the next `subject_exhausted`, `-coach-history` seeds four conversations in History, `-coach-one-draft`
+makes the setup fixture's drafts one routine, `-coach-kept-draft` keeps a signed-out start's draft on the phone beside the
+account's own, `-coach-board after-sign-in` creates three full-body days signed out and answers a signed-in *Swap chin-ups
+for pulldowns* with a change to *Full body B*, `-coach-offline` takes Coach and its REST reads offline and
+`-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator offline launches seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
 or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
@@ -339,7 +329,7 @@ Offline boundary observations:
 | Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Cancel sign-in. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
 | Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
-| Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity; a reply that is not a stream and not finished is asked again after 1, 2, 4, 8 and then every 16 seconds. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |
+| Coach turns | Stream parsing runs off the main actor. Server heartbeats count as transport activity; the request idle timeout is 60 seconds and the total stream limit is one hour. A dropped stream resumes after 1, 2, 4 and 8 beats, keeps the partial text and clears Reconnecting on the first frame; a fifth loss ends the turn interrupted. A batch's results post again after a lost answer, since the same body answers 204. Stop asks the server and its stream ends the turn; with no connection the turn stops on this phone. A turn keeps running under a background task while the system lends time. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
 The network-dependent native features are Coach, journal echoes, account authentication, sharing and

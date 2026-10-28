@@ -3,23 +3,16 @@ import UIKit
 import ImageIO
 import SyncEngine
 
-struct CoachStreamActivity {
-  let receive: @MainActor () throws -> Void
-}
-
 extension GymRESTClient {
-  func coachRequest(_ path: String, method: String = "GET", body: Data? = nil,
-                    mediaType: String? = nil, expectedAccount: String? = nil, idleTimeout: TimeInterval = 60, reportsFailure: Bool = true, activity: CoachStreamActivity? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
+  // The account's reads the Coach room makes beside the engine: the connected tools' grants and keys.
+  func coachRequest(_ path: String, method: String = "GET", body: Data? = nil, expectedAccount: String? = nil) async throws -> Data {
     if let expectedAccount {
       guard let runtime, try runtime.account() == expectedAccount else { throw CancellationError() }
-    }
-    if mediaType == nil, snapshot == nil, path.hasPrefix("/v1/gym/") {
-      return try await request(path, method: method, body: body)
     }
     guard !blocked, let runtime, let baseURL = runtime.settings.baseURL,
           let owner = try runtime.account(), !runtime.engine.status.authPaused,
           let token = runtime.tokens.token(for: owner) else { throw AppFailure(message: "Sign in to use this part of Gym.") }
-    guard (path.hasPrefix("/v1/gym/") || path == "/v1/oauth/grants" || path == "/v1/mcp-keys"), !path.contains(".."),
+    guard (path == "/v1/oauth/grants" || path == "/v1/mcp-keys"), !path.contains(".."),
           let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
           url.host == baseURL.host, url.scheme == baseURL.scheme, url.port == baseURL.port else {
       throw AppFailure(message: "Gym could not open this request.")
@@ -27,77 +20,10 @@ extension GymRESTClient {
     var request = URLRequest(url: url)
     request.httpMethod = method; request.httpBody = body
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
-    if body != nil { request.setValue(mediaType ?? "application/json", forHTTPHeaderField: "Content-Type") }
-    if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept"); request.timeoutInterval = idleTimeout }
+    if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
     let requestGeneration = generation
     let id = UUID()
-    let streamConfiguration = session.configuration
-    streamConfiguration.timeoutIntervalForRequest = idleTimeout
-    streamConfiguration.timeoutIntervalForResource = 3600
-    let transport = snapshot == nil ? session : URLSession(configuration: streamConfiguration)
-    defer { if snapshot != nil { transport.invalidateAndCancel() } }
-    let wireRequest = request
-    let task = Task<(Data, URLResponse), any Error>.detached { [self] in
-      if let snapshot {
-        let (bytes, response) = try await transport.bytes(for: wireRequest)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if !(200..<300).contains(http.statusCode) || !(http.value(forHTTPHeaderField: "Content-Type") ?? "").hasPrefix("text/event-stream") {
-          var data = Data()
-          for try await byte in bytes {
-            try Task.checkCancellation()
-            data.append(byte)
-            if data.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) }
-          }
-          return (data, response)
-        }
-        var parser = CoachSSE(), terminal = false, line = Data()
-        for try await byte in bytes {
-          try Task.checkCancellation()
-          guard byte == 10 else {
-            line.append(byte)
-            if line.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) }
-            continue
-          }
-          if line.last == 13 { line.removeLast() }
-          guard let text = String(data: line, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
-          line.removeAll(keepingCapacity: true)
-          if let activity {
-            try await MainActor.run {
-              try Task.checkCancellation()
-              guard generation == requestGeneration, !blocked,
-                    try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
-              try activity.receive()
-            }
-          }
-          if let (event, data) = parser.consume(text) {
-            if event == "error" {
-              try await MainActor.run {
-                try Task.checkCancellation()
-                guard generation == requestGeneration, !blocked,
-                      try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
-              }
-              let object = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-              throw GymRESTFailure(status: object["status"] as? Int ?? 500, body: data,
-                                   message: object["error"] as? String ?? CoachCopy.noAnswer)
-            }
-            if event == "snapshot" {
-              let value = try JSONDecoder().decode(CoachSnapshot.self, from: data)
-              try await MainActor.run {
-                try Task.checkCancellation()
-                guard generation == requestGeneration, !blocked,
-                      try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
-                try snapshot(value)
-              }
-              terminal = value.generation.terminal
-              if terminal { break }
-            }
-          }
-        }
-        guard terminal else { throw URLError(.networkConnectionLost) }
-        return (Data(), response)
-      }
-      return try await NativeAuth.data(for: wireRequest, session: transport)
-    }
+    let task = Task<(Data, URLResponse), any Error>.detached { [session] in try await NativeAuth.data(for: request, session: session) }
     tasks[id] = task
     defer { tasks[id] = nil }
     do {
@@ -115,8 +41,9 @@ extension GymRESTClient {
       return data
     } catch {
       if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
-      telemetry.event("api_request_failed", properties: coachFailure(error, method: method).properties)
-      if reportsFailure { reportCoachFailure(error, method: method) }
+      let failure = coachFailure(error, method: method)
+      telemetry.event("api_request_failed", properties: failure.properties)
+      if failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
       throw error
     }
   }
@@ -128,16 +55,7 @@ extension GymRESTClient {
     let kind = offline ? "offline" : (error as? URLError)?.code == .timedOut ? "timeout" : status != nil ? "http" : error is DecodingError ? "decode" : "transport"
     var properties = ["operation": "gym_rest", "route": "/v1/gym", "method": method, "failure_kind": kind]
     if let status { properties["status"] = String(status) }
-    let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
-    let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
-    return (properties, !offline && !unavailable && !ExpectedStatuses.contains(status))
-  }
-
-  // A Coach request's unexpected failure, reported once: a streamed ask reports only the failure it gives up on.
-  func reportCoachFailure(_ error: any Error, method: String) {
-    guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
-    let failure = coachFailure(error, method: method)
-    if failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
+    return (properties, !offline && !ExpectedStatuses.contains(status))
   }
 }
 
@@ -163,12 +81,34 @@ nonisolated enum CoachPhotoPreparation {
           width: Int(current.size.width), height: Int(current.size.height), bytes: encoded.count)
         return (attachment, encoded)
       }
-      let size = CGSize(width: max(1, floor(current.size.width * 0.8)), height: max(1, floor(current.size.height * 0.8)))
-      let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = !png
-      current = UIGraphicsImageRenderer(size: size, format: format).image { context in
-        if !png { UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: size)) }
-        current.draw(in: CGRect(origin: .zero, size: size))
+      current = scaled(current, by: 0.8, png: png)
+    }
+  }
+
+  // Coach §9.3: the model copy of a prepared photo, a JPEG within the model's edge and byte bounds, kept beside the original.
+  static func modelCopy(of original: Data, attachment: CoachAttachment, maxEdge: Int = CoachTurnBounds.modelPictureEdge,
+                        maxBytes: Int = CoachTurnBounds.modelPictureBytes) throws -> CoachPictureRow {
+    guard var current = UIImage(data: original) else { throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.") }
+    let longest = max(current.size.width, current.size.height)
+    if longest > CGFloat(maxEdge) { current = scaled(current, by: CGFloat(maxEdge) / longest, png: false) }
+    var quality: CGFloat = 0.85
+    while true {
+      guard let encoded = current.jpegData(compressionQuality: quality) else { throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.") }
+      if encoded.count <= maxBytes {
+        return CoachPictureRow(id: attachment.id, mediaType: attachment.mediaType, width: attachment.width, height: attachment.height,
+                               original: original, model: encoded)
       }
+      if quality > 0.5 { quality -= 0.15 } else { current = scaled(current, by: 0.8, png: false) }
+    }
+  }
+
+  // A JPEG has no alpha, so a photo is flattened onto white before encoding; a PNG keeps its transparency.
+  static func scaled(_ image: UIImage, by factor: CGFloat, png: Bool) -> UIImage {
+    let size = CGSize(width: max(1, floor(image.size.width * factor)), height: max(1, floor(image.size.height * factor)))
+    let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = !png
+    return UIGraphicsImageRenderer(size: size, format: format).image { context in
+      if !png { UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: size)) }
+      image.draw(in: CGRect(origin: .zero, size: size))
     }
   }
 }

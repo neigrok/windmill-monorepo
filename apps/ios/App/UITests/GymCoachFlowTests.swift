@@ -96,7 +96,9 @@ import XCTest
   func testAskReadReceiptApplyAndHistory() {
     let app = launch()
     ask("Is Push A still doing anything?", app)
+    // The receipt row stands over the proposal card, which fills a compact screen: drag it into view.
     let sources = app.buttons["coach-read-receipt"]
+    for _ in 0..<4 where !sources.isHittable { app.scrollViews.firstMatch.swipeDown(velocity: .slow) }
     XCTAssertTrue(waitForVisible(sources, in: app))
     XCTAssertEqual(sources.label, "Read 1 workout · 1 week")
     sources.tap()

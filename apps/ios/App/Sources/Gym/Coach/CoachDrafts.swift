@@ -2,25 +2,17 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// One save of new routines: a server-held draft by its request and operation, or the phone's own drafts by their request.
-struct CoachDraftSave {
+// Coach's new routines from an archived signed-out answer, decided on one card under it: each routine a heading that opens
+// in place to its movements as added blocks — one open at a time — then Apply, which saves every routine on this phone,
+// and Reject, which drops them here.
+struct CoachDraftsCard: View {
   // What a save came to: saved, a kept note that leaves Apply for another try, or a closed note that retires it.
   enum Outcome: Equatable { case saved, kept(String), closed(String) }
-  let requestId: String?
-  let operationId: String?
-  // A signed-in draft is saved by its request and operation; one that arrived without its request cannot be.
-  var savable: Bool { operationId == nil || requestId != nil }
-}
 
-// Coach's new routines, decided on one card under its answer: each routine a heading that opens in place to its movements
-// as added blocks — one open at a time — then Apply, which saves every routine, and Reject, which drops them here.
-struct CoachDraftsCard: View {
   let coach: CoachConversation
-  // The card's key, its request: what Reject records.
+  // The card's key, the answer's request: what Reject records and Apply imports.
   let id: String
   let routines: [CoachRoutine]
-  // What Apply saves, in order: each server-held draft by its operation, or the phone's own drafts at once.
-  let saves: [CoachDraftSave]
   @State var open = 0
   @State var busy = false
   @State var note: String?
@@ -48,13 +40,13 @@ struct CoachDraftsCard: View {
           }
         }
       }
-      if let note = note ?? (saves.allSatisfy(\.savable) ? nil : CoachCopy.draftUnsavable) {
+      if let note {
         Text(note).font(.subheadline).foregroundStyle(GymPalette.inkDim).padding(.top, 14).accessibilityIdentifier("coach-save-routines-note")
       }
       VStack(spacing: 10) {
         Button { apply() } label: {
           HStack(spacing: RoomSpace.related) { if busy { ProgressView().tint(GymPalette.onAccent) }; Text("Apply") }
-        }.buttonStyle(ChangeCardButtonStyle(prominent: true)).disabled(busy || closed || !saves.allSatisfy(\.savable))
+        }.buttonStyle(ChangeCardButtonStyle(prominent: true)).disabled(busy || closed)
           .accessibilityIdentifier("coach-save-routines")
         Button("Reject") { coach.rejectDrafts(id) }.buttonStyle(ChangeCardButtonStyle()).disabled(busy).accessibilityIdentifier("coach-reject-routines")
       }.padding(.top, 16)
@@ -80,15 +72,11 @@ struct CoachDraftsCard: View {
   }
   func apply() {
     busy = true; note = nil
-    Task {
-      defer { busy = false }
-      for save in saves {
-        switch await coach.saveRoutines(save) {
-        case .saved: continue
-        case .kept(let text): note = text; return
-        case .closed(let text): note = text; closed = true; return
-        }
-      }
+    defer { busy = false }
+    switch coach.saveRoutines(id) {
+    case .saved: break
+    case .kept(let text): note = text
+    case .closed(let text): note = text; closed = true
     }
   }
 }
@@ -99,60 +87,15 @@ extension CoachConversation {
     var next = saved; next.rejectedDrafts = (next.rejectedDrafts ?? []) + [id]
     if keep(next, failure: "Your choice couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "drafts_rejected"]) }
   }
-  // Signed in, Save confirms the server-held draft and reports started, then saved, refused (4xx) or failed (5xx or no answer).
-  func saveRoutines(_ save: CoachDraftSave) async -> CoachDraftSave.Outcome {
+  // Apply saves the answer's routines on this phone, by the answer's own id, so a second Apply changes nothing.
+  func saveRoutines(_ requestId: String) -> CoachDraftsCard.Outcome {
     guard let owner, allowed else { return .closed(CoachCopy.accountChanged) }
-    guard let operation = save.operationId else {
-      guard let record = saved.onboarding?.first(where: { $0.id == save.requestId }) else { return .closed(CoachCopy.draftGone) }
-      do { try importOnboarding(record, owner: owner, generation: workGeneration); error = nil; return .saved }
-      catch {
-        gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "save_routines", "outcome": "failed"])
-        if error is CancellationError { return .closed(CoachCopy.accountChanged) }
-        return .kept((error as? AppFailure)?.message ?? CoachCopy.confirmRetry)
-      }
+    guard let record = saved.onboarding?.first(where: { $0.id == requestId }) else { return .closed(CoachCopy.draftGone) }
+    do { try importOnboarding(record, owner: owner); error = nil; return .saved }
+    catch {
+      gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "save_routines", "outcome": "failed"])
+      if error is CancellationError { return .closed(CoachCopy.accountChanged) }
+      return .kept((error as? AppFailure)?.message ?? CoachCopy.confirmRetry)
     }
-    guard !anonymous, let requestId = save.requestId else { return .closed(CoachCopy.draftUnsavable) }
-    let thread = saved.threadId
-    gym.telemetry.event("gym_coach_routine_confirm", properties: ["outcome": "started"])
-    let response: CoachSnapshot
-    do {
-      let data = try await rest.coachRequest("/v1/gym/threads/\(CoachCopy.escaped(thread))/generations/\(CoachCopy.escaped(requestId))/routines/\(CoachCopy.escaped(operation))/confirm",
-        method: "POST", body: Data("{}".utf8), expectedAccount: owner)
-      response = try JSONDecoder().decode(CoachSnapshot.self, from: data)
-      guard response.thread == thread, response.generation.requestId == requestId,
-            response.generation.routineDrafts.contains(where: { $0.operationId == operation && $0.state == "saved" }) else { throw URLError(.badServerResponse) }
-    } catch {
-      if error is CancellationError || (error as? URLError)?.code == .cancelled { return self.owner == owner ? .kept(CoachCopy.confirmRetry) : .closed(CoachCopy.accountChanged) }
-      if let status = (error as? GymRESTFailure)?.status, (400..<500).contains(status) {
-        gym.telemetry.event("gym_coach_routine_confirm", properties: ["outcome": "refused"])
-        switch status {
-        case 404: return .closed(CoachCopy.draftGone)
-        case 400, 422: return .closed(CoachCopy.draftUnsavable)
-        case 401: return .kept(CoachCopy.draftSignIn)
-        default: return .kept(CoachCopy.confirmRetry)
-        }
-      }
-      gym.telemetry.event("gym_coach_routine_confirm", properties: ["outcome": "failed"])
-      if error is DecodingError || (error as? URLError)?.code == .badServerResponse { gym.report("gym_rest", error) }
-      return .kept(CoachCopy.confirmRetry)
-    }
-    gym.telemetry.event("gym_coach_routine_confirm", properties: ["outcome": "saved"])
-    CoachFixture.applySetupResults(response.generation.results, gym: gym)
-    gym.refresh()
-    guard self.owner == owner, allowed else { return .closed(CoachCopy.accountChanged) }
-    guard saved.threadId == thread else { return .saved }
-    var next = saved
-    if next.generation?.requestId == requestId { next.generation = response.generation }
-    if next.thread?.generation?.requestId == requestId { next.thread?.generation = response.generation }
-    if let index = next.exchanges.firstIndex(where: { $0.requestId == requestId }) { next.exchanges[index] = response.generation }
-    if let index = next.thread?.turns.firstIndex(where: { $0.from != "lifter" && $0.generationId == response.generation.id }) {
-      next.thread?.turns[index].routineDrafts = response.generation.routineDrafts
-      next.thread?.turns[index].results = response.generation.results
-    }
-    let relink = "The routine was saved. Retry to restore its link."
-    guard keep(next, failure: relink) else { return .kept(relink) }
-    gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "routines_saved"])
-    error = nil
-    return .saved
   }
 }

@@ -2,16 +2,18 @@ import Foundation
 import Synchronization
 import GymDomain
 import DomainKit
+import SyncAPI
 import SyncCore
 import SyncEngine
 import SyncIOS
+import SyncSchema
 import SyncStore
 import UIKit
 #if DEBUG
 import struct SyncModelServer.ModelServer
 #endif
 
-// Simulator fixtures use the real engine actions and the authenticated REST boundary.
+// Simulator fixtures use the real engine, the real executor and a scripted Coach server over the turn wire.
 enum CoachFixture {
   nonisolated static var setup: Bool {
     #if DEBUG && targetEnvironment(simulator)
@@ -39,13 +41,25 @@ enum CoachFixture {
   static func rest(_ gym: GymModel) -> GymRESTClient {
     #if DEBUG && targetEnvironment(simulator)
     if ProcessInfo.processInfo.arguments.contains("-coach-fixture") {
-      let config = URLSessionConfiguration.ephemeral
-      config.protocolClasses = [CoachFixtureProtocol.self]; config.httpCookieStorage = nil
-      return GymRESTClient(runtime: gym.runtime, telemetry: gym.telemetry, session: URLSession(configuration: config))
+      return GymRESTClient(runtime: gym.runtime, telemetry: gym.telemetry, session: fixtureSession())
     }
     #endif
     return gym.rest
   }
+  // The turn wire the room speaks: the scripted server under `-coach-fixture`, the configured one otherwise.
+  static func turnWire(_ runtime: AppRuntime) -> CoachTurnWire? {
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.arguments.contains("-coach-fixture") { return CoachTurnWire(baseURL: URL(string: "https://coach.fixture"), session: fixtureSession()) }
+    #endif
+    return nil
+  }
+  #if DEBUG && targetEnvironment(simulator)
+  static func fixtureSession() -> URLSession {
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [CoachFixtureProtocol.self]; config.httpCookieStorage = nil
+    return URLSession(configuration: config)
+  }
+  #endif
   @discardableResult static func prepare(_ gym: GymModel, signIn: Bool = false) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), let runtime = gym.runtime, let server = runtime.auth.fake else { return true }
@@ -64,13 +78,16 @@ enum CoachFixture {
       if !runtime.settings.restoreBoard, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
-      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }
+      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") {
+        if ProcessInfo.processInfo.arguments.contains("-coach-archived-answer") { try seedSetupAnswer(owner: owner) }
+        return true
+      }
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-note"), title: "How I want to be talked to", body: "Don’t cheerlead. Say the number and stop.")))
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
       let board = CoachBoard.current
       for exercise in board == nil ? [] : CoachBoard.yours { _ = gym.run(CreateExercise(exercise)) }
-      for case .exercise(let exercise, _, _, _) in board?.writes ?? [] { _ = gym.run(CreateExercise(exercise)) }
-      let routines = board?.routines ?? [(id: "coach-fixture-routine", name: "Push A", entries: [CoachBoard.entry("back-squat", 1, 5, 80)])]
+      let routines = board?.routines ?? (ProcessInfo.processInfo.arguments.contains("-coach-created") ? []
+        : [(id: "coach-fixture-routine", name: "Push A", entries: [CoachBoard.entry("back-squat", 1, 5, 80)])])
       for planned in routines {
         var routine = Draft(new: Routine(id: ID(RecordID(planned.id)), name: planned.name, entries: planned.entries))
         _ = gym.save(&routine)
@@ -81,26 +98,8 @@ enum CoachFixture {
           sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))],
           routineId: ID(RecordID(first.id))))
       }
-      let removing = ProcessInfo.processInfo.arguments.contains("-coach-removal")
-      let proposals = board?.proposals ?? [CoachBoard.Proposed(id: "coach-fixture-proposal", routine: "coach-fixture-routine", name: "Push A2",
-        entries: [CoachBoard.entry("back-squat", 1, 3, 90), RoutineEntry(exerciseId: ID("bench-press"))], removing: removing)]
-      for proposed in proposals {
-        _ = gym.run(ProposeRoutine(id: ID(RecordID(proposed.id)), routineId: ID(RecordID(proposed.routine)), name: proposed.name, entries: proposed.entries,
-          summary: removing ? "Push A has stopped moving your squat." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: proposed.removing))
-      }
+      if ProcessInfo.processInfo.arguments.contains("-coach-history") { try seedHistory(gym) }
       await runtime.engine.flushOnLeave(); gym.refresh()
-      // The board's routine changes after Coach proposed, so its card is out of date.
-      if let edit = board?.editedAfter, var routine = try gym.runner.open(ID<Routine>(RecordID(edit.id))) {
-        routine.current.entries = edit.entries
-        _ = gym.save(&routine)
-        await runtime.engine.flushOnLeave(); gym.refresh()
-      }
-      // A newer proposal for Push A replaces this one, so its card and Review are out of date.
-      if ProcessInfo.processInfo.arguments.contains("-coach-out-of-date") {
-        _ = gym.run(ProposeRoutine(id: ID("coach-fixture-newer"), routineId: ID("coach-fixture-routine"), name: "Push A3",
-          entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 2, weightKg: 95)])], summary: "Doubles at 95."))
-        await runtime.engine.flushOnLeave(); gym.refresh()
-      }
       // An Apply then waits on the log past the card's 15-second wait.
       if ProcessInfo.processInfo.arguments.contains("-coach-decision-stall") {
         server.state.withLock { $0.server.refuse(next: 1_000, code: .clockSkew) }
@@ -132,38 +131,62 @@ enum CoachFixture {
     #endif
   }
 
-  // The board's writes land as Coach's first words arrive, after the phone took what the log held as the question went.
-  static let boardWritten = Mutex(false)
-  static func applyBoardWrites(_ gym: GymModel) {
+  // Once the board's turn ended: its routine changes under the proposal (`routine-changed`), or a newer proposal
+  // replaces it (`-coach-out-of-date`), so the card is out of date.
+  static let boardSettled = Mutex(false)
+  static func afterTurn(_ gym: GymModel) {
     #if DEBUG && targetEnvironment(simulator)
-    guard let board = CoachBoard.current, !board.writes.isEmpty, !boardWritten.withLock({ let done = $0; $0 = true; return done }) else { return }
-    for write in board.writes {
-      switch write {
-      case .exercise(let exercise, let name, let equipment, let loadCount): _ = gym.run(UpdateExercise(exercise.id, name: name, equipment: equipment, loadCount: loadCount))
-      case .note(let title, let body): _ = gym.run(SaveNoteCall(Note(id: ID("board-note"), title: title, body: body)))
-      case .swap(let name, let from, let to):
-        guard let routine = gym.routines.first(where: { $0.name == name }) else { continue }
-        let entries = routine.entries.map { $0.exerciseId == ID(RecordID(from)) ? to : $0 }
-        _ = gym.run(ProposeRoutine(id: ID("board-proposal"), routineId: routine.id, name: routine.name, entries: entries, summary: ""))
-      }
+    guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), !boardSettled.withLock({ let done = $0; $0 = true; return done }) else { return }
+    if let edit = CoachBoard.current?.editedAfter, var routine = try? gym.runner.open(ID<Routine>(RecordID(edit.id))) {
+      routine.current.entries = edit.entries
+      _ = gym.save(&routine)
     }
+    if ProcessInfo.processInfo.arguments.contains("-coach-out-of-date") {
+      _ = gym.run(ProposeRoutine(id: ID("coach-fixture-newer"), routineId: ID("coach-fixture-routine"), name: "Push A3",
+        entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 2, weightKg: 95)])], summary: "Doubles at 95."))
+    }
+    if let runtime = gym.runtime { Task { await runtime.engine.flushOnLeave(); gym.refresh() } }
     #endif
   }
 
-  static func applySetupResults(_ results: [CoachResult], gym: GymModel) {
-    #if DEBUG && targetEnvironment(simulator)
-    guard ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") else { return }
-    for result in results where result.kind == "routine-created" {
-      let id = ID<Routine>(RecordID(result.routineId))
-      guard !gym.routines.contains(where: { $0.id == id }) else { continue }
-      var routine = Draft(new: Routine(id: id, name: result.routineName, entries: [
-        RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5), count: 3)),
-        RoutineEntry(exerciseId: ID("bench-press"), sets: Array(repeating: SetTarget(reps: 5), count: 3)),
-        RoutineEntry(exerciseId: ID("barbell-row"), sets: Array(repeating: SetTarget(reps: 5), count: 3))]))
-      _ = gym.save(&routine)
+  #if DEBUG && targetEnvironment(simulator)
+  // The setup fixture's archived signed-out answer: Coach drafted the lifter's program, three full-body days, and the room
+  // offers Apply on them (01.7, 01.14, 01.15, 01.8, 01.9).
+  static func seedSetupAnswer(owner: String) throws {
+    let routines = draftNames.map { suffix in
+      CoachOnboardingOut.Routine(name: ("Full body " + suffix).trimmingCharacters(in: .whitespaces),
+        entries: ["back-squat", "bench-press", suffix == "B" ? "chin-up" : "barbell-row"].map { exercise in
+          CoachOnboardingOut.Routine.Entry(exerciseId: exercise, sets: Array(repeating: .init(reps: exercise == "chin-up" ? 8 : 5, weightKg: nil), count: 3), restSeconds: 120)
+        })
     }
-    #endif
+    let allowance = AiAllowance(code: "ok", currency: "USD", period: "lifetime", tier: "anonymous", configured: true, limit: "0.050000000",
+                                used: "0.001000000", reserved: "0.000000000", remaining: "0.049000000", resetsAtMs: nil, budgetResetsAtMs: nil)
+    var response = CoachOnboardingOut(requestId: "setup-request", resultId: "setup-operation", status: "completed", expiresAtMs: 1_900_000_000_000,
+                                      routines: routines, errorCode: nil, allowance: allowance)
+    response.message = draftNames.count == 1 ? "Here is 1 new routine. Check it, then apply."
+      : "Your screenshot has 3 full-body days. Here are 3 new routines. Check them, then apply."
+    var saved = CoachSaved()
+    saved.onboarding = [CoachOnboardingRecord(request: CoachOnboardingIn(requestId: "setup-request", mode: "conversation", text: "My program, 3 days a week"),
+                                              response: response)]
+    saved.acceptedFirstMessage = true
+    try CoachDraftStore().write(saved, account: owner)
   }
+
+  // Four conversations a few days apart (08.4): a proposal, a plain answer, another, and routines created.
+  static func seedHistory(_ gym: GymModel) throws {
+    let now = gym.dates.moment.now.ms, day: Int64 = 86_400_000
+    let seeds: [(String, String, Int64, [AbilityCall])] = [
+      ("history-push", "Is Push A still doing anything?", 0, []),
+      ("history-pull-ups", "Pull-ups are bodyweight for me. I add a 10 kg belt.", 1, []),
+      ("history-squats", "How heavy should I start squats?", 3, []),
+      ("history-program", "My program, 3 days a week", 4, [AbilityCall(callId: "c1", name: "create_routine", input: nil, outcome: .ok,
+                                                                        created: [RecordRef(type: Routine.type, id: "coach-fixture-routine")])]),
+    ]
+    for (id, title, days, calls) in seeds {
+      _ = try gym.runner.run(SeedConversation(id: ID(RecordID(id)), title: title, at: Instant(ms: now - days * day), calls: calls))
+    }
+  }
+  #endif
 
   static func failureReason(_ error: any Error) -> String {
     if let engine = error as? EngineError {
@@ -188,13 +211,42 @@ enum CoachFixture {
 }
 
 #if DEBUG && targetEnvironment(simulator)
+// A completed conversation seeded whole: one question and its answer, stamped on the day given.
+struct SeedConversation: Action {
+  let id: ID<CoachThread>
+  let title: String
+  let at: Instant
+  let calls: [AbilityCall]
+  var answer = "Here is what I found."
+
+  var scope: ScopeRef { Gym.scope }
+
+  func load(_ read: Reader) throws -> (replica: String, moment: Moment) { (read.replica, read.moment) }
+
+  func decide(_ loaded: (replica: String, moment: Moment), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    var plan = Plan()
+    plan.create(try Valid(CoachThread(id: id, title: title), at: loaded.moment))
+    plan.create(try Valid(CoachMessage(id: ids.mint(CoachMessage.self), threadId: id, role: .lifter, text: title, at: at), at: loaded.moment))
+    plan.create(try Valid(CoachMessage(id: ids.mint(CoachMessage.self), threadId: id, role: .coach, replica: loaded.replica, text: answer,
+                                       state: .completed, receipt: AbilityCall.receipt(of: calls), calls: calls, at: Instant(ms: at.ms + 60_000)), at: loaded.moment))
+    return .write(plan)
+  }
+}
+
+// The scripted Coach server (Coach §6) under `-coach-fixture`: an installation for the signed-out seat, and for each question
+// a turn stream whose batch of ability calls the phone runs for real, answered with the rest of the answer once the phone
+// posts the batch's results.
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
-  static let deletedThreads = Mutex<Set<String>>([])
-  static let threads = Mutex<[String: Data]>([:])
-  static let setupGenerations = Mutex<[String: Data]>([:])
   static let asked = Mutex(0)
-  // The log's now, so an answer is stamped on the day the room reads as today; each answer a minute after the one before.
+  // The log's now, so an answer is stamped on the day the room reads as today.
   static let now = Mutex<Int64>(0)
+  // The open stream waiting for the phone's results or its Stop, and the frames it still owes.
+  nonisolated final class Held: @unchecked Sendable {
+    let stream: CoachFixtureProtocol
+    let frames: [String]
+    init(_ stream: CoachFixtureProtocol, frames: [String]) { self.stream = stream; self.frames = frames }
+  }
+  static let held = Mutex<Held?>(nil)
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
@@ -212,218 +264,103 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       }
       body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
-    let parts = path.split(separator: "/").map(String.init)
-    let thread = body["thread"] as? String ?? (parts.count > 3 && parts[2] == "threads" ? parts[3] : "coach-fixture-thread")
-    let requestId = body["requestId"] as? String ?? (parts.count > 5 && parts[4] == "generations" ? parts[5] : "coach-fixture-request")
-    let stored = Self.threads.withLock { $0[thread] }.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
-    let said = CoachFixtureConversation(asked: body["question"] as? String)
-    var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
-      "status": "completed", "answer": said.answer, "at": Self.now.withLock { $0 += 60_000; return $0 }, "revision": 2, "attachments": said.attachments,
-      "steps": said.steps, "results": said.results, "receipt": said.receipt]
-    if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture"), body["purpose"] as? String == "routine_setup" {
-      generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []
-      if (body["attachmentIds"] as? [String])?.isEmpty != false { generation["attachments"] = [] }
-      generation["receipt"] = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": [], "proposals": [], "observations": []]
-      generation["answer"] = CoachFixture.draftNames.count == 1 ? "Here is 1 new routine. Check it, then apply."
-        : "Your screenshot has 3 full-body days. Here are 3 new routines. Check them, then apply."
-      generation["routineDrafts"] = CoachFixture.draftNames.enumerated().map { index, suffix in
-        ["operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix, "name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces),
-         "position": index, "state": "pending", "entries": ["back-squat", "bench-press", "barbell-row"].enumerated().map { position, exercise in
-           ["position": position, "exerciseId": exercise, "sets": [["reps": 5, "weightKg": NSNull()]], "restSeconds": 120] as [String: Any]
-         }] as [String: Any]
-      }
-      // Coach asks two things before it drafts (`-coach-choices`, 01.17).
-      if ProcessInfo.processInfo.arguments.contains("-coach-choices") {
-        generation["answer"] = ""; generation["routineDrafts"] = []
-        generation["clarification"] = ["id": "fixture-choices", "question": "Two things, so it fits your week.", "groups": [
-          ["id": "days", "label": "How many days a week?", "multiple": false, "options": [["id": "three", "label": "3 days"], ["id": "daily", "label": "Every day"]]],
-          ["id": "equipment", "label": "What is at home?", "multiple": true, "options": [["id": "dumbbells", "label": "Dumbbells"], ["id": "bands", "label": "Bands"]]]]]
-      }
-    }
-
-    if path != "/v1/gym/ask", let saved = stored?["generation"] as? [String: Any] { generation = saved }
-    var row: [String: Any] = stored ?? ["id": thread, "title": body["question"] as? String ?? said.question, "askedAt": 1_790_424_000_000,
-      "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
-    var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
-    if path.hasPrefix("/v1/ai/installations") || path == "/v1/gym/coach/onboarding" {
+    let arguments = ProcessInfo.processInfo.arguments
+    if path.hasPrefix("/v1/ai/installations") {
       let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
         "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
-      // A spent allowance answers the first question and refuses the next, as the lifter's own allowance runs out.
-      let spent = ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent") && path == "/v1/gym/coach/onboarding"
-        && Self.asked.withLock({ $0 += 1; return $0 }) > 1
-      if spent {
-        var exhausted = allowance; exhausted["code"] = "subject_exhausted"; exhausted["remaining"] = "0.000000000"; exhausted["used"] = "0.050000000"
-        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "c", count: 64), "status": "failed", "expiresAtMs": 1_900_000_000_000 as Int64,
-          "errorCode": "subject_exhausted", "allowance": exhausted, "routines": []]
-      } else if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent") {
-        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "d", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
-          "errorCode": NSNull(), "allowance": allowance, "routines": [], "message": CoachBoard.squatsAnswer]
-      } else if path == "/v1/gym/coach/onboarding", ProcessInfo.processInfo.arguments.contains("-coach-needs-account") {
-        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "b", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
-          "errorCode": NSNull(), "allowance": allowance, "message": "I need your account to change a routine. Sign in, then ask again.", "routines": [],
-          "needsAccount": true]
-      } else if path == "/v1/gym/coach/onboarding" {
-        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
-          "errorCode": NSNull(), "allowance": allowance, "message": "Here are your routine drafts. Review them before saving.",
-          "routines": CoachFixture.draftNames.map { suffix in
-            ["name": ("Full body " + suffix).trimmingCharacters(in: .whitespaces), "entries": ["back-squat", "bench-press", suffix == "B" ? "chin-up" : "barbell-row"].map { exercise in
-              ["exerciseId": exercise, "sets": Array(repeating: ["reps": exercise == "chin-up" ? 8 : 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
-            }] as [String: Any]
-          }]
-      } else {
-        response = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
-        if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
-      }
-    } else if path.hasSuffix("/confirm"), path.contains("/routines/") {
-      let parts = path.split(separator: "/").map(String.init)
-      let key = parts[5], operation = parts[7]
-      if let stored = Self.setupGenerations.withLock({ $0[key] }),
-         var snapshot = (try? JSONSerialization.jsonObject(with: stored)) as? [String: Any],
-         var value = snapshot["generation"] as? [String: Any], var drafts = value["routineDrafts"] as? [[String: Any]],
-         let index = drafts.firstIndex(where: { $0["operationId"] as? String == operation }) {
-        drafts[index]["state"] = "saved"; value["routineDrafts"] = drafts
-        value["revision"] = (value["revision"] as? Int ?? 2) + 1
-        value["results"] = drafts.filter { $0["state"] as? String == "saved" }.map { draft in
-          ["kind": "routine-created", "operationId": draft["operationId"]!, "routineId": draft["routineId"]!,
-           "routineName": draft["name"]!, "movementCount": 3]
-        }
-        snapshot["generation"] = value
-        Self.setupGenerations.withLock { $0[key] = try? JSONSerialization.data(withJSONObject: snapshot) }
-        response = snapshot
-      } else { status = 404; response = ["code": "not-found"] }
-    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-allowance-spent"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
-      status = 402
-      response = ["code": "ai-allowance", "error": "allowance", "allowance": ["code": "subject_exhausted", "currency": "USD", "period": "month", "tier": "logged_in",
-        "configured": true, "limit": "1.000000000", "used": "1.000000000", "reserved": "0.000000000", "remaining": "0.000000000",
-        "resetsAtMs": 1_793_491_200_000 as Int64, "budgetResetsAtMs": NSNull()] as [String: Any]]
-    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-daily-cap"), Self.asked.withLock({ $0 += 1; return $0 }) > 1 {
-      // A bucket emptied back to back frees its next question one refill later, 8,640,000 ms.
-      status = 429; response = ["code": "ask-daily-limit", "error": "the next question frees up in a couple of hours",
-                                "retryAtMs": Int64(Date().timeIntervalSince1970 * 1000) + 8_640_000]
-    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
-      status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
-    } else if path == "/v1/gym/ask" {
-      _ = Self.deletedThreads.withLock { $0.remove(thread) }
-      var partial = generation; partial["status"] = "running"; partial["answer"] = ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") ? "" : said.partial; partial["revision"] = 1
-      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") {
-        Self.setupGenerations.withLock { $0[requestId] = try? JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]) }
-        partial["routineDrafts"] = []
-      }
-      let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
-      let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
-      row["generation"] = said.held ? partial : generation
-      row["askedAt"] = generation["at"]
-      Self.threads.withLock { $0[thread] = try? JSONSerialization.data(withJSONObject: row) }
-      data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"
-      // A held answer streams its first snapshot and keeps the stream open, so Coach stays mid-answer.
+      var response: [String: Any] = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
+      if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
+      respond(200, response); return
+    }
+    if path == "/v1/oauth/grants" { respond(200, ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]]); return }
+    if path == "/v1/mcp-keys" { respond(200, ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]]); return }
+    if path == "/v1/gym/coach/turns" {
+      // A deployment without Coach mounts no turn route; a spent allowance or the day's cap refuses every question after the first.
+      if arguments.contains("-coach-unavailable") { respond(404, [:], type: "text/html"); return }
+      let asked = Self.asked.withLock { $0 += 1; return $0 }
+      if arguments.contains("-coach-allowance-spent"), asked > 1 { respond(429, ["error": "allowance", "code": "subject_exhausted"]); return }
+      if arguments.contains("-coach-daily-cap"), asked > 1 { respond(429, ["error": "later", "code": "coach-rate-limited"]); return }
+      let said = CoachFixtureConversation(asked: body["question"] as? String)
+      let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+      client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+      let answer = Self.frame("text", ["delta": said.answer]) + Self.frame("done", ["state": "completed"])
       if said.held {
-        let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": type])!
-        client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("event: snapshot\ndata: \(first)\n\n".utf8)); return
+        if !said.partial.isEmpty { client?.urlProtocol(self, didLoad: Data(Self.frame("text", ["delta": said.partial]).utf8)) }
+        let held = Held(self, frames: [Self.frame("done", ["state": "stopped"])])
+        Self.held.withLock { $0 = held }
+        return
       }
-    } else if path == "/v1/gym/threads", ProcessInfo.processInfo.arguments.contains("-coach-history") {
-      // Four conversations a few days apart: a proposal, a movement corrected, a plain answer and created routines.
-      let now = Self.now.withLock { $0 }, day: Int64 = 86_400_000
-      let thread = { (id: String, title: String, days: Int64, outcome: [String: Any]) -> [String: Any] in
-        ["id": id, "title": title, "askedAt": now - days * day, "outcome": outcome, "turns": [], "nextCursor": NSNull()]
-      }
-      response = ["threads": [
-        thread("history-push", "Is Push A still doing anything?", 0, ["kind": "proposed", "changes": 3, "routineId": "coach-fixture-routine", "routine": "Push A"]),
-        thread("history-pull-ups", "Pull-ups are bodyweight for me. I add a 10 kg belt.", 1, ["kind": "read-only", "changes": 0]),
-        thread("history-squats", "How heavy should I start squats?", 3, ["kind": "read-only", "changes": 0]),
-        thread("history-program", "My program, 3 days a week", 4, ["kind": "created", "changes": 3])], "nextCursor": NSNull()]
-    } else if path == "/v1/gym/threads" {
-      let rows = Self.threads.withLock { Array($0.values) }.compactMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
-      response = ["threads": rows, "nextCursor": NSNull()]
-    } else if path.hasPrefix("/v1/gym/threads/"), request.httpMethod == "DELETE" {
-      _ = Self.deletedThreads.withLock { $0.insert(request.url!.lastPathComponent) }
-      _ = Self.threads.withLock { $0.removeValue(forKey: request.url!.lastPathComponent) }
-    } else if path.hasPrefix("/v1/gym/threads/"), Self.deletedThreads.withLock({ $0.contains(thread) }) {
-      status = 404; response = ["code": "not-found"]
+      guard !said.calls.isEmpty else { client?.urlProtocol(self, didLoad: Data(answer.utf8)); client?.urlProtocolDidFinishLoading(self); return }
+      let calls = said.calls.enumerated().map { index, call in ["callId": "toolu_\(index + 1)", "name": call.0, "input": call.1] as [String: Any] }
+      let held = Held(self, frames: [answer])
+      Self.held.withLock { $0 = held }
+      client?.urlProtocol(self, didLoad: Data(Self.frame("calls", ["batch": 1, "calls": calls]).utf8))
+      return
     }
-    else if path == "/v1/oauth/grants" { response = ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]] }
-    else if path == "/v1/mcp-keys" { response = ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]] }
-    else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = (generation["revision"] as? Int ?? 2) + 1; response = ["thread": thread, "generation": stopped] }
-    else if path.contains("/attachments/"), request.httpMethod == "GET" { data = said.photo(); type = "image/jpeg" }
-    else if path.contains("/attachments/") { response = ["attachment": ["id": path.components(separatedBy: "/").last!, "mediaType": "image/jpeg", "width": 10, "height": 10, "bytes": request.httpBody?.count ?? 10]] }
-    else { response = row }
-    if let snapshot = response["generation"] as? [String: Any], response["thread"] as? String == thread {
-      row["generation"] = snapshot
-      Self.threads.withLock { $0[thread] = try? JSONSerialization.data(withJSONObject: row) }
+    if path.hasPrefix("/v1/gym/coach/turns/"), path.hasSuffix("/results") {
+      let owed = Self.held.withLock { held in defer { held = nil }; return held }
+      if let owed { for frame in owed.frames { owed.stream.client?.urlProtocol(owed.stream, didLoad: Data(frame.utf8)) }; owed.stream.client?.urlProtocolDidFinishLoading(owed.stream) }
+      respond(200, ["batch": body["batch"] ?? 1]); return
     }
-    if data.isEmpty { data = try! JSONSerialization.data(withJSONObject: response) }
+    if path.hasPrefix("/v1/gym/coach/turns/"), path.hasSuffix("/stop") {
+      let owed = Self.held.withLock { held in defer { held = nil }; return held }
+      if let owed { owed.stream.client?.urlProtocol(owed.stream, didLoad: Data(Self.frame("done", ["state": "stopped"]).utf8)); owed.stream.client?.urlProtocolDidFinishLoading(owed.stream) }
+      respond(202, ["state": "stopped"]); return
+    }
+    respond(404, ["error": "no such turn", "code": "coach-turn-unknown"])
+  }
+  func respond(_ status: Int, _ response: [String: Any], type: String = "application/json") {
     let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": type])!
     client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
+    client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: response)); client?.urlProtocolDidFinishLoading(self)
   }
-  override func stopLoading() {}
+  static func frame(_ event: String, _ data: [String: Any]) -> String {
+    "event: \(event)\ndata: " + String(decoding: try! JSONSerialization.data(withJSONObject: data), as: UTF8.self) + "\n\n"
+  }
+  override func stopLoading() { Self.held.withLock { if $0?.stream === self { $0 = nil } } }
 }
 
 // One conversation per fixture state: a change to Push A, its removal read from totals (`-coach-removal`), a routine and a note
 // (`-coach-created`), a Markdown answer (`-coach-markdown`), and Coach held mid-answer (`-coach-streaming`) or before its
-// first word under a program screenshot (`-coach-thinking`).
+// first word (`-coach-thinking`). `calls` are the ability calls the server's batch asks the phone to run, by name and input.
 nonisolated struct CoachFixtureConversation {
   let question: String
   let partial: String
   let answer: String
   var held = false
-  var screenshot = false
-  var attachments: [[String: Any]] = []
-  var steps: [[String: Any]]
-  var results: [[String: Any]] = []
-  let receipt: [String: Any]
-  let outcome: [String: Any]
+  var calls: [(String, [String: Any])] = []
 
   init(arguments: [String] = ProcessInfo.processInfo.arguments, asked: String? = nil) {
-    let workout: [String: Any] = ["workingSetCount": 1, "tonnageKg": 400, "durationMs": 1_000_000]
-    let read: [String: Any] = ["sets": 1, "sessions": 1, "weeks": 1]
-    let observations: [[String: Any]] = [
-      ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "list_sessions",
-       "coverage": "summary", "setsRead": 0, "routine": "Push A", "workout": workout],
-      ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "get_session",
-       "coverage": "session", "setsRead": 1, "routine": "Push A", "workout": workout]]
-    steps = [["tool": "list_notes"], ["tool": "list_sessions"], ["tool": "get_session"]]
+    let session: (String, [String: Any]) = ("get_session", ["sessionId": "coach-fixture-session"])
     if let board = CoachBoard.current {
       let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
       question = turn.question; partial = turn.answer; answer = turn.answer
-      let tools = turn.tools ?? [board.proposals.contains(where: \.removing) ? "propose_routine_removal" : "propose_routine_change"]
-      steps.append(contentsOf: tools.map { ["tool": $0] })
-      receipt = ["version": 1, "read": read, "steps": steps, "proposals": turn.proposals, "observations": observations]
-      outcome = ["kind": "proposed", "changes": 1, "routineId": board.routines.first?.id ?? NSNull(), "routine": board.routines.first?.name ?? NSNull()]
+      calls = turn.calls(board)
     } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
-      held = !arguments.contains("-coach-markdown"); screenshot = arguments.contains("-coach-thinking")
-      question = screenshot ? "My program, 3 days a week" : "What should Thursday look like?"
-      partial = screenshot ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
+      held = !arguments.contains("-coach-markdown")
+      question = arguments.contains("-coach-thinking") ? "My program, 3 days a week" : "What should Thursday look like?"
+      partial = arguments.contains("-coach-thinking") ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
       answer = "## Thursday · Push A\n\nKeep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.\n\n"
         + "- Bench Press — 3 × 3 at 90\n- Incline Press — 3 × 10 at 24\n- Triceps Pushdown — 3 × 12\n\n"
         + "| Movement | Last | Next |\n|---|---|---|\n| Bench Press | 5 × 5 · 82.5 | 3 × 3 · 90 |\n| Incline Press | 3 × 10 · 22 | 3 × 10 · 24 |\n| Pushdown | 3 × 12 · 30 | 3 × 12 · 30 |"
-      if screenshot { attachments = [["id": "coach-fixture-photo", "mediaType": "image/jpeg", "width": 360, "height": 480, "bytes": 500]] }
-      receipt = ["version": 1, "read": read, "steps": steps, "proposals": [], "observations": observations]
-      outcome = ["kind": "answered", "changes": 0, "routineId": NSNull(), "routine": NSNull()]
+      calls = held ? [] : [session]
     } else if arguments.contains("-coach-created") {
       question = "Build me a routine."; partial = "Push A is in your routines."
       answer = "Push A is in your routines: back squat, one set of five at 80."
-      steps = [["tool": "list_notes"], ["tool": "list_exercises"], ["tool": "create_routine"], ["tool": "save_note"]]
-      results = [["kind": "routine-created", "operationId": "coach-fixture-result", "routineId": "coach-fixture-routine", "routineName": "Push A"]]
-      receipt = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": steps, "proposals": [], "observations": []]
-      outcome = ["kind": "created", "changes": 1, "routineId": "coach-fixture-routine", "routine": "Push A"]
+      calls = [("create_routine", ["id": "coach-fixture-routine", "name": "Push A", "position": 0, "entries": CoachBoard.json([CoachBoard.entry("back-squat", 1, 5, 80)])]),
+               ("save_note", ["id": "board-note", "title": "Shoulder", "body": "Left shoulder hurts on wide-grip bench. Use a close grip."])]
     } else if arguments.contains("-coach-removal") {
       question = "Remove Push A."; partial = "Push A has not moved your squat in six weeks."
       answer = "Push A has not moved your squat in six weeks. Removing it leaves every set you logged where it is."
-      steps = [["tool": "list_notes"], ["tool": "get_stats"], ["tool": "propose_routine_removal"]]
-      receipt = ["version": 1, "read": read, "steps": steps, "proposals": ["coach-fixture-proposal"], "observations": []]
-      outcome = ["kind": "proposed", "changes": 1, "routineId": "coach-fixture-routine", "routine": "Push A"]
+      calls = [("get_stats", [:]), ("propose_routine_removal", ["id": "coach-fixture-proposal", "routineId": "coach-fixture-routine", "summary": "Push A has stopped moving your squat."])]
     } else {
       question = "Is Push A still doing anything?"; partial = "Keep the weekly work steady."
       answer = "## Your next block\n\nKeep the weekly work steady. **Three triples at 90** gives you a top set to push."
-      attachments = [["id": "coach-fixture-photo", "mediaType": "image/jpeg", "width": 480, "height": 360, "bytes": 500]]
-      steps.append(["tool": "propose_routine_change"])
-      receipt = ["version": 1, "read": read, "steps": steps, "proposals": ["coach-fixture-proposal"], "observations": observations]
-      outcome = ["kind": "proposed", "changes": 3, "routineId": "coach-fixture-routine", "routine": "Push A"]
+      calls = [session, ("propose_routine_change", ["id": "coach-fixture-proposal", "routineId": "coach-fixture-routine", "name": "Push A2",
+        "entries": CoachBoard.json([CoachBoard.entry("back-squat", 1, 3, 90), RoutineEntry(exerciseId: ID("bench-press"))]),
+        "summary": "Three triples at 90 keeps the weekly tonnage and gives you a top set to push."])]
     }
   }
-
-  func photo() -> Data { screenshot ? Self.program() : Self.photo() }
 
   // A phone screenshot of a three-day program, as a lifter shares one to build from.
   static func program() -> Data {
@@ -441,20 +378,6 @@ nonisolated struct CoachFixtureConversation {
       }
     }.jpegData(compressionQuality: 0.9)!
   }
-
-  // The lifter's photo: a lit frame with the training symbol on it, so a capture shows how a picture sits, not a swatch.
-  static func photo() -> Data {
-    let format = UIGraphicsImageRendererFormat(); format.scale = 1
-    let size = CGSize(width: 480, height: 360)
-    return UIGraphicsImageRenderer(size: size, format: format).image { context in
-      let colours = [UIColor(GymPalette.accent).cgColor, UIColor(GymPalette.done).cgColor, UIColor(GymPalette.record).cgColor]
-      let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours as CFArray, locations: [0, 0.6, 1])!
-      context.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
-      let symbol = UIImage(systemName: "figure.strengthtraining.traditional", withConfiguration: UIImage.SymbolConfiguration(pointSize: 180))!
-        .withTintColor(UIColor(GymPalette.card), renderingMode: .alwaysOriginal)
-      symbol.draw(at: CGPoint(x: (size.width - symbol.size.width) / 2, y: (size.height - symbol.size.height) / 2))
-    }.jpegData(compressionQuality: 0.9)!
-  }
 }
 
 // A Figma board's conversation (`-coach-board 08.17`): the routines it starts from, what Coach proposes for them, and
@@ -465,19 +388,31 @@ nonisolated struct CoachBoard {
     let question: String
     let answer: String
     var proposals: [String] = []
-    var tools: [String]?
-  }
-  // What Coach writes on the log while it answers: a movement it corrects, or a note it saves.
-  enum Write {
-    case exercise(Exercise, name: String?, equipment: String?, loadCount: Int?), note(String, String)
-    // Coach proposes to swap one movement in a routine the lifter already holds, found by its name.
-    case swap(routine: String, from: String, to: RoutineEntry)
+    var creates: [(id: String, name: String, entries: [RoutineEntry])] = []
+    var note: (String, String)?
+    // Signed out, a note Coach wants to save needs the account: the phone refuses it, and the answer offers Sign in.
+    var needsAccount = false
+
+    // The batch the server asks of the phone for this turn: the proposals it writes, the routines it creates, the note.
+    func calls(_ board: CoachBoard) -> [(String, [String: Any])] {
+      var calls: [(String, [String: Any])] = []
+      for id in proposals {
+        guard let proposed = board.proposals.first(where: { $0.id == id }) else { continue }
+        if proposed.removing { calls.append(("propose_routine_removal", ["id": proposed.id, "routineId": proposed.routine, "summary": "You have not done it in 8 weeks."])) }
+        else { calls.append(("propose_routine_change", ["id": proposed.id, "routineId": proposed.routine, "name": proposed.name, "entries": CoachBoard.json(proposed.entries), "summary": ""])) }
+      }
+      for (index, routine) in creates.enumerated() {
+        calls.append(("create_routine", ["id": routine.id, "name": routine.name, "position": index, "entries": CoachBoard.json(routine.entries)]))
+      }
+      if let note { calls.append(("save_note", ["id": "board-note", "title": note.0, "body": note.1])) }
+      if needsAccount { calls.append(("save_note", ["id": "board-account-note", "title": "Push A", "body": "Make Push A harder."])) }
+      return calls
+    }
   }
   var routines: [(id: String, name: String, entries: [RoutineEntry])]
   var proposals: [Proposed]
   var turns: [Turn]
   var editedAfter: (id: String, entries: [RoutineEntry])?
-  var writes: [Write] = []
 
   static var current: CoachBoard? {
     let arguments = ProcessInfo.processInfo.arguments
@@ -489,6 +424,15 @@ nonisolated struct CoachBoard {
   }
   static func ladder(_ exercise: String, _ sets: [(Int?, Double?)]) -> RoutineEntry {
     RoutineEntry(exerciseId: ID(RecordID(exercise)), sets: sets.map { SetTarget(reps: $0.0, weightKg: $0.1) })
+  }
+  // Routine entries as a call's input lists them.
+  static func json(_ entries: [RoutineEntry]) -> [[String: Any]] {
+    entries.map { entry in
+      var line: [String: Any] = ["exerciseId": entry.exerciseId.description]
+      if let sets = entry.sets { line["sets"] = sets.map { set in var target: [String: Any] = [:]; if let reps = set.reps { target["reps"] = reps }; if let kg = set.weightKg { target["weightKg"] = kg }; return target } }
+      if let rest = entry.restSeconds { line["restSeconds"] = rest }
+      return line
+    }
   }
   static func one(_ question: String, _ answer: String, routine: (String, [RoutineEntry]), proposed: (String, [RoutineEntry]), removing: Bool = false) -> CoachBoard {
     CoachBoard(routines: [(id: "board-routine", name: routine.0, entries: routine.1)],
@@ -505,31 +449,30 @@ nonisolated struct CoachBoard {
   static let pullA = [entry("chin-up", 3, nil), entry("barbell-row", 3, 8, 60), entry("face-pull", 3, 15, 12.5), entry("lateral-raise", 3, 15, 8), entry("rear-delt-fly", 3, 15, 8)]
   static let change = one("Is Push A still doing anything?", "Your Bench Press has not gone up in 3 weeks.\n\nYou did 5 × 5 at 82.5 kg nine times and finished every rep. Try 3 sets of 3 at 90 kg for a heavier top set.",
     routine: ("Push A", pushA), proposed: ("Push A", [heavier, pushA[3], entry("incline-dumbbell-press", 3, 10, 24), entry("triceps-pushdown", 3, 10, 30)]))
-  static func wrote(_ question: String, _ answer: String, tool: String, _ write: Write) -> CoachBoard {
-    var board = CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
-                           turns: [Turn(question: question, answer: answer, tools: [tool])])
-    if case .exercise(let exercise, _, _, _) = write { board.routines[0].entries.append(RoutineEntry(exerciseId: exercise.id, sets: [SetTarget(reps: 8)])) }
-    board.writes = [write]
-    return board
+  // The three full-body days a signed-out first question creates, and the swap the signed-in next question proposes for day B.
+  static let fullBody: [(id: String, name: String, entries: [RoutineEntry])] = ["A", "B", "C"].map { suffix in
+    (id: "setup-routine-" + suffix, name: "Full body " + suffix,
+     entries: ["back-squat", "bench-press", suffix == "B" ? "chin-up" : "barbell-row"].map { entry($0, 3, $0 == "chin-up" ? 8 : 5, rest: 120) })
   }
 
   static let squatsAnswer = "Choose a weight you can lift 8 times with good form. Do 5 reps. The app remembers it for next time."
   static let all: [String: CoachBoard] = [
-    "after-sign-in": CoachBoard(routines: [], proposals: [],
-      turns: [Turn(question: "Swap chin-ups for pulldowns", answer: "Here is a change for Full body B.", proposals: ["board-proposal"])],
-      writes: [.swap(routine: "Full body B", from: "chin-up", to: RoutineEntry(exerciseId: ID("lat-pulldown"), sets: Array(repeating: SetTarget(reps: 8, weightKg: 45), count: 3), restSeconds: 120))]),
+    "after-sign-in": CoachBoard(routines: [], proposals: [
+        Proposed(id: "board-proposal", routine: "setup-routine-B", name: "Full body B",
+                 entries: [fullBody[1].entries[0], fullBody[1].entries[1], entry("lat-pulldown", 3, 8, 45, rest: 120)])],
+      turns: [Turn(question: "Build a short full body routine for three days each week", answer: "Here are three full-body days. They are in Routines now.", creates: fullBody),
+              Turn(question: "Build me a three day full body program", answer: "Here are three full-body days. They are in Routines now.", creates: fullBody),
+              Turn(question: "Swap chin-ups for pulldowns", answer: "Here is a change for Full body B.", proposals: ["board-proposal"])]),
     "squats": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
-      turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer, tools: [])]),
+      turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer)]),
+    "needs-account": CoachBoard(routines: [], proposals: [],
+      turns: [Turn(question: "Make Push A harder", answer: "I need your account to change a routine. Sign in, then ask again.", needsAccount: true)]),
     "stalled": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
       turns: [Turn(question: "Bench has stalled for three weeks. Is Push A still doing anything?",
-                   answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.", tools: [])]),
-    "load-basis": wrote("Pull-ups are bodyweight for me. I add a 10 kg belt.",
-      "Done. Pull-up is now a bodyweight movement. Log the belt as 10 kg added. Volume counts only the added weight.", tool: "update_exercise",
-      .exercise(Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "machine", stepKg: 2.5), name: nil, equipment: "bodyweight", loadCount: nil)),
-    "note": wrote("My left shoulder hurts on wide-grip bench.", "I saved this as a note. I will use it when I plan.", tool: "save_note",
-      .note("Shoulder", "Left shoulder hurts on wide-grip bench. Use a close grip.")),
-    "movement-details": wrote("Incline DB is really dumbbells, one in each hand.", "Done. Enter the weight of one dumbbell from now on.", tool: "update_exercise",
-      .exercise(Exercise(id: ID("board-incline-db"), name: "Incline DB", pattern: "press", equipment: "barbell", stepKg: 2.5), name: "Incline Press", equipment: "dumbbell", loadCount: 2)),
+                   answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.")]),
+    "note": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+      turns: [Turn(question: "My left shoulder hurts on wide-grip bench.", answer: "I saved this as a note. I will use it when I plan.",
+                   note: ("Shoulder", "Left shoulder hurts on wide-grip bench. Use a close grip."))]),
     "change": change,
     "summary": CoachBoard(
       routines: change.routines + [(id: "board-lower", name: "Lower A", entries: [entry("back-squat", 1, 5, 80), entry("romanian-deadlift", 3, 8, 82.5),
@@ -575,4 +518,3 @@ nonisolated struct CoachBoard {
   ]
 }
 #endif
-

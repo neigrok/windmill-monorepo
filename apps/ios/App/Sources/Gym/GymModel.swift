@@ -27,6 +27,8 @@ final class GymModel {
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let rest: GymRESTClient
+  // The phone's Coach turns (Coach §4), driven for the room over the engine runtime; none without one.
+  let coachTurns: CoachTurnDriver?
   let locale: Locale
   let waits: GymWaits
   // What this phone remembers under any account or none.
@@ -76,9 +78,10 @@ final class GymModel {
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
-       phone: UserDefaults? = nil, waits: GymWaits = GymWaits()) {
+       phone: UserDefaults? = nil, waits: GymWaits = GymWaits(), coachWire: CoachTurnWire? = nil) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale; self.phone = phone; self.waits = waits
     self.rest = rest ?? GymRESTClient(runtime: runtime, telemetry: telemetry)
+    coachTurns = runtime.map { CoachTurnDriver(runner: runner, runtime: $0, wire: coachWire ?? CoachFixture.turnWire($0), telemetry: telemetry, beat: waits.coachBeat) }
     runtime?.gymBinding.gym = self
     refresh()
   }
@@ -156,6 +159,7 @@ final class GymModel {
     } catch { readFailed = true; self.error = "Gym could not be read from this phone. Try again."; report("gym_read", error); return }
     observationGeneration += 1
     observeScopes(observationGeneration)
+    coachTurns?.start()
     let events = runtime.engine.events()
     observationTask = Task { [weak self] in
       for await _ in events {
@@ -195,7 +199,7 @@ final class GymModel {
   }
 
   func stop() {
-    observationGeneration += 1; scopeViews = []
+    observationGeneration += 1; scopeViews = []; coachTurns?.stop()
     observationTask?.cancel(); observationTask = nil; clockTask?.cancel(); clockTask = nil; rest.cancel()
   }
 

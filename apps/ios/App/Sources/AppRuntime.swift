@@ -103,6 +103,8 @@ final class AppRuntime {
   let runner: ActionRunner
   let auth: NativeAuth
   let lifecycle: AppLifecycle
+  // The background time a Coach turn keeps the process alive within (Coach §4.5).
+  let background: BackgroundActivity
   let tokens: any TokenStore
   let revocations: any TokenStore
   let installation: AiInstallation
@@ -184,6 +186,7 @@ final class AppRuntime {
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
+    background = BackgroundActivity(time: ApplicationBackgroundTime())
     updateTelemetryIdentity()
   }
 
@@ -196,6 +199,7 @@ final class AppRuntime {
     self.installation = installation ?? AiInstallation(baseURL: settings.baseURL, credentials: KeychainInstallationCredentialStore(service: "works.windmill.tests.ai-installation." + UUID().uuidString), telemetry: telemetry)
     hadInstallHistory = true
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
+    background = BackgroundActivity(time: ApplicationBackgroundTime())
   }
 
   nonisolated static let commandResultWrites: CommandResultDeviceWrites = { command, result, epoch, rows in

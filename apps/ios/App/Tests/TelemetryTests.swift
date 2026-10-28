@@ -86,7 +86,10 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["screen": "settings"]).isEmpty && TelemetryPrivacy.properties(["screen": "sign_out"]).isEmpty)
     #expect(TelemetryPrivacy.events.contains("gym_hidden_workout") && TelemetryPrivacy.properties(["action": "hide"]) == ["action": .label("hide")])
     #expect(TelemetryPrivacy.properties(["action": "open", "door": "accessory", "name": "private-marker"]) == ["action": .label("open"), "door": .label("accessory")])
-    #expect(TelemetryPrivacy.events.contains("gym_coach_routine_confirm"))
+    #expect(TelemetryPrivacy.events.contains("coach_turn") && TelemetryPrivacy.events.contains("coach_ability"))
+    #expect(TelemetryPrivacy.properties(["state": "completed", "seat": "anon", "ability_calls": "7", "answer_bytes": "120", "code": "subject_exhausted", "text": "private-marker"])
+            == ["state": .label("completed"), "seat": .label("anon"), "ability_calls": .number(7), "answer_bytes": .number(120), "code": .label("subject_exhausted")])
+    #expect(TelemetryPrivacy.properties(["name": "save_note", "outcome": "seat-required", "refusals": "not-a-count"]) == ["name": .label("save_note"), "outcome": .label("seat-required")])
     for outcome in ["started", "saved", "refused", "failed"] {
       #expect(TelemetryPrivacy.properties(["outcome": outcome, "routine": "private-marker"]) == ["outcome": .label(outcome)])
     }

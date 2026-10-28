@@ -17,7 +17,7 @@ protocol specified here. Its installation identity follows §8.
 | Surface | Signed out | Signed in |
 |---|---|---|
 | Android | no | no |
-| iOS | no | no |
+| iOS | yes | yes |
 | Web | — | no |
 | MCP (generated catalog) | — | no |
 

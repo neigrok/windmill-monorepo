@@ -49,11 +49,11 @@ operation, `failure_kind`, optional numeric status label and `duration_ms`. Dura
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
 not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large. A deployment without Coach
-does not mount `POST /v1/gym/ask`, so a send meets the server's 404 page: `api_request_failed` carries status `404`,
-`gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no composer and no retry. Coach's
-`503 ask-not-configured`, over HTTP or in the stream, reads the same way with status `503`. A streamed ask that goes idle or
-drops reconnects up to three times; each attempt still records `api_request_failed`, and only the failure the ask gives up on
-reports to Sentry under `gym_rest`.
+does not mount `POST /v1/gym/coach/turns`, so a send meets the server's 404 page: `api_request_failed` carries status `404`
+under operation `gym_coach_turn`, `gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no
+composer and no retry. A turn stream that drops resumes after 1, 2, 4 and 8 beats through `GET …/turns/{turnId}`; a fifth
+loss ends the turn `interrupted` and reports once under `gym_coach_turn` (kind transport), a frame the phone cannot read
+reports as decode, a 5xx as http, and a `coach-turn-unknown` on resume is an expected refusal that ends the turn interrupted.
 Known USD allowance refusal codes at status 503 are also expected refusals; accounting failures remain
 reportable. The typed allowance state retains partial creation receipts and the editable draft without
 an automatic retry. Amounts, reset timestamps and request IDs never enter telemetry.
@@ -66,8 +66,9 @@ enters telemetry.
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
 addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
 live in memory only and are cleared on dismissal, expiry or completion. Product properties pass a finite allowlist of labels;
-unknown event names, property names and label values are discarded. Duration is the only numeric
-product property and is clamped to 0–86,400,000 ms. Version/build/release metadata is bounded.
+unknown event names, property names and label values are discarded. Duration and a Coach turn's counts
+(`ability_calls`, `refusals`, `answer_bytes`) are the only numeric product properties; duration is clamped to
+0–86,400,000 ms and a count to 0–10,000,000. Version/build/release metadata is bounded.
 
 The final Sentry send hook removes messages, requests, extras, breadcrumbs, user identity, transaction
 and server names, arbitrary tags and custom contexts. It strips exception messages and mechanism
@@ -105,16 +106,15 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor (once a visit to the editor, however often its steps pop), routine_movement_editor (combined name, equipment and targets), routine_movement (the Add movement picker), movement, log, on_this_phone (the list On this phone opens), session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, review (the Routines row's proposal sheet), connected_log, connected_log_guide (How this works), sources (What Coach read), workout, receipt |
 | Outside the app | `gym_activity_set_logged`, `gym_activity_offer_refused`, `gym_intent_opened` | surface: activity (the Live Activity's *Log set*), control (the workout control in Control Center), shortcut (an App Shortcut) on every row; `gym_activity_set_logged`: a set logged durable on the phone; `gym_activity_offer_refused`: outcome: refused (the rack had moved past the offer, or a rule of the log refused the set, and the logger opened), failed (the phone could not save the set and the logger opened, or Windmill could not start to log it and opened instead), absent (a *Log set* shortcut found no workout open); `gym_intent_opened`: intent: start_workout, open_workout (Windmill opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included) |
 | Home Screen quick actions | `quick_action` | item: write (*Write tonight*), start (*Start ‹routine›*, which also records `gym_session_started` when the workout begins), open_workout (*Open workout*); once per item chosen, from a cold start or the background. The routine's name is never a property. |
-| Coach routine setup | `gym_setup_step` | screen: coach, or receipt for the phone's first signed-out receipt's Keep it (action: keep); action: shown, screenshot, build_manually, clarify (a choice chip), drafts_rejected (Reject on the drafts card), save_routines (outcome: failed, when a signed-out result cannot be saved on the phone), routines_saved (after Apply and its durable receipt), open_routine, keep_routines, photo_selected, photo_removed, sign_in (a recovery's Sign in, or the one under a signed-out answer that needs an account), connect (the day's cap's Use your own AI agent). Legacy draft actions remain decode-compatible. No chosen option, goal, program text, image, amount or routine name is sent. Storage failures use the existing static gym_read/gym_action boundary. |
+| Coach routine setup | `gym_setup_step` | screen: coach, or receipt for the phone's first signed-out receipt's Keep it (action: keep); action: shown, screenshot, build_manually, drafts_rejected (Reject on the drafts card), save_routines (outcome: failed, when a signed-out result cannot be saved on the phone), routines_saved (after Apply and its durable receipt), open_routine, keep_routines, photo_selected, photo_removed, sign_in (a recovery's Sign in, or the one under a signed-out answer whose call needed the account), connect (the cap's Use your own AI agent). Legacy draft actions remain decode-compatible. No chosen option, goal, program text, image, amount or routine name is sent. Storage failures use the existing static gym_read/gym_action boundary. |
 | Training | `gym_session_started`, `gym_set_logged`, `gym_session_finished` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue |
 | Hidden workout | `gym_hidden_workout` | action: hide when the lifter hides the open workout (*Hide workout*, or *Build my routine* on a first workout); action: open with door: accessory (the tab bar's accessory, iOS 26) or row (The log's Hidden row, iOS 18) when the lifter brings it back. A return the room cannot make records nothing and leaves the band's *Gym could not restore this workout. Try again.* |
 | Routines | `gym_routine_saved` | screen: routine_editor; action: create, update |
 | Workout rack adjustment | `gym_workout_adjusted` | screen: workout; field: weight, reps; outcome: ok, failed, refused — once per save of a burst of taps, with what the save came to (refused when the log refuses it or an account change is under way). No numeric value is sent. |
 | Workout movement picker | `gym_workout_picker` | action: open, select, cancel; selection outcome: ok or refused. A refused addition keeps the picker open. No query, movement name, identifier or set value is sent. Existing read/write failures report under gym_read/gym_action. |
 | Exercise editor | `gym_exercise_updated` | screen: movement; action: rename (only the name changed), equipment (the equipment or the dumbbell count changed); outcome: ok, refused, failed. No exercise name, weight, quantity or identifier is sent. |
-| Coach routine confirmation | `gym_coach_routine_confirm` | outcome: started when a signed-in Apply sends its confirmation; saved when the server saved the draft, even when the lifter has moved to another conversation; refused when the server answers 4xx; failed for a 5xx or no answer. A confirmation the phone cancels for an account change records nothing more. Only failed reports to Sentry, under `gym_rest`. No routine name, draft or identifier is sent. |
 | Coach navigation | `gym_action` | screen: coach or history; action: new_chat, view_answer, open_conversation, delete_conversation; door on new_chat: tab, history, handoff, new_chat; outcome: ok, failed or refused. Archive failures use static gym_read/gym_action reports. No conversation text, photo, owner, thread or request identifier is sent. |
-| Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling, allowance; duration_ms |
+| Coach | `gym_ask_started`, `gym_ask_outcome`, `coach_turn`, `coach_ability` | screen: coach. `gym_ask_started` once a turn is recorded on the replica; `gym_ask_outcome` once it ended or was refused: answered (completed), cancelled (stopped), refused (declined, or a refusal before the stream), failed (failed or interrupted), capped with cap: allowance (an allowance code) or daily (`coach-rate-limited`), absent (a deployment without the turn route), offline (a send held back with no network); duration_ms. `coach_turn` once per turn that opened (Coach §10.2): state (completed, declined, failed, stopped, interrupted), seat (anon, bound), code (the §6.5 code a failed turn ended on), ability_calls, refusals and answer_bytes as bounded counts, duration_ms. `coach_ability` once per ability call the phone ran, the four context reads included: name (the catalog name), outcome (ok, or the refusal code: not-offered, seat-required, invalid-arguments, refused, coach-turn-volume). Never the question, the answer, a result, a picture or an id. |
 | Proposals | `gym_proposal_outcome` | screen: coach (the card, in the conversation or on the Routines row's sheet); action: apply, reject (Android records the same turn-down as dismiss), retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled once a launch when unanswered after 15 seconds, however many Try agains then wait, with no action when the queue cannot be read; action retry is a Try again on a decision still queued, ok when the log took it, offline when its push got no answer — no network, a refused connection, a deadline — and failed when the log answered with a failure; a Try again after the log refused an Apply decides afresh and records apply). Failures report under `gym_action`; offline is this event, never a Sentry Issue |
 | Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, a connected credential's row); outcome: ok, failed (whether the browser opened) |
 | Gym actions | `gym_action` | screen: gym, session_share, history, workout, log, session, on_this_phone; outcome: ok, refused, failed, cancelled. Receipt Share uses action share. Destructive confirmations use action discard + state shown, then action cancel + outcome cancelled on dismissal; committed removals use their existing outcome. No action payloads |
@@ -150,9 +150,11 @@ one REST signal each; *Not useful* records one `journal_echo_dismissed` and reti
 and roll back if a request fails. Closing the reader dismisses no echo and records nothing.
 
 Coach archive migration and read failures report under `gym_read`; save, selection and removal
-failures use `gym_action`. History merges server rows only for the active owner, and late reads retain
-their captured owner. A cached conversation refresh never dispatches an ask. Conversation content,
-draft text, photo data, archive paths and owner/thread/request identifiers stay out of these reports.
+failures use `gym_action`. A turn's failures at the wire or the store report under `gym_coach_turn`
+with kinds transport, timeout, http (a 5xx), decode and storage; expected refusals (allowance,
+installation, rate, update-required, a lost turn, any 4xx) are `api_request_failed` metrics.
+Conversation content, draft text, photo data, archive paths and thread, message, turn or call
+identifiers stay out of these reports.
 
 The finished-workout receipt’s Done emits `first_run_choice` with screen `workout` and action `close`.
 Its Share tap and destructive confirmation steps emit bounded `gym_action` labels. Confirmed Discard
@@ -233,16 +235,18 @@ server refuses for it. Signed out the alert reads *Update Windmill to sign in.*;
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,
 `auth_methods` and `auth_apple_remove`. Removal uses method `DELETE`; reading methods uses `GET`.
-Gym REST uses `GET` for reads, `POST` for Ask, Stop, explicit routine confirmation and share creation, `PUT` for Coach attachments
-and `DELETE` for share revocation and Coach conversations; gym records are written only through the
-engine. Anonymous Coach setup uses POST to issue an installation credential and create an immutable
-onboarding request, GET to read the server allowance and poll the same request, and POST to bind its
-cost after verified sign-in. Installation calls use `ai_installation` and the `/v1/ai` route family; onboarding uses `gym_rest` and `/v1/gym`. The separate
-installation Keychain service reports read/write failures with `keychain_read`/`keychain_save` and never
-replaces an unreadable or rejected credential. Expected installation, rate and allowance refusals are
-metrics; accounting and unexpected transport/decoding failures report to Sentry. Stop waiting records
-`gym_ask_outcome:cancelled` for the phone wait, without claiming provider cancellation. Local import
-failures use `gym_action`; no creation receipt appears until all routines and their replay marker commit.
+Gym REST uses `GET` for reads, `POST` for share creation and `DELETE` for share revocation; gym records,
+conversations included, are written only through the engine. A Coach turn uses the turn routes:
+`POST /v1/gym/coach/turns` opens a stream, `GET …/{turnId}` resumes it, `POST …/results` answers a batch
+of ability calls the phone ran on its replica, `POST …/stop` asks for Stop. A signed-out turn
+authenticates with the installation credential (POST to issue it, GET to read its allowance, POST to
+bind its cost after verified sign-in). Installation calls use `ai_installation` and the `/v1/ai` route
+family; turn calls use `gym_coach_turn` and `/v1/gym`. The separate installation Keychain service
+reports read/write failures with `keychain_read`/`keychain_save` and never replaces an unreadable or
+rejected credential. Expected installation, rate and allowance refusals are metrics; accounting and
+unexpected transport/decoding failures report to Sentry. Stop records `gym_ask_outcome:cancelled` once
+the turn ended stopped. Applying an archived signed-out answer's drafts uses `gym_action`; no creation
+receipt appears until all routines and their replay marker commit.
 Keep, sign-in and Add/Discard retain the existing account/adoption events; installation costs bind
 independently of whether local content is added or discarded. Local drafts, photos, result identities,
 allowance amounts and IP signals never enter product events or failure properties.

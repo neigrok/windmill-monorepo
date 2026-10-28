@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 import DomainKit
+import GymDomain
+import SyncSchema
 
 // Who speaks a bubble: the lifter's are accent and stand at the trailing edge, Coach's are card and stand at the leading.
 nonisolated enum CoachSpeaker { case lifter, coach }
@@ -54,18 +56,13 @@ struct CoachTyping: View {
 // The lifter's turn: each photo its own bubble, then the words in the bubble that closes the group, at the trailing edge.
 struct CoachQuestion: View {
   let gym: GymModel
-  let thread: String
   let text: String
-  let attachments: [CoachAttachment]
-  var draft: (id: String, data: Data)?
-  var uploading = false
+  let pictures: [Picture]
+  var draft: (CoachAttachment, Data)?
   var body: some View {
     VStack(alignment: .trailing, spacing: RoomSpace.small) {
-      ForEach(attachments) { attachment in
-        let local = draft?.id == attachment.id ? draft?.data : nil
-        CoachPhotoView(gym: gym, thread: thread, attachment: attachment, local: local, side: 200)
-          .overlay { if uploading, local != nil { ProgressView().accessibilityLabel("Photo upload") } }
-      }
+      ForEach(pictures, id: \.id) { picture in CoachPhotoView(gym: gym, id: picture.id, side: 200) }
+      if let draft { CoachPhotoView(gym: gym, id: draft.0.id, side: 200, local: (draft.0, draft.1)) }
       if !text.isEmpty {
         CoachBubble(speaker: .lifter) { Text(text).textSelection(.enabled) }
           .contextMenu { Button("Copy question") { UIPasteboard.general.string = text } }
@@ -92,68 +89,147 @@ struct CoachAnswerText: View {
   }
 }
 
-// Coach's answer: its words, its read receipt, the cards of what it proposed, and the cards of what it wrote.
+// What one answer read, as its receipt row and What Coach read say it (Coach §9.2): the workouts its calls served, by
+// identity, the weeks they fall in, and whether it read notes, movement history, or nothing.
+struct CoachReading: Identifiable {
+  struct Workout: Identifiable {
+    let id: String
+    let title: String
+    let meta: String
+    let available: Bool
+  }
+  let id = UUID()
+  let workouts: [Workout]
+  let weeks: Int
+  let notes: Bool
+  let nothing: Bool
+  let stats: Bool
+  init(calls: [AbilityCall], gym: GymModel) {
+    var served = ReadServed()
+    for call in calls where call.outcome == .ok { served.saw(call.read) }
+    let sessions = served.sessions.compactMap { id in gym.sessions.first { $0.id == id } }.sorted { $0.startedAt > $1.startedAt }
+    workouts = sessions.map { session in
+      let readout = gym.log?.readout(session: session.id)
+      let facts = readout.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.volumeKg) + " kg"] } ?? []
+      return Workout(id: session.id.description, title: readout?.name ?? session.displayName ?? Readout.noRoutine,
+                     meta: ([gym.dates.subtitle(session.startedAt)] + facts).joined(separator: " · "), available: true)
+    }
+    weeks = served.weeks.count
+    notes = calls.contains { $0.name == "list_notes" && $0.outcome == .ok }
+    nothing = served.isEmpty
+    stats = calls.contains { $0.name == "get_stats" && $0.outcome == .ok }
+  }
+  var count: String { GymCount.of(workouts.count, "workout") + " · " + GymCount.of(weeks, "week") }
+  // The receipt row: what the sheet lists, else what it read in words with no number; none when it read what no line can say.
+  var line: String? {
+    if !workouts.isEmpty { return "Read " + count }
+    if nothing { return "Read nothing from your log" }
+    return stats ? "Read your movement history" : nil
+  }
+}
+
+// What an answer's calls wrote, read from the records they created: the routines, the note, the proposals.
+struct CoachWrites {
+  let routines: [Routine]
+  let notes: [Note]
+  let proposals: [String]
+  init(calls: [AbilityCall], gym: GymModel) {
+    let created = calls.filter { $0.outcome == .ok }.flatMap(\.created)
+    routines = created.filter { $0.type == Routine.type }.compactMap { ref in gym.routines.first { $0.id.record == ref.id } }
+    notes = created.filter { $0.type == Note.type }.compactMap { ref in gym.notes.first { $0.id.record == ref.id } }
+    proposals = created.filter { $0.type == Proposal.type }.map { $0.id.description }
+  }
+}
+
+// Coach's answer: its words as they stream and once they stand, its read receipt, the cards of what it proposed, and the
+// cards of what it wrote; a turn that ended short of an answer says so in the words the room has for it.
 struct CoachAnswerView: View {
   let gym: GymModel
-  let text: String
-  let receipt: CoachReceipt?
-  let steps: [CoachStep]
-  let results: [CoachResult]
+  let message: CoachMessage
+  // Signed out, the newest answer whose call needed the account offers Sign in under it.
+  var offersSignIn = false
+  var signIn: () -> Void = {}
   let read: (CoachReading) -> Void
   let notes: () -> Void
   @Environment(\.coachOpenRoutine) var openRoutine
+  @Environment(\.coachKeepRoutines) var keepRoutines
   var body: some View {
+    let writes = CoachWrites(calls: message.calls, gym: gym)
+    let ended = message.state.isTerminal
     VStack(alignment: .leading, spacing: 14) {
-      let created = results.filter { $0.kind == "routine-created" }
       VStack(alignment: .leading, spacing: 0) {
-        if !text.isEmpty { CoachAnswerText(text: text) }
-        if let receipt, created.isEmpty { receiptRow(receipt) }
+        if message.text.isEmpty, !ended { CoachTyping() }
+        if !message.text.isEmpty { CoachAnswerText(text: message.text) }
+        if ended, writes.routines.isEmpty { receiptRow }
       }
-      ForEach(receipt?.proposals ?? [], id: \.self) { id in ProposalCard(gym: gym, id: id).id(ProposalCard.anchor(id)) }
-      if !created.isEmpty {
-        // After Apply, one receipt per routine created, each a door to its summary and Start.
+      if ended, offersSignIn, message.calls.contains(where: { $0.outcome == .refused(.seatRequired) }) {
+        Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
+          .accessibilityIdentifier("coach-sign-in")
+      }
+      ForEach(writes.proposals, id: \.self) { id in ProposalCard(gym: gym, id: id).id(ProposalCard.anchor(id)) }
+      if !writes.routines.isEmpty {
+        // One receipt per routine created, each a door to its summary and Start.
         VStack(spacing: 0) {
-          ForEach(Array(created.enumerated()), id: \.element.id) { index, result in
+          ForEach(writes.routines, id: \.id) { routine in
             Button {
               gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "open_routine"])
-              openRoutine?(result.routineId)
+              openRoutine?(routine.id.description)
             } label: {
               HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle").font(.title3).foregroundStyle(GymPalette.ink)
-                GymRow(title: result.routineName, meta: "Routine created" + (result.movementCount.map { " · " + GymCount.of($0, "movement") } ?? ""))
+                GymRow(title: routine.name, meta: "Routine created · " + GymCount.of(routine.entries.count, "movement"))
                 Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(GymPalette.inkFaint)
               }.padding(.vertical, 10).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
-              .accessibilityIdentifier("coach-created-" + result.operationId)
+            }.buttonStyle(.plain).accessibilityLabel("Open routine · " + routine.name)
+              .accessibilityIdentifier("coach-created-" + routine.id.description)
           }
         }.modifier(ChangeCard())
+        // Signed out, the routines a turn created live on this phone alone until the lifter keeps them with an account.
+        if gym.isAnonymous, let keepRoutines {
+          Button { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "keep_routines"]); keepRoutines() } label: {
+            Label("Only on this phone · Keep it", systemImage: "iphone").font(.footnote).frame(minHeight: RoomSpace.minimumTarget)
+          }.buttonStyle(.plain).accessibilityIdentifier("coach-keep-routines")
+        }
       }
-      if let receipt, !created.isEmpty { receiptRow(receipt) }
-      // The wire names the tools an answer ran, never what they wrote, so a write's card says what Coach did and no more:
-      // a note or movement read from the log now could be the lifter's own later edit, or another answer's write.
-      if let saved = CoachCopy.noteSave(steps) {
-        Button(action: notes) { writeCard(saved, symbol: "square.and.pencil", door: true) }.buttonStyle(.plain)
+      if ended, !writes.routines.isEmpty { receiptRow }
+      ForEach(writes.notes, id: \.id) { note in
+        Button(action: notes) { writeCard("Saved a note", symbol: "square.and.pencil", lines: [note.title, note.body], door: true) }.buttonStyle(.plain)
           .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
           .accessibilityIdentifier("coach-saved-note")
       }
-      if let updated = CoachCopy.movementUpdate(steps) {
-        writeCard(updated, symbol: "pencil").accessibilityElement(children: .combine).accessibilityIdentifier("coach-updated-movement")
+      if let ending = Self.ending(message) {
+        Text(ending).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-ending")
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
-  // What Coach wrote besides answering, one card each with no buttons: its symbol in accent and what it did, and the
-  // door's chevron where the card opens what it wrote.
-  func writeCard(_ title: String, symbol: String, door: Bool = false) -> some View {
+  // A turn that did not complete, in the room's existing words for the nearest state: an interruption or a stop, and a
+  // decline in the words a refused signed-out answer had.
+  static func ending(_ message: CoachMessage) -> String? {
+    switch message.state {
+    case .failed, .interrupted: CoachCopy.interrupted
+    case .stopped: CoachCopy.stopped
+    case .declined: CoachCopy.refusal("model_refused")
+    case .running, .completed: nil
+    }
+  }
+  // What Coach wrote besides answering, one card each with no buttons: its symbol in accent and what it did, the record's
+  // own lines under it, and the door's chevron where the card opens what it wrote.
+  func writeCard(_ title: String, symbol: String, lines: [String], door: Bool = false) -> some View {
     HStack(spacing: RoomSpace.related) {
-      Label { Text(title).foregroundStyle(GymPalette.ink) } icon: { Image(systemName: symbol).foregroundStyle(GymPalette.accent) }
-        .font(.headline)
+      VStack(alignment: .leading, spacing: RoomSpace.small) {
+        Label { Text(title).foregroundStyle(GymPalette.ink) } icon: { Image(systemName: symbol).foregroundStyle(GymPalette.accent) }
+          .font(.headline)
+        ForEach(Array(lines.filter { !$0.isEmpty }.enumerated()), id: \.offset) { index, line in
+          Text(line).font(index == 0 ? .subheadline.weight(.semibold) : .subheadline).foregroundStyle(index == 0 ? GymPalette.ink : GymPalette.inkDim).lineLimit(3)
+        }
+      }
       Spacer(minLength: 0)
       if door { DoorChevron(room: .gym) }
     }.contentShape(Rectangle()).modifier(ChangeCard())
   }
   // The receipt row, a door to What Coach read while there are workouts to list.
-  @ViewBuilder func receiptRow(_ receipt: CoachReceipt) -> some View {
-    let reading = CoachReading(receipt, steps: steps, dates: gym.dates)
+  @ViewBuilder var receiptRow: some View {
+    let reading = CoachReading(calls: message.calls, gym: gym)
     if let line = reading.line {
       let row = HStack(spacing: RoomSpace.related) {
         Label(line, systemImage: "book.closed")
@@ -240,61 +316,39 @@ struct CoachMarkdown: View {
   }
 }
 
-// A photo that opens full size, fitted to its side: a sent one is a bubble 200 pt on its long side, a drafted one 80 pt.
+// A photo that opens full size, fitted to its side: a sent one is a bubble 200 pt on its long side, a drafted one 80 pt. A
+// sent picture is held on the phone that sent it (Coach §9.3); another phone draws its place and that it is unavailable.
 struct CoachPhotoView: View {
   let gym: GymModel
-  let thread: String
-  let attachment: CoachAttachment
-  let local: Data?
-  let owner: String?
+  let id: String
   let side: CGFloat
-  init(gym: GymModel, thread: String, attachment: CoachAttachment, local: Data?, side: CGFloat) {
-    self.gym = gym; self.thread = thread; self.attachment = attachment; self.local = local; self.side = side; owner = gym.account
+  var local: (CoachAttachment, Data)?
+  @State var enlarged = false
+  @Namespace var zoom
+  var row: CoachPictureRow? {
+    guard local == nil else { return nil }
+    return CoachPictureRow(id: id, json: try? gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(id)) })
   }
+  var attachment: CoachAttachment? { local?.0 ?? row?.attachment }
+  var image: UIImage? { (local?.1 ?? row?.original).flatMap(UIImage.init(data:)) }
   var size: CGSize {
-    guard attachment.width > 0, attachment.height > 0 else { return CGSize(width: side, height: side) }
+    guard let attachment, attachment.width > 0, attachment.height > 0 else { return CGSize(width: side, height: side) }
     let scale = side / CGFloat(max(attachment.width, attachment.height))
     return CGSize(width: CGFloat(attachment.width) * scale, height: CGFloat(attachment.height) * scale)
   }
   var shape: RoundedRectangle { RoundedRectangle(cornerRadius: side > 100 ? 18 : 10, style: .continuous) }
-  @State var data: Data?
-  @State var loadedOwner: String?
-  @State var failed = false
-  @State var connectionRequired = false
-  @State var enlarged = false
-  @Namespace var zoom
-  var image: UIImage? {
-    guard owner == gym.account, (gym.isAnonymous && !gym.accountTransition && local != nil) || (gym.coachAccountAvailable && (local != nil || loadedOwner == gym.account)) else { return nil }
-    return (data ?? local).flatMap(UIImage.init(data:))
-  }
   var body: some View {
     Group {
       if let image {
         Button { enlarged = true } label: {
           Image(uiImage: image).resizable().scaledToFill().frame(width: size.width, height: size.height).clipShape(shape)
-        }.buttonStyle(.plain).accessibilityLabel("Enlarge photo").matchedTransitionSource(id: attachment.id, in: zoom)
-      } else if failed {
-        Button { Task { await load() } } label: { tile(Image(systemName: "arrow.clockwise").foregroundStyle(GymPalette.accent)) }
-          .buttonStyle(.plain).accessibilityLabel(connectionRequired ? "Photo needs a connection. Retry" : "Photo unavailable. Retry")
-      } else { tile(ProgressView()).accessibilityLabel("Reading photo") }
-    }.task(id: "\(gym.account ?? ""):\(thread):\(attachment.id)") { data = nil; if local == nil { await load() } }
-      .fullScreenCover(isPresented: $enlarged) {
-        if let image { CoachPhotoCover(image: image).navigationTransition(.zoom(sourceID: attachment.id, in: zoom)) }
+        }.buttonStyle(.plain).accessibilityLabel("Enlarge photo").matchedTransitionSource(id: id, in: zoom)
+      } else {
+        Image(systemName: "photo").foregroundStyle(GymPalette.inkDim).frame(width: size.width, height: size.height).background(GymPalette.line, in: shape)
+          .accessibilityLabel("Photo unavailable")
       }
-  }
-  // The photo's place while it is read or needs a retry.
-  func tile(_ content: some View) -> some View { content.frame(width: size.width, height: size.height).background(GymPalette.line, in: shape) }
-  func load() async {
-    let owner = gym.account; failed = false; connectionRequired = false
-    do {
-      let loaded = try await CoachFixture.rest(gym).coachRequest("/v1/gym/threads/\(CoachCopy.escaped(thread))/attachments/\(CoachCopy.escaped(attachment.id))", expectedAccount: owner)
-      guard owner == gym.account, !gym.accountTransition else { return }
-      guard UIImage(data: loaded) != nil else { throw URLError(.cannotDecodeContentData) }
-      loadedOwner = owner; data = loaded
-    } catch {
-      if owner == gym.account, !(error is CancellationError) {
-        failed = true; connectionRequired = GymRESTClient.needsConnection(error)
-      }
+    }.fullScreenCover(isPresented: $enlarged) {
+      if let image { CoachPhotoCover(image: image).navigationTransition(.zoom(sourceID: id, in: zoom)) }
     }
   }
 }
@@ -331,8 +385,8 @@ struct CoachPhotoCover: View {
   }
 }
 
-// When a conversation's questions were asked, as the server stamped them, in order: a question starts a group under its time
-// when it is the first, or an hour or more after the one before; one with no stamp starts none.
+// When a conversation's questions were asked, in order: a question starts a group under its time when it is the first, or
+// an hour or more after the one before.
 struct CoachStamps {
   let times: [Int64]
   func starts(_ at: Int64) -> Bool {
