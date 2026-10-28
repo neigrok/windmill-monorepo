@@ -588,3 +588,9 @@ symlink reports, and exports an allowlist of stack and symbolication fields. All
 checks pass with Xcode 27.1, including three collector privacy/bounds fixtures; workflow YAML and
 whitespace checks pass. CI uses Xcode 26.3. Its signal-10 failure has no established cause or local
 reproduction; the diagnostic upload does not change test execution or assert a repair.
+
+The web persisted-restart fixture explicitly checks schema 9/minimum 9. Its complete file passes
+61 cases with zero failures/skips. The Domain diagnostic artifact from CI 40659886037 contains
+the bounded test log and no crash report; the signal-10 cause remains unresolved. The outstanding
+iOS nightly bounce case passes locally on iPhone 17/iOS 26.5 with Xcode 27.1, one case with zero
+skips/runtime warnings. Full nightly 40661042534 checks the CI toolchain separately.
