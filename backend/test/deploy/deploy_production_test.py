@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import re
@@ -437,6 +438,201 @@ class DeployProductionTest(unittest.TestCase):
                 self.assertEqual(list(self.temporary.iterdir()), [])
 
 
+def web_shim(kind, arguments):
+    path = Path(os.environ["WM_WEB_STATE"])
+    state = json.loads(path.read_text())
+    state["commands"].append([kind] + arguments)
+    path.write_text(json.dumps(state))
+    if kind == "docker":
+        expected = ["compose", "exec", "-T", "server", "curl", "--silent", "--show-error", "--max-time", "2",
+                    "--write-out", "\n%{http_code}", "-H", "Sync-Schema: 2147483647", "http://127.0.0.1:8080/v1/sync/hello"]
+        if arguments != expected:
+            raise AssertionError("web guard attempted a non-read operation")
+        if state.get("failure"):
+            print("PRIVATE_WEB_CANARY", file=sys.stderr)
+            return 1
+        print(state.get("body", json.dumps(state["hello"])) + "\n" + str(state.get("status", 200)))
+        return 0
+    remote = Path(os.environ["WM_WEB_REMOTE"])
+    if kind == "ssh":
+        command = arguments[-1]
+        if command.startswith("cd ~/windmill && python3 - web-preflight "):
+            return subprocess.run([sys.executable, "-", *shlex.split(command.split("python3 - ", 1)[1])],
+                                  input=sys.stdin.read(), text=True, cwd=remote).returncode
+        if command == "mkdir -p ~/windmill/web":
+            (remote / "web").mkdir(exist_ok=True)
+            return 0
+        raise AssertionError("unmodeled web SSH command")
+    if kind == "rsync":
+        if arguments[:3] != ["-az", "--delete", "-e"] or arguments[-2:] != ["dist/", "fixture@host:windmill/web/"]:
+            raise AssertionError("unmodeled web promotion")
+        shutil.copyfile("dist/index.html", remote / "web/index.html")
+        return 0
+    raise AssertionError("unmodeled web deployment command")
+
+
+class WebCompatibilityTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.remote = self.root / "remote"
+        self.remote.mkdir()
+        (self.remote / "web").mkdir()
+        for name, contents in {"web/index.html": "compatible live web", ".env": "PRIVATE_WEB_CANARY",
+                               "docker-compose.yml": "live compose", "sync-epoch": "retained epoch"}.items():
+            (self.remote / name).write_text(contents)
+        self.web = self.root / "checkout/web"
+        (self.web / "dist").mkdir(parents=True)
+        (self.web / "dist/index.html").write_text("candidate web")
+        helper = self.web.parent / "backend/deploy/sync_compatibility.py"
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT.with_name("sync_compatibility.py"), helper)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("docker", "ssh", "rsync"):
+            target = self.bin / name
+            target.write_text("#!" + sys.executable + "\nimport runpy,sys\nsys.argv=[" + repr(str(Path(__file__).resolve())) +
+                              ", '--web-shim', " + repr(name) + "]+sys.argv[1:]\nrunpy.run_path(sys.argv[0],run_name='__main__')\n")
+            target.chmod(0o755)
+        self.state = self.root / "state.json"
+        self.environment = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+                            "WM_WEB_STATE": str(self.state), "WM_WEB_REMOTE": str(self.remote),
+                            "SSH_KEY": "PRIVATE_WEB_CANARY", "SSH_HOST": "host", "SSH_USER": "fixture", "SSH_PORT": "22",
+                            "GITHUB_SHA": "b" * 40}
+
+    def block(self, name):
+        text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
+        step = text.split("      - name: " + name + "\n", 1)[1]
+        return textwrap.dedent(step.split("        run: |\n", 1)[1].split("\n      - ", 1)[0])
+
+    def live_files(self):
+        return {str(path.relative_to(self.remote)): path.read_bytes() for path in self.remote.rglob("*") if path.is_file()}
+
+    def promote(self, hello, schema=10, minimum=10, **response):
+        self.state.write_text(json.dumps({"commands": [], "hello": hello, **response}))
+        (self.web / "web-sync-compatibility.json").write_text(json.dumps({"schema": schema, "minSchema": minimum}))
+        return subprocess.run(["bash", "-euc", self.block("Rsync dist to the VPS")], cwd=self.web,
+                              env=self.environment, capture_output=True, text=True)
+
+    def test_incompatible_clients_leave_every_live_file_unchanged(self):
+        before = self.live_files()
+        for hello, schema, minimum in (({"schema": 8, "minSchema": 4}, 10, 10),
+                                       ({"schema": 11, "minSchema": 11}, 10, 10)):
+            with self.subTest(hello=hello):
+                result = self.promote(hello, schema, minimum)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (1, "", "HOLD web deployment: live backend and candidate client are incompatible\n"))
+                self.assertEqual(self.live_files(), before)
+                self.assertEqual([command[0] for command in json.loads(self.state.read_text())["commands"]], ["ssh", "docker"])
+
+    def test_compatible_intervals_promote_only_after_the_anonymous_live_check(self):
+        for hello, schema, minimum in (({"schema": 10, "minSchema": 10}, 10, 10),
+                                       ({"schema": 11, "minSchema": 10}, 10, 10),
+                                       ({"schema": 10, "minSchema": 4}, 9, 9)):
+            with self.subTest(hello=hello):
+                result = self.promote(hello, schema, minimum)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (0, "PASS web deployment: live backend accepts the candidate sync client\n", ""))
+                self.assertEqual([command[0] for command in json.loads(self.state.read_text())["commands"]],
+                                 ["ssh", "docker", "ssh", "rsync"])
+                self.assertEqual((self.remote / "web/index.html").read_text(), "candidate web")
+                self.assertEqual((self.remote / ".env").read_text(), "PRIVATE_WEB_CANARY")
+                self.assertEqual((self.remote / "sync-epoch").read_text(), "retained epoch")
+
+    def test_missing_malformed_refused_or_unavailable_hello_holds_without_exposing_output(self):
+        before = self.live_files()
+        cases = [{"hello": {}}, {"hello": {"schema": True, "minSchema": 1}},
+                 {"hello": {"schema": "10", "minSchema": 10}}, {"hello": {"schema": 10, "minSchema": 11}},
+                 {"hello": {"schema": 10, "minSchema": 0}}, {"hello": {}, "body": "PRIVATE_WEB_CANARY"},
+                 {"hello": {"schema": 10, "minSchema": 10}, "failure": True}]
+        cases += [{"hello": {"schema": 10, "minSchema": 10}, "status": status} for status in (401, 426, 500, 503)]
+        for fields in cases:
+            with self.subTest(fields=fields):
+                result = self.promote(**fields)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("HOLD web deployment:", result.stderr)
+                self.assertNotIn("PRIVATE_WEB_CANARY", result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(self.live_files(), before)
+                self.assertEqual([command[0] for command in json.loads(self.state.read_text())["commands"]], ["ssh", "docker"])
+
+    def test_invalid_candidate_interval_never_reaches_the_host(self):
+        before = self.live_files()
+        for schema, minimum in ((10, 11), (10, 0), (True, 1), ("PRIVATE_WEB_CANARY", 10)):
+            with self.subTest(schema=schema, minimum=minimum):
+                result = self.promote({"schema": 10, "minSchema": 10}, schema, minimum)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("PRIVATE_WEB_CANARY", result.stdout + result.stderr)
+                self.assertEqual(json.loads(self.state.read_text())["commands"], [])
+                self.assertEqual(self.live_files(), before)
+
+    def test_pinned_artifact_records_the_source_composed_schema_and_every_dist_file_before_preflight(self):
+        contract = self.web.parent / "packages/api-contract/sync"
+        contract.mkdir(parents=True)
+        (contract / "composition.json").write_text(json.dumps({"registries": ["gym.registry.json", "journal.registry.json"]}))
+        for name in ("gym", "journal"):
+            (contract / (name + ".registry.json")).write_text(json.dumps({"version": 10, "minVersion": 10}))
+        (self.web / "dist/.retained").write_bytes(bytes([0, 128, 255]))
+        result = subprocess.run(["bash", "-euc", self.block("Prepare pinned web release")], cwd=self.web,
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "", ""))
+        release = json.loads((self.web / "web-release.json").read_text())
+        self.assertEqual(release, {"source": "b" * 40, "compatibility": {"schema": 10, "minSchema": 10}, "files": [
+            {"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for name, data in ((".retained", bytes([0, 128, 255])), ("index.html", b"candidate web"))]})
+        text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
+        self.assertLess(text.index("name: Retain pinned web release"), text.index("name: Rsync dist to the VPS"))
+        retained = text.split("      - name: Retain pinned web release\n", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("name: web-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}", retained)
+        for entry in ("web/dist/", "web/web-release.json", "web/web-sync-compatibility.json", "include-hidden-files: true", "if-no-files-found: error"):
+            self.assertIn(entry, retained)
+        promotion = text.split("      - name: Rsync dist to the VPS\n", 1)[1]
+        self.assertIn("if: github.event_name != 'pull_request'", promotion)
+        self.assertIn("group: deploy-vps\n  cancel-in-progress: false", text)
+
+    def test_inconsistent_composed_metadata_or_an_empty_dist_cannot_be_retained_for_promotion(self):
+        contract = self.web.parent / "packages/api-contract/sync"
+        contract.mkdir(parents=True)
+        (contract / "composition.json").write_text(json.dumps({"registries": ["gym.registry.json", "journal.registry.json"]}))
+        (contract / "gym.registry.json").write_text(json.dumps({"version": 10, "minVersion": 10}))
+        (contract / "journal.registry.json").write_text(json.dumps({"version": 9, "minVersion": 9}))
+        result = subprocess.run(["bash", "-euc", self.block("Prepare pinned web release")], cwd=self.web,
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (1, "", "FAIL sync compatibility verification could not complete\n"))
+        self.assertFalse((self.web / "web-release.json").exists())
+        (contract / "journal.registry.json").write_text(json.dumps({"version": 10, "minVersion": 10}))
+        (self.web / "dist/index.html").unlink()
+        result = subprocess.run(["bash", "-euc", self.block("Prepare pinned web release")], cwd=self.web,
+                                env=self.environment, capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL web release has no files\n"))
+        self.assertFalse((self.web / "web-release.json").exists())
+
+    def test_a_dist_symlink_cannot_misdescribe_outside_bytes_as_a_retained_release(self):
+        contract = self.web.parent / "packages/api-contract/sync"
+        contract.mkdir(parents=True)
+        (contract / "composition.json").write_text(json.dumps({"registries": ["gym.registry.json"]}))
+        (contract / "gym.registry.json").write_text(json.dumps({"version": 10, "minVersion": 10}))
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "private.txt").write_text("PRIVATE_WEB_CANARY")
+        before = self.live_files()
+        link = self.web / "dist/linked"
+        for target in (outside / "private.txt", outside, outside / "missing"):
+            with self.subTest(target=target.name):
+                link.symlink_to(target)
+                result = subprocess.run(["bash", "-euc", self.block("Prepare pinned web release")], cwd=self.web,
+                                        env=self.environment, capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (1, "", "FAIL web release contains a symlink\n"))
+                self.assertFalse((self.web / "web-release.json").exists())
+                self.assertNotIn("PRIVATE_WEB_CANARY", result.stdout + result.stderr)
+                self.assertEqual(self.live_files(), before)
+                link.unlink()
+
+
 class DeployWorkflowTest(unittest.TestCase):
     def test_workflow_requires_an_image_commit_reachable_from_main_and_uses_its_sentry_release(self):
         workflow = SCRIPT.parents[2] / ".github/workflows/deploy.yml"
@@ -491,6 +687,8 @@ class DeployWorkflowTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--web-shim"]:
+        sys.exit(web_shim(sys.argv[2], sys.argv[3:]))
     if sys.argv[1:2] == ["--docker-shim"]:
         sys.exit(docker_shim(sys.argv[2:]))
     unittest.main()

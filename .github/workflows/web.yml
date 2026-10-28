@@ -2,13 +2,15 @@ name: Web Deploy
 
 # Static Vite build → rsync to the VPS, where the same Caddy that fronts the backend serves
 # ~/windmill/web at $DOMAIN_APP. `npm run build` runs `node --test test/` first, so the web half of
-# the ladder drift gate fires here. The rsync is gated on the event, so a PR never touches the VPS.
+# the ladder drift gate fires here. Promotion requires compatible live sync metadata; a PR never touches the VPS.
 on:
   push:
     branches: [main]
     paths:
       - 'web/**'
       - 'packages/**'
+      - 'backend/deploy/sync_compatibility.py'
+      - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '!web/**/*.md'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'web/**'
       - 'packages/**'
+      - 'backend/deploy/sync_compatibility.py'
+      - 'backend/test/deploy/deploy_production_test.py'
       - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '!web/**/*.md'
@@ -37,6 +41,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+
+      - name: Verify web sync deployment guard
+        run: python3 ../backend/test/deploy/deploy_production_test.py WebCompatibilityTest -v
 
       - uses: actions/setup-node@v5
         with:
@@ -66,6 +73,50 @@ jobs:
           VITE_PADDLE_ENV: ${{ vars.PADDLE_ENV }}
         run: npm run build
 
+      - name: Prepare pinned web release
+        run: |
+          python3 ../backend/deploy/sync_compatibility.py metadata ../packages/api-contract/sync web-sync-compatibility.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          dist = Path("dist")
+          if dist.is_symlink():
+              raise SystemExit("FAIL web release contains a symlink")
+          paths = sorted(dist.rglob("*"))
+          if any(path.is_symlink() for path in paths):
+              raise SystemExit("FAIL web release contains a symlink")
+          files = []
+          for path in paths:
+              if not path.is_file():
+                  continue
+              digest = hashlib.sha256()
+              with path.open("rb") as contents:
+                  for chunk in iter(lambda: contents.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              files.append({"path": path.relative_to(dist).as_posix(), "bytes": path.stat().st_size,
+                            "sha256": digest.hexdigest()})
+          if not files:
+              raise SystemExit("FAIL web release has no files")
+          Path("web-release.json").write_text(json.dumps({
+              "source": os.environ["GITHUB_SHA"],
+              "compatibility": json.loads(Path("web-sync-compatibility.json").read_text()),
+              "files": files}, indent=2) + "\n")
+          PY
+
+      - name: Retain pinned web release
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            web/dist/
+            web/web-release.json
+            web/web-sync-compatibility.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Rsync dist to the VPS
         if: github.event_name != 'pull_request'
         env:
@@ -78,5 +129,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > deploy_key
           chmod 600 deploy_key
           SSH="ssh -i deploy_key -p ${SSH_PORT:-22} -o StrictHostKeyChecking=accept-new"
+          client=$(python3 -c 'import json, sys; sys.path.insert(0, "../backend/deploy"); from sync_compatibility import compatibility; value = compatibility(json.load(open("web-sync-compatibility.json"))); print(value["schema"], value["minSchema"])')
+          $SSH "$SSH_USER@$SSH_HOST" "cd ~/windmill && python3 - web-preflight $client" < ../backend/deploy/sync_compatibility.py
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill/web'
           rsync -az --delete -e "$SSH" dist/ "$SSH_USER@$SSH_HOST:windmill/web/"

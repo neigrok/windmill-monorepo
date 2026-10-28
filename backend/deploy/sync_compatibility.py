@@ -50,6 +50,17 @@ def sync_reply(schema, path="hello"):
     return int(status), json.loads(body)
 
 
+def web_preflight(schema, minimum):
+    client = compatibility({"schema": schema, "minSchema": minimum})
+    status, hello = sync_reply(2147483647)
+    if status != 200:
+        raise SystemExit("HOLD web deployment: live sync compatibility is unavailable")
+    current = compatibility(hello)
+    if current["schema"] < client["minSchema"] or current["minSchema"] > client["schema"]:
+        raise SystemExit("HOLD web deployment: live backend and candidate client are incompatible")
+    print("PASS web deployment: live backend accepts the candidate sync client")
+
+
 def preflight(environment, acknowledgement, receipt):
     candidate = ["docker", "compose", "--env-file", str(environment), "-f", "docker-compose.next.yml"]
     services = json.loads(capture(candidate + ["config", "--format", "json"]))["services"]
@@ -124,15 +135,22 @@ def main():
     guard.add_argument("receipt", type=Path)
     runtime = commands.add_parser("verify")
     runtime.add_argument("receipt", type=Path)
+    web = commands.add_parser("web-preflight")
+    web.add_argument("schema", type=int)
+    web.add_argument("minimum", type=int)
     args = parser.parse_args()
     try:
         if args.command == "metadata":
             args.output.write_text(json.dumps(metadata(args.contract)) + "\n")
         elif args.command == "preflight":
             preflight(args.environment, args.acknowledgement, args.receipt)
+        elif args.command == "web-preflight":
+            web_preflight(args.schema, args.minimum)
         else:
             verify(args.receipt)
     except Exception:
+        if args.command == "web-preflight":
+            raise SystemExit("HOLD web deployment: sync compatibility could not be verified")
         raise SystemExit("FAIL sync compatibility verification could not complete")
 
 

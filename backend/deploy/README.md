@@ -162,7 +162,11 @@ verified. A source merge does not authorize a minimum change.
 1. Keep a schema 8 / minimum 4 maintenance image available during preparation. Automatic deployment
    refuses a candidate minimum that differs from the live server.
 2. Prepare schema 10 readers on every surface. Preserve stored equipment/count values, exact zero,
-   absent targets and pending writes. Web deploys independently. New selectors require their own
+   absent targets and pending writes. Web Deploy retains the complete pinned `dist`, source/file-hash
+   manifest and composed compatibility artifact before checking the live anonymous hello. It holds
+   promotion before mkdir/rsync unless live schema is at least the client minimum and live minimum
+   accepts the client schema; incompatible or unreadable state leaves the served web files intact.
+   New selectors require their own
    design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
    fresh hello advertises a server schema at least the client's generated registry minimum.
 3. Verify the signed Android update over the public replacement floor, including retained local work
@@ -180,6 +184,10 @@ verified. A source merge does not authorize a minimum change.
    header and return `426 client-update-required` for missing/old carriers before JSON, image or
    SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
    web and old native clients retain local work and show their existing update-required surface.
+   Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted
+   main source. Each attempt retains a separate pinned web artifact; inspect its full source SHA,
+   schema and file hashes. The preflight reads the current compose deployment and promotes no
+   backend state. Verify the new web release and real queued delivery after promotion.
 6. Keep a schema 10 / minimum 10 maintenance image available before accepting the new load range
    or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
    column caps. Automation resumes when candidate and live minimum match. Server and migration use

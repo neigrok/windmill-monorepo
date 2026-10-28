@@ -32,3 +32,17 @@ promotion. Candidate runtime verification must cover all four sync doors, curren
 Gym payloads and queued delivery after a fresh compatible hello. A passing mount/auth rejection
 matrix does not prove successful payload decoding, nullable metrics or distribution availability.
 No production cutoff is performed by the shared-load source change.
+
+Web promotion has its own fail-closed check under the same `deploy-vps` serialization. Its composed
+client schema must be at least the live backend minimum, and the live backend schema must be at
+least the client minimum. An anonymous hello runs inside the current server container without
+changing the environment, containers, epoch or live web files. Missing, malformed or unavailable
+compatibility produces a static `HOLD web deployment` failure before mkdir or rsync. Build and test
+steps still run; a source merge cannot promote an incompatible web client.
+
+Before that check, Web Deploy retains the complete `dist`, composed compatibility metadata and a
+release manifest with the full source SHA and every file's size/SHA256. The artifact name includes
+the source, workflow run and attempt, so retrying a held run retains its earlier candidate. The
+coordinated cutoff verifies native upgrade availability, performs the acknowledged backend cutoff,
+then retries the compatible web promotion and proves queued delivery. An artifact or passing
+compatibility check alone proves neither that delivery nor production availability.
