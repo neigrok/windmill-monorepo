@@ -242,23 +242,22 @@ public:
       int working = 0;
       double tonnage = 0;
       std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY the name
-      std::optional<TopWorkingSet> top;
+      std::optional<HeaviestSet> top;
       std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : db.sets) {
         if (!(set.session == session.id)) continue;
         ++count;
         if (std::optional<std::string> name = db.nameOf(user, set.exercise)) names.insert(*name);
         if (!lastSetAtMs || set.completedAtMs > *lastSetAtMs) lastSetAtMs = set.completedAtMs;
-        if (set.kind != SetKind::working) continue;
         ++working;
         // `greatest(weight_kg, 0) * reps`: an assisted set moved no external weight, so it adds nothing.
         tonnage += std::max(set.weightKg, 0.0) * set.reps;
-        // Heaviest working set, ties to more reps, never volume (TopWorkingSet).
+        // Heaviest set, ties to more reps, never volume (HeaviestSet).
         if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
           continue;
-        top = TopWorkingSet{set.weightKg, set.reps};
+        top = HeaviestSet{set.weightKg, set.reps};
       }
-      // The working-set statement: this session's working sets, dated by the SESSION (domain/Progress.h).
+      // The fact statement: this session's sets, dated by the SESSION (domain/Progress.h).
       std::vector<ProgressSet> worked =
           factsWhere(user, [&](const Session& ran, const Set&) { return ran.id == session.id; });
       // closed_by when the row carries it, else the four-hour rule's own signature for a legacy row.
@@ -296,7 +295,7 @@ public:
     return out;
   }
 
-  // Finished sessions newest first on (startedAt, id), stopping at the first holding a non-warmup set.
+  // Finished sessions newest first on (startedAt, id), stopping at the first holding a set of the movement.
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override {
     std::optional<Session> newest;
     for (const Session& session : db.sessions) {
@@ -306,7 +305,6 @@ public:
         continue;
       for (const Set& set : db.sets) {
         if (!(set.session == session.id) || !(set.exercise == exercise)) continue;
-        if (set.kind == SetKind::warmup) continue;
         newest = session;
         break;
       }
@@ -319,8 +317,7 @@ public:
     }
     std::vector<Set> block;
     for (const Set& set : db.sets)
-      if (set.session == newest->id && set.exercise == exercise && set.kind != SetKind::warmup)
-        block.push_back(set);
+      if (set.session == newest->id && set.exercise == exercise) block.push_back(set);
     std::sort(block.begin(), block.end(),
               [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
     // The name comes off the session's own frozen snapshot.
@@ -354,8 +351,7 @@ public:
     history.standing = factsWhere(user, [&](const Session& ran, const Set& prior) {
       bool workedToday = false;
       for (const Set& today : db.sets)
-        if (today.session == session.id && today.exercise == prior.exercise && today.kind == SetKind::working)
-          workedToday = true;
+        if (today.session == session.id && today.exercise == prior.exercise) workedToday = true;
       return workedToday && ran.finishedAtMs &&
              std::pair(ran.startedAtMs, ran.id.str()) < std::pair(session.startedAtMs, session.id.str());
     });
@@ -411,7 +407,7 @@ public:
     for (auto session = ran.rbegin(); session != ran.rend(); ++session) {
       std::vector<Set> block;
       for (const Set& set : setsOf(session->id))
-        if (set.exercise == exercise && set.kind != SetKind::warmup) block.push_back(set);
+        if (set.exercise == exercise) block.push_back(set);
       if (block.empty()) continue;
       std::sort(block.begin(), block.end(),
                 [](const Set& a, const Set& b) { return a.setNumber < b.setNumber; });
@@ -421,10 +417,10 @@ public:
     return history;
   }
 
-  // Every working set of the finished log, dated by the SESSION; weeks are contiguous Monday-to-Monday UTC.
+  // Every set of the finished log, dated by the SESSION; weeks are contiguous Monday-to-Monday UTC.
   TrainingLog trainingLog(const UserId& user) override {
     TrainingLog log;
-    const std::vector<std::pair<Session, Set>> lived = workingSetsOfFinished(user);
+    const std::vector<std::pair<Session, Set>> lived = setsOfFinished(user);
     log.sets = progressHistory(user);
 
     std::map<std::uint64_t, TrainingWeek> byWeek;
@@ -465,7 +461,7 @@ public:
       for (const Set& set : setsOf(session.id))
         workout.sets.push_back(HistorySet{set.id.str(), set.exercise.str(),
             db.nameOf(user, set.exercise).value_or(""), set.setNumber, set.weightKg, set.reps,
-            set.rpe, set.completedAtMs, set.kind == SetKind::working});
+            set.rpe, set.completedAtMs});
       workouts.push_back(std::move(workout));
     }
     return historyPage(std::move(workouts), query);
@@ -563,7 +559,7 @@ public:
         for (const Set& set : setsOf(ran.id)) {
           std::optional<std::string> movement = db.nameOf(ran.user, set.exercise);
           if (!movement) continue;
-          block.push_back(SharedSet{*movement, set.setNumber, set.weightKg, set.reps, set.kind,
+          block.push_back(SharedSet{*movement, set.setNumber, set.weightKg, set.reps,
                                     set.rpe, set.note, set.completedAtMs});
         }
         return SharedSession{ran.startedAtMs, ran.finishedAtMs,
@@ -590,14 +586,14 @@ private:
       if (!query.exercise.empty() && std::none_of(workout.sets.begin(), workout.sets.end(),
           [&](const auto& set) { return set.exerciseId == query.exercise; })) continue;
       for (const auto& set : workout.sets)
-        if (set.working) facts.push_back(ProgressSet{SessionId{workout.id}, workout.startedAtMs,
+        facts.push_back(ProgressSet{SessionId{workout.id}, workout.startedAtMs,
             ExerciseId{set.exerciseId}, PerformedFact{SetId{set.id}, set.weightKg, set.reps, set.rpe}});
       const auto totals = workout.totals();
       ++page.summary.sessions;
       page.summary.sets += totals.sets;
       page.summary.reps += totals.reps;
       for (const auto& set : workout.sets)
-        if (set.working) volume.emplace_back(set.id, set.weightKg, set.reps, set.equipment, set.loadCount);
+        volume.emplace_back(set.id, set.weightKg, set.reps, set.equipment, set.loadCount);
       const std::chrono::year_month_day date{std::chrono::floor<std::chrono::days>(
           std::chrono::sys_time<std::chrono::milliseconds>{std::chrono::milliseconds{workout.startedAtMs}})};
       const unsigned month = unsigned(date.month());
@@ -634,11 +630,10 @@ private:
     return page;
   }
 
-  // This account's working sets in its FINISHED sessions only, each carrying the session it was lived in.
-  std::vector<std::pair<Session, Set>> workingSetsOfFinished(const UserId& user) const {
+  // This account's sets in its FINISHED sessions only, each carrying the session it was lived in.
+  std::vector<std::pair<Session, Set>> setsOfFinished(const UserId& user) const {
     std::vector<std::pair<Session, Set>> lived;
     for (const Set& set : db.sets) {
-      if (set.kind != SetKind::working) continue;
       for (const Session& ran : db.sessions) {
         if (!(ran.id == set.session) || !(ran.user == user) || !ran.finishedAtMs) continue;
         lived.push_back({ran, set});
@@ -647,13 +642,12 @@ private:
     return lived;
   }
 
-  // The working-set projection (domain/Progress.h): each working set of this account's sessions that `keep` admits,
+  // The fact projection (domain/Progress.h): each set of this account's sessions that `keep` admits,
   // dated by its session, in the store's order.
   template <typename Keep>
   std::vector<ProgressSet> factsWhere(const UserId& user, Keep keep) const {
     std::vector<ProgressSet> facts;
     for (const Set& set : db.sets) {
-      if (set.kind != SetKind::working) continue;
       for (const Session& ran : db.sessions)
         if (ran.id == set.session && ran.user == user && keep(ran, set)) facts.push_back(ProgressSet::of(ran, set));
     }

@@ -698,7 +698,7 @@ TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
   REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
   for (const auto& [id, at] : {std::pair{"set_pg000001", kNow + 60'000}, std::pair{"set_pg000002", kNow + 120'000}})
     REQUIRE(h.door.append(h.user, SessionId{"ses_pg000001"},
-                              SetWrite{SetId{id}, ExerciseId{"bench-press"}, 82.5, 8, SetKind::working, std::nullopt, "", at})
+                              SetWrite{SetId{id}, ExerciseId{"bench-press"}, 82.5, 8, std::nullopt, "", at})
                 .set.has_value());
   REQUIRE(h.door.proposeRemoval(h.user, ProposalId{"prop_pg00001"}, RoutineId{"rt_pg000001"}, "Drop it.",
                                    ProposalSource{ProposalDoor::mcp, "", "", std::nullopt})

@@ -357,7 +357,8 @@ a null register is refused `invalid`. v7 keeps minimum v4, and the base `exercis
 The gym Coach's `thread` and `message` types and the `runningTurn` and `picture:<id>` device rows (v8) are
 additive too. The explicit `other` equipment value extends a client-enforced enum, so version 9
 requires minimum 9. Unbounded finite normalized gym loads and nullable derived metrics require
-version 10 / minimum 10. Existing equipment rows and overrides are not migrated.
+version 10 / minimum 10. Sets without a `kind` field require version 11 / minimum 11. Existing
+equipment rows and overrides are not migrated.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2666,7 +2667,7 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 | `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell, other}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
 | `exerciseName` | keyed (`ref<exercise>`: a seed, or a custom movement of the account) | none | lww, each optional: `name` 1–240 bytes, `equipment` (the `exercise.equipment` enum), `loadCount` integer 1–2; lww server: `aliases` as an exercise's | The account's name and loading for a movement. Keyed by a seed: `name` unset reads as the seed's own name, a seed renamed back to it holds it, and a change of the displayed name writes `aliases` as an exercise's rename does. Keyed by a custom movement alive in the joined rows, stored or created in the same intent: only `equipment` and `loadCount`; a `name` → `invalid`, since a custom movement's name and aliases live on its `exercise`. Keyed by any other id → `invalid`. A null register → `invalid`. `loadCount` counts only for `dumbbell` equipment. |
 | `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
-| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` finite quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
+| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` finite quantum 0.01, `reps` 1–500, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25); lww server: `updatedAt` epoch ms ≥0 | Cap 10. Editor save guards the fields it writes. Client-derived `position` is the dense rank from 0 of `(ord, id)` among alive notes. R118 `updatedAt` is its content admission time; reorder leaves it alone. |
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`. No server-origin door writes a weigh-in. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
@@ -2784,7 +2785,7 @@ It is the only writer of `closedBy = stale`.
   drawn until its entry resolves (§7.5 step 2).
 - **`gym.importSession {id: ref<session>, routineId?, startedAt: instant, finishedAt: instant, sets}`.**
   Creates a finished session (`closedBy = finish`) and its sets, with no join. `sets` holds at most
-  200 sets, each `{id, exerciseId, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
+  200 sets, each `{id, exerciseId, weightKg, reps, rpe?, note?, completedAt}`, with a set's
   bounds and quanta. A set's `completedAt` is an integer epoch ms inside a `json` argument, not an
   `instant`, so §6.1 step 2 does not bound it: the command's check does (`bad-instant`).
   - An import receipt for `id`: equal raw arguments → ok, its session alive or dead; different →
@@ -2800,7 +2801,7 @@ It is the only writer of `closedBy = stale`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
 - **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets, preserveOtherSets?}`.**
-  Each set is `{id, exerciseId, setNumber, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
+  Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt}`, with a set's
   bounds and quanta, its `completedAt` bounded by the command's check as `gym.importSession`'s is. `requestId` matches the gym id pattern, and `routineName` is ≤240 bytes or
   null. It corrects a finished workout; `preserveOtherSets` is an optional boolean, default false:
   - The session is alive and the owner's; otherwise `unknown-record` or `record-dead`.
@@ -2809,8 +2810,8 @@ It is the only writer of `closedBy = stale`.
   - 1–200 sets with unique ids; set numbers 1–2 147 483 647 and unique per movement; every instant within
     `[startedAt, finishedAt]` and not in the future → otherwise `bad-instant` or `invalid`.
   - Crossing another finished session → `session-overlap`.
-  - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; a new set takes
-    `kind`, default `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
+  - An existing set whose `exerciseId` changes → `invalid`. Set numbers are taken as given, and a
+    kept set takes its `completedAt`. Omitted `rpe`
     and `note` keep their values. Unnamed prior sets die unless `preserveOtherSets` is true, which
     leaves those rows unchanged. Their numbers must not collide with named sets, and their times
     must remain within the interval; the 200-set limit applies only to the argument. A reused or spent set id → `id-taken` or

@@ -44,9 +44,8 @@ remain unchanged. Debug and Release real-wire suites each pass 17 cases with zer
 Debug run passes all 17 against the backend auth-receipt/schema prerequisite on main.
 
 Native acceptance logs eight 60 kg × 8 sets across two routine movements. The receipt and backend
-readback count all eight sets and 3,840 kg. A local REST import carrying warmup, working, drop and
-failure values retains all four sets; the installed app shows four ordinary rows and 960 kg. No kind
-control appears. Local recovery compatibility is covered by the unit and wire suites.
+readback count all eight sets and 3,840 kg. Local recovery compatibility is covered by the unit and
+wire suites.
 
 The simplified rack has one acceptance path for every logged set. Recovery retains source documents
 for retry without a separate kind-correction state. Wire summary fields retain their existing names;
@@ -783,7 +782,7 @@ verification are recorded in [Coach history preview](coach-history-preview.md).
 
 The History, sources, deletion, Copy and Jump recipes use `coach-history.json` with
 `coach-history-fixture.json`: one
-Push A workout, one working set and 400 kg volume. The optional `setsPerMovement` history value
+Push A workout, one set and 400 kg volume. The optional `setsPerMovement` history value
 is an integer from 1 to 20; each explicit 40-minute workout has at most 20 total sets. Omitted
 counts retain three sets per movement. Capture tooling
 keeps the existing date, routine-index, finite-load and rep guards. The deletion recipe uses the

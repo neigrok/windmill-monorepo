@@ -13,11 +13,10 @@
 using namespace wm::gym;
 
 namespace {
-Set set(double weightKg, int reps, SetKind kind = SetKind::working,
-        std::optional<double> rpe = std::nullopt, std::string note = "",
+Set set(double weightKg, int reps, std::optional<double> rpe = std::nullopt, std::string note = "",
         std::string id = "set_00000001") {
   return Set{SetId{std::move(id)}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 0,
-             weightKg, reps, kind, rpe, std::move(note), 1'700'000'000'000};
+             weightKg, reps, rpe, std::move(note), 1'700'000'000'000};
 }
 
 // The sentence the constructor refused with, or empty when it built.
@@ -35,31 +34,6 @@ bool rejects(const std::function<void()>& build) { return !refusal(build).empty(
 Session openSession(std::uint64_t startedAtMs) {
   return Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, startedAtMs};
 }
-}
-
-TEST(set_kind_round_trips_through_its_codec) {
-  CHECK_EQ(toString(SetKind::warmup), std::string("warmup"));
-  CHECK_EQ(toString(SetKind::working), std::string("working"));
-  CHECK_EQ(toString(SetKind::drop), std::string("drop"));
-  CHECK_EQ(toString(SetKind::failure), std::string("failure"));
-  CHECK(parseSetKind("warmup") == SetKind::warmup);
-  CHECK(parseSetKind("working") == SetKind::working);
-  CHECK(parseSetKind("drop") == SetKind::drop);
-  CHECK(parseSetKind("failure") == SetKind::failure);
-}
-
-TEST(parse_set_kind_is_strict_an_unknown_word_throws) {
-  CHECK(rejects([] { parseSetKind("amrap"); }));
-  CHECK(rejects([] { parseSetKind(""); }));
-  CHECK(rejects([] { parseSetKind("Working"); }));
-}
-
-TEST(set_kind_from_stored_clamps_unknown_to_working) {
-  CHECK(setKindFromStored("warmup") == SetKind::warmup);
-  CHECK(setKindFromStored("drop") == SetKind::drop);
-  CHECK(setKindFromStored("failure") == SetKind::failure);
-  CHECK(setKindFromStored("amrap") == SetKind::working);   // a newer deploy's kind can't crash us
-  CHECK(setKindFromStored("") == SetKind::working);
 }
 
 TEST(pattern_parses_strictly_and_clamps_on_read) {
@@ -111,10 +85,10 @@ TEST(set_construction_accepts_the_full_legal_range) {
   CHECK_EQ(set(std::numeric_limits<double>::max(), 1).weightKg, std::numeric_limits<double>::max());
   CHECK_EQ(set(80.0, 1).reps, 1);
   CHECK_EQ(set(80.0, 500).reps, 500);
-  CHECK_EQ(set(80.0, 8, SetKind::working, 8.5).rpe, std::optional<double>(8.5));
-  CHECK_EQ(set(80.0, 8, SetKind::working, 1.0).rpe, std::optional<double>(1.0));
-  CHECK_EQ(set(80.0, 8, SetKind::working, 10.0).rpe, std::optional<double>(10.0));
-  CHECK_EQ(set(80.0, 8, SetKind::working, std::nullopt, std::string(4000, 'x')).note.size(),
+  CHECK_EQ(set(80.0, 8, 8.5).rpe, std::optional<double>(8.5));
+  CHECK_EQ(set(80.0, 8, 1.0).rpe, std::optional<double>(1.0));
+  CHECK_EQ(set(80.0, 8, 10.0).rpe, std::optional<double>(10.0));
+  CHECK_EQ(set(80.0, 8, std::nullopt, std::string(4000, 'x')).note.size(),
            static_cast<std::size_t>(4000));
 }
 
@@ -123,25 +97,25 @@ TEST(set_construction_rejects_out_of_range_fields) {
   CHECK(rejects([] { set(80.0, 501); }));
   CHECK(rejects([] { set(std::numeric_limits<double>::infinity(), 8); }));
   CHECK(rejects([] { set(std::numeric_limits<double>::quiet_NaN(), 8); }));
-  CHECK(rejects([] { set(80.0, 8, SetKind::working, 0.5); }));
-  CHECK(rejects([] { set(80.0, 8, SetKind::working, 10.5); }));
-  CHECK(rejects([] { set(80.0, 8, SetKind::working, std::nullopt, std::string(4001, 'x')); }));
-  CHECK(rejects([] { set(80.0, 8, SetKind::working, std::nullopt, "", "set_001"); }));   // 7 chars
-  CHECK(rejects([] { set(80.0, 8, SetKind::working, std::nullopt, "", "bad id 00"); }));
+  CHECK(rejects([] { set(80.0, 8, 0.5); }));
+  CHECK(rejects([] { set(80.0, 8, 10.5); }));
+  CHECK(rejects([] { set(80.0, 8, std::nullopt, std::string(4001, 'x')); }));
+  CHECK(rejects([] { set(80.0, 8, std::nullopt, "", "set_001"); }));   // 7 chars
+  CHECK(rejects([] { set(80.0, 8, std::nullopt, "", "bad id 00"); }));
   // Postgres text stops at a NUL, so the note would be stored truncated — refuse it instead.
   CHECK(rejects([] {
-    set(80.0, 8, SetKind::working, std::nullopt, std::string("before\0after", 12));
+    set(80.0, 8, std::nullopt, std::string("before\0after", 12));
   }));
   CHECK(rejects([] {
     Set{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 0, 80.0, 8,
-        SetKind::working, std::nullopt, "", 0};                        // no completion instant
+        std::nullopt, "", 0};                        // no completion instant
   }));
   CHECK(rejects([] {
     Set{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 0, 80.0, 8,
-        SetKind::working, std::nullopt, "", kMaxInstantMs + 1};        // nanoseconds, not ms
+        std::nullopt, "", kMaxInstantMs + 1};        // nanoseconds, not ms
   }));
   CHECK_EQ((Set{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 0,
-                80.0, 8, SetKind::working, std::nullopt, "", kMaxInstantMs}).completedAtMs,
+                80.0, 8, std::nullopt, "", kMaxInstantMs}).completedAtMs,
            kMaxInstantMs);
 }
 
@@ -322,7 +296,7 @@ TEST(is_stale_counts_four_hours_from_the_last_activity) {
   const std::uint64_t t = 1'700'000'000'000;
   const Session open = openSession(t);
   const auto setAt = [](std::uint64_t completedAtMs, const char* id) {
-    return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 1, 60, 5, SetKind::working,
+    return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 1, 60, 5,
                std::nullopt, "", completedAtMs};
   };
   CHECK_FALSE(isStale(open, {}, t + kAutoCloseMs - 1));   // just under, counted from the start
@@ -382,7 +356,7 @@ TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
 
   CHECK(rejects([] {
     Set{SetId{"set_11111111"}, SessionId{"ses_11111111"}, ExerciseId{"bench-press"}, 1, 82.5, 8,
-        SetKind::working, std::nullopt, "\xED\xA0\x80", 1'700'000'000'000};
+        std::nullopt, "\xED\xA0\x80", 1'700'000'000'000};
   }));
   CHECK(rejects([] {
     Exercise{ExerciseId{"ex_11111111"}, "Zercher \xED\xA0\x80 Squat", Pattern::squat,

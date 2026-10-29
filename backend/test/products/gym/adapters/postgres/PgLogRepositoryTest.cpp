@@ -27,15 +27,15 @@ using namespace wm::gym::doortest;
 namespace {
 
 SetWrite lift(const std::string& id, const std::string& exercise, double weightKg, int reps,
-              std::uint64_t completedAtMs, SetKind kind = SetKind::working) {
-  return SetWrite{SetId{id}, ExerciseId{exercise}, weightKg, reps, kind, std::nullopt, "", completedAtMs};
+              std::uint64_t completedAtMs) {
+  return SetWrite{SetId{id}, ExerciseId{exercise}, weightKg, reps, std::nullopt, "", completedAtMs};
 }
 
 SetWrite bench(const std::string& id, double weightKg, std::uint64_t completedAtMs) {
   return lift(id, "bench-press", weightKg, 8, completedAtMs);
 }
 
-// A row of the working-set projection (domain/Progress.h): the set, dated by its session's start.
+// A row of the fact projection (domain/Progress.h): the set, dated by its session's start.
 ProgressSet fact(const std::string& session, std::uint64_t startedAtMs, const std::string& set,
                  const std::string& exercise, double weightKg, int reps) {
   return ProgressSet{SessionId{session}, startedAtMs, ExerciseId{exercise},
@@ -43,9 +43,8 @@ ProgressSet fact(const std::string& session, std::uint64_t startedAtMs, const st
 }
 
 // The reps are what every record is judged on, so a squat states them.
-SetWrite squat(const std::string& id, double weightKg, int reps, std::uint64_t completedAtMs,
-               SetKind kind = SetKind::working) {
-  return lift(id, "back-squat", weightKg, reps, completedAtMs, kind);
+SetWrite squat(const std::string& id, double weightKg, int reps, std::uint64_t completedAtMs) {
+  return lift(id, "back-squat", weightKg, reps, completedAtMs);
 }
 
 // A start the lifter makes at `atMs`: the clock stands there, so the door holds no start ahead of it.
@@ -151,28 +150,22 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   CHECK_EQ(h.repo.log.open(h.user), std::optional<Session>(Session{SessionId{"ses_pg000002"}, h.user, t1 + 5}));
 }
 
-TEST(pg_gym_progress_reads_raw_finished_working_sets_with_owner_and_effort_intact) {
+TEST(pg_gym_progress_reads_raw_finished_sets_with_owner_and_effort_intact) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t began = 1'700'000'000'123;
   started(h, h.user, "ses_pg000001", began);
   const std::vector<SetWrite> sets{
-      {SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 100, 1, SetKind::working, std::nullopt, "private note", began + 1'000},
-      {SetId{"set_pg000002"}, ExerciseId{"bench-press"}, 90, 10, SetKind::working, 6.5, "", began + 2'000},
-      {SetId{"set_pg000003"}, ExerciseId{"bench-press"}, 90, 8, SetKind::working, 7, "", began + 3'000},
-      {SetId{"set_pg000004"}, ExerciseId{"chin-up"}, -10, 8, SetKind::working, 8.5, "", began + 4'000},
-      {SetId{"set_pg000005"}, ExerciseId{"pull-up"}, 0, 8, SetKind::working, std::nullopt, "", began + 5'000},
-      {SetId{"set_pg000006"}, ExerciseId{"bench-press"}, 200, 8, SetKind::warmup, 8, "", began + 6'000},
-      {SetId{"set_pg000007"}, ExerciseId{"bench-press"}, 200, 8, SetKind::drop, 8, "", began + 7'000},
-      {SetId{"set_pg000008"}, ExerciseId{"bench-press"}, 200, 8, SetKind::failure, 8, "", began + 8'000}};
+      {SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 100, 1, std::nullopt, "private note", began + 1'000},
+      {SetId{"set_pg000002"}, ExerciseId{"bench-press"}, 90, 10, 6.5, "", began + 2'000},
+      {SetId{"set_pg000003"}, ExerciseId{"bench-press"}, 90, 8, 7, "", began + 3'000},
+      {SetId{"set_pg000004"}, ExerciseId{"chin-up"}, -10, 8, 8.5, "", began + 4'000},
+      {SetId{"set_pg000005"}, ExerciseId{"pull-up"}, 0, 8, std::nullopt, "", began + 5'000}};
   for (const SetWrite& set : sets) logged(h, h.user, "ses_pg000001", set);
   finished(h, h.user, "ses_pg000001", began + 10'000);
 
   started(h, h.user, "ses_pg000002", began + 20'000);
   finished(h, h.user, "ses_pg000002", began + 30'000);
-  started(h, h.user, "ses_pg000003", began + 40'000);
-  logged(h, h.user, "ses_pg000003", lift("set_pg000009", "bench-press", 200, 8, began + 41'000, SetKind::warmup));
-  finished(h, h.user, "ses_pg000003", began + 50'000);
   started(h, h.user, "ses_pg000004", began + 60'000);
   logged(h, h.user, "ses_pg000004", bench("set_pg000010", 200, began + 61'000));
   started(h, h.other, "ses_pg000005", began);
@@ -256,16 +249,16 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
 
   const Set bench1 = logged(h, h.user, "ses_pg000001", bench("set_pg000001", 82.5, t1 + 1'000));
   const Set squat1 = logged(h, h.user, "ses_pg000001", SetWrite{SetId{"set_pg000002"}, ExerciseId{"back-squat"},
-                                                                100.0, 5, SetKind::working, 8.5, "felt heavy", t1 + 2'000});
+                                                                100.0, 5, 8.5, "felt heavy", t1 + 2'000});
   const Set bench2 = logged(h, h.user, "ses_pg000001", bench("set_pg000003", 85.0, t1 + 3'000));
 
   CHECK_EQ(bench1, Set(SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 82.5, 8,
-                       SetKind::working, std::nullopt, "", t1 + 1'000));
+                       std::nullopt, "", t1 + 1'000));
   // Its own count, not the session's.
   CHECK_EQ(squat1, Set(SetId{"set_pg000002"}, SessionId{"ses_pg000001"}, ExerciseId{"back-squat"}, 1, 100.0, 5,
-                       SetKind::working, 8.5, "felt heavy", t1 + 2'000));
+                       8.5, "felt heavy", t1 + 2'000));
   CHECK_EQ(bench2, Set(SetId{"set_pg000003"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 2, 85.0, 8,
-                       SetKind::working, std::nullopt, "", t1 + 3'000));
+                       std::nullopt, "", t1 + 3'000));
 
   // A replay with a drifted weight is handed the ORIGINAL stored row, byte-for-byte.
   const AppendOutcome replayed = h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000001", 90.0, t1 + 99'000));
@@ -286,7 +279,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   started(h, h.user, "ses_pg000001", t1);
   started(h, h.other, "ses_pg000002", t1);
   const Set mine = logged(h, h.user, "ses_pg000001",
-      SetWrite{SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 142.5, 3, SetKind::working, 9.5,
+      SetWrite{SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 142.5, 3, 9.5,
                "knee felt off, deload next week", t1 + 1'000});
 
   // Another account mints the same id into ITS own session.
@@ -476,8 +469,8 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   CHECK(third.empty());
 }
 
-// topSet is a lateral over the WORKING sets; closedItself is the four-hour rule's signature — finished_at at the last set's instant, or at started_at.
-TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
+// topSet is a lateral over the session's sets; closedItself is the four-hour rule's signature — finished_at at the last set's instant, or at started_at.
+TEST(pg_gym_log_carries_the_top_set_and_says_which_row_closed_itself) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -486,7 +479,7 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   started(h, h.user, "ses_pg000001", t1);
   logged(h, h.user, "ses_pg000001", squat("set_pg000001", 100, 5, t1 + 60'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 8, t1 + 120'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 140, 1, t1 + 30'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 140, 1, t1 + 30'000));
   finished(h, h.user, "ses_pg000001", t1 + 3'600'000);
   // Left running and never touched again: the auto-close ends it AT its last set.
   started(h, h.user, "ses_pg000002", t1 + 10'000'000);
@@ -497,24 +490,24 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   started(h, h.user, "ses_pg000004", t1 + 30'000'000);
   h.clock.now = t1 + 30'000'000 + kAutoCloseMs;
   REQUIRE(!h.training.openSession(h.user));
-  // Warmed up and still running — started LAST, because only one session is ever open.
+  // One set in and still running — started LAST, because only one session is ever open.
   started(h, h.user, "ses_pg000003", t1 + 20'000'000);
-  logged(h, h.user, "ses_pg000003", squat("set_pg000005", 60, 10, t1 + 20'060'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000003", squat("set_pg000005", 60, 10, t1 + 20'060'000));
 
   std::vector<SessionSummary> listed = pageOf(h, page(t1 + 40'000'000, 50));
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(4));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000004"));
-  CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>());   // no sets at all
+  CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>());   // no sets at all
   CHECK(listed[0].closedItself);                                // ended when it began
   CHECK_EQ(listed[1].session.id.str(), std::string("ses_pg000003"));
-  CHECK_EQ(listed[1].topSet, std::optional<TopWorkingSet>());   // a ramp-up is not a top set
+  CHECK_EQ(listed[1].topSet, std::optional<HeaviestSet>(HeaviestSet{60, 10}));
   CHECK_FALSE(listed[1].closedItself);                          // still running
   CHECK_EQ(listed[2].session.id.str(), std::string("ses_pg000002"));
-  CHECK_EQ(listed[2].topSet, std::optional<TopWorkingSet>(TopWorkingSet{90, 5}));
+  CHECK_EQ(listed[2].topSet, std::optional<HeaviestSet>(HeaviestSet{90, 5}));
   CHECK(listed[2].closedItself);
   CHECK_EQ(listed[3].session.id.str(), std::string("ses_pg000001"));
-  CHECK_EQ(listed[3].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100, 8}));
+  CHECK_EQ(listed[3].topSet, std::optional<HeaviestSet>(HeaviestSet{140, 1}));   // never 100 × 8
   CHECK_FALSE(listed[3].closedItself);
 
   // A row closed before closed_by existed reads the four-hour rule's own signature.
@@ -525,20 +518,20 @@ TEST(pg_gym_log_carries_the_top_working_set_and_says_which_row_closed_itself) {
   CHECK_FALSE(legacy[3].closedItself);
 }
 
-// Raw rows provide both counts; the domain reducer clamps assisted loads before arithmetic.
-TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_tonnage) {
+// Raw rows provide the counts; the domain reducer clamps assisted loads before arithmetic.
+TEST(pg_gym_log_counts_every_set_and_clamps_an_assisted_set_out_of_the_tonnage) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
 
   started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 100, 5, t1 + 3'000));
   logged(h, h.user, "ses_pg000001", bench("set_pg000004", 82.5, t1 + 4'000));                     // 82.5 × 8
   logged(h, h.user, "ses_pg000001", bench("set_pg000005", -20, t1 + 5'000));                      // assisted × 8
   finished(h, h.user, "ses_pg000001", t1 + 6'000);
-  // A whole session of chin-ups: working sets that moved no measurable load at all.
+  // A whole session of chin-ups: sets that moved no measurable load at all.
   started(h, h.user, "ses_pg000002", t1 + 100'000);
   logged(h, h.user, "ses_pg000002", bench("set_pg000006", 0, t1 + 101'000));
   finished(h, h.user, "ses_pg000002", t1 + 102'000);
@@ -550,18 +543,18 @@ TEST(pg_gym_log_counts_working_sets_apart_and_clamps_an_assisted_set_out_of_the_
   CHECK_EQ(listed[0].workingSetCount, 1);
   CHECK_EQ(listed[0].tonnageKg, 0.0);
   CHECK_EQ(listed[1].setCount, 5);
-  CHECK_EQ(listed[1].workingSetCount, 4);          // the ramp-up is counted, never worked
-  CHECK_EQ(listed[1].tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the assisted set adds none
+  CHECK_EQ(listed[1].workingSetCount, 5);
+  CHECK_EQ(listed[1].tonnageKg, 60.0 * 10 + 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the assisted set adds none
 }
 
-// Every WORKING set, dated by its session, in set-id order; a load at or below zero rides along unfiltered.
-TEST(pg_gym_log_hands_back_every_working_set_of_a_row) {
+// Every set, dated by its session, in set-id order; a load at or below zero rides along unfiltered.
+TEST(pg_gym_log_hands_back_every_set_of_a_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
 
   started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 95, 6, t1 + 3'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000004", 95, 10, t1 + 4'000));
@@ -573,14 +566,15 @@ TEST(pg_gym_log_hands_back_every_working_set_of_a_row) {
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   // Dated by the SESSION and not by the set (domain/Progress.h).
-  CHECK_EQ(listed[0].worked, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
+  CHECK_EQ(listed[0].worked, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 60, 10),
+                                                       fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
                                                        fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 6),
                                                        fact("ses_pg000001", t1, "set_pg000004", "back-squat", 95, 10),
                                                        fact("ses_pg000001", t1, "set_pg000005", "back-squat", 95, 8),
                                                        fact("ses_pg000001", t1, "set_pg000006", "back-squat", -20, 12)}));
   // And what the application makes of it: the session's number, not its heaviest set's.
   CHECK_EQ(topE1rmOf(listed[0].worked), Estimate::of(95.0, 10, std::nullopt)->e1rm);
-  CHECK_EQ(listed[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
 }
 
 // The movements are framed by the rows they come back in, so a name holding a separator is still ONE movement.
@@ -600,7 +594,7 @@ TEST(pg_gym_log_names_a_movement_whose_display_name_holds_a_newline_once) {
   CHECK_EQ(listed[0].exerciseNames, (std::vector<std::string>{"Bench Press", "Zercher\nSquat"}));
 }
 
-// The prefill read: the most recent FINISHED session wins, warmups are not history, the block is in set_number order.
+// The prefill read: the most recent FINISHED session wins, the block is every set of the movement in set_number order.
 TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
@@ -612,7 +606,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   finished(h, h.user, "ses_pg000001", t1 + 2'000);
 
   started(h, h.user, "ses_pg000002", t1 + 10'000, day.id);
-  logged(h, h.user, "ses_pg000002", lift("set_pg000002", "bench-press", 40.0, 10, t1 + 11'000, SetKind::warmup));
+  const Set opener = logged(h, h.user, "ses_pg000002", lift("set_pg000002", "bench-press", 40.0, 10, t1 + 11'000));
   const Set top = logged(h, h.user, "ses_pg000002", bench("set_pg000003", 82.5, t1 + 12'000));
   const Set backOff = logged(h, h.user, "ses_pg000002", bench("set_pg000004", 80.0, t1 + 13'000));
   logged(h, h.user, "ses_pg000002", squat("set_pg000005", 100.0, 5, t1 + 14'000));
@@ -633,9 +627,7 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
   CHECK_EQ(last.lastTime->session.finishedAtMs, std::optional<std::uint64_t>(t1 + 15'000));
   CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
-  REQUIRE_EQ(last.lastTime->sets, (std::vector<Set>{top, backOff}));
-  // The warmup is set 1 of that movement, so the block starts at 2: a filter, not a renumbering.
-  CHECK_EQ(last.lastTime->sets[0].setNumber, 2);
+  REQUIRE_EQ(last.lastTime->sets, (std::vector<Set>{opener, top, backOff}));
 
   // The other account reads its own log, and only that.
   LastTimeOutcome theirs = h.repo.log.lastTime(h.other, ExerciseId{"bench-press"});
@@ -647,25 +639,17 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   CHECK_EQ(theirs.lastTime->sets[0].weightKg, 142.5);
 }
 
-// A movement that was only ever warmed up has no last time — the same answer as one never touched.
 TEST(pg_gym_last_time_of_a_first_ever_movement_is_empty_and_of_an_unknown_one_is_a_refusal) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  const std::uint64_t t1 = 1'700'000'000'123;
-  started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60.0, 10, t1 + 1'000, SetKind::warmup));
-  finished(h, h.user, "ses_pg000001", t1 + 2'000);
   movement(h, h.other, "pg-zercher-squat", "Zercher Squat");
 
   LastTimeOutcome neverLogged = h.repo.log.lastTime(h.user, ExerciseId{"deadlift"});
-  LastTimeOutcome onlyWarmed = h.repo.log.lastTime(h.user, ExerciseId{"back-squat"});
   LastTimeOutcome unknown = h.repo.log.lastTime(h.user, ExerciseId{"pg-no-such-movement"});
   LastTimeOutcome anothersCustom = h.repo.log.lastTime(h.user, ExerciseId{"pg-zercher-squat"});
 
   CHECK(neverLogged.error == LastTimeError::none);
   CHECK_EQ(neverLogged.lastTime, std::optional<LastTime>());
-  CHECK(onlyWarmed.error == LastTimeError::none);
-  CHECK_EQ(onlyWarmed.lastTime, std::optional<LastTime>());
   CHECK(unknown.error == LastTimeError::unknownExercise);
   CHECK_EQ(unknown.lastTime, std::optional<LastTime>());
   // Owner-scoped exactly like the catalog read: another account's custom movement is unknown here.
@@ -709,8 +693,8 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   logged(h, h.user, "ses_pg000001", bench("set_pg000001", 142.5, t1 + 1'000));
   finished(h, h.user, "ses_pg000001", t1 + 2'000);
   // A set row inside the owner's session carrying ANOTHER account's user_id.
-  sql("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, weight_kg, reps, kind, completed_at) "
-      "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 900, 5, 'working', to_timestamp($3::bigint / 1000.0))",
+  sql("INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, weight_kg, reps, completed_at) "
+      "VALUES ($1, 'ses_pg000001', $2::uuid, 'bench-press', 9, 900, 5, to_timestamp($3::bigint / 1000.0))",
       pqxx::params{"set_pg000009", h.other.str(), static_cast<long long>(t1 + 3'000)});
 
   LastTimeOutcome theirs = h.repo.log.lastTime(h.other, ExerciseId{"bench-press"});
@@ -731,7 +715,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(summaries[0].setCount, 1);
   CHECK_EQ(summaries[0].workingSetCount, 1);
   CHECK_EQ(summaries[0].tonnageKg, std::optional<double>{142.5 * 8});
-  CHECK_EQ(summaries[0].topSet, (std::optional<TopWorkingSet>{TopWorkingSet{142.5, 8}}));
+  CHECK_EQ(summaries[0].topSet, (std::optional<HeaviestSet>{HeaviestSet{142.5, 8}}));
 }
 
 // Against real jsonb, with the blob written STRAIGHT INTO the column: only a string is a routine name.
@@ -805,11 +789,9 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
   finished(h, h.user, "ses_pg000001", t1 + 2'000);
 
   started(h, h.user, "ses_pg000002", t1 + 10'000);
-  logged(h, h.user, "ses_pg000002", lift("set_pg000002", "bench-press", 40.0, 10, t1 + 11'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000002", lift("set_pg000002", "bench-press", 40.0, 10, t1 + 11'000));
   logged(h, h.user, "ses_pg000002", bench("set_pg000003", 82.5, t1 + 12'000));
   logged(h, h.user, "ses_pg000002", bench("set_pg000004", 80.0, t1 + 13'000));
-  // Squatted only as a ramp-up, which is the same silence as never squatting at all.
-  logged(h, h.user, "ses_pg000002", squat("set_pg000005", 60.0, 5, t1 + 14'000, SetKind::warmup));
   finished(h, h.user, "ses_pg000002", t1 + 15'000);
 
   // Today, live and far heavier.
@@ -905,8 +887,7 @@ TEST(pg_gym_history_marks_the_best_reps_at_each_load_this_session_works) {
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 8, t1 - 2 * week + 120'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 100, 5, t1 - 2 * week + 180'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000004", 90, 10, t1 - 2 * week + 240'000));
-  // A warmup is not history, and neither is a movement this session never works.
-  logged(h, h.user, "ses_pg000001", squat("set_pg000005", 140, 3, t1 - 2 * week + 30'000, SetKind::warmup));
+  // A movement this session never works is not history.
   logged(h, h.user, "ses_pg000001", bench("set_pg000006", 80, t1 - 2 * week + 300'000));
   finished(h, h.user, "ses_pg000001", t1 - 2 * week + 3'600'000);
   started(h, h.user, "ses_pg000003", t1);
@@ -991,17 +972,17 @@ TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
   const std::uint64_t t1 = 1'700'000'000'123;
   started(h, h.user, "ses_pg000001", t1);
   logged(h, h.user, "ses_pg000001", SetWrite{SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 82.5, 8,
-                                             SetKind::working, 8.5, "felt heavy", t1 + 1'000});
+                                             8.5, "felt heavy", t1 + 1'000});
 
-  fixed(h, "set_pg000001", sync::parseJson(R"({"weightKg":47.5,"reps":4,"kind":"drop","rpe":null})"));
+  fixed(h, "set_pg000001", sync::parseJson(R"({"weightKg":47.5,"reps":4,"rpe":null})"));
 
   const Set rewritten{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 47.5, 4,
-                      SetKind::drop, std::nullopt, "felt heavy", t1 + 1'000};
+                      std::nullopt, "felt heavy", t1 + 1'000};
   CHECK_EQ(h.repo.log.setOf(h.user, SetId{"set_pg000001"}), std::optional<Set>(rewritten));
   CHECK_EQ(h.repo.log.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{rewritten});
   const pqxx::result kept = sql(
       "SELECT set_id, session_id, user_id::text, exercise_id, set_number, weight_kg::float8, "
-      "reps, kind, rpe::float8, note, deleted FROM gym_set_revisions WHERE set_id = $1",
+      "reps, rpe::float8, note, deleted FROM gym_set_revisions WHERE set_id = $1",
       pqxx::params{"set_pg000001"});
   REQUIRE_EQ(kept.size(), static_cast<std::size_t>(1));
   CHECK_EQ(kept[0][0].as<std::string>(), std::string("set_pg000001"));
@@ -1011,10 +992,9 @@ TEST(pg_gym_a_correction_rewrites_the_set_in_place_and_keeps_what_it_replaced) {
   CHECK_EQ(kept[0][4].as<int>(), 1);
   CHECK_EQ(kept[0][5].as<double>(), 82.5);
   CHECK_EQ(kept[0][6].as<int>(), 8);
-  CHECK_EQ(kept[0][7].as<std::string>(), std::string("working"));
-  CHECK_EQ(kept[0][8].as<double>(), 8.5);
-  CHECK_EQ(kept[0][9].as<std::string>(), std::string("felt heavy"));
-  CHECK_FALSE(kept[0][10].as<bool>());
+  CHECK_EQ(kept[0][7].as<double>(), 8.5);
+  CHECK_EQ(kept[0][8].as<std::string>(), std::string("felt heavy"));
+  CHECK_FALSE(kept[0][9].as<bool>());
 }
 
 // A fix that never names the note leaves the lifter's word standing, and an empty note is the CLEAR — stored as '', never null.
@@ -1024,18 +1004,18 @@ TEST(pg_gym_a_correction_leaves_a_note_it_does_not_name_and_stores_an_empty_one_
   const std::uint64_t t1 = 1'700'000'000'123;
   started(h, h.user, "ses_pg000001", t1);
   logged(h, h.user, "ses_pg000001", SetWrite{SetId{"set_pg000001"}, ExerciseId{"bench-press"}, 82.5, 8,
-                                             SetKind::working, 8.5, "felt heavy", t1 + 1'000});
+                                             8.5, "felt heavy", t1 + 1'000});
 
   fixed(h, "set_pg000001", sync::parseJson(R"({"rpe":7.5})"));
   CHECK_EQ(h.repo.log.setOf(h.user, SetId{"set_pg000001"}),
            std::optional<Set>(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 82.5,
-                                  8, SetKind::working, 7.5, "felt heavy", t1 + 1'000}));
+                                  8, 7.5, "felt heavy", t1 + 1'000}));
 
   fixed(h, "set_pg000001", sync::parseJson(R"({"note":""})"));
   // The clear named the note alone.
   CHECK_EQ(h.repo.log.setOf(h.user, SetId{"set_pg000001"}),
            std::optional<Set>(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 82.5,
-                                  8, SetKind::working, 7.5, "", t1 + 1'000}));
+                                  8, 7.5, "", t1 + 1'000}));
   const pqxx::result row = sql("SELECT note, note IS NULL, rpe::float8 FROM gym_sets WHERE id = $1", pqxx::params{"set_pg000001"});
   REQUIRE_EQ(row.size(), static_cast<std::size_t>(1));
   CHECK_EQ(row[0][0].as<std::string>(), std::string(""));
@@ -1058,7 +1038,7 @@ TEST(pg_gym_a_four_thousand_byte_note_survives_the_column_whole) {
 
   CHECK_EQ(h.repo.log.setOf(h.user, SetId{"set_pg000001"}),
            std::optional<Set>(Set{SetId{"set_pg000001"}, SessionId{"ses_pg000001"}, ExerciseId{"bench-press"}, 1, 82.5,
-                                  8, SetKind::working, std::nullopt, atTheBound, t1 + 1'000}));
+                                  8, std::nullopt, atTheBound, t1 + 1'000}));
   CHECK_EQ(atTheBound.size(), static_cast<std::size_t>(4000));
   const pqxx::result row = sql("SELECT octet_length(note), char_length(note) FROM gym_sets WHERE id = $1",
                                pqxx::params{"set_pg000001"});
@@ -1216,7 +1196,7 @@ TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_unto
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
   CHECK_EQ(rows[0].setCount, 1);
   CHECK_EQ(rows[0].tonnageKg, 180.0);
-  CHECK_EQ(rows[0].topSet, std::optional<TopWorkingSet>(TopWorkingSet{60, 3}));
+  CHECK_EQ(rows[0].topSet, std::optional<HeaviestSet>(HeaviestSet{60, 3}));
 }
 
 // The discard reaches the revisions too: session_id carries a cascading foreign key and set_id carries none.
@@ -1267,8 +1247,8 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"ses_pg000002"}).value().startedAtMs, static_cast<std::uint64_t>(1));
 }
 
-// Every working set of the finished log, and the weekly counts. No estimate in the SQL.
-TEST(pg_gym_statistics_is_every_working_set_and_the_weekly_counts) {
+// Every set of the finished log, and the weekly counts. No estimate in the SQL.
+TEST(pg_gym_statistics_is_every_set_and_the_weekly_counts) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'000;
@@ -1277,7 +1257,7 @@ TEST(pg_gym_statistics_is_every_working_set_and_the_weekly_counts) {
   started(h, h.user, "ses_pg000001", t1);
   logged(h, h.user, "ses_pg000001", squat("set_pg000001", 100, 5, t1 + 60'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 110, 2, t1 + 120'000));
-  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 60, 10, t1 + 180'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000001", squat("set_pg000003", 60, 10, t1 + 180'000));
   finished(h, h.user, "ses_pg000001", t1 + 3'600'000);
   started(h, h.user, "ses_pg000002", t1 + week);
   logged(h, h.user, "ses_pg000002", squat("set_pg000004", 105, 5, t1 + week + 60'000));
@@ -1285,12 +1265,13 @@ TEST(pg_gym_statistics_is_every_working_set_and_the_weekly_counts) {
 
   TrainingLog log = h.repo.log.trainingLog(h.user);
 
-  // Each set carries the START of the session it was done in; the warmup counts toward nothing.
+  // Each set carries the START of the session it was done in.
   CHECK_EQ(log.sets, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 100, 5),
                                                fact("ses_pg000001", t1, "set_pg000002", "back-squat", 110, 2),
+                                               fact("ses_pg000001", t1, "set_pg000003", "back-squat", 60, 10),
                                                fact("ses_pg000002", t1 + week, "set_pg000004", "back-squat", 105, 5)}));
   // Monday 00:00 UTC, truncated `AT TIME ZONE 'UTC'`: 1699833600000 is 2023-11-13.
-  CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 2},
+  CHECK_EQ(log.weeks, (std::vector<TrainingWeek>{TrainingWeek{1'699'833'600'000, 1, 3},
                                                  TrainingWeek{1'699'833'600'000 + week, 1, 1}}));
 }
 
@@ -1395,8 +1376,8 @@ TEST(pg_gym_shared_session_answers_one_workout_and_nothing_about_the_account) {
   CHECK_EQ(read->routineName, std::string("Push A"));
   CHECK_EQ(read->sets,
            (std::vector<SharedSet>{
-               SharedSet{"Back Squat", 1, 100, 5, SetKind::working, std::nullopt, "", now + 60'000},
-               SharedSet{"Back Squat", 2, 110, 2, SetKind::working, std::nullopt, "", now + 120'000}}));
+               SharedSet{"Back Squat", 1, 100, 5, std::nullopt, "", now + 60'000},
+               SharedSet{"Back Squat", 2, 110, 2, std::nullopt, "", now + 120'000}}));
 
   // Expired, unknown and revoked are one answer, and the end is not inclusive.
   CHECK_FALSE(h.repo.log.sharedSession("pg-tok-live", now + kShareLifetimeMs));
@@ -1474,8 +1455,8 @@ TEST(pg_gym_log_lists_the_open_session_and_never_lets_its_sets_stand_before_a_pa
   CHECK_EQ(whole.standing, std::vector<ProgressSet>{});
 }
 
-// The working sets of FINISHED sessions oldest first, the routines naming the movement once each, then the recent days.
-TEST(pg_gym_movement_history_is_its_finished_working_sets_the_routines_and_the_recent_days) {
+// The sets of FINISHED sessions oldest first, the routines naming the movement once each, then the recent days.
+TEST(pg_gym_movement_history_is_its_finished_sets_the_routines_and_the_recent_days) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'000;
@@ -1484,7 +1465,7 @@ TEST(pg_gym_movement_history_is_its_finished_working_sets_the_routines_and_the_r
   planned(h, "rt_pg000001", "Legs", {entryAt(1, "back-squat"), entryAt(2, "back-squat")});
 
   started(h, h.user, "ses_pg000001", t1);
-  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000, SetKind::warmup));
+  logged(h, h.user, "ses_pg000001", squat("set_pg000001", 60, 10, t1 + 1'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000002", 100, 5, t1 + 2'000));
   logged(h, h.user, "ses_pg000001", squat("set_pg000003", 95, 10, t1 + 3'000));
   finished(h, h.user, "ses_pg000001", t1 + 4'000);
@@ -1498,15 +1479,17 @@ TEST(pg_gym_movement_history_is_its_finished_working_sets_the_routines_and_the_r
   CHECK_EQ(history.routines, std::vector<std::string>{"Legs"});
   // Every set carries the SESSION's start, never its own stamp, so the bar, the tile and the record line cannot land
   // on three days.
-  CHECK_EQ(history.sets, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
+  CHECK_EQ(history.sets, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "back-squat", 60, 10),
+                                                   fact("ses_pg000001", t1, "set_pg000002", "back-squat", 100, 5),
                                                    fact("ses_pg000001", t1, "set_pg000003", "back-squat", 95, 10)}));
   REQUIRE_EQ(history.recent.size(), static_cast<std::size_t>(1));
   CHECK_EQ(history.recent[0].session, SessionId{"ses_pg000001"});
   CHECK_EQ(history.recent[0].startedAtMs, t1);
-  // The warmup is not a set this page prints, for the reason the prefill block excludes it.
-  REQUIRE_EQ(history.recent[0].sets.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(history.recent[0].sets[0].weightKg, 100.0);
-  CHECK_EQ(history.recent[0].sets[1].weightKg, 95.0);
+  // Every set of the day, in set-number order.
+  REQUIRE_EQ(history.recent[0].sets.size(), static_cast<std::size_t>(3));
+  CHECK_EQ(history.recent[0].sets[0].weightKg, 60.0);
+  CHECK_EQ(history.recent[0].sets[1].weightKg, 100.0);
+  CHECK_EQ(history.recent[0].sets[2].weightKg, 95.0);
 }
 
 // A movement this account's catalog does not hold answers with nothing at all, as does another lifter's private one.
@@ -1647,7 +1630,7 @@ TEST(pg_gym_batch_hashes_the_same_precision_the_store_holds) {
   CHECK_EQ(stored.set->rpe, std::optional<double>{7.1});
   CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"},
                               {SetWrite{stored.set->id, stored.set->exercise, stored.set->weightKg, stored.set->reps,
-                                        stored.set->kind, stored.set->rpe, stored.set->note, stored.set->completedAtMs}})
+                                        stored.set->rpe, stored.set->note, stored.set->completedAtMs}})
             .replayed);
 }
 

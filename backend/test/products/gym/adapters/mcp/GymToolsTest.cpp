@@ -553,15 +553,13 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
            static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
 }
 
-// The schemas publish three vocabularies and the domain refuses against them; every word round-trips.
+// The schemas publish two vocabularies and the domain refuses against them; every word round-trips.
 TEST(gym_catalog_publishes_the_vocabularies_the_domain_actually_parses) {
   for (const char* word : kPatterns) CHECK_EQ(toString(parsePattern(word)), std::string(word));
   for (const char* word : kEquipment) CHECK_EQ(toString(parseEquipment(word)), std::string(word));
-  for (const char* word : kSetKinds) CHECK_EQ(toString(parseSetKind(word)), std::string(word));
   CHECK_EQ(kPatterns.size(), std::size_t{7});
   CHECK_EQ((std::vector<std::string>{kEquipment.begin(), kEquipment.end()}),
            (std::vector<std::string>{"barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell", "other"}));
-  CHECK_EQ(kSetKinds.size(), std::size_t{4});
 }
 
 TEST(gym_tools_read_and_write_only_the_callers_own_log) {
@@ -1912,7 +1910,7 @@ TEST(gym_log_sets_is_atomic_ordered_and_keeps_original_retry_identity) {
   const ToolResult replay = me.call("log_sets", args);
   CHECK_EQ(body(replay), parse(R"({"sessionId":"ses_batch001","applied":true,"replayed":true,"sessionDeleted":false,"sets":[{"id":"set_batch001","setNumber":1,"status":"replayed"},{"id":"set_batch002","status":"deleted"}]})"));
   const std::vector<Set> standing{Set{SetId{"set_batch001"}, SessionId{"ses_batch001"}, ExerciseId{"bench-press"}, 1,
-                                      80, 3, SetKind::working, std::nullopt, "", h.clock.now - 1000}};
+                                      80, 3, std::nullopt, "", h.clock.now - 1000}};
   CHECK_EQ(h.training.detail(h.user, SessionId{"ses_batch001"})->sets, standing);
   args["sets"][0]["reps"] = 3;
   CHECK(me.call("log_sets", args).isError);
@@ -2006,11 +2004,11 @@ TEST(gym_all_five_reads_capture_only_the_session_scope_they_actually_served) {
   h.repo.db.sessions.push_back(session);
   h.repo.db.sets = {
       Set{SetId{"set_evidence1"}, session.id, ExerciseId{"bench-press"}, 1, 20, 5,
-          SetKind::warmup, std::nullopt, "", 1'700'000'100'000},
+          std::nullopt, "", 1'700'000'100'000},
       Set{SetId{"set_evidence2"}, session.id, ExerciseId{"bench-press"}, 2, 80, 5,
-          SetKind::working, std::nullopt, "", 1'700'000'200'000},
+          std::nullopt, "", 1'700'000'200'000},
       Set{SetId{"set_evidence3"}, session.id, ExerciseId{"back-squat"}, 1, 100, 5,
-          SetKind::working, std::nullopt, "", 1'700'000'200'000}};
+          std::nullopt, "", 1'700'000'200'000}};
   AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
   const ToolCaller caller{uid(), ToolScope::everything()};
   const std::vector<std::pair<std::string, Json::Value>> calls = {
@@ -2021,15 +2019,15 @@ TEST(gym_all_five_reads_capture_only_the_session_scope_they_actually_served) {
       {"get_last_times", parse(R"({"exerciseIds":["back-squat","bench-press"]})")}};
   for (const auto& [name, args] : calls) CHECK_FALSE(hands.callTool(name, args, caller).isError);
 
-  const WorkoutObservation workout{session, 2, 900};
+  const WorkoutObservation workout{session, 3, 1000};
   CHECK_EQ(hands.read().tally(), (ReadTally{3, 1, 1}));
   CHECK_EQ(hands.read().observations(), (std::vector<SessionObservation>{
       {"list_sessions", session, ReadCoverage::summary, 0, workout},
       {"get_session", session, ReadCoverage::session, 3, workout},
-      {"last_time", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"bench-press"}},
+      {"last_time", session, ReadCoverage::movement, 2, std::nullopt, ExerciseId{"bench-press"}},
       {"get_sessions", session, ReadCoverage::session, 3, workout},
       {"get_last_times", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"back-squat"}},
-      {"get_last_times", session, ReadCoverage::movement, 1, std::nullopt, ExerciseId{"bench-press"}}}));
+      {"get_last_times", session, ReadCoverage::movement, 2, std::nullopt, ExerciseId{"bench-press"}}}));
   CHECK_EQ(hands.steps(), (std::vector<AskStep>{{"list_sessions", false}, {"get_session", false},
       {"last_time", false}, {"get_sessions", false}, {"get_last_times", false}}));
 
@@ -2038,8 +2036,8 @@ TEST(gym_all_five_reads_capture_only_the_session_scope_they_actually_served) {
   CHECK_FALSE(hands.callTool("get_session", calls[1].second, caller).isError);
   CHECK_EQ(hands.read().tally(), (ReadTally{3, 1, 1}));
   REQUIRE_EQ(hands.read().observations().size(), 7u);
-  CHECK_EQ(hands.read().observations()[1].workout->tonnageKg, 900);
-  CHECK_EQ(hands.read().observations()[6].workout->tonnageKg, 950);
+  CHECK_EQ(hands.read().observations()[1].workout->tonnageKg, 1000);
+  CHECK_EQ(hands.read().observations()[6].workout->tonnageKg, 1050);
   CHECK_EQ(hands.read().observations()[1].routine, std::optional<std::string>{"Push A"});
   CHECK_EQ(hands.read().observations()[6].routine, std::optional<std::string>{"Corrected"});
 }
@@ -2050,7 +2048,7 @@ TEST(gym_refused_oversized_batches_leave_no_evidence_from_unserved_rows) {
   h.repo.db.sessions.push_back(session);
   for (int index = 1; index <= 50; ++index)
     h.repo.db.sets.emplace_back(SetId{"set_evidence" + std::to_string(index)}, session.id,
-        ExerciseId{"bench-press"}, index, 80, 5, SetKind::working, std::nullopt,
+        ExerciseId{"bench-press"}, index, 80, 5, std::nullopt,
         std::string(4000, 'x'), 1'700'000'100'000);
   AskTools hands{h.tools, ThreadId{"thr_evidence1"}};
   const ToolCaller caller{uid(), ToolScope::everything()};

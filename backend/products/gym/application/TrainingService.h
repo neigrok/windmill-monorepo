@@ -22,7 +22,7 @@ struct SessionDetail {
 // record runs the domain's three record rules over the whole page in one walk against the sets
 // standing before it, and needs to be told which rows are FINISHED. Recomputed on every read and
 // stored nowhere.
-// topE1rm is `topE1rmOf` over the session's working sets: the best estimate any of them earned, NOT the
+// topE1rm is `topE1rmOf` over the session's sets: the best estimate any of them earned, NOT the
 // estimate of `summary.topSet`. Absent where none earned one.
 struct LogRow {
   SessionSummary summary;

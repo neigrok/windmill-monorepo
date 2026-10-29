@@ -18,7 +18,7 @@ using namespace wm::gym::doortest;
 namespace {
 
 SetWrite bench(const std::string& id, double weightKg, std::uint64_t completedAtMs) {
-  return SetWrite{SetId{id}, ExerciseId{"bench-press"}, weightKg, 8, SetKind::working, std::nullopt, "", completedAtMs};
+  return SetWrite{SetId{id}, ExerciseId{"bench-press"}, weightKg, 8, std::nullopt, "", completedAtMs};
 }
 
 // A start the lifter makes at `atMs`: the clock stands there, so the door holds no start ahead of it.
@@ -243,7 +243,7 @@ TEST(pg_gym_correction_replaces_a_workout_atomically_preserves_plan_and_replays_
   const SessionId id{"ses_correct01"};
   const Routine routine = pushA(h, "rt_correct01");
   started(h, h.user, id.str(), at, routine.id);
-  logged(h, h.user, id.str(), SetWrite{SetId{"set_correct01"}, ExerciseId{"bench-press"}, 60, 8, SetKind::warmup,
+  logged(h, h.user, id.str(), SetWrite{SetId{"set_correct01"}, ExerciseId{"bench-press"}, 60, 8,
                                        6, "keep this note", at + 1'000});
   logged(h, h.user, id.str(), bench("set_correct02", 80, at + 2'000));
   finished(h, h.user, id.str(), at + 3'000);
@@ -263,8 +263,8 @@ TEST(pg_gym_correction_replaces_a_workout_atomically_preserves_plan_and_replays_
   CHECK_EQ(h.repo.log.session(h.user, id),
            std::optional<Session>(Session{id, h.user, at, at + 4'000, routine.id, plan, ClosedBy::finish, "Historical name"}));
   const std::vector<Set> after{
-      Set{SetId{"set_correct01"}, id, ExerciseId{"bench-press"}, 1, 65, 8, SetKind::warmup, 6, "keep this note", at + 1'000},
-      Set{SetId{"set_correct03"}, id, ExerciseId{"back-squat"}, 1, 90, 5, SetKind::working, std::nullopt, "new note", at + 3'000}};
+      Set{SetId{"set_correct01"}, id, ExerciseId{"bench-press"}, 1, 65, 8, 6, "keep this note", at + 1'000},
+      Set{SetId{"set_correct03"}, id, ExerciseId{"back-squat"}, 1, 90, 5, std::nullopt, "new note", at + 3'000}};
   CHECK_EQ(h.repo.log.setsOf(id), after);
   CHECK_EQ(h.repo.log.history(h.user, {}).sessions[0].routineName, "Historical name");
   const auto replay = h.door.command(h.user, "gym.correctSession", request);

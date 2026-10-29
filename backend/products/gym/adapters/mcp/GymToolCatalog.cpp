@@ -191,12 +191,11 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["beforeId"] = str("That same row's `id`. Send it with `before` — an id alone names no row.");
     p["limit"] = boundedInt("How many workouts (default 20).", 1, kMaxLogLimit);
     tools.push_back(tool("list_sessions", Access::read,
-        "Your training log, newest first — one row per workout: the session, `setCount` (every set "
-        "it held) beside `workingSetCount` (only the working ones, which are the only sets that "
-        "count toward anything), `tonnageKg` (the load those working sets moved, an assisted or "
-        "zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was "
-        "done), which movements were in it, its heaviest working set, `topE1rm` (the best Epley "
-        "estimate any working set in it earned — the session's own number, not the heaviest set's), "
+        "Your training log, newest first — one row per workout: the session, `setCount` and "
+        "`workingSetCount` (the same number: every set it held counts), `tonnageKg` (the load those "
+        "sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is "
+        "not a claim that nothing was done), which movements were in it, its heaviest set, `topE1rm` "
+        "(the best Epley estimate any set in it earned — the session's own number, not the heaviest set's), "
         "`record` (a personal record happened in that workout — best e1RM, most reps at a load, or "
         "the heaviest load, judged against the log as it stands now, and false on around 190 rows "
         "in 200), and `closedItself` (the four-hour rule ended it rather than a "
@@ -214,7 +213,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         "started from a routine carries `plan`, the routine frozen at the start: each line's `sets` "
         "scheme, one item per set in the order lifted (a ramp reads [{\"reps\":5,\"weightKg\":60},"
         "…,{\"reps\":1,\"weightKg\":100}]; no `sets` is an open line). With "
-        "`review: true` the reply also carries the finish readout — duration, working sets, top "
+        "`review: true` the reply also carries the finish readout — duration, sets, top "
         "e1RM, at most one record, and the comparison against the last time you trained that day of "
         "the program. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
         p, {"sessionId"}));
@@ -253,9 +252,9 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     Json::Value p(Json::objectValue);
     p["exerciseId"] = str("Narrow to one movement's line. Omitted, every movement you have trained.");
     tools.push_back(tool("get_stats", Access::read,
-        "The long view over your FINISHED workouts: sessions and working sets per week (Monday to "
+        "The long view over your FINISHED workouts: sessions and sets per week (Monday to "
         "Monday, UTC — a week you did not train is present and zero), and per movement its line of "
-        "top working sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, "
+        "top sets with an Epley e1RM where one is defined, its best e1RM, its heaviest set, "
         "and when it was last trained. Narrow with `exerciseId`; the whole answer is long. There is "
         "no volume, no score and no streak here — every number is a fact with a direction. "
         "Unavailable derived metrics are null; they never stand for zero or a smaller record.",
@@ -326,7 +325,6 @@ std::vector<ToolDeclaration> gymToolCatalog() {
     p["weightKg"] = num("Load in kg. Negative is legal — that is band-assisted work.");
     p["reps"] = boundedInt("Reps completed (1–500).", 1, 500);
     p["completedAt"] = instant("When the set was completed, epoch ms.");
-    p["kind"] = enumStr("Default working. Warmups, drops and failures count toward nothing.", kSetKinds);
     p["rpe"] = num("Rated exertion, 1–10. Omit if it was not rated.");
     p["note"] = cappedStr("A free note on this set, at most 4000 BYTES of UTF-8 — the log counts "
                           "bytes, not characters.", kMaxSetNoteBytes);
@@ -551,7 +549,7 @@ std::vector<ToolDeclaration> gymToolCatalog() {
                   "Times must be at or after workout start and no later than now. Use import_session for an already-completed workout."
         : sessions ? "Read 1..50 exact workouts with their sets, in requested order, plus missingSessionIds. Optionally include review. "
                      "The complete tools/call result is limited to 262144 serialized bytes; request fewer ids or omit review if refused."
-        : "Read the last completed workout for 1..50 exact exercise ids in requested order. trained:false means no completed non-warmup set history; "
+        : "Read the last completed workout for 1..50 exact exercise ids in requested order. trained:false means no completed set history; "
           "missingExerciseIds names exercises outside the available catalog. The complete result is limited to 262144 serialized bytes; retry with fewer ids if refused.";
     ToolDeclaration declaration = tool(name, write ? Access::write : Access::read, description, p, required);
     Json::Value output(Json::objectValue);
@@ -605,8 +603,7 @@ std::string gymInstructions() {
          "and constraints. Existing-routine changes are proposals: tell the user they await Apply. "
          "Log supplied workout facts without coaching intake.\n\n"
          "Retry lost replies with the same ID and body. Loads are kg; times are epoch milliseconds. "
-         "Only working sets count toward training totals. Each `read` tally covers its reply; do not "
-         "sum tallies across replies.";
+         "Each `read` tally covers its reply; do not sum tallies across replies.";
 }
 
 }

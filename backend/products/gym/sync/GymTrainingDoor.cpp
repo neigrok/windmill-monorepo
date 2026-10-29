@@ -30,7 +30,7 @@ std::vector<Set> batchSets(const SessionId& session, const std::vector<SetWrite>
     const auto& row = incoming[i];
     try {
       sets.emplace_back(row.id, session, row.exercise, 0, row.weightKg, row.reps,
-                        row.kind, row.rpe, row.note, row.completedAtMs);
+                        row.rpe, row.note, row.completedAtMs);
     } catch (const InvalidTraining& error) {
       throw InvalidTraining("sets[" + std::to_string(i) + "] (" + row.id.str() + "): " + error.what());
     }
@@ -133,7 +133,7 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
     const auto stored = log_.session(user, session);
     if (!stored) { answer.error = AppendError::notFound; return std::nullopt; }
     Set canonical{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
-                  incoming.kind, incoming.rpe, incoming.note, incoming.completedAtMs};
+                  incoming.rpe, incoming.note, incoming.completedAtMs};
     const auto replayed = log_.setOf(user, incoming.id);
     if (replayed) {
       if (replayed->session == session) answer.set = replayed;

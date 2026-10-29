@@ -34,7 +34,7 @@ ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTrai
 Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user);  // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
-// `topE1rm` is the best estimate over every working set; `topSet` is only the heaviest, and no e1RM
+// `topE1rm` is the best estimate over every set; `topSet` is only the heaviest, and no e1RM
 // may be computed from it. Every estimate on this wire is stated to a tenth (Estimate::stated) and rounded as a
 // value, so 20.7 can reach a client as 20.699999999999999: clients format and never re-round. The progress
 // projection alone carries estimates at full precision.

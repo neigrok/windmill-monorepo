@@ -181,7 +181,7 @@ TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
   h.door.start(h.user, SessionStart{sid(), h.clock.now, true, rtId()});
   AppendOutcome landed = h.door.append(
       h.user, sid(),
-      SetWrite{setId(), ExerciseId{"ex_11111111"}, 60.0, 8, SetKind::working, std::nullopt, "",
+      SetWrite{setId(), ExerciseId{"ex_11111111"}, 60.0, 8, std::nullopt, "",
                h.clock.now + 1});
   h.door.finish(h.user, sid(), h.clock.now + 2);
 
@@ -218,7 +218,7 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   for (int number = 1; number <= 4; ++number)
     h.door.append(h.user, sid(),
                       SetWrite{setId("set_0000000" + std::to_string(number)), ExerciseId{"back-squat"}, 100,
-                               5, SetKind::working, std::nullopt, "",
+                               5, std::nullopt, "",
                                h.clock.now + static_cast<std::uint64_t>(number) * 60'000});
   h.door.finish(h.user, sid(), h.clock.now + 3'600'000);
 
@@ -307,7 +307,7 @@ TEST(exercise_loading_edits_keep_history_identity_and_account_scope) {
   Harness h;
   h.door.start(h.user, SessionStart{sid(), h.clock.now, true});
   h.door.append(h.user, sid(), SetWrite{setId(), ExerciseId{"bench-press"}, 16, 10,
-      SetKind::working, std::nullopt, "", h.clock.now});
+      std::nullopt, "", h.clock.now});
   h.door.finish(h.user, sid(), h.clock.now + 1000);
   const ToolCaller owner{h.user, ToolScope::everything()};
   const auto result = h.tools.callTool("update_exercise",
@@ -342,7 +342,7 @@ TEST(other_equipment_round_trips_without_rewriting_signed_history_or_legacy_valu
   REQUIRE(created.exercise);
   CHECK_EQ(*created.exercise, Exercise(ExerciseId{"ex_other01"}, "Assistance", Pattern::pull, Equipment::other, 2.5, true));
   h.door.start(h.user, SessionStart{sid(), h.clock.now, true});
-  h.door.append(h.user, sid(), SetWrite{setId(), created.exercise->id, -16, 10, SetKind::working, std::nullopt, "", h.clock.now});
+  h.door.append(h.user, sid(), SetWrite{setId(), created.exercise->id, -16, 10, std::nullopt, "", h.clock.now});
   h.door.finish(h.user, sid(), h.clock.now + 1000);
   REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{created.exercise->id, "My assistance", {}, {}}));
   const auto history = h.repo.log.history(h.user, HistoryQuery{});

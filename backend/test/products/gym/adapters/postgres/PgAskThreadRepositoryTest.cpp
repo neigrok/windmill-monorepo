@@ -44,7 +44,7 @@ ProposalWrite askedFor(const std::string& id, const std::string& routine, const 
 Session trained(doortest::Harness& h, const std::string& id, const std::string& routine, const std::string& set) {
   h.door.start(h.user, SessionStart{SessionId{id}, kNow - 9000, false, RoutineId{routine}}).session.value();
   h.door.append(h.user, SessionId{id},
-                    SetWrite{SetId{set}, ExerciseId{"bench-press"}, 80, 8, SetKind::working, std::nullopt, "", kNow - 1000})
+                    SetWrite{SetId{set}, ExerciseId{"bench-press"}, 80, 8, std::nullopt, "", kNow - 1000})
       .set.value();
   h.door.finish(h.user, SessionId{id}, kNow).session.value();
   return Session{SessionId{id}, h.user, kNow - 9000, kNow, RoutineId{routine}, pushA(), ClosedBy::finish};

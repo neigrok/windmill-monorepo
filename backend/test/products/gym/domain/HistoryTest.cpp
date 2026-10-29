@@ -3,16 +3,16 @@
 
 using namespace wm::gym;
 
-TEST(gym_history_external_volume_counts_working_reps_and_never_subtracts_assistance) {
+TEST(gym_history_external_volume_counts_every_rep_and_never_subtracts_assistance) {
   HistoryWorkout workout{"ses_history01", 1'700'000'000'000, 1'700'000'001'000, "", "", {
-      {"set_history01", "pull-up", "Pull Up", 1, -20, 8, {}, 1'700'000'000'100, true},
-      {"set_history02", "pull-up", "Pull Up", 2, 10, 6, {}, 1'700'000'000'200, true},
-      {"set_history03", "pull-up", "Pull Up", 3, 30, 10, {}, 1'700'000'000'300, false}}};
+      {"set_history01", "pull-up", "Pull Up", 1, -20, 8, {}, 1'700'000'000'100},
+      {"set_history02", "pull-up", "Pull Up", 2, 10, 6, {}, 1'700'000'000'200},
+      {"set_history03", "pull-up", "Pull Up", 3, 30, 10, {}, 1'700'000'000'300}}};
   const auto total = workout.totals();
   CHECK_EQ(total.sessions, 1);
-  CHECK_EQ(total.sets, 2);
-  CHECK_EQ(total.reps, 14);
-  CHECK_EQ(total.tonnageKg, 60.0);
+  CHECK_EQ(total.sets, 3);
+  CHECK_EQ(total.reps, 24);
+  CHECK_EQ(total.tonnageKg, 360.0);
 }
 
 TEST(gym_history_share_intersection_never_widens_a_range_and_supports_empty_overlap) {
@@ -37,12 +37,11 @@ TEST(gym_history_share_intersection_never_widens_a_range_and_supports_empty_over
 
 TEST(gym_history_volume_respects_single_and_paired_dumbbells_without_changing_entered_loads) {
   HistoryWorkout workout{"ses_history01", 1, 2, "", "", {
-    {"set_pair0001", "pair", "Pair", 1, 16, 10, {}, 1, true, Equipment::dumbbell, 2},
-    {"set_single01", "single", "Single", 1, 16, 10, {}, 1, true, Equipment::dumbbell, 1},
-    {"set_bar00001", "bar", "Bar", 1, 32, 10, {}, 1, true, Equipment::barbell, 2},
-    {"set_body0001", "body", "Body", 1, 5, 10, {}, 1, true, Equipment::bodyweight, 2},
-    {"set_assist01", "assist", "Assist", 1, -10, 10, {}, 1, true, Equipment::bodyweight},
-    {"set_warm0001", "pair", "Pair", 2, 100, 10, {}, 1, false, Equipment::dumbbell, 2}}};
+    {"set_pair0001", "pair", "Pair", 1, 16, 10, {}, 1, Equipment::dumbbell, 2},
+    {"set_single01", "single", "Single", 1, 16, 10, {}, 1, Equipment::dumbbell, 1},
+    {"set_bar00001", "bar", "Bar", 1, 32, 10, {}, 1, Equipment::barbell, 2},
+    {"set_body0001", "body", "Body", 1, 5, 10, {}, 1, Equipment::bodyweight, 2},
+    {"set_assist01", "assist", "Assist", 1, -10, 10, {}, 1, Equipment::bodyweight}}};
   CHECK_EQ(workout.totals().tonnageKg, 850.0);
   CHECK_EQ(workout.totals("pair").tonnageKg, 320.0);
   CHECK_EQ(workout.sets.front().weightKg, 16.0);

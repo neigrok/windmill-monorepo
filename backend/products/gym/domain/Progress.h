@@ -34,7 +34,7 @@ struct Estimate {
   bool operator==(const Estimate&) const = default;
 };
 
-// A working set as every derived read takes it: its identity, its load, its reps and the effort it was rated at.
+// A set as every derived read takes it: its identity, its load, its reps and the effort it was rated at.
 struct PerformedFact {
   SetId set;
   double weightKg;
@@ -53,7 +53,7 @@ struct EstimatedFact {
   bool operator==(const EstimatedFact&) const = default;
 };
 
-// The one projection of working sets in this product: a set with its session and that session's start, never the
+// The one projection of sets in this product: a set with its session and that session's start, never the
 // set's own completed_at, which is the device's wall clock. Every estimate, best and record is derived from these
 // rows in the domain; the store only selects and orders them.
 struct ProgressSet {
@@ -67,7 +67,7 @@ struct ProgressSet {
   bool operator==(const ProgressSet&) const = default;
 };
 
-// One movement in one session: how many working sets it took, its heaviest set (ties to more reps, then the lowest
+// One movement in one session: how many sets it took, its heaviest set (ties to more reps, then the lowest
 // set id), the set earning its estimate (the highest score, ties to the lowest set id), and its most reps at zero load.
 struct MovementSessionFact {
   ExerciseId exercise;

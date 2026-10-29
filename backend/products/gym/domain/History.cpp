@@ -17,7 +17,7 @@ HistoryTotals HistoryWorkout::totals(const std::optional<std::string>& exercise)
   HistoryTotals total{1, 0, 0, 0};
   std::vector<VolumePart> parts;
   for (const HistorySet& set : sets) {
-    if (!set.working || (exercise && set.exerciseId != *exercise)) continue;
+    if (exercise && set.exerciseId != *exercise) continue;
     ++total.sets;
     total.reps += set.reps;
     if (set.movementAvailable) parts.emplace_back(set.id, set.weightKg, set.reps, set.equipment, set.loadCount);

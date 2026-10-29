@@ -94,7 +94,7 @@ An optional `requestId` makes an edit replayable without overwriting later chang
 this identity; the sync door commits the original result with the edit, and recovery reads that receipt.
 Coach reads the catalog first and makes these edits only when the user requests them. Stable IDs
 keep all historical sets together. Equipment controls load interpretation: barbell includes the bar,
-dumbbell is per dumbbell, bodyweight is added load. Volume multiplies working-set load by the declared
+dumbbell is per dumbbell, bodyweight is added load. Volume multiplies each set's load by the declared
 number of dumbbells; it never changes the recorded kg, reps or one-rep-max units.
 
 ## Anonymous Coach dialogue

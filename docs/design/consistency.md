@@ -208,8 +208,8 @@ and Android disagree.
   (`--accent-terracotta-500`). Figma Theme roles `ios/gym/accent`, `ios/gym/accent-soft`,
   `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. The shared gym vectors and the iOS, Android and web domains count every
-  set as a working set and read a stored `kind` only to ignore it. Still carrying a kind:
+  the Gym boards state none. The sync registry (v11) and the shared gym vectors carry no set kind:
+  every logged set counts. Still carrying a kind:
   Android's app layer, whose kind no longer reaches the log — `SetKind` (`gym/domain/Training.kt:17-23`),
   `FixSheet.kt:249` passing a set's kind through, the logger indexing warm-ups *W* in faint ink
   (`LoggerScreen.kt:770-781`, `LiveSession.kt:74,146-151`), workout detail printing the wire *warmup*
@@ -219,11 +219,7 @@ and Android disagree.
   05.3, 05.6, 07.2, 07.3); the web, whose new-set rows carry a dead `kind: 'working'`
   (`WorkoutEditor.jsx`, `backfill/draft.js`) that the domain's imported and corrected sets drop before
   the wire, and which draws the share page's kinds and a warm-up set on the gym landing
-  (`GymLanding.jsx`); and the backend, whose reads count working sets only (`PgLogRepository.cpp`,
-  `PgLogHistory.cpp`, `Review.cpp`: REST, MCP `gym_get_stats` and last time, the Coach's context) and
-  whose MCP `gym_log_set` and Coach prompt still offer warm-up, drop and failure. An old row of another
-  kind so counts on every client and not on the server. Build work: remove it on Android, the web and
-  the backend.
+  (`GymLanding.jsx`). Build work: remove it on Android and the web.
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from

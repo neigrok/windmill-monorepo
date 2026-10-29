@@ -33,13 +33,13 @@ drogon::HttpResponsePtr readSession(TrainingApi& api, const std::string& session
 Set loggedSet(const std::string& session = "ses_11111111", const std::string& id = "set_11111111",
               const std::string& exercise = "bench-press", double weightKg = 82.5,
               std::uint64_t completedAt = 1'700'000'060'000) {
-  return Set{setId(id), sid(session), ExerciseId{exercise}, 0, weightKg, 8, SetKind::working,
+  return Set{setId(id), sid(session), ExerciseId{exercise}, 0, weightKg, 8,
              std::nullopt, "", completedAt};
 }
 
 // The same set as an agent's door writes it.
 SetWrite setWrite(const std::string& id, double weightKg, std::uint64_t completedAt) {
-  return SetWrite{setId(id), ExerciseId{"bench-press"}, weightKg, 8, SetKind::working, std::nullopt, "",
+  return SetWrite{setId(id), ExerciseId{"bench-press"}, weightKg, 8, std::nullopt, "",
                   completedAt};
 }
 
@@ -107,9 +107,7 @@ TEST(gym_exercises_last_is_the_final_set_of_each_movement_and_nothing_for_the_re
                                 std::nullopt, std::nullopt, ClosedBy::finish});
   h.repo.db.seedSet(loggedSet());
   h.repo.db.seedSet(loggedSet("ses_11111111", "set_11111112", "bench-press", 80.0, 1'700'000'120'000));
-  Set warmup = loggedSet("ses_11111111", "set_11111113", "back-squat", 60.0, 1'700'000'180'000);
-  warmup.kind = SetKind::warmup;
-  h.repo.db.seedSet(warmup);
+  h.repo.db.seedSet(loggedSet("ses_11111111", "set_11111113", "back-squat", 60.0, 1'700'000'180'000));
   h.repo.db.seedSession(Session{sid("ses_22222222"), me, 1'700'000'400'000, 1'700'000'700'000,
                                 std::nullopt, std::nullopt, ClosedBy::finish});
   h.repo.db.seedSet(loggedSet("ses_22222222", "set_22222221", "back-squat", 100.0, 1'700'000'460'000));
@@ -177,21 +175,19 @@ TEST(gym_list_sessions_wraps_rows_with_both_counts_the_tonnage_and_the_top_sets_
 TEST(gym_list_sessions_says_which_row_closed_itself_and_omits_an_absent_top_set) {
   Harness h;
   UserId user = h.signIn("s-live");
-  // A session the four-hour rule ended: finished at its last set's instant exactly, which is what the row infers from.
+  // A session the four-hour rule ended holding nothing: finished at its own start, which is what the row infers from.
   h.repo.db.sessions.push_back(
-      Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'060'000});
-  h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"},
-                            1, 40.0, 10, SetKind::warmup, std::nullopt, "", 1'700'000'060'000});
+      Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'000'000});
 
   drogon::HttpResponsePtr response =
       send(h.training, &TrainingApi::listSessions, getRequest("/v1/gym/sessions", "s-live"));
 
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // A ramp-up and nothing else: no working set, so no top set, no estimate, and a tonnage of zero.
+  // No set at all: no top set, no estimate, and a tonnage of zero.
   CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"sessions":[{"closedItself":true,"exercises":["Bench Press"],)"
-                       R"("finishedAt":1700000060000,"id":"ses_11111111","record":false,)"
-                            R"("setCount":1,)"
+           std::string(R"({"sessions":[{"closedItself":true,"exercises":[],)"
+                       R"("finishedAt":1700000000000,"id":"ses_11111111","record":false,)"
+                            R"("setCount":0,)"
                        R"("startedAt":1700000000000,"tonnageKg":0.0,"topE1rm":null,"workingSetCount":0}]})"));
 }
 
@@ -202,10 +198,10 @@ TEST(gym_list_sessions_carries_the_sessions_estimate_not_its_top_sets) {
   h.repo.db.sessions.push_back(
       Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'300'000});
   h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"), ExerciseId{"back-squat"},
-                            1, 100.0, 5, SetKind::working, std::nullopt, "", 1'700'000'060'000});
+                            1, 100.0, 5, std::nullopt, "", 1'700'000'060'000});
   for (int number = 2; number <= 4; ++number)
     h.repo.db.sets.push_back(Set{setId("set_1111111" + std::to_string(number)), sid("ses_11111111"),
-                              ExerciseId{"back-squat"}, number, 95.0, 10, SetKind::working,
+                              ExerciseId{"back-squat"}, number, 95.0, 10,
                               std::nullopt, "",
                               1'700'000'060'000 + static_cast<std::uint64_t>(number) * 1'000});
 
@@ -292,7 +288,7 @@ TEST(gym_session_detail_wraps_the_session_and_its_sets) {
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"session":{"id":"ses_11111111","startedAt":1700000000000},)"
                        R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
-                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("id":"set_11111111","note":"","reps":8,)"
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
@@ -445,7 +441,7 @@ TEST(gym_last_answers_the_newest_finished_session_with_its_block) {
                        R"("plan":{"entries":[],"routine":"Bench day"},)"
                        R"("startedAt":1700000000000},)"
                        R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
-                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("id":"set_11111111","note":"","reps":8,)"
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
@@ -467,7 +463,7 @@ TEST(gym_last_omits_the_routine_for_a_session_trained_ad_hoc) {
                        R"("session":{"finishedAt":1700000100000,"id":"ses_11111111",)"
                        R"("startedAt":1700000000000},)"
                        R"("sets":[{"completedAt":1700000060000,"exerciseId":"bench-press",)"
-                       R"("id":"set_11111111","kind":"working","note":"","reps":8,)"
+                       R"("id":"set_11111111","note":"","reps":8,)"
                        R"("setNumber":1,"weightKg":82.5}]})"));
 }
 
@@ -494,7 +490,7 @@ TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
   CHECK_EQ(live, (std::optional<Session>{Session{sid("ses_22222222"), h.user, 1'700'000'110'000}}));
   CHECK_EQ(next.error, AppendError::none);
   CHECK_EQ(next.set, (std::optional<Set>{Set{setId("set_33333333"), sid("ses_22222222"), ExerciseId{"bench-press"},
-                                             2, 102.5, 8, SetKind::working, std::nullopt, "", 1'700'000'130'000}}));
+                                             2, 102.5, 8, std::nullopt, "", 1'700'000'130'000}}));
   CHECK(h.failures.messages.empty());
 }
 
@@ -606,7 +602,7 @@ void trained(Harness& h, const wm::UserId& caller, const std::string& session,
   for (int number = 1; number <= 4; ++number)
     h.repo.db.sets.push_back(Set{setId("set_" + session.substr(4) + std::to_string(number)),
                               sid(session), ExerciseId{"back-squat"}, number, weightKg, reps,
-                              SetKind::working, std::nullopt, "",
+                              std::nullopt, "",
                               startedAtMs + static_cast<std::uint64_t>(number) * 60'000});
 }
 }
@@ -733,13 +729,13 @@ TEST(gym_stats_progress_answers_the_complete_qualified_identity_and_effort_contr
   h.repo.db.sessions.push_back(Session{sid("ses_11111111"), user, 1'700'000'000'000, 1'700'000'060'000});
   h.repo.db.sets = {
       {setId("set_11111111"), sid("ses_11111111"), ExerciseId{"bench-press"}, 1,
-       100, 1, SetKind::working, std::nullopt, "private note", 1'700'000'010'000},
+       100, 1, std::nullopt, "private note", 1'700'000'010'000},
       {setId("set_11111112"), sid("ses_11111111"), ExerciseId{"bench-press"}, 2,
-       90, 10, SetKind::working, 6.5, "", 1'700'000'020'000},
+       90, 10, 6.5, "", 1'700'000'020'000},
       {setId("set_11111113"), sid("ses_11111111"), ExerciseId{"bench-press"}, 3,
-       90, 8, SetKind::working, 7.5, "", 1'700'000'030'000},
+       90, 8, 7.5, "", 1'700'000'030'000},
       {setId("set_11111114"), sid("ses_11111111"), ExerciseId{"chin-up"}, 1,
-       -10, 8, SetKind::working, 8, "", 1'700'000'040'000}};
+       -10, 8, 8, "", 1'700'000'040'000}};
   const auto request = getRequest("/v1/gym/stats", "s-live");
   request->setParameter("projection", "progress");
 
@@ -761,7 +757,7 @@ TEST(gym_stats_progress_empty_is_explicit_and_another_owner_has_no_rows) {
   h.repo.db.sessions.push_back(Session{sid("ses_11111111"), uid("other"),
                                       1'700'000'000'000, 1'700'000'060'000});
   h.repo.db.sets.push_back(Set{setId("set_11111111"), sid("ses_11111111"),
-      ExerciseId{"bench-press"}, 1, 100, 1, SetKind::working, 8, "", 1'700'000'030'000});
+      ExerciseId{"bench-press"}, 1, 100, 1, 8, "", 1'700'000'030'000});
   const auto request = getRequest("/v1/gym/stats", "s-live");
   request->setParameter("projection", "progress");
 
@@ -878,9 +874,9 @@ TEST(gym_shared_session_needs_no_caller_and_carries_no_id) {
   CHECK_EQ(read->getStatusCode(), drogon::k200OK);
   CHECK_EQ(dump(bodyOf(read)),
            std::string(R"({"finishedAt":1700003600000,"sets":[)"
-                       R"({"completedAt":1700000060000,"exercise":"Bench Press","kind":"working",)"
+                       R"({"completedAt":1700000060000,"exercise":"Bench Press",)"
                        R"("note":"","reps":8,"setNumber":1,"weightKg":82.5},)"
-                       R"({"completedAt":1700000120000,"exercise":"Bench Press","kind":"working",)"
+                       R"({"completedAt":1700000120000,"exercise":"Bench Press",)"
                        R"("note":"","reps":8,"setNumber":2,"weightKg":82.5}],)"
                        R"("startedAt":1700000000000})"));
 }
@@ -977,8 +973,8 @@ TEST(gym_import_from_a_routine_is_201_with_the_plan_frozen_and_the_routine_left_
       R"("restSeconds":180,"sets":[{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
       R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5}]}],"routine":"Push A"},"routineId":"rt_11111111",)"
       R"("startedAt":1699992800000},"sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
-      R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0},{"completedAt":1699994000000,)"
-      R"("exerciseId":"bench-press","id":"set_import02","kind":"working","note":"","reps":8,"setNumber":2,"weightKg":62.5}]})";
+      R"("note":"","reps":8,"setNumber":1,"weightKg":60.0},{"completedAt":1699994000000,)"
+      R"("exerciseId":"bench-press","id":"set_import02","note":"","reps":8,"setNumber":2,"weightKg":62.5}]})";
   CHECK_EQ(dump(bodyOf(response)), stored);
   // The same shape the session's own read answers, byte for byte.
   CHECK_EQ(dump(bodyOf(readSession(h.trainingApi, "ses_import01", "s-door"))), stored);
@@ -1002,7 +998,7 @@ TEST(gym_import_without_a_routine_is_201_ad_hoc_and_a_replay_is_200_with_the_sto
 
   const std::string stored =
       R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
-      R"("sets":[{"completedAt":1699993400000,"exerciseId":"back-squat","id":"set_import01","kind":"working",)"
+      R"("sets":[{"completedAt":1699993400000,"exerciseId":"back-squat","id":"set_import01",)"
       R"("note":"","reps":8,"setNumber":1,"weightKg":100.0}]})";
   CHECK_EQ(created->getStatusCode(), drogon::k201Created);
   CHECK_EQ(dump(bodyOf(created)), stored);
@@ -1026,7 +1022,7 @@ TEST(gym_import_leaves_the_open_session_alone_even_where_their_times_cross) {
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
                        R"("sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
-                       R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
+                       R"("note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
   // Still open, still where it began.
   CHECK_EQ(h.repo.log.open(h.user), (std::optional<Session>{Session{sid("ses_live0001"), h.user, 1'699'995'000'000}}));
   CHECK(h.failures.messages.empty());
@@ -1051,7 +1047,7 @@ TEST(gym_import_replayed_after_the_hour_filled_in_is_still_200_and_a_changed_bod
   CHECK_EQ(dump(bodyOf(replayed)),
            std::string(R"({"session":{"finishedAt":1699996400000,"id":"ses_import01","startedAt":1699992800000},)"
                        R"("sets":[{"completedAt":1699993400000,"exerciseId":"bench-press","id":"set_import01",)"
-                       R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
+                       R"("note":"","reps":8,"setNumber":1,"weightKg":60.0}]})"));
   CHECK_EQ(rewritten->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(dump(bodyOf(rewritten)), std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
   CHECK(h.failures.messages.empty());
@@ -1101,7 +1097,7 @@ TEST(gym_import_with_a_spent_session_id_is_409_session_id_taken_whoever_spent_it
   CHECK_EQ(dump(bodyOf(rewritten)), std::string(R"({"code":"session-id-taken","error":"that session id is taken"})"));
   CHECK_EQ(h.repo.log.setsOf(sid("ses_import01")),
            (std::vector<Set>{Set{setId("set_import01"), sid("ses_import01"), ExerciseId{"bench-press"}, 1, 60, 8,
-                                 SetKind::working, std::nullopt, "", 1'699'993'400'000}}));
+                                 std::nullopt, "", 1'699'993'400'000}}));
   CHECK(h.failures.messages.empty());
 }
 
@@ -1160,8 +1156,6 @@ TEST(gym_import_that_cannot_be_read_is_400_with_the_sentence_that_says_why) {
   unknownField["joinOpenSession"] = false;
   Json::Value unknownSetField = good;
   unknownSetField["sets"][0]["setNumber"] = 1;
-  Json::Value unknownKind = good;
-  unknownKind["sets"][0]["kind"] = "cluster";
   Json::Value outside = good;
   outside["sets"][0]["completedAt"] = Json::Value::UInt64(1'699'996'400'001);
   Json::Value unknownExercise = good;
@@ -1172,8 +1166,7 @@ TEST(gym_import_that_cannot_be_read_is_400_with_the_sentence_that_says_why) {
                        R"(finishedAt, routineId, sets."})"));
   CHECK_EQ(refusal(unknownSetField),
            std::string(R"({"error":"sets[0]: unknown set field \"setNumber\". A set takes: id, exerciseId, )"
-                       R"(weightKg, reps, completedAt, kind, rpe, note."})"));
-  CHECK_EQ(refusal(unknownKind), std::string(R"({"error":"sets[0]: unknown set kind: cluster"})"));
+                       R"(weightKg, reps, completedAt, rpe, note."})"));
   CHECK_EQ(refusal(importBody("ses_import01", 1'699'996'400'000, 1'699'992'800'000, {})),
            std::string(R"({"error":"finishedAt must be at or after startedAt"})"));
   CHECK_EQ(refusal(importBody("ses_import01", 1'699'992'800'000, 1'700'000'000'001, {})),
@@ -1277,7 +1270,7 @@ TEST(gym_atomic_correction_keeps_the_frozen_plan_clears_rpe_and_refreshes_the_na
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   const SessionId id{"ses_correct01"};
   REQUIRE_EQ(h.door.importSession(h.user, SessionImport{id, 1'700'000'000'000, 1'700'000'003'000, rtId("rt_original1"),
-      {SetWrite{setId("set_correct01"), ExerciseId{"bench-press"}, 80, 8, SetKind::working, 8, "private",
+      {SetWrite{setId("set_correct01"), ExerciseId{"bench-press"}, 80, 8, 8, "private",
                 1'700'000'001'000}}}).error, BatchLogError::none);
   const auto before = readSession(h.trainingApi, id.str(), "s-door");
   Json::Value correction = wm::parse(R"({"sessionId":"ses_correct01","requestId":"fix_correct01","startedAt":1700000000000,"finishedAt":1700000003000,"routineName":"Historical name","sets":[{"id":"set_correct01","exerciseId":"bench-press","setNumber":1,"weightKg":80,"reps":8,"rpe":null,"note":"","completedAt":1700000001000}]})");
@@ -1295,16 +1288,16 @@ TEST(gym_atomic_correction_keeps_the_frozen_plan_clears_rpe_and_refreshes_the_na
                        R"({"reps":5,"weightKg":82.5}]}],"routine":"Original routine"},)"
                        R"("routineId":"rt_original1","routineName":"Historical name","startedAt":1700000000000},)"
                        R"("sets":[{"completedAt":1700000001000,"exerciseId":"bench-press","id":"set_correct01",)"
-                       R"("kind":"working","note":"","reps":8,"setNumber":1,"weightKg":80.0}]})"));
+                       R"("note":"","reps":8,"setNumber":1,"weightKg":80.0}]})"));
   correction["requestId"] = "fix_correct02";
   correction["routineName"] = "Name only";
   REQUIRE_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction)), std::string());
   const auto renamed = readSession(h.trainingApi, id.str(), "s-door", after->getHeader("ETag"));
   CHECK_EQ(renamed->statusCode(), drogon::k200OK);
-  // An unknown set kind refuses the whole correction.
+  // An invalid set refuses the whole correction.
   correction["requestId"] = "fix_bad00001";
   correction["routineName"] = "Never lands";
-  correction["sets"][0]["kind"] = "unknown";
+  correction["sets"][0]["reps"] = 0;
   CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction)), std::string("invalid"));
   CHECK_EQ(readSession(h.trainingApi, id.str(), "s-door", renamed->getHeader("ETag"))->statusCode(),
            drogon::k304NotModified);

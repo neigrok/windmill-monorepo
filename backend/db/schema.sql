@@ -1391,8 +1391,8 @@ create index if not exists gym_write_receipts_owner on gym_write_receipts(user_i
 -- in gym_set_revisions. The client-minted id ('set_<hex>') makes the flush queue replayable, and a
 -- delete spends the id for good: an insert asks gym_set_revisions whether the id names a deleted set
 -- before it writes. set_number is server-assigned max+1 per (session, exercise), never count+1, and
--- nothing renumbers after a delete. Weights are kg; negative is legal (band-assisted). Only working
--- sets count toward volume.
+-- nothing renumbers after a delete. Weights are kg; negative is legal (band-assisted). Every set
+-- counts toward volume.
 create table if not exists gym_sets (
   id           text primary key,
   session_id   text not null references gym_sessions(id) deferrable initially deferred,
@@ -1403,8 +1403,6 @@ create table if not exists gym_sets (
     check (weight_kg not in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
            and weight_kg = trunc(weight_kg, 2)),
   reps         int  not null check (reps between 1 and 500),
-  kind         text not null default 'working' check (kind in
-                 ('warmup','working','drop','failure')),
   rpe          numeric(3,1) check (rpe between 1 and 10),
   note         text not null default '',
   completed_at timestamptz not null
@@ -1425,7 +1423,6 @@ create table if not exists gym_set_revisions (
   set_number   int  not null,
   weight_kg    numeric not null,
   reps         int  not null,
-  kind         text not null,
   rpe          numeric(3,1),
   note         text not null default '',
   completed_at timestamptz not null,
@@ -1436,6 +1433,7 @@ create table if not exists gym_set_revisions (
 -- unwritable.
 create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
 create index if not exists gym_set_revisions_user on gym_set_revisions (user_id);
+alter table gym_set_revisions drop column if exists kind;
 
 do $$
 declare
@@ -1743,10 +1741,10 @@ alter table gym_sets
   add column if not exists exercise_id_stamp text,
   add column if not exists weight_kg_stamp text,
   add column if not exists reps_stamp text,
-  add column if not exists kind_stamp text,
   add column if not exists rpe_stamp text,
   add column if not exists note_stamp text,
   add column if not exists completed_at_stamp text;
+alter table gym_sets drop column if exists kind, drop column if exists kind_stamp;
 create index if not exists gym_sets_sync_feed on gym_sets (user_id, seq);
 
 alter table gym_notes

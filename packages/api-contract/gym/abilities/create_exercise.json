@@ -113,12 +113,7 @@
       "records": []
     },
     "call": {
-      "input": {
-        "equipment": "other",
-        "id": "other-movement01",
-        "name": "Assisted pull",
-        "pattern": "isolation"
-      },
+      "input": {"equipment":"other","id":"other-movement01","name":"Assisted pull","pattern":"isolation"},
       "name": "create_exercise"
     },
     "expect": {
@@ -133,12 +128,7 @@
       "sha256": "550bb7a203c904c2d8217d27a2ae4e4595ae58c81df98bf591ec99cdd5294d5b",
       "writes": [
         {
-          "f": {
-            "equipment": "other",
-            "name": "Assisted pull",
-            "pattern": "isolation",
-            "stepKg": 2.5
-          },
+          "f": {"equipment":"other","name":"Assisted pull","pattern":"isolation","stepKg":2.5},
           "id": "other-movement01",
           "life": "alive",
           "t": "exercise"

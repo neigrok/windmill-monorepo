@@ -64,7 +64,7 @@ HistoryWorkout historyWorkoutFrom(const Json::Value& value) {
     if (set["rpe"].isNumeric()) rpe = set["rpe"].asDouble();
     workout.sets.push_back(HistorySet{set["id"].asString(), set["exerciseId"].asString(),
         set["exercise"].asString(), set["setNumber"].asInt(), set["weightKg"].asDouble(),
-        set["reps"].asInt(), rpe, set["completedAt"].asUInt64(), set["working"].asBool(), equipmentFromStored(set.get("equipment", "barbell").asString()),
+        set["reps"].asInt(), rpe, set["completedAt"].asUInt64(), equipmentFromStored(set.get("equipment", "barbell").asString()),
         set.get("loadCount", 0).asInt(), set.get("movementAvailable", true).asBool()});
   }
   return workout;

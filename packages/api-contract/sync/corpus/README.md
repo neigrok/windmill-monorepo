@@ -166,8 +166,7 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
      other finished session whose span crosses the import's, a span being `[startedAt,
      max(finishedAt, startedAt + 1))`.
   4. Otherwise create the session finished (`closedBy: finish`, `routineId` and `plan` as `gym.start`
-     gives them) and its sets, `kind` default `working`, `note` default `""`, numbered in argument
-     order; record the receipt.
+     gives them) and its sets, `note` default `""`, numbered in argument order; record the receipt.
 - `gym.correctSession {sessionId, requestId, startedAt, finishedAt, routineName, sets, preserveOtherSets?}`: no close.
   1. The session absent or `foreign` → `unknown-record`; dead → `record-dead`.
   2. A correction receipt for `requestId`: same session and equal arguments → `ok`, writing the
@@ -176,9 +175,9 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
      `(exerciseId, setNumber)`, or a set number outside 1–2 147 483 647 → `invalid`. Instants as for the import → `bad-instant`; a crossing →
      `session-overlap`.
   4. The session takes `startedAt`, `finishedAt`, `closedBy: finish` and `displayName := routineName`.
-     A named set standing in the session keeps its movement (another → `invalid`) and its kind, takes
+     A named set standing in the session keeps its movement (another → `invalid`), takes
      `weightKg`, `reps`, `completedAt` and `setNumber`, and `rpe` and `note` only when named. A new one
-     takes optional `kind`, default `working`, with its `setNumber`. Every standing set left out dies
+     is created with its `setNumber`. Every standing set left out dies
      unless optional `preserveOtherSets` is true. That mode leaves unnamed rows unchanged; their
      numbers must not collide with named sets, and their times must remain within the interval.
      The 200-set limit applies to the argument. Record the receipt.

@@ -13,8 +13,8 @@ The server claims the `training-reads.json` cases that make an estimate, by the 
 stats case over Postgres (`backend/test/products/gym/application/TrainingReadsCorpusTest.cpp`), which seeds each case's
 records into the engine's stores and reads them through `TrainingService`. The server's wire states a review's and the
 statistics' estimates to a tenth, so those expectations are stated the same way before the bytes are compared. That
-test names the cases the server answers otherwise, each by the rule it reads differently (the server counts only
-`kind: working` sets), and the one case its store cannot hold (a set without its session).
+test names the cases the server answers otherwise, each by the rule it reads differently, and the one case its
+store cannot hold (a set without its session).
 
 The ability conformance corpus beside this one, `../abilities/` ([README](../../README.md)), is claimed by the Swift replica
 executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`): each case runs through `RunAbility` over its
@@ -59,10 +59,8 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 `GymPreferences` and `Proposal` use `{id,fields}`. The writable form excludes server metadata,
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
-Sets have no type: every set is a working set. A stored row's `kind` is read and ignored, and no
-writable form or read document carries one. The session commands' rules still name a `sets.kind`
-choice (`gym.importSession.sets.kind`, `gym.correctSession.sets.kind`); the domain's imported and
-corrected sets drop it.
+Sets have no type: every logged set counts. No stored row, writable form, command argument or read
+document carries one.
 
 `ExerciseName` is a metadata override keyed by a movement: a seed's carries `name`, `equipment` and
 `loadCount`, a custom movement's only `equipment` and `loadCount` (its name lives on `exercise.name`). Its
@@ -166,7 +164,7 @@ parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-s
 finish behavior, start bounds and half-open overlap. `SetRules` pins next-number overflow.
 
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
-last-time rows and today's sets. `SessionReadout` provides duration, working-set (every set)
+last-time rows and today's sets. `SessionReadout` provides duration, set
 and movement counts, volume and the session estimate. `StatsProgress` groups
 finished facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility

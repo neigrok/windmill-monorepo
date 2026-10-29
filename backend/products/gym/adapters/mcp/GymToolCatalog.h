@@ -13,7 +13,6 @@ inline const std::vector<const char*> kPatterns = {"squat", "hinge", "press",
                                                    "pull",  "carry", "core", "isolation"};
 inline const std::vector<const char*> kEquipment = {"barbell", "dumbbell",   "machine",
                                                     "cable",   "bodyweight", "kettlebell", "other"};
-inline const std::vector<const char*> kSetKinds = {"warmup", "working", "drop", "failure"};
 
 constexpr std::size_t kMaxBatchReadIds = 50;
 constexpr std::size_t kBatchReadByteBudget = 256 * 1024;

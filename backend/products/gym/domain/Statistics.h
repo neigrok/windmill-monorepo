@@ -24,7 +24,7 @@ struct TrainingWeek {
   bool operator==(const TrainingWeek&) const = default;
 };
 
-// `sets` are every working set of this account's FINISHED sessions; the store selects them and the domain makes
+// `sets` are every set of this account's FINISHED sessions; the store selects them and the domain makes
 // every estimate. Only finished sessions feed the weeks too.
 struct TrainingLog {
   std::vector<ProgressSet> sets;
@@ -33,7 +33,7 @@ struct TrainingLog {
   bool operator==(const TrainingLog&) const = default;
 };
 
-// A movement's top working set in one session, dated by the SESSION's start; `e1rm` is that set's own estimate,
+// A movement's top set in one session, dated by the SESSION's start; `e1rm` is that set's own estimate,
 // absent where it earned none.
 struct MovementPoint {
   std::uint64_t atMs;

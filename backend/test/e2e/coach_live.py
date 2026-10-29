@@ -137,7 +137,7 @@ class LiveCoachProof:
             status, _, _ = self.request("GET", photo_path, role=foreign)
             self.check(role + ("_photo_foreign" if foreign else "_photo_anonymous"), status == expected)
         _, vision = self.ask(role, role + "_photo", photo_thread,
-            "Turn the program in this picture into the two routines it specifies. Preserve exactly its movements, working-set counts and rep targets, with no prescribed weights. The picture contains my weekly availability and equipment.", [attachment])
+            "Turn the program in this picture into the two routines it specifies. Preserve exactly its movements, set counts and rep targets, with no prescribed weights. The picture contains my weekly availability and equipment.", [attachment])
         vision = self.confirm_routines(role, photo_thread, vision)
         observed = []
         self.check(role + "_two_photo_receipts", len(vision.get("results", [])) == 2)
@@ -183,7 +183,7 @@ class LiveCoachProof:
         status, history, _ = self.request("GET", "/v1/gym/threads/" + goal_thread)
         self.check("followup_history", status == 200 and history["turns"][-1]["text"] == goal["generation"]["answer"])
         payload, created = self.ask("free", "free_routines", goal_thread,
-            "Three days each week, with a full gym. Create exactly two short alternating full-body routines with three movements each and three working sets per movement. Use rep targets and no prescribed weights.")
+            "Three days each week, with a full gym. Create exactly two short alternating full-body routines with three movements each and three sets per movement. Use rep targets and no prescribed weights.")
         created = self.confirm_routines("free", goal_thread, created)
         self.check("two_free_routines", len(created.get("results", [])) == 2 and all(row.get("movementCount") == 3 for row in created["results"]))
         before = self.usage()

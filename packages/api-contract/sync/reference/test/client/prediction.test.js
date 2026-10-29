@@ -109,7 +109,7 @@ for (const refuse of [false, true]) {
   });
 
   test(`gym.correctSession predicts dropped sets dead and ${refuse ? 'restores the workout on refusal' : 'keeps them hidden through acceptance and pull'}`, () => {
-    const { vector, state, ctx, replica: initial } = gymFixture('a correction replaces the workout: interval, name, kept sets rewritten, new sets working, the rest dead');
+    const { vector, state, ctx, replica: initial } = gymFixture('a correction replaces the workout: interval, name, kept sets rewritten, new sets created, the rest dead');
     let replica = initial;
     const before = drawn(replica, gymRegistry, GYM);
     const args = vector.input.intent.cmd.args;
@@ -121,7 +121,7 @@ for (const refuse of [false, true]) {
         { op: 'update', t: 'session', id: args.sessionId, f: { startedAt: args.startedAt, finishedAt: args.finishedAt, closedBy: 'finish', displayName: args.routineName } },
         ...args.sets.map(({ id, setNumber, ...f }) => prior.some((set) => set.id === id)
           ? { op: 'update', t: 'set', id, f }
-          : { op: 'create', t: 'set', id, f: { ...f, sessionId: args.sessionId, kind: 'working' } }),
+          : { op: 'create', t: 'set', id, f: { ...f, sessionId: args.sessionId } }),
         ...prior.filter((set) => !named.has(set.id)).map((set) => ({ op: 'delete', t: 'set', id: set.id })),
       ];
       return { gesture: { changes: [], opts: { cmd: { name: 'gym.correctSession', args }, predict } } };

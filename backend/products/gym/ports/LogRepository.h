@@ -13,19 +13,19 @@
 
 namespace wm::gym {
 
-// Heaviest working set of a session, ties broken by more reps. Warmups, drops and failures excluded.
-struct TopWorkingSet {
+// Heaviest set of a session, ties broken by more reps.
+struct HeaviestSet {
   double weightKg;
   int reps;
 
-  bool operator==(const TopWorkingSet&) const = default;
+  bool operator==(const HeaviestSet&) const = default;
 };
 
-// setCount counts every kind; workingSetCount only the working ones.
-// tonnageKg is `sum(greatest(weight_kg, 0) * reps * count)` over working sets, where count is the movement's
+// Every set counts: setCount and workingSetCount are the same number, both kept because the wire names both.
+// tonnageKg is `sum(greatest(weight_kg, 0) * reps * count)` over every set, where count is the movement's
 // dumbbell count (2 unless it holds one) and 1 for any other equipment (liftedVolume, domain/Training.h) — a
 // negative (band-assisted) load must not subtract. Zero means nothing measurable moved, never "no work".
-// worked: the session's working sets as the record rules read them, dated by the SESSION's start. Loads at or
+// worked: the session's sets as the record rules read them, dated by the SESSION's start. Loads at or
 // below zero ride along unfiltered.
 // closedItself reads `closed_by`; where it is null, a session closed itself when finished_at sits
 // exactly at the last set's instant, or at started_at for a session holding none.
@@ -35,14 +35,14 @@ struct SessionSummary {
   int workingSetCount;
   std::optional<double> tonnageKg;
   std::vector<std::string> exerciseNames;
-  std::optional<TopWorkingSet> topSet;
+  std::optional<HeaviestSet> topSet;
   std::vector<ProgressSet> worked;
   bool closedItself = false;
 
   bool operator==(const SessionSummary&) const = default;
 };
 
-// `standing` is the working sets of the FINISHED sessions before the OLDEST row on the page, bounded by the page's
+// `standing` is the sets of the FINISHED sessions before the OLDEST row on the page, bounded by the page's
 // own movements. An empty page has empty `standing`.
 struct LogPage {
   std::vector<SessionSummary> sessions;   // newest first
@@ -51,7 +51,7 @@ struct LogPage {
   bool operator==(const LogPage&) const = default;
 };
 
-// The most recent FINISHED session holding a non-warmup set of the movement, and its sets of that
+// The most recent FINISHED session holding a set of the movement, and its sets of that
 // movement in set_number order; most recent is (startedAt, id). `sets` is never empty. routineName
 // is the historical display override or frozen plan name ("" when ad-hoc), never the routine's name today.
 struct LastTime {
@@ -112,7 +112,6 @@ struct SharedSet {
   int setNumber;
   double weightKg;
   int reps;
-  SetKind kind;
   std::optional<double> rpe;
   std::string note;
   std::uint64_t completedAtMs;
@@ -161,7 +160,7 @@ struct LogRepository {
   // One movement's whole page in one pass; the store selects sets and computes no e1RM.
   virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;
 
-  // Every working set of the finished log and its weeks; no e1RM is computed here.
+  // Every set of the finished log and its weeks; no e1RM is computed here.
   virtual TrainingLog trainingLog(const UserId& user) = 0;
 
   virtual std::vector<ProgressSet> progressHistory(const UserId& user) = 0;

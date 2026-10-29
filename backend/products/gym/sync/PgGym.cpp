@@ -204,7 +204,6 @@ std::string fallback(const std::string& type, const std::string& name) {
   if (name == "reps") return "1";
   if (name == "pattern") return "'isolation'";
   if (name == "equipment") return "'bodyweight'";
-  if (name == "kind") return "'working'";
   if (name == "intent") return "'revise'";
   if (name == "door") return "'ask'";
   if (name == "state") return "'pending'";
@@ -287,8 +286,8 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
   for (const RowWrite* pointer : ordered) {
     const RowWrite& write = *pointer;
     if (type_.name == "set" && write.before) {
-      sql.exec("insert into gym_set_revisions(set_id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,rpe,note,completed_at,deleted,replaced_at) "
-               "select id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,rpe,note,completed_at,$3,to_timestamp($4::numeric/1000) from gym_sets where user_id=$1::uuid and id=$2",
+      sql.exec("insert into gym_set_revisions(set_id,session_id,user_id,exercise_id,set_number,weight_kg,reps,rpe,note,completed_at,deleted,replaced_at) "
+               "select id,session_id,user_id,exercise_id,set_number,weight_kg,reps,rpe,note,completed_at,$3,to_timestamp($4::numeric/1000) from gym_sets where user_id=$1::uuid and id=$2",
                pqxx::params{scope.account().str(), write.id.column(), !write.after, static_cast<std::int64_t>(write.appliedAt.value_or(write.after ? write.after->ru : write.before->ru))});
     }
     if (!write.after) {
@@ -344,7 +343,7 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
     if (type_.name == "set" && !write.before) {
       Json::Value request(Json::objectValue);
       request["id"] = row.id.json();
-      for (const char* field : {"exerciseId", "weightKg", "reps", "kind", "rpe", "note", "completedAt"})
+      for (const char* field : {"exerciseId", "weightKg", "reps", "rpe", "note", "completedAt"})
         if (!value(&row, field).isNull()) request[field] = value(&row, field);
       const std::string session = value(&row, "sessionId").asString();
       sql.exec("insert into gym_write_receipts(kind,id,user_id,session_id,request_hash) values('set',$1,$2::uuid,$3,$4) on conflict do nothing",

@@ -70,7 +70,7 @@ const FINISHED = rec('session', 'session0001', {
   stamp: `${T + 2}:0:srv`, seq: 3,
   f: { routineId: 'routine0001', historyRoutineId: 'routine0001', plan: { routine: 'Lower A', entries: SQUAT }, startedAt: T, finishedAt: T + H, closedBy: 'finish' },
 });
-const SET = rec('set', 'set00000001', { stamp: s(T + 3), seq: 4, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 80, reps: 5, kind: 'working', note: '', completedAt: T + 600_000 }, v: { setNumber: 1 } });
+const SET = rec('set', 'set00000001', { stamp: s(T + 3), seq: 4, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 80, reps: 5, note: '', completedAt: T + 600_000 }, v: { setNumber: 1 } });
 const CHANGES = [{ kind: 'retargeted', exerciseId: 'back-squat', before: { sets: [{ reps: 5, weightKg: 80 }], restSeconds: 180 }, after: { sets: [{ reps: 5, weightKg: 85 }], restSeconds: 180 } }];
 const ROUTINE_GUARDS = ['entries', 'name'].map((field) => ({ t: 'routine', id: 'routine0001', field, stamp: s(T + 1) }));
 const proposalRow = (id, seq, extra = {}, stamp = `${T + 4}:0:srv`) => rec('proposal', id, {
@@ -151,7 +151,7 @@ function sets() {
   const state = (session) => gymState({
     rows: { [GYM_A]: [EXERCISE, session, SET], [GYM_B]: [B_EXERCISE] },
   });
-  const newSet = (sessionId, completedAt, exerciseId = 'back-squat') => gym([create('set', 'set00000002', s(T + 9 * H), { sessionId, exerciseId, weightKg: 85, reps: 5, kind: 'working', note: '', completedAt })]);
+  const newSet = (sessionId, completedAt, exerciseId = 'back-squat') => gym([create('set', 'set00000002', s(T + 9 * H), { sessionId, exerciseId, weightKg: 85, reps: 5, note: '', completedAt })]);
   return [
     admitted('a new set in a workout its lifter finished is refused session-finished', { state: base(), intent: newSet('session0001', T + 2 * H) }),
     admitted('a new set in a workout finished before closedBy was recorded is refused session-finished', { state: state(legacy), intent: newSet('session0001', T + 2 * H) }),
@@ -261,7 +261,7 @@ function sessions() {
     ...extra,
   });
   const twoSets = gymState({
-    rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET, rec('set', 'set00000002', { stamp: s(T + 4), seq: 6, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 60, reps: 8, kind: 'warmup', note: 'easy', rpe: 6, completedAt: T + 300_000 }, v: { setNumber: 2 } })], [GYM_B]: [] },
+    rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET, rec('set', 'set00000002', { stamp: s(T + 4), seq: 6, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 60, reps: 8, note: 'easy', rpe: 6, completedAt: T + 300_000 }, v: { setNumber: 2 } })], [GYM_B]: [] },
   });
   const overlapping = structuredClone(twoSets);
   const overlap = structuredClone(FINISHED);
@@ -281,7 +281,7 @@ function sessions() {
     admitted('a session created by a bare delta is invalid: only commands create sessions', { state: base(), intent: gym([create('session', 'session0003', s(T + 9 * H))]) }),
     admitted('a start under another account\'s session id is refused id-taken', { state: gymState({ rows: { [GYM_A]: [], [GYM_B]: [rec('session', 'session0007', { stamp: `${T}:0:srv`, seq: 1, f: { startedAt: T } })] } }), intent: start('session0007') }),
     admitted('a delete of an open session is refused session-open', { state: withOpen(T + 8 * H), intent: gym([{ t: 'session', id: 'session0002', born: `${T + 8 * H}:0:srv`, life: ['dead', s(T + 9 * H)] }]) }),
-    admitted('a delete of an open session 4 h past its last activity is admitted and kills its sets', { state: withOpen(T + 5 * H, [rec('set', 'set00000002', { stamp: s(T + 5 * H), seq: 7, f: { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, kind: 'working', note: '', completedAt: T + 5 * H } , v: { setNumber: 1 } })]), intent: gym([{ t: 'session', id: 'session0002', born: `${T + 5 * H}:0:srv`, life: ['dead', s(T + 9 * H)] }]) }),
+    admitted('a delete of an open session 4 h past its last activity is admitted and kills its sets', { state: withOpen(T + 5 * H, [rec('set', 'set00000002', { stamp: s(T + 5 * H), seq: 7, f: { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 5 * H } , v: { setNumber: 1 } })]), intent: gym([{ t: 'session', id: 'session0002', born: `${T + 5 * H}:0:srv`, life: ['dead', s(T + 9 * H)] }]) }),
     admitted('a delete of a finished session kills its sets', { state: base(), intent: gym([{ t: 'session', id: 'session0001', born: `${T + 2}:0:srv`, life: ['dead', s(T + 9 * H)] }]) }),
     admitted('a finish of a session finished before closedBy was recorded is ok and writes nothing', { state: only(legacy), intent: finish(T + 2 * H) }),
     admitted('a finish within 4 h of a stale close\'s last activity moves finishedAt to it', { state: only(stale), intent: finish(T + 2 * H) }),
@@ -295,14 +295,14 @@ function sessions() {
     admitted('an import replayed with equal arguments is ok', { state: imported, intent: cmd('gym.importSession', importArgs()) }),
     admitted('an import replayed with other arguments is refused payload-conflict', { state: imported, intent: cmd('gym.importSession', importArgs({ finishedAt: T + 4 * H })) }),
     admitted('an import under a session its account holds from a start is refused payload-conflict', { state: base(), intent: cmd('gym.importSession', importArgs({ id: 'session0001' })) }),
-    admitted('a correction replaces the workout: interval, name, kept sets rewritten, new sets working, the rest dead', { state: twoSets, intent: cmd('gym.correctSession', correction()) }),
-    admitted('a correction keeps a kept set\'s kind, rpe and note unless named', { state: twoSets, intent: cmd('gym.correctSession', correction({ sets: [{ id: 'set00000002', exerciseId: 'back-squat', setNumber: 1, weightKg: 62.5, reps: 8, completedAt: T + 300_000 }] })) }),
-    admitted('an additive correction keeps unnamed sets and creates the missing set with its kind', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 3, weightKg: 45, reps: 8, kind: 'warmup', rpe: 7, note: 'Saved', completedAt: T + 900_000 }] })) }),
-    admitted('an additive correction keeps an existing kind even when a different kind is named', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000002', exerciseId: 'back-squat', setNumber: 2, weightKg: 62.5, reps: 8, kind: 'failure', completedAt: T + 300_000 }] })) }),
-    admitted('an additive correction refuses a number used by an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', completedAt: T + 900_000 }] })) }),
-    admitted('an additive correction refuses an interval excluding an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, startedAt: T + 500_000, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 3, weightKg: 45, reps: 8, kind: 'warmup', completedAt: T + 900_000 }] })) }),
-    admitted('an additive correction checks the named set interval before retained number collisions', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', rpe: 7, note: 'Saved', completedAt: T + H + 1 }] })) }),
-    admitted('an additive correction checks overlap before retained number collisions', { state: overlapping, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', rpe: 7, note: 'Saved', completedAt: T + 900_000 }] })) }),
+    admitted('a correction replaces the workout: interval, name, kept sets rewritten, new sets created, the rest dead', { state: twoSets, intent: cmd('gym.correctSession', correction()) }),
+    admitted('a correction keeps a kept set\'s rpe and note unless named', { state: twoSets, intent: cmd('gym.correctSession', correction({ sets: [{ id: 'set00000002', exerciseId: 'back-squat', setNumber: 1, weightKg: 62.5, reps: 8, completedAt: T + 300_000 }] })) }),
+    admitted('an additive correction keeps unnamed sets and creates the missing set with its rpe and note', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 3, weightKg: 45, reps: 8, rpe: 7, note: 'Saved', completedAt: T + 900_000 }] })) }),
+    admitted('an additive correction rewrites a named standing set in place and keeps its rpe and note', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000002', exerciseId: 'back-squat', setNumber: 2, weightKg: 62.5, reps: 8, completedAt: T + 300_000 }] })) }),
+    admitted('an additive correction refuses a number used by an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, completedAt: T + 900_000 }] })) }),
+    admitted('an additive correction refuses an interval excluding an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, startedAt: T + 500_000, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 3, weightKg: 45, reps: 8, completedAt: T + 900_000 }] })) }),
+    admitted('an additive correction checks the named set interval before retained number collisions', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, rpe: 7, note: 'Saved', completedAt: T + H + 1 }] })) }),
+    admitted('an additive correction checks overlap before retained number collisions', { state: overlapping, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, rpe: 7, note: 'Saved', completedAt: T + 900_000 }] })) }),
     admitted('a correction of an open session is refused session-open', { state: withOpen(T + 8 * H), intent: cmd('gym.correctSession', correction({ sessionId: 'session0002', startedAt: T + 8 * H, finishedAt: T + 9 * H, sets: [{ id: 'set00000009', exerciseId: 'dip', setNumber: 1, weightKg: 0, reps: 5, completedAt: T + 8 * H }] })) }),
     admitted('a correction that moves a set to another movement is invalid', { state: twoSets, intent: cmd('gym.correctSession', correction({ sets: [{ id: 'set00000001', exerciseId: 'dip', setNumber: 1, weightKg: 0, reps: 5, completedAt: T + 900_000 }] })) }),
     admitted('a correction replayed with equal arguments is ok', { state: gymState({ rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET], [GYM_B]: [] }, product: { corrections: { [GYM_A]: { 'fix-000001': { sessionId: 'session0001', args: correction() } } } } }), intent: cmd('gym.correctSession', correction()) }),
@@ -331,9 +331,9 @@ function adversarial() {
   const correction = (sets) => cmd('gym.correctSession', correctArgs({ sets }));
   const open = rec('session', 'session0001', { stamp: `${T + 2}:0:srv`, seq: 3, f: { startedAt: T + 8 * H } });
   const prior = (number) => rec('set', 'set00000001', { stamp: s(T + 8 * H), seq: 4,
-    f: { sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, kind: 'working', note: '', completedAt: T + 8 * H }, v: { setNumber: number } });
+    f: { sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, note: '', completedAt: T + 8 * H }, v: { setNumber: number } });
   const nextSet = (id = 'set00000009') => create('set', id, s(T + 9 * H), {
-    sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, kind: 'working', note: '', completedAt: T + 9 * H,
+    sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, note: '', completedAt: T + 9 * H,
   });
   const repeated = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: {
     name: 'Lower A', revision: 1, createdEntries: 3, entries: [...SQUAT, { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 90 }] }, { exerciseId: 'dip' }],

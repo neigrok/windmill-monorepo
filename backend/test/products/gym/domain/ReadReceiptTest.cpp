@@ -85,22 +85,20 @@ TEST(merging_two_replies_counts_the_overlap_once) {
   CHECK_EQ(page.tally(), (ReadTally{0, 2, 2}));
 }
 
-TEST(workout_evidence_counts_working_rows_and_positive_load_without_promoting_other_kinds) {
+TEST(workout_evidence_counts_every_row_and_only_positive_load) {
   const Session session{SessionId{"ses_evidence1"}, UserId{"u1"}, 1000, 9000};
   std::vector<Set> sets;
   int number = 0;
-  for (const auto& [kind, kg] : std::vector<std::pair<SetKind, double>>{
-           {SetKind::warmup, 20}, {SetKind::working, 82.5}, {SetKind::working, 0},
-           {SetKind::working, -10}, {SetKind::drop, 60}, {SetKind::failure, 100}})
+  for (const double kg : {20.0, 82.5, 0.0, -10.0, 60.0, 100.0})
     sets.emplace_back(SetId{"set_evidence" + std::to_string(++number)}, session.id,
-                      ExerciseId{"bench-press"}, number, kg, 5, kind, std::nullopt, "", 2000);
+                      ExerciseId{"bench-press"}, number, kg, 5, std::nullopt, "", 2000);
 
   const std::vector<Exercise> catalog{
       Exercise{ExerciseId{"bench-press"}, "Bench press", Pattern::press, Equipment::barbell, 2.5, false}};
 
   const WorkoutObservation total{session, sets, catalog};
-  CHECK_EQ(total.workingSetCount, 3);
-  CHECK_EQ(total.tonnageKg, 412.5);
+  CHECK_EQ(total.workingSetCount, 6);
+  CHECK_EQ(total.tonnageKg, 1312.5);
   CHECK_EQ(total.durationMs, std::optional<std::uint64_t>{8000});
   const Session open{session.id, session.user, session.startedAtMs};
   CHECK_FALSE(WorkoutObservation(open, sets, catalog).durationMs.has_value());

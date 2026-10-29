@@ -10,11 +10,11 @@
 
 namespace wm::gym {
 
-// A session's top estimate: the highest e1RM any of its working sets earned, never the heaviest set's. Absent where
+// A session's top estimate: the highest e1RM any of its sets earned, never the heaviest set's. Absent where
 // none earned one.
 std::optional<double> topE1rmOf(const std::vector<ProgressSet>& sets);
 
-// `standing` is every working set of the movements this session works, from the FINISHED sessions that started
+// `standing` is every set of the movements this session works, from the FINISHED sessions that started
 // before it. `previous` is the newest FINISHED session sharing this one's routine and starting earlier;
 // `previousSets` are its sets in the order they were performed.
 struct SessionHistory {
@@ -47,13 +47,13 @@ struct PersonalRecord {
 };
 
 // The three record rules: best e1RM for a movement · heaviest load for any reps · most reps at a load it has used
-// before. `today` is one FINISHED session's working sets, `standing` those of the finished sessions before it; the
+// before. `today` is one FINISHED session's sets, `standing` those of the finished sessions before it; the
 // reply is that session's single line, ranked kind ▸ the set's estimate score ▸ load ▸ movement id. Every rule
 // requires a mark to have been PASSED, and each movement is judged against its own sets alone.
 std::optional<PersonalRecord> recordAgainst(const std::vector<ProgressSet>& today,
                                             const std::vector<ProgressSet>& standing);
 
-// A row of the log as the record walk reads it: its working sets, and whether it is over.
+// A row of the log as the record walk reads it: its sets, and whether it is over.
 struct WorkedSession {
   SessionId session;
   bool finished;
@@ -62,9 +62,9 @@ struct WorkedSession {
   bool operator==(const WorkedSession&) const = default;
 };
 
-// Which sessions of a page earned a record. `page` arrives OLDEST FIRST and `standing` are the working sets that
+// Which sessions of a page earned a record. `page` arrives OLDEST FIRST and `standing` are the sets that
 // stood before the oldest of them; the walk folds each finished session into the standing sets as it passes.
-// A session under kSlightWorkingSets earns nothing, but its sets still fold in. An UNFINISHED session earns nothing
+// A session under kSlightSets earns nothing, but its sets still fold in. An UNFINISHED session earns nothing
 // and its sets do NOT fold: its workout is not over.
 std::vector<SessionId> recordedIn(const std::vector<WorkedSession>& page,
                                   const std::vector<ProgressSet>& standing);
@@ -102,7 +102,7 @@ struct Against {
 };
 
 // durationMs is the span the session covers — start to finish, or to its last set while it is still
-// open — and topE1rm is absent when no working set in it earned an estimate.
+// open — and topE1rm is absent when no set in it earned an estimate.
 struct ReviewStats {
   std::uint64_t durationMs;
   int workingSets;
@@ -111,8 +111,8 @@ struct ReviewStats {
   bool operator==(const ReviewStats&) const = default;
 };
 
-// Under this many working sets a session says nothing beyond its three facts.
-constexpr int kSlightWorkingSets = 4;
+// Under this many sets a session says nothing beyond its three facts.
+constexpr int kSlightSets = 4;
 
 // The finish surface, computed on every read and stored nowhere.
 struct Review {
@@ -124,7 +124,7 @@ struct Review {
   bool operator==(const Review&) const = default;
 };
 
-// Working sets only, at most one record and only for a finished session that passed a mark, and a comparison only for
+// Every set counts. At most one record and only for a finished session that passed a mark, and a comparison only for
 // a session that named a routine. `sets` arrive in the order they were performed.
 Review review(const Session& session, const std::vector<Set>& sets, const SessionHistory& history);
 

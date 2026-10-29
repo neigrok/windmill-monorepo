@@ -227,7 +227,7 @@ export class GymProduct {
       if (readable) f.historyRoutineId = [args.routineId, null];
     }
     setOwn(imports, args.id, structuredClone(args));
-    const setDeltas = args.sets.map((set) => ({ t: 'set', id: set.id, life: ['alive', null], born: null, f: this.setFields(args.id, set, 'working') }));
+    const setDeltas = args.sets.map((set) => ({ t: 'set', id: set.id, life: ['alive', null], born: null, f: this.setFields(args.id, set) }));
     return {
       deltas: [...deltas, { t: 'session', id: args.id, life: ['alive', null], born: null, f }, ...setDeltas],
       write: [
@@ -237,13 +237,12 @@ export class GymProduct {
     };
   }
 
-  setFields(sessionId, set, kind) {
+  setFields(sessionId, set) {
     const f = {
       sessionId: [sessionId, null],
       exerciseId: [set.exerciseId, null],
       weightKg: [set.weightKg, null],
       reps: [set.reps, null],
-      kind: [set.kind ?? kind, null],
       note: [set.note ?? '', null],
       completedAt: [set.completedAt, null],
     };
@@ -305,7 +304,7 @@ export class GymProduct {
         deltas.push({ t: 'set', id: set.id, born: prior.born, f, v: { setNumber: set.setNumber } });
         write.push({ t: 'set', id: set.id, f: Object.fromEntries(Object.keys(f).map((name) => [name, null])) });
       } else {
-        const f = this.setFields(args.sessionId, set, 'working');
+        const f = this.setFields(args.sessionId, set);
         deltas.push({ t: 'set', id: set.id, life: ['alive', null], born: null, f, v: { setNumber: set.setNumber } });
         write.push({ t: 'set', id: set.id, born: null, f: Object.fromEntries(Object.keys(f).map((name) => [name, null])) });
       }

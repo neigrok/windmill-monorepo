@@ -33,7 +33,6 @@ struct HistorySet {
   int reps;
   std::optional<double> rpe;
   std::uint64_t completedAtMs;
-  bool working;
   Equipment equipment = Equipment::barbell;
   int loadCount = 0;
   bool movementAvailable = true;

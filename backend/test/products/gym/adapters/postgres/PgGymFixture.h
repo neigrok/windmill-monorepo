@@ -89,13 +89,13 @@ inline std::vector<SessionSummary> pageOf(LogRepository& repo, const wm::UserId&
 inline Set benchSet(const std::string& id, double weightKg, std::uint64_t completedAtMs,
                     const std::string& session = "ses_pg000001") {
   return Set{SetId{id}, SessionId{session}, ExerciseId{"bench-press"}, 0, weightKg, 8,
-             SetKind::working, std::nullopt, "", completedAtMs};
+             std::nullopt, "", completedAtMs};
 }
 
 // The reps are what the marks are made of, so the finish read's fixture states them.
 inline Set squatSet(const std::string& id, const std::string& session, double weightKg, int reps,
-                    std::uint64_t completedAtMs, SetKind kind = SetKind::working) {
-  return Set{SetId{id}, SessionId{session}, ExerciseId{"back-squat"}, 0, weightKg, reps, kind,
+                    std::uint64_t completedAtMs) {
+  return Set{SetId{id}, SessionId{session}, ExerciseId{"back-squat"}, 0, weightKg, reps,
              std::nullopt, "", completedAtMs};
 }
 
