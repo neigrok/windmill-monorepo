@@ -83,8 +83,8 @@ insert into gym_routine_entry_sets(routine_id,position,set_index,reps,weight_kg)
 insert into gym_sessions(id,user_id,started_at) values('session-load-schema','00000000-0000-4000-8000-000000000043',to_timestamp(1));
 insert into gym_sets(id,session_id,user_id,exercise_id,set_number,weight_kg,reps,completed_at)
   values('set-load-schema','session-load-schema','00000000-0000-4000-8000-000000000043','bench-press',1,500,1,to_timestamp(2));
-insert into gym_set_revisions(set_id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,note,completed_at)
-  select id,session_id,user_id,exercise_id,set_number,-500,reps,kind,note,completed_at from gym_sets where id='set-load-schema';
+insert into gym_set_revisions(set_id,session_id,user_id,exercise_id,set_number,weight_kg,reps,note,completed_at)
+  select id,session_id,user_id,exercise_id,set_number,-500,reps,note,completed_at from gym_sets where id='set-load-schema';
 set constraints all immediate;
 alter table gym_routine_entry_sets drop constraint gym_routine_entry_sets_load_finite_cent,
   alter column weight_kg type numeric(6,2), add check(weight_kg between -500 and 500);
