@@ -89,72 +89,108 @@ struct CoachAnswerText: View {
   }
 }
 
-// What one answer read, as its receipt row and What Coach read say it (Coach §9.2): the workouts its calls served, by
-// identity, the weeks they fall in, the rows the calls recorded as counts alone, and whether it read notes, movement
-// history, or nothing.
+// What one answer did, as its step line, its receipt row and What Coach read say it (Coach §9.2): one step per call the
+// phone ran, in order, from its catalog phrase, with what it served or wrote read from the records now; the workouts
+// counted by identity across the turn, plus the rows calls recorded as counts alone.
 struct CoachReading: Identifiable {
-  struct Workout: Identifiable {
-    let id: String
+  struct Step: Equatable {
     let title: String
-    let meta: String
-    let available: Bool
+    let detail: String?
   }
   let id = UUID()
-  let workouts: [Workout]
-  let counted: ReadTally
+  let steps: [Step]
+  let workouts: Int
   let weeks: Int
-  let notes: Bool
   let nothing: Bool
   let stats: Bool
+  // The phrases of the calls so far, in order, under an answer still on its way (08.35).
+  let stepLine: String?
+
   init(calls: [AbilityCall], gym: GymModel) {
     var served = ReadServed()
     var counted = ReadTally()
+    var steps: [Step] = []
+    var phrases: [String] = []
     for call in calls where call.outcome == .ok {
+      guard let ability = Catalog.ability(named: call.name) else { continue }
       switch call.read {
       case .ids(let read): served.saw(read)
       case .counts(let tally): counted = counted + tally
       }
+      phrases.append(ability.phrase)
+      steps.append(Self.step(call, phrase: ability.phrase, gym: gym))
     }
-    let sessions = served.sessions.compactMap { id in gym.sessions.first { $0.id == id } }.sorted { $0.startedAt > $1.startedAt }
-    workouts = sessions.map { session in
-      let readout = gym.log?.readout(session: session.id)
-      let facts = readout.map { [GymCount.of($0.workingSetCount, "set")] + ($0.volumeKg.map { [Readout.weight($0) + " kg"] } ?? []) } ?? []
-      return Workout(id: session.id.description, title: readout?.name ?? session.displayName ?? Readout.noRoutine,
-                     meta: ([gym.dates.subtitle(session.startedAt)] + facts).joined(separator: " · "), available: true)
-    }
-    self.counted = counted
+    self.steps = steps
+    workouts = served.sessions.count + counted.sessions
     weeks = served.weeks.count + counted.weeks
-    notes = calls.contains { $0.name == "list_notes" && $0.outcome == .ok }
     nothing = served.isEmpty && counted.isEmpty
     stats = calls.contains { $0.name == "get_stats" && $0.outcome == .ok }
+    stepLine = phrases.isEmpty ? nil : phrases.joined(separator: " · ")
   }
-  var count: String { GymCount.of(workouts.count + counted.sessions, "workout") + " · " + GymCount.of(weeks, "week") }
-  // The receipt row: what the sheet lists, else what it read in words with no number; none when it read what no line can say.
+
+  // One row of What Coach read: a read that served workouts says how many and over which weeks and days; every other
+  // call its phrase, with the names the records hold now under it.
+  static func step(_ call: AbilityCall, phrase: String, gym: GymModel) -> Step {
+    let read: (sessions: Int, weeks: Int, days: [Instant]) = switch call.read {
+    case .ids(let served): (served.sessions.count, served.weeks.count, served.sessions.compactMap { id in gym.sessions.first { $0.id == id }?.startedAt })
+    case .counts(let tally): (tally.sessions, tally.weeks, [])
+    }
+    if read.sessions > 0 {
+      let days = read.days.sorted { $0.ms < $1.ms }.map { gym.dates.draw(LocalDay($0, in: gym.dates.moment.zone), .dateTime.month(.abbreviated).day()) }
+      let span = days.count > 1 && days.first != days.last ? [days.first! + " – " + days.last!] : days.prefix(1).map { $0 }
+      return Step(title: "Read " + GymCount.of(read.sessions, "workout"), detail: ([GymCount.of(read.weeks, "week")] + span).joined(separator: " · "))
+    }
+    let created = call.created.compactMap { ref -> String? in
+      switch ref.type {
+      case Routine.type: gym.routines.first { $0.id.record == ref.id }?.name
+      case Note.type: gym.notes.first { $0.id.record == ref.id }?.title
+      case Exercise.type: gym.catalogue.find(DomainKit.ID<Exercise>(ref.id))?.name
+      case Proposal.type: gym.proposals.first { $0.id.record == ref.id }.map { proposal in
+        let removal = proposal.intent == "remove"
+        return CoachCopy.proposalTitle(routine: proposal.baseName ?? gym.coachRoutine(proposal)?.name, changes: gym.coachChangeCount(proposal), removal: removal)
+      }
+      default: nil
+      }
+    }
+    let detail: String? = switch call.name {
+    case "list_notes": gym.notes.isEmpty ? nil : GymCount.of(gym.notes.count, "note")
+    case "list_routines": gym.routines.isEmpty ? nil : gym.routines.map(\.name).joined(separator: " · ")
+    default: created.isEmpty ? nil : created.joined(separator: " · ")
+    }
+    return Step(title: phrase.prefix(1).uppercased() + phrase.dropFirst(), detail: detail)
+  }
+
+  var count: String { GymCount.of(workouts, "workout") + " · " + GymCount.of(weeks, "week") }
+  // The receipt row: the workouts by identity, else what it read in words with no number; none when it read what no line can say.
   var line: String? {
-    if !workouts.isEmpty || counted.sessions > 0 { return "Read " + count }
+    if workouts > 0 { return "Read " + count }
     if nothing { return "Read nothing from your log" }
     return stats ? "Read your movement history" : nil
   }
 }
 
-// What an answer's calls wrote, read from the records they created: the routines, the note, the proposals.
+// What an answer's calls wrote, read from the records they created: the routines, the notes, the movements, the proposals.
 struct CoachWrites {
   let routines: [Routine]
   let notes: [Note]
+  let exercises: [Exercise]
   let proposals: [String]
   init(calls: [AbilityCall], gym: GymModel) {
     let created = calls.filter { $0.outcome == .ok }.flatMap(\.created)
     routines = created.filter { $0.type == Routine.type }.compactMap { ref in gym.routines.first { $0.id.record == ref.id } }
     notes = created.filter { $0.type == Note.type }.compactMap { ref in gym.notes.first { $0.id.record == ref.id } }
+    exercises = created.filter { $0.type == Exercise.type }.compactMap { ref in gym.catalogue.find(ID<Exercise>(ref.id)) }
     proposals = created.filter { $0.type == Proposal.type }.map { $0.id.description }
   }
 }
 
-// Coach's answer: its words as they stream and once they stand, its read receipt, the cards of what it proposed, and the
-// cards of what it wrote; a turn that ended short of an answer says so in the words the room has for it.
+// Coach's answer: its words as they stream and once they stand, the step line while it works, the cards of what it
+// proposed and wrote, how the turn ended when it ended short, and its read receipt; a turn another device drives says
+// only that (Coach §4.5).
 struct CoachAnswerView: View {
   let gym: GymModel
   let message: CoachMessage
+  var elsewhere = false
   // Signed out, the newest answer whose call needed the account offers Sign in under it.
   var offersSignIn = false
   var signIn: () -> Void = {}
@@ -164,12 +200,18 @@ struct CoachAnswerView: View {
   @Environment(\.coachKeepRoutines) var keepRoutines
   var body: some View {
     let writes = CoachWrites(calls: message.calls, gym: gym)
+    let reading = CoachReading(calls: message.calls, gym: gym)
     let ended = message.state.isTerminal
     VStack(alignment: .leading, spacing: 14) {
-      VStack(alignment: .leading, spacing: 0) {
-        if message.text.isEmpty, !ended { CoachTyping() }
+      VStack(alignment: .leading, spacing: RoomSpace.small) {
+        if message.text.isEmpty, !ended, !elsewhere { CoachTyping() }
         if !message.text.isEmpty { CoachAnswerText(text: message.text) }
-        if ended, writes.routines.isEmpty { receiptRow }
+        if elsewhere {
+          Label("Answering on another device", systemImage: "iphone").font(.footnote).foregroundStyle(GymPalette.inkDim)
+            .frame(maxWidth: .infinity).accessibilityIdentifier("coach-answering-elsewhere")
+        } else if !ended, let steps = reading.stepLine {
+          Text(steps).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-step-line")
+        }
       }
       if ended, offersSignIn, message.calls.contains(where: { $0.outcome == .refused(.seatRequired) }) {
         Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
@@ -200,25 +242,31 @@ struct CoachAnswerView: View {
           }.buttonStyle(.plain).accessibilityIdentifier("coach-keep-routines")
         }
       }
-      if ended, !writes.routines.isEmpty { receiptRow }
       ForEach(writes.notes, id: \.id) { note in
         Button(action: notes) { writeCard("Saved a note", symbol: "square.and.pencil", lines: [note.title, note.body], door: true) }.buttonStyle(.plain)
           .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
           .accessibilityIdentifier("coach-saved-note")
       }
-      if let ending = Self.ending(message) {
-        Text(ending).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-ending")
+      ForEach(writes.exercises, id: \.id) { exercise in movementCard(exercise) }
+      if ended {
+        VStack(alignment: .leading, spacing: RoomSpace.small) {
+          if let ending = Self.ending(message) {
+            Text(ending).font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-ending")
+          }
+          receiptRow(reading)
+        }
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
-  // A turn that did not complete, in the room's existing words for the nearest state: an interruption or a stop, and a
-  // decline in the words a refused signed-out answer had.
+  // How a turn ended short of a whole answer, in the board's line under what arrived (08.46–08.50).
   static func ending(_ message: CoachMessage) -> String? {
     switch message.state {
-    case .failed, .interrupted: CoachCopy.interrupted
-    case .stopped: CoachCopy.stopped
-    case .declined: CoachCopy.refusal("model_refused")
-    case .running, .completed: nil
+    case .completed: message.truncated ? "Cut short. Ask Coach to go on." : nil
+    case .declined: "Coach declined to answer this."
+    case .failed: "Coach couldn’t finish. Ask again."
+    case .stopped: "Stopped."
+    case .interrupted: "Interrupted. What arrived is kept."
+    case .running: nil
     }
   }
   // What Coach wrote besides answering, one card each with no buttons: its symbol in accent and what it did, the record's
@@ -236,16 +284,29 @@ struct CoachAnswerView: View {
       if door { DoorChevron(room: .gym) }
     }.contentShape(Rectangle()).modifier(ChangeCard())
   }
-  // The receipt row, a door to What Coach read while there are workouts to list.
-  @ViewBuilder var receiptRow: some View {
-    let reading = CoachReading(calls: message.calls, gym: gym)
+  // A movement Coach made (08.37): the card's head over a hairline, then the movement as one Added block — its name,
+  // equipment and step every value new.
+  func movementCard(_ exercise: Exercise) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Label { Text("Made a movement").foregroundStyle(GymPalette.ink) } icon: { Image(systemName: "plus.circle.fill").foregroundStyle(GymPalette.accent) }
+        .font(.headline)
+      Divider().overlay(GymPalette.line)
+      ChangeBlock(kind: .added, title: exercise.name, fields: [
+        ProposalDiff.Field("Name", before: nil, after: exercise.name),
+        ProposalDiff.Field("Equipment", before: nil, after: MovementEquipment(exercise).title),
+        ProposalDiff.Field("Step", before: nil, after: Readout.weight(exercise.stepKg) + " kg"),
+      ]).padding(.vertical, 4)
+    }.modifier(ChangeCard()).accessibilityElement(children: .combine).accessibilityIdentifier("coach-made-movement")
+  }
+  // The receipt row, a door to What Coach read while the turn ran anything to list.
+  @ViewBuilder func receiptRow(_ reading: CoachReading) -> some View {
     if let line = reading.line {
       let row = HStack(spacing: RoomSpace.related) {
         Label(line, systemImage: "book.closed")
         Spacer(minLength: 0)
-        if !reading.workouts.isEmpty { DoorChevron(room: .gym) }
+        if !reading.steps.isEmpty { DoorChevron(room: .gym) }
       }.font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget)
-      if reading.workouts.isEmpty { row.accessibilityElement(children: .ignore).accessibilityLabel(line).accessibilityIdentifier("coach-read-receipt") }
+      if reading.steps.isEmpty { row.accessibilityElement(children: .ignore).accessibilityLabel(line).accessibilityIdentifier("coach-read-receipt") }
       else {
         Button { read(reading) } label: { row.contentShape(Rectangle()) }.buttonStyle(.plain)
           .accessibilityLabel(line).accessibilityIdentifier("coach-read-receipt")

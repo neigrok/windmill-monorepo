@@ -7,7 +7,6 @@ import SyncEngine
 private struct CoachAccountDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
 private struct CoachKeepDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
 private struct CoachRoutineDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
-private struct CoachSessionDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 extension EnvironmentValues {
   var coachKeepRoutines: (@MainActor () -> Void)? {
     get { self[CoachKeepDoor.self] }
@@ -20,10 +19,6 @@ extension EnvironmentValues {
   var coachOpenRoutine: (@MainActor (String) -> Void)? {
     get { self[CoachRoutineDoor.self] }
     set { self[CoachRoutineDoor.self] = newValue }
-  }
-  var coachOpenSession: (@MainActor (String) -> Void)? {
-    get { self[CoachSessionDoor.self] }
-    set { self[CoachSessionDoor.self] = newValue }
   }
 }
 

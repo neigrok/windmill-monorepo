@@ -257,7 +257,13 @@ question and refuses the next `subject_exhausted`, `-coach-history` seeds four c
 makes the setup fixture's drafts one routine, `-coach-kept-draft` keeps a signed-out start's draft on the phone beside the
 account's own, `-coach-board after-sign-in` creates three full-body days signed out and answers a signed-in *Swap chin-ups
 for pulldowns* with a change to *Full body B*, `-coach-offline` takes Coach and its REST reads offline and
-`-coach-unavailable` answers as a deployment without Coach.
+`-coach-unavailable` answers as a deployment without Coach. The local Coach's boards are `-coach-board` cases too: `steps`
+holds a turn after its batch with the step line under it, `resume` drops that stream and answers the resume with a
+snapshot, `movement` makes a movement, `truncated`, `declined`, `failed`, `stopped` and `interrupted` end a turn each way,
+`no-connection`, `workout-open`, `log-arriving` and `too-long` refuse the send after the first answer on this phone,
+`invalid-installation`, `device-bound`, `free-month` and `update-required` refuse it from the server, `signed-out-reads`
+seeds two workouts on the anonymous replica, `another-device` seeds a turn another phone is answering, and
+`account-changing` begins an account change under a draft.
 
 Debug simulator offline launches seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
 or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and

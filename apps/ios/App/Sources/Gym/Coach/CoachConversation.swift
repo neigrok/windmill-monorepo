@@ -35,9 +35,13 @@ import SyncSchema
   }
   var available: Bool { seat != nil }
   var allowed: Bool { available && owner == seat }
+  // The replica this phone writes: a running Coach message of another's is answering on another device (Coach §4.5).
+  var replica: String? { try? gym.runner.read(Gym.scope) { $0.replica } }
   var thread: ID<CoachThread>? { saved.conversation.map { ID(RecordID($0)) } }
   var refusal: CoachTurnRefusal? { driver?.refusal }
   var canCompose: Bool { allowed && draftReadable && !(refusal?.capped ?? false) }
+  // How far the draft runs past the question bound (Coach §4.1), in bytes; the composer refuses it as it is typed.
+  var tooLongBy: Int { max(0, saved.text.utf8.count - textLimit) }
   // The turn in flight is this conversation's, or another's, which the band names.
   var asking: Bool { sending || (thread != nil && driver?.running?.turn.thread == thread) }
   var answeringElsewhere: Bool { driver?.running != nil && !asking }
@@ -68,20 +72,23 @@ import SyncSchema
   func proposalTurn(_ id: String) -> AnyHashable? {
     messages.first { message in message.calls.contains { call in call.outcome == .ok && call.created.contains { $0.id.description == id } } }?.id.description
   }
-  // Why a send cannot go now; a dimmed Send says it in the band when tapped.
-  var blockedReason: String? {
+  // Why Send stands dimmed: no connection, a cap the composer stays closed on, or a draft this phone cannot read.
+  var sendHint: String? {
     if offline { return CoachCopy.offline }
-    if let refusal, refusal.capped { return refusal.message }
+    if let refusal, refusal.capped { return refusal.sentence }
     return draftReadable ? nil : CoachCopy.unreadableDraft
   }
 
   // MARK: - The owner and its archive
 
+  // The seat's own conversation and draft; while the account changes there is no seat, and the draft on screen stays
+  // where it is (board 08.6) until the next seat's own replaces it.
   func activate() async {
     let next = seat
     if next != owner {
-      owner = next; saved = CoachSaved(); error = nil; draftReadable = true; sending = false
+      owner = next; error = nil; sending = false
       guard let next else { observe(); return }
+      saved = CoachSaved(); draftReadable = true
       do { saved = try store.read(next) }
       catch { draftReadable = false; self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error) }
     }
@@ -139,14 +146,10 @@ import SyncSchema
   // MARK: - A turn
 
   // Coach §4.1: the question and its picture go to the driver; once the turn is recorded the field clears and this
-  // conversation is the thread the turn opened. A refused send keeps the draft, and the driver's band says why.
+  // conversation is the thread the turn opened. A refused send keeps the draft, and the driver's refusal says why.
   func send() {
-    guard allowed, draftReadable, !asking, !answeringElsewhere, let driver, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
-    if let reason = blockedReason {
-      error = reason
-      if offline { gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "offline"]) }
-      return
-    }
+    guard allowed, draftReadable, !asking, !answeringElsewhere, let driver, tooLongBy == 0, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
+    if let refusal, refusal.capped { return }
     let question = saved.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let photo = saved.photo.flatMap { attachment in saved.photoData.map { (attachment, $0) } }
     let picture: CoachPictureRow?

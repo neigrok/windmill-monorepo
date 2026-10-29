@@ -8,6 +8,7 @@ struct Look {
   var largestText = false
 
   static let both = Appearance.allCases.map { Look(appearance: $0) }
+  static let dark = [Look(appearance: .dark)]
   static let bothAtLargestText = Appearance.allCases.map { Look(appearance: $0, largestText: true) }
 
   var launchArguments: [String] {
@@ -56,9 +57,9 @@ enum GymTab: String {
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = look.name(screen, on: app); attachment.lifetime = .keepAlways; add(attachment)
   }
-  // One board in Dark and Daylight: `open` launches the app in the look and brings up the board's screen.
-  func captureBoard(_ screen: String, settle seconds: Double = 1.0, opening open: (Look) -> XCUIApplication) {
-    for look in Look.both {
+  // One board in each look, Dark and Daylight unless named: `open` launches the app in the look and brings up the board's screen.
+  func captureBoard(_ screen: String, in looks: [Look] = Look.both, settle seconds: Double = 1.0, opening open: (Look) -> XCUIApplication) {
+    for look in looks {
       let app = open(look)
       capture(screen, look, app, settle: seconds)
       app.terminate()

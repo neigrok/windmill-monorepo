@@ -313,10 +313,10 @@ final class CoachCaptures: DesignCapture {
     }
   }
   func testAccessStates() {
-    captureBoard("08.6-coach-no-seat") { look in
-      let app = launch("recovery-paused", look)
-      XCTAssertTrue(app.tabBars.buttons["Coach"].waitForExistence(timeout: 30)); app.tabBars.buttons["Coach"].tap()
-      XCTAssertTrue(app.buttons["coach-sign-in"].waitForExistence(timeout: 15))
+    captureBoard("08.6-coach-account-changing") { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "account-changing"])
+      XCTAssertTrue(app.staticTexts["Your account is changing. Your question is kept here."].waitForExistence(timeout: 15))
+      XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "What should Thursday look like?", "The draft stays in the field")
       return app
     }
     captureBoard("08.7-coach-not-carried") { look in
@@ -491,6 +491,204 @@ final class CoachCaptures: DesignCapture {
       capture("gym-coach-removal-waiting", look, app)
       XCTAssertTrue(apply.waitForLabel("Try again", timeout: 25))
       capture("gym-coach-removal-still-waiting", look, app)
+    }
+  }
+
+  // MARK: - The local Coach's states
+
+  // A signed-out gym with its own workouts on this phone: Coach's answer and the receipt that counts them.
+  func launchSignedOutCoach(_ look: Look, board: String) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = ["-scenario", "gym-e2e-anonymous-" + UUID().uuidString, "-server", "https://gym.invalid", "-model-server",
+                           "-coach-fixture", "-coach-board", board, "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + look.launchArguments
+    app.launch()
+    // An empty gym opens on Coach; one the board seeded workouts into opens on Routines.
+    if !app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 20) { open(.coach, app) }
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))
+    return app
+  }
+  // The question's answer settles: the receipt row stands and Stop is gone.
+  func askSettled(_ question: String, _ app: XCUIApplication) {
+    ask(question, app)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-read-receipt"].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+  }
+  // A second question Coach refuses: the notice stands at the conversation's end with the question kept in the field.
+  func askRefused(_ question: String, _ app: XCUIApplication, door: String?) {
+    let field = app.descendants(matching: .any)["coach-question"]
+    field.tap(); field.typeText(question)
+    app.buttons["coach-send"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-notice"].waitForExistence(timeout: 15))
+    if let door { XCTAssertTrue(app.buttons[door].exists) }
+    if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(field.value as? String, question, "The refused question stays in the field")
+  }
+
+  func testSignedOutReads() {
+    captureBoard("01.19-coach-signed-out-reads", in: Look.dark) { look in
+      let app = launchSignedOutCoach(look, board: "signed-out-reads")
+      askSettled("How heavy should I start squats?", app)
+      XCTAssertEqual(app.descendants(matching: .any)["coach-read-receipt"].label, "Read 2 workouts · 1 week")
+      return app
+    }
+  }
+
+  func testStepLine() {
+    captureBoard("08.35-coach-step-line", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "steps"])
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-step-line"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["coach-stop"].exists)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  func testWhatCoachUsed() {
+    captureBoard("08.36-coach-what-coach-used", in: Look.dark) { look in
+      let app = askBoard("change", "Is Push A still doing anything?", look)
+      let sources = app.buttons["coach-read-receipt"]
+      for _ in 0..<4 where !sources.isHittable { app.scrollViews.firstMatch.swipeDown(velocity: .slow) }
+      XCTAssertTrue(sources.wait(for: \.isHittable, toEqual: true, timeout: 5)); sources.tap()
+      XCTAssertTrue(app.navigationBars["What Coach read"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.staticTexts["What Coach used, in order"].exists && app.staticTexts["Read 1 workout"].exists)
+      return app
+    }
+  }
+
+  func testMadeMovement() {
+    captureBoard("08.37-coach-made-movement", in: Look.dark) { look in
+      let app = askWrite("movement", "Add incline dumbbell press to my movements. I go up in 2.5 kg steps.", "coach-made-movement", look)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-made-movement"].label.contains("Incline Dumbbell Press"))
+      return app
+    }
+  }
+
+  // Every send refused after an answer landed (08.38–08.45), the question kept in the field under the notice.
+  func testSendRefusals() {
+    let stalled = "Bench has stalled for three weeks. Is Push A still doing anything?", thursday = "What should Thursday look like?"
+    captureBoard("08.38-coach-refused-no-connection", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "no-connection"])
+      askSettled(stalled, app)
+      askRefused(thursday, app, door: "coach-try-again")
+      return app
+    }
+    captureBoard("08.39-coach-refused-workout-open", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "workout-open"])
+      askSettled(stalled, app)
+      askRefused(thursday, app, door: "coach-open-workout")
+      return app
+    }
+    captureBoard("08.40-coach-refused-log-arriving", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "log-arriving"])
+      askSettled(stalled, app)
+      askRefused(thursday, app, door: nil)
+      return app
+    }
+    captureBoard("08.41-coach-refused-too-long", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "too-long"])
+      askSettled(stalled, app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-too-long"].waitForExistence(timeout: 10))
+      XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+      return app
+    }
+    captureBoard("08.42-coach-refused-invalid-installation", in: Look.dark) { look in
+      let app = launchSignedOutCoach(look, board: "invalid-installation")
+      askSettled("How heavy should I start squats?", app)
+      askRefused(thursday, app, door: "coach-sign-in")
+      return app
+    }
+    captureBoard("08.43-coach-refused-device-bound", in: Look.dark) { look in
+      let app = launchSignedOutCoach(look, board: "device-bound")
+      askSettled("How heavy should I start squats?", app)
+      askRefused(thursday, app, door: "coach-sign-in")
+      return app
+    }
+    captureBoard("08.44-coach-refused-free-month", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "free-month"])
+      askSettled(stalled, app)
+      askRefused(thursday, app, door: "coach-own-agent")
+      // The day the server names, in the phone's own date order.
+      let paused = app.descendants(matching: .any)["coach-notice"].staticTexts.firstMatch.label
+      XCTAssertTrue(paused.hasPrefix("Coach is paused for everyone this month. It comes back on "), paused)
+      return app
+    }
+    captureBoard("08.45-coach-refused-update-required", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "update-required"])
+      askSettled(stalled, app)
+      askRefused(thursday, app, door: "coach-update")
+      return app
+    }
+  }
+
+  // Every way a turn ends short of a whole answer (08.46–08.50): what arrived stays, with the board's line under it.
+  func testEndedStates() {
+    let thursday = "What should Thursday look like?"
+    func ended(_ board: String, _ question: String, _ line: String, _ look: Look) -> XCUIApplication {
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", board])
+      ask(question, app)
+      let ending = app.staticTexts["coach-ending"]
+      XCTAssertTrue(ending.waitForExistence(timeout: 15))
+      XCTAssertEqual(ending.label, line)
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+    captureBoard("08.46-coach-ended-truncated", in: Look.dark) { look in ended("truncated", thursday, "Cut short. Ask Coach to go on.", look) }
+    captureBoard("08.47-coach-ended-declined", in: Look.dark) { look in ended("declined", "Bench has stalled for three weeks. Is Push A still doing anything?", "Coach declined to answer this.", look) }
+    captureBoard("08.48-coach-ended-failed", in: Look.dark) { look in ended("failed", thursday, "Coach couldn’t finish. Ask again.", look) }
+    captureBoard("08.49-coach-ended-stopped", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "stopped"])
+      ask(thursday, app)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-made-movement"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForExistence(timeout: 5)); app.buttons["coach-stop"].tap()
+      let ending = app.staticTexts["coach-ending"]
+      XCTAssertTrue(ending.waitForExistence(timeout: 10))
+      XCTAssertEqual(ending.label, "Stopped.")
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+    captureBoard("08.50-coach-ended-interrupted", in: Look.dark) { look in ended("interrupted", thursday, "Interrupted. What arrived is kept.", look) }
+  }
+
+  func testAnsweringOnAnotherDevice() {
+    captureBoard("08.51-coach-answering-elsewhere", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "another-device"])
+      let history = app.buttons["coach-history"]
+      XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 10)); history.tap()
+      let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Bench has stalled")).firstMatch
+      XCTAssertTrue(row.waitForExistence(timeout: 10))
+      XCTAssertTrue(row.label.contains("Answering"), row.label)
+      row.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-answering-elsewhere"].waitForExistence(timeout: 10))
+      XCTAssertFalse(app.buttons["coach-stop"].exists)
+      return app
+    }
+  }
+
+  // The stream drops mid-answer and the turn resumes from the server's snapshot, its step line and Stop as before.
+  func testResume() {
+    captureBoard("08.52-coach-resumed", in: Look.dark) { look in
+      let app = launchSignedInCoach(look, arguments: ["-coach-board", "resume"])
+      ask("What should Thursday look like?", app)
+      XCTAssertTrue(app.staticTexts["Reconnecting…"].waitForExistence(timeout: 15))
+      XCTAssertTrue(app.staticTexts["Reconnecting…"].waitForNonExistence(timeout: 15))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-step-line"].exists && app.buttons["coach-stop"].exists)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  func testEmptyHistory() {
+    captureBoard("08.53-coach-history-empty", in: Look.dark) { look in
+      let app = launch("shell-last-room", look, arguments: ["-coach-fixture", "-coach-setup-fixture"])
+      openGymFromJournal(app, opensOn: .coach)
+      let history = app.buttons["coach-history"]
+      XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 15)); history.tap()
+      XCTAssertTrue(app.staticTexts["No conversations yet.\nWhat you ask Coach on this phone is listed here."].waitForExistence(timeout: 10))
+      return app
     }
   }
 }

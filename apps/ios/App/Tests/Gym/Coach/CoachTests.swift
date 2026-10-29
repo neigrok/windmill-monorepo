@@ -72,26 +72,40 @@ import SyncTesting
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty } && rest.tasks.isEmpty)
   }
 
-  @Test func localCoachSourcesOmitOnlyUnavailableVolume() throws {
+  // What Coach read lists one step per call, in order, from its catalog phrase (08.36): a read that served workouts says
+  // how many over which weeks and days, by identity, a write names what it made, and a refused call is no step at all;
+  // the step line under a running answer is the same phrases in order (08.35).
+  @Test func whatCoachReadListsOneStepPerCallInOrder() throws {
     let (h, gym) = fixture()
     #expect(gym.run(CreateExercise(Exercise(id: ID("source-other"), name: "Other", pattern: "press", equipment: "other", stepKg: 2.5)))?.receipt != nil)
-    let cases: [(Double, Double?)] = [(80, 160), (0, 0), (-10, 0), (Double.greatestFiniteMagnitude, nil)]
-    for (index, item) in cases.enumerated() {
+    var served = ReadServed()
+    for (index, daysAgo) in [2, 9].enumerated() {
       let id = ID<Session>(RecordID("source-" + String(index)))
-      let start = Instant(ms: 1_790_423_900_000 - Int64(index) * 1_000)
+      let start = Instant(ms: 1_790_423_900_000 - Int64(daysAgo) * 86_400_000)
       #expect(gym.run(ImportSession(id: id, startedAt: start, finishedAt: Instant(ms: start.ms + 100), sets: [
-        ImportedSet(id: ID(RecordID("source-set-" + String(index))), exerciseId: ID("source-other"), weightKg: item.0,
-                    reps: 2, completedAt: Instant(ms: start.ms + 1)),
+        ImportedSet(id: ID(RecordID("source-set-" + String(index))), exerciseId: ID("source-other"), weightKg: 80, reps: 2, completedAt: Instant(ms: start.ms + 1)),
       ]))?.receipt != nil)
       h.sync(); gym.refresh()
-      let session = try #require(gym.sessions.first { $0.id == id })
-      var served = ReadServed(); served.saw(session: session)
-      let reading = CoachReading(calls: [AbilityCall(callId: "source-call", name: "get_session", input: nil, outcome: .ok, read: .ids(served))], gym: gym)
-      let expected = [gym.dates.subtitle(start), "1 set"] + (item.1.map { [Readout.weight($0) + " kg"] } ?? [])
-      #expect(reading.workouts.map(\.id) == [id.description])
-      #expect(reading.workouts.map(\.meta) == [expected.joined(separator: " · ")])
-      #expect(reading.workouts.map(\.available) == [true])
+      served.saw(session: try #require(gym.sessions.first { $0.id == id }))
     }
+    let calls = [
+      AbilityCall(callId: "c1", name: "list_notes", input: nil, outcome: .ok),
+      AbilityCall(callId: "c2", name: "list_sessions", input: nil, outcome: .ok, read: .ids(served)),
+      AbilityCall(callId: "c3", name: "get_session", input: nil, outcome: .ok, read: .ids(.none)),
+      AbilityCall(callId: "c4", name: "save_note", input: nil, outcome: .refused(.seatRequired)),
+      AbilityCall(callId: "c5", name: "create_exercise", input: nil, outcome: .ok, created: [RecordRef(type: Exercise.type, id: "source-other")]),
+    ]
+    let reading = CoachReading(calls: calls, gym: gym)
+    let days = [9, 2].map { gym.dates.draw(LocalDay(Instant(ms: 1_790_423_900_000 - Int64($0) * 86_400_000), in: gym.dates.moment.zone), .dateTime.month(.abbreviated).day()) }
+    #expect(reading.steps == [
+      CoachReading.Step(title: "Read your notes", detail: nil),
+      CoachReading.Step(title: "Read 2 workouts", detail: "2 weeks · " + days[0] + " – " + days[1]),
+      CoachReading.Step(title: "Read one workout", detail: nil),
+      CoachReading.Step(title: "Created a movement", detail: "Other"),
+    ])
+    #expect(reading.line == "Read 2 workouts · 2 weeks")
+    #expect(reading.stepLine == "read your notes · read your recent workouts · read one workout · created a movement")
+    #expect(CoachReading(calls: [calls[0]], gym: gym).line == "Read nothing from your log")
   }
 
   func settle(_ condition: () -> Bool) async throws {
@@ -136,23 +150,32 @@ import SyncTesting
       .init(path: "/v1/oauth/grants", method: "GET", authorization: bearer, mediaType: nil, body: nil)])
   }
 
-  @Test func recoveryIsOfferedOnlyWhereSigningInCanHelp() {
-    for code in ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"] {
-      #expect(CoachRecovery(code: code, anonymous: true) == .signIn)
+  // Each refusal offers the one door that exists (boards 08.38–08.45): sign-in where the phone's own AI access is spent or
+  // belongs to an account, the lifter's own agent where Coach's shared capacity is paused, and nothing where no door helps.
+  @Test func eachRefusalOffersTheOneDoorThatExists() {
+    for code in ["device_bound", "installation_bound", "invalid_installation"] {
+      #expect(CoachTurnRefusal(code: code) == .installation(code))
+      #expect(CoachTurnRefusal(code: code).recovery(anonymous: true) == .signIn && CoachTurnRefusal(code: code).recovery(anonymous: false) == nil)
     }
-    for code in ["free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required", "unconfigured"] {
-      #expect(CoachRecovery(code: code, anonymous: true) == nil)
-      #expect(CoachRecovery(code: code, anonymous: false) == nil)
+    #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: true) == .signIn)
+    #expect(CoachTurnRefusal.allowance("subject_exhausted").recovery(anonymous: false) == nil, "Signed in, a spent allowance offers nothing while paid plans are closed")
+    for code in ["free_day_exhausted", "concurrency_exhausted", "funding_required", "unconfigured"] {
+      #expect(CoachTurnRefusal(code: code).recovery(anonymous: true) == nil && CoachTurnRefusal(code: code).recovery(anonymous: false) == nil)
     }
-    #expect(CoachRecovery(code: "subject_exhausted", anonymous: false) == nil, "Signed in, a spent allowance offers nothing while paid plans are closed")
-    #expect(CoachRecovery(.rateLimited, anonymous: false) == nil && CoachRecovery(.rateLimited, anonymous: true) == nil)
-    #expect(CoachRecovery(.installation("device_bound"), anonymous: true) == .signIn && CoachRecovery(.installation("device_bound"), anonymous: false) == nil)
-    #expect(CoachRecovery(.allowance("subject_exhausted"), anonymous: true) == .signIn && CoachRecovery(.allowance("free_day_exhausted"), anonymous: true) == nil)
+    #expect(CoachTurnRefusal(code: "free_month_exhausted", resetsAtMs: 1_793_491_200_000) == .freeMonthExhausted(resetsAtMs: 1_793_491_200_000))
+    #expect([CoachTurnRefusal.freeMonthExhausted(resetsAtMs: nil), .rateLimited].map { $0.recovery(anonymous: false) } == [.ownAgent, .ownAgent])
+    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .updateRequired].map { $0.recovery(anonymous: true) } == [.tryAgain, .openWorkout, nil, .update])
     #expect([CoachTurnRefusal(code: "subject_exhausted"), CoachTurnRefusal(code: "coach-rate-limited"), CoachTurnRefusal(code: "coach-update-required"),
              CoachTurnRefusal(code: "invalid_installation"), CoachTurnRefusal(code: "coach-busy", status: 503), CoachTurnRefusal(code: "", status: 404)]
       == [.allowance("subject_exhausted"), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent])
-    #expect([CoachTurnRefusal.allowance("subject_exhausted"), .rateLimited, .absent].map { $0.capped } == [true, true, true])
-    #expect([CoachTurnRefusal.updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped } == [false, false, false])
+    #expect([CoachTurnRefusal.allowance("subject_exhausted"), .freeMonthExhausted(resetsAtMs: nil), .rateLimited, .absent].map { $0.capped } == [true, true, true, true])
+    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped }
+      == [false, false, false, false, false, false])
+    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired].map(\.sentence) == [
+      "No connection. Your question is kept here.", "Coach waits until you finish this workout.",
+      "Your log is still arriving on this phone. Ask again in a moment.", "This phone can’t ask Coach signed out any more. Sign in to continue.",
+      "This phone is linked to an account. Sign in to ask Coach.", "This version can’t ask Coach any more. Update Windmill to continue.",
+    ])
   }
 
   // Each refusal says only what is true of it: the reset line where a reset brings Coach back, *used all* only when nothing

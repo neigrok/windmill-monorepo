@@ -131,10 +131,12 @@ import SyncTesting
       let callIds = try request.body?.member("results").asArray().map { try $0.member("callId").asString() }
       #expect(callIds == batch.calls.map(\.callId))
     }
-    if let code = try? end.member("code").asString() {
-      #expect(phone.driver.refusal?.code == code)
+    // A failed turn's code becomes the refusal said at the conversation's end only where it names a cap or a door; a
+    // code that names neither is said by the message's own ending line alone (08.48).
+    if let code = try? end.member("code").asString(), case let expected = CoachTurnRefusal(code: code), expected != .said(code) {
+      #expect(phone.driver.refusal == expected, Comment(rawValue: file))
     } else {
-      #expect(phone.driver.refusal == nil)
+      #expect(phone.driver.refusal == nil, Comment(rawValue: file))
     }
     let outcome = phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" } }.last?.properties["outcome"]
     #expect(outcome == CoachTurnDriver.outcome(of: answer.state) || (answer.state == .failed && outcome == "capped"), Comment(rawValue: file))
@@ -166,7 +168,6 @@ import SyncTesting
     try await settle { phone.coach.saved.text == "Private question" }
     #expect(phone.coach.thread == nil && phone.coach.saved.conversation == nil)
     #expect(phone.driver.refusal == .updateRequired && phone.coach.canCompose)
-    #expect(phone.driver.refusal?.message == AuthRefusal.updateRequired.message)
     let requests = TurnFixtureProtocol.state.withLock { $0.requests }
     #expect(requests.map(\.path) == ["/v1/gym/coach/turns"])
     #expect(requests.first?.headers["Sync-Schema"] == String(SyncSchema.version))
@@ -184,7 +185,7 @@ import SyncTesting
     try await send(phone, "What routines do I have?")
     let answer = try #require(try messages(phone).last { $0.role == .coach })
     #expect(answer.state == .interrupted && answer.text == "Checking.")
-    #expect(phone.driver.error == CoachCopy.interrupted)
+    #expect(phone.driver.error == nil && phone.driver.refusal == nil)
     #expect(TurnFixtureProtocol.state.withLock { $0.requests.map(\.path).filter { $0.hasPrefix("/v1/gym/coach/turns/") }.count } == 1)
     let wire = phone.driver.wire
     TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.answered.insert(1) }
@@ -243,20 +244,21 @@ import SyncTesting
     phone.connectivity.set(online: false)
     try await settle { phone.coach.offline }
     phone.coach.edit("Private question"); phone.coach.send()
-    #expect(phone.coach.error == CoachCopy.offline && !phone.coach.asking && phone.coach.saved.text == "Private question")
+    try await settle { phone.driver.refusal == .offline }
+    #expect(!phone.coach.asking && phone.coach.saved.text == "Private question")
     phone.connectivity.set(online: true)
     try await settle { !phone.coach.offline }
     let session = phone.gym.runner.mint(Session.self)
     #expect(phone.gym.run(StartSession(id: session))?.receipt != nil)
     phone.coach.send(); try await settle { !phone.coach.sending }
-    #expect(phone.coach.error == "Finish your workout first." && phone.coach.saved.text == "Private question")
+    #expect(phone.driver.refusal == .workoutOpen && phone.coach.saved.text == "Private question")
     #expect(phone.gym.run(FinishSession(id: session))?.receipt != nil)
     phone.coach.edit(String(repeating: "x", count: CoachRules.maxQuestionBytes + 1)); phone.coach.send()
     try await settle { !phone.coach.sending }
     #expect(!phone.coach.asking && phone.coach.saved.text.utf8.count == 8001)
     let recorded = try messages(phone)
     #expect(TurnFixtureProtocol.state.withLock { $0.requests.isEmpty } && recorded.isEmpty)
-    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline"])
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline", "refused"])
   }
 
   // A refusal before the stream withdraws the turn: the question returns to the field, and no message or picture row stays.
@@ -286,7 +288,7 @@ import SyncTesting
     try await send(phone, "What routines do I have?")
     let answer = try #require(try messages(phone).last { $0.role == .coach })
     #expect(answer.state == .interrupted && answer.calls.map(\.name).last == "list_routines")
-    #expect(phone.driver.refusal == nil && phone.driver.error == CoachCopy.interrupted)
+    #expect(phone.driver.refusal == nil && phone.driver.error == nil)
     let turn = phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_turn" }.map(\.properties) }
     #expect(turn.map { $0["state"] } == ["interrupted"] && turn.map { $0["code"] } == ["coach-turn-order"])
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } == [])

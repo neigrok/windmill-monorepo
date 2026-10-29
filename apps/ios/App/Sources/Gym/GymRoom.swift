@@ -82,7 +82,6 @@ struct GymRoom: View {
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachKeepRoutines, { app.keep(routines: true) })
     .environment(\.coachOpenRoutine, { id in routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
-    .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(isPresented: Binding(get: { routine != nil }, set: { if !$0 { routine = nil } }), onDismiss: {
       if let id = startRoutine { startRoutine = nil; gym.startWorkout(routineId: id) }

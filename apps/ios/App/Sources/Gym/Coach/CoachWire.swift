@@ -23,11 +23,9 @@ nonisolated struct CoachResult: Codable, Equatable, Identifiable, Sendable {
 }
 
 nonisolated enum CoachCopy {
-  static let interrupted = "Response interrupted."
-  static let stopped = "Response stopped."
   static let noAnswer = "Coach didn’t answer. Try again in a moment"
   static let offline = "Coach needs a connection."
-  static let signedOut = "Coach needs your workout log. Please sign in."
+  static let accountChanging = "Your account is changing. Your question is kept here."
   static let absent = "This Windmill does not have Coach. You can still read your log."
   static let unreadableDraft = "Your draft couldn’t be read."
   // The day's cap, said of the wait to the server's moment: under a minute, then to the nearest minute below 9½, the nearest
@@ -43,7 +41,6 @@ nonisolated enum CoachCopy {
     }
     return "You can ask again in \(wait)."
   }
-  static let signInToContinue = "Sign in to continue."
   static let confirmRetry = "Couldn’t save the routine. Try again."
   static let draftGone = "This draft is no longer available."
   static let accountChanged = "The account changed. Open this again."
@@ -99,22 +96,6 @@ nonisolated enum CoachCopy {
     case "model_refused": return "Coach couldn’t help with that request. Edit your message and try again."
     case "output_truncated", "invalid_result": return "Coach couldn’t make complete routines. Your draft is kept."
     default: return "Coach couldn’t answer that. Your draft is kept."
-    }
-  }
-}
-
-// Recovery for a refused send: sign-in where the phone's own AI access is spent or bound. Signed in there is none to offer
-// while paid plans are closed.
-nonisolated enum CoachRecovery: Equatable {
-  case signIn
-  init?(code: String, anonymous: Bool) {
-    guard anonymous, ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"].contains(code) else { return nil }
-    self = .signIn
-  }
-  init?(_ refusal: CoachTurnRefusal?, anonymous: Bool) {
-    switch refusal {
-    case .allowance(let code), .installation(let code): self.init(code: code, anonymous: anonymous)
-    default: return nil
     }
   }
 }

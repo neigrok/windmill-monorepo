@@ -103,14 +103,18 @@ import XCTest
     XCTAssertEqual(sources.label, "Read 1 workout · 1 week")
     sources.tap()
     XCTAssertTrue(app.navigationBars["What Coach read"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["1 workout · 1 week"].exists && app.staticTexts["Also read your notes."].exists)
-    let sourceWorkout = app.buttons["coach-source-coach-fixture-session"]
-    XCTAssertTrue(sourceWorkout.waitForExistence(timeout: 5))
-    XCTAssertTrue(sourceWorkout.label.hasPrefix("Push A"), sourceWorkout.label)
-    XCTAssertTrue(sourceWorkout.label.hasSuffix(" · 1 set · 400 kg"), sourceWorkout.label)
-    sourceWorkout.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
-    back(app)
+    // One step per call, in order: the context reads, the workout the batch read again (counted once), the proposal;
+    // the sheet opens at half height, so its tail is dragged up before it is read.
+    XCTAssertTrue(app.staticTexts["What Coach used, in order"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Read 1 workout"].exists && app.staticTexts["1 week · Sep 26"].exists)
+    XCTAssertTrue(app.staticTexts["Read your notes"].exists && app.staticTexts["2 notes"].exists)
+    let proposed = app.staticTexts["Wrote a proposal for one of your routines"]
+    for _ in 0..<4 where !proposed.exists { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(proposed.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Push A · 3 changes"].exists && app.staticTexts["Read one workout"].exists && app.staticTexts["Read your program"].exists)
+    app.buttons["Close"].tap()
+    XCTAssertTrue(app.navigationBars["What Coach read"].waitForNonExistence(timeout: 5))
+    openTab("Routines", app)
     openTab("Coach", app)
     XCTAssertFalse(app.descendants(matching: .any)["coach-proposal-header"].exists)
     app.buttons["coach-history"].tap()

@@ -117,10 +117,12 @@ nonisolated enum TurnEvent: Equatable, Sendable {
   }
 }
 
-// A refusal the server answered a turn request with before its stream, by §6.5 code.
+// A refusal the server answered a turn request with before its stream, by §6.5 code, and the moment a shared free pool
+// refills when its body carries the allowance (`budgetResetsAtMs`).
 nonisolated struct TurnRefusal: Error, Equatable, Sendable {
   let status: Int
   let code: String
+  var budgetResetsAtMs: Int64? = nil
 
   static let turnUnknown = "coach-turn-unknown"
   // The closing error of a stream another stream of the same turn took over (§6.5): the turn runs on, this stream is done.
@@ -226,8 +228,10 @@ nonisolated struct TurnSSE {
   }
 
   nonisolated static func refusal(_ status: Int, _ body: Data) -> TurnRefusal {
-    let code = (try? JSON(parsing: Array(body)).member("code").asString()) ?? ""
-    return TurnRefusal(status: status, code: code.isEmpty ? "coach-vendor-error" : code)
+    let json = try? JSON(parsing: Array(body))
+    let code = (try? json?.member("code").asString()) ?? ""
+    let reset = try? json?.member("allowance").member("budgetResetsAtMs").asInteger()
+    return TurnRefusal(status: status, code: code.isEmpty ? "coach-vendor-error" : code, budgetResetsAtMs: reset)
   }
 
   // The frames of one stream, parsed off the main actor, until its terminal frame; a stream that ends before one is a lost

@@ -956,7 +956,16 @@ iOS. It and the product differ in these places.
   `1589:39166` / `1690:14706` / `1589:39294` (replaced `1173:4111` / `1173:4983` and caption
   `1174:5318`); the 08 section's flow instruction is `1589:13082` (replaced `1117:1706`). Drawing
   facts for the build: 08.37 is drawn on the Changed row with its word overridden because the Added
-  row holds one field; 08.41 says characters where the contract limit is bytes.
+  row holds one field; 08.41 says characters where the contract limit is bytes. Where the build and
+  the drawings differ: the step line and the What Coach read rows take the catalog's own phrases
+  (*read your program*, *wrote a proposal for one of your routines*) where 08.35 and 08.36 drew
+  *read your routines* and *proposed a change*; 08.37 draws no receipt row, the build keeps it
+  (brand foundations: always visible); 08.49 and 08.50 draw a *Changed a movement* card, which no
+  ability can land (`update_exercise` is withheld, B-1), so the build's landed write is *Made a
+  movement*; 08.41's line counts UTF-8 bytes under the word *characters*, and its field grows to five
+  lines with the pasted draft where the board draws one; 08.44's reset day needs
+  `budgetResetsAtMs` on the turn route's refusal, which the backend does not send yet, so the line
+  ends at *this month* until it does, and the day follows the phone's locale (*Nov 1* in en_US).
 
 ### Native and web differences
 

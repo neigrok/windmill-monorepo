@@ -16,7 +16,6 @@ struct CoachHistoryScreen: View {
   let coach: CoachConversation
   @State var deletion: Row?
   @Environment(\.dismiss) var dismiss
-  @Environment(\.coachOpenAccount) var openAccount
 
   var rows: [Row] {
     let local = (try? coach.owner.map { try coach.store.archive($0).entries } ?? []) ?? []
@@ -36,9 +35,9 @@ struct CoachHistoryScreen: View {
   func meta(of messages: [CoachMessage], draft: CoachArchive.Entry?) -> String? {
     guard let answer = messages.last(where: { $0.role == .coach }) else { return draft?.state }
     switch answer.state {
-    case .running: return coach.driver?.running?.turn.coach == answer.id ? "Answering" : "Answer in progress"
+    case .running: return "Answering"
     case .interrupted, .failed: return "Interrupted"
-    case .stopped: return CoachCopy.stopped
+    case .stopped: return "Stopped"
     case .declined, .completed: break
     }
     if let draft, draft.state == "Draft" { return "Draft" }
@@ -56,9 +55,9 @@ struct CoachHistoryScreen: View {
     let rows = rows
     Group {
       if !coach.allowed {
-        CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.signedOut, signIn: openAccount)
+        CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.accountChanging)
       } else if rows.isEmpty {
-        ContentUnavailableView("No conversations", systemImage: "bubble.left.and.bubble.right")
+        CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: "No conversations yet.\nWhat you ask Coach on this phone is listed here.")
       } else { conversations(rows) }
     }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .gymTabBar()

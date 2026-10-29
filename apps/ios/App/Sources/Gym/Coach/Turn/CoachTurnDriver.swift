@@ -12,21 +12,27 @@ import SyncSchema
 // each batch of ability calls through the replica executor and posts their results, ends the turn with its terminal state,
 // and handles Stop, a dropped connection, the background and the turns a process death or a seat change left running.
 
-// Why a send could not go, in the words the room already has for the nearest state.
+// Why a send could not go: the phone's own admission (Coach §4.1), or the server's refusal by §6.5 code. Each is said once,
+// as a notice at the conversation's end with the one door that exists (boards 08.38–08.45, 08.8, 01.10, 01.11, 08.7).
 nonisolated enum CoachTurnRefusal: Equatable, Sendable {
+  case offline
+  case workoutOpen
+  case logArriving
   case allowance(String)
+  case freeMonthExhausted(resetsAtMs: Int64?)
   case rateLimited
   case updateRequired
   case absent
   case installation(String)
   case said(String)
 
-  init(code: String, status: Int? = nil) {
+  init(code: String, status: Int? = nil, resetsAtMs: Int64? = nil) {
     switch code {
-    case _ where TurnRefusal.allowanceCodes.contains(code) && code != "invalid_installation": self = .allowance(code)
+    case "free_month_exhausted": self = .freeMonthExhausted(resetsAtMs: resetsAtMs)
+    case "invalid_installation", "installation_bound", "device_bound": self = .installation(code)
+    case _ where TurnRefusal.allowanceCodes.contains(code): self = .allowance(code)
     case "coach-rate-limited": self = .rateLimited
     case "coach-update-required", "client-update-required": self = .updateRequired
-    case "invalid_installation", "installation_bound", "device_bound": self = .installation(code)
     case _ where status == 404: self = .absent
     default: self = .said(code)
     }
@@ -35,28 +41,77 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   var code: String {
     switch self {
     case .allowance(let code), .installation(let code), .said(let code): code
+    case .offline: "offline"
+    case .workoutOpen: "workout-open"
+    case .logArriving: "coach-replica-syncing"
+    case .freeMonthExhausted: "free_month_exhausted"
     case .rateLimited: "coach-rate-limited"
     case .updateRequired: "coach-update-required"
     case .absent: "absent"
     }
   }
 
-  var message: String {
+  var sentence: String {
     switch self {
+    case .offline: "No connection. Your question is kept here."
+    case .workoutOpen: "Coach waits until you finish this workout."
+    case .logArriving: "Your log is still arriving on this phone. Ask again in a moment."
     case .allowance(let code): AiAllowance.sentence(code)
+    case .freeMonthExhausted: "Coach is paused for everyone this month."
     case .rateLimited: CoachCopy.daily(waitMs: nil)
-    case .updateRequired: AuthRefusal.updateRequired.message
+    case .updateRequired: "This version can’t ask Coach any more. Update Windmill to continue."
     case .absent: CoachCopy.absent
-    case .installation(let code): CoachCopy.refusal(code)
+    case .installation("invalid_installation"): "This phone can’t ask Coach signed out any more. Sign in to continue."
+    case .installation: "This phone is linked to an account. Sign in to ask Coach."
     case .said: CoachCopy.noAnswer
+    }
+  }
+
+  // The one door the notice offers: sign-in where the phone's own AI access is spent or belongs to an account, the lifter's
+  // own agent where Coach's shared capacity is paused, the update, the workout, or Send again. Signed in, a spent allowance
+  // offers nothing while paid plans are closed.
+  func recovery(anonymous: Bool) -> CoachRecovery? {
+    switch self {
+    case .offline: .tryAgain
+    case .workoutOpen: .openWorkout
+    case .logArriving, .absent, .said: nil
+    case .allowance(let code): anonymous && code == "subject_exhausted" ? .signIn : nil
+    case .freeMonthExhausted, .rateLimited: .ownAgent
+    case .updateRequired: .update
+    case .installation: anonymous ? .signIn : nil
     }
   }
 
   // The composer stays closed on a cap the server refills and on a deployment without Coach; everything else asks again.
   var capped: Bool {
     switch self {
-    case .allowance, .rateLimited, .absent: true
-    case .updateRequired, .installation, .said: false
+    case .allowance, .freeMonthExhausted, .rateLimited, .absent: true
+    case .offline, .workoutOpen, .logArriving, .updateRequired, .installation, .said: false
+    }
+  }
+
+  // Whether the server, not this phone, refused: the `gym_ask_outcome` it ends with and the cap it names.
+  var askOutcome: (outcome: String, cap: String?) {
+    switch self {
+    case .offline: ("offline", nil)
+    case .allowance, .freeMonthExhausted: ("capped", "allowance")
+    case .rateLimited: ("capped", "daily")
+    case .absent: ("absent", nil)
+    case .workoutOpen, .logArriving, .updateRequired, .installation, .said: ("refused", nil)
+    }
+  }
+}
+
+nonisolated enum CoachRecovery: Equatable, Sendable {
+  case tryAgain, openWorkout, signIn, ownAgent, update
+
+  var title: String {
+    switch self {
+    case .tryAgain: "Try again"
+    case .openWorkout: "Open workout"
+    case .signIn: "Sign in"
+    case .ownAgent: "Use your own AI agent"
+    case .update: "Update"
     }
   }
 }
@@ -105,7 +160,7 @@ nonisolated struct TurnInterrupted: Error {
   var running: Running?
   var stopping = false
   var reconnecting = false
-  // How the last send ended when the server refused it, and what the band says.
+  // How the last send was refused, said once at the conversation's end; and a fault of this phone's own, said in the band.
   var refusal: CoachTurnRefusal?
   var error: String?
   @ObservationIgnored var work: Task<Void, Never>?
@@ -122,6 +177,9 @@ nonisolated struct TurnInterrupted: Error {
   }
 
   var offline: Bool { CoachFixture.offline || !runtime.engine.status.online }
+  var logArriving: Bool {
+    get throws { try CoachFixture.logArriving || !runner.read(Gym.scope) { try $0.firstPullComplete() } }
+  }
 
   // Coach §4.5: at engine start a running Coach message the device row names ended with the process, and every change of
   // the active replica ends the turn that ran under the replica it replaced.
@@ -166,23 +224,22 @@ nonisolated struct TurnInterrupted: Error {
 
   // MARK: - Open
 
-  // Coach §4.1: admitted locally, recorded, and sent; the turn it opened, or nil with the band's reason, the draft kept.
+  // Coach §4.1: admitted locally, recorded, and sent; the turn it opened, or nil with the refusal said at the conversation's
+  // end, the draft kept. A question past the bound never reaches here: the composer refuses it as it is typed.
   func send(_ question: String, picture: CoachPictureRow?, thread: ID<CoachThread>?, anonymous: Bool,
             withdrawn: @escaping @MainActor (OpenTurn.Turn) -> Void) async -> OpenTurn.Turn? {
     guard running == nil else { error = "Coach is answering another message. Try again when it finishes."; return nil }
-    if offline { error = CoachCopy.offline; outcome("offline"); return nil }
-    guard question.utf8.count <= CoachRules.maxQuestionBytes else { error = "Keep your message within \(CoachRules.maxQuestionBytes) bytes."; return nil }
+    guard question.utf8.count <= CoachRules.maxQuestionBytes else { return nil }
+    if offline { refuse(.offline); return nil }
     let seat: TurnSeat
     do { seat = try await self.seat(anonymous: anonymous) } catch {
-      self.error = refusalMessage(for: error)
-      outcome("refused")
+      if let refused = Self.refusal(for: error) { refuse(refused) } else { self.error = (error as? AppFailure)?.message ?? CoachCopy.noAnswer; outcome("refused") }
       return nil
     }
     guard running == nil else { error = "Coach is answering another message. Try again when it finishes."; return nil }
     do {
-      let admission = try runner.read(Gym.scope) { read in (open: try TrainingLog(read).open != nil, pulled: try read.firstPullComplete()) }
-      if admission.open { error = "Finish your workout first."; return nil }
-      if !admission.pulled { error = CoachCopy.noAnswer; outcome("refused"); return nil }
+      if try runner.read(Gym.scope, { try TrainingLog($0).open != nil }) { refuse(.workoutOpen); return nil }
+      if try logArriving { refuse(.logArriving); return nil }
       if let picture, try runner.run(KeepPicture(picture: picture)).refusal != nil { error = "Your message couldn’t be saved. Try again."; return nil }
       let pictures = picture.map { [Picture(id: $0.id, mediaType: "image/jpeg", localOnly: true)] } ?? []
       let outcome = try runner.run(OpenTurn(thread: thread, question: question, pictures: pictures))
@@ -204,20 +261,27 @@ nonisolated struct TurnInterrupted: Error {
   // and never replaced once invalid.
   func seat(anonymous: Bool) async throws -> TurnSeat {
     guard anonymous else {
-      guard let account = try runtime.account(), let token = runtime.tokens.token(for: account) else { throw AppFailure(message: CoachCopy.signedOut) }
+      guard let account = try runtime.account(), let token = runtime.tokens.token(for: account) else { throw AppFailure(message: CoachCopy.accountChanging) }
       return .bound(token: token.value)
     }
     return .anon(credential: try await runtime.installation.credential())
   }
 
-  func refusalMessage(for error: any Error) -> String {
-    if GymRESTClient.needsConnection(error) { return CoachCopy.offline }
-    if let failure = error as? AppFailure { return failure.message }
-    if let failure = error as? AiRequestFailure {
-      let code = (try? JSONDecoder().decode(InstallationFailure.self, from: failure.body))?.code ?? "unavailable"
-      return CoachTurnRefusal(code: code, status: failure.status).message
-    }
-    return CoachCopy.refusal("unavailable")
+  // A seat the phone could not take: no connection, or the installation the server refused by code; a keychain or
+  // account fault is this phone's own and stays a band message.
+  static func refusal(for error: any Error) -> CoachTurnRefusal? {
+    if GymRESTClient.needsConnection(error) { return .offline }
+    guard let failure = error as? AiRequestFailure else { return nil }
+    let code = (try? JSONDecoder().decode(InstallationFailure.self, from: failure.body))?.code ?? "unavailable"
+    return CoachTurnRefusal(code: code, status: failure.status)
+  }
+
+  // A send refused before any record: said once at the conversation's end, the draft kept.
+  func refuse(_ refused: CoachTurnRefusal) {
+    refusal = refused; error = nil
+    var ended = ["screen": "coach", "outcome": refused.askOutcome.outcome]
+    if let cap = refused.askOutcome.cap { ended["cap"] = cap }
+    telemetry.event("gym_ask_outcome", properties: ended)
   }
 
   // MARK: - The turn
@@ -385,9 +449,9 @@ nonisolated struct TurnInterrupted: Error {
 
   // MARK: - End
 
-  // Coach §4.4: the terminal state, the text and the receipt its calls derive, in one transaction; then what the band and
-  // the events say of it. The code is the §6.5 code a failed turn ended on, which the band states, or the cause of an
-  // interrupted one, which only the `coach_turn` event carries.
+  // Coach §4.4: the terminal state, the text and the receipt its calls derive, in one transaction; then what the events say
+  // of it. How the turn ended is the message's own line in the room; a failed turn's §6.5 code becomes the refusal said at
+  // the conversation's end when it names a cap or a door, and the cause of an interrupted one only the `coach_turn` event carries.
   func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, tally: CoachTurnTally, started: ContinuousClock.Instant) {
     textFlush?.cancel(); textFlush = nil
     let text = streamed
@@ -395,10 +459,10 @@ nonisolated struct TurnInterrupted: Error {
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
     let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0) } : nil
-    refusal = refused
-    error = refused?.message ?? (state == .interrupted ? CoachCopy.interrupted : state == .stopped ? CoachCopy.stopped : nil)
+    refusal = refused.flatMap { if case .said = $0 { nil } else { $0 } }
+    error = nil
     var ended = ["screen": "coach", "outcome": Self.outcome(of: state)]
-    if case .allowance? = refused { ended["outcome"] = "capped"; ended["cap"] = "allowance" }
+    if let cap = refused?.askOutcome.cap, cap == "allowance" { ended["outcome"] = "capped"; ended["cap"] = cap }
     let duration = Int64(started.duration(to: .now).components.seconds * 1_000)
     telemetry.event("gym_ask_outcome", properties: ended, durationMs: duration)
     var turn = ["state": state.rawValue, "seat": running.seat.seat == .anon ? "anon" : "bound",
@@ -412,15 +476,11 @@ nonisolated struct TurnInterrupted: Error {
     do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
-    let refused = CoachTurnRefusal(code: refusal.code, status: refusal.status)
-    self.refusal = refused; error = refused.message
-    var ended = ["screen": "coach", "outcome": "refused"]
-    switch refused {
-    case .allowance: ended["outcome"] = "capped"; ended["cap"] = "allowance"
-    case .rateLimited: ended["outcome"] = "capped"; ended["cap"] = "daily"
-    case .absent: ended["outcome"] = "absent"
-    case .updateRequired, .installation, .said: if refusal.status >= 500 { ended["outcome"] = "failed"; report("http", refusal) }
-    }
+    let refused = CoachTurnRefusal(code: refusal.code, status: refusal.status, resetsAtMs: refusal.budgetResetsAtMs)
+    self.refusal = refused; error = nil
+    var ended = ["screen": "coach", "outcome": refused.askOutcome.outcome]
+    if let cap = refused.askOutcome.cap { ended["cap"] = cap }
+    if ended["outcome"] == "refused", refusal.status >= 500 { ended["outcome"] = "failed"; report("http", refusal) }
     telemetry.event("api_request_failed", properties: ["operation": "gym_coach_turn", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": String(refusal.status)])
     telemetry.event("gym_ask_outcome", properties: ended, durationMs: Int64(started.duration(to: .now).components.seconds * 1_000))
   }

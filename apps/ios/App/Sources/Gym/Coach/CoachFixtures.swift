@@ -30,9 +30,20 @@ enum CoachFixture {
     []
     #endif
   }
+  // The connection: absent from launch (`-coach-offline`), or gone once a board's first answer landed (08.38).
+  nonisolated static let connectionGone = Mutex(false)
   nonisolated static var offline: Bool {
     #if DEBUG && targetEnvironment(simulator)
-    ProcessInfo.processInfo.arguments.contains("-coach-offline")
+    ProcessInfo.processInfo.arguments.contains("-coach-offline") || connectionGone.withLock { $0 }
+    #else
+    false
+    #endif
+  }
+  // The replica's history still arriving once the board's first answer landed (08.40), which no scripted server can make
+  // a settled replica show.
+  nonisolated static var logArriving: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+    CoachBoard.current?.secondSend == .logArriving && boardSettled.withLock { $0 }
     #else
     false
     #endif
@@ -63,7 +74,18 @@ enum CoachFixture {
   @discardableResult static func prepare(_ gym: GymModel, signIn: Bool = false) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), let runtime = gym.runtime, let server = runtime.auth.fake else { return true }
-    if gym.isAnonymous, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") == true { return false }
+    if gym.isAnonymous, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") == true {
+      // Signed out, the phone's own reads (01.19): two workouts last week, Tuesday and Thursday, on the anonymous replica.
+      guard CoachBoard.current?.situation == .signedOutWorkouts else { return false }
+      let day: Int64 = 86_400_000, lastMonday = ReadServed.week(of: gym.dates.moment.now) - 7 * day
+      for (index, weekday) in [1, 3].enumerated() {
+        let start = lastMonday + Int64(weekday) * day + 10 * 3_600_000
+        _ = gym.run(ImportSession(id: ID(RecordID("anon-session-\(index)")), startedAt: Instant(ms: start), finishedAt: Instant(ms: start + 3_600_000),
+          sets: [ImportedSet(id: ID(RecordID("anon-set-\(index)")), exerciseId: ID("back-squat"), weightKg: 40, reps: 8, completedAt: Instant(ms: start + 600_000))]))
+      }
+      gym.refresh()
+      return true
+    }
     do {
       gym.refresh()
       if gym.account == nil {
@@ -99,6 +121,12 @@ enum CoachFixture {
           routineId: ID(RecordID(first.id))))
       }
       if ProcessInfo.processInfo.arguments.contains("-coach-history") { try seedHistory(gym) }
+      // A turn another device is answering (08.51): its conversation waits in History with no words yet, under another
+      // replica's identity.
+      if board?.situation == .anotherDevice {
+        _ = try gym.runner.run(SeedConversation(id: ID("another-device"), title: "Bench has stalled for three weeks. Is Push A still doing anything?",
+                                                at: Instant(ms: gym.dates.moment.now.ms - 60_000), calls: [], answer: "", state: .running, replica: "rp_" + String(repeating: "a", count: 32)))
+      }
       await runtime.engine.flushOnLeave(); gym.refresh()
       // An Apply then waits on the log past the card's 15-second wait.
       if ProcessInfo.processInfo.arguments.contains("-coach-decision-stall") {
@@ -117,8 +145,9 @@ enum CoachFixture {
     return true
   }
 
-  // A draft program screenshot in the composer, as if just chosen from the photo picker (`-coach-draft-photo`), or, signed
-  // in, a draft a signed-out start left on this phone beside the account's own (`-coach-kept-draft`, 01.18).
+  // A draft program screenshot in the composer, as if just chosen from the photo picker (`-coach-draft-photo`); signed in,
+  // a draft a signed-out start left on this phone beside the account's own (`-coach-kept-draft`, 01.18); or a question
+  // in the field as the account begins to change under it (08.6).
   static func seedDraft(_ coach: CoachConversation) {
     #if DEBUG && targetEnvironment(simulator)
     let arguments = ProcessInfo.processInfo.arguments
@@ -128,13 +157,18 @@ enum CoachFixture {
       next.phoneDrafts = [CoachPhoneDraft(text: "Push day twice a week, legs on Friday. I have dumbbells and a bench.", photo: nil, photoData: nil, setupChoice: .describe)]
       _ = coach.keep(next, failure: "Your draft couldn’t be saved. Try again.")
     }
+    if CoachBoard.current?.situation == .accountChanging, coach.allowed, !coach.gym.accountChanging {
+      coach.edit("What should Thursday look like?")
+      coach.gym.accountChanging = true
+    }
     #endif
   }
 
   // Once the board's turn ended: its routine changes under the proposal (`routine-changed`), or a newer proposal
-  // replaces it (`-coach-out-of-date`), so the card is out of date.
-  static let boardSettled = Mutex(false)
-  static func afterTurn(_ gym: GymModel) {
+  // replaces it (`-coach-out-of-date`), so the card is out of date; or the next send meets what the board refuses it
+  // with on this phone — the connection gone, a workout open, a question past its bound.
+  nonisolated static let boardSettled = Mutex(false)
+  static func afterTurn(_ gym: GymModel, _ coach: CoachConversation) {
     #if DEBUG && targetEnvironment(simulator)
     guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), !boardSettled.withLock({ let done = $0; $0 = true; return done }) else { return }
     if let edit = CoachBoard.current?.editedAfter, var routine = try? gym.runner.open(ID<Routine>(RecordID(edit.id))) {
@@ -145,7 +179,18 @@ enum CoachFixture {
       _ = gym.run(ProposeRoutine(id: ID("coach-fixture-newer"), routineId: ID("coach-fixture-routine"), name: "Push A3",
         entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 2, weightKg: 95)])], summary: "Doubles at 95."))
     }
-    if let runtime = gym.runtime { Task { await runtime.engine.flushOnLeave(); gym.refresh() } }
+    switch CoachBoard.current?.secondSend {
+    case .connectionGone: connectionGone.withLock { $0 = true }
+    case .workoutOpen: _ = gym.run(StartSession(id: gym.runner.mint(Session.self)))
+    case .tooLong: coach.edit("Week 1 — Mon: Squat 3×5, Bench 3×5, Row 3×5. " + String(repeating: "Tue: rest. ", count: 850))
+    default: break
+    }
+    if let runtime = gym.runtime {
+      Task {
+        await runtime.engine.flushOnLeave(); gym.refresh()
+        if CoachBoard.current?.secondSend == .workoutOpen { gym.hideWorkout() }
+      }
+    }
     #endif
   }
 
@@ -211,13 +256,16 @@ enum CoachFixture {
 }
 
 #if DEBUG && targetEnvironment(simulator)
-// A completed conversation seeded whole: one question and its answer, stamped on the day given.
+// A conversation seeded whole: one question and its answer, stamped on the day given; by default completed on this
+// replica, else as another device left it.
 struct SeedConversation: Action {
   let id: ID<CoachThread>
   let title: String
   let at: Instant
   let calls: [AbilityCall]
   var answer = "Here is what I found."
+  var state = MessageState.completed
+  var replica: String?
 
   var scope: ScopeRef { Gym.scope }
 
@@ -227,8 +275,9 @@ struct SeedConversation: Action {
     var plan = Plan()
     plan.create(try Valid(CoachThread(id: id, title: title), at: loaded.moment))
     plan.create(try Valid(CoachMessage(id: ids.mint(CoachMessage.self), threadId: id, role: .lifter, text: title, at: at), at: loaded.moment))
-    plan.create(try Valid(CoachMessage(id: ids.mint(CoachMessage.self), threadId: id, role: .coach, replica: loaded.replica, text: answer,
-                                       state: .completed, receipt: AbilityCall.receipt(of: calls), calls: calls, at: Instant(ms: at.ms + 60_000)), at: loaded.moment))
+    plan.create(try Valid(CoachMessage(id: ids.mint(CoachMessage.self), threadId: id, role: .coach, replica: replica ?? loaded.replica, text: answer,
+                                       state: state, receipt: state.isTerminal ? AbilityCall.receipt(of: calls) : nil, calls: calls,
+                                       at: Instant(ms: at.ms + 60_000)), at: loaded.moment))
     return .write(plan)
   }
 }
@@ -240,11 +289,26 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   static let asked = Mutex(0)
   // The log's now, so an answer is stamped on the day the room reads as today.
   static let now = Mutex<Int64>(0)
-  // The open stream waiting for the phone's results or its Stop, and the frames it still owes.
+  // The open stream and the frames it still owes: sent once the phone's results land, after which the stream closes or
+  // stays open for Stop, whose own frames end it.
   nonisolated final class Held: @unchecked Sendable {
     let stream: CoachFixtureProtocol
     let frames: [String]
-    init(_ stream: CoachFixtureProtocol, frames: [String]) { self.stream = stream; self.frames = frames }
+    let finishes: Bool
+    let onStop: [String]
+    init(_ stream: CoachFixtureProtocol, frames: [String], finishes: Bool, onStop: [String]) {
+      self.stream = stream; self.frames = frames; self.finishes = finishes; self.onStop = onStop
+    }
+    func deliver() -> Held? {
+      for frame in frames { stream.client?.urlProtocol(stream, didLoad: Data(frame.utf8)) }
+      guard finishes else { return Held(stream, frames: [], finishes: true, onStop: onStop) }
+      stream.client?.urlProtocolDidFinishLoading(stream)
+      return nil
+    }
+    func stop() {
+      for frame in onStop { stream.client?.urlProtocol(stream, didLoad: Data(frame.utf8)) }
+      stream.client?.urlProtocolDidFinishLoading(stream)
+    }
   }
   static let held = Mutex<Held?>(nil)
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -275,39 +339,50 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     if path == "/v1/oauth/grants" { respond(200, ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]]); return }
     if path == "/v1/mcp-keys" { respond(200, ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]]); return }
     if path == "/v1/gym/coach/turns" {
-      // A deployment without Coach mounts no turn route; a spent allowance or the day's cap refuses every question after the first.
+      // A deployment without Coach mounts no turn route; a spent allowance, the day's cap or the board's own refusal
+      // meets every question after the first.
       if arguments.contains("-coach-unavailable") { respond(404, [:], type: "text/html"); return }
       let asked = Self.asked.withLock { $0 += 1; return $0 }
       if arguments.contains("-coach-allowance-spent"), asked > 1 { respond(429, ["error": "allowance", "code": "subject_exhausted"]); return }
       if arguments.contains("-coach-daily-cap"), asked > 1 { respond(429, ["error": "later", "code": "coach-rate-limited"]); return }
-      let said = CoachFixtureConversation(asked: body["question"] as? String)
-      let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
-      client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
-      let answer = Self.frame("text", ["delta": said.answer]) + Self.frame("done", ["state": "completed"])
-      if said.held {
-        if !said.partial.isEmpty { client?.urlProtocol(self, didLoad: Data(Self.frame("text", ["delta": said.partial]).utf8)) }
-        let held = Held(self, frames: [Self.frame("done", ["state": "stopped"])])
-        Self.held.withLock { $0 = held }
-        return
+      if case .refused(let status, let code, let resetsAtMs)? = CoachBoard.current?.secondSend, asked > 1 {
+        var refusal: [String: Any] = ["error": code, "code": code]
+        if let resetsAtMs { refusal["allowance"] = ["code": code, "budgetResetsAtMs": resetsAtMs] }
+        respond(status, refusal); return
       }
-      guard !said.calls.isEmpty else { client?.urlProtocol(self, didLoad: Data(answer.utf8)); client?.urlProtocolDidFinishLoading(self); return }
+      let said = CoachFixtureConversation(asked: body["question"] as? String)
+      open()
+      let owed = Held(self, frames: said.frames, finishes: said.end != .held, onStop: [Self.frame("done", ["state": "stopped"])])
+      guard !said.calls.isEmpty else { Self.held.withLock { $0 = owed.deliver() }; return }
+      Self.held.withLock { $0 = owed }
       let calls = said.calls.enumerated().map { index, call in ["callId": "toolu_\(index + 1)", "name": call.0, "input": call.1] as [String: Any] }
-      let held = Held(self, frames: [answer])
-      Self.held.withLock { $0 = held }
       client?.urlProtocol(self, didLoad: Data(Self.frame("calls", ["batch": 1, "calls": calls]).utf8))
       return
     }
     if path.hasPrefix("/v1/gym/coach/turns/"), path.hasSuffix("/results") {
       let owed = Self.held.withLock { held in defer { held = nil }; return held }
-      if let owed { for frame in owed.frames { owed.stream.client?.urlProtocol(owed.stream, didLoad: Data(frame.utf8)) }; owed.stream.client?.urlProtocolDidFinishLoading(owed.stream) }
+      if let owed { Self.held.withLock { $0 = owed.deliver() } }
       respond(200, ["batch": body["batch"] ?? 1]); return
     }
     if path.hasPrefix("/v1/gym/coach/turns/"), path.hasSuffix("/stop") {
       let owed = Self.held.withLock { held in defer { held = nil }; return held }
-      if let owed { owed.stream.client?.urlProtocol(owed.stream, didLoad: Data(Self.frame("done", ["state": "stopped"]).utf8)); owed.stream.client?.urlProtocolDidFinishLoading(owed.stream) }
+      owed?.stop()
       respond(202, ["state": "stopped"]); return
     }
+    // Coach §4.5 resume: the turn's stream again, from a snapshot of the text so far (08.52); a server that no longer
+    // holds the turn says so (08.50).
+    if path.hasPrefix("/v1/gym/coach/turns/"), request.httpMethod == "GET", CoachBoard.current?.situation == .resumable {
+      let said = CoachFixtureConversation()
+      open()
+      client?.urlProtocol(self, didLoad: Data(Self.frame("snapshot", ["text": said.text, "state": "running", "calls": NSNull()]).utf8))
+      Self.held.withLock { $0 = Held(self, frames: [], finishes: false, onStop: [Self.frame("done", ["state": "stopped"])]) }
+      return
+    }
     respond(404, ["error": "no such turn", "code": "coach-turn-unknown"])
+  }
+  func open() {
+    let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+    client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
   }
   func respond(_ status: Int, _ response: [String: Any], type: String = "application/json") {
     let http = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": type])!
@@ -321,44 +396,59 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
 }
 
 // One conversation per fixture state: a change to Push A, its removal read from totals (`-coach-removal`), a routine and a note
-// (`-coach-created`), a Markdown answer (`-coach-markdown`), and Coach held mid-answer (`-coach-streaming`) or before its
-// first word (`-coach-thinking`). `calls` are the ability calls the server's batch asks the phone to run, by name and input.
+// (`-coach-created`), a Markdown answer (`-coach-markdown`), Coach held mid-answer (`-coach-streaming`) or before its
+// first word (`-coach-thinking`), or a board's own turn. `calls` are the ability calls the server's batch asks the phone to
+// run, by name and input; `text` streams after their results, and `end` says how the stream closes.
 nonisolated struct CoachFixtureConversation {
+  enum End: Equatable { case completed, truncated, declined, failed(String), held, lost }
   let question: String
-  let partial: String
-  let answer: String
-  var held = false
+  let text: String
+  var end = End.completed
   var calls: [(String, [String: Any])] = []
 
   init(arguments: [String] = ProcessInfo.processInfo.arguments, asked: String? = nil) {
     let session: (String, [String: Any]) = ("get_session", ["sessionId": "coach-fixture-session"])
     if let board = CoachBoard.current {
       let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
-      question = turn.question; partial = turn.answer; answer = turn.answer
+      question = turn.question; text = turn.answer; end = turn.end
       calls = turn.calls(board)
     } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
-      held = !arguments.contains("-coach-markdown")
+      let held = !arguments.contains("-coach-markdown")
       question = arguments.contains("-coach-thinking") ? "My program, 3 days a week" : "What should Thursday look like?"
-      partial = arguments.contains("-coach-thinking") ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
-      answer = "## Thursday · Push A\n\nKeep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.\n\n"
+      let partial = arguments.contains("-coach-thinking") ? "" : "Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…"
+      text = held ? partial : "## Thursday · Push A\n\nKeep the same total work each week. Do 3 sets of 3 at 90 kg for a heavier top set.\n\n"
         + "- Bench Press — 3 × 3 at 90\n- Incline Press — 3 × 10 at 24\n- Triceps Pushdown — 3 × 12\n\n"
         + "| Movement | Last | Next |\n|---|---|---|\n| Bench Press | 5 × 5 · 82.5 | 3 × 3 · 90 |\n| Incline Press | 3 × 10 · 22 | 3 × 10 · 24 |\n| Pushdown | 3 × 12 · 30 | 3 × 12 · 30 |"
+      end = held ? .held : .completed
       calls = held ? [] : [session]
     } else if arguments.contains("-coach-created") {
-      question = "Build me a routine."; partial = "Push A is in your routines."
-      answer = "Push A is in your routines: back squat, one set of five at 80."
+      question = "Build me a routine."
+      text = "Push A is in your routines: back squat, one set of five at 80."
       calls = [("create_routine", ["id": "coach-fixture-routine", "name": "Push A", "position": 0, "entries": CoachBoard.json([CoachBoard.entry("back-squat", 1, 5, 80)])]),
                ("save_note", ["id": "board-note", "title": "Shoulder", "body": "Left shoulder hurts on wide-grip bench. Use a close grip."])]
     } else if arguments.contains("-coach-removal") {
-      question = "Remove Push A."; partial = "Push A has not moved your squat in six weeks."
-      answer = "Push A has not moved your squat in six weeks. Removing it leaves every set you logged where it is."
+      question = "Remove Push A."
+      text = "Push A has not moved your squat in six weeks. Removing it leaves every set you logged where it is."
       calls = [("get_stats", [:]), ("propose_routine_removal", ["id": "coach-fixture-proposal", "routineId": "coach-fixture-routine", "summary": "Push A has stopped moving your squat."])]
     } else {
-      question = "Is Push A still doing anything?"; partial = "Keep the weekly work steady."
-      answer = "## Your next block\n\nKeep the weekly work steady. **Three triples at 90** gives you a top set to push."
+      question = "Is Push A still doing anything?"
+      text = "## Your next block\n\nKeep the weekly work steady. **Three triples at 90** gives you a top set to push."
       calls = [session, ("propose_routine_change", ["id": "coach-fixture-proposal", "routineId": "coach-fixture-routine", "name": "Push A2",
         "entries": CoachBoard.json([CoachBoard.entry("back-squat", 1, 3, 90), RoutineEntry(exerciseId: ID("bench-press"))]),
         "summary": "Three triples at 90 keeps the weekly tonnage and gives you a top set to push."])]
+    }
+  }
+
+  // The frames after the batch's results: the text, then how the stream ends — a terminal frame, nothing while it is
+  // held for Stop, or nothing at all when the connection is lost.
+  var frames: [String] {
+    let words = text.isEmpty ? [] : [CoachFixtureProtocol.frame("text", ["delta": text])]
+    switch end {
+    case .completed: return words + [CoachFixtureProtocol.frame("done", ["state": "completed"])]
+    case .truncated: return words + [CoachFixtureProtocol.frame("done", ["state": "completed", "truncated": true])]
+    case .declined: return words + [CoachFixtureProtocol.frame("done", ["state": "declined"])]
+    case .failed(let code): return words + [CoachFixtureProtocol.frame("error", ["code": code])]
+    case .held, .lost: return words
     }
   }
 
@@ -380,8 +470,9 @@ nonisolated struct CoachFixtureConversation {
   }
 }
 
-// A Figma board's conversation (`-coach-board 08.17`): the routines it starts from, what Coach proposes for them, and
-// what it says to each question; a board may then change a routine under its proposal.
+// A Figma board's conversation (`-coach-board 08.17`): the routines it starts from, what Coach proposes for them, what it
+// says to each question and how each turn ends; a board may then change a routine under its proposal, meet the next
+// send with a refusal, or stand in a situation the fixture seeds.
 nonisolated struct CoachBoard {
   struct Proposed { let id: String; let routine: String; let name: String; let entries: [RoutineEntry]; var removing = false }
   struct Turn {
@@ -390,10 +481,13 @@ nonisolated struct CoachBoard {
     var proposals: [String] = []
     var creates: [(id: String, name: String, entries: [RoutineEntry])] = []
     var note: (String, String)?
+    var movement: Exercise?
     // Signed out, a note Coach wants to save needs the account: the phone refuses it, and the answer offers Sign in.
     var needsAccount = false
+    var end = CoachFixtureConversation.End.completed
 
-    // The batch the server asks of the phone for this turn: the proposals it writes, the routines it creates, the note.
+    // The batch the server asks of the phone for this turn: the proposals it writes, the routines it creates, the note,
+    // the movement.
     func calls(_ board: CoachBoard) -> [(String, [String: Any])] {
       var calls: [(String, [String: Any])] = []
       for id in proposals {
@@ -405,14 +499,25 @@ nonisolated struct CoachBoard {
         calls.append(("create_routine", ["id": routine.id, "name": routine.name, "position": index, "entries": CoachBoard.json(routine.entries)]))
       }
       if let note { calls.append(("save_note", ["id": "board-note", "title": note.0, "body": note.1])) }
+      if let movement {
+        calls.append(("create_exercise", ["id": movement.id.description, "name": movement.name, "pattern": movement.pattern, "equipment": movement.equipment, "stepKg": movement.stepKg]))
+      }
       if needsAccount { calls.append(("save_note", ["id": "board-account-note", "title": "Push A", "body": "Make Push A harder."])) }
       return calls
     }
   }
+  // What the send after the board's first answer meets (08.38–08.45): the server's refusal by status and code, with
+  // the moment a shared pool refills, or this phone's own admission.
+  enum SecondSend: Equatable { case refused(Int, String, resetsAtMs: Int64?), connectionGone, workoutOpen, logArriving, tooLong }
+  // A situation the fixture seeds around the board: the phone's own workouts signed out (01.19), a turn another device
+  // is answering (08.51), the account changing under a draft (08.6), a turn that resumes from its snapshot (08.52).
+  enum Situation: Equatable { case signedOutWorkouts, anotherDevice, accountChanging, resumable }
   var routines: [(id: String, name: String, entries: [RoutineEntry])]
   var proposals: [Proposed]
   var turns: [Turn]
   var editedAfter: (id: String, entries: [RoutineEntry])?
+  var secondSend: SecondSend?
+  var situation: Situation?
 
   static var current: CoachBoard? {
     let arguments = ProcessInfo.processInfo.arguments
@@ -456,6 +561,25 @@ nonisolated struct CoachBoard {
   }
 
   static let squatsAnswer = "Choose a weight you can lift 8 times with good form. Do 5 reps. The app remembers it for next time."
+  static let thursday = "What should Thursday look like?"
+  static let stalled = CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+    turns: [Turn(question: "Bench has stalled for three weeks. Is Push A still doing anything?",
+                 answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.")])
+  static let squats = CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+    turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer)])
+  // A turn that ends how the board says, on the routine and proposal of `change`.
+  static func ended(_ answer: String, _ end: CoachFixtureConversation.End, proposing: Bool = false, movement: Exercise? = nil) -> CoachBoard {
+    var board = change
+    board.turns = [Turn(question: thursday, answer: answer, proposals: proposing ? ["board-proposal"] : [], movement: movement, end: end)]
+    return board
+  }
+  static func after(_ secondSend: SecondSend, of board: CoachBoard = stalled) -> CoachBoard {
+    var next = board; next.secondSend = secondSend; return next
+  }
+  static func standing(in situation: Situation, _ board: CoachBoard = stalled) -> CoachBoard {
+    var next = board; next.situation = situation; return next
+  }
+  static let pullUp = Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5)
   static let all: [String: CoachBoard] = [
     "after-sign-in": CoachBoard(routines: [], proposals: [
         Proposed(id: "board-proposal", routine: "setup-routine-B", name: "Full body B",
@@ -463,13 +587,10 @@ nonisolated struct CoachBoard {
       turns: [Turn(question: "Build a short full body routine for three days each week", answer: "Here are three full-body days. They are in Routines now.", creates: fullBody),
               Turn(question: "Build me a three day full body program", answer: "Here are three full-body days. They are in Routines now.", creates: fullBody),
               Turn(question: "Swap chin-ups for pulldowns", answer: "Here is a change for Full body B.", proposals: ["board-proposal"])]),
-    "squats": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
-      turns: [Turn(question: "How heavy should I start squats?", answer: squatsAnswer)]),
+    "squats": squats,
     "needs-account": CoachBoard(routines: [], proposals: [],
       turns: [Turn(question: "Make Push A harder", answer: "I need your account to change a routine. Sign in, then ask again.", needsAccount: true)]),
-    "stalled": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
-      turns: [Turn(question: "Bench has stalled for three weeks. Is Push A still doing anything?",
-                   answer: "Your Bench Press has not gone up in 3 weeks. You did 5 × 5 at 82.5 kg nine times.")]),
+    "stalled": stalled,
     "note": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
       turns: [Turn(question: "My left shoulder hurts on wide-grip bench.", answer: "I saved this as a note. I will use it when I plan.",
                    note: ("Shoulder", "Left shoulder hurts on wide-grip bench. Use a close grip."))]),
@@ -515,6 +636,31 @@ nonisolated struct CoachBoard {
       routine: ("Push A", [bench, entry("incline-bench-press", 3, 10, 24), entry("overhead-press", 3, 8, 40), entry("lateral-raise", 3, 12), entry("triceps-pushdown", 3, 12, 30, rest: 60), entry("cable-fly", 3, 12, 15)]),
       proposed: ("Push Day", [entry("overhead-press", 3, 8, 40), heavier, ladder("incline-bench-press", [(10, 24), (10, 24), (8, 26)]), entry("lateral-raise", 3, 15),
                               entry("triceps-pushdown", 3, 12, 30, rest: 90), entry("dip", 3, nil), entry("face-pull", 3, 15, 12.5)])),
+    // The local Coach's states: a turn under way with its step line, resumed from its snapshot; a movement made;
+    // every way a turn ends short; every refusal of the next send; and the situations around the room.
+    "steps": ended("Thursday is still a Push day. Keep the same total work, and change the last set to a heavier…", .held),
+    "resume": standing(in: .resumable, ended("Thursday is still a Push day. Keep the same total work, and change the last set to a heavier triple. Bench first: 3 sets of 5 at 82.5 kg, then one", .lost)),
+    "movement": CoachBoard(routines: [(id: "board-routine", name: "Push A", entries: pushB)], proposals: [],
+      turns: [Turn(question: "Add incline dumbbell press to my movements. I go up in 2.5 kg steps.",
+                   answer: "Done. Incline Dumbbell Press is in your movements: dumbbells, 2.5 kg steps.",
+                   movement: Exercise(id: ID("board-incline-dumbbell-press"), name: "Incline Dumbbell Press", pattern: "press", equipment: "dumbbell", stepKg: 2.5))]),
+    "truncated": ended("Thursday is still a Push day. Keep the same total work and change the last set to a heavier triple. For the bench, start at", .truncated),
+    "declined": CoachBoard(routines: stalled.routines, proposals: [], turns: [Turn(question: stalled.turns[0].question, answer: "", end: .declined)]),
+    "failed": ended("Thursday is still a Push day.", .failed("coach-vendor-error")),
+    "stopped": ended("Thursday is still a Push day. I set Pull-up to bodyweight first, then", .held, movement: pullUp),
+    "interrupted": ended("Thursday is still a Push day. I set Pull-up to bodyweight first, then", .lost, movement: pullUp),
+    "no-connection": after(.connectionGone),
+    "workout-open": after(.workoutOpen),
+    "log-arriving": after(.logArriving),
+    "too-long": after(.tooLong),
+    "invalid-installation": after(.refused(401, "invalid_installation", resetsAtMs: nil), of: squats),
+    "device-bound": after(.refused(403, "device_bound", resetsAtMs: nil), of: squats),
+    "free-month": after(.refused(429, "free_month_exhausted", resetsAtMs: 1_793_491_200_000)),
+    "update-required": after(.refused(426, "coach-update-required", resetsAtMs: nil)),
+    "signed-out-reads": standing(in: .signedOutWorkouts, CoachBoard(routines: [], proposals: [],
+      turns: [Turn(question: "How heavy should I start squats?", answer: "You squatted 40 kg for 8 twice last week and logged it as easy. Start at 45 kg and do 5 reps.")])),
+    "another-device": standing(in: .anotherDevice),
+    "account-changing": standing(in: .accountChanging),
   ]
 }
 #endif
