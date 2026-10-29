@@ -498,14 +498,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
   screenshot.
-- **9f · Onboarding gym drawings trail the phone racks.** Shell · Android A4 (`2:10131`,
-  Daylight `2:10203`) retains the obsolete *Set / kg / Reps* header in its embedded rack.
-  `OnboardingGlimpses.kt` draws the approved current-rack substitution: three headerless rows,
+- **9f · iOS onboarding gym drawing follow-up.** Shell · Android A4 (`2:10131`,
+  Daylight `2:10203`) matches the approved current-rack substitution: three headerless rows,
   the checked current row, glyph clocks, *100 kg total*, *5 reps* and the full-width *Log set*.
-  Redraw only A4's embedded rack from Gym · Android 03.13 (`1252:28829`), preserving the Shell
-  card, copy, pager and actions. The iOS code already reuses `MovementLedger`, `WorkoutLedgerRow`
-  and `GymNumeral` (`OnboardingGlimpses.swift`); inspect the iOS A4 drawing and `_Glimpse / Gym`
-  (`210:56`) against that current rack before editing them.
+  Its editable miniature preserves the Shell card, copy, pager, actions and surrounding geometry.
+  The iOS code already reuses `MovementLedger`, `WorkoutLedgerRow` and `GymNumeral`
+  (`OnboardingGlimpses.swift`); inspect the iOS A4 drawing and `_Glimpse / Gym` (`210:56`)
+  against that current rack before editing them.
 - **9g · Where each product lives.** The iOS app tags both rooms *In this app* (`Onboarding.swift`);
   Android tags Journal *On the web* and Gym *In this app* (`gym/src/main/res/values/onboarding.xml`).
   Decide whether Android's tags name the iPhone.

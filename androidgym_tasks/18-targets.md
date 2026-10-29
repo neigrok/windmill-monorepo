@@ -1,18 +1,20 @@
 # One movement editor for name, equipment and targets; one outer routine Save
 
-**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25.
+**Status:** On main at `95b83e80` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+
+**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25.
 
 **Figma:**
 - 02.6 Combined movement editor: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44962)
 - 02.11 Combined movement editor, Vary by set expanded on the same route: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29263) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45508)
-- 02.19 Regular Load unit below at 320dp/200%: [Approved frame](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960), ✅ Ready for dev, human-approved 2026-10-28. Keep 20sp value and 16sp unit bases, side controls, native minus and pinned Done. Expansion stays while focused through valid zero; longer text retains native horizontal editing. The older full-width/buttons-below proposal is unapproved.
+- 02.19 Regular Load unit below at 320dp/200%: [Approved frame](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960), 🚀 In production, human-approved 2026-10-28. Keep 20sp value and 16sp unit bases, side controls, native minus and pinned Done. Expansion stays while focused through valid zero; longer text retains native horizontal editing. The older full-width/buttons-below proposal is unapproved.
 - Components (Design System library, Android page):
   - `Android / Number stepper` `337:2514`
   - `Android / Keyboard` `337:2403` (Number and Decimal)
   - `Android / Swipe row` `337:2217`
   - `Android / Button` `210:181`
 
-**Shared equipment control:** [Canonical Android section](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), ✅ Ready for dev, human-approved 2026-10-26. The combined uniform/per-set, add, keyboard, invalid, unsaved and Load-focus drawings on the canonical Android page use this approved shared control. The existing Name/Equipment/Targets composition and staged Add/Done routes remain unchanged.
+**Shared equipment control:** [Canonical Android section](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), 🚀 In production, human-approved 2026-10-26. The combined uniform/per-set, add, keyboard, invalid, unsaved and Load-focus drawings on the canonical Android page use this approved shared control. The existing Name/Equipment/Targets composition and staged Add/Done routes remain unchanged.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `ui/RoutineBuilder.kt` opens `MovementForm` for uniform/per-set targets, name and equipment. Routine creation stages stable movement identities in the owning draft.

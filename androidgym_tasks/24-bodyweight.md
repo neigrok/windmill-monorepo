@@ -1,6 +1,8 @@
 # Compact native Weigh-in, calendar date staging and nine-second Undo
 
-**Approved flow:** [Weigh-in](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) — ✅ Ready for dev, human-approved 2026-10-25.
+**Status:** On main at `b071acc1` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+
+**Approved flow:** [Weigh-in](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) — human-approved 2026-10-25.
 
 **Figma:**
 - 06.1 Weigh in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-31991) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-46006)
@@ -18,7 +20,7 @@
 - Bodyweight retains its ordinary chart and Every weigh-in drilldown, uses the standard M3 outlined segmented row/check, and routes row swipe plus correction Delete through the same durable held-delete path as the Log.
 - The engine owns the original nine-foreground-second deadline, rewrite/expiry guards and account/restart release. A fresh same-origin/user/identityRevision Account wrapper retains only current engine-backed weight receipts; reconnect revalidates the replica, offer and exact deadline inside the guarded connection pipeline. Released, expired or foreign offers cannot renew Undo. Failed holds retain the row with an honest error, and refused released deletes restore the authoritative fact and notice.
 - Compact/calendar/cross-screen/state checks pass, and the held-weight lifecycle suite passes 15 cases without skips, including fresh wrappers, changed origin/revision, released/expired offers, owner changes and reported reconnect read failure. The composed capture-tool suite passes 31 cases.
-- Installed paired ordinary states and changed-date Cancel/Use/reopen/recreation pass. Native Save reaches the selected day with all six prior facts unchanged. Recreation retains the exact original engine deadline; Bodyweight→Log Undo restores the row while all server facts remain unchanged. The review packet retains timing/fixture qualifications and bounded intake receipts. Unexpected failure branches are deterministic unit coverage; no native unexpected Issue is claimed. No production status is claimed.
+- Installed paired ordinary states and changed-date Cancel/Use/reopen/recreation pass. Native Save reaches the selected day with all six prior facts unchanged. Recreation retains the exact original engine deadline; Bodyweight→Log Undo restores the row while all server facts remain unchanged. The review packet retains timing/fixture qualifications and bounded intake receipts. Unexpected failure branches are deterministic unit coverage; no native unexpected Issue is claimed. The implementation is on main.
 
 **Change**
 - Implement the approved compact Weigh-in composition: normal sheet about 314 dp, inline-error example 340 dp, with responsive height/scrolling rather than an unconditional fixed height. Weight, Date and **Save weight** fit above the Decimal IME; remove excess bottom padding and any additional backing panel. Preserve native status/navigation insets and 48 dp minimum targets. The canonical 360×800 compact example is the minimum screenshot check, not permission to clip larger text.

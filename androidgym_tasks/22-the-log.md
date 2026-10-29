@@ -1,6 +1,8 @@
 # The log: every weigh-in in chronology, distinct rows and Weigh in FAB
 
-**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25.
+**Status:** On main at `f10e503c` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+
+**Approved flow:** [Log](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25.
 
 **Figma:**
 - 05.1 The log, Weigh in FAB: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39988)
@@ -22,7 +24,7 @@
 - The 56 dp Material 3 Extended FAB sits at bottom end with 88 dp list clearance. Empty copy says **No workouts yet**; a weight-only Log displays its facts. The separate recovery entry remains room-owned for task 25.
 - The presentation model and engine adapter preserve an absent `recordedAt` as null; the correction state's saver retains null across recreation.
 - Read-model, row, sharing, navigation and restoration checks pass. Share coverage includes clipboard failure, mint refusal, retry and delayed A→B/A→B→A replies without capability publication. The composed capture-tool suite passes 31 cases.
-- Installed Dark/Daylight acceptance covers chronology, distinct rows, direct Record, empty Log, confirmation and weight Undo. The 320×640 dp, double-text Log keeps its full long title and valid time readable, and the last row clears the FAB. Confirmed removal reaches the server; bounded first-party events arrive. Native evidence is combined across attributed runs, with fixture/observer qualifications retained in the review packet. No production status is claimed.
+- Installed Dark/Daylight acceptance covers chronology, distinct rows, direct Record, empty Log, confirmation and weight Undo. The 320×640 dp, double-text Log keeps its full long title and valid time readable, and the last row clears the FAB. Confirmed removal reaches the server; bounded first-party events arrive. Native evidence is combined across attributed runs, with fixture/observer qualifications retained in the review packet. The implementation is on main.
 
 **Change**
 - Build one newest-first timeline with every finished workout and every weigh-in as independent entries. Remove the top-level **Bodyweight** card/header. Keep existing training-consistency copy and the separate On this phone recovery entry (25) without turning weight into another root-level section.

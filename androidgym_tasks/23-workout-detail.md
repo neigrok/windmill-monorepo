@@ -1,6 +1,8 @@
 # Workout detail
 
-**Approved flow:** [Log / Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — ✅ Ready for dev, human-approved 2026-10-25. Workout discard uses the approved [Finish overflow confirmation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362); weight Undo remains separate.
+**Status:** On main at `cadb48f6` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+
+**Approved flow:** [Log / Finish](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39834) — human-approved 2026-10-25. Workout discard uses the approved [Finish overflow confirmation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-32362); weight Undo remains separate.
 
 **Figma:**
 - 05.3 Workout detail: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-27642) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-30969)
@@ -14,7 +16,7 @@
 - `ui/SessionScreen.kt` keeps the routine title, saved plan, detail-set fixes and swipe deletion. Movement headers use the existing equipment glyph and the stored load basis. The shared native error-text button opens the room-owned single confirmation with **Discard workout**.
 - `domain/Training.kt` derives each Android-local comparison effort from every performed set. It retains the scalar top set for comparison predicates and legacy decode, plus serialized rep/load bounds for the displayed range and recreation.
 - `ui/FinishScreen.kt` formats the full effort range for `ReviewRemarks`, whose reader is workout detail. The Finish receipt retains its own approved fact/action presentation.
-- The affected source gate passes 87 gym checks with no failures, errors or skips; app Debug compilation passes. `tools/capture-recipes/workout-detail.json` and `workout-detail-fixture.json` cover the five-set example and paired top/bottom/dialog frames. Paired Dark/Daylight detail, bottom actions and five-set confirmation are accepted on frozen source `8d844b43` (APK `6d3ad11a…`). The preserved intake contains session views and discard shown/cancelled/ok steps. Retained post-reset runtime and app exit history show no product fatal/ANR; the pre-reset boot log was not separately exported. The flow remains Ready for dev until shipment.
+- The affected source gate passes 87 gym checks with no failures, errors or skips; app Debug compilation passes. `tools/capture-recipes/workout-detail.json` and `workout-detail-fixture.json` cover the five-set example and paired top/bottom/dialog frames. Paired Dark/Daylight detail, bottom actions and five-set confirmation are accepted on frozen source `8d844b43` (APK `6d3ad11a…`). The preserved intake contains session views and discard shown/cancelled/ok steps. Retained post-reset runtime and app exit history show no product fatal/ANR; the pre-reset boot log was not separately exported. Its canonical task states are marked 🚀 In production.
 
 **Change**
 - The title is the routine; a workout with no routine reads `Readout.noRoutine` (13).

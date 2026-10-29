@@ -1,6 +1,8 @@
 # The routine editor's History, and *· yours* on a movement the lifter made
 
-**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25.
+**Design status:** 02.13 History remains ✅ Ready for dev; the shared routine editor is in production.
+
+**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25.
 
 **Figma:**
 - 02.13 Routine editor, History: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39087) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-39184)

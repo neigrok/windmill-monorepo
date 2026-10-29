@@ -886,14 +886,15 @@ owned rig is stopped, its retired AVD removed and all acceptance evidence retain
 
 Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
 The human-approved [02.19 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
-is Ready for dev on the canonical Android page. It keeps a realistic signed load visible at narrow
+is marked In production on the canonical Android page. It keeps a realistic signed load visible at narrow
 width and enlarged text. Task 18 implements and verifies that exact focused Load scope; the older
 full-width/buttons-below fallback remains unapproved.
 
 ## Shared load and Finish integration observations
 
-The prepared Android batch contains tasks 18, 22, 23, 24, 45 and 52, with one commit per task.
-Its Android tree is `004fc4c3373eaa16a93cbc9944d724d6edd48df4`. Both Debug and Release gym
+The Android batch on main contains tasks 18, 22, 23, 24, 45, 51 and 52, with one commit per task.
+The combined six-task gate uses evidence tree `004fc4c3373eaa16a93cbc9944d724d6edd48df4`;
+Connected log has its separate 47-case and native gate below. Both Debug and Release gym
 suites pass 1,412 cases with 17 opt-in LiveWire skips each; platform passes 140 cases and App
 passes 48, with no failures/errors. Debug assembles. The native task packets name their exact
 source, APK, backend and retained evidence; no native failure injection is inferred from unit tests.
@@ -1105,7 +1106,7 @@ reads use the approved internet sentence; missing authenticated transport remain
 failure boundaries stay `gym.refreshConnectedLog` and `gym.openConnections`. Existing Room
 `gym_screen_viewed` events retain `screen=connections|notes`; the task adds no event name.
 
-All eight linked frames are Ready for development on fresh inspection. Supporting text uses the
+All eight linked frames are marked In production on the canonical Android page. Supporting text uses the
 Nunito 14 sp/20 sp roles, the connected heading is bold and the empty heading regular. Row title/support
 lines have no extra gap; the caption uses 8 dp above and 16 dp below. The forward icon is the
 existing 20 dp asset. The How chevron reuses the existing note chevron at 20 dp: its normalized
@@ -1140,4 +1141,22 @@ browser corrections are included, so these are bounded totals rather than whole-
 Fifteen Android SDK/release-attributed envelopes contain no Issues. Retained runtime/exit history
 has no product fatal/ANR marker. No native technical failure was injected, no read/browser Issue
 arrival is claimed and local intake does not establish vendor forwarding. Owned rig cleanup keeps
-all non-AVD evidence and leaves the shared collector unchanged. The flow stays Ready until shipment.
+all non-AVD evidence and leaves the shared collector unchanged. The source is on main and its canonical task states are marked In production.
+
+## Main batch verification and canon status
+
+Main `b40dd5e0` contains tasks 18, 22, 23, 24, 45, 51 and 52 as separate task commits.
+The active task pack has 30 of 42 tasks on main. The canonical shipped frames and complete
+Weigh-in/Connected-log flows are marked In production; mixed Routines/Workout parents and
+unfinished creation, History and Coach states retain their own statuses. Shell A4 reuses the
+approved headerless rack without changing its surrounding composition. The Target-summary
+proposal and postponed Coach actions remain outside the release scope.
+
+The web workflow retains the complete pinned `b40dd5e0` artifact, then holds before rsync because
+the live backend does not admit the new client interval. No compatibility cutoff is activated.
+The Lift CLI fixture includes its valid 900 kg set; all 66 tests pass with accurate finite-weight
+summary/docs. Hidden-workout tests use LocalActivity: lintDebug has zero errors/fatals and all
+five affected tests pass. Python HTTP probes use the configured API-contract directory, including
+backend-only layouts; seven affected tests pass through the actual configured CTest target.
+These support fixes change test/build admission and stale copy, not app behavior. Their main CI
+reruns remain required; the complete supported iOS run `40789910187` is green.

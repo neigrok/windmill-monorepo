@@ -1,12 +1,14 @@
 # Connected log follows iOS, names ChatGPT or Claude and says it saves notes; Notes signed out keeps one head line
 
+**Status:** On main at `eb34fb30` in batch `b40dd5e0`; the shipped canonical states are 🚀 In production. The coordinated app release remains pending.
+
 **Figma:**
 - 09.3 Connected log: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39148) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44042)
 - 09.4 Connected log, How this works: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39190) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44074)
 - 09.5 Connected log, nothing connected: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1334-17213) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1334-17366)
 - 09.6 Notes, signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39287) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-44142)
 
-**Approved states:** 09.3–09.6 above are ✅ Ready for dev, verified 2026-10-29. They remain Ready until shipment.
+**Approved states:** 09.3–09.6 above are 🚀 In production, verified 2026-10-29.
 
 **Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `domain/ConnectedLog.kt` names ChatGPT or Claude and includes saving notes at the Write level. Existing scope parsing, since-date semantics and account-wide static-key disclosure stay intact.

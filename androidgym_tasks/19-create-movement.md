@@ -1,6 +1,8 @@
 # Create movement in a routine draft or an active workout
 
-**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — ✅ Ready for dev, human-approved 2026-10-25. The live-workout picker/custom-create return is covered by the approved [Workout flow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036).
+**Design status:** 02.9/02.14 creation states remain ✅ Ready for dev; the shared editor and equipment control are in production.
+
+**Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25. The live-workout picker/custom-create return is covered by the approved [Workout flow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036).
 
 **Figma:**
 - 02.9 Create movement: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-29027) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-45281)
@@ -11,7 +13,7 @@
   - `Android / Keyboard` `337:2403`
   - `Android / Button` `210:181`
 
-**Shared equipment control:** [Canonical Android section](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), ✅ Ready for dev, human-approved 2026-10-26. The existing creation drawings use this approved shared control, with no One/Two selector or Name/Equipment hint. Their form and return-flow composition is retained.
+**Shared equipment control:** [Canonical Android section](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), 🚀 In production, human-approved 2026-10-26. The existing creation drawings use this approved shared control, with no One/Two selector or Name/Equipment hint. Their form and return-flow composition is retained.
 
 **Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
 - `CreateMovementSheet` (`ui/MovementPicker.kt:379-449`), in a `ModalBottomSheet` (:336-347):
