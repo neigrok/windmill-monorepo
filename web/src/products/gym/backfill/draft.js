@@ -42,13 +42,13 @@ function namedLoad(slot) {
   return slot.weightKg ?? null;
 }
 
-// The Nth set: the target's own value, then last time's Nth working set, then last time's last set.
+// The Nth set: the target's own value, then last time's Nth set, then last time's last set.
 function prefilledValues(slot, index, lifted) {
   const matching = lifted[index] ?? lifted[lifted.length - 1] ?? null;
   return { weightKg: namedLoad(slot) ?? matching?.weightKg ?? null, reps: slot.reps ?? matching?.reps ?? null };
 }
 
-// A movement as it arrives. An open entry takes last time's working sets as they were lifted, and
+// A movement as it arrives. An open entry takes last time's sets as they were lifted, and
 // none when it was never lifted; an added one takes them too, or one empty row to type into.
 function arrivingMovement({ exerciseId, target, reply, mint }) {
   const lastTime = lastTimeOf(reply);
@@ -230,7 +230,7 @@ export function sourceCaption(movement, edited) {
 
 // The ImportSession input: stable set identities and approximate instants chosen by the draft.
 // The set instants are spread evenly strictly inside the span and read as approximate; nothing
-// reads a rest interval off them. Every set is a working set.
+// reads a rest interval off them.
 export function importOf({ id, slot, draft }) {
   const flat = draft.movements.flatMap((movement) => movement.sets.map((set) => ({
     exerciseId: movement.exerciseId, weightKg: set.weightKg, reps: set.reps,
@@ -245,7 +245,6 @@ export function importOf({ id, slot, draft }) {
       id: `${id.replace(/^ses_/, 'set_')}_${index + 1}`,
       ...set,
       completedAt: slot.startedAt + Math.round((length * (index + 1)) / (flat.length + 1)),
-      kind: 'working',
     })),
   };
 }

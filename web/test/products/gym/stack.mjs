@@ -153,14 +153,14 @@ async function run() {
     await waitUntil(async () => { await pullToPhone(); return Boolean(await phoneGym.proposal('prop_fixture_settled')); }, { processes: [backend], label: 'phone pull' });
     await phoneGym.applyProposal('prop_fixture_settled');
     for (const [index, daysAgo, routineId, sets] of [
-      [1, 20, 'rt_fixture_main', [['back-squat', 40, 8, 'warmup'], ['back-squat', 80, 5, 'working'], ['pull-up', -10, 8, 'working']]],
-      [2, 12, 'rt_fixture_other', [['bench-press', 50, 8, 'working'], ['bench-press', 55, 8, 'working'], ['bench-press', 30, 12, 'drop']]],
-      [3, 5, 'rt_fixture_main', [['back-squat', 85, 5, 'working'], ['back-squat', 82.5, 6, 'working'], ['ex_fixture_custom', 24, 10, 'working']]],
+      [1, 20, 'rt_fixture_main', [['back-squat', 40, 8, null], ['back-squat', 80, 5, 8.5], ['pull-up', -10, 8, 8.5]]],
+      [2, 12, 'rt_fixture_other', [['bench-press', 50, 8, 8.5], ['bench-press', 55, 8, 8.5], ['bench-press', 30, 12, null]]],
+      [3, 5, 'rt_fixture_main', [['back-squat', 85, 5, 8.5], ['back-squat', 82.5, 6, 8.5], ['ex_fixture_custom', 24, 10, 8.5]]],
     ]) {
       const startedAt = now - daysAgo * day;
       await phoneGym.importSession({ id: `ses_fixture_${index}`, routineId, startedAt, finishedAt: startedAt + 3600000,
-        sets: sets.map(([exerciseId, weightKg, reps, kind], setIndex) => ({ id: `set_fixture_${index}_${setIndex}`, exerciseId, weightKg, reps, kind,
-          rpe: kind === 'working' ? 8.5 : null, note: 'Fixture set note', completedAt: startedAt + (setIndex + 1) * 600000 })) });
+        sets: sets.map(([exerciseId, weightKg, reps, rpe], setIndex) => ({ id: `set_fixture_${index}_${setIndex}`, exerciseId, weightKg, reps,
+          rpe, note: 'Fixture set note', completedAt: startedAt + (setIndex + 1) * 600000 })) });
     }
     await pushFromPhone();
     await waitUntil(async () => {
@@ -206,17 +206,17 @@ async function run() {
       assert.deepEqual((await reads.proposals({ state: 'pending' })).map(({ id }) => id), ['prop_fixture_pending']);
       assert.deepEqual((await reads.sessions()).map(({ id, setCount, workingSetCount, tonnageKg }) => ({ id, setCount, workingSetCount, tonnageKg })), [
         { id: 'ses_fixture_3', setCount: 3, workingSetCount: 3, tonnageKg: 1160 },
-        { id: 'ses_fixture_2', setCount: 3, workingSetCount: 2, tonnageKg: 840 },
-        { id: 'ses_fixture_1', setCount: 3, workingSetCount: 2, tonnageKg: 400 },
+        { id: 'ses_fixture_2', setCount: 3, workingSetCount: 3, tonnageKg: 1200 },
+        { id: 'ses_fixture_1', setCount: 3, workingSetCount: 3, tonnageKg: 720 },
       ]);
       assert.deepEqual((await reads.sessions({ limit: 1 })).map(({ id }) => id), ['ses_fixture_3']);
       for (const index of [1, 2, 3]) {
         assert.deepEqual(await reads.session(`ses_fixture_${index}`), await request(`/v1/gym/sessions/ses_fixture_${index}`));
         const review = await reads.review(`ses_fixture_${index}`);
-        assert.equal(review.stats.workingSets, index === 3 ? 3 : 2);
+        assert.equal(review.stats.workingSets, 3);
         assert.equal(review.slight, true);
       }
-      assert.deepEqual((await reads.history({ timeZone: 'UTC' })).summary, { sessions: 3, sets: 7, reps: 50, tonnageKg: 2400 });
+      assert.deepEqual((await reads.history({ timeZone: 'UTC' })).summary, { sessions: 3, sets: 9, reps: 70, tonnageKg: 3080 });
       assert.deepEqual((await reads.history({ exercise: 'back-squat', timeZone: 'UTC' })).sessions.map(({ id }) => id), ['ses_fixture_3', 'ses_fixture_1']);
       assert.deepEqual((await reads.history({ routine: 'rt_fixture_other', timeZone: 'UTC' })).sessions.map(({ id }) => id), ['ses_fixture_2']);
       const firstPage = await reads.history({ limit: 1, timeZone: 'UTC' });
@@ -280,7 +280,7 @@ async function run() {
       await page.locator('.gym-mirror-head').filter({ hasText: 'Training now' }).waitFor(); e2e++;
       assert.equal(await page.locator('.gym-mirror button').count(), 0, 'mirror must never control a live workout');
       await phone.commit('self/gym', [{ op: 'create', t: 'set', id: 'set_fixture_phone', f: { sessionId: 'ses_fixture_phone', exerciseId: 'back-squat',
-        weightKg: 92.5, reps: 5, kind: 'working', rpe: null, note: '', completedAt: Date.now() - 5000 } }]);
+        weightKg: 92.5, reps: 5, rpe: null, note: '', completedAt: Date.now() - 5000 } }]);
       await pushFromPhone();
       await page.locator('.gym-mirror-line').filter({ hasText: '92.5 × 5' }).waitFor(); e2e++;
       const phoneFinish = Date.now() - 1000;
@@ -309,7 +309,7 @@ async function run() {
       await page.waitForURL(`**#/gym/session/${importedId}?from=*`);
 
       const recoveredSet = { id: 'set_fixture_recovery', exerciseId: 'bench-press', setNumber: 1,
-        weightKg: 20, reps: 8, completedAt: imported.session.startedAt + 1, kind: 'warmup', rpe: 6, note: 'Recovered set' };
+        weightKg: 20, reps: 8, completedAt: imported.session.startedAt + 1, rpe: 6, note: 'Recovered set' };
       await page.evaluate(async ({ id, startedAt, finishedAt, set }) => {
         const { syncSession } = await import('/src/platform/sync/session.js');
         const { createGymApi } = await import('/src/products/gym/gymRuntime.js');

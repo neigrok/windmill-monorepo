@@ -48,7 +48,7 @@ export const TRAINED_WINDOW = 50;
 
 // How often each movement has been trained, counted off the log THIS PAGE ALREADY HOLDS: a session
 // summary carries the account's own name for every movement in it (`exercises`), so the count is
-// sessions that named it, not working sets — the wire ranks nothing by use and this invents no read.
+// sessions that named it, not sets — the wire ranks nothing by use and this invents no read.
 // A movement the log has never named is counted nowhere; what the log cannot fill is filled below.
 export function trainedCounts(sessions = []) {
   const counted = new Map();

@@ -4,7 +4,7 @@ import { correctionDraft, correctionWrite, readSetFields } from '../../../../src
 
 test('whole-workout correction preserves actual facts, shifts instants and renumbers per movement', () => {
   const session = { id: 'ses_a', startedAt: new Date(2026, 8, 7, 18).getTime(), finishedAt: new Date(2026, 8, 7, 19).getTime(), plan: { routine: 'Push A' } };
-  const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, kind: 'warmup', weightKg: 40, reps: 8, rpe: 7, note: 'steady', completedAt: session.startedAt + 600000 }];
+  const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, weightKg: 40, reps: 8, rpe: 7, note: 'steady', completedAt: session.startedAt + 600000 }];
   const draft = correctionDraft(session, sets);
   draft.date = '2026-09-08';
   draft.sets.push({ id: 'set_b', exerciseId: 'bench', fields: { weightKg: '60', reps: '8', rpe: '', note: '' } });
@@ -13,7 +13,6 @@ test('whole-workout correction preserves actual facts, shifts instants and renum
     requestId: 'fix_a', startedAt: session.startedAt + moved, finishedAt: session.finishedAt + moved, routineName: 'Push A',
     sets: [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, weightKg: 40, reps: 8, rpe: 7, note: 'steady', completedAt: session.startedAt + 600000 + moved }, { id: 'set_b', exerciseId: 'bench', setNumber: 2, weightKg: 60, reps: 8, rpe: null, note: '', completedAt: session.finishedAt + moved }],
   } });
-  assert.equal('kind' in correctionWrite(session, draft, 'fix_a').value.sets[0], false);
 });
 
 test('refused text remains in the draft and identifies its exact input without clamping it', () => {
@@ -26,7 +25,7 @@ test('refused text remains in the draft and identifies its exact input without c
 
 test('editing a set preserves the workout’s original sub-minute instants and rejects non-decimal input', () => {
   const session = { id: 'ses_a', startedAt: new Date(2026, 8, 7, 18, 0, 23, 450).getTime(), finishedAt: new Date(2026, 8, 7, 19, 1, 46, 900).getTime(), routineName: 'Push A' };
-  const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, kind: 'working', weightKg: 40, reps: 8, completedAt: session.startedAt + 12000 }];
+  const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, weightKg: 40, reps: 8, completedAt: session.startedAt + 12000 }];
   const draft = correctionDraft(session, sets);
   draft.sets[0].fields.weightKg = '42.5';
   const result = correctionWrite(session, draft, 'fix_a').value;
@@ -68,7 +67,7 @@ test('an unchanged local time keeps its exact DST-fold instant and an edited DST
   process.env.TZ = 'America/New_York';
   try {
     const session = { id: 'ses_fold', startedAt: Date.parse('2026-11-01T01:30:23-05:00'), finishedAt: Date.parse('2026-11-01T02:00:23-05:00'), routineName: 'Push A' };
-    const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, kind: 'working', weightKg: 60, reps: 101, rpe: 5, completedAt: session.startedAt + 12000 }];
+    const sets = [{ id: 'set_a', exerciseId: 'bench', setNumber: 1, weightKg: 60, reps: 101, rpe: 5, completedAt: session.startedAt + 12000 }];
     const draft = correctionDraft(session, sets);
     draft.sets[0].fields.weightKg = '62.5';
     const write = correctionWrite(session, draft, 'fix_a').value;

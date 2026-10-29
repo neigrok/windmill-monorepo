@@ -112,7 +112,7 @@ function Moat() {
           <div>
             <div className="gyLabel">Tuesday · week 6</div>
             <div className="gyWell" style={{ marginTop: 12, padding: '6px 14px' }}>
-              <SetRow n="1" reps="60 × 8 · warm-up" style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--warmup-ink)' }} />
+              <SetRow n="1" reps="60 × 8" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
               <SetRow n="2" reps="90 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
               <SetRow n="3" reps="95 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
               <SetRow n="4" reps="100 × 5" done style={{ color: 'var(--gym-ink)' }} />
@@ -159,7 +159,7 @@ function Moat() {
             </div>
           </div>
           <div className="gyWell" style={{ marginTop: 18, padding: '6px 14px' }}>
-            <SetRow n="1" reps="60 × 8 · warm-up" style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--warmup-ink)' }} />
+            <SetRow n="1" reps="60 × 8" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
             <SetRow n="2" reps="90 × 5" done style={{ borderBottom: '1px solid var(--gym-line)', color: 'var(--gym-ink-dim)' }} />
             <SetRow n="3" reps="95 × 5" done style={{ color: 'var(--gym-ink-dim)' }} />
             <SetRow n="4" reps="100 × 5" done gy="row4" className="gyFade" style={{ display: 'none', borderTop: '1px solid var(--gym-line)', color: 'var(--gym-ink)' }} />

@@ -97,7 +97,6 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
       setNumber: 1,
       weightKg: 80,
       reps: 8,
-      kind: 'working',
       note: '',
       completedAt: 1_909_001_000_000,
     }],

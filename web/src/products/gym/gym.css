@@ -378,7 +378,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font-size: 13px;
   color: var(--gym-ink-faint);
 }
-/* A set is marked rather than numbered; a warmup gets a bare point, in its own ink. */
+/* A set is marked rather than numbered. */
 .gym-set-mark {
   width: 12px;
   color: var(--set-done);
@@ -395,7 +395,6 @@ button.gym-set:focus-visible .gym-set-fix {
   font-size: 11px;
   color: var(--gym-ink-faint);
 }
-.gym-set-kind,
 .gym-set-rpe {
   font-size: 12px;
   color: var(--gym-ink-faint);
@@ -410,15 +409,6 @@ button.gym-set:focus-visible .gym-set-fix {
   margin-left: 28px;
   font-size: 13px;
   color: var(--gym-ink-dim);
-}
-.gym-set-warmup .gym-set-load {
-  color: var(--warmup-ink);
-  font-weight: 500;
-}
-.gym-set-warmup .gym-set-kind,
-.gym-set-warmup .gym-set-mark,
-.gym-set-warmup .gym-set-plan {
-  color: var(--warmup-ink);
 }
 
 /* The pieces the rooms share: the live dot, the toast voice, and the sheet chrome. */
@@ -3815,8 +3805,6 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-record-screen .gym-record-sub { margin: 16px 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
 .gym-record-more { margin-top: 24px; color: var(--gym-ink-dim); }
 .gym-record-more summary { cursor: pointer; font-size: 13px; }
-
-.gym-set-warmup .gym-set-rail i { background: var(--warmup-ink); }
 
 .gym-history-filter:has(button[aria-label^='Clear']) { box-shadow: inset 0 0 0 1px var(--color-brand); color: var(--gym-ink); }
 .gym-history-filter:has(button[aria-label^='Clear']) .gym-date-trigger,

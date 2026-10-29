@@ -15,7 +15,7 @@ for (const lifts of [[[70, 10], [80, 5]], [[80, 5], [70, 10]]]) {
       const startedAt = now - (2 - index) * 86400000;
       return [confirmed('session', sessionId, { startedAt, finishedAt: startedAt + 3600000 }),
         ...Array.from({ length: 4 }, (_, set) => confirmed('set', `set_${index}_${set}`, {
-          sessionId, exerciseId: 'bench-press', weightKg, reps, kind: 'working', completedAt: startedAt + set + 1,
+          sessionId, exerciseId: 'bench-press', weightKg, reps, completedAt: startedAt + set + 1,
         }))];
     });
     const history = gymReadView({ drawn: rows, stored: rows, firstPullComplete: true }, { now });

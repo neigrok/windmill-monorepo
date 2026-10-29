@@ -135,7 +135,7 @@ test('an open workout replaces the composer with truthful read-only context whil
   browserWith();
   const { CoachRoom, CoachBody, CoachMessage, WorkoutInProgress } = await loadScreen('products/gym/coach/CoachRoom.jsx');
   const log = roomLog({ session: { id: 'ses_live', startedAt: 1000, plan: { routine: 'Push', entries: [{ exerciseId: 'bench', sets: [{ weightKg: 60, reps: 8 }, { weightKg: 60, reps: 8 }] }] } },
-    catalog: [{ id: 'bench', name: 'Bench Press' }], sets: [{ id: 'set_1', exerciseId: 'bench', weightKg: 62.5, reps: 7, kind: 'working', setNumber: 1, completedAt: 2000 }] });
+    catalog: [{ id: 'bench', name: 'Bench Press' }], sets: [{ id: 'set_1', exerciseId: 'bench', weightKg: 62.5, reps: 7, setNumber: 1, completedAt: 2000 }] });
   const room = renderHook(t, () => CoachRoom({ log, accountId: 'alice' }));
   assert.equal(elementsOf(room.tree).some((element) => element.type === CoachBody), false);
   const refused = elementsOf(room.tree).find((element) => element.type === WorkoutInProgress);

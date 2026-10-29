@@ -116,7 +116,6 @@ export const CommandSpecs = Object.freeze([
     new TextSpec(`${command}.sets.exerciseId`, { unit: 'chars', min: 1, max: 64, trim: false, nfc: false }),
     new TextSpec(`${command}.sets.id`, { unit: 'chars', min: 8, max: 64, trim: false, nfc: false }),
     new TextSpec(`${command}.sets.note`, { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
-    new ChoiceSpec(`${command}.sets.kind`, ['warmup', 'working', 'drop', 'failure']),
   ]),
 ]);
 

@@ -15,8 +15,7 @@ import { browserWith, elementsOf, findByClass, loadScreen, renderHook, textOf } 
 const actualDraft = (set) => readSetFields(setFields(set)).value;
 
 const SET = {
-  id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4,
-  kind: 'working', rpe: 8.5, note: 'felt heavy', completedAt: 1_900_000_300_000,
+  id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy', completedAt: 1_900_000_300_000,
 };
 
 test('the draft opens on the set as it stands, every field the sheet can touch and no other', () => {
@@ -36,14 +35,6 @@ test('a fix carries the fields that moved and nothing else', () => {
   assert.deepEqual(fixOf(SET, { weightKg: 50, reps: 4, ...held }), { weightKg: 50 });
   assert.deepEqual(fixOf(SET, { weightKg: 47.5, reps: 5, ...held }), { reps: 5 });
   assert.deepEqual(fixOf(SET, { weightKg: 42.5, reps: 6, ...held }), { weightKg: 42.5, reps: 6 });
-});
-
-test('a fix never names the kind, so the kind the store holds stands whatever the set was', () => {
-  for (const kind of ['warmup', 'working', 'drop', 'failure']) {
-    const set = { ...SET, kind };
-    assert.deepEqual(actualDraft(set), { weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy' });
-    assert.deepEqual(fixOf(set, { ...actualDraft(set), reps: 6 }), { reps: 6 });
-  }
 });
 
 test('clearing an rpe or a note is NAMED, and a field nobody touched is not named at all', () => {

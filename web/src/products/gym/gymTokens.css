@@ -28,7 +28,6 @@
   --set-done: var(--color-success);              /* logged */
   --set-done-soft: var(--color-success-bg);
   --set-done-glow: rgba(154, 168, 89, 0.8);      /* dark-theme glow depth, per --kind-*-glow */
-  --warmup-ink: var(--neutral-500);              /* does not count toward volume */
   --unsynced-ink: var(--neutral-500);            /* saved on this device only; the web never is */
   --target-ink: var(--color-brand);              /* what the plan said */
   --pr-ink: var(--color-warning);                /* a personal record */
@@ -65,7 +64,6 @@
 
   --set-done: var(--color-success);
   --set-done-soft: var(--color-success-bg);
-  --warmup-ink: var(--neutral-500);
   --unsynced-ink: var(--neutral-500);
   --target-ink: var(--color-brand);
   --pr-ink: var(--accent-gold-700);

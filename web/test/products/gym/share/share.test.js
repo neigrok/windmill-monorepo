@@ -58,10 +58,10 @@ test('SHARED_TERMS — what the reader is told, with no date it cannot see', () 
 
 test('sharedGroups — the same order the owner sees, keyed on the name the wire carries', () => {
   const groups = sharedGroups([
-    { exercise: 'Bench Press', setNumber: 1, weightKg: 80, reps: 8, kind: 'working', note: '', completedAt: 300 },
-    { exercise: 'Back Squat', setNumber: 1, weightKg: 100, reps: 5, kind: 'working', note: '', completedAt: 100 },
-    { exercise: 'Bench Press', setNumber: 2, weightKg: 80, reps: 7, kind: 'working', note: '', completedAt: 400 },
-    { exercise: 'Back Squat', setNumber: 2, weightKg: 105, reps: 5, kind: 'working', note: '', completedAt: 200 },
+    { exercise: 'Bench Press', setNumber: 1, weightKg: 80, reps: 8, note: '', completedAt: 300 },
+    { exercise: 'Back Squat', setNumber: 1, weightKg: 100, reps: 5, note: '', completedAt: 100 },
+    { exercise: 'Bench Press', setNumber: 2, weightKg: 80, reps: 7, note: '', completedAt: 400 },
+    { exercise: 'Back Squat', setNumber: 2, weightKg: 105, reps: 5, note: '', completedAt: 200 },
   ]);
   assert.deepEqual(groups.map(([exercise]) => exercise), ['Back Squat', 'Bench Press']);
   assert.deepEqual(groups.map(([, sets]) => sets.map((set) => set.setNumber)), [[1, 2], [1, 2]]);

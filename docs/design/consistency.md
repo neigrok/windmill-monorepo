@@ -216,10 +216,7 @@ and Android disagree.
   / *drop* / *failure* as a set note (`SessionScreen.kt:128`), the Record's recent sets appending it
   (`domain/Record.kt:40-43`) and the saved-workout recovery's *Choose set kind*
   (`SettingsScreen.kt:240-242,268,293-308,370-383`), none of it on the Android boards (03.1, 03.3,
-  05.3, 05.6, 07.2, 07.3); the web, whose new-set rows carry a dead `kind: 'working'`
-  (`WorkoutEditor.jsx`, `backfill/draft.js`) that the domain's imported and corrected sets drop before
-  the wire, and which draws the share page's kinds and a warm-up set on the gym landing
-  (`GymLanding.jsx`). Build work: remove it on Android and the web.
+  05.3, 05.6, 07.2, 07.3). Build work: remove it on Android.
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from

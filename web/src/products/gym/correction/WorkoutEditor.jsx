@@ -58,7 +58,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   };
   const addSet = (exerciseId) => {
     const previous = draft.sets.filter((set) => set.exerciseId === exerciseId).at(-1);
-    const next = { id: mintId('set_'), exerciseId, kind: 'working', fields: previous ? { ...previous.fields, rpe: '', note: '' } : { weightKg: '', reps: '', rpe: '', note: '' } };
+    const next = { id: mintId('set_'), exerciseId, fields: previous ? { ...previous.fields, rpe: '', note: '' } : { weightKg: '', reps: '', rpe: '', note: '' } };
     setDraft((current) => ({ ...current, sets: [...current.sets, next] }));
     setPick(false);
     setSelected(exerciseId);
