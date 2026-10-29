@@ -103,7 +103,7 @@ class WorkoutRecoveryTests {
         val account = room.account("u1")
         runBlocking { room.select("u1") }
         pastWorkout(room, "Push A", 40.0, 8)
-        val warmup = runBlocking { room.training.details() }.single().sets.single()
+        val historical = runBlocking { room.training.details() }.single().sets.single()
         var showing by mutableStateOf(true)
         val restored = StateRestorationTester(compose)
         var instances = 0
@@ -129,7 +129,7 @@ class WorkoutRecoveryTests {
             awaitText("1e999")
             compose.onNodeWithText("1e999").assertIsDisplayed()
             compose.onNodeWithText(NumberEntry.notANumber).assertIsDisplayed()
-            compose.runOnIdle { assertEquals(40.0, warmup.weightKg, 0.0) }
+            compose.runOnIdle { assertEquals(40.0, historical.weightKg, 0.0) }
             compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithText("controlled tempo").assertIsDisplayed()
             compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
@@ -149,7 +149,7 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("Fix set").assertDoesNotExist()
             compose.onNodeWithText("40 × 8").assertIsDisplayed()
             assertEquals(2, instances)
-            assertEquals("nothing was corrected", listOf(warmup), runBlocking { room.training.details() }.single().sets)
+            assertEquals("nothing was corrected", listOf(historical), runBlocking { room.training.details() }.single().sets)
         } finally {
             compose.runOnIdle { showing = false }
             compose.waitForIdle()

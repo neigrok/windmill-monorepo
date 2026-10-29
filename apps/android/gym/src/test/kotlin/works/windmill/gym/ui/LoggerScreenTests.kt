@@ -441,7 +441,7 @@ class LoggerScreenTests {
     private fun ledger(): List<Pair<String, Boolean>> = compose
         .onAllNodes(SemanticsMatcher("a ledger row") { node ->
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-                .any { Regex("^(Set \\d+|Warmup), .*").matches(it) }
+                .any { Regex("^Set \\d+, .*").matches(it) }
         })
         .fetchSemanticsNodes()
         .sortedBy { it.positionInRoot.y }

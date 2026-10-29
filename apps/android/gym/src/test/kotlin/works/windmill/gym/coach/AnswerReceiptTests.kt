@@ -32,8 +32,8 @@ class AnswerReceiptTests {
         val receipt = AnswerReceipt(1, ReadTally(1, 1, 1), observations = listOf(movement, unknown, invalid))
         assertEquals(emptyList<SessionObservation>(), receipt.workouts)
         assertEquals(emptyList<SessionObservation>(), receipt.copy(version = 2).observed)
-        assertNull(WindmillJson.decodeFromString<AskTurn>("""{"from":"coach","text":"9 working sets, 2700kg."}""").receipt)
-        assertNull(WindmillJson.decodeFromString<AskAnswer>("""{"answer":"9 working sets, 2700kg.","read":{"sets":9}}""").receipt)
+        assertNull(WindmillJson.decodeFromString<AskTurn>("""{"from":"coach","text":"9 sets, 2700kg."}""").receipt)
+        assertNull(WindmillJson.decodeFromString<AskAnswer>("""{"answer":"9 sets, 2700kg.","read":{"sets":9}}""").receipt)
     }
 
     @Test

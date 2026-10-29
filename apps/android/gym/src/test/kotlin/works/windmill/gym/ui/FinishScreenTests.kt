@@ -450,7 +450,7 @@ class ShareWithCoachTests {
         compose.onNodeWithText("This workout has ended.").assertIsDisplayed()
         compose.onNodeWithText("Done").performClick()
         assertEquals(1, done)
-        for (text in listOf("Duration", "Working sets", "Volume", "Ended early.", "Keep it", FinishCoach.action)) {
+        for (text in listOf("Duration", "Sets", "Volume", "Ended early.", "Keep it", FinishCoach.action)) {
             compose.onNodeWithText(text).assertDoesNotExist()
         }
         compose.onNodeWithContentDescription("More").assertDoesNotExist()

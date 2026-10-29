@@ -209,14 +209,10 @@ and Android disagree.
   `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
   the Gym boards state none. The sync registry (v11) and the shared gym vectors carry no set kind:
-  every logged set counts. Still carrying a kind:
-  Android's app layer, whose kind no longer reaches the log — `SetKind` (`gym/domain/Training.kt:17-23`),
-  `FixSheet.kt:249` passing a set's kind through, the logger indexing warm-ups *W* in faint ink
-  (`LoggerScreen.kt:770-781`, `LiveSession.kt:74,146-151`), workout detail printing the wire *warmup*
-  / *drop* / *failure* as a set note (`SessionScreen.kt:128`), the Record's recent sets appending it
-  (`domain/Record.kt:40-43`) and the saved-workout recovery's *Choose set kind*
-  (`SettingsScreen.kt:240-242,268,293-308,370-383`), none of it on the Android boards (03.1, 03.3,
-  05.3, 05.6, 07.2, 07.3). Build work: remove it on Android.
+  every logged set counts, and no surface carries one. Copy: every surface labels a workout's count
+  *Sets* / *N sets* (finish receipts, workout detail, Coach's read card and sources, the web review tile
+  and landing). The Gym boards still say *Working sets* — iOS 03.7, 05.3 and 07.2 tiles, the log row
+  and the Routines line; Android 03.7 `1254:32362` — designer to mirror the word.
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from

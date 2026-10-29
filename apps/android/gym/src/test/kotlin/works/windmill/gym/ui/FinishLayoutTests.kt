@@ -62,7 +62,7 @@ class FinishLayoutTests {
             List(4) { TrainingSet("set_$it", "bench-press", weightKg = 10.0, reps = 5, completedAtMs = 2_000L + it) }, null)
         compose.setContent { GymMaterial { FinishScreen(finished, emptyList()) } }
         val duration = compose.onNodeWithText("Duration").fetchSemanticsNode().boundsInRoot
-        val count = compose.onNodeWithText("Working sets").fetchSemanticsNode().boundsInRoot
+        val count = compose.onNodeWithText("Sets").fetchSemanticsNode().boundsInRoot
         val volume = compose.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot
         assertEquals(duration.right, count.left, 0.5f)
         assertEquals(count.right, volume.left, 0.5f)
@@ -91,7 +91,7 @@ class FinishLayoutTests {
                 }
             }
         }
-        for (text in listOf("2,700 kg", "Duration", "Working sets", "Volume")) {
+        for (text in listOf("2,700 kg", "Duration", "Sets", "Volume")) {
             val node = compose.onNodeWithText(text).performScrollTo().assertIsDisplayed()
             val layouts = mutableListOf<TextLayoutResult>()
             node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(layouts)

@@ -51,7 +51,7 @@ internal object CoachSources {
         val date = DateTimeFormatter.ofPattern("EEE, MMM d").format(Instant.ofEpochMilli(observation.startedAtMs).atZone(ZoneId.systemDefault()))
         val workout = observation.workout?.takeIf { observation.wholeWorkout }
             ?: return "$date · ${Readout.setCount(observation.setsRead)} read"
-        val sets = if (workout.workingSetCount == 1) "1 working set" else "${workout.workingSetCount} working sets"
+        val sets = Readout.setCount(workout.workingSetCount)
         val volume = workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"
         return "$date · $sets · $volume"
     }

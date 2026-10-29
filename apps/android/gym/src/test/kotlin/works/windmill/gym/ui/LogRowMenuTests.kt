@@ -40,7 +40,7 @@ class LogRowMenuTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    // A finished free workout another phone logged on the account: one working set of bench.
+    // A finished free workout another phone logged on the account: one set of bench.
     private fun store(scope: CoroutineScope): EngineRoomFixture {
         val server = EngineRoomFixture.server()
         val room = EngineRoomFixture(tmp.newFolder(), scope)

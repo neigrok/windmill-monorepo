@@ -560,7 +560,7 @@ class FinishSheetTests {
             finishAWorkout(room, sets = 0)
             compose.onNodeWithText("No sets logged").assertIsDisplayed()
             compose.onNodeWithText(FinishCoach.action).assertDoesNotExist()
-            compose.onNodeWithText("Working sets").assertDoesNotExist()
+            compose.onNodeWithText("Sets").assertDoesNotExist()
             compose.onNodeWithText("Volume").assertDoesNotExist()
             compose.onNodeWithText("0 kg").assertDoesNotExist()
             compose.onNodeWithText("Share this workout").assertDoesNotExist()

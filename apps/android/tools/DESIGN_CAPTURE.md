@@ -104,8 +104,8 @@ retained point opened from a Log new-best moment in both appearances. Optional f
 contains 1–40 explicit workouts: zero-based `routine`, integer `daysAgo` (0–3650), integer
 `minutesAgo` (0–1439), finite `weightKg` in hundredths, and integer `reps` (1–500). Each workout
 lasts 40 minutes and must finish by the fixture clock. The supported `gym_import_session` door
-writes three working sets per movement unless an explicit workout supplies `setsPerMovement`
-(1–20). Custom history permits at most 20 total working sets per workout, preserving its 40-minute
+writes three sets per movement unless an explicit workout supplies `setsPerMovement`
+(1–20). Custom history permits at most 20 total sets per workout, preserving its 40-minute
 duration. Omitting history preserves the default seed.
 The Record fixture has six factual workouts, five daily chart points and two earlier records.
 
@@ -227,7 +227,7 @@ With `--fresh-mode-fixture` and `--fixture capture-recipes/coach-history-fixture
 `capture-recipes/coach-history.json` captures History, sources, delete confirmation, Copy and
 Jump to latest. Each group uses at most three asks per fresh account. Coach recipes wait for
 exact native input echo before sending or navigating; a partial fixture input fails that
-precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one working set and
+precondition. Use two separate runs, each with a new output directory. The synthetic source workout has one set and
 400 kg volume; the previews are deterministic fixture answers.
 
 Recipes fail if their queued model responses were not consumed. A model-backed write recipe must

@@ -39,8 +39,8 @@ fatal exception. Host timing is kept separate from device readiness and the comp
 
 The app model, rack acceptance, performed rows and saved-workout recovery have no set-kind API or
 control. Every set contributes to counters, totals, history, last-time prefill and early-finish rules.
-Legacy kind fields are ignored when decoding; new set writes omit them. Shared compatibility vectors
-remain unchanged. Debug and Release real-wire suites each pass 17 cases with zero skips. A further
+Sets carry no kind (registry v11/minimum 11): no read, write or command argument names one.
+Debug and Release real-wire suites each pass 17 cases with zero skips. A further
 Debug run passes all 17 against the backend auth-receipt/schema prerequisite on main.
 
 Native acceptance logs eight 60 kg × 8 sets across two routine movements. The receipt and backend
@@ -48,7 +48,7 @@ readback count all eight sets and 3,840 kg. Local recovery compatibility is cove
 wire suites.
 
 The simplified rack has one acceptance path for every logged set. Recovery retains source documents
-for retry without a separate kind-correction state. Wire summary fields retain their existing names;
+for retry. Wire summary fields retain their existing names;
 they count every set. The app still contains history/read projections alongside the shared domain;
 future consolidation should preserve the shared estimate qualification and equipment-load rules.
 

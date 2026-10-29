@@ -222,8 +222,8 @@ class RegistryCompositionTests {
         assertEquals(setOf("gym", "journal"), composed.products.keys)
         assertEquals(parts.flatMap { it.types.map(TypeDef::json) }, composed.types.map(TypeDef::json))
         assertEquals(parts.flatMap { it.commands }, composed.commands)
-        assertEquals(10L, composed.version)
-        assertEquals(10L, composed.minVersion)
+        assertEquals(11L, composed.version)
+        assertEquals(11L, composed.minVersion)
     }
 
     @Test fun compositionRejectsEmptyInvalidNameDuplicateProductAndVersionMismatch() {

@@ -384,7 +384,7 @@ private fun SessionHead(summary: SessionSummary) {
         Text("Volume", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim)
         Text(summary.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—",
             style = WindmillFont.display(34, FontWeight.ExtraBold).copy(lineHeight = 40.sp), color = skin.ink)
-        val count = summary.workingSetCount?.let { "$it working ${if (it == 1) "set" else "sets"}" } ?: Readout.setCount(summary.setCount)
+        val count = Readout.setCount(summary.workingSetCount ?: summary.setCount)
         Text("$count · ${summary.exercises.size} ${if (summary.exercises.size == 1) "movement" else "movements"}", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
         if (summary.plan != null) Text("Plan saved at start", style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkFaint)
         if (summary.closedItself) Text("Closed after four hours without a set", style = WindmillFont.body(13), color = skin.inkDim)

@@ -43,7 +43,7 @@ class LogRowLayoutTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
         try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
-            // Yesterday's Push A, logged on another phone: one working set of bench, the account's record.
+            // Yesterday's Push A, logged on another phone: one set of bench, the account's record.
             val phoneScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
             try { EngineRoomFixture(tmp.newFolder(), phoneScope).use { phone -> runBlocking {
                 phone.now = now - 86_400_000
