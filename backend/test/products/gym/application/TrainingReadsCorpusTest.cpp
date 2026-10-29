@@ -33,13 +33,7 @@ Json::Value trainingReads() {
 
 // The cases the server answers otherwise, each for a rule outside the one e1RM rule. Each is run and must still
 // differ, so a case that comes to agree leaves this list.
-const std::set<std::string> kOtherRules{
-    // Canon reads every set as a working set; the server counts only `kind: working`.
-    "progress snapshot keeps signed and unqualified facts counts old warmup rows and excludes open sessions",
-    "shared mirror 20 stats []",
-    "shared mirror 29 review [\"ses_fixture_1\"]",
-    "shared mirror 31 review [\"ses_fixture_2\"]",
-};
+const std::set<std::string> kOtherRules{};
 
 // The cases whose records the server's store cannot hold, and so never runs.
 const std::map<std::string, std::string> kUnheld{

@@ -18,8 +18,7 @@ std::string historySource(pqxx::transaction_base& txn, const UserId& user) {
       "'routineId',coalesce(s.history_routine_id,''),'routineName',coalesce(s.display_name,s.plan->>'routine',''),"
       "'sets',coalesce((SELECT jsonb_agg(jsonb_build_object('id',st.id,'exerciseId',st.exercise_id,"
       "'exercise',coalesce(n.name,e.name),'equipment',coalesce(n.equipment,e.equipment),'loadCount',coalesce(n.load_count,e.load_count,0),'movementAvailable',e.id IS NOT NULL,'setNumber',st.set_number,'weightKg',st.weight_kg,"
-      "'reps',st.reps,'rpe',st.rpe,'completedAt',(extract(epoch from st.completed_at)*1000)::bigint,"
-      "'working',st.kind='working') ORDER BY st.completed_at,st.set_number,st.id COLLATE \"C\") "
+      "'reps',st.reps,'rpe',st.rpe,'completedAt',(extract(epoch from st.completed_at)*1000)::bigint) ORDER BY st.completed_at,st.set_number,st.id COLLATE \"C\") "
       "FROM gym_sets st LEFT JOIN gym_exercises e ON e.id=st.exercise_id "
       "LEFT JOIN gym_exercise_names n ON n.exercise_id=e.id AND n.user_id=s.user_id "
       "WHERE st.session_id=s.id AND st.user_id=s.user_id),'[]'::jsonb)) AS workout "
@@ -45,8 +44,8 @@ HistoryPage readHistory(pqxx::transaction_base& txn, const std::string& source,
   const std::string scope = historyScope(txn, source, query);
   const std::string progress = query.includeProgress ?
       "(SELECT coalesce(jsonb_agg(jsonb_build_object('sessionId',id,'startedAt',started_ms,'fact',fact) "
-      "ORDER BY started_ms,id COLLATE \"C\",(fact->>'exerciseId') COLLATE \"C\",(fact->>'id') COLLATE \"C\") "
-      "FILTER (WHERE (fact->>'working')::boolean),'[]') FROM facts)::text" : "'[]'";
+      "ORDER BY started_ms,id COLLATE \"C\",(fact->>'exerciseId') COLLATE \"C\",(fact->>'id') COLLATE \"C\"),'[]') "
+      "FROM facts)::text" : "'[]'";
   const auto rows = txn.exec(scope +
       ", page AS (SELECT * FROM scope WHERE (started_ms,id COLLATE \"C\") < (" +
       std::to_string(query.beforeMs) + "," + txn.quote(query.beforeId) + " COLLATE \"C\") "
@@ -56,10 +55,9 @@ HistoryPage readHistory(pqxx::transaction_base& txn, const std::string& source,
       "SELECT "
       "(SELECT coalesce(jsonb_agg(workout ORDER BY started_ms DESC,id COLLATE \"C\" DESC),'[]') FROM page)::text AS sessions,"
       "(SELECT count(*)::int FROM scope) AS session_count,"
-      "(SELECT count(*)::int FROM facts WHERE (fact->>'working')::boolean) AS set_count,"
-      "(SELECT coalesce(sum((fact->>'reps')::int),0)::int FROM facts WHERE (fact->>'working')::boolean) AS reps,"
-      "(SELECT coalesce(jsonb_agg(fact ORDER BY (fact->>'id') COLLATE \"C\"),'[]') "
-      "FROM facts WHERE (fact->>'working')::boolean)::text AS volume_facts,"
+      "(SELECT count(*)::int FROM facts) AS set_count,"
+      "(SELECT coalesce(sum((fact->>'reps')::int),0)::int FROM facts) AS reps,"
+      "(SELECT coalesce(jsonb_agg(fact ORDER BY (fact->>'id') COLLATE \"C\"),'[]') FROM facts)::text AS volume_facts,"
       "(SELECT coalesce(jsonb_agg(m ORDER BY month DESC),'[]') FROM (SELECT "
       "to_char(to_timestamp(started_ms/1000.0) AT TIME ZONE " + txn.quote(query.timeZone) + ",'YYYY-MM') AS month,count(*)::int AS sessions "
       "FROM scope GROUP BY month) m)::text AS months,"

@@ -58,7 +58,7 @@ class FixSheetEffortTests {
     }
 
     @Test
-    fun correctingAHistoricalSetHasNoKindChoiceOrConfirmationHaptic() {
+    fun correctingAHistoricalSetHasNoConfirmationHaptic() {
         val sensations = mutableListOf<HapticFeedbackType>()
         val saved = sheet(TrainingSet(id = "set_1", exerciseId = "bench-press", setNumber = 2,
             weightKg = 82.5, reps = 5, completedAtMs = 0), object : HapticFeedback {
@@ -67,8 +67,6 @@ class FixSheetEffortTests {
             }
         })
 
-        compose.onNodeWithText("Kind").assertDoesNotExist()
-        compose.onNodeWithText("warmup").assertDoesNotExist()
         compose.onNodeWithText(SetEffort.noteLabel).performTextInput("left shoulder")
         compose.onNodeWithText("Save fix").performClick()
 

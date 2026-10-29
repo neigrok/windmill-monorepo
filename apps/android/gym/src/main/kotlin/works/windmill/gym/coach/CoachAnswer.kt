@@ -155,7 +155,7 @@ internal fun CoachAnswer(
                         style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.inkDim,
                     )
                     val facts = listOfNotNull(
-                        "Working sets" to workout.workingSetCount.toString(),
+                        "Sets" to workout.workingSetCount.toString(),
                         "Volume" to (workout.tonnageKg?.let { "${Readout.weight(it)} kg" } ?: "—"),
                         workout.durationMs?.let { "Duration" to if (it < 60_000) "<1 min" else "${it / 60_000} min" },
                     )
@@ -194,7 +194,7 @@ internal fun CoachAnswer(
                                 "session" -> "Workout · ${Readout.setCount(fact.setsRead)} read"
                                 else -> "Workout summary"
                             }
-                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)} working" +
+                            val totals = fact.workout?.takeIf { fact.wholeWorkout }?.let { " · ${Readout.setCount(it.workingSetCount)}" +
                                 (it.tonnageKg?.let { kg -> " · ${Readout.weight(kg)}kg" } ?: "") }.orEmpty()
                             Text("$about · ${Readout.shortDate(fact.startedAtMs, nowMs)}\n$scope$totals", style = WindmillFont.body(13).copy(lineHeight = 18.sp), color = skin.inkDim)
                         }

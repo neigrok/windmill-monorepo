@@ -3,7 +3,7 @@ import DomainKit
 import GymDomain
 import SyncCore
 
-// This workout (03.4): each movement's working sets against its plan, a gym/done check once every planned set is logged, Add
+// This workout (03.4): each movement's sets against its plan, a gym/done check once every planned set is logged, Add
 // movement as the list's last row, and Hide workout.
 struct WorkoutAssembly: View {
   @Bindable var workout: WorkoutState

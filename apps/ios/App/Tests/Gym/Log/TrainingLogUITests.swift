@@ -230,7 +230,7 @@ import SyncTesting
   @Test func aSessionRowReadsItsWorkingSetsAndDuration() throws {
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let readout = try #require(gym.log?.readout(session: value.id))
-    #expect(LogPresentation.sessionFacts(readout) == "1 working set · 33m")
+    #expect(LogPresentation.sessionFacts(readout) == "1 set · 33m")
     #expect(!gym.sessionIsUnsent(value.id))
   }
 

@@ -10,7 +10,7 @@ struct SyncSchemaTests {
     let gym = try Corpus.registryFile("gym").asObject()
     let journal = try Corpus.registryFile("journal").asObject()
     let expected: JSON = [
-      "registry": "windmill", "version": 10, "minVersion": 10,
+      "registry": "windmill", "version": 11, "minVersion": 11,
       "products": .object(JSON.Object(uniqueKeysWithValues: try gym.member("products").asObject().members + journal.member("products").asObject().members)),
       "types": .array(try gym.member("types").asArray() + journal.member("types").asArray()),
       "commands": .array(try gym.member("commands").asArray() + journal.member("commands").asArray()),
@@ -23,7 +23,7 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [10, 10, 10])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [11, 11, 11])
   }
 
   @Test func everyTypeAndCommandHasItsName() {

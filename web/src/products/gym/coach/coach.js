@@ -21,9 +21,9 @@ export function coachWorkout(session, sets = [], catalog = []) {
   const total = groups.length && groups.every((group) => group.targets !== null)
     ? groups.reduce((count, group) => count + group.targets, 0) : null;
   const remaining = groups.reduce((count, group) => count + group.rows.filter((row) => row.kind === 'target').length, 0);
-  return { name: routineNameOf(session) ?? 'Free session', started: timeLabel(session.startedAt),
-    count: `${sets.length} ${sets.length === 1 ? 'set' : 'sets'} logged`,
-    progress: total && remaining ? `set ${total - remaining + 1} of ${total}` : `${sets.length} working ${sets.length === 1 ? 'set' : 'sets'} logged`,
+  const count = `${sets.length} ${sets.length === 1 ? 'set' : 'sets'} logged`;
+  return { name: routineNameOf(session) ?? 'Free session', started: timeLabel(session.startedAt), count,
+    progress: total && remaining ? `set ${total - remaining + 1} of ${total}` : count,
     groups, active };
 }
 

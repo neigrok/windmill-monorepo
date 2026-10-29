@@ -16,8 +16,7 @@ const NOW = Date.UTC(2026, 9, 6, 12);
 function sessionWithASet({ finishedAt = 1_755_003_600_000 } = {}) {
   return [
     confirmed('session', 'session0001', { startedAt: 1_755_000_000_000, finishedAt }),
-    confirmed('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 1, weightKg: 100, reps: 5,
-      kind: 'working', note: '', completedAt: 1_755_000_600_000 }),
+    confirmed('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 1, weightKg: 100, reps: 5, note: '', completedAt: 1_755_000_600_000 }),
   ];
 }
 
@@ -274,7 +273,7 @@ test('history uses the log’s scope totals and names the unit once, with no leg
   const workout = (id, startedAt, routineName, sets, reps, weightKg) => [
     confirmed('session', id, { startedAt, finishedAt: startedAt + 3_600_000, displayName: routineName }),
     ...Array.from({ length: sets }, (_, n) => confirmed('set', `${id}set${n}`, { sessionId: id, exerciseId: 'bench-press', setNumber: n + 1,
-      weightKg, reps, kind: 'working', note: '', completedAt: startedAt + (n + 1) * 60_000 })),
+      weightKg, reps, note: '', completedAt: startedAt + (n + 1) * 60_000 })),
   ];
   await gymAccount(t, [
     ...workout('sessionSep07', new Date(2026, 8, 7, 18).getTime(), 'Push A', 9, 6, 40),
@@ -397,7 +396,7 @@ test('a session’s set rows say what each load counts for its movement', async 
     confirmed('session', 'session0001', { startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000 }),
     ...[['set0000001', 'dumbbell-bench-press', 16], ['set0000002', 'goblet-squat', 24], ['set0000003', 'pull-up', -10],
       ['set0000004', 'back-squat', 100], ['set0000005', 'leg-press', 140]].map(([id, exerciseId, weightKg], index) =>
-      confirmed('set', id, { sessionId: 'session0001', exerciseId, setNumber: 1, weightKg, reps: 8, kind: 'working', note: '',
+      confirmed('set', id, { sessionId: 'session0001', exerciseId, setNumber: 1, weightKg, reps: 8, note: '',
         completedAt: 1_755_000_600_000 + index * 1000 })),
   ]);
   const room = await sessionInARoom(t);
@@ -410,7 +409,7 @@ test('session totals use unavailable for pound conversion overflow and preserve 
   browserWith();
   const rows = sessionWithASet();
   rows[1] = confirmed('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 1,
-    weightKg: 1e308, reps: 1, kind: 'working', note: '', completedAt: 1_755_000_600_000 });
+    weightKg: 1e308, reps: 1, note: '', completedAt: 1_755_000_600_000 });
   await gymAccount(t, [...rows, confirmed('prefs', 'prefs', { units: 'lb' })]);
   spellWeightsIn('lb');
   try {

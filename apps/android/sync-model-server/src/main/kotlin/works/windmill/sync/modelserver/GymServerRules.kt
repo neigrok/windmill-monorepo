@@ -69,7 +69,7 @@ class GymServerRules : ServerRules {
         }.sortedWith(compareBy<Row> { value(it, "startedAt")!!.long() }.thenBy { it.key }).firstOrNull()
         if (crossed != null) throw Refusal("session-overlap", Json.objectOf("sessionId" to crossed.key.id.json))
     }
-    private fun setFields(session: String, set: Json) = mapOf("sessionId" to Json.of(session), "exerciseId" to set.member("exerciseId"), "weightKg" to set.member("weightKg"), "reps" to set.member("reps"), "kind" to (set["kind"] ?: Json.of("working")), "note" to (set["note"] ?: Json.of("")), "completedAt" to set.member("completedAt")) + listOf("rpe").mapNotNull { name -> set[name]?.let { name to it } }.toMap()
+    private fun setFields(session: String, set: Json) = mapOf("sessionId" to Json.of(session), "exerciseId" to set.member("exerciseId"), "weightKg" to set.member("weightKg"), "reps" to set.member("reps"), "note" to (set["note"] ?: Json.of("")), "completedAt" to set.member("completedAt")) + listOf("rpe").mapNotNull { name -> set[name]?.let { name to it } }.toMap()
     private fun replayWrite(session: String, sets: List<Json>, c: RuleContext) = (listOf(key("session", session)) + sets.map { key("set", it.member("id").str()) }).mapNotNull { k -> c.idState(k).row?.takeIf { it.isAlive }?.let { claim(it) } }
     private fun correctSession(cmd: CheckedCommand, c: RuleContext): CommandOutcome {
         val id = cmd.string("sessionId"); val session = alive(key("session", id), c); val request = cmd.string("requestId"); val sets = cmd.args.getValue("sets").arr(); c.ensure("corrections")

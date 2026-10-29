@@ -741,7 +741,7 @@ test('the count over the log follows its rows: a held session leaves it, and Und
   const workout = (id, daysAgo) => {
     const startedAt = NOW - daysAgo * 86_400_000;
     return [confirmed('session', id, { startedAt, finishedAt: startedAt + 3_600_000 }),
-      confirmed('set', `${id}set`, { sessionId: id, exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 5, kind: 'working', completedAt: startedAt + 600_000, note: '' })];
+      confirmed('set', `${id}set`, { sessionId: id, exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 5, completedAt: startedAt + 600_000, note: '' })];
   };
   const gym = await gymAccount(t, [...workout('session0001', 2), ...workout('session0002', 1)]);
   const logScreen = await roomWith(t, 'products/gym/Log.jsx', ({ LogList }, log) => LogList({ log }));
@@ -761,7 +761,7 @@ test('the count over the log follows its rows: a held session leaves it, and Und
 test('the live session’s sets follow the window: a held set leaves the mirror, and Undo puts it back', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const set = (id, completedAt) => confirmed('set', id, { sessionId: 'sessionPhone', exerciseId: 'bench-press', setNumber: Number(id.at(-1)), weightKg: 60, reps: 5, kind: 'working', completedAt, note: '' });
+  const set = (id, completedAt) => confirmed('set', id, { sessionId: 'sessionPhone', exerciseId: 'bench-press', setNumber: Number(id.at(-1)), weightKg: 60, reps: 5, completedAt, note: '' });
   const gym = await gymAccount(t, [confirmed('session', 'sessionPhone', { startedAt: NOW - 600_000 }), set('set0000001', NOW - 400_000), set('set0000002', NOW - 200_000)]);
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const view = renderHook(t, () => useTrainingLog(), { live: true });

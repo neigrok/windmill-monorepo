@@ -531,8 +531,8 @@ TEST(the_gym_registry_reads_as_declared) {
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
   CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
-  CHECK_EQ(gym.version(), 10);
-  CHECK_EQ(gym.minVersion(), 10);
+  CHECK_EQ(gym.version(), 11);
+  CHECK_EQ(gym.minVersion(), 11);
   CHECK(gym.type("message")->fields.at("threadId").parent);
   CHECK_EQ(gym.type("message")->fields.at("state").kind, FieldKind::ranked);
   CHECK_EQ(gym.type("message")->fields.at("state").rank.at("completed"), 2);
@@ -560,8 +560,8 @@ TEST(the_gym_registry_reads_as_declared) {
 TEST(the_deployment_composition_embeds_gym_and_journal_v8) {
   const Json::Value composition = parseJson(compositionText());
   CHECK_EQ(jcs(composition), jcs(parseJson(R"({"composition":"windmill","registries":["gym.registry.json","journal.registry.json"]})")));
-  CHECK_EQ(productRegistry().version(), 10);
-  CHECK_EQ(productRegistry().minVersion(), 10);
+  CHECK_EQ(productRegistry().version(), 11);
+  CHECK_EQ(productRegistry().minVersion(), 11);
   const std::vector<Registry> registries{wm::gym::engine::registry(), wm::journal::engine::registry()};
   const auto catalog = productCatalog();
   CHECK_EQ(namesOf(catalog->registry().types()), (std::vector<std::string>{"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "thread", "message", "page", "journalState"}));

@@ -83,12 +83,12 @@ test('a noteâ€™s title counts the same fixture the same way, against the columnâ
 // receipt would be chrome, so its absence here is a decision and not an omission.
 test('the finish card cuts a typed routine name at sixty code points, and draws no counter', async (t) => {
   browserWith();
-  // Four working sets and no routine: a workout the review offers to keep as one.
+  // Four sets and no routine: a workout the review offers to keep as one.
   const startedAt = 1_755_000_000_000;
   await gymAccount(t, [
     confirmed('session', 'session0001', { startedAt, finishedAt: startedAt + 3_600_000 }),
     ...[1, 2, 3, 4].map((setNumber) => confirmed('set', `set000000${setNumber}`, {
-      sessionId: 'session0001', exerciseId: 'back-squat', setNumber, weightKg: 100, reps: 5, kind: 'working', completedAt: startedAt + setNumber * 600_000, note: '',
+      sessionId: 'session0001', exerciseId: 'back-squat', setNumber, weightKg: 100, reps: 5, completedAt: startedAt + setNumber * 600_000, note: '',
     })),
   ]);
 

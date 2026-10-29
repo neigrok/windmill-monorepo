@@ -201,7 +201,7 @@ that pinned 163 strings still drew nine classes of impossible screen, because no
 Every surface invented its own example session. Each one looked plausible alone. None of them
 survived arithmetic:
 
-- a session header claiming twelve working sets above five drawn ones,
+- a session header claiming twelve sets above five drawn ones,
 - a tonnage that is not the sum of the sets beneath it,
 - a note reading *three short* over a load that also missed its target, when the code returns the
   load branch first and can never print both,

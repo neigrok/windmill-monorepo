@@ -143,7 +143,8 @@ session's set revisions and share, a log share's snapshots, Coach's tables) and 
   second 3. Nothing renumbers after a delete; a correction names every set's number. Admission holds
   the account's scope lock, and there is no unique index on `(session_id, exercise_id, set_number)`:
   the column holds gaps.
-- **Only WORKING sets count toward anything** — volume, estimates, records, the counts a screen prints.
+- **Every set counts toward everything** — volume, estimates, records, the counts a screen prints. A set
+  has no kind.
 - **Negative `weight_kg` is legal** and means band-assisted work, which is why every volume sum
   clamps at zero.
 - Canonical unit is **kg, at rest and on the wire**, `numeric` and never float; there is no `lb`
@@ -156,7 +157,7 @@ cent admission on live rows. Normalization preserves canonical decimal-grid valu
 reciprocal scaling overflow, as engine §7.1 defines. Estimate ordering compares bounded canonical
 decimal digits and an exponent; display availability does not decide eligibility.
 
-Each complete volume aggregate independently folds its flat working sets in canonical set-ID order:
+Each complete volume aggregate independently folds its flat sets in canonical set-ID order:
 `max(load,0) × reps × historical load count`, then left-to-right additions, checking every operation.
 An unavailable contributor or nonfinite operation makes the whole aggregate explicit null; empty
 aggregates are zero. SQL does not sum numeric subtotals. Unavailable eligible estimates suppress
@@ -239,8 +240,8 @@ A whole-workout correction is the command `gym.correctSession`, pushed through `
 admitted in one transaction (GymRules). It refuses an open workout (`session-open`) and an interval
 that crosses another finished one (`session-overlap`), rewrites the session's start, finish and
 `displayName` and closes it as the lifter's `finish`, rewrites each set it names with the number it
-names, creates a set it names that the workout does not hold with the supplied `kind` (default
-`working`), and kills every set it leaves out, whose ids stay spent; a rewritten set keeps its kind.
+names, creates a set it names that the workout does not hold, and kills every set it leaves out, whose
+ids stay spent.
 Optional `preserveOtherSets: true` retains unnamed rows unchanged, with number and interval checks
 against the named sets; only the argument has a 200-set limit. Its request id is the key of a
 `gym_correction_receipts` row, so a replay answers from the current rows without applying again and
@@ -447,7 +448,7 @@ binding's, `sync/GymRules` (§5).
 
 `Exercise` (id, name, pattern, equipment, stepKg, custom, aliases, loadCount) · `Session` (id, user,
 startedAtMs, finishedAtMs?, routine?, plan?, closedBy?, displayName? — plan absent = ad-hoc) · `Set`
-(id, session, exercise, setNumber, weightKg, reps, kind, rpe?, note, completedAtMs) · `SetBatch` (one
+(id, session, exercise, setNumber, weightKg, reps, rpe?, note, completedAtMs) · `SetBatch` (one
 session's sets, 1–200 or 0–200 for an import, validated whole) · `PlanSnapshot` of `PlanEntry` (exercise, sets,
 restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `max`) · `Routine` of
 `RoutineEntry`, plus `defaultStepKg(Equipment)`.
@@ -487,8 +488,6 @@ restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `
   1–100 when named and its `weightKg` finite after cent normalization, `restSeconds`
   15–900. The document's size is bounded beside every field's value: a routine's lines are one row
   each and each line's scheme one more, written in one transaction, at most 50 × 20 rows.
-- `parseSetKind` is **strict on write** (an unknown kind is a 400); `setKindFromStored` clamps to
-  `working` on read, so a kind added by a newer deploy cannot crash an older reader.
 - Id shape is one rule: `^[A-Za-z0-9_-]{8,64}$`, recommended prefixes `ses_` / `set_` / `rt_`, opaque
   to the server.
 
@@ -544,22 +543,22 @@ four hours of the last activity, staying at that activity when the tap came late
   The domain suite claims the `GymEstimate` cases of `packages/api-contract/gym/domain/training-reads.json`,
   and the adapters suite its progress, review and statistics cases over Postgres
   (`test/products/gym/application/TrainingReadsCorpusTest.cpp`).
-- **`topE1rmOf` is the one definition of a session's e1RM**, over *every* working set the session held
+- **`topE1rmOf` is the one definition of a session's e1RM**, over *every* set the session held
   — never the estimate of the top set: 3 × 95 × 10 beats 100 × 5. Every surface that prints one comes
   through it.
 - **`recordAgainst` is the one implementation of the three record rules**; `recordedIn` walks it
   forward over a page, judging each session against the history as it stood that day and folding a
   session into that history **only if it is finished**.
-- **The record rules:** working sets only, and only for a FINISHED session; **a mark must have been
+- **The record rules:** every set counts, and only for a FINISHED session; **a mark must have been
   passed**, so a first session claims nothing and equalling is not beating (80 × 5 does not beat 70 × 10:
   their scores are equal); at most one record per session, ranked `e1rm` ▸ `heaviest` ▸ `repsAtWeight`,
   and within a kind by the higher score of the set that earned it, then the heavier load, then the
   movement id. A beaten mark is dated by the start of the earliest session holding it.
-  Under `kSlightWorkingSets` (4) working sets a session says nothing beyond its three facts; duration
+  Under `kSlightSets` (4) sets a session says nothing beyond its three facts; duration
   is deliberately not in that predicate. The comparison exists only for a session that named a
-  routine, is matched on the **top working set** (heaviest, ties to more reps) and never on volume,
+  routine, is matched on the **top set** (heaviest, ties to more reps) and never on volume,
   and names the earlier session by the routine name frozen in *that* session's snapshot.
-- **`ProgressSet` is the one projection of working sets**: a set with its session and **that session's
+- **`ProgressSet` is the one projection of sets**: a set with its session and **that session's
   start**, never its own `completed_at`. The store selects and orders the rows; every estimate, best and
   record is derived from them in the domain (`progressSessions`, `MovementSeries`), so no part of the
   rule is in SQL.
@@ -637,9 +636,9 @@ aggregate boundaries are listed in [Layout](#2-layout).
   from one that belongs to somebody else.
 - `LastTimeOutcome` exists because `lastTime` has two empty answers — never trained, and no such
   movement — and only the store can tell them apart.
-- `SessionSummary` carries both set counts (`setCount` is every row; `workingSetCount` is what the log
-  screen prints), the clamped `tonnageKg`, the movement names, the session's `topSet`, its `worked`
-  sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the working sets
+- `SessionSummary` carries both set counts (`setCount` and `workingSetCount` are the same number, every
+  row, kept apart because the wire names both), the clamped `tonnageKg`, the movement names, the session's
+  `topSet`, its `worked` sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the sets
   of everything FINISHED before the page's oldest row, narrowed to its movements, because a record is
   judged against the history before its session and page two has history page two cannot see. The
   application puts `topE1rm` and `record` on the row afterwards: those are RULES, not aggregations, and
@@ -659,14 +658,14 @@ aggregate boundaries are listed in [Layout](#2-layout).
 grouping in first-performed order, assembled client-side from numbered sets.
 
 - The row's derived facts ride the same statement, so the list never loads a session's sets. `topSet`
-  is a lateral over the session's **working** sets — heaviest, ties to more reps, never volume, absent
+  is a lateral over the session's sets — heaviest, ties to more reps, never volume, absent
   for a session holding none.
-- **`tonnageKg` sums nonnegative entered kg × reps × dumbbell count over working rows.**
+- **`tonnageKg` sums nonnegative entered kg × reps × dumbbell count over every row.**
   Dumbbell values are per dumbbell; count is one or two. Other equipment has multiplier one.
   Barbell values include the bar. Bodyweight values are added load only; assistance contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
   go, never `0.0 t`.** Weeks are the client's own fold over the page it holds — there is no week
   endpoint — so the oldest loaded week omits its tonnage until more is loaded.
-- **`topE1rm` is `topE1rmOf` over the row's working sets**, not the estimate of `topSet`; absent where
+- **`topE1rm` is `topE1rmOf` over the row's sets**, not the estimate of `topSet`; absent where
   no set earned one. **The wire's doubles are doubles**: it is stated to one decimal as a *value*, the
   JSON text is not, so `20.7` can cross as `20.699999999999999`. Every surface parses and formats; nothing
   prints the raw token, re-rounds, or re-derives the estimate.
@@ -681,14 +680,12 @@ grouping in first-performed order, assembled client-side from numbered sets.
 the exercise, and its sets in order.
 
 - **The locator walks SESSIONS, newest first** over `gym_sessions_log`, `LIMIT 1` at the first finished
-  session holding a non-warmup set of the movement, on the same `(started_at, id)` key the log pages
+  session holding a set of the movement, on the same `(started_at, id)` key the log pages
   on, so the two reads cannot name a different newest session. **Never walk SETS by `completed_at`**:
   it is the device's wall clock, and one future-stamped set pins "last time" to a stale session. Both
   indexes still do work; the planner picks by selectivity.
 - **Finished, never open — and this read settles nothing.** It fires on every movement change, and the
   only open session it could reach is the caller's own live workout.
-- **Warmups are not history.** The block is the session's non-warmup sets, and every consumer excludes
-  them. The filter is not a renumbering: a block behind a warmup starts at set 2.
 - **The routine name is the session's `display_name`, else the frozen snapshot's**, type-checked
   (`jsonb_typeof(plan->'routine') = 'string'`), because `->>` would render an object or a number as
   TEXT into the product's highest-value pixel.
@@ -702,7 +699,7 @@ and `list_exercises` hands the same row to an agent; it is **sparse**, and a mov
 the picker's `never logged`.
 
 The plan hash-joins the account's sets to its sessions and sorts every qualifying row once, spilling
-to disk above roughly twenty thousand working sets. **Do not drive it off the catalog**: the same rule
+to disk above roughly twenty thousand sets. **Do not drive it off the catalog**: the same rule
 as a `LATERAL` per catalog row is orders of magnitude slower, because proving "never logged" for an
 untrained movement walks every session the account ever ran. The fallback, if this read ever needs
 one, is that `LATERAL` driven off the movements the account has *touched*.
@@ -713,10 +710,10 @@ instant is read off the log (`max(started_at)` per routine), not out of a column
 
 **A movement's record** (`movementHistory` + the pure `movementRecord`) — four statements in one
 transaction. The first is the catalog's own predicate: no row means `404 no such movement` and the
-other three never fire. The **sets** are the movement's working sets in finished sessions; the tiles,
+other three never fire. The **sets** are the movement's sets in finished sessions; the tiles,
 the twelve weeks of bars and the record ladder are computed from them by `MovementSeries`. Their window
 is a **lifetime** — only the chart is windowed, by the domain. The **recent days** are a separate
-statement because they print every set but a warmup, in set-number order. The fourth statement is the days of the program that name
+statement because they print every set, in set-number order. The fourth statement is the days of the program that name
 the movement, by name, deduplicated and in program order — `routineCount` is that list's length.
 Everything is dated by the session's own start. The record **ladder** is every session whose
 estimate beat every session before it by score, newest first, and the first is not on it. Where no set
@@ -724,7 +721,7 @@ earned an estimate there is no best-e1RM tile, no chart and no ladder. Every lis
 when empty**, so an untrained movement answers 200 with two zero counts and nothing else.
 
 **The finish** (`historyFor` + the pure `review`) — one read behind one rule. The read is the
-working sets of finished sessions that started earlier, restricted to the movements this session works,
+sets of finished sessions that started earlier, restricted to the movements this session works,
 each dated by its session. **Both of its windows compare the pair
 `(started_at, id)` against the reviewed session's own**, which excludes the session from its own
 history — the review is always read *after* the finish, so without it every set would tie itself and
@@ -734,7 +731,7 @@ which keeps it right when a set arrives late from a flush queue, and is why ther
 **The statistics engine** (`trainingLog` + the pure `statistics`) — the default
 `GET /v1/gym/stats` response and MCP `get_stats`. Its repository reads two things in one transaction:
 
-- The **sets** are every working set of the finished log, the projection the progress read takes. Per
+- The **sets** are every set of the finished log, the projection the progress read takes. Per
   movement, a point is each session's heaviest set (ties to more reps, then the lowest set id) with that
   set's own estimate where it earned one; the best e1RM is the highest-scoring estimate, the heaviest
   the heaviest point, each keeping the earliest session on a tie and dated by its start.
@@ -892,7 +889,7 @@ Absences that carry meaning:
 ```json
 { "startedAt": 1700000000000, "finishedAt": 1700003600000, "routine": "Legs",
   "sets": [ { "exercise": "Back Squat", "setNumber": 1, "weightKg": 105, "reps": 5,
-              "kind": "working", "note": "", "completedAt": 1700000060000 } ] }
+              "note": "", "completedAt": 1700000060000 } ] }
 ```
 
 ### 8.3 The status ladder
@@ -1007,7 +1004,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
 | `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt | `save_note` — append a useful user-provided insight | |
 | `get_sessions` — 1–50 exact unique ids, requested order, explicit missing ids, optional review | `log_sets` — 1–200 ordered sets, one transaction | |
-| `get_last_times` — 1–50 exact unique exercise ids, explicit missing ids and no non-warmup history | `import_session` — one completed historical workout with 0–200 sets | |
+| `get_last_times` — 1–50 exact unique exercise ids, explicit missing ids and no history | `import_session` — one completed historical workout with 0–200 sets | |
 | | `update_exercise` — rename or change equipment while retaining the movement ID | |
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
@@ -1094,7 +1091,7 @@ another path. Validation or a conflict rolls back every new row and receipt with
 
 `get_sessions` loads owner-scoped sessions and sets in two queries, restores requested order, and
 reports absent or inaccessible ids identically. `get_last_times` uses existing per-exercise history
-reads; `trained: false` means no completed non-warmup set history. Both retain read-receipt accounting
+reads; `trained: false` means no completed set history. Both retain read-receipt accounting
 and reject complete serialized results over 262144 bytes rather than silently omitting rows. New
 batch tool results include `outputSchema`, `structuredContent` and compatibility JSON text.
 
@@ -1241,7 +1238,7 @@ not a log row, and a reply that served only notes carries no `read` block at all
 Successful Ask answers additionally carry `receipt` version1: the read tally, actual server-observed
 steps, proposal IDs and ordered observations. Each observation names its tool, session, start/end,
 routine label, coverage (`summary`, `session`, `movement`), served set count and optional movement
-ID. Complete summaries and session reads may carry Working-set count, kg tonnage and duration;
+ID. Complete summaries and session reads may carry set count, kg tonnage and duration;
 a movement subset cannot provide whole-workout metrics. Summary reads serve zero set rows. Failed
 and oversized replies contribute no observations; repeated reads retain their own snapshots while
 the tally deduplicates identity.

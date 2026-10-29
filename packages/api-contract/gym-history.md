@@ -6,8 +6,8 @@ Session reads, workout shares and statistics keep their own wire contracts. Web 
 
 The response contains:
 
-- `sessions`: `{id, startedAt, finishedAt, routineId?, routineName, setCount, workingSetCount, reps, tonnageKg, exerciseNames, movements, sets}`. `movements` contains `{exerciseId,sets,reps,tonnageKg}` totals using the same working-set rule. A set is `{id, exerciseId, exercise, setNumber, weightKg, reps, rpe?, completedAt}`. The safe history projection omits set notes, private Notes, Coach, planned targets and owner identity.
-- `summary`: `{sessions, sets, reps, tonnageKg}` for the complete filtered scope, before pagination. Sets, reps and external volume count working sets; volume clamps negative load to zero and multiplies a dumbbell load by the dumbbells the movement holds ([load count](gym/domain/README.md)). `setCount` counts all sets in that workout.
+- `sessions`: `{id, startedAt, finishedAt, routineId?, routineName, setCount, workingSetCount, reps, tonnageKg, exerciseNames, movements, sets}`. `movements` contains `{exerciseId,sets,reps,tonnageKg}` totals counting every set. A set is `{id, exerciseId, exercise, setNumber, weightKg, reps, rpe?, completedAt}`. The safe history projection omits set notes, private Notes, Coach, planned targets and owner identity.
+- `summary`: `{sessions, sets, reps, tonnageKg}` for the complete filtered scope, before pagination. Sets, reps and external volume count every set; volume clamps negative load to zero and multiplies a dumbbell load by the dumbbells the movement holds ([load count](gym/domain/README.md)). `setCount` counts all sets in that workout.
 - `months`: `[{month:"2024-01", sessions}]`, month index in `timeZone` (IANA name, default UTC), newest first, for the complete filtered scope.
 - `exercises` and `routines`: `[{id, name, sessions}]` for the same complete filtered scope; count means workouts containing that identity, not sets. Exercise facets also carry `equipment` when known; snapshots freeze it with the safe facts. Readers suppress estimates for bodyweight equipment or unknown equipment, without inferring equipment from a name.
 - `next`: `{before, beforeId}` when another page exists, otherwise `null`.
@@ -24,4 +24,4 @@ Both history reads accept `projection=progress` to add `progress:{asOf,sessions}
 
 A completed workout is corrected through `/v1/sync` by gym's `gym.correctSession` command, whose arguments `sync/gym.registry.json` declares and whose rules [the corpus README](sync/corpus/README.md) states (engine.md A.2). Its `routineName` is a historical display override: session reads return it as optional `session.routineName`, and history rows resolve it. It does not modify the living routine or any part of the frozen `session.plan` snapshot. Readers use `session.routineName ?? session.plan?.routine`.
 
-Progress movements also carry optional `mostReps`, a performed fact for the zero-load working set with the most reps (equal reps choose the smallest set ID). Signed heaviest and qualified estimates keep their existing meanings.
+Progress movements also carry optional `mostReps`, a performed fact for the zero-load set with the most reps (equal reps choose the smallest set ID). Signed heaviest and qualified estimates keep their existing meanings.

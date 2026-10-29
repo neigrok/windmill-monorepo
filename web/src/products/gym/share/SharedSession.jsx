@@ -56,10 +56,9 @@ export function SharedSession({ token }) {
           <ul className="gym-sets">
             {/* No set on this wire has an id, so the row is keyed by place plus set number. */}
             {group.map((set, index) => (
-              <li key={`${set.setNumber}-${index}`} className={set.kind === 'warmup' ? 'gym-set gym-set-warmup' : 'gym-set'}>
+              <li key={`${set.setNumber}-${index}`} className="gym-set">
                 <span className="gym-set-number">{set.setNumber}</span>
                 <span className="gym-set-load">{`${fmt(set.weightKg)} × ${set.reps}`}</span>
-                {set.kind !== 'working' && <span className="gym-set-kind">{set.kind}</span>}
                 {set.rpe != null && <span className="gym-set-rpe">rpe {set.rpe}</span>}
                 <span className="gym-set-time">{timeLabel(set.completedAt)}</span>
                 {set.note && <span className="gym-set-note">{set.note}</span>}

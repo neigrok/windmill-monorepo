@@ -65,10 +65,10 @@ class CoachAnswerTests {
             CoachAnswer("Ordinary prose.", receipt, emptyList(), 4000, receiptInset = 4.dp)
         } } }
         assertEquals(20.dp, compose.onNodeWithText("From your log").getUnclippedBoundsInRoot().left)
-        assertEquals(36.dp, compose.onNodeWithText("Working sets").getUnclippedBoundsInRoot().left)
+        assertEquals(36.dp, compose.onNodeWithText("Sets").getUnclippedBoundsInRoot().left)
         assertEquals(376.dp, compose.onNodeWithText("960 kg").getUnclippedBoundsInRoot().right)
         val layout = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("Working sets").fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        compose.onNodeWithText("Sets").fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
         assertEquals(16.sp, layout.single().layoutInput.style.fontSize)
         compose.onNodeWithText(Ask.receipt(read).replaceFirstChar { it.uppercase() }).performClick()
         compose.onNodeWithText("Saved a note").assertIsDisplayed()
@@ -159,10 +159,10 @@ class CoachAnswerTests {
         compose.onNodeWithText("Keep these exact words.").assertIsDisplayed()
         compose.onNodeWithText("No invented summary.").assertIsDisplayed()
         compose.onNodeWithText("From your log").assertDoesNotExist()
-        compose.onNodeWithText("Working sets").assertDoesNotExist()
+        compose.onNodeWithText("Sets").assertDoesNotExist()
         compose.onNodeWithText("Read 3 workouts · 1 week").performScrollTo().performClick()
         compose.onNodeWithText("What Coach read").assertIsDisplayed()
-        compose.onNodeWithText("2 working sets · 960 kg", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("2 sets · 960 kg", substring = true).assertIsDisplayed()
         compose.onNodeWithText("9999 kg", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Old workout", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Movement only", substring = true).performScrollTo().assertIsDisplayed()
@@ -176,7 +176,7 @@ class CoachAnswerTests {
             CoachAnswer("The model's focal answer stays first.", AnswerReceipt(1, ReadTally(15, 5, 1), observations = reads), emptyList(), 6000)
         } } }
         compose.onNodeWithText("The model's focal answer stays first.").assertIsDisplayed()
-        compose.onNodeWithText("Working sets").assertDoesNotExist()
+        compose.onNodeWithText("Sets").assertDoesNotExist()
         compose.onNodeWithText("Read 5 workouts · 1 week").assertIsDisplayed().performClick()
         compose.onNodeWithText("Workout 5", substring = true).performScrollTo().assertIsDisplayed()
     }
@@ -188,15 +188,15 @@ class CoachAnswerTests {
             CoachAnswer("A factual answer.", AnswerReceipt(1, ReadTally(3, 1, 1), observations = listOf(fact)), emptyList(), 4000)
         } }
         compose.onNodeWithText("Read 1 workout · 1 week").performClick()
-        compose.onNodeWithText("3 working sets · —", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("3 sets · —", substring = true).assertIsDisplayed()
         compose.onNodeWithText("0 kg", substring = true).assertDoesNotExist()
     }
 
     @Test
     fun aPastAnswerWithoutEvidenceNeverTreatsProseAsFacts() {
-        compose.setContent { GymMaterial { CoachAnswer("Nine working sets, 2700kg, 48 minutes.", null, emptyList(), 5000) } }
-        compose.onNodeWithText("Nine working sets, 2700kg, 48 minutes.").assertIsDisplayed()
-        compose.onNodeWithText("Working sets").assertDoesNotExist()
+        compose.setContent { GymMaterial { CoachAnswer("Nine sets, 2700kg, 48 minutes.", null, emptyList(), 5000) } }
+        compose.onNodeWithText("Nine sets, 2700kg, 48 minutes.").assertIsDisplayed()
+        compose.onNodeWithText("Sets").assertDoesNotExist()
         compose.onNodeWithText("From your log").assertDoesNotExist()
         compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
     }

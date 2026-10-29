@@ -74,7 +74,7 @@ struct Harness {
                                 std::nullopt, ClosedBy::finish});
     for (int number = 1; number <= sets; ++number)
       repo.db.seedSet(Set{SetId{"set_" + session.substr(4) + std::to_string(number)}, SessionId{session},
-                          ExerciseId{"bench-press"}, 0, 82.5, 8, SetKind::working, std::nullopt, "",
+                          ExerciseId{"bench-press"}, 0, 82.5, 8, std::nullopt, "",
                           startedAt + static_cast<std::uint64_t>(number) * 60'000});
   }
 };

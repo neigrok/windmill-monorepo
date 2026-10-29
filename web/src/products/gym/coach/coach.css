@@ -80,7 +80,7 @@
 .gym-root .gym-coach-mirror-movement ul { margin: 0; padding: 0 0 8px; list-style: none; }
 .gym-root .gym-coach-mirror-movement li { display: flex; align-items: center; gap: 12px; height: 44px; font: 400 16px/20px var(--font-mono); }
 .gym-root .gym-coach-mirror-movement li > i, .gym-root .gym-coach-mirror-rail i { width: 2px; height: 10px; background: var(--gym-line-strong); box-sizing: border-box; }
-.gym-root .gym-coach-mirror-movement li.is-lifted > i, .gym-root .gym-coach-mirror-movement li.is-warmup > i, .gym-root .gym-coach-mirror-rail i.is-lifted, .gym-root .gym-coach-mirror-rail i.is-warmup { background: var(--color-brand); }
+.gym-root .gym-coach-mirror-movement li.is-lifted > i, .gym-root .gym-coach-mirror-rail i.is-lifted { background: var(--color-brand); }
 .gym-root .gym-coach-mirror-movement li.is-next > i { background: transparent; border: 1px solid var(--color-brand); }
 .gym-root .gym-coach-mirror-rail { display: flex; gap: 4px; }
 .gym-root .gym-coach-workout-mirror > .gym-coach-workout-meta { margin-top: 8px; }

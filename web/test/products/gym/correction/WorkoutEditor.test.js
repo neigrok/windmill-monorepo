@@ -22,7 +22,7 @@ for (const future of [false, true]) test(`a ${future ? 'future' : 'known overlap
   t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 24, 18).getTime() });
   browserWith();
   const session = { id: 'ses_correction', startedAt: new Date(2026, 8, 21, 18).getTime(), finishedAt: new Date(2026, 8, 21, 19).getTime() };
-  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'working', completedAt: session.startedAt + 60000 };
+  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, completedAt: session.startedAt + 60000 };
   const { id: setId, ...setFields } = set;
   const gym = await gymAccount(t, [confirmed('session', session.id, { startedAt: session.startedAt, finishedAt: session.finishedAt }),
     confirmed('set', setId, { ...setFields, sessionId: session.id }),
@@ -48,7 +48,7 @@ test('a late correction refusal restores literal input after remount and waits f
   t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 24, 18).getTime() });
   browserWith();
   const session = { id: 'ses_correction', startedAt: new Date(2026, 8, 21, 18, 0, 23).getTime(), finishedAt: new Date(2026, 8, 21, 19, 0, 23).getTime() };
-  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'drop', rpe: 8.5, note: 'Exact note', completedAt: session.startedAt + 60000 };
+  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, rpe: 8.5, note: 'Exact note', completedAt: session.startedAt + 60000 };
   const { id: setId, ...setFields } = set;
   const gym = await gymAccount(t, [confirmed('session', session.id, { startedAt: session.startedAt, finishedAt: session.finishedAt }), confirmed('set', setId, { ...setFields, sessionId: session.id })]);
   const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');
@@ -103,7 +103,7 @@ test('a failed correction retains the native date and set draft, then permits re
   browserWith();
   const startedAt = new Date(2026, 0, 7, 18, 5).getTime();
   const session = { id: 'ses_correction', startedAt, finishedAt: startedAt + 3600000, routineName: 'Push A' };
-  const lifted = { exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'working', completedAt: startedAt + 60000, note: '' };
+  const lifted = { exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, completedAt: startedAt + 60000, note: '' };
   const set = { id: 'set_correction', ...lifted };
   const gym = await gymAccount(t, [
     confirmed('session', session.id, { startedAt, finishedAt: session.finishedAt, displayName: 'Push A' }),
@@ -159,7 +159,7 @@ test('a correction form never adopts another tab’s command result', async (t) 
   browserWith();
   const startedAt = new Date(2026, 0, 7, 18).getTime();
   const session = { id: 'ses_correction', startedAt, finishedAt: startedAt + 3600000 };
-  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'working', completedAt: startedAt + 60000 };
+  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, completedAt: startedAt + 60000 };
   const { id: setId, ...setFields } = set;
   const gym = await gymAccount(t, [confirmed('session', session.id, { startedAt, finishedAt: session.finishedAt }), confirmed('set', setId, { ...setFields, sessionId: session.id })]);
   const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');
@@ -192,7 +192,7 @@ test('a deleted workout still opens its refused correction draft from the recove
   const startedAt = new Date(2026, 0, 7, 18).getTime();
   const session = { id: 'ses_correction', startedAt, finishedAt: startedAt + 3600000 };
   const stored = confirmed('session', session.id, { startedAt, finishedAt: session.finishedAt });
-  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'working', completedAt: startedAt + 60000 };
+  const set = { id: 'set_correction', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, completedAt: startedAt + 60000 };
   const { id: setId, ...setFields } = set;
   const gym = await gymAccount(t, [stored, confirmed('set', setId, { ...setFields, sessionId: session.id })]);
   const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');

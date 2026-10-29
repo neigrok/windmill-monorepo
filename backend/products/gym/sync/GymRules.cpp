@@ -195,8 +195,7 @@ Delta newSet(const std::string& session, const Json::Value& set, bool correction
   delta.lattice.born = Stamp{};
   delta.lattice.life = Life(LifeState::alive, Stamp{});
   Json::Value f = object({{"sessionId", session}, {"exerciseId", set["exerciseId"]}, {"weightKg", set["weightKg"]},
-                         {"reps", set["reps"]}, {"kind", set.get("kind", "working")},
-                         {"note", set.get("note", "")}, {"completedAt", set["completedAt"]}});
+                         {"reps", set["reps"]}, {"note", set.get("note", "")}, {"completedAt", set["completedAt"]}});
   if (set.isMember("rpe")) f["rpe"] = set["rpe"];
   for (const std::string& name : f.getMemberNames()) delta.lattice.f.emplace(name, Reg(f[name], Stamp{}));
   if (correction) delta.v["setNumber"] = set["setNumber"];

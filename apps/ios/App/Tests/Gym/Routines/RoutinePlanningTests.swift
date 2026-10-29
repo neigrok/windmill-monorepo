@@ -237,8 +237,8 @@ import UIKit
     let session = Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2))
     let set = TrainingSet(id: ID("set-one1"), sessionId: session.id, exerciseId: ID("bench-press"), weightKg: 100, reps: 5, completedAt: Instant(ms: 1))
     let other = TrainingSet(id: ID("set-two2"), sessionId: session.id, exerciseId: ID("deadlift"), weightKg: 60, reps: 5, completedAt: Instant(ms: 1))
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set], catalogue: Catalogue(custom: [], names: []))) == "1 working set · 1 movement")
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 working sets · 2 movements")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set], catalogue: Catalogue(custom: [], names: []))) == "1 set · 1 movement")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, other], catalogue: Catalogue(custom: [], names: []))) == "2 sets · 2 movements")
   }
 
   // A routine's summary names each movement by its place and marks the lifter's own; one gone from the catalogue says so.

@@ -30,22 +30,18 @@ using RoutineId = Id<RoutineTag>;
 // Pattern is the only classification. Equipment decides the default stepKg.
 enum class Pattern { squat, hinge, press, pull, carry, core, isolation };
 enum class Equipment { barbell, dumbbell, machine, cable, bodyweight, kettlebell, other };
-enum class SetKind { warmup, working, drop, failure };
 
 std::string toString(Pattern pattern);
 std::string toString(Equipment equipment);
-std::string toString(SetKind kind);
 
 // Strict on write: an unknown word in a request is a 400, never a silent downgrade of user data.
 Pattern parsePattern(std::string_view text);       // throws InvalidTraining
 Equipment parseEquipment(std::string_view text);   // throws InvalidTraining
-SetKind parseSetKind(std::string_view text);       // throws InvalidTraining
 
 // Clamped on read: a future value added by a newer deploy can't crash an older reader — an unknown
-// stored kind reads as working, an unknown pattern as isolation, unknown equipment as barbell.
+// stored pattern reads as isolation, unknown equipment as barbell.
 Pattern patternFromStored(std::string_view text);
 Equipment equipmentFromStored(std::string_view text);
-SetKind setKindFromStored(std::string_view text);
 
 // The one id-shape rule for every client-minted id (recommended prefixes ses_ / set_ / rt_, opaque
 // to the server). Seeded exercise slugs ('dip') are not client-minted and follow their own rule.
@@ -191,13 +187,12 @@ struct Set {
   int setNumber;
   double weightKg;
   int reps;
-  SetKind kind;
   std::optional<double> rpe;
   std::string note;
   std::uint64_t completedAtMs;
 
   Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double weightKg, int reps,
-      SetKind kind, std::optional<double> rpe, std::string note, std::uint64_t completedAtMs);
+      std::optional<double> rpe, std::string note, std::uint64_t completedAtMs);
 
   bool operator==(const Set&) const = default;
 };

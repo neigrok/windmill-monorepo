@@ -38,7 +38,7 @@ for (const workouts of [250, 1000]) test(`training reads recompute once per repl
     for (let set = 0; set < 20; set += 1) rows.push({
       ...row('set', `${id}_set_${set}`, { sessionId: id,
         exerciseId: ['bench-press', 'back-squat', 'deadlift', 'pull-up'][Math.floor(set / 5)],
-        weightKg: 60 + index % 20, reps: 8, kind: 'working', completedAt: at + 60000 * (set + 1) }),
+        weightKg: 60 + index % 20, reps: 8, completedAt: at + 60000 * (set + 1) }),
       v: { setNumber: set % 5 + 1 },
     });
   }
@@ -55,7 +55,7 @@ for (const workouts of [250, 1000]) test(`training reads recompute once per repl
   const changed = [...rows,
     row('session', 'session_new', { startedAt: now - 1000, finishedAt: now, closedBy: 'finish' }),
     row('set', 'session_new_set', { sessionId: 'session_new', exerciseId: 'bench-press',
-      weightKg: 80, reps: 8, kind: 'working', completedAt: now }),
+      weightKg: 80, reps: 8, completedAt: now }),
   ];
   update({ drawn: changed, stored: changed });
   assert.deepEqual(recomputations(), { sessions: 2, exercises: 2 }, 'changed replica recomputes each training read once');

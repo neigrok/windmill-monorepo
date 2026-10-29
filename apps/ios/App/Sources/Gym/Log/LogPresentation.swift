@@ -17,7 +17,7 @@ nonisolated enum LogPresentation {
   // A month moment's line, its own month: *Trained every week of February*.
   static func trainedEvery(_ month: LocalDay, dates: GymDate) -> String { "Trained every week of \(dates.month(month))" }
   static func sessionFacts(_ readout: SessionReadout) -> String {
-    [GymCount.of(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
+    [GymCount.of(readout.workingSetCount, "set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
   }
   // A movement's line under its name on a finished session: what the plan held for it, or that the plan did not.
   static func planLine(_ exercise: ID<Exercise>, plan: SessionPlan?) -> String? {

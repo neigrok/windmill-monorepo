@@ -24,7 +24,7 @@ const input = { id: 'session00001', startedAt: NOW - 60_000, finishedAt: NOW - 1
   sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: NOW - 5_000 }] };
 const rawDraft = { date: '2027-01-15', startTime: '07:59', duration: '  59 ', unit: 'kg', routineName: 'Private session',
   groups: [{ id: 'group1', exerciseId: 'bench-press', sets: [{ id: 'set00000001', weight: '060,000', reps: '05',
-    rpe: '7,5', note: ' Private e\u0301 words\n', kind: 'drop' }] }] };
+    rpe: '7,5', note: ' Private e\u0301 words\n' }] }] };
 const correction = { requestId: 'request00001', startedAt: input.startedAt, finishedAt: input.finishedAt, routineName: 'Corrected',
   sets: [{ ...input.sets[0], setNumber: 1, reps: 6 }] };
 

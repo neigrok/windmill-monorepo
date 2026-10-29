@@ -20,7 +20,7 @@ using namespace wm::gym::doortest;
 namespace {
 
 SetWrite setAt(const char* id, std::uint64_t at, const char* exercise = "dip") {
-  return {SetId{id}, ExerciseId{exercise}, 20.25, 5, SetKind::working, 7.5, "", at};
+  return {SetId{id}, ExerciseId{exercise}, 20.25, 5, 7.5, "", at};
 }
 
 SessionStart startAt(const char* id, std::uint64_t at, bool join = true) {
@@ -29,7 +29,7 @@ SessionStart startAt(const char* id, std::uint64_t at, bool join = true) {
 
 Json::Value rawAppend(Harness& h, const UserId& user, const SessionId& session, const SetWrite& incoming) {
   auto fields = toJson(Set{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
-                           incoming.kind, incoming.rpe, incoming.note, incoming.completedAtMs});
+                           incoming.rpe, incoming.note, incoming.completedAtMs});
   fields.removeMember("id");
   fields.removeMember("setNumber");
   fields["sessionId"] = session.str();
@@ -263,7 +263,7 @@ TEST(gym_training_engine_import_preserves_hash_overlap_and_deleted_receipt) {
   changedArgs["finishedAt"] = Json::UInt64(changed.finishedAtMs);
   const auto& changedSet = changed.sets[0];
   changedArgs["sets"].append(toJson(Set{changedSet.id, changed.id, changedSet.exercise, 0, changedSet.weightKg,
-                                      changedSet.reps, changedSet.kind, changedSet.rpe, changedSet.note, changedSet.completedAtMs}));
+                                      changedSet.reps, changedSet.rpe, changedSet.note, changedSet.completedAtMs}));
   changedArgs["sets"][0].removeMember("setNumber");
   CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.importSession", changedArgs)), "payload-conflict");
   CHECK_EQ(h.door.importSession(h.user, changed).error, BatchLogError::payloadConflict);
@@ -342,8 +342,8 @@ TEST(gym_training_engine_correction_command_refuses_padding_and_numbers_off_thei
   CHECK_EQ(corrected->displayName, std::optional<std::string>{"Valid workout"});
   const auto sets = h.repo.log.setsOf(session);
   CHECK_EQ(sets, (std::vector<Set>{
-      Set{SetId{"set_padding01"}, session, ExerciseId{"dip"}, 1, 20.25, 5, SetKind::working, 7.5, "", end - 1500},
-      Set{SetId{"set_padding02"}, session, ExerciseId{"dip"}, 2, 0, 8, SetKind::working, std::nullopt, "", end - 1400}}));
+      Set{SetId{"set_padding01"}, session, ExerciseId{"dip"}, 1, 20.25, 5, 7.5, "", end - 1500},
+      Set{SetId{"set_padding02"}, session, ExerciseId{"dip"}, 2, 0, 8, std::nullopt, "", end - 1400}}));
   REQUIRE_EQ(sets.size(), 2u);
   CHECK(!std::signbit(sets[1].weightKg));
   CHECK(h.failures.messages.empty());
@@ -354,7 +354,7 @@ TEST(gym_training_engine_parent_refusal_is_an_absent_session_at_the_door) {
   Harness h;
   const auto set = setAt("set_orphan001", h.clock.now);
   auto args = toJson(Set{set.id, SessionId{"session_absent"}, set.exercise, 0, set.weightKg, set.reps,
-                         set.kind, set.rpe, set.note, set.completedAtMs});
+                         set.rpe, set.note, set.completedAtMs});
   args.removeMember("id");
   args.removeMember("setNumber");
   args["sessionId"] = "session_absent";

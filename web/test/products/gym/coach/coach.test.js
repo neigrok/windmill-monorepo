@@ -21,7 +21,7 @@ test('live mirror uses frozen targets and actual sets without comparing ambiguou
   ] });
   const ambiguous = coachWorkout({ ...session, plan: { entries: [session.plan.entries[0], session.plan.entries[0]] } }, sets, catalog);
   assert.deepEqual(ambiguous.groups, [{ id: 'bench', name: 'Bench Press', scheme: null, targets: null, rows: [{ key: 'set_1', kind: 'lifted', label: '62.5 × 7' }] }]);
-  assert.equal(ambiguous.progress, '1 working set logged');
+  assert.equal(ambiguous.progress, '1 set logged');
   assert.deepEqual(coachWorkout({ startedAt: 0, plan: '{bad json' }, [], []).groups, []);
 });
 

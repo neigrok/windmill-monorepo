@@ -91,7 +91,6 @@ public enum Gym {
                   "completedAt": ["integer": true, "min": 0, "type": "number"],
                   "exerciseId": ["pattern": "^[A-Za-z0-9_-]{1,64}$", "type": "string"],
                   "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
-                  "kind": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
@@ -127,7 +126,6 @@ public enum Gym {
                   "completedAt": ["integer": true, "min": 0, "type": "number"],
                   "exerciseId": ["pattern": "^[A-Za-z0-9_-]{1,64}$", "type": "string"],
                   "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
-                  "kind": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
@@ -183,7 +181,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 10,
+    "minVersion": 11,
     "products": [
       "gym": [
         "codes": [
@@ -446,11 +444,6 @@ public enum Gym {
         "fields": [
           "completedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "client"],
           "exerciseId": ["kind": "const", "ref": "exercise", "writer": "client"],
-          "kind": [
-            "domain": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
-            "kind": "lww",
-            "writer": "client",
-          ],
           "note": ["domain": ["type": "string"], "kind": "lww", "max": 4000, "unit": "bytes", "writer": "client"],
           "reps": [
             "domain": ["integer": true, "max": 500, "min": 1, "type": "number"],
@@ -757,6 +750,6 @@ public enum Gym {
         "type": "message",
       ],
     ],
-    "version": 10,
+    "version": 11,
   ]
 }

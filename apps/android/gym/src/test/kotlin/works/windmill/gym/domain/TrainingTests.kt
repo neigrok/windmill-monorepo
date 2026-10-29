@@ -116,25 +116,13 @@ class TrainingWireTests {
     fun testASetDecodesTheLogsOwnNumberingAndDefaultsTheRest() {
         val set = json.decodeFromString(TrainingSet.serializer(), """
         { "id": "set_1", "exerciseId": "back-squat", "setNumber": 3, "weightKg": 105,
-          "reps": 5, "kind": "working", "completedAt": 1754300000000 }
+          "reps": 5, "completedAt": 1754300000000 }
         """)
 
         assertEquals(3, set.setNumber)
         assertEquals("note is a String on the wire, so an absent one is empty and not missing", "", set.note)
         assertNull(set.rpe)
         assertEquals(1_754_300_000_000, set.completedAtMs)
-    }
-
-    @Test
-    fun testLegacyKindsAreIgnoredAndNeverWritten() {
-        for (kind in listOf("warmup", "working", "drop", "failure", "cluster")) {
-            val set = json.decodeFromString(TrainingSet.serializer(),
-                """{"id":"set_1","exerciseId":"x","weightKg":1,"reps":1,"kind":"$kind","completedAt":1}""")
-            assertEquals(TrainingSet("set_1", "x", weightKg = 1.0, reps = 1, completedAtMs = 1), set)
-            assertEquals("""{"id":"set_1","exerciseId":"x","weightKg":1.0,"reps":1,"completedAt":1}""",
-                json.encodeToString(TrainingSet.serializer(), set))
-        }
-
     }
 
     @Test

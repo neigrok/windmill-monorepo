@@ -26,8 +26,8 @@ test('global catalog mirrors every schema seed, overrides seed names, and omits 
   assert.deepEqual(readView([row('exerciseName', 'bench-press', { aliases: ['Flat Press'] })]).exercises().filter((exercise) => exercise.id === 'bench-press'), [{ ...seed, aliases: ['Flat Press'] }]);
 });
 
-test('session details keep frozen plan, corrected display name, serial numbers and genuine absences, and never a stored set kind', () => {
-  const rows = [sessionRow('session_a', at, { plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }] }, displayName: '', routineId: null }), setRow('working_1', 'session_a', { rpe: null }), setRow('warmup_1', 'session_a', { completedAt: at - 10, kind: 'warmup', rpe: 6 }, { v: { setNumber: 2 } })];
+test('session details keep frozen plan, corrected display name, serial numbers and genuine absences', () => {
+  const rows = [sessionRow('session_a', at, { plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }] }, displayName: '', routineId: null }), setRow('working_1', 'session_a', { rpe: null }), setRow('warmup_1', 'session_a', { completedAt: at - 10, rpe: 6 }, { v: { setNumber: 2 } })];
   rows[2].v = { setNumber: 2 };
   assert.deepEqual(readView(rows).session('session_a'), { session: { id: 'session_a', startedAt: at, finishedAt: at + 3600000, routineName: '', plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }] } }, sets: [ { id: 'warmup_1', exerciseId: 'bench-press', setNumber: 2, weightKg: 60, reps: 8, rpe: 6, note: '', completedAt: at - 10 }, { id: 'working_1', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, note: '', completedAt: at + 1000 } ] });
   assert.equal(readView(rows).session('missing'), null);
@@ -53,8 +53,8 @@ test('frozen plan reads preserve values outside editor bounds', () => {
   assert.deepEqual(readView([sessionRow('session_a', at, { plan })]).session('session_a').session.plan, plan);
 });
 
-test('summaries count every set whatever kind its row stored, clamp assisted volume, and keyset page equal starts', () => {
-  const rows = [sessionRow('session_b', at), sessionRow('session_a', at), setRow('working_1', 'session_a', { weightKg: -10, reps: 8 }), setRow('working_2', 'session_a', { weightKg: 50, reps: 10 }), setRow('warmup_1', 'session_a', { kind: 'warmup', weightKg: 150 }), setRow('drop_set1', 'session_a', { kind: 'drop', weightKg: 70 })];
+test('summaries count every set, clamp assisted volume, and keyset page equal starts', () => {
+  const rows = [sessionRow('session_b', at), sessionRow('session_a', at), setRow('working_1', 'session_a', { weightKg: -10, reps: 8 }), setRow('working_2', 'session_a', { weightKg: 50, reps: 10 }), setRow('warmup_1', 'session_a', { weightKg: 150 }), setRow('drop_set1', 'session_a', { weightKg: 70 })];
   const api = readView(rows);
   assert.deepEqual(api.sessions({ limit: 1 }), [{ id: 'session_a', startedAt: at, finishedAt: at + 3600000, setCount: 4, workingSetCount: 4, tonnageKg: 2260, exercises: ['Bench Press'], topSet: { weightKg: 150, reps: 8 }, topE1rm: 150 * (1 + 8 / 30), record: false, closedItself: false }]);
   assert.deepEqual(api.sessions({ before: at, beforeId: 'session_a' }), [{ id: 'session_b', startedAt: at, finishedAt: at + 3600000, setCount: 0, workingSetCount: 0, tonnageKg: 0, exercises: [], topE1rm: null, record: false, closedItself: false }]);
@@ -69,7 +69,7 @@ test('volume totals fold flat facts using the shared checked Double order', () =
   assert.deepEqual(api.history().sessions[0].movements, [{ exerciseId: 'bench-press', sets: 2, reps: 32, tonnageKg: 2315.6499999999996 }]);
 });
 
-test('review needs four working sets and compares to earlier finished routines', () => {
+test('review needs four sets and compares to earlier finished routines', () => {
   const previous = at - 7 * 86400000;
   const rows = [sessionRow('previous', previous, { routineId: 'routine_a', plan: { routine: 'Push A', entries: [] } }), sessionRow('current_s', at, { routineId: 'routine_a', plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 8 }] }] } }), setRow('prior_set', 'previous', { weightKg: 60, reps: 8, completedAt: previous + 1000 }), ...Array.from({ length: 4 }, (_, index) => setRow(`current_${index}`, 'current_s', { weightKg: 65, reps: 8, completedAt: at + index * 1000 }))];
   assert.deepEqual(readView(rows).review('current_s'), { stats: { durationMs: 3600000, workingSets: 4, topE1rm: 65 * (1 + 8 / 30) }, slight: false, record: { kind: 'e1rm', exerciseId: 'bench-press', value: 65 * (1 + 8 / 30), weightKg: 65, reps: 8, previous: 76, previousAt: previous }, against: { sessionId: 'previous', routine: 'Push A', startedAt: previous, movements: [{ exerciseId: 'bench-press', now: { weightKg: 65, reps: 8, sets: 4 }, before: { weightKg: 60, reps: 8, sets: 1 }, planned: { sets: [{ reps: 8 }] } }] } });
@@ -77,8 +77,8 @@ test('review needs four working sets and compares to earlier finished routines',
   assert.equal(readView(rows).sessions({ limit: 1 })[0].record, true);
 });
 
-test('last-time and lastSets read every set of the latest finished session, whatever kind its row stored, and skip open sessions', () => {
-  const rows = [sessionRow('previous', at), row('session', 'open_now', { startedAt: at + 86400000 }), setRow('working_1', 'previous', { weightKg: 100 }), setRow('last_set1', 'previous', { weightKg: 40, reps: 12, kind: 'drop' }), setRow('warmup_1', 'previous', { weightKg: 120, kind: 'warmup' }), setRow('open_set1', 'open_now', { weightKg: 200, completedAt: at + 86400001 })];
+test('last-time and lastSets read every set of the latest finished session and skip open sessions', () => {
+  const rows = [sessionRow('previous', at), row('session', 'open_now', { startedAt: at + 86400000 }), setRow('working_1', 'previous', { weightKg: 100 }), setRow('last_set1', 'previous', { weightKg: 40, reps: 12 }), setRow('warmup_1', 'previous', { weightKg: 120 }), setRow('open_set1', 'open_now', { weightKg: 200, completedAt: at + 86400001 })];
   rows[3].v.setNumber = 3; rows[4].v.setNumber = 4;
   const api = readView(rows, { now: at + 86400002 });
   assert.deepEqual(api.lastSets(), [{ exerciseId: 'bench-press', weightKg: 120, reps: 8, at }]);
@@ -137,7 +137,7 @@ test('preferences defaults, weigh-in range latest and fractional note order surv
 });
 
 test('routine schemes and proposal removed counts project without inventing absent server metadata', () => {
-  const rows = [row('routine', 'routine_a', { name: 'Push', position: 2, createdDoor: 'ask', entries: [{ exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }] }), sessionRow('session_a', at, { routineId: 'routine_a' }), row('proposal', 'proposal_a', { routineId: 'routine_a', intent: 'revise', proposedName: 'Push B', summary: 'A change', door: 'mcp', connection: 'connection1', agent: 'My coach', state: 'pending', changes: [{ kind: 'removed', exerciseId: 'bench-press', before: { sets: [{ reps: 8 }] } }] }), setRow('working_1', 'session_a'), setRow('warmup_1', 'session_a', { kind: 'warmup' })];
+  const rows = [row('routine', 'routine_a', { name: 'Push', position: 2, createdDoor: 'ask', entries: [{ exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }] }), sessionRow('session_a', at, { routineId: 'routine_a' }), row('proposal', 'proposal_a', { routineId: 'routine_a', intent: 'revise', proposedName: 'Push B', summary: 'A change', door: 'mcp', connection: 'connection1', agent: 'My coach', state: 'pending', changes: [{ kind: 'removed', exerciseId: 'bench-press', before: { sets: [{ reps: 8 }] } }] }), setRow('working_1', 'session_a'), setRow('warmup_1', 'session_a')];
   const api = readView(rows);
   const head = { id: 'proposal_a', routineId: 'routine_a', intent: 'revise', state: 'pending', summary: 'A change', createdAt: at, source: { door: 'mcp', connection: 'connection1', agent: 'My coach' } };
   assert.deepEqual(api.routine('routine_a'), { id: 'routine_a', name: 'Push', position: 2, entries: [{ position: 1, exerciseId: 'bench-press', sets: [{}, { reps: 8 }, { weightKg: 0 }], restSeconds: 90 }], lastTrainedAt: at, pendingProposal: head, history: [{ kind: 'proposal', at, proposal: head }, { kind: 'created', at, by: 'ask' }] });
@@ -214,7 +214,7 @@ test('client stale closure uses the exact four-hour cutoff and never mutates con
 });
 
 test('any recent set prevents stale close, and finished sessions retain their recorded finish', () => {
-  const rows = [row('session', 'open_ses', { startedAt: at - 5 * 3600000 }), setRow('recent_1', 'open_ses', { completedAt: at - 1000, kind: 'warmup' }), sessionRow('finished_s', at - 6 * 3600000)];
+  const rows = [row('session', 'open_ses', { startedAt: at - 5 * 3600000 }), setRow('recent_1', 'open_ses', { completedAt: at - 1000 }), sessionRow('finished_s', at - 6 * 3600000)];
   const live = readView(rows, { now: at });
   assert.equal('finishedAt' in live.session('open_ses').session, false);
   assert.equal(live.liveHint(), true);

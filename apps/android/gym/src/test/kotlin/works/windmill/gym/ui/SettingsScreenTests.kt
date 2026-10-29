@@ -115,7 +115,7 @@ class SettingsScreenTests {
     }
 
     @Test
-    fun savedWorkoutCorrectionNeverRequiresASetKind() {
+    fun savedWorkoutCorrectionRetriesWithItsSetsAsSaved() {
         val at = 1_800_000_000_123L
         val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
         val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", weightKg = 80.0, reps = 5,
@@ -124,7 +124,6 @@ class SettingsScreenTests {
             "bad-instant", "Check the saved workout.")
         val saved = mutableListOf<SavedWorkout>()
         editor(refusal) { row, _ -> saved += row }
-        compose.onNodeWithText("Choose set kind").assertDoesNotExist()
         compose.onNodeWithText("Save and retry").performClick()
         compose.runOnIdle { assertEquals(listOf(SavedWorkout(source, listOf(set))), saved) }
     }

@@ -16,7 +16,6 @@ WorkoutObservation::WorkoutObservation(const Session& session, const std::vector
     : WorkoutObservation(session, 0, 0) {
   std::vector<VolumePart> parts;
   for (const Set& set : sets) {
-    if (set.kind != SetKind::working) continue;
     ++workingSetCount;
     const auto exercise = std::find_if(catalog.begin(), catalog.end(), [&](const auto& item) { return item.id == set.exercise; });
     if (exercise == catalog.end()) parts.emplace_back(set.id.str(), set.weightKg, set.reps, std::nullopt);

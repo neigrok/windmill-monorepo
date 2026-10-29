@@ -333,7 +333,7 @@ class WorkoutImportsTests {
         if (standingCount > 1) local.commit(scope, works.windmill.sync.api.Gesture((2..standingCount).map { number ->
             works.windmill.sync.api.Change.create("set", works.windmill.sync.api.NewID.Given(RecordID("standing$number")), mapOf(
                 "sessionId" to Json.of("session01"), "exerciseId" to Json.of("back-squat"), "weightKg" to Json.of(80.0),
-                "reps" to Json.of(8), "kind" to Json.of("working"), "completedAt" to Json.of(2_500)))
+                "reps" to Json.of(8), "completedAt" to Json.of(2_500)))
         }, atomic = true))
         push(local, server)
         local.commit(scope, works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.finish",
@@ -729,43 +729,6 @@ class WorkoutImportsTests {
                     local = listOf(works.windmill.sync.api.DeviceWrite(WorkoutImports.journalPrefix + "unknown", Json.of("original source")))) to Unit
             } }
             assertEquals(before, e.snapshot()); assertTrue(outbox(e).isEmpty())
-        }
-    }
-
-    @Test fun legacyKindsInARefusedSavedWorkoutRetryAfterRestartWithoutKindChoices() = runBlocking {
-        val kinds = listOf("warmup", "working", "drop", "failure", "cluster")
-        val row = finished().copy(sets = kinds.mapIndexed { index, _ ->
-            finished().sets.single().copy(id = "set0000$index", completedAtMs = 2_000L + index)
-        }, deleted = emptyList())
-        val source = Json.parse(diskJson.encodeToString(SavedWorkout.serializer(), row)).let { value ->
-            Json.Obj((value.obj() + ("sets" to Json.Arr(value.member("sets").arr().mapIndexed { index, set ->
-                Json.Obj((set.obj() + ("kind" to Json.of(kinds[index]))).toList())
-            }))).toList())
-        }
-        val snapshot = engine().use { local ->
-            WorkoutImports(local).prepare(row.copy(sets = row.sets.map { it.copy(setNumber = 2) }))
-            local.commit(scope) { context ->
-                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
-                    val items = journal.member("items").obj().mapValues { (_, item) ->
-                        Json.Obj((item.obj() + mapOf("source" to source, "code" to Json.of("source-kind"))).toList())
-                    }
-                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
-                }
-                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
-            }
-            local.snapshot()
-        }
-        engine(snapshot).use { reopened ->
-            val imports = WorkoutImports(reopened)
-            assertEquals(row.sets, imports.refusals().single().sets)
-            imports.retry(row.session.id)
-            assertEquals(emptyList<ImportRefusal>(), imports.refusals())
-            assertEquals(source, sources(reopened).single().member("source"))
-            val sets = outbox(reopened).single().member("intent").member("cmd").member("args").member("sets").arr()
-            assertEquals(row.sets.map { set -> Json.objectOf("id" to Json.of(set.id), "exerciseId" to Json.of(set.exerciseId),
-                "weightKg" to Json.of(set.weightKg), "reps" to Json.of(set.reps), "rpe" to Json.Null,
-                "note" to Json.of(""), "completedAt" to Json.of(set.completedAtMs)) }, sets)
-            assertEquals(row.sets, EngineTraining(reopened).session(row.session.id)!!.sets)
         }
     }
 

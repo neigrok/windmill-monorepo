@@ -17,7 +17,7 @@ count: for a dumbbell movement, its resolved dumbbell count (the override, else 
 else two), and one for every other equipment, so a count left on another equipment is ignored. Goblet
 squat, dumbbell row, suitcase carry and overhead triceps extension default to one dumbbell by their
 stable ids, so renames cannot change their default. Bodyweight movements count only positive added
-load, and warmups never count. Estimates stay in the entered weight unit. History projections, workout
+load. Estimates stay in the entered weight unit. History projections, workout
 detail totals and finish receipts all take the account's catalogue for this interpretation.
 
 Coach prepares a durable routine draft only for a client that reviews drafts (`routineReview: true` on

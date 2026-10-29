@@ -39,7 +39,7 @@ function lastWorkout(movements) {
     ...movements.flatMap(([exerciseId, sets]) => sets.map(([weightKg, reps], index) => {
       minute += 1;
       return confirmed('set', `setOld_${exerciseId}_${index + 1}`, {
-        sessionId: 'sessionOld01', exerciseId, setNumber: index + 1, weightKg, reps, kind: 'working', completedAt: at(19, 18, minute), note: '',
+        sessionId: 'sessionOld01', exerciseId, setNumber: index + 1, weightKg, reps, completedAt: at(19, 18, minute), note: '',
       });
     })),
   ];

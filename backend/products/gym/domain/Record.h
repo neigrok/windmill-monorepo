@@ -12,7 +12,7 @@ namespace wm::gym {
 
 // Everything here counts FINISHED sessions only.
 
-// Sets arrive in the order they were performed, warmups excluded.
+// Sets arrive in the order they were performed.
 struct MovementDay {
   SessionId session;
   std::uint64_t startedAtMs;
@@ -22,10 +22,8 @@ struct MovementDay {
 };
 
 // An absent `exercise` means this account's catalog holds no such movement, whether it never existed
-// or belongs to someone else. `sets` are the movement's working sets over the whole history; `recent` is bounded
+// or belongs to someone else. `sets` are the movement's sets over the whole history; `recent` is bounded
 // by the store.
-// `sets` come from the sessions the movement was WORKED in; `recent` holds the days it was trained
-// in at all bar a warmup, so a session holding only drops is in the list and not in the count.
 struct MovementHistory {
   std::optional<Exercise> exercise;
   std::vector<std::string> routines;   // the days that name it, in program order

@@ -8,7 +8,7 @@ async function sheet(t, changes = {}, refused = null, exercise = { id: 'overhead
   const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
   const saved = [];
   const view = renderHook(t, () => FixSheet({
-    set: { id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4, kind: 'working', rpe: 8.5, note: 'felt heavy', ...changes },
+    set: { id: 'set_3', exerciseId: 'overhead-press', setNumber: 3, weightKg: 47.5, reps: 4, rpe: 8.5, note: 'felt heavy', ...changes },
     movement: 'Overhead Press', exercise, session: { id: 'ses_1', plan: null },
     onSave: (fix) => { saved.push(fix); return refused; }, onDelete() {}, onClose() {},
   }));
@@ -63,8 +63,8 @@ test('byte limits preserve typed notes and explain refusal without sending an in
   assert.deepEqual(findByClass(fix.tree(), 'gym-name-count'), []);
 });
 
-test('web corrections edit actual numbers in place and retain stored kind through a refused retry', async (t) => {
-  const fix = await sheet(t, { kind: 'warmup' }, 'The log didn’t answer.');
+test('web corrections edit actual numbers in place through a refused retry', async (t) => {
+  const fix = await sheet(t, {}, 'The log didn’t answer.');
   assert.deepEqual(elementsOf(fix.tree()).filter((each) => each.type === 'input').map((each) => each.props['aria-label']), ['Load in kg total', 'Reps']);
   fix.field('reps').props.onChange({ target: { value: '5' } });
   await fix.submit();
@@ -89,7 +89,7 @@ test('fixing one value preserves an existing rating outside the capture scale an
 test('focused correction retains surrounding saved rows and refuses overflow under the selected row', async (t) => {
   browserWith();
   const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
-  const sets = [1, 2, 3].map((setNumber) => ({ id: `set_${setNumber}`, exerciseId: 'bench', setNumber, weightKg: 60, reps: 8, kind: 'working' }));
+  const sets = [1, 2, 3].map((setNumber) => ({ id: `set_${setNumber}`, exerciseId: 'bench', setNumber, weightKg: 60, reps: 8 }));
   const saved = [];
   const view = renderHook(t, () => FixSheet({ set: sets[1], sets, movement: 'Bench Press', session: { startedAt: new Date(2026, 8, 7).getTime() }, onSave: (fix) => saved.push(fix), onDelete() {}, onClose() {} }));
   assert.deepEqual(findByClass(view.tree, 'gym-fix-sibling').map(textOf), ['60 × 8', '60 × 8']);

@@ -54,7 +54,7 @@ selector inputs stay unchanged; retry and clock refreshes invalidate them. Live 
 their idle deadline. Each training read indexes sets by session and caches progress; record receipts
 come from one chronological pass. Equal cent-load estimate scores keep the earliest record, and
 bodyweight repetition records remain independent of assisted and loaded sets. Equipment and load-count overrides
-resolve through the current catalogue for old and new sets. Dumbbell entries are per dumbbell; working-set volume
+resolve through the current catalogue for old and new sets. Dumbbell entries are per dumbbell; volume
 multiplies by the configured one or two dumbbells. Other equipment counts the entered external load once. Estimates
 retain the entered unit. Seed and custom names continue to identify the same movement throughout history. Set rows,
 the fix sheet, workout corrections and past-workout entry name each load's basis from the catalogue: `kg each` for
@@ -66,7 +66,7 @@ predictions persist workout fields, correction removals and routine deaths from 
 through offline restart. Set numbers arrive with server admission; a pending correction retains the
 confirmed number until then. Import and correction plans preserve raw numbers and optional-key
 presence; predictions and committed commands use their declared numeric quantum. Additive corrections use
-`preserveOtherSets` to keep unnamed sets, their kinds and concurrent changes. The server decides
+`preserveOtherSets` to keep unnamed sets and concurrent changes. The server decides
 admission. Workout forms preflight known conflicts in their commit transaction and retain the exact
 submitted draft in `rack:workoutDrafts` until admission succeeds. Pending saves stay on the form;
 refusals keep it editable, survive reload, and offer a route back from the log. Only acceptance shows

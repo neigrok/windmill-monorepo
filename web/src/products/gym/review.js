@@ -15,7 +15,7 @@ export function finishHead({ startedAt, finishedAt, routine = null, slight = fal
 export function statTiles(stats) {
   return [
     { value: durLabel(stats.durationMs), label: 'Duration' },
-    { value: String(stats.workingSets), label: 'Working sets' },
+    { value: String(stats.workingSets), label: 'Sets' },
     { value: stats.topE1rm == null ? '—' : fmt(stats.topE1rm), label: 'Top e1RM' },
   ];
 }

@@ -14,7 +14,7 @@ const std::uint64_t kMonday = 1'700'000'000'000;   // 2023-11-14, a Tuesday
 const std::uint64_t kWeek = 604'800'000;
 const std::uint64_t kDay = 86'400'000;
 
-// One working set of a finished session; sessions are named by their start.
+// One set of a finished session; sessions are named by their start.
 ProgressSet set(const std::string& exercise, std::uint64_t startedAtMs, const std::string& id, double weightKg,
                 int reps, std::optional<double> rpe = std::nullopt) {
   return ProgressSet{SessionId{"ses_" + std::to_string(startedAtMs)}, startedAtMs, ExerciseId{exercise},

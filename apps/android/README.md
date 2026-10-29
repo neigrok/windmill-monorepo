@@ -122,8 +122,8 @@ finish or overlap that prevents correction, or a server advertising an older reg
 separate workout with new account identities: its
 start, complete saved set and finish are acknowledged in order. The original source, values and
 time survive; concurrent changes leave the source available for another retry. Settings Retry
-schedules reconciliation before reporting completion. Legacy set-kind fields are ignored on reads;
-new sets carry no kind, and every set contributes to training totals and history.
+schedules reconciliation before reporting completion. Sets carry no kind: every logged set counts
+toward training totals and history.
 The native **Workout** Quick Settings tile uses the notification snapshot. Its subtitle advances
 only while the shade listens; reopening restores the current workout and latest-set clock. An
 inactive tap opens Routines without starting anything. An active tap rechecks the owner and workout

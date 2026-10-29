@@ -142,9 +142,9 @@ TEST(gym_live_and_reopened_answer_evidence_is_exact_even_after_the_log_changes) 
   a.h.repo.db.sessions.push_back(session);
   a.h.repo.db.sets = {
       Set{SetId{"set_evidence1"}, session.id, ExerciseId{"bench-press"}, 1, 20, 5,
-          SetKind::warmup, std::nullopt, "", 1'700'000'100'000},
+          std::nullopt, "", 1'700'000'100'000},
       Set{SetId{"set_evidence2"}, session.id, ExerciseId{"bench-press"}, 2, 80, 5,
-          SetKind::working, std::nullopt, "", 1'700'000'200'000}};
+          std::nullopt, "", 1'700'000'200'000}};
   a.agent.plan = {{"list_sessions", parse("{}")},
       {"get_session", parse(R"({"sessionId":"ses_evidence1"})")},
       {"last_time", parse(R"({"exerciseId":"bench-press"})")},
@@ -155,12 +155,12 @@ TEST(gym_live_and_reopened_answer_evidence_is_exact_even_after_the_log_changes) 
       "proposals":[],"observations":[
         {"tool":"list_sessions","sessionId":"ses_evidence1","startedAt":1700000000000,
          "finishedAt":1700000900000,"routine":"Push A","coverage":"summary","setsRead":0,
-         "workout":{"workingSetCount":1,"tonnageKg":400.0,"durationMs":900000}},
+         "workout":{"workingSetCount":2,"tonnageKg":500.0,"durationMs":900000}},
         {"tool":"get_session","sessionId":"ses_evidence1","startedAt":1700000000000,
          "finishedAt":1700000900000,"routine":"Push A","coverage":"session","setsRead":2,
-         "workout":{"workingSetCount":1,"tonnageKg":400.0,"durationMs":900000}},
+         "workout":{"workingSetCount":2,"tonnageKg":500.0,"durationMs":900000}},
         {"tool":"last_time","sessionId":"ses_evidence1","startedAt":1700000000000,
-         "finishedAt":1700000900000,"routine":"Push A","coverage":"movement","setsRead":1,
+         "finishedAt":1700000900000,"routine":"Push A","coverage":"movement","setsRead":2,
          "exerciseId":"bench-press"}]})");
   Json::Value expected = parse(R"({"answer":"You squatted 100 for five.","proposals":[],
       "read":{"sets":2,"sessions":1,"weeks":1},"thread":"thr_evidence1"})");

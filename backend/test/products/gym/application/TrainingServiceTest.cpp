@@ -60,7 +60,7 @@ struct Harness : wm::gym::doortest::Harness {
 
   SetWrite bench(std::string id, double weightKg, std::uint64_t completedAtMs) {
     return SetWrite{setId(std::move(id)), ExerciseId{"bench-press"}, weightKg, 8,
-                    SetKind::working, std::nullopt, "", completedAtMs};
+                    std::nullopt, "", completedAtMs};
   }
 
   // A workout's squats, one a minute from its start, under set ids its session's id names.
@@ -69,7 +69,7 @@ struct Harness : wm::gym::doortest::Harness {
     std::vector<SetWrite> written;
     for (int number = 1; number <= sets; ++number)
       written.push_back(SetWrite{setId("set_" + session.substr(4) + std::to_string(number)),
-                                 ExerciseId{"back-squat"}, weightKg, reps, SetKind::working,
+                                 ExerciseId{"back-squat"}, weightKg, reps,
                                  std::nullopt, "",
                                  startedAtMs + static_cast<std::uint64_t>(number) * 60'000});
     return written;
@@ -126,7 +126,6 @@ struct Harness : wm::gym::doortest::Harness {
     args["sets"] = Json::Value(Json::arrayValue);
     for (const Set& set : sets) {
       Json::Value row = toJson(set);
-      row.removeMember("kind");
       row.removeMember("note");
       args["sets"].append(row);
     }
@@ -167,16 +166,16 @@ struct Harness : wm::gym::doortest::Harness {
     pqxx::read_transaction sql{*lease};
     std::vector<Kept> rows;
     for (const auto& row : sql.exec(
-             "select set_id, session_id, exercise_id, set_number, weight_kg::float8, reps, kind, rpe::float8, "
+             "select set_id, session_id, exercise_id, set_number, weight_kg::float8, reps, rpe::float8, "
              "note, (extract(epoch from completed_at) * 1000)::bigint, deleted "
              "from gym_set_revisions order by revision_id")) {
       std::optional<double> rpe;
-      if (!row[7].is_null()) rpe = row[7].as<double>();
+      if (!row[6].is_null()) rpe = row[6].as<double>();
       rows.push_back(Kept{Set{SetId{row[0].as<std::string>()}, SessionId{row[1].as<std::string>()},
                               ExerciseId{row[2].as<std::string>()}, row[3].as<int>(), row[4].as<double>(),
-                              row[5].as<int>(), setKindFromStored(row[6].as<std::string>()), rpe,
-                              row[8].as<std::string>(), row[9].as<std::uint64_t>()},
-                          row[10].as<bool>()});
+                              row[5].as<int>(), rpe,
+                              row[7].as<std::string>(), row[8].as<std::uint64_t>()},
+                          row[9].as<bool>()});
     }
     return rows;
   }
@@ -421,11 +420,11 @@ TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
   CHECK(third.error == AppendError::none);
   CHECK(tomorrow.error == AppendError::finished);
   CHECK_EQ(h.sets(), (std::vector<Set>{
-      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
           std::nullopt, "", lastNight + 60'000),
-      Set(setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 2, 82.5, 8, SetKind::working,
+      Set(setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 2, 82.5, 8,
           std::nullopt, "", lastNight + 120'000),
-      Set(setId("set_00000003"), sid(), ExerciseId{"bench-press"}, 3, 85.0, 8, SetKind::working,
+      Set(setId("set_00000003"), sid(), ExerciseId{"bench-press"}, 3, 85.0, 8,
           std::nullopt, "", lastNight + 180'000)}));
   // The finish followed the last owed set, and is still the log's word, still revisable.
   CHECK_EQ(h.repo.log.session(h.user, sid()),
@@ -453,7 +452,7 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
                                                             std::nullopt, std::nullopt, ClosedBy::finish)));
   CHECK(after.error == AppendError::finished);
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
-                                          8, SetKind::working, std::nullopt, "", t0 + 600'000)});
+                                          8, std::nullopt, "", t0 + 600'000)});
   // A finish EARLIER than the stale close keeps the later instant, and still becomes the lifter's word.
   h.startAt(h.clock.now, "ses_00000002");
   h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
@@ -485,7 +484,7 @@ TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
 
   CHECK(late.error == AppendError::finished);
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
-                                          8, SetKind::working, std::nullopt, "", h.clock.now + 60'000)});
+                                          8, std::nullopt, "", h.clock.now + 60'000)});
   CHECK_EQ(h.sessions(), std::vector<Session>{Session(sid(), h.user, h.clock.now, h.clock.now + 120'000,
                                                       std::nullopt, std::nullopt, ClosedBy::finish)});
 }
@@ -501,7 +500,7 @@ TEST(append_replays_an_already_stored_set_across_the_finish_boundary) {
   AppendOutcome replayed =
       h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
-  const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+  const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
                    std::nullopt, "", h.clock.now + 1);
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(landed.set, std::optional<Set>(stored));
@@ -514,7 +513,7 @@ TEST(append_refuses_a_set_id_minted_by_another_account) {
   Harness h;
   h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
   h.door.append(h.other, sid("ses_00000002"),
-                    SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 142.5, 3, SetKind::working,
+                    SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 142.5, 3,
                              std::optional<double>(9.5), "knee felt off, deload next week", h.clock.now});
   h.startAt(h.clock.now);
 
@@ -524,7 +523,7 @@ TEST(append_refuses_a_set_id_minted_by_another_account) {
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // never the stranger's row, not even to say it exists
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid("ses_00000002"),
-                                          ExerciseId{"bench-press"}, 1, 142.5, 3, SetKind::working,
+                                          ExerciseId{"bench-press"}, 1, 142.5, 3,
                                           std::optional<double>(9.5), "knee felt off, deload next week",
                                           h.clock.now)});
   CHECK_EQ(h.training.detail(h.user, sid()),
@@ -541,13 +540,13 @@ TEST(append_refuses_a_set_id_the_same_lifter_spent_in_another_session) {
 
   AppendOutcome outcome = h.door.append(
       h.user, sid("ses_00000002"),
-      SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 222.5, 9, SetKind::working,
+      SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 222.5, 9,
                std::nullopt, "", h.clock.now + 4});
 
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // the old row is NOT reported as this write's result
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid("ses_00000001"),
-                                          ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+                                          ExerciseId{"bench-press"}, 1, 80.0, 8,
                                           std::nullopt, "", h.clock.now + 1)});
   CHECK_EQ(h.training.detail(h.user, sid("ses_00000002")),
            std::optional<SessionDetail>(SessionDetail{Session(sid("ses_00000002"), h.user, h.clock.now + 3), {}}));
@@ -560,7 +559,7 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
 
   AppendOutcome outcome = h.door.append(
       h.user, sid(),
-      SetWrite{setId("set_00000001"), ExerciseId{"zercher-squat"}, 100.0, 5, SetKind::working,
+      SetWrite{setId("set_00000001"), ExerciseId{"zercher-squat"}, 100.0, 5,
                std::nullopt, "", h.clock.now + 1});
 
   CHECK(outcome.error == AppendError::unknownExercise);
@@ -579,7 +578,7 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
 
   AppendOutcome refused = h.door.append(
       h.user, sid(),
-      SetWrite{setId("set_00000001"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
+      SetWrite{setId("set_00000001"), ExerciseId{"ex_22222222"}, 100.0, 5,
                std::nullopt, "", h.clock.now + 1});
 
   CHECK(refused.error == AppendError::unknownExercise);
@@ -589,11 +588,11 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
   h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
   AppendOutcome mine = h.door.append(
       h.other, sid("ses_00000002"),
-      SetWrite{setId("set_00000002"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
+      SetWrite{setId("set_00000002"), ExerciseId{"ex_22222222"}, 100.0, 5,
                std::nullopt, "", h.clock.now + 2});
   CHECK(mine.error == AppendError::none);
   CHECK_EQ(mine.set, std::optional<Set>(Set(setId("set_00000002"), sid("ses_00000002"),
-                                            ExerciseId{"ex_22222222"}, 1, 100.0, 5, SetKind::working,
+                                            ExerciseId{"ex_22222222"}, 1, 100.0, 5,
                                             std::nullopt, "", h.clock.now + 2)));
 }
 
@@ -608,7 +607,6 @@ TEST(append_into_a_finished_workout_is_refused_by_admission_too_and_answers_fini
   fields["exerciseId"] = "bench-press";
   fields["weightKg"] = 80.0;
   fields["reps"] = 8;
-  fields["kind"] = "working";
   fields["note"] = "";
   fields["completedAt"] = Json::UInt64(h.clock.now + 1);
 
@@ -626,7 +624,7 @@ TEST(append_numbers_max_plus_one_per_exercise_across_interleaving) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  SetWrite squat{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5, SetKind::working,
+  SetWrite squat{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                  std::nullopt, "", h.clock.now + 2};
 
   AppendOutcome bench1 = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
@@ -651,7 +649,7 @@ TEST(append_replay_returns_the_stored_row_byte_for_byte) {
   AppendOutcome replayed =
       h.door.append(h.user, sid(), h.bench("set_00000001", 90.0, h.clock.now + 99));
 
-  const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+  const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
                    std::nullopt, "", h.clock.now + 1);
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(first.set, std::optional<Set>(stored));
@@ -742,7 +740,7 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
   h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 2});
+                             std::nullopt, "", h.clock.now + 2});
   h.door.finish(h.user, sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
@@ -759,21 +757,21 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
            (std::vector<std::string>{"Back Squat", "Bench Press"}));
 }
 
-// The top set is the heaviest WORKING set, ties to more reps, never volume.
-TEST(log_carries_the_top_working_set_of_each_session) {
+// The top set is the heaviest set, ties to more reps, never volume.
+TEST(log_carries_the_top_set_of_each_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 2});
+                             std::nullopt, "", h.clock.now + 2});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 8,
-                             SetKind::working, std::nullopt, "", h.clock.now + 3});
+                             std::nullopt, "", h.clock.now + 3});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000004"), ExerciseId{"back-squat"}, 140.0, 1,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 4});
+                             std::nullopt, "", h.clock.now + 4});
   h.door.finish(h.user, sid(), h.clock.now + 5);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");   // nothing logged into it yet
@@ -781,23 +779,23 @@ TEST(log_carries_the_top_working_set_of_each_session) {
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>());   // not 0 kg × 0
-  CHECK_EQ(listed[1].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 8}));
+  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>());   // not 0 kg × 0
+  CHECK_EQ(listed[1].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{140.0, 1}));   // never 100 × 8
 }
 
-TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) {
+TEST(log_counts_every_set_and_sums_what_they_moved) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 60.0, 10,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 2});
+                             std::nullopt, "", h.clock.now + 2});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 3});
+                             std::nullopt, "", h.clock.now + 3});
   h.door.append(h.user, sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
   h.door.finish(h.user, sid(), h.clock.now + 5);
 
@@ -805,8 +803,8 @@ TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) 
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].summary.setCount, 4);
-  CHECK_EQ(listed[0].summary.workingSetCount, 3);
-  CHECK_EQ(listed[0].summary.tonnageKg, 100.0 * 5 + 100.0 * 5 + 82.5 * 8);   // the warmup is not in
+  CHECK_EQ(listed[0].summary.workingSetCount, 4);
+  CHECK_EQ(listed[0].summary.tonnageKg, 60.0 * 10 + 100.0 * 5 + 100.0 * 5 + 82.5 * 8);
 }
 
 // Band-assisted work logs a NEGATIVE load, which adds no tonnage rather than subtracting from it.
@@ -816,16 +814,16 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, -20.0, 10,
-                             SetKind::working, std::nullopt, "", h.clock.now + 2});
+                             std::nullopt, "", h.clock.now + 2});
   h.door.finish(h.user, sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
   h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 0.0, 9,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
@@ -837,36 +835,36 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
   CHECK_EQ(listed[1].summary.tonnageKg, 500.0);        // the assisted set took nothing away
 }
 
-// The estimate is absent where no working set earned one: here, a set at zero load and a warmup.
+// The estimate is absent where no set earned one: here, a set at zero load and a set of twelve reps.
 TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_estimate) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.finish(h.user, sid(), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
   h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 0.0, 9,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
   h.clock.now += 10'000;
-  h.startAt(h.clock.now, "ses_00000003");   // warmed up and nothing else
+  h.startAt(h.clock.now, "ses_00000003");   // twelve reps and nothing else
   h.door.append(h.user, sid("ses_00000003"),
-                    SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 40.0, 10,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
+                    SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 40.0, 12,
+                             std::nullopt, "", h.clock.now + 1});
   h.door.finish(h.user, sid("ses_00000003"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
-  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>());
+  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{40.0, 12}));
   CHECK_EQ(listed[0].topE1rm, std::optional<double>());
-  CHECK_EQ(listed[1].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{0.0, 9}));
+  CHECK_EQ(listed[1].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{0.0, 9}));
   CHECK_EQ(listed[1].topE1rm, std::optional<double>());
-  CHECK_EQ(listed[2].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(listed[2].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
   CHECK_EQ(listed[2].topE1rm, e1rm(100.0, 5));
 }
 
@@ -876,11 +874,11 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   for (int number = 2; number <= 4; ++number)
     h.door.append(h.user, sid(),
                       SetWrite{setId("set_0000000" + std::to_string(number)),
-                               ExerciseId{"back-squat"}, 95.0, 10, SetKind::working, std::nullopt,
+                               ExerciseId{"back-squat"}, 95.0, 10, std::nullopt,
                                "", h.clock.now + static_cast<std::uint64_t>(number)});
   h.door.finish(h.user, sid(), h.clock.now + 5);
 
@@ -889,31 +887,28 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   REQUIRE(finished.has_value());
-  CHECK_EQ(listed[0].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
   CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));         // not the top set's
   CHECK_EQ(listed[0].topE1rm, finished->stats.topE1rm);
   CHECK(e1rm(95.0, 10) > e1rm(100.0, 5));              // the two really do disagree
 }
 
-// The store hands over every working set and the domain estimates only what the one e1RM rule admits: twelve reps at
+// The store hands over every set and the domain estimates only what the one e1RM rule admits: twelve reps at
 // a heavier load earn nothing, and the row's number is the best set at ten reps or fewer.
-TEST(log_reads_every_working_set_and_estimates_only_the_sets_the_rule_admits) {
+TEST(log_reads_every_set_and_estimates_only_the_sets_the_rule_admits) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 95.0, 6,
-                             SetKind::working, std::nullopt, "", h.clock.now + 1});
+                             std::nullopt, "", h.clock.now + 1});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 95.0, 10,
-                             SetKind::working, std::nullopt, "", h.clock.now + 2});
+                             std::nullopt, "", h.clock.now + 2});
   h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 110.0, 12,
-                             SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.door.append(h.user, sid(),
-                    SetWrite{setId("set_00000004"), ExerciseId{"bench-press"}, 60.0, 12,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 4});
-  h.door.finish(h.user, sid(), h.clock.now + 5);
+                             std::nullopt, "", h.clock.now + 3});
+  h.door.finish(h.user, sid(), h.clock.now + 4);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -1065,14 +1060,11 @@ TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {
            std::optional<Session>(Session(sid("ses_00000003"), h.user, h.clock.now)));
 }
 
-TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
+TEST(last_time_is_the_movements_block_in_set_order) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Bench day"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.door.append(h.user, sid("ses_00000001"),
-                    SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 40.0, 10,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
   AppendOutcome first =
       h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
   AppendOutcome second =
@@ -1081,7 +1073,7 @@ TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
       h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
   h.door.append(h.user, sid("ses_00000001"),
                     SetWrite{setId("set_00000005"), ExerciseId{"back-squat"}, 100.0, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 5});
+                             std::nullopt, "", h.clock.now + 5});
   h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 6);
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
@@ -1093,31 +1085,6 @@ TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
   CHECK(last.error == LastTimeError::none);
   CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
   CHECK_EQ(last.lastTime->sets, (std::vector<Set>{*first.set, *second.set, *third.set}));
-  // Numbering counts the warmup (max+1 per session and exercise), so the block starts at 2.
-  CHECK_EQ(last.lastTime->sets[0].setNumber, 2);
-}
-
-TEST(last_time_steps_over_a_session_that_only_warmed_this_movement_up) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  Harness h;
-  h.startAt(h.clock.now, "ses_00000001");
-  AppendOutcome worked =
-      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
-  h.clock.now += 10'000;
-  h.startAt(h.clock.now, "ses_00000002");
-  h.door.append(h.user, sid("ses_00000002"),
-                    SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 40.0, 10,
-                             SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
-
-  LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
-
-  REQUIRE(last.lastTime.has_value());
-  REQUIRE(worked.set.has_value());
-  CHECK(last.error == LastTimeError::none);
-  CHECK_EQ(last.lastTime->session.id, sid("ses_00000001"));
-  CHECK_EQ(last.lastTime->sets, std::vector<Set>{*worked.set});
 }
 
 TEST(last_time_never_reaches_into_another_accounts_log) {
@@ -1130,7 +1097,7 @@ TEST(last_time_never_reaches_into_another_accounts_log) {
   h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now + 10});
   AppendOutcome stranger = h.door.append(
       h.other, sid("ses_00000009"),
-      SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 142.5, 3, SetKind::working,
+      SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 142.5, 3,
                std::nullopt, "", h.clock.now + 20});
   h.door.finish(h.other, sid("ses_00000009"), h.clock.now + 30);
 
@@ -1532,7 +1499,7 @@ TEST(discard_refuses_a_session_that_is_still_running) {
   CHECK(refused == DiscardOutcome::open);
   CHECK_EQ(h.sessions(), std::vector<Session>{Session(sid(), h.user, h.clock.now)});
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 82.5,
-                                          8, SetKind::working, std::nullopt, "", h.clock.now + 1)});
+                                          8, std::nullopt, "", h.clock.now + 1)});
 }
 
 TEST(discard_takes_the_session_and_its_sets_and_asking_twice_is_the_same_fact) {
@@ -1571,7 +1538,7 @@ TEST(statistics_draws_a_point_per_finished_session_and_leaves_the_open_one_out) 
   h.startAt(h.clock.now, "ses_00000003");   // today's workout, still being logged into
   h.door.append(h.user, sid("ses_00000003"),
                     SetWrite{setId("set_99999999"), ExerciseId{"back-squat"}, 110, 5,
-                             SetKind::working, std::nullopt, "", h.clock.now + 60'000});
+                             std::nullopt, "", h.clock.now + 60'000});
 
   Statistics answer = h.training.statistics(h.user);
 
@@ -1603,7 +1570,7 @@ TEST(statistics_never_reaches_another_accounts_log) {
   h.door.importSession(h.other, SessionImport{sid("ses_00000002"), h.clock.now - kWeek,
                                                   h.clock.now - kWeek + 3'600'000, std::nullopt,
                                                   {SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 200,
-                                                            5, SetKind::working, std::nullopt, "",
+                                                            5, std::nullopt, "",
                                                             h.clock.now - kWeek}}});
 
   Statistics answer = h.training.statistics(h.user);
@@ -1612,25 +1579,21 @@ TEST(statistics_never_reaches_another_accounts_log) {
   CHECK_EQ(answer.weeks.size(), static_cast<std::size_t>(0));
 }
 
-TEST(progress_settles_stale_work_and_reads_only_finished_working_sessions_for_the_owner) {
+TEST(progress_settles_stale_work_and_reads_only_finished_sessions_for_the_owner) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   CHECK_EQ(h.training.progress(h.other), (StatsProgress{h.clock.now, {}}));
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.startExactly(began - 2'000, "ses_00000003");
   h.door.finish(h.user, sid("ses_00000003"), began);
-  h.startExactly(began - 1'000, "ses_00000002");
-  h.door.append(h.user, sid("ses_00000002"), SetWrite{setId("set_00000002"), ExerciseId{"bench-press"},
-                                                          100, 8, SetKind::warmup, std::nullopt, "", began});
-  h.door.finish(h.user, sid("ses_00000002"), began);
   h.door.start(h.other, SessionStart{sid("ses_00000004"), began});
   h.door.append(h.other, sid("ses_00000004"), SetWrite{setId("set_00000004"), ExerciseId{"bench-press"},
-                                                           200, 8, SetKind::working, 8, "", began + 60'000});
+                                                           200, 8, 8, "", began + 60'000});
   h.door.finish(h.other, sid("ses_00000004"), began + 60'000);
   h.startAt(began, "ses_00000001");
   REQUIRE(h.door.append(h.user, sid("ses_00000001"),
       SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, -10, 8,
-               SetKind::working, std::nullopt, "", began + 60'000}).set);
+               std::nullopt, "", began + 60'000}).set);
 
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {sid("ses_00000001"), began, {{ExerciseId{"bench-press"}, 1,
@@ -1653,13 +1616,13 @@ TEST(progress_reads_corrections_and_deletions_without_cached_or_legacy_estimates
           estimated({set, 100, 1, std::nullopt})}}}}}));
 
   h.correct(session, "correct_00000001", startedAtMs, startedAtMs + 3'600'000,
-            {Set{set, session, exercise, 1, 90, 10, SetKind::working, 7.0, "", startedAtMs + 60'000}});
+            {Set{set, session, exercise, 1, 90, 10, 7.0, "", startedAtMs + 60'000}});
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 90, 10, 7},
           estimated({set, 90, 10, 7})}}}}}));
 
   h.correct(session, "correct_00000002", startedAtMs, startedAtMs + 3'600'000,
-            {Set{set, session, exercise, 1, 90, 10, SetKind::working, 6.5, "", startedAtMs + 60'000}});
+            {Set{set, session, exercise, 1, 90, 10, 6.5, "", startedAtMs + 60'000}});
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 90, 10, 6.5}, std::nullopt}}}}}));
 
@@ -1740,7 +1703,7 @@ TEST(shared_session_resolves_a_live_token_and_names_no_account) {
            std::optional<std::uint64_t>(h.clock.now - kWeek + 3'600'000));
   CHECK_EQ(read->routineName, "");   // the session was ad-hoc, and an absence is not a blank name
   REQUIRE_EQ(read->sets.size(), static_cast<std::size_t>(4));
-  CHECK_EQ(read->sets[0], (SharedSet{"Back Squat", 1, 100, 5, SetKind::working, std::nullopt, "",
+  CHECK_EQ(read->sets[0], (SharedSet{"Back Squat", 1, 100, 5, std::nullopt, "",
                                      h.clock.now - kWeek + 60'000}));
 }
 
@@ -1861,7 +1824,7 @@ TEST(a_slight_session_gets_no_dot_however_heavy_it_was) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.trained("ses_00000001", h.clock.now, 100, 5, 4);
-  h.trained("ses_00000002", h.clock.now + kWeek, 140, 5, kSlightWorkingSets - 1);
+  h.trained("ses_00000002", h.clock.now + kWeek, 140, 5, kSlightSets - 1);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 2 * kWeek);
 
@@ -1921,9 +1884,9 @@ TEST(a_fix_rewrites_the_stored_set_and_keeps_the_version_it_replaced) {
   h.edit("set", "set_00000001", fix);
 
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
-                                          5, SetKind::working, std::nullopt, "", h.clock.now + 60'000)});
+                                          5, std::nullopt, "", h.clock.now + 60'000)});
   CHECK_EQ(h.kept(), (std::vector<Kept>{Kept{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1,
-                                                82.5, 8, SetKind::working, std::nullopt, "",
+                                                82.5, 8, std::nullopt, "",
                                                 h.clock.now + 60'000),
                                             false}}));
 }
@@ -1935,7 +1898,7 @@ TEST(a_fix_never_reaches_another_accounts_set) {
   h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
   h.door.append(h.other, sid("ses_00000009"),
-                    SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3, SetKind::working,
+                    SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3,
                              std::nullopt, "", h.clock.now});
   Json::Value fix(Json::objectValue);
   fix["weightKg"] = 60.0;
@@ -1944,9 +1907,9 @@ TEST(a_fix_never_reaches_another_accounts_set) {
 
   CHECK_EQ(theirs, std::string("unknown-record"));
   CHECK_EQ(h.sets(), (std::vector<Set>{
-      Set(setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"}, 1, 100.0, 3, SetKind::working,
+      Set(setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"}, 1, 100.0, 3,
           std::nullopt, "", h.clock.now),
-      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 82.5, 8, SetKind::working, std::nullopt,
+      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 82.5, 8, std::nullopt,
           "", h.clock.now + 60'000)}));
   CHECK_EQ(h.kept(), std::vector<Kept>{});
 }
@@ -1962,9 +1925,9 @@ TEST(a_deleted_set_leaves_the_log_and_is_kept_marked_deleted) {
   h.kill(h.user, "set", "set_00000001");
 
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 2, 85.0,
-                                          8, SetKind::working, std::nullopt, "", h.clock.now + 120'000)});
+                                          8, std::nullopt, "", h.clock.now + 120'000)});
   CHECK_EQ(h.kept(), (std::vector<Kept>{Kept{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1,
-                                                82.5, 8, SetKind::working, std::nullopt, "",
+                                                82.5, 8, std::nullopt, "",
                                                 h.clock.now + 60'000),
                                             true}}));
 }
@@ -1976,7 +1939,7 @@ TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
   h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
   h.door.append(h.other, sid("ses_00000009"),
-                    SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3, SetKind::working,
+                    SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3,
                              std::nullopt, "", h.clock.now});
 
   h.kill(h.user, "set", "set_00000001");
@@ -1984,9 +1947,9 @@ TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
   h.kill(h.user, "set", "set_00000009");
 
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000009"), sid("ses_00000009"), ExerciseId{"bench-press"},
-                                          1, 100.0, 3, SetKind::working, std::nullopt, "", h.clock.now)});
+                                          1, 100.0, 3, std::nullopt, "", h.clock.now)});
   CHECK_EQ(h.kept(), (std::vector<Kept>{Kept{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1,
-                                                82.5, 8, SetKind::working, std::nullopt, "",
+                                                82.5, 8, std::nullopt, "",
                                                 h.clock.now + 60'000),
                                             true}}));
 }
@@ -2003,13 +1966,13 @@ TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
   AppendOutcome replayed =
       h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
 
-  const Set standing(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+  const Set standing(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
                      std::nullopt, "", h.clock.now + 60'000);
   CHECK_EQ(replayed.set, std::optional<Set>());
   CHECK(replayed.error == AppendError::deleted);
   CHECK_EQ(h.sets(), std::vector<Set>{standing});
   CHECK_EQ(h.kept(), (std::vector<Kept>{Kept{Set(setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 2,
-                                                82.5, 8, SetKind::working, std::nullopt, "",
+                                                82.5, 8, std::nullopt, "",
                                                 h.clock.now + 120'000),
                                             true}}));
   h.door.finish(h.user, sid(), h.clock.now + 300'000);
@@ -2034,11 +1997,11 @@ TEST(a_delete_leaves_the_numbers_alone_and_the_next_set_never_reuses_one) {
   REQUIRE(next.set.has_value());
   CHECK_EQ(next.set->setNumber, 4);
   CHECK_EQ(h.sets(), (std::vector<Set>{
-      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
+      Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
           std::nullopt, "", h.clock.now + 60'000),
-      Set(setId("set_00000003"), sid(), ExerciseId{"bench-press"}, 3, 85.0, 8, SetKind::working,
+      Set(setId("set_00000003"), sid(), ExerciseId{"bench-press"}, 3, 85.0, 8,
           std::nullopt, "", h.clock.now + 180'000),
-      Set(setId("set_00000004"), sid(), ExerciseId{"bench-press"}, 4, 87.5, 8, SetKind::working,
+      Set(setId("set_00000004"), sid(), ExerciseId{"bench-press"}, 4, 87.5, 8,
           std::nullopt, "", h.clock.now + 240'000)}));
 }
 
@@ -2077,11 +2040,11 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   for (int number = 1; number <= 3; ++number)
     h.door.append(h.user, sid("ses_00000002"),
                       SetWrite{setId("set_0000002" + std::to_string(number)),
-                               ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt, "",
+                               ExerciseId{"back-squat"}, 100, 5, std::nullopt, "",
                                week1 + static_cast<std::uint64_t>(number) * 60'000});
   h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000024"), ExerciseId{"back-squat"}, 120, 5,
-                             SetKind::working, std::nullopt, "", week1 + 240'000});
+                             std::nullopt, "", week1 + 240'000});
   h.clock.now = week1 + 3'600'000;   // the lifter taps finish an hour in, and corrects the workout after
   h.door.finish(h.user, sid("ses_00000002"), week1 + 3'600'000);
   const std::optional<Review> before = h.training.review(h.user, sid("ses_00000002"));
@@ -2107,7 +2070,7 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   std::vector<LogRow> rows = h.logBefore(h.clock.now + 10 * kWeek);
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(2));
   CHECK_EQ(rows[0].summary.session.id, sid("ses_00000002"));
-  CHECK_EQ(rows[0].summary.topSet, std::optional<TopWorkingSet>(TopWorkingSet{100.0, 5}));
+  CHECK_EQ(rows[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
   CHECK_EQ(rows[0].summary.tonnageKg, 1950.0);
   CHECK_EQ(rows[0].topE1rm, e1rm(100, 5));
   CHECK_FALSE(rows[0].record);
@@ -2165,6 +2128,6 @@ TEST(import_settles_a_walked_away_session_first_so_its_span_is_in_the_way) {
   CHECK_EQ(crossing.overlapping, std::optional<Session>(walkedAway));
   CHECK_EQ(h.sessions(), std::vector<Session>{walkedAway});
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8,
-                                          SetKind::working, std::nullopt, "", startedAt + 30 * 60'000)});
+                                          std::nullopt, "", startedAt + 30 * 60'000)});
 }
 

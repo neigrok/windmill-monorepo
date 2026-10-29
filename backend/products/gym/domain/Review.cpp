@@ -117,16 +117,16 @@ std::vector<Candidate> recordsFor(const ExerciseId& exercise, const std::vector<
   return earned;
 }
 
-std::vector<Set> setsOfMovement(const std::vector<Set>& working, const ExerciseId& exercise) {
+std::vector<Set> setsOfMovement(const std::vector<Set>& sets, const ExerciseId& exercise) {
   std::vector<Set> out;
-  for (const Set& set : working)
+  for (const Set& set : sets)
     if (set.exercise == exercise) out.push_back(set);
   return out;
 }
 
 // The heaviest set, ties broken by more reps and then by the earlier one — never the largest volume
 // and never the best e1RM.
-std::optional<Set> topWorkingSet(const std::vector<Set>& sets) {
+std::optional<Set> heaviestOf(const std::vector<Set>& sets) {
   std::optional<Set> top;
   for (const Set& set : sets) {
     if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps)) continue;
@@ -136,7 +136,7 @@ std::optional<Set> topWorkingSet(const std::vector<Set>& sets) {
 }
 
 std::optional<TopSet> topSetOf(const std::vector<Set>& sets) {
-  std::optional<Set> top = topWorkingSet(sets);
+  std::optional<Set> top = heaviestOf(sets);
   if (!top) return std::nullopt;
   int atLoad = 0;
   for (const Set& set : sets)
@@ -159,16 +159,13 @@ std::uint64_t spanOf(const Session& session, const std::vector<Set>& sets) {
 
 // The comparison exists only for a session that named a routine, and only where there is an earlier
 // one to stand against.
-std::optional<Against> comparisonOf(const Session& session, const std::vector<Set>& working,
+std::optional<Against> comparisonOf(const Session& session, const std::vector<Set>& sets,
                                     const SessionHistory& history) {
   if (!session.routine) return std::nullopt;
   if (!history.previous) return std::nullopt;
-  std::vector<Set> before;
-  for (const Set& set : history.previousSets)
-    if (set.kind == SetKind::working) before.push_back(set);
 
   std::vector<AgainstMovement> movements;
-  for (const ExerciseId& movement : movementsOf(working)) {
+  for (const ExerciseId& movement : movementsOf(sets)) {
     // A plan may name one movement twice; the first line is its main work, and the comparison prints
     // one target rather than adding two together.
     std::optional<PlanEntry> planned;
@@ -178,9 +175,9 @@ std::optional<Against> comparisonOf(const Session& session, const std::vector<Se
         planned = entry;
         break;
       }
-    // The movement came out of this session's own working sets, so its top set is always there.
-    movements.push_back(AgainstMovement{movement, *topSetOf(setsOfMovement(working, movement)),
-                                        topSetOf(setsOfMovement(before, movement)), planned});
+    // The movement came out of this session's own sets, so its top set is always there.
+    movements.push_back(AgainstMovement{movement, *topSetOf(setsOfMovement(sets, movement)),
+                                        topSetOf(setsOfMovement(history.previousSets, movement)), planned});
   }
   return Against{history.previous->id,
                  history.previous->plan ? history.previous->plan->routineName : "",
@@ -228,7 +225,7 @@ std::vector<SessionId> recordedIn(const std::vector<WorkedSession>& page,
   std::vector<SessionId> earned;
   for (const WorkedSession& session : page) {
     if (!session.finished) continue;   // the workout is not over: it earns nothing, and nothing stands on it yet
-    if (session.sets.size() >= static_cast<std::size_t>(kSlightWorkingSets) && recordAgainst(session.sets, history))
+    if (session.sets.size() >= static_cast<std::size_t>(kSlightSets) && recordAgainst(session.sets, history))
       earned.push_back(session.session);
     history.insert(history.end(), session.sets.begin(), session.sets.end());
   }
@@ -236,18 +233,14 @@ std::vector<SessionId> recordedIn(const std::vector<WorkedSession>& page,
 }
 
 Review review(const Session& session, const std::vector<Set>& sets, const SessionHistory& history) {
-  std::vector<Set> working;
-  for (const Set& set : sets)
-    if (set.kind == SetKind::working) working.push_back(set);
   std::vector<ProgressSet> today;
-  for (const Set& set : working) today.push_back(ProgressSet::of(session, set));
+  for (const Set& set : sets) today.push_back(ProgressSet::of(session, set));
 
-  // The span counts every set, warmups included; everything below counts only working sets.
-  ReviewStats stats{spanOf(session, sets), static_cast<int>(working.size()), topE1rmOf(today)};
-  if (stats.workingSets < kSlightWorkingSets) return Review{stats, true, std::nullopt, std::nullopt};
+  ReviewStats stats{spanOf(session, sets), static_cast<int>(sets.size()), topE1rmOf(today)};
+  if (stats.workingSets < kSlightSets) return Review{stats, true, std::nullopt, std::nullopt};
   std::optional<PersonalRecord> record;
   if (session.finishedAtMs) record = recordAgainst(today, history.standing);
-  return Review{stats, false, std::move(record), comparisonOf(session, working, history)};
+  return Review{stats, false, std::move(record), comparisonOf(session, sets, history)};
 }
 
 }

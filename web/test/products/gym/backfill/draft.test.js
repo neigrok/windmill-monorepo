@@ -9,7 +9,7 @@ import {
 } from '../../../../src/products/gym/backfill/draft.js';
 
 const lifted = (sets, startedAt = 1_900_000_000_000) => ({
-  exerciseId: 'x', session: { id: 'ses_old', startedAt }, sets: sets.map(([weightKg, reps]) => ({ weightKg, reps, kind: 'working' })),
+  exerciseId: 'x', session: { id: 'ses_old', startedAt }, sets: sets.map(([weightKg, reps]) => ({ weightKg, reps })),
 });
 const never = { exerciseId: 'x' };
 
@@ -39,7 +39,7 @@ const PUSH_A_LAST = new Map([
 
 const set = (key, weightKg, reps, touched = false) => ({ key, weightKg, reps, touched });
 
-test('draftFromRoutine — each set takes its target, then last time’s Nth working set, then last time’s last', () => {
+test('draftFromRoutine — each set takes its target, then last time’s Nth set, then last time’s last', () => {
   const draft = draftFromRoutine(PUSH_A, PUSH_A_LAST);
   assert.deepEqual(draft, {
     routineId: 'rt_push',
@@ -107,7 +107,7 @@ test('a last time that did not answer claims no history: the movement keeps its 
   ]);
 });
 
-test('withMovementAdded — last time’s working sets, or one empty row when it was never lifted or not read', () => {
+test('withMovementAdded — last time’s sets, or one empty row when it was never lifted or not read', () => {
   const one = withMovementAdded(freeDraft(), 'back-squat', lifted([[100, 5], [100, 5]], 7));
   const two = withMovementAdded(one, 'lunge', never);
   const three = withMovementAdded(two, 'curl', null);
@@ -284,9 +284,9 @@ test('importOf — domain input from the form: the span, the routine, and stable
     finishedAt: startedAt + 3_600_000,
     routineId: 'rt_legs',
     sets: [
-      { id: 'set_9f3a1c22b0e1d4f7_1', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 900_000, kind: 'working' },
-      { id: 'set_9f3a1c22b0e1d4f7_2', exerciseId: 'back-squat', weightKg: 100, reps: 4, completedAt: startedAt + 1_800_000, kind: 'working' },
-      { id: 'set_9f3a1c22b0e1d4f7_3', exerciseId: 'chin-up', weightKg: 0, reps: 8, completedAt: startedAt + 2_700_000, kind: 'working' },
+      { id: 'set_9f3a1c22b0e1d4f7_1', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 900_000 },
+      { id: 'set_9f3a1c22b0e1d4f7_2', exerciseId: 'back-squat', weightKg: 100, reps: 4, completedAt: startedAt + 1_800_000 },
+      { id: 'set_9f3a1c22b0e1d4f7_3', exerciseId: 'chin-up', weightKg: 0, reps: 8, completedAt: startedAt + 2_700_000 },
     ],
   });
   assert.equal(JSON.stringify(importOf({ id: 'ses_9f3a1c22b0e1d4f7', slot, draft })), JSON.stringify(request), 'the same form sends the same bytes');
@@ -300,8 +300,8 @@ test('importOf — a free session names no routine, and uneven spreads round to 
     startedAt,
     finishedAt: startedAt + 2_700_000,
     sets: [
-      { id: 'set_0000000000000002_1', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 900_000, kind: 'working' },
-      { id: 'set_0000000000000002_2', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 1_800_000, kind: 'working' },
+      { id: 'set_0000000000000002_1', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 900_000 },
+      { id: 'set_0000000000000002_2', exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: startedAt + 1_800_000 },
     ],
   });
   const spread = importOf({ id: 'ses_3', slot: { startedAt, finishedAt: startedAt + 1000 }, draft })

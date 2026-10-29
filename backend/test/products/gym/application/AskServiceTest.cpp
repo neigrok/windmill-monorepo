@@ -68,7 +68,7 @@ struct Coach : doortest::Harness {
   Coach() {
     door.start(user, SessionStart{session, 1'700'000'000'000});
     door.append(user, session,
-               SetWrite{setId(), ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt,
+               SetWrite{setId(), ExerciseId{"back-squat"}, 100, 5, std::nullopt,
                         "", 1'700'000'300'000});
     door.finish(user, session, 1'700'000'900'000);
   }

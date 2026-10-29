@@ -107,7 +107,7 @@ import XCTest
     let sourceWorkout = app.buttons["coach-source-coach-fixture-session"]
     XCTAssertTrue(sourceWorkout.waitForExistence(timeout: 5))
     XCTAssertTrue(sourceWorkout.label.hasPrefix("Push A"), sourceWorkout.label)
-    XCTAssertTrue(sourceWorkout.label.hasSuffix(" · 1 working set · 400 kg"), sourceWorkout.label)
+    XCTAssertTrue(sourceWorkout.label.hasSuffix(" · 1 set · 400 kg"), sourceWorkout.label)
     sourceWorkout.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     back(app)

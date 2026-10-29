@@ -32,7 +32,6 @@ struct SetWrite {
   ExerciseId exercise;
   double weightKg;
   int reps;
-  SetKind kind;
   std::optional<double> rpe;
   std::string note;
   std::uint64_t completedAtMs;

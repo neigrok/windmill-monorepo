@@ -13,7 +13,6 @@ internal class GymCommand(override val name: String, override val args: Map<Stri
             Gym.Commands.importSession to listOf(
                 TextSpec("gym.importSession.sets.id", works.windmill.sync.core.MeasureUnit.chars, 8, 64, false, false),
                 TextSpec("gym.importSession.sets.exerciseId", works.windmill.sync.core.MeasureUnit.chars, 1, 64, false, false),
-                ChoiceSpec("gym.importSession.sets.kind", listOf("warmup", "working", "drop", "failure")),
                 TextSpec("gym.importSession.sets.note", works.windmill.sync.core.MeasureUnit.bytes, 0, 4000, false, false),
             ),
             Gym.Commands.correctSession to listOf(
@@ -22,7 +21,6 @@ internal class GymCommand(override val name: String, override val args: Map<Stri
                 TextSpec("gym.correctSession.sets.id", works.windmill.sync.core.MeasureUnit.chars, 8, 64, false, false),
                 TextSpec("gym.correctSession.sets.exerciseId", works.windmill.sync.core.MeasureUnit.chars, 1, 64, false, false),
                 TextSpec("gym.correctSession.sets.note", works.windmill.sync.core.MeasureUnit.bytes, 0, 4000, false, false),
-                ChoiceSpec("gym.correctSession.sets.kind", listOf("warmup", "working", "drop", "failure")),
             ),
         )
     }

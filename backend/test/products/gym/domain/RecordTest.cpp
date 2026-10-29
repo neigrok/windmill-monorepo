@@ -24,7 +24,7 @@ Exercise chinUp() {
                   false};
 }
 
-// A working set of the session `session`, which started at `startedAtMs`.
+// A set of the session `session`, which started at `startedAtMs`.
 ProgressSet ran(const std::string& session, std::uint64_t startedAtMs, const std::string& set, double weightKg,
                 int reps, const std::string& exercise = "back-squat") {
   return ProgressSet{SessionId{session}, startedAtMs, ExerciseId{exercise},
@@ -35,7 +35,7 @@ double epley(double weightKg, int reps) { return weightKg * (1.0 + reps / 30.0);
 
 Set squatSet(const std::string& id, double weightKg, int reps, std::uint64_t completedAtMs) {
   return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"back-squat"}, 1, weightKg, reps,
-             SetKind::working, std::nullopt, "", completedAtMs};
+             std::nullopt, "", completedAtMs};
 }
 }
 

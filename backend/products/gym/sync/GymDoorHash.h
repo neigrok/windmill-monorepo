@@ -14,7 +14,6 @@ inline std::string gymRequestHash(const Json::Value& request) {
 inline std::string gymSetRequestHash(Json::Value request, const std::string& session) {
   request.removeMember("setNumber");
   request["sessionId"] = session;
-  request["kind"] = request.get("kind", "working");
   request["note"] = request.get("note", "");
   double weight = std::round(request["weightKg"].asDouble() * 100) / 100;
   request["weightKg"] = weight == 0 ? 0.0 : weight;

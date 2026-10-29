@@ -121,7 +121,7 @@ class EngineTrainingTests {
             val plan = Json.parse("""{"routine":"PRIVATE_FROZEN_PLAN","entries":"broken"}""")
             val session = mapOf("startedAt" to Json.of(100), "finishedAt" to Json.of(900), "closedBy" to Json.of("finish"), "plan" to plan)
             val set = mapOf("sessionId" to Json.of("sessionP2"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(80),
-                "reps" to Json.of(5), "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(500))
+                "reps" to Json.of(5), "note" to Json.of(""), "completedAt" to Json.of(500))
             room.engine.commit(scope, Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.importSession", Json.objectOf(
                 "id" to Json.of("sessionP2"), "startedAt" to Json.of(100), "finishedAt" to Json.of(900), "sets" to Json.Arr(emptyList()))),
                 predict = listOf(Change.create(Gym.Types.session, NewID.Given(RecordID("sessionP2")), session),

@@ -73,13 +73,8 @@ SetWrite parseSetWrite(const Json::Value& body) {
   if (!body["reps"].isInt()) throw InvalidTraining("reps must be a whole number");
 
   SetWrite write{SetId{body["id"].asString()}, ExerciseId{body["exerciseId"].asString()},
-                 body["weightKg"].asDouble(), body["reps"].asInt(), SetKind::working,
+                 body["weightKg"].asDouble(), body["reps"].asInt(),
                  std::nullopt, "", instantOf(body, "completedAt")};
-  // Omitted or null means the default; a present kind parses strictly.
-  if (body.isMember("kind") && !body["kind"].isNull()) {
-    if (!body["kind"].isString()) throw InvalidTraining("kind must be a string");
-    write.kind = parseSetKind(body["kind"].asString());
-  }
   if (body.isMember("rpe") && !body["rpe"].isNull()) {
     if (!body["rpe"].isNumeric()) throw InvalidTraining("rpe must be a number");
     write.rpe = body["rpe"].asDouble();
@@ -117,11 +112,10 @@ SessionImport parseSessionImport(const Json::Value& body) {
     if (set.isObject())
       for (const std::string& field : set.getMemberNames()) {
         if (field == "id" || field == "exerciseId" || field == "weightKg" || field == "reps" ||
-            field == "completedAt" || field == "kind" || field == "rpe" || field == "note")
+            field == "completedAt" || field == "rpe" || field == "note")
           continue;
         throw InvalidTraining(path + "unknown set field \"" + field +
-                              "\". A set takes: id, exerciseId, weightKg, reps, completedAt, kind, "
-                              "rpe, note.");
+                              "\". A set takes: id, exerciseId, weightKg, reps, completedAt, rpe, note.");
       }
     try {
       incoming.sets.push_back(parseSetWrite(set));
@@ -275,7 +269,6 @@ Json::Value toJson(const Set& set) {
   body["setNumber"] = set.setNumber;
   body["weightKg"] = set.weightKg;
   body["reps"] = set.reps;
-  body["kind"] = toString(set.kind);
   if (set.rpe) body["rpe"] = *set.rpe;
   body["note"] = set.note;
   body["completedAt"] = Json::Value::UInt64(set.completedAtMs);
@@ -289,7 +282,7 @@ Json::Value toJson(const std::vector<Set>& sets) {
 }
 
 // tonnageKg is always present: null is unavailable and zero is a real answer. topSet is omitted for a session with no
-// working set; topE1rm is null when no working set earned an available estimate.
+// set; topE1rm is null when no set earned an available estimate.
 Json::Value toJson(const LogRow& row) {
   Json::Value body = toJson(row.summary.session);
   body["setCount"] = row.summary.setCount;
@@ -1022,7 +1015,6 @@ Json::Value toJson(const SharedSession& shared) {
     line["setNumber"] = set.setNumber;
     line["weightKg"] = set.weightKg;
     line["reps"] = set.reps;
-    line["kind"] = toString(set.kind);
     if (set.rpe) line["rpe"] = *set.rpe;
     line["note"] = set.note;
     line["completedAt"] = Json::Value::UInt64(set.completedAtMs);

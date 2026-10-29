@@ -50,11 +50,16 @@ test('additive corrections preserve unnamed rows and restore kind without changi
       assert.deepEqual(sets.find((row) => row.id === prior.id), prior, name);
     }
     const restored = sets.find((row) => named.has(row.id));
-    assert.equal(restored.f.kind[0], 'warmup', name);
+    assert.equal(Object.hasOwn(restored.f, 'kind'), false, name);
     if (name.includes('missing')) {
       assert.equal(sets.length, 3);
       assert.equal(restored.f.rpe[0], 7);
       assert.equal(restored.f.note[0], 'Saved');
+    } else {
+      assert.equal(sets.length, 2);
+      assert.equal(restored.f.weightKg[0], 62.5);
+      assert.equal(restored.f.rpe[0], 6);
+      assert.equal(restored.f.note[0], 'easy');
     }
   }
 });

@@ -41,7 +41,7 @@ window.openRoom = async ({ response, now, plan, seed }) => {
         ['routine', 'routine_private', { name: 'Private routine', position: 0, entries: [{ exerciseId: 'bench-press' }] }],
         ['session', 'session_private', { startedAt: now - 3600000, finishedAt: now - 1000, plan }],
         ['set', 'set_private', { sessionId: 'session_private', exerciseId: 'bench-press', weightKg: 60,
-          reps: 8, kind: 'working', note: 'Private set', completedAt: now - 2000 }],
+          reps: 8, note: 'Private set', completedAt: now - 2000 }],
       ];
       for (const [index, [t, id, fields]] of records.entries()) device.activeReplica.putConfirmed('self/gym', {
         t, id, seq: index + 1, born: stamp, life: ['alive', stamp],

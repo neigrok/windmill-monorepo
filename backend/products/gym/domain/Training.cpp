@@ -37,16 +37,6 @@ std::string toString(Equipment equipment) {
   return "barbell";
 }
 
-std::string toString(SetKind kind) {
-  switch (kind) {
-    case SetKind::warmup: return "warmup";
-    case SetKind::working: return "working";
-    case SetKind::drop: return "drop";
-    case SetKind::failure: return "failure";
-  }
-  return "working";
-}
-
 Pattern parsePattern(std::string_view text) {
   if (text == "squat") return Pattern::squat;
   if (text == "hinge") return Pattern::hinge;
@@ -69,14 +59,6 @@ Equipment parseEquipment(std::string_view text) {
   throw InvalidTraining("unknown equipment: " + std::string(text));
 }
 
-SetKind parseSetKind(std::string_view text) {
-  if (text == "warmup") return SetKind::warmup;
-  if (text == "working") return SetKind::working;
-  if (text == "drop") return SetKind::drop;
-  if (text == "failure") return SetKind::failure;
-  throw InvalidTraining("unknown set kind: " + std::string(text));
-}
-
 Pattern patternFromStored(std::string_view text) {
   try {
     return parsePattern(text);
@@ -90,14 +72,6 @@ Equipment equipmentFromStored(std::string_view text) {
     return parseEquipment(text);
   } catch (const InvalidTraining&) {
     return Equipment::barbell;
-  }
-}
-
-SetKind setKindFromStored(std::string_view text) {
-  try {
-    return parseSetKind(text);
-  } catch (const InvalidTraining&) {
-    return SetKind::working;
   }
 }
 
@@ -237,10 +211,9 @@ Session::Session(SessionId id, UserId user, std::uint64_t startedAtMs,
 }
 
 Set::Set(SetId id, SessionId session, ExerciseId exercise, int setNumber, double weightKg,
-         int reps, SetKind kind, std::optional<double> rpe, std::string note,
-         std::uint64_t completedAtMs)
+         int reps, std::optional<double> rpe, std::string note, std::uint64_t completedAtMs)
     : id(std::move(id)), session(std::move(session)), exercise(std::move(exercise)),
-      setNumber(setNumber), weightKg(weightKg), reps(reps), kind(kind), rpe(rpe),
+      setNumber(setNumber), weightKg(weightKg), reps(reps), rpe(rpe),
       note(std::move(note)), completedAtMs(completedAtMs) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad set id");
   if (this->session.empty()) throw InvalidTraining("a set belongs to a session");

@@ -103,7 +103,7 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   CHECK_EQ(seen, seeds);
   REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
   CHECK(h.door.append(h.user, SessionId{"ses_pg000001"},
-                          SetWrite{SetId{"set_pg000001"}, mine.id, 60.0, 8, SetKind::working, std::nullopt, "", kNow})
+                          SetWrite{SetId{"set_pg000001"}, mine.id, 60.0, 8, std::nullopt, "", kNow})
             .error == AppendError::none);
   CHECK(h.door.createRoutine(h.user, RoutineWrite{RoutineId{"rt_pg000001"}, "Push A", 0,
                                                      {entryAt(1, "pg-zercher-squat")}},
@@ -253,7 +253,7 @@ TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   h.clock.now = t1 + 2'000;
   REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, std::nullopt}).session);
   REQUIRE(h.door.append(h.user, SessionId{"ses_pg000001"},
-                            SetWrite{SetId{"set_pg000001"}, ExerciseId{"back-squat"}, 100, 5, SetKind::working,
+                            SetWrite{SetId{"set_pg000001"}, ExerciseId{"back-squat"}, 100, 5,
                                      std::nullopt, "", t1 + 1'000})
               .set);
   REQUIRE(h.door.finish(h.user, SessionId{"ses_pg000001"}, t1 + 2'000).session);

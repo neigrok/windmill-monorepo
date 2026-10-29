@@ -283,7 +283,7 @@ fun FinishScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val facts: @Composable (Modifier) -> Unit = { modifier ->
                         ReceiptFact(Readout.duration(duration), "Duration", modifier)
-                        ReceiptFact(summary.setCount.toString(), "Working sets", modifier)
+                        ReceiptFact(summary.setCount.toString(), "Sets", modifier)
                         val volume = Finish.volume(summary.tonnageKg)
                         ReceiptFact(volume, "Volume", modifier, "kg".takeUnless { volume == "—" })
                     }

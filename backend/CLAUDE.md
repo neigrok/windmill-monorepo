@@ -25,7 +25,8 @@ Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and t
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
 `windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
-pair makes a repeated rotation idempotent (`deploy/README.md`).
+pair makes a repeated rotation idempotent, and `resum_sync_digests.cpp` is the offline tool that rewrites
+every alive scope's digest from its feed after a registry change (`deploy/README.md`).
 
 ## How a product plugs in
 
@@ -80,12 +81,12 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym and journal bindings against registry v10/minimum 10 and composition.json. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the gym and journal bindings against registry v11/minimum 11 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's twelve types and seven commands, and `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`.
-`platform/infra/SyncProducts` seals the two into the gym + journal v10/minimum-10 catalog. `windmill_server`
+`platform/infra/SyncProducts` seals the two into the gym + journal v11/minimum-11 catalog. `windmill_server`
 always serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, and the engine is the only
 writer of gym and journal client data. Every gym write the server makes for a lifter — the MCP gym
 tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, and the

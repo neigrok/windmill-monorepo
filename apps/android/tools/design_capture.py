@@ -128,7 +128,7 @@ def read_fixture(path):
             if type(sets) is not int or not 1 <= sets <= 20:
                 raise ValueError("Capture history needs 1 to 20 sets per movement.")
             if sets * len(fixture["routines"][workout["routine"]]["entries"]) > 20:
-                raise ValueError("Capture custom history must fit all working sets inside its 40-minute workout.")
+                raise ValueError("Capture custom history must fit all sets inside its 40-minute workout.")
             kg = workout["weightKg"]
             try:
                 number = float(kg) if type(kg) in (int, float) else math.nan

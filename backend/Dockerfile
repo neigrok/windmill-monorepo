@@ -56,7 +56,7 @@ COPY --from=contract gym /contract/gym
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_server_test_clock windmill_mcp windmill_mcp_http windmill_server_probe \
-               windmill_rotate_sync_epoch \
+               windmill_rotate_sync_epoch windmill_resum_sync_digests \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -67,9 +67,9 @@ RUN python3 deploy/sync_compatibility.py metadata /contract/sync build/sync-comp
 # Belt and braces: prove the binaries exist before we carry them to the runtime stage.
 RUN test -x build/windmill_server && test -x build/windmill_mcp_http
 
-# The probe is the sync engine's test and dev product: it must never ship. Neither shipped binary links probe
-# code, and the runtime stage carries schema.sql, never probe.sql.
-RUN ! nm -C build/windmill_server build/windmill_mcp_http | grep -q 'wm::probe::'
+# The probe is the sync engine's test and dev product: it must never ship. No shipped binary that binds the
+# engine links probe code, and the runtime stage carries schema.sql, never probe.sql.
+RUN ! nm -C build/windmill_server build/windmill_mcp_http build/windmill_resum_sync_digests | grep -q 'wm::probe::'
 
 ########################  runtime  ########################
 # Same Ubuntu 22.04 userland as the builder, so glibc/libstdc++ ABI matches exactly.
@@ -95,6 +95,7 @@ RUN apt-get update \
 COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
 COPY --from=build /src/build/windmill_rotate_sync_epoch /usr/local/bin/windmill_rotate_sync_epoch
+COPY --from=build /src/build/windmill_resum_sync_digests /usr/local/bin/windmill_resum_sync_digests
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/build/sync-compatibility.json /app/sync-compatibility.json
 

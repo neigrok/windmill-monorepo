@@ -62,7 +62,7 @@ struct PredictionTests {
 
   @Test(arguments: [false, true])
   func correctSessionHidesDroppedSetsAndRestoresTheWorkoutOnRefusal(_ refuse: Bool) async throws {
-    let fixture = try await GymPredictionFixture("a correction replaces the workout: interval, name, kept sets rewritten, new sets working, the rest dead")
+    let fixture = try await GymPredictionFixture("a correction replaces the workout: interval, name, kept sets rewritten, new sets created, the rest dead")
     let replica: any Replica = fixture.engine
     let before = try replica.read(GymRemovalActions.scope) { try $0.drawn("set", where: "sessionId", is: "session0001") }
     let sessionBefore = try replica.read(GymRemovalActions.scope) { try $0.drawn("session", "session0001") }
@@ -275,7 +275,6 @@ enum GymRemovalActions {
           predict.append(.update("set", id, values))
         } else {
           values["sessionId"] = session.json
-          values["kind"] = "working"
           predict.append(.create("set", id: .given(id), values))
         }
       }
