@@ -277,7 +277,8 @@ Run `windmill_resum_sync_digests` once after any deploy whose registry drops or 
 field. A scope's stored digest is the §6.12 sum over its alive rows as `feed` returns them, and
 admission only ever moves it by a difference, so such a registry change leaves every stored digest
 stale: each client would hit the §7.5 digest-mismatch reset twice and then stop checking. With the
-new server and schema live, from `~/windmill`:
+new server and schema live, dispatch **Resum production sync digests** (`sync-digest-resum.yml`), or from
+`~/windmill` on the host:
 
 ```sh
 docker compose run --rm --no-deps -T server windmill_resum_sync_digests

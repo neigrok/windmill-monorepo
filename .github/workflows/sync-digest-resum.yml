@@ -1,0 +1,38 @@
+name: Resum production sync digests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  resum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Resum every alive scope's digest on the VPS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            docker compose run --rm --no-deps -T server windmill_resum_sync_digests
+          }
+          main < /dev/null
+          REMOTE
