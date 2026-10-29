@@ -1,7 +1,7 @@
 package works.windmill.gym
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,7 +72,7 @@ class HiddenWorkoutTests {
             val shell = ShellActions(openYou = {})
             val restoration = StateRestorationTester(compose)
             restoration.setContent {
-                activity = LocalContext.current as ComponentActivity
+                activity = LocalActivity.current as ComponentActivity
                 if (showing) CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides telemetry) {
                     GymMaterial { GymRoom(account, phone.store) }
                 }
