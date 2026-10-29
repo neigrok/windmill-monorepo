@@ -88,7 +88,7 @@ summary.
 
 Refused (counted, listed row by row):
 
-- reps outside `1..500`, weight outside `-500..500`, an instant of zero or past year 9999
+- reps outside `1..500`, a missing or non-finite weight, an instant of zero or past year 9999
 - a session with no sets
 - a session whose every set was refused
 - a session or set id that is not a Lift UUID, or that the export holds twice

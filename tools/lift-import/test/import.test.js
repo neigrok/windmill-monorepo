@@ -126,8 +126,12 @@ describe('the CLI', () => {
       { method: 'GET', path: '/v1/gym/exercises' },
       ...Array.from({ length: 4 }, () => ({ method: 'POST', path: '/v1/gym/sessions/import' })),
     ]);
-    deepStrictEqual(result.calls.slice(1).map(({ body }) => body.sets.length), [5, 2, 2, 2]);
-    match(result.stdout, /4 sessions imported · 11 sets imported/);
+    deepStrictEqual(result.calls.slice(1).map(({ body }) => body.sets.length), [5, 3, 2, 2]);
+    deepStrictEqual(result.calls[2].body.sets[2], {
+      id: 'set_3bf5defe7743486d8be76c350716edfe', exerciseId: 'romanian-deadlift',
+      weightKg: 900, reps: 8, completedAt: 1778088420000,
+    });
+    match(result.stdout, /4 sessions imported · 12 sets imported/);
     strictEqual(JSON.parse(await readFile(result.mappingPath, 'utf8')).exercises['Bench Press'], 'bench-press');
   });
 

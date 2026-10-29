@@ -209,7 +209,7 @@ function reportPlan(plan, resolved, args) {
     ['sets holding a duplicate id', counts.setsSkippedDuplicateId],
     ['sets naming an unresolved movement', counts.setsSkippedUnresolvedName],
     ['sets with reps outside 1..500', counts.setsSkippedRepsOutOfBand],
-    ['sets with weight outside -500..500', counts.setsSkippedWeightOutOfBand],
+    ['sets with missing or non-finite weight', counts.setsSkippedWeightOutOfBand],
     ['sets with an instant outside the band', counts.setsSkippedInstantOutOfBand],
   ].filter(([, count]) => count > 0);
 
