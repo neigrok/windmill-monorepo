@@ -933,10 +933,10 @@ iOS. It and the product differ in these places.
   Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
   anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
   variant remains excluded while checkout is closed.
-- **6v · Local Coach boards approved 2026-10-29 (local Coach W4b).** The Gym iOS page holds the
-  states the local Coach adds (`gym_coach.md`, BUILD.md W4) as ✅ Ready for dev Dark/Daylight pairs,
-  each with a caption (Dark / Daylight / caption): 01.19 signed-out answer with its read receipt
-  `1589:39083` / `1690:14725` / `1589:39289`; 08.35 step line from catalog phrases `1588:12617` /
+- **6v · Local Coach boards, 🚀 In production on iOS since 2026-10-29.** The Gym iOS page holds
+  the states the local Coach adds (`gym_coach.md`, BUILD.md W4) as 🚀 In production Dark/Daylight
+  pairs, each with a caption (Dark / Daylight / caption): 01.19 signed-out answer with its read
+  receipt `1589:39083` / `1690:14725` / `1589:39289`; 08.35 step line from catalog phrases `1588:12617` /
   `1690:13258` / `1590:13207`; 08.36 What Coach read `1589:12790` / `1690:13279` / `1590:13212`;
   08.37 Made a movement `1589:12859` / `1690:13300` / `1590:13217`; send refusals 08.38 no connection
   `1588:11903` / `1690:13319` / `1590:13222`, 08.39 workout open `1588:11944` / `1690:13340` /
@@ -954,8 +954,8 @@ iOS. It and the product differ in these places.
   the account-changing state `1589:13033` / `1690:13247` / `1590:13302` (replaced the no-seat pair
   `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 carries the picture line under R8
   `1589:39166` / `1690:14706` / `1589:39294` (replaced `1173:4111` / `1173:4983` and caption
-  `1174:5318`); the 08 section's flow instruction is `1589:13082` (replaced `1117:1706`). Drawing
-  facts for the build: 08.37 is drawn on the Changed row with its word overridden because the Added
+  `1174:5318`); the 08 section's flow instruction is `1589:13082` (replaced `1117:1706`, still
+  ✅ Ready for dev). Drawing facts: 08.37 is drawn on the Changed row with its word overridden because the Added
   row holds one field; 08.41 says characters where the contract limit is bytes. Where the build and
   the drawings differ: the step line and the What Coach read rows take the catalog's own phrases
   (*read your program*, *wrote a proposal for one of your routines*) where 08.35 and 08.36 drew
