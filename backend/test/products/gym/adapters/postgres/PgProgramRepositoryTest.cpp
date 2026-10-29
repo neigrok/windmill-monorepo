@@ -421,7 +421,7 @@ TEST(pg_gym_mcp_and_coach_can_propose_renaming_and_removing_historical_blank_rou
       REQUIRE(!renamed.isError);
       const auto storedRename = h.repo.program.proposal(h.user, ProposalId{args["id"].asString()});
       REQUIRE(storedRename.has_value());
-      CHECK_EQ(storedRename->baseName, trimmedName(name));
+      CHECK_EQ(storedRename->baseName, canonicalName(name));
       CHECK_EQ(storedRename->proposedName, "Readable name");
       CHECK_EQ(storedRename->head.state, ProposalState::pending);
       CHECK_EQ(storedRename->head.source, source);
@@ -432,7 +432,7 @@ TEST(pg_gym_mcp_and_coach_can_propose_renaming_and_removing_historical_blank_rou
       REQUIRE(!removed.isError);
       const auto storedRemoval = h.repo.program.proposal(h.user, ProposalId{args["id"].asString()});
       REQUIRE(storedRemoval.has_value());
-      CHECK_EQ(storedRemoval->baseName, trimmedName(name));
+      CHECK_EQ(storedRemoval->baseName, canonicalName(name));
       CHECK_EQ(storedRemoval->proposedName, std::string());   // a removal leaves no name, as a phone mints it
       CHECK_EQ(storedRemoval->head.intent, ProposalIntent::remove);
       CHECK_EQ(storedRemoval->head.state, ProposalState::pending);

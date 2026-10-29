@@ -31,7 +31,7 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
 Routine::Routine(Stored, RoutineId id, UserId user, std::string name, int position,
                  std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs,
                  int revision)
-    : id(std::move(id)), user(std::move(user)), name(trimmedName(std::move(name))),
+    : id(std::move(id)), user(std::move(user)), name(canonicalName(name)),
       position(position), entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs),
       revision(revision) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad routine id");

@@ -1,5 +1,6 @@
 #include "products/gym/domain/Note.h"
 
+#include "platform/domain/Nfc.h"
 #include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
@@ -18,7 +19,7 @@ std::size_t codePoints(const std::string& text) {
   return points;
 }
 
-// Unicode's White_Space property: the ASCII blanks `trimmedName` strips, plus NEL, the no-break
+// Unicode's White_Space property: the ASCII blanks `canonicalName` strips, plus NEL, the no-break
 // space, the ogham mark, the en/em family, the line and paragraph separators, the narrow no-break
 // space, the medium mathematical space and the ideographic space — every one an invisible title.
 bool isWhitespace(unsigned int point) {
@@ -47,9 +48,10 @@ std::size_t decodeAt(const std::string& text, std::size_t at, unsigned int& poin
   return width;
 }
 
-// The trim every display name gets, widened to Unicode blanks at both ends: a title of no-break
-// spaces is the empty title it is, and a blank inside the text stays exactly as typed.
-std::string trimmedText(std::string text) {
+// The form a note's text is stored in: NFC, as every display name, with the trim widened to Unicode blanks at both
+// ends: a title of no-break spaces is the empty title it is, and a blank inside the text stays exactly as typed.
+std::string canonicalText(std::string_view typed) {
+  const std::string text = nfc(typed);
   std::size_t first = 0;
   while (first < text.size()) {
     unsigned int point = 0;
@@ -80,8 +82,8 @@ Note::Note(NoteId id, UserId user, std::string title, std::string body, int posi
 
 Note::Note(Stored, NoteId id, UserId user, std::string title, std::string body, int position,
            std::uint64_t updatedAtMs)
-    : id(std::move(id)), user(std::move(user)), title(trimmedText(std::move(title))),
-      body(trimmedText(std::move(body))), position(position), updatedAtMs(updatedAtMs) {
+    : id(std::move(id)), user(std::move(user)), title(canonicalText(title)),
+      body(canonicalText(body)), position(position), updatedAtMs(updatedAtMs) {
   // Unreadable before unstorable: a NUL or a bad byte is refused as a note nobody can read, with
   // the sentence the wire's other unreadable bodies get.
   if (!wellFormedId(this->id.str())) throw InvalidTraining("could not read that note");

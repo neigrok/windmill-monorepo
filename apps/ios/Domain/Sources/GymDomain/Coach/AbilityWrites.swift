@@ -32,7 +32,7 @@ public struct CreateExerciseCall: Decider {
 }
 
 // `create_routine`: a new day of the program lands as the lifter's editor would save it. A routine already standing
-// under the call's id replays when it holds this document, and refuses another.
+// under the call's id replays when it holds this document in its stored form, composed and trimmed, and refuses another.
 public struct CreateRoutineCall: Decider {
   public struct Loaded {
     let stored: Routine?
@@ -57,11 +57,11 @@ public struct CreateRoutineCall: Decider {
 
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<AbilityAnswer, GymRefusal> {
     if let snapshot = loaded.creation?.snapshot { return .unchanged(AbilityAnswer(snapshot)) }
+    let valid = try Valid(routine, at: loaded.moment)
     if let stored = loaded.stored {
-      guard stored.fields == routine.fields else { return .refuse(GymRefusal(Refused(.idTaken, subject: routine.id.ref, path: .predicted))) }
+      guard stored.fields == valid.value.fields else { return .refuse(GymRefusal(Refused(.idTaken, subject: routine.id.ref, path: .predicted))) }
       return .unchanged(AbilityAnswer(CoachDocuments.routine(stored)))
     }
-    let valid = try Valid(routine, at: loaded.moment)
     if valid.value.entries.contains(where: { loaded.catalogue.find($0.exerciseId) == nil }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: routine.id.ref, path: .predicted)))
     }

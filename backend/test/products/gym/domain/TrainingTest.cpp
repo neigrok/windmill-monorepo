@@ -259,6 +259,20 @@ TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   }));
 }
 
+TEST(an_exercise_name_enters_composed_and_is_held_to_its_bytes_after) {
+  std::string decomposed;
+  for (std::size_t at = 0; at < kMaxNameLength / 2; ++at) decomposed += "e\xCC\x81";
+
+  CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, " Hack Squat Cafe\xCC\x81 ", Pattern::squat, Equipment::machine, 5.0, true).name,
+           std::string("Hack Squat Caf\xC3\xA9"));
+  CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, decomposed, Pattern::squat, Equipment::machine, 5.0, true).name.size(),
+           kMaxNameLength);
+  CHECK_EQ(refusal([&] { Exercise(ExerciseId{"ex_11111111"}, decomposed + "e\xCC\x81", Pattern::squat, Equipment::machine, 5.0, true); }),
+           std::string("exercise name too long"));
+  CHECK_EQ(refusal([] { Exercise(ExerciseId{"ex_11111111"}, "Hack \xE1\x84\x80\xE1\x85", Pattern::squat, Equipment::machine, 5.0, true); }),
+           std::string("an exercise name must be storable text"));
+}
+
 TEST(exercise_name_is_capped_at_the_same_bytes_a_routine_name_is) {
   CHECK_EQ(Exercise(ExerciseId{"ex_11111111"}, std::string(kMaxNameLength, 'x'), Pattern::squat,
                     Equipment::barbell, 2.5, true)

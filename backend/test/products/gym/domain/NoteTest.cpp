@@ -36,7 +36,7 @@ TEST(a_note_trims_both_ends_and_keeps_what_the_lifter_typed) {
   CHECK_EQ(kept.body, std::string("Blunt."));
   CHECK_EQ(kept.position, 0);
   CHECK_EQ(kept.updatedAtMs, 0u);
-  // Verbatim inside: nothing summarises, nothing normalises a lifter's line breaks or emoji.
+  // Verbatim inside: nothing summarises, nothing rewrites a lifter's line breaks or emoji.
   CHECK_EQ(note("Tone", "Blunt.\n\nNo praise 💀").body, std::string("Blunt.\n\nNo praise 💀"));
 }
 
@@ -122,6 +122,27 @@ TEST(a_title_runs_to_sixty_characters_counted_as_code_points) {
            std::string("a title runs to 60 characters"));
   // Trimmed first: sixty letters wrapped in blanks is sixty letters.
   CHECK_EQ(refusal([&] { note("  " + sixtyAscii + "  ", ""); }), std::string(""));
+}
+
+// gym_coach.md §3.3: title and body enter composed, and both bounds are measured on the composed form.
+TEST(a_note_enters_composed_and_is_measured_after) {
+  std::string sixtyDecomposed;
+  for (int at = 0; at < 60; ++at) sixtyDecomposed += "e\xCC\x81";   // 120 code points as sent, 60 as stored
+  std::string bodyDecomposed;
+  for (int at = 0; at < 250; ++at) bodyDecomposed += "e\xCC\x81";   // 750 bytes as sent, 500 as stored
+  std::string sixtyComposed;
+  for (int at = 0; at < 60; ++at) sixtyComposed += "\xC3\xA9";
+  std::string bodyComposed;
+  for (int at = 0; at < 250; ++at) bodyComposed += "\xC3\xA9";
+
+  const Note composed = note(" Cafe\xCC\x81 \xE1\x84\x80\xE1\x85\xA1\xE1\x86\xA8 ", "Squat de\xCC\x81ja\xCC\x80 vu");
+  CHECK_EQ(composed.title, std::string("Caf\xC3\xA9 \xEA\xB0\x81"));
+  CHECK_EQ(composed.body, std::string("Squat d\xC3\xA9j\xC3\xA0 vu"));
+  CHECK_EQ(note(sixtyDecomposed, bodyDecomposed).title, sixtyComposed);
+  CHECK_EQ(note(sixtyDecomposed, bodyDecomposed).body, bodyComposed);
+  CHECK_EQ(refusal([&] { note(sixtyDecomposed + "e\xCC\x81", ""); }), std::string("a title runs to 60 characters"));
+  CHECK_EQ(refusal([&] { note("Tone", bodyDecomposed + "e\xCC\x81"); }), std::string("a note runs to 500 bytes"));
+  CHECK_EQ(refusal([] { note("Tone", "de\xCC\x81ja\xCC"); }), std::string("could not read that note"));
 }
 
 // Five hundred BYTES, the column's octet_length: a body of accented letters fills it twice as fast.

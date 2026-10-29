@@ -375,7 +375,7 @@ and Android disagree.
   journeys 01 and 08, with local components on the Gym Components page: `_Coach / Bubble · Messages`
   (`1167:185`: sender × tail × text, image, typing) and `_Coach / Composer · Messages` (`1168:212`:
   empty, typed, photo). Boards: 01.1 `1173:3783`, 01.2 `1173:3860`, 01.4 `1173:3934`,
-  01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.8 `1173:4471`, 01.9 `1182:4650`,
+  01.5 `1589:39166`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.8 `1173:4471`, 01.9 `1182:4650`,
   01.10 `1173:4600`, 01.11 `1173:4678`, 01.12 `1173:4754`, 01.13 `1173:4833`; 08.1 `1170:2943`,
   08.2 `1203:6633`, 08.3 `1203:6896`, 08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9
   `1170:3192`, 08.10 `1170:3266`,
@@ -937,21 +937,30 @@ iOS. It and the product differ in these places.
   Anonymous waiting and local saving are distinct states; “Stop waiting” cannot promise that provider spending stopped. Existing
   anonymous and account allowance-exhaustion boards are ✅ Ready for dev; the Windmill One
   variant remains excluded while checkout is closed.
-- **6v · Local Coach drafts awaiting owner approval (2026-10-27).** The Gym iOS page holds 🚧
-  boards for the states the local Coach adds (`gym_coach.md`, BUILD.md W4), Dark only until approved:
-  01.19 signed-out answer with its read receipt `1589:39083`; 08.35 step line from catalog phrases
-  `1588:12617`; 08.36 What Coach read as one line per ability `1589:12790`; 08.37 Made a movement
-  `1589:12859`; send refusals 08.38–08.45 (`1588:11903` no connection, `1588:11944` workout open,
-  `1588:11985` coach-replica-syncing, `1588:12026` over 8,000 bytes, `1588:12075` invalid_installation,
-  `1588:12116` device_bound, `1588:12157` free_month_exhausted, `1588:12198` coach-update-required);
-  ends 08.46–08.50 (`1588:12239` truncated, `1588:12300` declined, `1588:12361` failed, `1588:12422`
-  stopped, `1588:12489` interrupted); 08.51 answering on another device `1588:12556`; 08.52 resume
-  from the snapshot `1588:12654`; 08.53 empty History under R5 `1589:12977`. Redraw siblings beside
-  their approved boards: 08.6 as the account-changing state `1589:13033`, 01.5 with the picture line
-  under R8 `1589:39166`, and the 08 section's flow instruction `1589:13082`. Open on the boards: the
-  Added change row holds one field, so 08.37 is drawn on the Changed row with its word overridden;
-  08.41 says characters where the limit is bytes; 08.39's words and 08.42's recovery (sign-in only,
-  no re-issue door) are the owner's to confirm.
+- **6v · Local Coach boards approved 2026-10-29 (local Coach W4b).** The Gym iOS page holds the
+  states the local Coach adds (`gym_coach.md`, BUILD.md W4) as ✅ Ready for dev Dark/Daylight pairs,
+  each with a caption (Dark / Daylight / caption): 01.19 signed-out answer with its read receipt
+  `1589:39083` / `1690:14725` / `1589:39289`; 08.35 step line from catalog phrases `1588:12617` /
+  `1690:13258` / `1590:13207`; 08.36 What Coach read `1589:12790` / `1690:13279` / `1590:13212`;
+  08.37 Made a movement `1589:12859` / `1690:13300` / `1590:13217`; send refusals 08.38 no connection
+  `1588:11903` / `1690:13319` / `1590:13222`, 08.39 workout open `1588:11944` / `1690:13340` /
+  `1590:13227`, 08.40 coach-replica-syncing `1588:11985` / `1690:13361` / `1590:13232`, 08.41 over
+  8,000 bytes `1588:12026` / `1690:13380` / `1590:13237`, 08.42 invalid_installation `1588:12075` /
+  `1690:13399` / `1590:13242`, 08.43 device_bound `1588:12116` / `1690:13420` / `1590:13247`, 08.44
+  free_month_exhausted `1588:12157` / `1690:13441` / `1590:13252`, 08.45 coach-update-required
+  `1588:12198` / `1690:13462` / `1590:13257`; ends 08.46 truncated `1588:12239` / `1690:13483` /
+  `1590:13262`, 08.47 declined `1588:12300` / `1690:13502` / `1590:13267`, 08.48 failed `1588:12361` /
+  `1690:13520` / `1590:13272`, 08.49 stopped `1588:12422` / `1690:13539` / `1590:13277`, 08.50
+  interrupted `1588:12489` / `1690:13564` / `1590:13282`; 08.51 answering on another device
+  `1588:12556` / `1690:13590` / `1590:13287`; 08.52 resume from the snapshot `1588:12654` /
+  `1690:13605` / `1590:13292`; 08.53 empty History under R5 `1589:12977` / `1690:13626` /
+  `1590:13297`. Three redraws took their originals' slots and the originals were deleted: 08.6 is now
+  the account-changing state `1589:13033` / `1690:13247` / `1590:13302` (replaced the no-seat pair
+  `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 carries the picture line under R8
+  `1589:39166` / `1690:14706` / `1589:39294` (replaced `1173:4111` / `1173:4983` and caption
+  `1174:5318`); the 08 section's flow instruction is `1589:13082` (replaced `1117:1706`). Drawing
+  facts for the build: 08.37 is drawn on the Changed row with its word overridden because the Added
+  row holds one field; 08.41 says characters where the contract limit is bytes.
 
 ### Native and web differences
 

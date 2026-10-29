@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(windmill_backend CXX)
+project(windmill_backend C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,6 +46,10 @@ endfunction()
 # and depends on the platform, never the other way round. `windmill_journal` and `windmill_gym`
 # mirror that seam — one products/<name> library each, beside roadmap and linked into the server.
 
+# utf8proc, the Unicode normalizer (third_party/utf8proc/README.md): the one C source, which includes its data table.
+add_library(utf8proc STATIC third_party/utf8proc/utf8proc.c)
+target_compile_definitions(utf8proc PUBLIC UTF8PROC_STATIC)
+
 # --- platform + roadmap domain and application. The adapters (the messy vendor edges) are
 # folded into these same libraries below.
 add_library(windmill_platform
@@ -59,6 +63,7 @@ add_library(windmill_platform
   platform/domain/Mail.cpp
   platform/domain/MailArming.cpp
   platform/domain/OAuth.cpp
+  platform/domain/Nfc.cpp
   platform/domain/sync/Jcs.cpp
   platform/domain/sync/Digest.cpp
   platform/domain/sync/Pattern.cpp
@@ -88,6 +93,7 @@ add_library(windmill_platform
   platform/application/sync/SyncLive.cpp
   platform/ports/ToolHost.cpp)
 target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_platform PRIVATE utf8proc)
 
 add_library(windmill_roadmap
   products/roadmap/domain/LooseGraph.cpp
@@ -220,6 +226,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/AiUsageTest.cpp
   test/platform/domain/AiBudgetTest.cpp
   test/platform/domain/IdsTest.cpp
+  test/platform/domain/NfcTest.cpp
   test/platform/domain/sync/JcsTest.cpp
   test/platform/domain/sync/DigestTest.cpp
   test/platform/domain/sync/PatternTest.cpp
