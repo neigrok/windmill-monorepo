@@ -25,7 +25,8 @@ Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and t
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
 `windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
-pair makes a repeated rotation idempotent (`deploy/README.md`).
+pair makes a repeated rotation idempotent, and `resum_sync_digests.cpp` is the offline tool that rewrites
+every alive scope's digest from its feed after a registry change (`deploy/README.md`).
 
 ## How a product plugs in
 

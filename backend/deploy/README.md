@@ -270,6 +270,28 @@ dependent delete before replaying its source; older servers can acknowledge an a
 without preserving its death or lack a successful command's durable replay receipt. Epoch rotation
 alone cannot correct those implementations.
 
+## Resum the scope digests
+
+Run `windmill_resum_sync_digests` once after any deploy whose registry drops or renames a lattice
+field. A scope's stored digest is the §6.12 sum over its alive rows as `feed` returns them, and
+admission only ever moves it by a difference, so such a registry change leaves every stored digest
+stale: each client would hit the §7.5 digest-mismatch reset twice and then stop checking. With the
+new server and schema live, from `~/windmill`:
+
+```sh
+docker compose run --rm --no-deps -T server windmill_resum_sync_digests
+```
+
+It uses `DATABASE_URL` and the server's Sentry settings, lists the alive scopes, and rewrites each
+one's digest from its feed in a transaction of its own under that scope's row lock, leaving `seq`,
+counters and `open` as they were; dead scopes are skipped. The server may keep serving meanwhile:
+a write that lands between two scopes moves the digest it finds by the same difference either way.
+It prints one line, `scopes seen N, digests moved M` — `N` alive scopes summed, `M` of them whose
+stored digest differed from the sum — and emits a structured `sync.digest.resum` completion. A
+second run prints `digests moved 0`; a run that fails midway leaves the scopes it committed right
+and is simply run again. Exit 0 means every scope was summed, 2 means `DATABASE_URL` is unset, and
+1 means an unexpected failure.
+
 The [restore proof](../test/e2e/README.md) runs both pull-first and push-first reconnects against a
 real dump, restore and epoch rotation. It checks durable reload before and after the epoch
 transition, independent acknowledged and unsent creates, dependent offline edits/deletes, and a

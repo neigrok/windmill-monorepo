@@ -89,6 +89,7 @@ add_library(windmill_platform
   platform/application/sync/SyncCatalog.cpp
   platform/application/sync/Admission.cpp
   platform/application/sync/ServerCall.cpp
+  platform/application/sync/DigestResum.cpp
   platform/application/sync/SyncService.cpp
   platform/application/sync/SyncLive.cpp
   platform/ports/ToolHost.cpp)
@@ -497,6 +498,10 @@ target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_product_
 add_executable(windmill_rotate_sync_epoch platform/infra/rotate_sync_epoch.cpp)
 target_link_libraries(windmill_rotate_sync_epoch PRIVATE windmill_platform)
 
+# Rewrites every alive scope's digest from its feed after a registry change that dropped or renamed a lattice field.
+add_executable(windmill_resum_sync_digests platform/infra/resum_sync_digests.cpp)
+target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
+
 # The real composition with a harness-controlled clock; never copied to the runtime image.
 add_executable(windmill_server_test_clock platform/infra/main.cpp)
 target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
@@ -571,6 +576,7 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgSyncStoreTest.cpp
   test/platform/adapters/postgres/PgAdmissionConcurrencyTest.cpp
   test/platform/adapters/postgres/PgPullSnapshotTest.cpp
+  test/platform/adapters/postgres/PgDigestResumTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/PgGymTest.cpp
   test/products/journal/sync/PgJournalTest.cpp)
