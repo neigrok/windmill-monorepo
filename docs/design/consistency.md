@@ -279,8 +279,9 @@ and Android disagree.
   obsolete strings from `ui/NotesScreen.kt` and `domain/Notes.kt`.
 - **9t · Connected log with a connection.** Android source (`ConnectedLogScreen.kt`) follows the
   approved connected/empty roots and separate disclosure page in 09.3–09.5. Browser rows use the
-  drawn `arrow_forward`; the How door uses the matching Material chevron. Paired native acceptance
-  remains with task 51 before this source alignment can claim rendered acceptance.
+  drawn `arrow_forward`; the How door uses the matching Material chevron. Task 51's paired local
+  native comparison passes with the physical camera-cutout inset accounted for. At 320 dp/200%,
+  the complete body and How door are reachable by scrolling, with the root action pinned.
 - **9u · Dates in the person's locale.** iOS formats every Gym and shell date in the person's locale
   through one formatter (*Sep 23*, *Wed, Sep 23*; `GymFormat.swift`); the domain kit's
   `Readout.briefDay` orders *26 Sep* by hand. Rule whether shared readouts follow the locale on

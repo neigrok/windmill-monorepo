@@ -924,15 +924,13 @@ three-by-sixty input or assertions. The coalescer fixture feeds five deltas sync
 the existing MainActor driver, awaits its actual flush and checks exact final text/stopped state;
 production's 250 ms interval is unchanged.
 
-Supported Xcode 26.3 run `40783195857` passes App unit tests and all three UI shards, including their
-selected-test accounting. Its package job compiles Domain, then fails the exact source pin because
-main's normalization boundary contains both `nfc` and `nfd` while the guard expects only `nfc`.
-The consistency repair retains an exact byte pin and updates its positive/negative fixtures plus
-current documentation; production normalization is unchanged. All 73 source fixtures and the
-real-tree source check pass locally. The 47 whole-world cases retain every expected finding but
-add manifest-name findings when the pinned SwiftSyntax 602 parses the local Swift 6.4 package
-interface; no guard is waived. A fresh supported package/build gate remains required. No release
-build or complete supported run is claimed from the four green jobs.
+Supported Xcode 26.3 run `40789910187` passes all five jobs: packages/builds including Release,
+App unit tests and all three UI shards with selected-test accounting. The normalization source
+guard pins the exact existing `nfc` and `nfd` implementation with matching positive/negative fixtures
+and current documentation; production normalization is unchanged. All 73 source fixtures and the
+real-tree source check also pass locally. The local Swift 6.4 whole-world manifest-name findings
+remain a qualification of that unsupported toolchain; the supported gate passes without a waiver.
+Task 51 changes only Android and its documentation, leaving the supported run's iOS tree unchanged.
 
 Task 14 is on main as `ee70d13c`, with ten canonical frames marked in production. Its separate
 fixture repair uses the immediate Main dispatcher and pumps Main at controlled read/transport-entry
@@ -1101,7 +1099,8 @@ its account sentence adopts the existing Nunito 16 sp/24 sp role. Signed-in prod
 The read adapter publishes both credential lists together. Owner, active replica and request
 generation reject responses from an earlier connection context, including an owner round trip or
 identity-revision change. Both readers observe cache invalidation independently of the loading
-flag, so a same-owner reconnect that settles within one turn restarts the complete pair. Unknown and failed reads do not claim no connections. Known offline
+flag, so a same-owner reconnect that settles within one turn restarts the complete pair. Unknown
+and failed reads do not claim no connections. Known offline
 reads use the approved internet sentence; missing authenticated transport remains unread. Static
 failure boundaries stay `gym.refreshConnectedLog` and `gym.openConnections`. Existing Room
 `gym_screen_viewed` events retain `screen=connections|notes`; the task adds no event name.
@@ -1111,12 +1110,34 @@ Nunito 14 sp/20 sp roles, the connected heading is bold and the empty heading re
 lines have no extra gap; the caption uses 8 dp above and 16 dp below. The forward icon is the
 existing 20 dp asset. The How chevron reuses the existing note chevron at 20 dp: its normalized
 path matches the approved SVG within 0.000034 dp export precision. The shared Chevron remains
-unchanged. Paired native rendered comparison is pending.
+unchanged. Paired native rendered comparison passes with the physical status-bar inset accounted for.
 
 The capture recipe composes two ordinary empty-account states with the fixture-account connected
 and disclosure pages. An explicit boolean fixture option seeds a disposable scoped Claude Desktop
 grant and static key, then verifies both read endpoints. The default fixture is unchanged. All 33
 capture-tool tests pass. The composed focused Kotlin gate passes 47 cases with zero failures,
 errors or skips: domain 6, read 3, account routes 8, paired large-text layout 2, screen 10, Notes 15
-and connection settings 3. App Debug compiles. Real fixture execution and native
-appearance/intake/runtime acceptance remain pending their coordinated lease.
+and connection settings 3. App Debug compiles. The real fixture retains one scoped grant and one
+account-wide key, verified through both list endpoints before and after the browser doors.
+
+Paired layout receipts use source `b2893f3e`; the nonvisual read-restart correction and remaining
+functional receipts use `bc0b9c8b`, APK `58692f9356f0ef8313ae544826bad7230a33621093cf40540838882344bba5dc`.
+The same-signer update retains the encrypted account file byte for byte. How survives two density
+changes and Back restores both rows automatically, without a user refresh. Both signed-out doors
+open Email and return without submission. Body, disclosure and the complete How door are reachable
+at 320 dp/200% in both appearances; the root action remains pinned. Stable anonymous replacements
+share the authenticated frames' 50.29 dp physical status-bar/camera-cutout inset. The product keeps
+that safe inset; the approved generic drawing uses 24 dp.
+
+The two tool rows deliver native browser settings intents and return with Back. Connect delivers
+its exact setup intent; Chrome's first-run window is left unaccepted and ordinary VIEW activation
+returns to the retained connection state. Private transition-postcondition failures are retained
+separately from the completed proof. No browser setup completion is claimed.
+
+First-party intake retains 87 `b289` events and 136 `bc0b` events, with no unexpected properties.
+Current-source screen counts are 17 connections and 9 notes; setup, configuration and private
+browser corrections are included, so these are bounded totals rather than whole-flow accounting.
+Fifteen Android SDK/release-attributed envelopes contain no Issues. Retained runtime/exit history
+has no product fatal/ANR marker. No native technical failure was injected, no read/browser Issue
+arrival is claimed and local intake does not establish vendor forwarding. Owned rig cleanup keeps
+all non-AVD evidence and leaves the shared collector unchanged. The flow stays Ready until shipment.

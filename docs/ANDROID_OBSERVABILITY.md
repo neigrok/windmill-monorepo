@@ -453,6 +453,11 @@ restart on cache invalidation. Unread and offline results make no empty-list cla
 `gym.refreshConnectedLog`; browser-launch failures retain `gym.openConnections`. Expected offline
 and unavailable authentication create no Issue. Tool names, credential identifiers, dates, scope
 strings, URLs and note contents never enter event properties. The pushed disclosure adds no event.
+Task 51's current-source local intake contains 17 `connections` and 9 `notes` screen views in a
+136-event bounded subset, including configuration and driver corrections. Properties remain
+allowlisted. Android SDK plus exact release attributes the local collector receipts; no native
+technical failure was injected and no `gym.refreshConnectedLog` or `gym.openConnections` Issue
+arrival is claimed. This establishes first-party storage, not vendor forwarding.
 
 The Routines FAB retains the existing `routine_editor` screen event and draft-save boundary. It adds
 no component event or failure reporter. Removing the standing sign-in suggestion adds no event.
