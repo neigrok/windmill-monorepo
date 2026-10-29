@@ -35,17 +35,17 @@ test('finishHead — the word above a session, and the day it ran', () => {
 test('statTiles — three facts, and the one that can be absent says so', () => {
   assert.deepEqual(statTiles({ durationMs: 3_720_000, workingSets: 16, topE1rm: 122.5 }), [
     { value: '1h 02m', label: 'Duration' },
-    { value: '16', label: 'Working sets' },
+    { value: '16', label: 'Sets' },
     { value: '122.5', label: 'Top e1RM' },
   ]);
   assert.deepEqual(statTiles({ durationMs: 2_820_000, workingSets: 14, topE1rm: 96.3 }), [
     { value: '47m', label: 'Duration' },
-    { value: '14', label: 'Working sets' },
+    { value: '14', label: 'Sets' },
     { value: '96.3', label: 'Top e1RM' },
   ]);
   assert.deepEqual(statTiles({ durationMs: 660_000, workingSets: 3 }), [
     { value: '11m', label: 'Duration' },
-    { value: '3', label: 'Working sets' },
+    { value: '3', label: 'Sets' },
     { value: '—', label: 'Top e1RM' },
   ]);
 });

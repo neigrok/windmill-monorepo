@@ -32,7 +32,7 @@ export const gymLandingHead = {
       '@id': `${SITE_ORIGIN}/gym#app`,
       'name': 'Windmill Gym',
       'url': `${SITE_ORIGIN}/gym`,
-      'description': 'A training log for barbell programs. Log a set in two taps, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, working sets and sessions per week, and a revocable link that shares one workout.',
+      'description': 'A training log for barbell programs. Log a set in two taps, and the next session opens with last time’s numbers already in the field. e1RM per lift over time, sets and sessions per week, and a revocable link that shares one workout.',
       'applicationCategory': 'HealthApplication',
       'operatingSystem': 'Web browser',
       'image': `${SITE_ORIGIN}/og-image.png`,
