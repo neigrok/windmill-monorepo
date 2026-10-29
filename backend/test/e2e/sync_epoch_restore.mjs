@@ -269,7 +269,8 @@ async function prove(order, clocked = false) {
     engine.setOnline(true);
     await until('removal observes the restored epoch', () => reset && !engine.sending && !engine.pulling);
     assert.equal(replica().meta.serverEpoch, newEpoch);
-    const first = trace.slice(started);
+    // The sender's readiness hello precedes any push; what this proves is the pushes and pulls.
+    const first = trace.slice(started).filter(({ endpoint }) => endpoint !== 'hello');
     if (order === 'push-first') {
       assert.deepEqual(first.map(({ endpoint, status }) => ({ endpoint, status })), [{ endpoint: 'push', status: 200 }]);
       assert.deepEqual(first[0].results.map(({ s }) => s), ['ok']);
@@ -518,10 +519,11 @@ async function prove(order, clocked = false) {
     assert.deepEqual(reset.pending, savedPending.map((entry) => ({ ...entry, state: 'ready' })));
     const recovery = trace.slice(recoveryStart);
     if (order === 'push-first') {
+      // The sender asks a fresh hello before it numbers a push, then the push meets the gap.
       assert.deepEqual(recovery.map(({ endpoint, status, error }) => ({ endpoint, status, error })),
-        [{ endpoint: 'push', status: 409, error: 'gap' }]);
-      assert.equal(recovery[0].epoch, newEpoch);
-      assert.equal(recovery[0].request.replica, oldReplica);
+        [{ endpoint: 'hello', status: 200, error: undefined }, { endpoint: 'push', status: 409, error: 'gap' }]);
+      assert.equal(recovery[1].epoch, newEpoch);
+      assert.equal(recovery[1].request.replica, oldReplica);
     } else {
       assert.ok(recovery.some((request) => request.endpoint === 'pull' && request.epoch === newEpoch
         && request.request.scopes.some(({ scope: name, cursor }) => name === scope && cursor === oldCursor)
