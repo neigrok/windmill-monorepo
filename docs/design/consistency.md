@@ -211,8 +211,15 @@ and Android disagree.
   the Gym boards state none. The sync registry (v11) and the shared gym vectors carry no set kind:
   every logged set counts, and no surface carries one. Copy: every surface labels a workout's count
   *Sets* / *N sets* (finish receipts, workout detail, Coach's read card and sources, the web review tile
-  and landing). The Gym boards still say *Working sets* — iOS 03.7, 05.3 and 07.2 tiles, the log row
-  and the Routines line; Android 03.7 `1254:32362` — designer to mirror the word.
+  and landing). The Gym boards say the same (mirrored 2026-10-29): iOS tiles 05.3 `1185:5019`
+  `1185:5078`, 05.4 `1188:5824` `1188:5876`, 07.2 `1138:2287` `1138:2330`, 07.4 `1283:38779`
+  `1283:38902`, 07.5 `1283:38851` `1283:38949`, the 02.13 History rows `1283:42197`–`1283:42264`,
+  the 00.2 log row `1057:357` and Coach's read card `I1172:3646;138:1244` `I1172:3716;138:1244`;
+  Android 03.7 `1254:32396` `1254:34576`, 03.8 `1254:32481` `1254:34638`, 03.14 `1283:41944`
+  `1283:42013`, 03.15 `1283:42310` `1283:42386`, 03.16 `1449:32871` `1449:33786`, 07.2 `1284:16844`
+  `1285:17001`, 07.8 `1284:17222` `1285:17108`, Coach's read card `1253:28726` `1254:41271`, and
+  every *N sets · duration* / *N sets · N movements* line across 02.13, 03, 05, 06 and 07 (124 text
+  nodes in all).
 - **9k · On this phone (owner ruling, 2026-10-22; build).** Both phones keep workouts the account
   has not taken in one **On this phone** row at the head of The log, a door to a pushed list (Needs
   you, Adding), Inspect, Fix workout and ⋯ *Discard workout*, with The log tab's badge as the door from
