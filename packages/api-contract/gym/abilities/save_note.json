@@ -44,6 +44,31 @@
     }
   },
   {
+    "case": "decomposed text lands composed",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"body":" Squat déjà vu 각 ","id":"tn7Qm2Kx9Lp4Wz8R-5","title":"Café goals"},
+      "name": "save_note"
+    },
+    "expect": {
+      "result": {"note":{"body":"Squat déjà vu 각","id":"tn7Qm2Kx9Lp4Wz8R-5","position":0,"title":"Café goals"},"saved":true},
+      "sha256": "895c872588ce156cb09f47731879abfcb709c5439884efb897a3f4adcf3ae325",
+      "writes": [
+        {
+          "f": {"body":"Squat déjà vu 각","ord":"a0","title":"Café goals"},
+          "id": "tn7Qm2Kx9Lp4Wz8R-5",
+          "life": "alive",
+          "t": "note"
+        }
+      ]
+    }
+  },
+  {
     "case": "an exact duplicate reuses the stored note",
     "seat": "bound",
     "now": 1790000000000,
@@ -58,6 +83,39 @@
     "expect": {
       "result": {"note":{"body":"Blunt.","id":"noteBBBBBBBBBBB1","position":1,"title":"How I want to be talked to"},"saved":true},
       "sha256": "66ba217f2ec83678c924f15ce91d45a85eb88b8821556e912c80dfc23a48a936",
+      "writes": []
+    }
+  },
+  {
+    "case": "a decomposed duplicate reuses the stored note",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Blunt.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a1","1789136000000:0:r_aaaaaaaaaaaa"],"title":["How I want to be talked to","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteBBBBBBBBBBB1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":1,"t":"note"},
+        {"born":"1789136000000:0:r_aaaaaaaaaaaa","f":{"body":["Keep the bar path straight 👍 — no q̇ wobble, café first.","1789136000000:0:r_aaaaaaaaaaaa"],"ord":["a0","1789136000000:0:r_aaaaaaaaaaaa"],"title":["Café q̇ 🏋️‍♀️","1789136000000:0:r_aaaaaaaaaaaa"],"updatedAt":[1789136000000,"1789136000000:0:r_aaaaaaaaaaaa"]},"id":"noteAAAAAAAAAAA1","life":["alive","1789136000000:0:r_aaaaaaaaaaaa"],"rc":1789136000000,"ru":1789136000000,"seq":2,"t":"note"}
+      ]
+    },
+    "call": {
+      "input": {
+        "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+        "id": "tn7Qm2Kx9Lp4Wz8R-6",
+        "title": "Café q̇ 🏋️‍♀️"
+      },
+      "name": "save_note"
+    },
+    "expect": {
+      "result": {
+        "note": {
+          "body": "Keep the bar path straight 👍 — no q̇ wobble, café first.",
+          "id": "noteAAAAAAAAAAA1",
+          "position": 0,
+          "title": "Café q̇ 🏋️‍♀️"
+        },
+        "saved": true
+      },
+      "sha256": "ef6a12cbefd4af39d607678cf8c09fb723dac4e87bc549afd650d8076bd8d816",
       "writes": []
     }
   },

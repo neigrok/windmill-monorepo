@@ -62,8 +62,9 @@ constexpr std::size_t kMaxNameLength = 240;
 // `text`, so this is the ONLY enforcement — and `log_set`'s schema states the same number.
 constexpr std::size_t kMaxSetNoteBytes = 4000;
 
-// Trims the ends before the ceiling is measured. ASCII whitespace only.
-std::string trimmedName(std::string text);
+// The form a display name is stored in (gym_coach.md §3.3): NFC, then the ends trimmed of ASCII whitespace. Every
+// ceiling is measured on it.
+std::string canonicalName(std::string_view name);
 
 // A write refuses a blank display name (sync::isBlank, admission's test); a read builds what the store
 // holds through the constructors tagged Stored, which run every other check: a stored blank name stands.

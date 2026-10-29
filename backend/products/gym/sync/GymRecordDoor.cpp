@@ -149,14 +149,15 @@ ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise
 }
 
 std::optional<Exercise> GymDoor::updateExercise(const UserId& user, const ExerciseUpdate& update) {
-  if (update.name && (trimmedName(*update.name).empty() || update.name->size() > kMaxNameLength || !storableText(*update.name)))
+  const std::optional<std::string> name = update.name ? std::optional(canonicalName(*update.name)) : std::nullopt;
+  if (name && (name->empty() || name->size() > kMaxNameLength || !storableText(*name)))
     throw InvalidTraining("an exercise needs a bounded, storable name");
   if (update.loadCount && *update.loadCount != 1 && *update.loadCount != 2)
     throw InvalidTraining("loadCount must be 1 or 2");
   if (update.requestId && !wellFormedId(*update.requestId)) throw InvalidTraining("requestId must be a stable, well-formed id");
   Json::Value arguments(Json::objectValue);
   arguments["exerciseId"] = update.id.str();
-  if (update.name) arguments["name"] = *update.name;
+  if (name) arguments["name"] = *name;
   if (update.equipment) arguments["equipment"] = toString(*update.equipment);
   if (update.loadCount) arguments["loadCount"] = *update.loadCount;
   std::optional<Exercise> saved;
@@ -176,14 +177,14 @@ std::optional<Exercise> GymDoor::updateExercise(const UserId& user, const Exerci
     if (existing == catalog.end()) return std::nullopt;
     found = true;
     Json::Value fields(Json::objectValue);
-    if (update.name && !existing->custom) fields["name"] = trimmedName(*update.name);
+    if (name && !existing->custom) fields["name"] = *name;
     if (update.equipment) fields["equipment"] = toString(*update.equipment);
     if (update.loadCount) fields["loadCount"] = *update.loadCount;
     auto built = intent();
-    if (update.name && existing->custom) {
-      Json::Value name(Json::objectValue);
-      name["name"] = trimmedName(*update.name);
-      built["d"].append(delta("exercise", update.id.str(), name));
+    if (name && existing->custom) {
+      Json::Value renamed(Json::objectValue);
+      renamed["name"] = *name;
+      built["d"].append(delta("exercise", update.id.str(), renamed));
     }
     if (!fields.empty()) built["d"].append(delta("exerciseName", update.id.str(), fields));
     if (built["d"].empty()) return std::nullopt;

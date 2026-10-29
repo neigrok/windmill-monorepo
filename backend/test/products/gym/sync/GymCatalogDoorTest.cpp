@@ -259,6 +259,32 @@ TEST(a_custom_movements_equipment_override_keeps_its_aliases_and_the_scope_diges
   CHECK(doortest::scopeConsistent(h.user));
 }
 
+// gym_coach.md §3.3: a rename enters composed whichever row holds it, and its receipt keeps the composed name, so a
+// decomposed replay of a composed rename answers the edit it made.
+TEST(a_rename_enters_composed_and_its_decomposed_replay_answers_the_edit_it_made) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Harness h;
+  REQUIRE(h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_custom01"}, "Sled push", Pattern::carry,
+                                                      Equipment::machine, 5.0}).exercise);
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, " Prowler Cafe\xCC\x81 ", {}, {}}));
+  const auto first = h.door.updateExercise(
+      h.user, ExerciseUpdate{ExerciseId{"back-squat"}, "Squat \xC3\xA0 la barre", {}, {}, "req_rename01"});
+  const auto replayed = h.door.updateExercise(
+      h.user, ExerciseUpdate{ExerciseId{"back-squat"}, "Squat a\xCC\x80 la barre", {}, {}, "req_rename01"});
+
+  const Exercise squat{ExerciseId{"back-squat"}, "Squat \xC3\xA0 la barre", Pattern::squat, Equipment::barbell, 2.5,
+                       false, {"Back Squat"}};
+  CHECK_EQ(first, std::optional<Exercise>(squat));
+  CHECK_EQ(replayed, std::optional<Exercise>(squat));
+  std::vector<Exercise> named = seedCatalog();
+  for (Exercise& seed : named)
+    if (seed.id == squat.id) seed = squat;
+  named.push_back(Exercise{ExerciseId{"ex_custom01"}, "Prowler Caf\xC3\xA9", Pattern::carry, Equipment::machine, 5.0,
+                           true, {"Sled push"}});
+  CHECK_EQ(h.repo.catalog.catalog(h.user), inCatalogOrder(named));
+  CHECK(doortest::scopeConsistent(h.user));
+}
+
 // A rename names a movement this account can see and a name it can hold, or nothing is written.
 TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");

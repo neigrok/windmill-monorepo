@@ -464,10 +464,13 @@ restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `
 - **Every free text goes through `storableText`**: no NUL (Postgres `text` stops at one) and
   well-formed UTF-8 only (Postgres refuses the rest mid-transaction, which would otherwise leave as
   the retryable house 500).
-- **Display names go through `trimmedName`**, then must be at most `kMaxNameLength` (240) **bytes**
-  — the unit the column counts. Clients cap at 60 characters, and 60 UTF-8 characters never exceed
-  240 bytes, so the client's cap is the one a lifter meets in every script. Trimming makes
-  `" Back Squat "` the seed's own name.
+- **Display names go through `canonicalName`**: composed to NFC (gym_coach.md §3.3,
+  `platform/domain/Nfc` over the vendored utf8proc), then trimmed, and only then held to
+  `kMaxNameLength` (240) **bytes** — the unit the column counts. Clients cap at 60 characters, and 60
+  UTF-8 characters never exceed 240 bytes, so the client's cap is the one a lifter meets in every
+  script. Trimming makes `" Back Squat "` the seed's own name. A note's title and body and a
+  proposal's summary are composed the same way before their bounds are measured; a set's note and a
+  workout's name are kept as sent, as `gym/domain/rules.json` marks them (`nfc: false`).
 - **A blank display name is refused on every write and read as stored.** A name is blank when every
   code point is whitespace, the set engine §6.11 tokenises on (`sync::isBlank`). Admission refuses a
   routine name, a movement name, a seed's renamed name, a note title or a revision's `proposedName`

@@ -185,6 +185,25 @@ TEST(routine_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
            std::string("a routine needs at least one movement"));
 }
 
+// gym_coach.md §3.3: a name enters composed, and its byte ceiling is measured on the composed form.
+TEST(a_routine_name_enters_composed_and_is_held_to_its_bytes_after) {
+  const auto named = [](const std::string& name) {
+    return Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, name, 0, {bench(1)}};
+  };
+  std::string decomposed;
+  std::string composed;
+  for (std::size_t at = 0; at < kMaxNameLength / 2; ++at) {
+    decomposed += "e\xCC\x81";   // three bytes each: 360 bytes as sent
+    composed += "\xC3\xA9";      // two bytes each: 240 bytes as stored
+  }
+
+  CHECK_EQ(named("  Cafe\xCC\x81 day ").name, std::string("Caf\xC3\xA9 day"));
+  CHECK_EQ(named(decomposed).name, composed);
+  CHECK_EQ(refusal([&] { named(decomposed + "e\xCC\x81"); }), std::string("routine name too long"));
+  CHECK_EQ(refusal([] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "Cafe\xCC\x81 \xFF", 0, {bench(1)}}; }),
+           std::string("a routine name must be storable text"));
+}
+
 TEST(routine_construction_refuses_a_document_with_no_entries) {
   CHECK(rejects([] { pushA({}); }));
 }

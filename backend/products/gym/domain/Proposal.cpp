@@ -1,5 +1,6 @@
 #include "products/gym/domain/Proposal.h"
 
+#include "platform/domain/Nfc.h"
 #include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
@@ -59,11 +60,12 @@ RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::strin
 
 RoutineProposal::RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,
                                  std::string proposedName, std::vector<RoutineChange> changes)
-    : head(std::move(head)), baseRevision(baseRevision), baseName(trimmedName(std::move(baseName))),
-      proposedName(trimmedName(std::move(proposedName))), changes(std::move(changes)) {
+    : head(std::move(head)), baseRevision(baseRevision), baseName(canonicalName(baseName)),
+      proposedName(canonicalName(proposedName)), changes(std::move(changes)) {
   if (!wellFormedId(this->head.id.str())) throw InvalidTraining("bad proposal id");
   if (this->head.routine.empty()) throw InvalidTraining("a proposal names a routine");
   if (this->head.user.empty()) throw InvalidTraining("a proposal belongs to an account");
+  this->head.summary = nfc(this->head.summary);
   if (this->head.summary.size() > kMaxSummaryLength)
     throw InvalidTraining("proposal summary too long");
   if (!storableText(this->head.summary))

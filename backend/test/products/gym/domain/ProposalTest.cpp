@@ -287,18 +287,37 @@ TEST(proposal_write_refuses_a_blank_revision_name_and_reads_historical_names) {
            std::string("a proposal stands on a revision from 1"));
 }
 
+// gym_coach.md §3.3: the proposed name and the summary enter composed, each held to its bytes after.
+TEST(a_proposal_enters_composed_and_is_measured_after) {
+  const std::vector<RoutineEntry> base{line(1, "bench-press")};
+  ProposalHead decomposed = head();
+  decomposed.summary.clear();
+  std::string summary;
+  for (std::size_t at = 0; at < kMaxSummaryLength / 2; ++at) {
+    decomposed.summary += "e\xCC\x81";   // 600 bytes as sent
+    summary += "\xC3\xA9";               // 400 bytes as stored
+  }
+
+  const RoutineProposal proposal{decomposed, 1, "Push A", " Cafe\xCC\x81 day ", changesBetween(base, base)};
+  CHECK_EQ(proposal.proposedName, std::string("Caf\xC3\xA9 day"));
+  CHECK_EQ(proposal.head.summary, summary);
+  decomposed.summary += "e\xCC\x81";
+  CHECK_EQ(refusal([&] { RoutineProposal{decomposed, 1, "Push A", "Push B", changesBetween(base, base)}; }),
+           std::string("proposal summary too long"));
+}
+
 TEST(proposals_can_rename_or_remove_a_historical_blank_routine) {
   const std::vector<RoutineEntry> base{line(1, "bench-press")};
   const auto kept = changesBetween(base, base);
   const auto removed = changesBetween(base, {});
   for (const std::string name : {"", " \t ", "\xC2\xA0\xE2\x80\x83\xEF\xBB\xBF"}) {
     const RoutineProposal renamed{head(), 1, name, "Readable name", kept};
-    CHECK_EQ(renamed.baseName, trimmedName(name));
+    CHECK_EQ(renamed.baseName, canonicalName(name));
     CHECK_EQ(renamed.proposedName, "Readable name");
     CHECK_EQ(renamed.changes, kept);
     const RoutineProposal removal{head(ProposalIntent::remove), 1, name, name, removed};
-    CHECK_EQ(removal.baseName, trimmedName(name));
-    CHECK_EQ(removal.proposedName, trimmedName(name));
+    CHECK_EQ(removal.baseName, canonicalName(name));
+    CHECK_EQ(removal.proposedName, canonicalName(name));
     CHECK_EQ(removal.changes, removed);
     CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, name, name, kept}; }),
              "a revision proposal needs a name");

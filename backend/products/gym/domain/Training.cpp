@@ -1,5 +1,6 @@
 #include "products/gym/domain/Training.h"
 
+#include "platform/domain/Nfc.h"
 #include "platform/domain/sync/TextMerge.h"
 #include "platform/domain/sync/Registry.h"
 
@@ -140,7 +141,8 @@ bool storableText(std::string_view text) {
   return true;
 }
 
-std::string trimmedName(std::string text) {
+std::string canonicalName(std::string_view name) {
+  const std::string text = nfc(name);
   const std::string_view blanks = " \t\n\r\f\v";
   const std::size_t first = text.find_first_not_of(blanks);
   if (first == std::string::npos) return {};
@@ -196,7 +198,7 @@ Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment e
 
 Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
                    double stepKg, bool custom, std::vector<std::string> aliases, int loadCount)
-    : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
+    : id(std::move(id)), name(canonicalName(name)), pattern(pattern),
       equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)),
       loadCount(equipment == Equipment::dumbbell ? (loadCount == 1 ? 1 : 2) : 1) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
