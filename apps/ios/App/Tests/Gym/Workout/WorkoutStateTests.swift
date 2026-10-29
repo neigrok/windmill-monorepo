@@ -647,13 +647,13 @@ import SyncTesting
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed())
     #expect(receipt.sets == sets && receipt.title == "Ended early.")
     #expect(receipt.subtitle(GymDate(gym.dates.moment, locale: Locale(identifier: "en_US"))) == "Free workout · Sat, Sep 26")
-    #expect(FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
+    #expect(FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Sets"),
                                                  FactTiles.Fact(value: "1325 kg", label: "Volume")])
     #expect(receipt.performed.map(\.exerciseId) == [second, first] && receipt.performed.map(\.reading) == ["1 × 5 · 100", "2 × 5 · 80–85"])
   }
 
   // A row keeps its place as sets are logged: the set takes over the current row, the next planned row becomes current, and
-  // the plan line and This workout's count read the same working sets.
+  // the plan line and This workout's count read the same sets.
   @Test func aLoggedSetTakesOverTheCurrentRowAndTheNextPlannedRowMovesUp() throws {
     let (_, gym) = try fixture(), plan = try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 40), count: 3))
     let workout = try begin(gym, routine: plan)
@@ -1281,7 +1281,7 @@ import SyncTesting
     #expect(try harness.notices(GymRefusal.self).count == 1)
   }
 
-  // Canon's heading: fewer than four working sets read Ended early., planned or free; the plan does not decide it.
+  // Canon's heading: fewer than four sets read Ended early., planned or free; the plan does not decide it.
   @Test func receiptSaysEndedEarlyBelowFourWorkingSetsPlannedOrFree() throws {
     let (_, gym) = try fixture()
     let title = { (session: Session, working: Int) in

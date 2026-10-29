@@ -28,7 +28,7 @@ public enum CoachDocuments {
   // A set as the model reads it; its number only once the log confirmed it (INV-3).
   public static func set(_ value: TrainingSet) -> JSON {
     .object(omittingNil: ["id": value.id.json, "exerciseId": value.exerciseId.json, "setNumber": value.setNumber.map(JSON.init),
-                         "weightKg": .of(value.weightKg), "reps": JSON(value.reps), "kind": .string(value.kind), "rpe": value.rpe.map(JSON.of),
+                         "weightKg": .of(value.weightKg), "reps": JSON(value.reps), "rpe": value.rpe.map(JSON.of),
                          "note": .string(value.note), "completedAt": .of(value.completedAt)])
   }
 

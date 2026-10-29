@@ -26,7 +26,6 @@ public struct ImportSessionCommand: ServerCommand {
   public static let specs: [any ValueSpec] = [
     TextSpec("gym.importSession.sets.id", unit: .chars, min: 8, max: 64, trim: false, nfc: false),
     TextSpec("gym.importSession.sets.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false),
-    ChoiceSpec("gym.importSession.sets.kind", values: ["warmup", "working", "drop", "failure"]),
     TextSpec("gym.importSession.sets.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false),
   ]
   public let args: [String: JSON]
@@ -45,7 +44,6 @@ public struct CorrectSessionCommand: ServerCommand {
     TextSpec("gym.correctSession.sets.id", unit: .chars, min: 8, max: 64, trim: false, nfc: false),
     TextSpec("gym.correctSession.sets.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false),
     TextSpec("gym.correctSession.sets.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false),
-    ChoiceSpec("gym.correctSession.sets.kind", values: ["warmup", "working", "drop", "failure"]),
   ]
   public let args: [String: JSON]
   public init(id: ID<Session>, requestId: String, startedAt: Instant, finishedAt: Instant, routineName: String?, sets: [CorrectedSet], preserveOtherSets: Bool = false) {

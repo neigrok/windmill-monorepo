@@ -465,8 +465,7 @@ import XCTest
       if id == accountWorkout {
         XCTAssertNil(session["finishedAt"]); XCTAssertEqual(sets.count, 1)
         XCTAssertEqual(session["startedAt"] as? Int64, startedAt); XCTAssertEqual(sets.first?["completedAt"] as? Int64, completedAt)
-        // The verify skill's fixture logs the set as working; the model server's set names no kind.
-        XCTAssertEqual(sets.first?["kind"] as? String, server == nil ? nil : "working"); XCTAssertEqual(sets.first?["note"] as? String, "")
+        XCTAssertNil(sets.first?["kind"]); XCTAssertEqual(sets.first?["note"] as? String, "")
         XCTAssertEqual(sets.first?["id"] as? String, accountSet)
         XCTAssertEqual(sets.first?["exerciseId"] as? String, "barbell-row")
         XCTAssertEqual(sets.first?["weightKg"] as? Double, 35); XCTAssertEqual(sets.first?["reps"] as? Int, 11)

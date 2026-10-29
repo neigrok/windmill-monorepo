@@ -179,7 +179,7 @@ final class GymHistory: Sendable {
     return history
   }
 
-  // A routine of five movements, three working sets each.
+  // A routine of five movements, three sets each.
   static func routineEntries(_ exercises: [RecordID], from index: Int) -> JSON {
     .array((0..<5).map { offset in
       ["exerciseId": exercises[(index + offset) % exercises.count].json, "restSeconds": 120,
@@ -187,12 +187,12 @@ final class GymHistory: Sendable {
     })
   }
 
-  // A logged set as the set logger writes it: its session and movement, the load, the reps and the kind; now and then
-  // an RPE and a note.
+  // A logged set as the set logger writes it: its session and movement, the load and the reps; now and then an RPE and
+  // a note.
   static func setValues(session: RecordID, exercise: RecordID, number: Int) -> [String: JSON] {
     var values: [String: JSON] = [
       "sessionId": session.json, "exerciseId": exercise.json, "weightKg": JSON(floatLiteral: 60 + Double(number % 8) * 2.5),
-      "reps": JSON(5 + number % 4), "kind": number % 5 == 0 ? "warmup" : "working",
+      "reps": JSON(5 + number % 4),
     ]
     if number % 3 == 0 { values["rpe"] = JSON(floatLiteral: 7.5) }
     if number % 10 == 0 { values["note"] = "Felt strong, bar speed good" }

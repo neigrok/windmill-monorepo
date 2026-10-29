@@ -87,7 +87,7 @@ import SyncTesting
       let session = try #require(gym.sessions.first { $0.id == id })
       var served = ReadServed(); served.saw(session: session)
       let reading = CoachReading(calls: [AbilityCall(callId: "source-call", name: "get_session", input: nil, outcome: .ok, read: .ids(served))], gym: gym)
-      let expected = [gym.dates.subtitle(start), "1 working set"] + (item.1.map { [Readout.weight($0) + " kg"] } ?? [])
+      let expected = [gym.dates.subtitle(start), "1 set"] + (item.1.map { [Readout.weight($0) + " kg"] } ?? [])
       #expect(reading.workouts.map(\.id) == [id.description])
       #expect(reading.workouts.map(\.meta) == [expected.joined(separator: " · ")])
       #expect(reading.workouts.map(\.available) == [true])

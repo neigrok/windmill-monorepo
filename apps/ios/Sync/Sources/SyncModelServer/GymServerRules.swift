@@ -145,8 +145,7 @@ public struct GymServerRules: ServerRules {
 
   func setFields(_ session: String, set: JSON) -> [String: JSON] {
     var fields: [String: JSON] = ["sessionId": .string(session), "exerciseId": set["exerciseId"]!,
-      "weightKg": set["weightKg"]!, "reps": set["reps"]!, "kind": set["kind"] ?? "working",
-      "note": set["note"] ?? "", "completedAt": set["completedAt"]!]
+      "weightKg": set["weightKg"]!, "reps": set["reps"]!, "note": set["note"] ?? "", "completedAt": set["completedAt"]!]
     fields["rpe"] = set["rpe"]
     return fields
   }

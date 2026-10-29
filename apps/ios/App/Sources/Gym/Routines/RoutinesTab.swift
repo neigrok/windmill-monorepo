@@ -216,7 +216,7 @@ enum RoutineLines {
   }
 
   static func session(_ readout: SessionReadout) -> String {
-    "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
+    "\(GymCount.of(readout.workingSetCount, "set")) · \(GymCount.of(readout.movementCount, "movement"))"
   }
 }
 

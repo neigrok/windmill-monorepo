@@ -7,7 +7,7 @@ nonisolated enum GymCount {
     "\(count) \(noun(count, singular, plural: plural))"
   }
 
-  // The noun alone, for a label that stands beside its value: *1 · Working set*.
+  // The noun alone, for a label that stands beside its value: *1 · Set*.
   static func noun(_ count: Int, _ singular: String, plural: String? = nil) -> String {
     count == 1 ? singular : plural ?? singular + "s"
   }

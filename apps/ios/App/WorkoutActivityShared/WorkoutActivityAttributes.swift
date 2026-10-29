@@ -1,7 +1,7 @@
 import ActivityKit
 import Foundation
 
-// The one working set the lock screen may log: the rack as the phone last drew it, under the set id it will carry.
+// The one set the lock screen may log: the rack as the phone last drew it, under the set id it will carry.
 nonisolated struct WorkoutActivityOffer: Codable, Hashable, Sendable {
   let ownerID: String
   let sessionID: String
