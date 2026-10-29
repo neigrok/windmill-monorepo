@@ -502,7 +502,10 @@ set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/e2e/anonymous_coach_test.py)
+  -m unittest -v anonymous_coach_test gym_http_test)
+set_tests_properties(anonymous_coach PROPERTIES
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/e2e"
+  ENVIRONMENT "WM_API_CONTRACT_DIR=${WM_API_CONTRACT_DIR}")
 # deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.
 add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py DeployProductionTest)
