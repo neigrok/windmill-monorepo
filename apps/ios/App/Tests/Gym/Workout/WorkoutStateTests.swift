@@ -1560,6 +1560,8 @@ import SyncTesting
 
     #expect(failing.savePlan(gym))
     #expect(gym.routines.first { $0.id == stored.id }?.entries == edited)
+    // A second Done, before the receipt has gone, closes it without saving or reporting again.
+    #expect(failing.savePlan(gym) && failing.offersSave && !failing.routineMoved)
     #expect(saved() == [["outcome": "failed"], ["outcome": "ok"]])
   }
 
