@@ -135,3 +135,37 @@ public struct ProposeRoutineCall: Decider {
     }
   }
 }
+
+// `propose_workout_change`: a workout proposal is minted under the call's id and the lifter decides on the workout's card;
+// a proposal already standing under that id is its replay, whatever it holds.
+public struct ProposeWorkoutCall: Decider {
+  public struct Loaded {
+    let stored: WorkoutProposal?
+    let workout: OpenWorkout
+  }
+
+  public let proposing: ProposeWorkout
+
+  public init(_ proposing: ProposeWorkout) {
+    self.proposing = proposing
+  }
+
+  public var scope: ScopeRef { Gym.scope }
+
+  public func load(_ read: Reader) throws -> Loaded {
+    Loaded(stored: try read.repository(WorkoutProposal.self).find(proposing.id, in: .stored), workout: try proposing.load(read))
+  }
+
+  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<AbilityAnswer, GymRefusal> {
+    let session = loaded.workout.session
+    let receipt = { (proposal: WorkoutProposal) in
+      CoachDocuments.workoutProposal(proposal, base: session?.plan?.entries ?? [], planRevision: session?.planRevision)
+    }
+    if let stored = loaded.stored { return .unchanged(AbilityAnswer(receipt(stored))) }
+    switch try proposing.proposed(over: loaded.workout) {
+    case .refuse(let refusal): return .refuse(refusal)
+    case .unchanged: throw Violation(rule: WorkoutProposalRules.lines.changes.path, path: "entries", reason: .custom("noChange"))
+    case .proposal(let valid, let plan): return .write(plan, AbilityAnswer(receipt(valid.value), created: [proposing.id.ref]))
+    }
+  }
+}
