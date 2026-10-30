@@ -97,7 +97,7 @@ std::optional<sync::Row> GymDoor::locked(sync::SyncTxn& txn, const UserId& user,
   return std::move(row->second);
 }
 
-Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
+Json::Value GymDoor::execute(const UserId& user, const Builder& builder, const std::string* refused) {
   auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
   WriteContext context(*observation);
   auto answer = std::make_shared<std::promise<Json::Value>>();
@@ -135,7 +135,7 @@ Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
       // A call with no requestId is admitted or asked to retry, and a retry is the engine being busy.
       const auto* admitted = std::get_if<sync::Admitted>(&outcome);
       if (!admitted) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
-      observation->finish(impl_->catalog->observationOutcome(admitted->result));
+      observation->finish(refused && !refused->empty() ? *refused : impl_->catalog->observationOutcome(admitted->result));
       answer->set_value(admitted->result);
     } catch (const GymUnavailable& refused) {
       observation->finish(refused.code);

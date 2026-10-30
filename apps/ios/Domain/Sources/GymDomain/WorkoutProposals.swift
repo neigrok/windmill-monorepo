@@ -142,7 +142,12 @@ public struct ProposeWorkout: Action {
         throw Violation(rule: WorkoutPlanRules.duplicate, path: Path("entries") + index + "exerciseId", reason: .custom("duplicate"))
       }
     }
-    if let movement = workout.loggedChange(to: entries) {
+    // The first logged movement whose entries the proposal changes, in the order the plan and then the proposal name
+    // movements: a logged movement may move, but its entries stay exactly as they stand.
+    let entriesOf = { (plan: [RoutineEntry], movement: ID<Exercise>) in plan.filter { $0.exerciseId == movement } }
+    if let movement = (workout.plan.entries + entries).map(\.exerciseId).first(where: {
+      workout.logged.contains($0) && entriesOf(workout.plan.entries, $0) != entriesOf(entries, $0)
+    }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.planLogged, subject: id.ref, detail: ["exerciseId": movement.json], path: .predicted)))
     }
     var plan = Plan()

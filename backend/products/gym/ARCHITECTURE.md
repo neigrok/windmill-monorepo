@@ -602,7 +602,8 @@ for every writer, and the door maps the engine's refusal code onto its outcome. 
 back through the repositories after the commit. Every call is one `gym.server_call` completion on
 door `server-origin`: the engine result's outcome (`ok` also when the builder answered without
 admitting, the engine's or gym's refusal code otherwise), `invalid` for malformed input, or
-`gym-engine-busy`.
+`gym-engine-busy`. A builder that refuses before admitting may name its refusal instead:
+`proposeWorkout` completes `unknown-record`, `no-plan`, `id-reused`, `no-change` or `id-taken`.
 
 - **Resolve the replay before any refusal.** A set already stored under its id in this session
   answers with itself, whatever state the session is in now; a start whose id or receipt names a

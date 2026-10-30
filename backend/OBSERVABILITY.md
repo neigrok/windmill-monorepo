@@ -314,7 +314,7 @@ listed separately because their only server writes are authentication refresh or
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
 | `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 13 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
-| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout` included) | `gym.server_call` | completion; actual call result and expected training refusal | unexpected |
+| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout` included) | `gym.server_call` | completion; actual call result, expected training refusal, and `proposeWorkout`'s refusal before admitting (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`) | unexpected |
 | `ServerCall::admit` / `admitBuilt` invalid dedupe id | `sync.server_call.admit` | completion; bounded refusal or result | log only |
 | `ServerCall::finish` dedupe metadata write | `sync.server_call.finish` | completion; bounded refusal or result | unexpected |
 | `Admission::storedAnswer` / `callAnswer` call digest disagreement | `sync.call.digest` | completion; expected digest conflict | log only |

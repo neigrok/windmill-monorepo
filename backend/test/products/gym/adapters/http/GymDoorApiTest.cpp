@@ -190,6 +190,31 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   CHECK(h.failures.messages.empty());
 }
 
+// A workout proposal the door refuses before admitting writes nothing, and the door's write line names the refusal.
+TEST(gym_engine_workout_proposal_refused_before_admission_names_its_refusal_on_the_door_line) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  DoorApis h;
+  REQUIRE(!h.call("create_routine", routineBody("rt_doorwp01")).isError);
+  Json::Value start = startBody("ses_doorwp01", h.clock.now - 120000);
+  start["routineId"] = "rt_doorwp01";
+  REQUIRE(!h.call("start_session", start).isError);
+  Json::Value unchanged(Json::objectValue);
+  unchanged["id"] = "wprop_door01";
+  unchanged["sessionId"] = "ses_doorwp01";
+  unchanged["entries"] = routineBody("rt_doorwp01")["entries"];
+  Json::Value absent = unchanged;
+  absent["sessionId"] = "ses_absent01";
+  const auto before = h.seq();
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " | " + completion.outcome); });
+  CHECK(h.call("propose_workout_change", unchanged).isError);
+  CHECK(h.call("propose_workout_change", absent).isError);
+  installWriteSink({});
+  CHECK_EQ(h.seq(), before);
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit | ok", "gym.server_call | no-change", "sync.admit | ok", "gym.server_call | unknown-record"}));
+  CHECK(h.failures.messages.empty());
+}
+
 // The confirmation route answers each outcome with its code, and the door's write line carries the route's
 // request id although the save runs on the upload pool.
 TEST(gym_engine_coach_confirmation_route_answers_each_outcome_under_one_request_id) {
