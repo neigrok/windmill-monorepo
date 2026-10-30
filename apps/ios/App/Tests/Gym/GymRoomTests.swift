@@ -27,6 +27,18 @@ import GymDomain
     #expect(routing == GymRoomRouting())
   }
 
+  // A door Coach opened over the workout opens once the workout is hidden: Keep with the routines it made, You, the routine
+  // it made, or a new routine in Routines, signed in or out.
+  @Test func aDoorCoachOpenedOverTheWorkoutOpensBehindIt() {
+    var routing = GymRoomRouting()
+    let routine = ID<Routine>("coach-made")
+    for signedOut in [true, false] {
+      #expect([WorkoutHandoff.keepRoutines, .you, .routine(routine), .buildRoutine].map { routing.receive($0, needsSignIn: signedOut, signedOut: signedOut) }
+              == [[.keepRoutines], [.openYou], [.routine(routine)], [.buildRoutine]])
+    }
+    #expect(routing == GymRoomRouting())
+  }
+
   // Share with Coach asks at once with an account; without one it opens Keep your log and asks once, when that sheet closes
   // signed in, and never after a sheet that closed signed out, even when a later sign-in succeeds.
   @Test func shareWithCoachWaitsForTheSignInItOpened() {

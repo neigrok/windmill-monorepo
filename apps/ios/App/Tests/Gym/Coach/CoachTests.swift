@@ -164,15 +164,15 @@ import SyncTesting
     }
     #expect(CoachTurnRefusal(code: "free_month_exhausted", resetsAtMs: 1_793_491_200_000) == .freeMonthExhausted(resetsAtMs: 1_793_491_200_000))
     #expect([CoachTurnRefusal.freeMonthExhausted(resetsAtMs: nil), .rateLimited].map { $0.recovery(anonymous: false) } == [.ownAgent, .ownAgent])
-    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .updateRequired].map { $0.recovery(anonymous: true) } == [.tryAgain, .openWorkout, nil, .update])
+    #expect([CoachTurnRefusal.offline, .logArriving, .updateRequired].map { $0.recovery(anonymous: true) } == [.tryAgain, nil, .update])
     #expect([CoachTurnRefusal(code: "subject_exhausted"), CoachTurnRefusal(code: "coach-rate-limited"), CoachTurnRefusal(code: "coach-update-required"),
              CoachTurnRefusal(code: "invalid_installation"), CoachTurnRefusal(code: "coach-busy", status: 503), CoachTurnRefusal(code: "", status: 404)]
       == [.allowance("subject_exhausted"), .rateLimited, .updateRequired, .installation("invalid_installation"), .said("coach-busy"), .absent])
     #expect([CoachTurnRefusal.allowance("subject_exhausted"), .freeMonthExhausted(resetsAtMs: nil), .rateLimited, .absent].map { $0.capped } == [true, true, true, true])
-    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped }
-      == [false, false, false, false, false, false])
-    #expect([CoachTurnRefusal.offline, .workoutOpen, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired].map(\.sentence) == [
-      "No connection. Your question is kept here.", "Coach waits until you finish this workout.",
+    #expect([CoachTurnRefusal.offline, .logArriving, .updateRequired, .installation("device_bound"), .said("coach-busy")].map { $0.capped }
+      == [false, false, false, false, false])
+    #expect([CoachTurnRefusal.offline, .logArriving, .installation("invalid_installation"), .installation("device_bound"), .updateRequired].map(\.sentence) == [
+      "No connection. Your question is kept here.",
       "Your log is still arriving on this phone. Ask again in a moment.", "This phone can’t ask Coach signed out any more. Sign in to continue.",
       "This phone is linked to an account. Sign in to ask Coach.", "This version can’t ask Coach any more. Update Windmill to continue.",
     ])
@@ -261,29 +261,32 @@ import SyncTesting
     first.current.title = "First"; first.current.body = String(repeating: "é", count: 251)
     #expect({ if case .refused = gym.save(&first) { return true }; return false }())
   }
-  @Test func proposalDecisionsBlockWorkoutAndWaitForAtomicEngineReceipt() throws {
+  // A routine proposal applies during a workout and changes the routine for next time; the running workout keeps the plan
+  // it started from.
+  @Test func aProposalAppliedMidWorkoutChangesTheRoutineAndNeverTheRunningWorkout() throws {
     let (h, gym) = fixture()
     gym.run(CreateExercise(Exercise(id: ID("custom-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
     gym.run(CreateExercise(Exercise(id: ID("custom-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
-    var routine = Draft(new: Routine(id: ID("routine-one"), name: "Before", entries: [RoutineEntry(exerciseId: ID("custom-squat"))]))
+    var routine = Draft(new: Routine(id: ID("routine-one"), name: "Before", entries: [RoutineEntry(exerciseId: ID("custom-squat"), sets: [SetTarget(reps: 5, weightKg: 100)])]))
     _ = gym.save(&routine); h.sync(); gym.refresh()
     let proposed = try h.runner.run(ProposeRoutine(id: ID("proposal-one"), routineId: routine.id, name: "After", entries: [RoutineEntry(exerciseId: ID("custom-bench"))], summary: "Change"))
     #expect(proposed.receipt != nil)
     h.sync(); gym.refresh()
     let proposal = try #require(gym.proposals.first)
-    gym.run(StartSession(id: ID("session-one")))
-    #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.error == "Finish your workout first.")
+    let card = ProposalCard(gym: gym, id: proposal.id.record.string!)
+    #expect(card.eyebrow == "Changes to Before")
+    #expect(gym.run(StartSession(id: ID("session-one"), routineId: routine.id))?.refusal == nil)
     h.sync(); gym.refresh()
-    gym.run(FinishSession(id: ID("session-one")))
-    h.sync(); gym.refresh()
-    #expect(gym.openSession == nil)
-    #expect(gym.coachDecideProposal(proposal, apply: true))
-    let waiting = ProposalCard(gym: gym, id: proposal.id.record.string!)
-    #expect(waiting.decision(stalled: false).title == "Applying…")
+    let started = try #require(gym.openSession), before = try #require(gym.routines.first)
+    #expect(started.plan == SessionPlan(before) && before.entries.map(\.exerciseId) == [ID<Exercise>("custom-squat")])
+    #expect(card.eyebrow == "Changes to Before · Next time")
+    #expect(gym.coachDecideProposal(proposal, apply: true) && gym.error == nil)
+    #expect(card.decision(stalled: false).title == "Applying…")
     h.sync(); gym.refresh()
     #expect(gym.proposals.first?.state == "applied" && gym.routines.first?.name == "After")
     #expect(gym.proposals.first.map(gym.coachProposalOutOfDate) == false)
     #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID<Exercise>("custom-bench")])
+    #expect(gym.openSession == started && gym.openSession?.plan == SessionPlan(before))
     #expect(!gym.coachDecideProposal(proposal, apply: false))
   }
   @Test(arguments: [false, true])
@@ -797,10 +800,6 @@ import SyncTesting
     h.sync(); gym.refresh(); elsewhere.refresh()
     let here = ProposalCard(gym: gym, id: "landed-here"), applied = ProposalCard(gym: gym, id: "landed-elsewhere")
     let proposal = { (id: String) in try #require(gym.proposals.first { $0.id == ID(RecordID(id)) }) }
-    gym.run(StartSession(id: ID("landed-session")))
-    #expect(!gym.coachDecideProposal(try proposal("landed-here"), apply: true) && gym.error == "Finish your workout first.")
-    gym.run(FinishSession(id: ID("landed-session")))
-    h.sync(); gym.refresh()
     #expect(!here.pending && !here.landed && here.failure == nil)
     #expect(gym.coachDecideProposal(try proposal("landed-here"), apply: true))
     h.server.refuse(code: .invalid)
@@ -843,12 +842,12 @@ import SyncTesting
     let refusals: [GymRefusal?] = [
       refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "routine-changed"]), refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "replaced"]),
       refusal(Gym.Codes.proposalSuperseded, proposal, ["reason": "superseded"]), refusal(Gym.Codes.proposalSettled, proposal, ["state": "applied"]),
-      refusal(Gym.Codes.sessionOpen, nil, nil), refusal(.unknownRecord, routine, nil), refusal(.unknownRecord, proposal, nil),
+      refusal(.unknownRecord, routine, nil), refusal(.unknownRecord, proposal, nil),
       refusal(.invalid, proposal, nil), nil]
     #expect(refusals.map { CoachCopy.notApplied($0, routine: "Push A") } == [
       "Push A changed after this suggestion. Not applied.", "A newer suggestion replaced this one. Not applied.",
       "This suggestion is out of date. Not applied.", "This suggestion was already answered. Not applied.",
-      "Finish your workout first. Not applied.", "Push A is no longer in your program. Not applied.", "Not applied.",
+      "Push A is no longer in your program. Not applied.", "Not applied.",
       "Not applied.", "Not applied."])
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {

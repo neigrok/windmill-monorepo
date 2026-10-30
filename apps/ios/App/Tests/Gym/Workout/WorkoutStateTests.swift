@@ -204,6 +204,17 @@ import SyncTesting
     #expect(!reopened.hideWorkout() && !reopened.workoutHidden && reopened.workout.isPresented)
   }
 
+  // A door Coach opens over the workout hides it and hands the door to the room; a workout that cannot hide keeps the lifter
+  // where they are and hands nothing on.
+  @Test(arguments: [WorkoutHandoff.keepRoutines, .you, .routine(ID("coach-made")), .buildRoutine])
+  func aDoorOutOfTheWorkoutHidesItAndHandsTheDoorOn(door: WorkoutHandoff) throws {
+    let (harness, gym) = try fixture(), workout = try begin(gym)
+    harness.failNextCommit()
+    #expect(!gym.hideWorkout(handingOff: door) && workout.isPresented && workout.handoff == nil)
+    #expect(gym.hideWorkout(handingOff: door) && gym.workoutHidden && !workout.isPresented && workout.handoff == door)
+    #expect(gym.openSession?.id == workout.sessionId)
+  }
+
   @Test func explicitStartRestoresHiddenWorkoutWhilePreservingItsRefusal() throws {
     let (_, gym) = try fixture(), workout = try begin(gym), id = try #require(workout.sessionId)
     #expect(gym.hideWorkout())

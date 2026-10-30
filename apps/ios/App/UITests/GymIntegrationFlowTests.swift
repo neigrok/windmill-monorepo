@@ -476,6 +476,34 @@ import XCTest
     return ids
   }
 
+  // Coach over a signed-out workout leads out of it: Build my own closes the sheet, hides the workout and opens a new
+  // routine in Routines, and the hidden workout comes back as it was.
+  func testCoachOverTheWorkoutOpensItsDoorsBehindIt() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-scenario", "gym-coach-doors-" + UUID().uuidString, "-model-server", "-server", "http://127.0.0.1:1"]
+    app.launch()
+    XCTAssertTrue(app.buttons["open-gym"].waitForExistence(timeout: 20)); app.buttons["open-gym"].tap()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 20)); app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 20)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10)); app.buttons["workout-log"].tap()
+    let coach = app.buttons["workout-coach"]
+    XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 5)); coach.tap()
+    let build = app.buttons["coach-setup-build_manually"]
+    XCTAssertTrue(build.waitForExistence(timeout: 10)); build.tap()
+    XCTAssertTrue(app.textFields["routine-name"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["workout-log"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-question"].exists)
+    app.navigationBars.buttons["Cancel"].tap()
+    let hidden = app.buttons["gym-hidden-workout"]
+    XCTAssertTrue(hidden.waitForExistence(timeout: 10)); hidden.tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.exists, "The hidden workout keeps its set")
+  }
+
   // Signed out, Share with Coach opens Keep your log; the sign-in it opens hands the receipt to Coach, which answers once.
   func testReceiptKeepsCoachAndAccountHandoffsThroughDismissal() {
     let anonymous = XCUIApplication()
