@@ -134,9 +134,13 @@ public struct ProposeWorkout: Action {
     if entries.contains(where: { loaded.catalogue.find($0.exerciseId) == nil }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.unknownExercise, subject: id.ref, path: .predicted)))
     }
-    let frozen = { (movement: ID<Exercise>) in max(1, workout.plan.entries.filter { $0.exerciseId == movement }.count) }
-    if let index = entries.indices.first(where: { i in entries[...i].filter { $0.exerciseId == entries[i].exerciseId }.count > frozen(entries[i].exerciseId) }) {
-      throw Violation(rule: WorkoutPlanRules.duplicate, path: Path("entries") + index + "exerciseId", reason: .custom("duplicate"))
+    // A movement appears once, or as often as the routine gave the plan it.
+    var named: [ID<Exercise>: Int] = [:]
+    for (index, entry) in entries.enumerated() {
+      named[entry.exerciseId, default: 0] += 1
+      if named[entry.exerciseId, default: 0] > max(1, workout.plan.entries.filter({ $0.exerciseId == entry.exerciseId }).count) {
+        throw Violation(rule: WorkoutPlanRules.duplicate, path: Path("entries") + index + "exerciseId", reason: .custom("duplicate"))
+      }
     }
     if let movement = workout.loggedChange(to: entries) {
       return .refuse(GymRefusal(Refused(Gym.Codes.planLogged, subject: id.ref, detail: ["exerciseId": movement.json], path: .predicted)))

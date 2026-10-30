@@ -39,7 +39,7 @@ public struct OpenWorkout: Sendable {
     guard let session, visible else { throw GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)) }
     if isClosed { throw GymRefusal(Refused(Gym.Codes.sessionFinished, subject: subject, path: .predicted)) }
     do throws(Violation) {
-      return WorkoutPlan(session: id, plan: try WorkoutPlanRules.plan(of: session), logged: logged)
+      return WorkoutPlan(session: session, plan: try WorkoutPlanRules.plan(of: session), logged: logged)
     } catch {
       throw GymRefusal(error)
     }
@@ -81,11 +81,12 @@ public struct WorkoutPlan: Equatable, Sendable {
     }
   }
 
-  public let session: ID<Session>
+  // The session as stored, and its plan.
+  public let session: Session
   public let plan: SessionPlan
   public let logged: Set<ID<Exercise>>
 
-  public init(session: ID<Session>, plan: SessionPlan, logged: Set<ID<Exercise>>) {
+  public init(session: Session, plan: SessionPlan, logged: Set<ID<Exercise>>) {
     self.session = session
     self.plan = plan
     self.logged = logged
@@ -106,7 +107,7 @@ public struct WorkoutPlan: Equatable, Sendable {
         if isLocked(entries[index].entry) { throw lockedBy(entries[index].entry.exerciseId) }
       }
       if let movement = operation.movement {
-        guard catalogue.find(movement) != nil else { throw GymRefusal(Refused(Gym.Codes.unknownExercise, subject: session.ref, path: .predicted)) }
+        guard catalogue.find(movement) != nil else { throw GymRefusal(Refused(Gym.Codes.unknownExercise, subject: session.id.ref, path: .predicted)) }
         if entries.contains(where: { $0.entry.exerciseId == movement }) {
           throw GymRefusal(Violation(rule: WorkoutPlanRules.duplicate, path: at + "exerciseId", reason: .custom("duplicate")))
         }
@@ -161,7 +162,7 @@ public struct WorkoutPlan: Equatable, Sendable {
   }
 
   func lockedBy(_ movement: ID<Exercise>) -> GymRefusal {
-    GymRefusal(Refused(Gym.Codes.planLogged, subject: session.ref, detail: ["exerciseId": movement.json], path: .predicted))
+    GymRefusal(Refused(Gym.Codes.planLogged, subject: session.id.ref, detail: ["exerciseId": movement.json], path: .predicted))
   }
 }
 
@@ -204,17 +205,16 @@ public struct ReviseWorkoutPlan: Action {
   public func load(_ read: Reader) throws -> OpenWorkout { try OpenWorkout(read, id: sessionId) }
 
   public func decide(_ loaded: OpenWorkout, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    let revised: SessionPlan
+    var session: Session
     do throws(GymRefusal) {
       let workout = try loaded.plan(refusing: sessionId.ref)
       guard workout.plan == base else { return .refuse(GymRefusal(Refused(.stale, subject: sessionId.ref, path: .predicted))) }
-      revised = try workout.revised(by: operations, catalogue: loaded.catalogue)
-      if revised == workout.plan { return .unchanged(()) }
+      session = workout.session
+      session.plan = try workout.revised(by: operations, catalogue: loaded.catalogue)
+      if session.plan == workout.plan { return .unchanged(()) }
     } catch {
       return .refuse(error)
     }
-    guard var session = loaded.session else { preconditionFailure("an open workout's plan has its session") }
-    session.plan = revised
     var plan = Plan()
     plan.update(try Valid(session, fields: ["plan"], at: loaded.moment), fields: ["plan"], guarded: true)
     return .write(plan)
