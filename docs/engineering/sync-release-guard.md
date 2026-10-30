@@ -17,9 +17,9 @@ Source and production advertise schema 11 / minimum 11 after deployment `4087363
 `41101251226` completed across three scopes and corrected two digests. Web promotion `41101256320`
 serves verified source `667bbc88`. Read-only run `41117835993` verifies iOS 0.2.0 (23) availability in
 one established internal beta group with two testers. Android 0.13.0 and the coordinated iOS
-replacement remain pending; queued client delivery remains unverified. The
-[deployment runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records exact receipts
-and the compatible rollback floor. Approved Android equipment controls do not approve new iOS or web pickers.
+replacement remain pending. The
+[deployment runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records the exact local
+schema-11 queued-delivery proof, its production/current-client qualifications and the compatible rollback floor. Approved Android equipment controls do not approve new iOS or web pickers.
 
 Each replacement sender requires a fresh hello for its current owner, token, replica and epoch
 before numbering or delivering work, with server schema at least its generated registry minimum.
@@ -43,6 +43,7 @@ steps still run; a source merge cannot promote an incompatible web client.
 Before that check, Web Deploy retains the complete `dist`, composed compatibility metadata and a
 release manifest with the full source SHA and every file's size/SHA256. The artifact name includes
 the source, workflow run and attempt, so retrying a held run retains its earlier candidate. The
-release still requires verification of native replacement availability and queued delivery. The
-completed backend cutoff and web promotion do not establish those remaining checks. An artifact or
-passing compatibility check alone proves neither delivery nor production availability.
+release still requires current native lifecycle acceptance and replacement availability. Task 25's
+local schema-11 queue proof is retained with the runbook's exact source/APK/backend pins. Public hello
+and served-artifact checks verify deployment compatibility; no production queued-write delivery is
+claimed. An artifact or passing compatibility check alone proves neither delivery nor native availability.

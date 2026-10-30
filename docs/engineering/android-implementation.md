@@ -954,7 +954,10 @@ production advertise schema 11 / minimum 11 after deployment `40873633845`. Dige
 `41101251226` completed across three scopes and corrected two digests. Web promotion `41101256320`
 serves verified source `667bbc88`. Read-only availability run `41117835993` verifies iOS 0.2.0 (23)
 in one established internal beta group with two testers. Android 0.13.0 and the coordinated iOS
-replacement remain pending; queued client delivery remains unverified.
+replacement remain pending. The
+[release runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records task 25's verified
+local schema-11 queued-delivery proof and its exact pins; current native acceptance remains separate,
+and production queued writes were not exercised.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and

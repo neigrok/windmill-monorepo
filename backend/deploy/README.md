@@ -166,9 +166,24 @@ completed across three scopes and corrected two digests. [Web promotion 41101256
 serves source `667bbc88` at schema 11 / minimum 11. Verification matched all 168 artifact file hashes
 and 82 public files exactly; five HTML files match after Cloudflare email-protection removal, and
 `gallery.html` follows its expected canonical redirect. Android 0.13.0 and the coordinated iOS
-replacement remain pending; queued client delivery remains unverified. The deployment guard requires
+replacement remain pending. The deployment guard requires
 exact acknowledgement for any further minimum change. The completed schema-11 cutoff does not need
 to be repeated for these replacement builds.
+
+[Task 25 native acceptance](../../androidgym_tasks/25-on-this-phone.md) verifies queued delivery on
+an isolated schema 11 / minimum 11 stack. One offline Fix saved a ready, unnumbered import; process
+restart retained it, reconnect produced exactly one authoritative sync result, and the outbox became
+empty. SQL and authenticated GET retain the original workout/set identities, exact set values and
+finish time with the corrected start. The evidence pins Android source
+`432da83a1493b2b540052d658d980adc74a02b1a`, APK SHA-256
+`e21d2ecdb6bc75c8e16d00eec918845e88b25fd4e9b9472a0285add9380a8644`, and backend SHA-256
+`0d202838aefdb8c5afb8bc213f101b46b5fbf835db9694b226e2633d168e9876`.
+
+This proves the recorded local queue/data path, not a production queued write or the final replacement
+APK. The pinned evidence applies where the relevant queue/data behavior is unchanged; tasks 47/48
+change authority boundaries and their focused native acceptance remains pending. Public hello and
+served-artifact compatibility checks remain part of final release verification. Production queued
+writes were not exercised.
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.
@@ -195,12 +210,15 @@ to be repeated for these replacement builds.
    minimum 11 at hello and schema 10 or older `426 upgrade-required` refusals at
    hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
    header and return `426 client-update-required` for missing/old carriers before JSON, image or
-   SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
-   web and old native clients retain local work and show their existing update-required surface.
+   SSE delivery. Verify queued native/web work against a real compatible local backend, with a fresh
+   hello before delivery. Reuse pinned evidence only where the relevant behavior is unchanged;
+   current tasks 47/48 authority changes require focused native acceptance. Cached web and old native
+   clients retain local work and show their existing update-required surface.
    Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted
    main source. Each attempt retains a separate pinned web artifact; inspect its full source SHA,
    schema and file hashes. The preflight reads the current compose deployment and promotes no
-   backend state. Verify the new web release and real queued delivery after promotion.
+   backend state. Verify the served web release and public compatibility independently; these reads
+   do not establish production queued-write delivery.
 6. Keep a schema 11 / minimum 11 maintenance image available before accepting the new load range
    or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
    column caps. Automation resumes when candidate and live minimum match. Server and migration use

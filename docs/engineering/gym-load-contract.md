@@ -6,7 +6,8 @@ means last time. Reps, set counts, bodyweight and configured movement steps reta
 Production advertises schema 11 / minimum 11. The
 [release runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records verified deployment,
 web, digest and iOS 0.2.0 (23) availability receipts. Android 0.13.0 and the coordinated iOS replacement
-remain pending; queued client delivery remains unverified.
+remain pending. The runbook qualifies task 25's local schema-11 queued-delivery proof separately from
+current native acceptance and production writes, which were not exercised.
 
 ## Normalization and storage
 
