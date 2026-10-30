@@ -51,6 +51,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheetWindow
@@ -71,6 +72,7 @@ fun RoutinesScreen(
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
     val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
+    val refusals = store.refusals.filterNot { it is RefusedWorkout }
 
     GymScreen(
         title = "Routines",
@@ -87,8 +89,8 @@ fun RoutinesScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (store.refusals.isNotEmpty()) item("refusals") {
-                    Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+                if (refusals.isNotEmpty()) item("refusals") {
+                    Refusals(refusals, store.catalog, onDismiss = { store.clearRefusals() })
                 }
 
                 items(store.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->

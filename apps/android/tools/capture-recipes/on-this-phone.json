@@ -1,0 +1,225 @@
+[
+  {
+    "board": "07.7",
+    "name": "log-on-this-phone",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "wait": "On this phone"
+      }
+    ]
+  },
+  {
+    "board": "07.1",
+    "name": "on-this-phone",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "3 workouts"
+      },
+      {
+        "wait": "Needs you"
+      },
+      {
+        "wait": "Adding"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      }
+    ]
+  },
+  {
+    "board": "07.2",
+    "name": "inspect",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "3 workouts"
+      },
+      {
+        "tap_contains": "Push A"
+      },
+      {
+        "wait": "Sets"
+      }
+    ],
+    "after": [
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      }
+    ]
+  },
+  {
+    "board": "07.3",
+    "name": "fix-workout",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "3 workouts"
+      },
+      {
+        "tap_contains": "Push A"
+      },
+      {
+        "wait": "Sets"
+      },
+      {
+        "tap": "Fix workout"
+      },
+      {
+        "wait": "Save and retry"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Close"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      }
+    ]
+  },
+  {
+    "board": "07.8",
+    "name": "discard-copy",
+    "account": "fixture",
+    "steps": [
+      {
+        "tap": "The log"
+      },
+      {
+        "tap": "3 workouts"
+      },
+      {
+        "tap_contains": "Push A"
+      },
+      {
+        "wait": "Sets"
+      },
+      {
+        "tap": "More"
+      },
+      {
+        "tap": "Discard workout"
+      },
+      {
+        "wait": "Discard this workout?"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      },
+      {
+        "key": "KEYCODE_BACK"
+      }
+    ]
+  },
+  {
+    "board": "07.4",
+    "name": "sign-in-decision",
+    "account": "fixture",
+    "steps": [
+      {
+        "wait": "Add to your account?"
+      },
+      {
+        "wait": "This phone has 3 workouts from before you signed in. Your account already has training. Add them, or discard them from this phone."
+      }
+    ]
+  },
+  {
+    "board": "07.5",
+    "name": "discard-phone-workouts",
+    "account": "fixture",
+    "steps": [
+      {
+        "wait": "Add to your account?"
+      },
+      {
+        "tap": "Discard"
+      },
+      {
+        "wait": "Discard 3 workouts?"
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      }
+    ]
+  },
+  {
+    "board": "07.9",
+    "name": "sign-in-decision-kinds",
+    "account": "fixture",
+    "steps": [
+      {
+        "wait": "Add to your account?"
+      },
+      {
+        "wait": "This phone has 2 workouts, 1 routine and 1 weigh-in from before you signed in. Your account already has training. Add them, or discard them from this phone."
+      }
+    ]
+  },
+  {
+    "board": "07.10",
+    "name": "discard-all",
+    "account": "fixture",
+    "steps": [
+      {
+        "wait": "Add to your account?"
+      },
+      {
+        "tap": "Discard"
+      },
+      {
+        "wait": "Discard all of it?"
+      },
+      {
+        "wait": "2 workouts, 1 routine and 1 weigh-in are deleted from this phone. You can’t undo this."
+      }
+    ],
+    "after": [
+      {
+        "tap": "Cancel"
+      }
+    ]
+  },
+  {
+    "board": "07.4",
+    "name": "sign-in-decision-after-mode-switch",
+    "account": "fixture",
+    "steps": [
+      {
+        "wait": "Add to your account?"
+      },
+      {
+        "absent": "Check your email"
+      }
+    ]
+  }
+]

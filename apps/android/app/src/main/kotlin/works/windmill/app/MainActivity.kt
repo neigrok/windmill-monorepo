@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -62,7 +64,6 @@ import works.windmill.platform.ClientUpdateDestination
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
 import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.gymLineageCounts
 import works.windmill.sync.engine.LineageAnswer
 import java.util.UUID
 
@@ -182,7 +183,7 @@ class MainActivity : ComponentActivity() {
 internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntroductionExit: () -> Unit,
     launchRevision: Int = 0, tileLaunchRevision: Int = 0, onIntroductionPage: (Int) -> Unit = {}) {
     val auth = runtime.auth
-    LaunchedEffect(Unit) { auth.restore() }
+    LaunchedEffect(Unit) { if (auth.handoffRevision == 0L) auth.restore() }
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -198,6 +199,18 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     var signIn by rememberSaveable { mutableStateOf(false) }
     var about by rememberSaveable { mutableStateOf(false) }
     var aboutPage by remember { mutableIntStateOf(0) }
+    var completingSignIn by rememberSaveable { mutableLongStateOf(0L) }
+    LaunchedEffect(auth.handoffRevision, auth.handoffPending, auth.handoffResult) {
+        val revision = auth.handoffRevision
+        if (auth.handoffPending && youUp) completingSignIn = revision
+        else if (!auth.handoffPending && completingSignIn == revision && revision != 0L) {
+            completingSignIn = 0L
+            if (auth.handoffResult == works.windmill.platform.auth.AuthHandoffResult.Accepted) {
+                auth.status.user?.id?.let(signInAttempts::complete)
+                youUp = false; signIn = false
+            }
+        }
+    }
     LaunchedEffect(tileLaunchRevision) {
         if (tileLaunchRevision > 0) {
             signInAttempts.cancel()
@@ -263,10 +276,10 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
                             onPageSettled = { aboutPage = it })
                     }
-                    if (youUp && !about) YouSheet(auth, onDismiss = { auth.status.user?.id?.let(signInAttempts::complete) ?: signInAttempts.cancel(); youUp = false },
+                    if (youUp && !about && runtime.engineSession.decision == null) YouSheet(auth, onDismiss = { auth.status.user?.id?.let(signInAttempts::complete) ?: signInAttempts.cancel(); youUp = false },
                         destinations = shell.destinations + YouDestination("about_windmill", aboutLabel) { about = true },
                         startSignIn = signIn)
-                    EngineAccountDecision(runtime)
+                    EngineAccountDecision(runtime.engineSession, auth, runtime.telemetry) { youUp = false; signIn = false }
                 }
             }
         }
@@ -274,65 +287,71 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
 }
 
 @Composable
-private fun EngineAccountDecision(runtime: WindmillApplication) {
-    val session = runtime.engineSession
+internal fun EngineAccountDecision(session: works.windmill.gym.store.GymEngineSession, auth: works.windmill.platform.auth.AuthStore,
+    telemetry: works.windmill.platform.telemetry.Telemetry, onCancelSignIn: () -> Unit = {}) {
     val signInAttempts = LocalShellActions.current.signInAttempts
     val sync by session.engine.status.state.collectAsState()
     val uri = LocalUriHandler.current
     val update = LocalClientUpdateDestination.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(sync.upgradeRequired) {
-        if (sync.upgradeRequired) runtime.telemetry.event("client_update_required",
+        if (sync.upgradeRequired) telemetry.event("client_update_required",
             mapOf("state" to "shown", "status" to "426"))
     }
     if (sync.upgradeRequired) {
         var shown by remember { mutableStateOf(true) }
         var updateFailure by remember { mutableStateOf<String?>(null) }
         if (shown) AlertDialog(onDismissRequest = {
-            runtime.telemetry.event("client_update_required", mapOf("action" to "dismiss")); shown = false
+            telemetry.event("client_update_required", mapOf("action" to "dismiss")); shown = false
         }, title = { Text("Update required") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Update Windmill to keep syncing. Your work is saved on this phone.")
                 updateFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } },
             confirmButton = { TextButton(onClick = {
-                updateFailure = update.open(uri::openUri, runtime.telemetry)
+                updateFailure = update.open(uri::openUri, telemetry)
             }) { Text(update.label) } },
             dismissButton = { TextButton(onClick = {
-                runtime.telemetry.event("client_update_required", mapOf("action" to "keep")); shown = false
+                telemetry.event("client_update_required", mapOf("action" to "keep")); shown = false
             }) { Text("Keep working on this phone") } })
     }
     session.decision?.let { decision ->
-        var confirmingDiscard by remember(decision) { mutableStateOf(false) }
+        var discardDecision by rememberSaveable { mutableStateOf<String?>(null) }
+        val copy = works.windmill.gym.ui.PhoneSignInCopy(decision.decisions.associate { it.product to it.count })
         fun cancelDiscard() {
             if (session.decisionBusy) return
-            runtime.telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))
-            confirmingDiscard = false
+            telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))
+            discardDecision = null
         }
         fun cancelSignIn() {
             if (session.decisionBusy) return
             signInAttempts.cancel()
-            scope.launch { session.cancel() }
+            onCancelSignIn()
+            scope.launch {
+                try { session.cancel(); auth.cancelPendingSignIn() }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    if (failure !is works.windmill.platform.auth.AuthHandoffFailure) telemetry.failure("auth_sign_in", failure)
+                }
+            }
         }
-        if (confirmingDiscard) AlertDialog(onDismissRequest = ::cancelDiscard,
-            title = { Text("Discard this phone’s training?") },
-            text = { Text("This removes the signed-out training listed here. Your account’s training stays saved.\n\n" +
-                gymLineageCounts(decision.decisions.firstOrNull { it.product == "gym" }?.count.orEmpty())) },
-            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.discard) } }) { Text("Discard") } },
+        if (discardDecision == session.decisionKey) AlertDialog(onDismissRequest = ::cancelDiscard,
+            title = { Text(copy.discardTitle) },
+            text = { Text(copy.discardBody) },
+            confirmButton = { TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = { scope.launch { session.decide(LineageAnswer.discard, decision) } }) { Text("Discard") } },
             dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text("Cancel") } })
-        else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text("Training saved on this phone") },
+        else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text("Add to your account?") },
             text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("This account also has training. Add this phone’s training to it, or discard this phone’s signed-out training.")
-                Text(gymLineageCounts(decision.decisions.firstOrNull { it.product == "gym" }?.count.orEmpty()))
+                Text(copy.question)
                 session.decisionFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             } },
-            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.add) } }) { Text("Add") } },
-            dismissButton = { Column {
-                TextButton(enabled = !session.decisionBusy, onClick = {
-                    runtime.telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
-                    confirmingDiscard = true
-                }) { Text("Discard") }
+            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.add, decision) } }) { Text("Add") } },
+            dismissButton = { Row {
                 TextButton(enabled = !session.decisionBusy, onClick = ::cancelSignIn) { Text("Cancel sign-in") }
+                TextButton(enabled = !session.decisionBusy, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error), onClick = {
+                    telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
+                    discardDecision = session.decisionKey
+                }) { Text("Discard") }
             } })
     }
 }

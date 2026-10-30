@@ -40,6 +40,7 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.Older
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.RecoveryRead
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheetBack
 import works.windmill.platform.design.WindmillSheetWindow
@@ -55,6 +56,8 @@ fun LogScreen(
     onShareSession: (String) -> Unit,
     onDiscardSession: (String) -> Unit,
     onOpenMovement: (String, String) -> Unit = { _, _ -> },
+    onOpenRecovery: (String?) -> Unit = {},
+    recovery: RecoveryRead? = null,
     now: () -> Long = System::currentTimeMillis,
 ) {
     val skin = LocalGymColors.current
@@ -94,6 +97,9 @@ fun LogScreen(
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (recovery?.workouts?.isNotEmpty() == true) item("on-this-phone") {
+                    OnThisPhoneSection(recovery, onList = { onOpenRecovery(null) }, onInspect = { onOpenRecovery(it) })
+                }
                 if (store.progressFailure != null) item("progress-failed") {
                     Column {
                         Text("Progress unavailable", style = WindmillFont.body(16), color = skin.ink)

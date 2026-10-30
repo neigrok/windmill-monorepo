@@ -26,12 +26,14 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.RefusedWrite
+import works.windmill.gym.store.RefusedWorkout
 import works.windmill.platform.design.WindmillSpace
 
 internal fun refusalHeadline(refused: RefusedWrite, catalog: List<Exercise>): String = when (refused) {
     is RefusedSet ->
         "${Readout.movement(refused.exerciseId, catalog)} " +
             "${Readout.effort(refused.weightKg, refused.reps)} never reached the log"
+    is RefusedWorkout -> refused.startedAtMs?.let { "Workout on ${Readout.date(it)} stays on this phone" } ?: "Workout stays on this phone"
     is RefusedChange -> "“${refused.name}” stays on this phone"
 }
 

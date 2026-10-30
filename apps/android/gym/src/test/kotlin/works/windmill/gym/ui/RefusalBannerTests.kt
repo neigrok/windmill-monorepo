@@ -5,8 +5,16 @@ import org.junit.Test
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
+import works.windmill.gym.store.RefusedWorkout
+import works.windmill.gym.domain.Readout
 
 class RefusalBannerTests {
+    @Test fun workoutFallbackUsesItsKnownDayAndNeverInventsAnInstant() {
+        val at = 0L
+        assertEquals("Workout on ${Readout.date(at)} stays on this phone", refusalHeadline(RefusedWorkout("notice", at, "Refused"), emptyList()))
+        assertEquals("Workout stays on this phone", refusalHeadline(RefusedWorkout("notice", null, "Refused"), emptyList()))
+    }
+
     @Test
     fun testALostSetAndALostClaimSpeakInTheBannersOneVoice() {
         val catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"))

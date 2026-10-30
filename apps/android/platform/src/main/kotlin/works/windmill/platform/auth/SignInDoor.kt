@@ -38,7 +38,8 @@ fun SignInDoor(
     var refusal by rememberSaveable { mutableStateOf<String?>(null) }
     var resendAt by rememberSaveable { mutableLongStateOf(0L) }
     var pending by remember(auth) { mutableStateOf<String?>(null) }
-    var completed by remember(auth) { mutableStateOf(false) }
+    var completed by rememberSaveable(auth) { mutableStateOf(false) }
+    var attachedHandoff by rememberSaveable(auth) { mutableLongStateOf(0L) }
     val identity = remember(auth) { Any() }
     val currentIdentity by rememberUpdatedState(identity)
     val busyCallback by rememberUpdatedState(onBusy)
@@ -54,8 +55,32 @@ fun SignInDoor(
     }
     val seconds = ((resendAt - maxOf(tick, now()) + 999) / 1000).coerceIn(0, 30)
 
+    LaunchedEffect(auth, auth.handoffRevision, attachedHandoff) {
+        val revision = auth.handoffRevision
+        if (revision == 0L || completed || (!auth.handoffPending && attachedHandoff != revision)) return@LaunchedEffect
+        attachedHandoff = revision
+        pending = "Signing in…"
+        busyCallback(true)
+        try {
+            if (auth.awaitExistingHandoff(revision) && active && currentIdentity === identity && !completed) {
+                completed = true
+                pending = null
+                busyCallback(false)
+                doneCallback()
+            }
+        } catch (interrupted: CancellationException) { throw interrupted }
+        catch (refused: WindmillApiException) {
+            if (active && currentIdentity === identity && auth.handoffRevision == revision)
+                refusal = MagicLink.refusal(refused, ofCode = typed.trim().let { it.length == 6 && it.all(Char::isDigit) })
+        } catch (failed: AuthHandoffFailure) {
+            if (active && currentIdentity === identity && auth.handoffRevision == revision)
+                refusal = "Sign-in could not be completed. Try again."
+        } finally {
+            if (active && currentIdentity === identity && auth.handoffRevision == revision) { pending = null; busyCallback(false) }
+        }
+    }
     fun requestCode() {
-        if (pending != null || completed || email.isBlank() || (sentTo != null && seconds > 0)) return
+        if (pending != null || auth.handoffPending || completed || email.isBlank() || (sentTo != null && seconds > 0)) return
         pending = "Sending…"
         busyCallback(true)
         refusal = null
@@ -76,8 +101,9 @@ fun SignInDoor(
     }
     fun signIn() {
         val address = sentTo ?: return
-        if (pending != null || completed || typed.isBlank()) return
+        if (pending != null || auth.handoffPending || completed || typed.isBlank()) return
         pending = "Signing in…"
+        attachedHandoff = auth.handoffRevision + 1
         busyCallback(true)
         refusal = null
         val entry = typed.trim()
@@ -87,8 +113,10 @@ fun SignInDoor(
                 val beforeCommit: (User) -> Unit = {
                     if (!active || currentIdentity !== identity) throw CancellationException("The sign-in form changed.")
                 }
-                if (code != null) auth.completeCode(address, code, beforeCommit) else auth.completeLink(entry, beforeCommit)
-                if (active && currentIdentity === identity) {
+                if (!auth.resumePendingSignIn(address)) {
+                    if (code != null) auth.completeCode(address, code, beforeCommit) else auth.completeLink(entry, beforeCommit)
+                }
+                if (auth.handoffRevision == 0L && active && currentIdentity === identity && !completed) {
                     completed = true
                     pending = null
                     busyCallback(false)
@@ -99,7 +127,7 @@ fun SignInDoor(
             } catch (refused: WindmillApiException) {
                 if (active && currentIdentity === identity) refusal = MagicLink.refusal(refused, ofCode = code != null)
             } catch (failed: Exception) {
-                auth.telemetry.failure("auth_sign_in", failed)
+                if (failed !is AuthHandoffFailure) auth.telemetry.failure("auth_sign_in", failed)
                 if (active && currentIdentity === identity) refusal = "Sign-in could not be completed. Try again."
             } finally {
                 if (active && currentIdentity === identity) { pending = null; busyCallback(false) }
@@ -114,18 +142,18 @@ fun SignInDoor(
                 style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = palette.ink)
             if (sentTo == null) {
                 Text("New here? The same door creates your account.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim)
-                DoorField("Email", "you@example.com", email, KeyboardType.Email, pending == null && !completed, refusal) { email = it; refusal = null }
+                DoorField("Email", "you@example.com", email, KeyboardType.Email, pending == null && !auth.handoffPending && !completed, refusal) { email = it; refusal = null }
             } else {
                 Text("Code sent to $sentTo.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.ink)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DoorField("Code", "6-digit code", typed, KeyboardType.Number, pending == null && !completed, refusal) { typed = it; refusal = null }
+                    DoorField("Code", "6-digit code", typed, KeyboardType.Number, pending == null && !auth.handoffPending && !completed, refusal) { typed = it; refusal = null }
                     Text(refusal ?: "Works once. Expires in 15 minutes.",
                         style = WindmillFont.body(14).copy(lineHeight = 20.sp),
                         color = if (refusal == null) palette.inkDim else MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { if (refusal != null) liveRegion = LiveRegionMode.Polite })
                 }
                 Text("You can also paste the email link.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
-                TextButton(onClick = ::requestCode, enabled = pending == null && !completed && seconds == 0L, modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(onClick = ::requestCode, enabled = pending == null && !auth.handoffPending && !completed && seconds == 0L, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(if (seconds > 0) "Resend in ${seconds}s" else "Resend", style = WindmillFont.body(14), color = palette.inkDim)
                 }
             }
@@ -136,13 +164,13 @@ fun SignInDoor(
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { if (sentTo == null) requestCode() else signIn() },
-                enabled = pending == null && !completed && (if (sentTo == null) email else typed).isNotBlank(),
+                enabled = pending == null && !auth.handoffPending && !completed && (if (sentTo == null) email else typed).isNotBlank(),
                 shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.onAccent)) {
-                Text(pending ?: if (sentTo == null) "Send code" else "Sign in", style = WindmillFont.body(16, FontWeight.Bold))
+                Text(pending ?: if (auth.handoffPending) "Signing in…" else if (sentTo == null) "Send code" else "Sign in", style = WindmillFont.body(16, FontWeight.Bold))
             }
-            if (sentTo != null) TextButton(onClick = { sentTo = null; typed = ""; refusal = null; resendAt = 0L },
-                enabled = pending == null && !completed, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            if (sentTo != null) TextButton(onClick = { attachedHandoff = 0L; sentTo = null; typed = ""; refusal = null; resendAt = 0L },
+                enabled = pending == null && !auth.handoffPending && !completed, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Text("Change email", style = WindmillFont.body(16, FontWeight.Bold), color = palette.ink)
             }
         }
