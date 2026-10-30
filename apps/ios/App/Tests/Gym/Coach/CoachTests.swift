@@ -977,8 +977,8 @@ import SyncTesting
     ])
   }
 
-  // The lifter edits the plan offline, then applies a change Coach made before the edit: the phone takes the Apply, the
-  // log takes the lifter's edit first and refuses the Apply, and the room says the workout changed.
+  // The lifter edits the plan offline, then applies a change Coach made before the edit: the card reads out of date at
+  // once, the Apply is refused on the phone, and the room says the workout changed; the log keeps the lifter's edit.
   @Test func anApplyOverTheLiftersOwnUnsentEditIsRefusedForTheWorkoutChanging() async throws {
     let connectivity = SwitchedConnectivity(), transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
     let runtime = try WorkoutStateTests.faultRuntime(transport, connectivity: connectivity, drivesLoops: true)
@@ -1007,19 +1007,16 @@ import SyncTesting
     #expect(gym.run(ReviseWorkoutPlan(sessionId: session, base: gym.openSession?.plan, operations: [.retarget(index: 0, set: 0, target: SetTarget(reps: 6, weightKg: 20))]))?.refusal == nil)
     gym.refresh()
     let proposal = try #require(gym.workoutProposals.first)
-    #expect(gym.coachDecideWorkoutProposal(proposal, apply: true))
-    gym.refresh()
-    #expect(gym.openSession?.plan?.entries == lighter)
-    connectivity.set(online: true)
-    let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
-    try await settle {
-      runtime.engine.foreground(); gym.refresh()
-      return !outcomes().isEmpty && gym.workoutProposals.first?.state == "superseded"
-    }
-    #expect(gym.openSession?.plan?.entries == edited && gym.openSession?.planRevision == 2)
-    #expect(gym.workoutProposals.first.map(gym.coachWorkoutProposalStance) == .outOfDate(.workoutChanged))
+    #expect(gym.coachWorkoutProposalStance(proposal) == .outOfDate(.workoutChanged))
+    #expect(!gym.coachDecideWorkoutProposal(proposal, apply: true))
     #expect(gym.error == "This workout changed after this suggestion. Nothing was applied.")
-    #expect(outcomes() == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "failed"]])
+    #expect(gym.openSession?.plan?.entries == edited)
+    connectivity.set(online: true)
+    try await settle { runtime.engine.foreground(); gym.refresh(); return gym.openSession?.planRevision == 2 }
+    #expect(gym.openSession?.plan?.entries == edited)
+    #expect(gym.workoutProposals.first.map(gym.coachWorkoutProposalStance) == .outOfDate(.workoutChanged))
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
+            == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "failed"]])
   }
 
   @Test(arguments: [false, true])
