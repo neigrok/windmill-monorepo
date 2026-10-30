@@ -5,6 +5,7 @@ import SyncEngine
 import SyncTesting
 import DomainKit
 import DomainKitTesting
+import GymDomain
 import JournalDomain
 import SyncModelServer
 import SyncSchema
@@ -90,6 +91,12 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["state": "completed", "seat": "anon", "ability_calls": "7", "answer_bytes": "120", "code": "subject_exhausted", "text": "private-marker"])
             == ["state": .label("completed"), "seat": .label("anon"), "ability_calls": .number(7), "answer_bytes": .number(120), "code": .label("subject_exhausted")])
     #expect(TelemetryPrivacy.properties(["name": "save_note", "outcome": "seat-required", "refusals": "not-a-count"]) == ["name": .label("save_note"), "outcome": .label("seat-required")])
+    // Every ability the catalog offers Coach is a name its event carries; a proposal's outcome names what it changes.
+    for ability in Catalog.offered(seat: .bound) + Catalog.offered(seat: .anon) {
+      #expect(TelemetryPrivacy.properties(["name": ability.name]) == ["name": .label(ability.name)], Comment(rawValue: ability.name))
+    }
+    #expect(TelemetryPrivacy.properties(["target": "workout", "action": "apply", "outcome": "decided"]) == ["target": .label("workout"), "action": .label("apply"), "outcome": .label("decided")])
+    #expect(TelemetryPrivacy.properties(["target": "routine"]) == ["target": .label("routine")] && TelemetryPrivacy.properties(["target": "Push A"]).isEmpty)
     for outcome in ["started", "saved", "refused", "failed"] {
       #expect(TelemetryPrivacy.properties(["outcome": outcome, "routine": "private-marker"]) == ["outcome": .label(outcome)])
     }
