@@ -497,8 +497,8 @@ struct FinishWorkout: Action {
     return revise(operations + [.swap(index: index, exerciseId: replacement)], walk: next, against: base)
   }
   // One edit of this workout's plan, saved with the walk it leaves, against the plan its editor opened on; each kind of
-  // change it makes is reported once. The durable offer is minted again over the new
-  // plan, and the rack follows it only as `rackFollows` says.
+  // change it makes is reported once. The durable offer is minted again over the new plan, and the rack follows it only
+  // as `rackFollows` says.
   @discardableResult func revise(_ operations: [WorkoutPlan.Operation], walk next: WorkoutWalk? = nil, against base: SessionPlan?) -> Bool {
     let report = { (outcome: String) in
       for action in operations.map(\.action).reduce(into: [String](), { if !$0.contains($1) { $0.append($1) } }) {

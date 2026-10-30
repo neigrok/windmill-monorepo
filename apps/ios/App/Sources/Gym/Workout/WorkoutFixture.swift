@@ -91,11 +91,9 @@ enum WorkoutFixture {
   static func prepareInFlight(_ board: String, model: AppModel) async -> Bool {
     let gym = model.gym
     guard let runtime = gym.runtime, let server = runtime.auth.fake else { gym.error = "The in-flight fixture needs the model server."; return true }
-    do {
-      let identity = server.identity(email: "workout-in-flight-fixture@example.com")
-      _ = try await runtime.engine.signIn(account: identity.account, token: identity.token)
-      gym.refresh()
-    } catch { gym.error = "The in-flight fixture could not sign in."; return true }
+    do { try await model.signIn(server.identity(email: "workout-in-flight-fixture@example.com")) }
+    catch { gym.error = "The in-flight fixture could not sign in."; return true }
+    model.openRoom(.gym)
     guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: "bodyweight"))?.refusal == nil else { return true }
     let entry = { (id: String, count: Int, reps: Int, kg: Double, rest: Int?) in
       RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count), restSeconds: rest)

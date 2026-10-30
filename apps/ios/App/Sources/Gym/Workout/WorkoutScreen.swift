@@ -304,7 +304,7 @@ struct WorkoutLedger: View {
           .fixedSize(horizontal: false, vertical: true)
         Image(systemName: "chevron.down").font(.subheadline.weight(.semibold)).foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
       }.frame(maxWidth: .infinity)
-    }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).disabled(!enabled)
+    }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).tint(GymPalette.ink).disabled(!enabled)
       .accessibilityLabel("Movement options").accessibilityValue(movement?.name ?? "Movement")
       .accessibilityIdentifier("workout-movement-menu")
   }

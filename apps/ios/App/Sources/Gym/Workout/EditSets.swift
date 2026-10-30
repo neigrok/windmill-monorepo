@@ -191,7 +191,8 @@ struct EditSetsSheet: View {
         .accessibilityHint(opened ? "Closes this set." : "Opens this set.")
         .accessibilityIdentifier("edit-sets-set-\(place + 1)")
       if opened { editor(row) }
-    }.listRowBackground(GymPalette.card.overlay(opened ? GymPalette.accentSoft : .clear))
+    }.listRowInsets(EdgeInsets(top: 0, leading: RoomSpace.inset, bottom: 0, trailing: RoomSpace.inset))
+      .listRowBackground(GymPalette.card.overlay(opened ? GymPalette.accentSoft : .clear))
   }
 
   // The open set's numbers as Fix set draws them (03.30): the load on the decimal pad, its field outlined in the accent while
