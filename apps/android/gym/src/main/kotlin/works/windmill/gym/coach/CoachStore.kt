@@ -64,6 +64,7 @@ class CoachStore internal constructor(
     private val archiveOwner: String get() = owner ?: anonymousOwner
     val accountKey: String get() = Seat.of(archiveOwner)
     private val conversationWrite = Mutex()
+    @Volatile private var ownerRevision = 0L
     private val archive = mutableStateMapOf<Pair<String, String>, LocalChat>()
     private val selected = mutableStateMapOf<String, String>()
     private val restoredOwners = mutableSetOf<String>()
@@ -233,8 +234,9 @@ class CoachStore internal constructor(
         val attachments = prior?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
         val pending = AskExchange(text.trim(), requestId = requestId, generation = prior?.generation, attachments = attachments,
             atMs = prior?.atMs ?: System.currentTimeMillis())
+        val submittedDraft = draft(seat, id).copy(text = pending.question, photo = attachments.firstOrNull())
         try {
-            saveDraft(id, CoachDraft(pending.question, attachments.firstOrNull()))
+            saveDraft(id, submittedDraft)
             keepChat(seat, chat.copy(exchanges = from + pending, cap = null, updatedAtMs = System.currentTimeMillis()))
         } catch (_: Exception) { return false }
         val key = seat to id
@@ -260,7 +262,7 @@ class CoachStore internal constructor(
                 val current = archive[key] ?: chat
                 keepChat(seat, current.copy(exchanges = from + outcome.exchange(pending),
                     cap = (outcome as? AskOutcome.Capped)?.cap?.name, absent = outcome is AskOutcome.Absent))
-                if (outcome is AskOutcome.Answered && draft(seat, id) == CoachDraft(pending.question, attachments.firstOrNull()))
+                if (outcome is AskOutcome.Answered && draft(seat, id) == submittedDraft)
                     saveDraft(seat, id, CoachDraft())
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.saveConversation", failure) }
@@ -314,6 +316,15 @@ class CoachStore internal constructor(
         pendingQuestions().forEach { request ->
             if (isAsking(request.thread)) return@forEach
             val chat = chat(request.thread) ?: LocalChat(request.thread)
+            val requestId = requireNotNull(request.requestId)
+            if (chat.refusedRequest(requestId) && localCoach?.snapshot(authenticatedOwner, requestId) == null) {
+                try { localCoach?.pauseRequest(authenticatedOwner, chat, requestId) { reportFailure("gym.saveConversation", it) } }
+                catch (failure: Exception) {
+                    reportFailure("gym.saveConversation", failure)
+                    archiveFailure = "Your conversation couldn’t be saved. Try again."
+                }
+                return@forEach
+            }
             if (chat.exchanges.none { it.requestId == request.requestId })
                 keepChat(archiveOwner, chat.copy(exchanges = chat.exchanges + pendingExchange(request)))
             submit(request.thread, request.question, draft(request.thread).photo, requireNotNull(request.requestId), authenticatedOwner)
@@ -403,6 +414,7 @@ class CoachStore internal constructor(
     }
 
     internal fun resetThreads() {
+        ownerRevision++
         conversations = emptyList()
         conversationsOwner = null
         confirmations = emptyMap()
@@ -477,7 +489,103 @@ class CoachStore internal constructor(
         } catch (failure: Exception) { unsavedDrafts += seat to key; reportFailure("gym.saveDraft", failure); throw failure }
     }
 
+    fun keptDrafts(key: String): List<KeptCoachDraft> {
+        draftVersion
+        return localCoach?.keptDrafts(archiveOwner, key).orEmpty()
+    }
+
+    fun choices(key: String, requestId: String, clarificationId: String): Map<String, List<String>> {
+        draftVersion
+        return localCoach?.choices(archiveOwner, key, "$requestId:$clarificationId").orEmpty()
+    }
+
+    suspend fun adoptPhoneDraft(account: String) {
+        if (owner != account) return
+        val disk = localCoach ?: return
+        val revision = ownerRevision
+        val unsaved = unsavedDrafts.toSet()
+        try {
+            val (moved, recovered) = withContext(storageDispatcher) {
+                if (owner != account || ownerRevision != revision) return@withContext null to null
+                val recovery = disk.reconcileDraftChange(account)
+                if (recovery != null) return@withContext null to recovery
+                val source = disk.selected(anonymousOwner) ?: return@withContext null to null
+                if (anonymousOwner to source in unsaved) return@withContext null to null
+                disk.adoptPhoneDraft(account, publishedFailure = { reportFailure("gym.adoptCoachDraft", it) }) {
+                    owner == account && ownerRevision == revision
+                } to null
+            }
+            if (recovered != null) publishRecovery(recovered)
+            else if (moved != null) {
+                drafts.remove(moved.sourceOwner to moved.sourceChat)
+                publishDraft(account, moved.targetChat)
+            } else return
+            val current = disk.selected(account)
+            if (current == null) selected.remove(account) else selected[account] = current
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.adoptCoachDraft", failure)
+            if (owner == account) archiveFailure = "Your draft couldn’t be saved. Try again."
+        }
+    }
+
+    fun draftChangeReady(key: String): Boolean {
+        val seat = archiveOwner
+        val recovered = try { localCoach?.reconcileDraftChange(seat, key) }
+        catch (_: Exception) { archiveFailure = "Your draft couldn’t be saved. Try again."; return false }
+        if (recovered == null) return true
+        publishRecovery(recovered)
+        return false
+    }
+
+    private fun publishRecovery(recovered: CoachDraftRecovery) {
+        recovered.source?.let { drafts.remove(it); unsavedDrafts.remove(it) }
+        publishDraft(recovered.owner, recovered.chat)
+        if (recovered.action != "adopt") telemetry.event("gym_action",
+            mapOf("screen" to "coach", "action" to recovered.action, "outcome" to "ok"))
+    }
+
+    fun choose(key: String, requestId: String, expected: CoachClarification, group: String, option: String): Boolean {
+        val seat = archiveOwner
+        if (!draftChangeReady(key)) return false
+        if (isAsking(key) || requestId.isEmpty()) return false
+        val current = chat(key)?.exchanges?.firstOrNull { it.requestId == requestId } ?: return false
+        val actual = CoachClarification.from(current.answer?.clarification ?: current.generation?.clarification)
+        if (actual != expected) return false
+        val selected = expected.choosing(choices(key, requestId, expected.id), group, option) ?: return false
+        val next = draft(key).copy(text = expected.text(selected))
+        try { localCoach?.saveChoice(seat, key, "$requestId:${expected.id}", selected, next) {
+            reportFailure("gym.saveDraft", it)
+        } ?: return false }
+        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        publishDraft(seat, key)
+        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "choose", "outcome" to "ok"))
+        return true
+    }
+
+    fun continueDraft(key: String, heldId: String): Boolean {
+        val seat = archiveOwner
+        if (!draftChangeReady(key)) return false
+        if (isAsking(key) || !draftSaved(key)) return false
+        try { if (localCoach?.continueDraft(seat, key, heldId) { reportFailure("gym.saveDraft", it) } != true) return false }
+        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        publishDraft(seat, key)
+        telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "continue_draft", "outcome" to "ok"))
+        return true
+    }
+
+    private fun publishDraft(seat: String, key: String) {
+        val disk = localCoach ?: return
+        drafts[seat to key] = disk.draft(seat, key)
+        unsavedDrafts.remove(seat to key)
+        val current = archive[seat to key] ?: disk.archivedChat(seat, key)
+        if (current != null) archive[seat to key] = current.copy(updatedAtMs = System.currentTimeMillis())
+        draftVersion++
+        archiveFailure = null
+    }
+
     fun removePhoto(key: String) {
+        if (!draftChangeReady(key)) return
         val seat = archiveOwner
         val current = draft(seat, key)
         if (current.photo == null) return
@@ -497,6 +605,7 @@ class CoachStore internal constructor(
     }
 
     internal suspend fun importPhoto(key: String, prepare: suspend () -> Pair<CoachAttachment, ByteArray>) {
+        if (!draftChangeReady(key)) return
         val prepareOperation = if (owner == null) "gym.coachOnboarding" else "gym.preparePhoto"
         val seat = archiveOwner
         val origin = seat to key
@@ -657,7 +766,8 @@ class CoachStore internal constructor(
         return try {
             val saved = seat?.let { localCoach?.pending(it)?.firstOrNull { it.requestId == requestId } }
             val request = saved ?: AskQuestion(thread = threadId, question = question, requestId = requestId,
-                attachmentIds = listOfNotNull(photo?.id))
+                attachmentIds = listOfNotNull(photo?.id),
+                purpose = if (draft(seat, threadId).setup || archive[seat to threadId]?.setup == true) "routine_setup" else "conversation")
             require(request.thread == threadId && request.question == question) { "A retry must keep the original message." }
             admission?.check()
             if (seat != null) persistRequest(admission) { localCoach?.keep(seat, request) }
@@ -738,7 +848,31 @@ class CoachStore internal constructor(
                 if (snapshot == null && photo != null && refusing is WindmillApiException.Refused && refusing.refusal.code == "ask-attachment-invalid") {
                     return complete(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."), refusing)
                 }
-                complete(AskOutcome.refusing(refusing, snapshot), refusing)
+                val outcome = AskOutcome.refusing(refusing, snapshot)
+                if (snapshot == null && outcome.terminalRefusal) {
+                    try {
+                        val current = chat(threadId) ?: LocalChat(threadId)
+                        val index = current.exchanges.indexOfLast { it.requestId == requestId }
+                        val original = current.exchanges.getOrNull(index)
+                            ?: AskExchange(question, requestId = requestId, attachments = listOfNotNull(photo))
+                        val exchange = outcome.exchange(original)
+                        val exchanges = if (index < 0) current.exchanges + exchange
+                            else current.exchanges.toMutableList().apply { set(index, exchange) }
+                        val settled = current.copy(exchanges = exchanges, cap = (outcome as? AskOutcome.Capped)?.cap?.name,
+                            absent = outcome is AskOutcome.Absent)
+                        archive[seat to threadId] = settled
+                        persistRequest(admission) {
+                            localCoach?.pauseRequest(seat, settled, requestId) { reportFailure("gym.saveConversation", it) }
+                        }
+                    } catch (interrupted: CancellationException) { throw interrupted }
+                    catch (failure: Exception) {
+                        reportFailure("gym.saveConversation", failure)
+                        archiveFailure = "Your conversation couldn’t be saved. Try again."
+                    }
+                    admission?.check()
+                    if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
+                }
+                complete(outcome, refusing)
             } catch (interrupted: CancellationException) { cancelled(interrupted) }
         }
     }
@@ -919,7 +1053,7 @@ sealed interface DraftOutcome {
 // full or another account's: the QUESTION is fine, so asking it again opens a new thread.
 sealed interface AskOutcome {
     data class Answered(val answer: AskAnswer) : AskOutcome
-    data class Refused(val said: String, val generation: AskGeneration? = null) : AskOutcome
+    data class Refused(val said: String, val generation: AskGeneration? = null, val terminal: Boolean = false) : AskOutcome
     data class Capped(val said: String, val cap: AskCap, val generation: AskGeneration? = null, val retryAtMs: Long? = null) : AskOutcome
     data class Failed(val said: String, val generation: AskGeneration? = null) : AskOutcome
     data class Fresh(val said: String) : AskOutcome
@@ -945,14 +1079,21 @@ sealed interface AskOutcome {
                     Failed(said ?: "Coach is answering another message. Try again when it finishes.", generation)
                 // Both are answered by opening a new thread; nothing is re-sent on its own.
                 refused.refusal.code == "ask-thread-full" || refused.refusal.code == "ask-thread-taken" -> Fresh(said ?: Ask.threadFull)
-                else -> Refused(said ?: "Coach couldn’t take that one", generation)
+                else -> Refused(said ?: "Coach couldn’t take that one", generation, terminal = true)
             }
         }
 
         private const val noAnswer = "Coach didn’t answer. Try again in a moment"
     }
 
-    fun exchange(pending: AskExchange): AskExchange = when (this) {
+    val terminalRefusal: Boolean get() = when (this) {
+        is Refused -> terminal && generation == null
+        is Capped -> generation == null
+        is Fresh, Absent -> true
+        else -> false
+    }
+
+    fun exchange(pending: AskExchange): AskExchange = (when (this) {
         is Answered -> answer.generation?.exchange()?.copy(attachments = answer.generation.attachments.ifEmpty { pending.attachments },
             atMs = pending.atMs.takeIf { it > 0 } ?: answer.generation.atMs, position = pending.position)
             ?: pending.copy(answer = answer)
@@ -962,5 +1103,5 @@ sealed interface AskOutcome {
             retryAtMs = retryAtMs)
         is Fresh -> pending.copy(trouble = said, needsNew = true)
         Absent -> pending.copy(trouble = Ask.notHere)
-    }
+    }).let { it.copy(terminalRefusal = terminalRefusal && it.generation == null) }
 }

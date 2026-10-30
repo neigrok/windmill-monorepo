@@ -5,6 +5,8 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineEntry
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import works.windmill.platform.net.WindmillJson
 
 // Request identities survive retries; generation snapshots retain completed actions.
 
@@ -36,6 +38,7 @@ data class AskAnswer(
     val generation: AskGeneration? = null,
     val results: List<CoachResult> = emptyList(),
     val routineDrafts: List<CoachRoutineDraft> = emptyList(),
+    val clarification: JsonElement? = null,
 ) {
     // A draft is saved once the log's turn or this phone's confirmation says so; neither unsaves it.
     fun confirmedBy(confirmation: AskGeneration?): AskAnswer {
@@ -66,7 +69,46 @@ data class CoachRoutineConfirmation(val thread: String, val generation: AskGener
 data class CoachAttachment(val id: String, val mediaType: String, val width: Int, val height: Int, val bytes: Long)
 
 @Serializable
-data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null)
+data class CoachDraft(val text: String = "", val photo: CoachAttachment? = null, val setup: Boolean = false)
+
+@Serializable
+data class CoachClarification(val id: String, val question: String, val groups: List<Group>) {
+    @Serializable data class Group(val id: String, val label: String, val multiple: Boolean, val options: List<Option>)
+    @Serializable data class Option(val id: String, val label: String)
+
+    fun choosing(selected: Map<String, List<String>>, groupId: String, optionId: String): Map<String, List<String>>? {
+        val group = groups.firstOrNull { it.id == groupId } ?: return null
+        if (group.options.none { it.id == optionId }) return null
+        val prior = selected[groupId].orEmpty()
+        val next = if (optionId in prior) prior - optionId else if (group.multiple) prior + optionId else listOf(optionId)
+        return groups.associate { known -> known.id to known.options.map { it.id }.filter { it in if (known.id == groupId) next else selected[known.id].orEmpty() } }
+    }
+
+    fun text(selected: Map<String, List<String>>): String = groups.mapNotNull { group ->
+        group.options.filter { it.id in selected[group.id].orEmpty() }.map { it.label }.takeIf { it.isNotEmpty() }
+            ?.joinToString(", ")?.plus(".")
+    }.joinToString(" ")
+
+    companion object {
+        fun from(value: JsonElement?): CoachClarification? {
+            if (value == null) return null
+            val result = try { WindmillJson.decodeFromJsonElement(serializer(), value) } catch (_: IllegalArgumentException) { return null }
+            fun text(value: String, limit: Int): Boolean = value.isNotBlank() && '\u0000' !in value &&
+                value.toByteArray(Charsets.UTF_8).size <= limit && value.codePoints().noneMatch { it in 0xD800..0xDFFF }
+            if (!result.id.matches(Regex("[A-Za-z0-9_-]{8,64}")) || !text(result.question, 500) || result.groups.size !in 1..2 ||
+                result.groups.map { it.id }.distinct().size != result.groups.size) return null
+            for (group in result.groups) {
+                if (group.id !in setOf("days", "equipment") || group.id == "days" && group.multiple || !text(group.label, 80) ||
+                    group.options.size !in 1..6 || group.options.map { it.id }.distinct().size != group.options.size) return null
+                if (group.options.any { !it.id.matches(Regex("[a-z0-9_-]{1,32}")) || !text(it.label, 80) }) return null
+            }
+            return result
+        }
+    }
+}
+
+@Serializable
+data class KeptCoachDraft(val id: String, val draft: CoachDraft)
 
 @Serializable
 data class AskGeneration(
@@ -83,9 +125,10 @@ data class AskGeneration(
     val stopRequested: Boolean = false,
     val attachments: List<CoachAttachment> = emptyList(),
     val routineDrafts: List<CoachRoutineDraft> = emptyList(),
+    val clarification: JsonElement? = null,
 ) {
     val terminal: Boolean get() = status in setOf("completed", "failed", "stopped")
-    fun response(): AskAnswer = AskAnswer(answer, receipt?.read ?: ReadTally(), steps, receipt?.proposals.orEmpty(), receipt, this, results, routineDrafts)
+    fun response(): AskAnswer = AskAnswer(answer, receipt?.read ?: ReadTally(), steps, receipt?.proposals.orEmpty(), receipt, this, results, routineDrafts, clarification)
 
     fun exchange(): AskExchange = AskExchange(
         question = question,
@@ -164,6 +207,7 @@ data class AskExchange(
     val position: Long = 0,
     val retryAtMs: Long? = null,
     val refusalCode: String? = null,
+    val terminalRefusal: Boolean = false,
 ) {
     val pending: Boolean get() = answer == null && trouble == null
 }

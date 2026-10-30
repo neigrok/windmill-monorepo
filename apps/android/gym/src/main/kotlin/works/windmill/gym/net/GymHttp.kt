@@ -170,8 +170,8 @@ private data class McpKeysResponse(val keys: List<McpKey> = emptyList())
 // `routineReview` tells the log this build draws Coach's routine drafts with a Save, so Coach may draft one.
 @Serializable
 private data class AskRequest(val thread: String, val question: String, val requestId: String?, val attachmentIds: List<String>,
-    val stream: Boolean, val routineReview: Boolean) {
-    constructor(asked: AskQuestion, stream: Boolean) : this(asked.thread, asked.question, asked.requestId, asked.attachmentIds, stream, true)
+    val stream: Boolean, val routineReview: Boolean, val purpose: String? = null) {
+    constructor(asked: AskQuestion, stream: Boolean) : this(asked.thread, asked.question, asked.requestId, asked.attachmentIds, stream, true, asked.purpose)
 }
 
 @Serializable

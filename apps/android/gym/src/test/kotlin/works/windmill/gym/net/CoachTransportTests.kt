@@ -92,6 +92,37 @@ class CoachTransportTests {
     }
 
     @Test
+    fun persistedPurposeReachesBothHttpModesWithoutRewritingOlderPendingRequests() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }))
+            val done = AskGeneration("generation-a", "request-a", "Question", "completed", "Answer", revision = 1)
+            for (purpose in listOf(null, "routine_setup", "conversation")) {
+                val purposeField = purpose?.let { ",\"purpose\":\"$it\"" }.orEmpty()
+                val persisted = """{"thread":"thread-a","question":"Question","requestId":"request-a","attachmentIds":["photo-a"]$purposeField}"""
+                val question = WindmillJson.decodeFromString(AskQuestion.serializer(), persisted)
+                for (stream in listOf(false, true)) {
+                    val body = if (stream)
+                        "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", done))}\n\n"
+                    else """{"answer":"Answer","read":{}}"""
+                    server.enqueue(MockResponse().setHeader("Content-Type", if (stream) "text/event-stream" else "application/json").setBody(body))
+                    val answer = if (stream) gym.stream(question) {} else gym.ask(question)
+                    assertEquals("Answer", answer.answer)
+                    val request = server.takeRequest()
+                    assertEquals("POST", request.method)
+                    assertEquals("/v1/gym/ask", request.path)
+                    assertEquals(SyncSchema.version.toString(), request.getHeader("Sync-Schema"))
+                    assertEquals("Bearer private-bearer", request.getHeader("Authorization"))
+                    assertEquals("""{"thread":"thread-a","question":"Question","requestId":"request-a","attachmentIds":["photo-a"],"stream":$stream,"routineReview":true$purposeField}""", request.body.readUtf8())
+                    assertEquals(persisted, WindmillJson.encodeToString(AskQuestion.serializer(), question))
+                }
+            }
+            assertEquals(6, server.requestCount)
+        } finally { server.shutdown() }
+    }
+
+    @Test
     fun malformedStreamIsReportedWithoutThePrivateJsonDecoderMessage() = runBlocking {
         val server = MockWebServer()
         server.start()

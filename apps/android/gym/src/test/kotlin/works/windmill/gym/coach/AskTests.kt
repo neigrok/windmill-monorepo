@@ -12,6 +12,51 @@ import org.junit.Test
 import works.windmill.platform.net.WindmillJson
 
 class AskTests {
+    @Test fun clarificationUsesSharedLimitsAndCanonicalSingleOrMultipleChoices() {
+        val days = CoachClarification.Group("days", "Days each week", false,
+            listOf(CoachClarification.Option("two", "2 days"), CoachClarification.Option("three", "3 days")))
+        val equipment = CoachClarification.Group("equipment", "Equipment", true,
+            listOf(CoachClarification.Option("barbell", "Barbell"), CoachClarification.Option("dumbbells", "Dumbbells"), CoachClarification.Option("bodyweight", "Bodyweight")))
+        val valid = CoachClarification("choice-123", "What works for you?", listOf(days, equipment))
+        fun parsed(value: CoachClarification) = CoachClarification.from(WindmillJson.encodeToJsonElement(CoachClarification.serializer(), value))
+        assertEquals(valid, parsed(valid))
+        var selected = requireNotNull(valid.choosing(emptyMap(), "days", "two"))
+        selected = requireNotNull(valid.choosing(selected, "days", "three"))
+        selected = requireNotNull(valid.choosing(selected, "equipment", "bodyweight"))
+        selected = requireNotNull(valid.choosing(selected, "equipment", "dumbbells"))
+        assertEquals(mapOf("days" to listOf("three"), "equipment" to listOf("dumbbells", "bodyweight")), selected)
+        assertEquals("3 days. Dumbbells, Bodyweight.", valid.text(selected))
+        assertEquals(listOf("bodyweight"), valid.choosing(selected, "equipment", "dumbbells")!!["equipment"])
+        assertEquals(emptyList<String>(), valid.choosing(selected, "days", "three")!!["days"])
+        assertNull(valid.choosing(selected, "unknown", "two")); assertNull(valid.choosing(selected, "days", "unknown"))
+        val singleEquipment = valid.copy(groups = listOf(equipment.copy(multiple = false)))
+        assertEquals(singleEquipment, parsed(singleEquipment))
+        assertEquals(mapOf("equipment" to listOf("barbell")), singleEquipment.choosing(selected, "equipment", "barbell"))
+        assertEquals(valid.copy(question = "é".repeat(250)), parsed(valid.copy(question = "é".repeat(250))))
+        val invalid = listOf(valid.copy(id = "short"), valid.copy(question = "é".repeat(251)), valid.copy(question = " "),
+            valid.copy(question = "bad\u0000text"), valid.copy(question = "bad\uD800text"), valid.copy(groups = emptyList()),
+            valid.copy(groups = listOf(days, days)), valid.copy(groups = listOf(days.copy(multiple = true))),
+            valid.copy(groups = listOf(days.copy(id = "unknown"))), valid.copy(groups = listOf(days.copy(label = "é".repeat(41)))),
+            valid.copy(groups = listOf(days.copy(options = emptyList()))), valid.copy(groups = listOf(days.copy(options = List(7) { CoachClarification.Option("id$it", "Label") }))),
+            valid.copy(groups = listOf(days.copy(options = listOf(days.options.first(), days.options.first())))),
+            valid.copy(groups = listOf(days.copy(options = listOf(CoachClarification.Option("BAD", "Label"))))),
+            valid.copy(groups = listOf(days.copy(options = listOf(CoachClarification.Option("valid", "é".repeat(41)))))))
+        invalid.forEach { assertNull(parsed(it)) }
+    }
+
+    @Test fun malformedOptionalClarificationNeverPoisonsTheAnswerOrStoredGeneration() {
+        for (raw in listOf("null", "42", "[]", "{}", "{\"id\":false}")) {
+            val answer = WindmillJson.decodeFromString(AskAnswer.serializer(),
+                """{"answer":"Ordinary answer","read":{},"clarification":$raw}""")
+            assertEquals("Ordinary answer", answer.answer)
+            assertNull(CoachClarification.from(answer.clarification))
+            val generation = AskGeneration("generation", "request", "Question", "completed", "Ordinary answer", clarification = answer.clarification)
+            val restored = WindmillJson.decodeFromString(AskGeneration.serializer(), WindmillJson.encodeToString(AskGeneration.serializer(), generation))
+            assertEquals(generation, restored)
+            assertEquals(answer.clarification, restored.response().clarification)
+        }
+    }
+
     private fun answered(question: String, said: String) =
         AskExchange(question = question, answer = AskAnswer(answer = said, read = ReadTally()))
 
