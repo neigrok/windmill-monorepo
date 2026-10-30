@@ -64,6 +64,11 @@ object TelemetryPolicy {
         coachOnboardingEvents[name]?.let { schema ->
             return properties(properties.filter { (key, value) -> key in commonEventKeys || value in schema[key].orEmpty() })
         }
+        if (name == "gym_sign_out") {
+            val allowed = mapOf("state" to setOf("shown"), "action" to setOf("keep", "discard", "cancel"),
+                "outcome" to setOf("completed", "failed"))
+            return properties(properties.filter { (key, value) -> key in commonEventKeys || value in allowed[key].orEmpty() })
+        }
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
                 "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))

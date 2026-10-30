@@ -94,6 +94,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val bootstrap = if (telemetryEnabled) SentryErrors else Telemetry.None
         val vault = SecretVault.onThisDevice(bootstrap)
         val sessions = PrefsSessions(this, vault, bootstrap)
+        fun accountWritable() = !sessions.signOutPending && (!::auth.isInitialized || !auth.transitionPending)
         val local = sessions.localSession
         val owner = (local as? LocalSession.Owned)?.user?.id
         val baseUrl = WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL)
@@ -111,7 +112,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork)
         val engineStorage = EngineStorage(this, vault)
-        if (owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
+        if (accountWritable() && owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
         val transport = HTTPTransport(baseUrl.toString(), SyncSchema.version.toInt(), engineTelemetry)
         var delivery: suspend (String, Reply<SyncResponse>) -> Unit = { _, _ -> }
         val reportedTransport = object : SyncTransport by transport {
@@ -126,8 +127,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             }
         }
         val syncRuntime = SyncRuntime(engine, reportedTransport,
-            engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"))
-        val training = EngineTraining(engine)
+            engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"), activityAllowed = ::accountWritable,
+            signOutDrainAllowed = { !sessions.signOutPending })
+        val training = EngineTraining(engine, writeAuthority = ::accountWritable)
         val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName))
         val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry)
         if (local is LocalSession.Owned) {
@@ -135,7 +137,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }
         }
         val anonymousSeat = {
-            if (sessions.localSession == LocalSession.Absent && training.anonymous)
+            if (accountWritable() && sessions.localSession == LocalSession.Absent && training.anonymous)
                 CoachOnboardingSeat(localCoach.anonymousOwner(), engine.activeReplica()) else null
         }
         coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
@@ -146,7 +148,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             scope = scope,
             rest = { (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) } },
             workoutClock = clock, workoutAuthority = { selectedOwner ->
-                when (val current = sessions.localSession) {
+                accountWritable() && when (val current = sessions.localSession) {
                     LocalSession.Absent -> selectedOwner == null
                     is LocalSession.Owned -> selectedOwner == current.user.id
                     is LocalSession.Unresolved -> false
@@ -155,7 +157,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             localCoach = localCoach,
             coachOnboarding = coachOnboarding,
         )
-        engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
+        engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = {
+            val revision = auth.accountOperationRevision
+            store.prepareEngineTransition { auth.accountOperationRevision == revision }
+        }, clearAccountCredential = engineStorage::delete)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry,
             lifecycle = AiInstallationLifecycle(engineSession, installation, scope, telemetry), handoffScope = scope)
         scope.launch {
@@ -164,9 +169,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
         }
         delivery = { replica, reply -> if (training.reportDelivery(replica, reply)) store.refreshEngine() }
-        syncRuntime.launch(engineStorage)
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },
-            authorityAvailable = { sessions.localSession !is LocalSession.Unresolved },
+            authorityAvailable = { accountWritable() && sessions.localSession !is LocalSession.Unresolved },
             authorityRevision = { auth.identityRevision })
         workoutNotifications = WorkoutNotifications(this, gym, scope,
             ComponentName(this, MainActivity::class.java),
@@ -174,20 +178,20 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             getSystemService(KeyguardManager::class.java), telemetry = telemetry)
         workoutNotifications.start()
         workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store::requestRoutines, telemetry)
-        scope.launch {
-            snapshotFlow { auth.identityRevision to auth.status }.collect {
-                gym.restoreLocal()
-                workoutNotifications.refreshCapabilities()
-            }
-        }
         store.observeEngine()
         val manager = getSystemService(ConnectivityManager::class.java)
         var knownOnline: Boolean? = null
+        fun applyRuntimeActivity() {
+            if (!accountWritable()) return
+            syncRuntime.launch(engineStorage)
+            syncRuntime.connectivity(knownOnline ?: false)
+            if (ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) engineSession.enter()
+        }
         fun updateConnectivity() {
             val online = manager.getNetworkCapabilities(manager.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
             if (online == knownOnline) return
             knownOnline = online
-            syncRuntime.connectivity(online)
+            applyRuntimeActivity()
             telemetry.event("sync_connectivity", mapOf("state" to if (online) "online" else "offline"))
         }
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -199,8 +203,15 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         networkCallback = callback
         updateConnectivity()
         manager.registerDefaultNetworkCallback(callback)
+        scope.launch {
+            snapshotFlow { Triple(auth.identityRevision, auth.status, auth.transitionPending) }.collect {
+                gym.restoreLocal()
+                workoutNotifications.refreshCapabilities()
+                applyRuntimeActivity()
+            }
+        }
         val lifecycle = object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) { engineSession.enter() }
+            override fun onStart(owner: LifecycleOwner) { applyRuntimeActivity() }
             override fun onStop(owner: LifecycleOwner) { scope.launch { engineSession.leave() } }
         }
         processLifecycle = lifecycle
