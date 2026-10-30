@@ -114,9 +114,11 @@ this receipt; swiping the receipt away saves nothing.
 ## Outside the app
 
 The expanded Dynamic Island (04.6) shows the rest target under the clock, static, from the plan. The
-Lock Screen card carries it the same way in its compact form, 04.7 (🚧 In progress, task 69): 124 pt
-tall with a 150 × 52 pt Log set. Neither counts it down, fills a bar or changes colour on its own. The
-island stays black in both appearances; compact and minimal are unchanged (04.3).
+Lock Screen card carries it the same way in its compact form, 04.7 (✅ Ready for dev, task 69): 141 pt
+tall, *Set 3 of 4* on its own line and a 150 × 52 pt Log set. Neither counts the target down, fills a
+bar or changes colour on its own. Neither the card nor the island says what is unsent (owner ruling
+2026-10-30); unsent sets are said in the room only, and 04.4 draws the remaining states. The island
+stays black in both appearances; compact and minimal are unchanged (04.3).
 
 ## Events
 

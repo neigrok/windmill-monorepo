@@ -339,7 +339,7 @@ and Android disagree.
     remove by the trash circle 02.8 `1149:2275`.
   - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
     hit areas 03.11 `1150:2638`, Bodyweight with added load 03.12 `1150:2793`.
-  - 04: the compact Lock Screen card 04.7 `1723:15733` (🚧, task 69); the shipped card measures
+  - 04: the compact Lock Screen card 04.7 `1723:15733` (✅, task 69); the shipped card measures
     ≈172 pt at default text, over ActivityKit's 160 pt cap.
   - 05: The log with its labelled Weigh in 05.1 `1153:2765`; Edit movement 05.9 `1153:2559`; the
     Equipment menu 05.10 `1153:2603`.
