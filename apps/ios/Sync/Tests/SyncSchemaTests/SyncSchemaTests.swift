@@ -10,7 +10,7 @@ struct SyncSchemaTests {
     let gym = try Corpus.registryFile("gym").asObject()
     let journal = try Corpus.registryFile("journal").asObject()
     let expected: JSON = [
-      "registry": "windmill", "version": 11, "minVersion": 11,
+      "registry": "windmill", "version": 12, "minVersion": 11,
       "products": .object(JSON.Object(uniqueKeysWithValues: try gym.member("products").asObject().members + journal.member("products").asObject().members)),
       "types": .array(try gym.member("types").asArray() + journal.member("types").asArray()),
       "commands": .array(try gym.member("commands").asArray() + journal.member("commands").asArray()),
@@ -23,17 +23,18 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [11, 11, 11])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [12, 12, 11])
   }
 
   @Test func everyTypeAndCommandHasItsName() {
     let types = [
       Gym.Types.routine, Gym.Types.routineCreation, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set, Gym.Types.note,
-      Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.thread, Gym.Types.message, Journal.Types.page, Journal.Types.journalState,
+      Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.workoutProposal, Gym.Types.thread, Gym.Types.message, Journal.Types.page, Journal.Types.journalState,
     ]
     let commands = [
       Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession, Gym.Commands.finish,
-      Gym.Commands.applyProposal, Gym.Commands.dismissProposal, Gym.Commands.closeStale, Journal.Commands.savePage, Journal.Commands.claimPage,
+      Gym.Commands.applyProposal, Gym.Commands.dismissProposal, Gym.Commands.applyWorkoutProposal,
+      Gym.Commands.dismissWorkoutProposal, Gym.Commands.closeStale, Journal.Commands.savePage, Journal.Commands.claimPage,
     ]
     #expect(types == SyncSchema.registry.types.map(\.name))
     #expect(commands == SyncSchema.registry.commands.map(\.name))
@@ -43,6 +44,7 @@ struct SyncSchemaTests {
     let codes = [
       Gym.Codes.payloadConflict, Gym.Codes.sessionFinished, Gym.Codes.sessionOpen, Gym.Codes.sessionOverlap,
       Gym.Codes.unknownExercise, Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Gym.Codes.messageFinal,
+      Gym.Codes.planLogged,
       Journal.Codes.claimConflict,
     ]
     #expect(codes == SyncSchema.registry.products.flatMap(\.codes))
@@ -50,6 +52,7 @@ struct SyncSchemaTests {
       Journal.Types.journalState: ["placeholder": "pending", "privacyLine": "pending", "firstPage": "pending", "scales": "pending"],
       Gym.Types.routine: ["position": JSON(Gym.Defaults.Routine.position)],
       Gym.Types.proposal: ["state": .string(Gym.Defaults.Proposal.state)],
+      Gym.Types.workoutProposal: ["state": .string(Gym.Defaults.WorkoutProposal.state)],
       Gym.Types.message: ["state": .string(Gym.Defaults.Message.state)],
       Gym.Types.prefs: [
         "units": .string(Gym.Defaults.Prefs.units), "restSeconds": Gym.Defaults.Prefs.restSeconds.map { JSON($0) } ?? .null,
