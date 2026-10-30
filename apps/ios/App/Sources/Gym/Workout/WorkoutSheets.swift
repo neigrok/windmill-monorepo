@@ -55,25 +55,23 @@ struct WorkoutAssembly: View {
   }
 }
 
-// The rack's load and reps on the wheels (03.2), committed together by the checkmark; Cancel keeps the rack.
-struct SetWheelSheet: View {
+// The rack's reps on one wheel (03.24), committed by the checkmark; Cancel keeps the rack.
+struct RepsWheelSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.dynamicTypeSize) private var typeSize
   let title: String
   let movement: String
-  let basis: MovementEquipment
-  let commit: (Double, Int) -> Void
-  @State private var weightKg: Double
+  let commit: (Int) -> Void
   @State private var reps: Int
 
-  init(title: String, movement: String, basis: MovementEquipment, weightKg: Double, reps: Int, commit: @escaping (Double, Int) -> Void) {
-    self.title = title; self.movement = movement; self.basis = basis; self.commit = commit
-    _weightKg = State(initialValue: weightKg); _reps = State(initialValue: reps)
+  init(title: String, movement: String, reps: Int, commit: @escaping (Int) -> Void) {
+    self.title = title; self.movement = movement; self.commit = commit
+    _reps = State(initialValue: reps)
   }
 
   var body: some View {
     NavigationStack {
-      SetWheels(weightKg: $weightKg, reps: $reps, basis: basis)
+      RepsWheel(reps: $reps, identifier: "set-wheel-reps")
         .padding(.horizontal, RoomSpace.inset)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(GymPalette.card.ignoresSafeArea())
@@ -82,10 +80,10 @@ struct SetWheelSheet: View {
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.accessibilityIdentifier("set-wheel-cancel") }
           ToolbarItem(placement: .topBarTrailing) {
-            Button("Done", systemImage: "checkmark") { commit(weightKg, reps); dismiss() }.accessibilityIdentifier("set-wheel-done")
+            Button("Done", systemImage: "checkmark") { commit(reps); dismiss() }.accessibilityIdentifier("set-wheel-done")
           }
         }.roomBar(.gym)
-    }.modifier(GymPage()).presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(380)])
+    }.modifier(GymPage()).presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(320)])
   }
 }
 
@@ -97,7 +95,7 @@ struct WorkoutMovementPicker: View {
   var body: some View {
     NavigationStack {
       MovementPicker(gym: gym, purpose: .workout, selected: Set(workout.walk.order),
-                     onBuildRoutine: { if gym.hideWorkout() { workout.handoff = .writtenProgram } },
+                     onBuildRoutine: { gym.hideWorkout(handingOff: .writtenProgram) },
                      onSelect: { entry in
                        let accepted = workout.add(entry.exerciseId)
                        gym.telemetry.event("gym_workout_picker", properties: ["action": "select", "outcome": accepted ? "ok" : "refused"])

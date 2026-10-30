@@ -76,7 +76,7 @@ supplies account/navigation callbacks and Coach handoffs. A model extension live
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
 bar, More menu), the transient band, the
-two-line row, the set row and fact tiles, the load and reps wheels and the Fix set editor, the rename sheet with its
+two-line row, the set row and fact tiles, the load field and reps wheel and the Fix set editor, the rename sheet with its
 model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
@@ -111,7 +111,7 @@ Exercise metadata applies across the account, while targets belong to that routi
 keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
 destination. Stale metadata or a changed owner refuses the whole save. Received Other movements
 retain their category and signed targets through name-only and target edits. Other uses kg without
-an equipment glyph; its load and Fix set wheels span negative, zero and positive values. The six
+an equipment glyph; its rack and Fix set loads take negative, zero and positive values through the ± key. The six
 existing equipment picker choices remain. Name/Equipment explanatory footers are absent, and the
 Other target section has no equipment help.
 
@@ -260,7 +260,7 @@ for pulldowns* with a change to *Full body B*, `-coach-offline` takes Coach and 
 `-coach-unavailable` answers as a deployment without Coach. The local Coach's boards are `-coach-board` cases too: `steps`
 holds a turn after its batch with the step line under it, `resume` drops that stream and answers the resume with a
 snapshot, `movement` makes a movement, `truncated`, `declined`, `failed`, `stopped` and `interrupted` end a turn each way,
-`no-connection`, `workout-open`, `log-arriving` and `too-long` refuse the send after the first answer on this phone,
+`no-connection`, `log-arriving` and `too-long` refuse the send after the first answer on this phone,
 `invalid-installation`, `device-bound`, `free-month` and `update-required` refuse it from the server, `signed-out-reads`
 seeds two workouts on the anonymous replica, `another-device` seeds a turn another phone is answering, and
 `account-changing` begins an account change under a draft.

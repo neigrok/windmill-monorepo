@@ -20,7 +20,7 @@ import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises
 import { GymVolume, Session, SessionRules, SetRules, TrainingSet, VolumePart } from '../../../../src/products/gym/domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
-import { GymEstimate, Prefill, ProgressRecords, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
+import { GymEstimate, Prefill, ProgressRecords, Readout, RestTarget, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
@@ -111,6 +111,10 @@ function trainingReadsForm(vector, read) {
       const sets = today === null ? [] : log.setsFor(today).filter((set) => set.exerciseId.equals(last.exerciseId));
       const value = Prefill.of(sets, f.optionalValue('planEntry', RoutineEntry.decode), last);
       return { weightKg: value.weightKg, reps: value.reps };
+    }
+    case 'RestTarget': {
+      const target = RestTarget.of(f.optionalValue('planEntry', RoutineEntry.decode), restSettings(read));
+      return target === null ? null : { seconds: target.seconds, reached: target.isReached(f.int('sinceMs')) };
     }
     case 'StatsProgress': return log.progress.json;
     case 'ProgressCompleteness': return { isComplete: log.progress.isComplete };

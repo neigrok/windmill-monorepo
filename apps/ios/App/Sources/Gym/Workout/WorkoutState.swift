@@ -22,6 +22,12 @@ struct WorkoutClocks: Equatable {
     if seconds < 3_600 { return "\(seconds / 60):\(tail)" }
     return "\(seconds / 3_600):\(String(format: "%02lld", seconds / 60 % 60)):\(tail)"
   }
+  // A clock in words, its empty parts left out: *2 minutes 14 seconds*.
+  static func spoken(_ ms: Int64) -> String {
+    let seconds = Int(max(0, ms / 1_000))
+    let parts = [(seconds / 3_600, "hour"), (seconds / 60 % 60, "minute"), (seconds % 60, "second")].filter { $0.0 > 0 }
+    return parts.isEmpty ? "0 seconds" : parts.map { GymCount.of($0.0, $0.1) }.joined(separator: " ")
+  }
 }
 
 // One movement in this workout: its sets in the order they were logged, then the current set and the plan still ahead.
@@ -216,6 +222,16 @@ struct FinishWorkout: Action {
     get { rackReps }
     set { adjustRack(weightKg: weightKg, reps: newValue) }
   }
+  // The load the rack's numeral stands for while it is a field, nil while the numeral shows. It lands when the field lets
+  // go and before the lifter changes movement; a movement the walk changes under it, another workout or another account
+  // drops it.
+  var typedLoad: Double?
+  func typeLoad() { if typedLoad == nil { typedLoad = weightKg } }
+  func landTypedLoad() {
+    guard let load = typedLoad else { return }
+    typedLoad = nil
+    adjustRack(weightKg: load, reps: reps)
+  }
   // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
   private(set) var adjustments = 0
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
@@ -239,6 +255,9 @@ struct FinishWorkout: Action {
   @ObservationIgnored var offerSession: Session?
   @ObservationIgnored var offerSets: [TrainingSet] = []
   @ObservationIgnored var drafts: [ID<Exercise>: Prefill] = [:]
+  // The set whose rest last reached its target, so each rest is reached once; each reach the lifter may feel counts here.
+  @ObservationIgnored var restReachedAfter: ID<TrainingSet>?
+  private(set) var restReaches = 0
 
   init(gym: GymModel) { self.gym = gym; restore() }
   func restoreRack(weightKg: Double, reps: Int) {
@@ -317,6 +336,15 @@ struct FinishWorkout: Action {
   var selected: ID<Exercise>? { walk.selected }
   var currentSets: [TrainingSet] { sets.filter { $0.exerciseId == selected } }
   var entry: RoutineEntry? { session?.plan?.entries.first { $0.exerciseId == selected } }
+  func restTarget(_ id: ID<Exercise>) -> RestTarget? {
+    RestTarget.of(session?.plan?.entries.first { $0.exerciseId == id }, rest: gym.restSettings)
+  }
+  func reachRest() {
+    guard let latest = sets.max(by: { $0.completedAt.ms < $1.completedAt.ms })?.id, latest != restReachedAfter else { return }
+    restReachedAfter = latest
+    restReaches += 1
+    gym.telemetry.event("gym_rest_target_reached", properties: ["screen": "workout"])
+  }
   func ledger(_ id: ID<Exercise>) -> MovementLedger {
     MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id })
   }
@@ -344,7 +372,7 @@ struct FinishWorkout: Action {
       message = Self.orderUnread
       gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
     }
-    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
+    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil; typedLoad = nil }
     sessionId = open.id; (walk, finishQueued) = restored
     if message == Self.orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
@@ -366,7 +394,7 @@ struct FinishWorkout: Action {
     }
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
-    if previousSelected != selected { prefill(); restoreActivityDraft() }
+    if previousSelected != selected { typedLoad = nil; prefill(); restoreActivityDraft() }
     else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
       let pending = rackBase.map { _ in Prefill(weightKg: weightKg, reps: reps) }
       prefill()
@@ -387,7 +415,9 @@ struct FinishWorkout: Action {
     walk = next; activityChanged(); return true
   }
   func select(_ id: ID<Exercise>) {
-    guard walk.order.contains(id), id != selected, !finishing, flushRack() else { return }
+    guard walk.order.contains(id), id != selected, !finishing else { return }
+    landTypedLoad()
+    guard flushRack() else { return }
     if let selected { drafts[selected] = Prefill(weightKg: weightKg, reps: reps) }
     var next = walk; next.selected = id
     guard keep(next) else { return }
@@ -396,7 +426,9 @@ struct FinishWorkout: Action {
   }
   @discardableResult func add(_ id: ID<Exercise>) -> Bool {
     guard session?.isOpen == true, !walk.order.contains(id), gym.catalogue.find(id) != nil,
-          !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed, flushRack() else { return false }
+          !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed else { return false }
+    landTypedLoad()
+    guard flushRack() else { return false }
     var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
     guard keep(next) else { return false }
@@ -411,6 +443,7 @@ struct FinishWorkout: Action {
     !sets.contains { $0.exerciseId == id } && session?.plan?.entries.contains { $0.exerciseId == id } != true
   }
   func remove(_ id: ID<Exercise>) {
+    landTypedLoad()
     guard flushRack() else { return }
     guard canRemove(id) else { message = "A movement with sets or planned targets stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
@@ -541,7 +574,7 @@ struct FinishWorkout: Action {
   func closeReceipt() { receipt = nil; if handoff == nil { handoff = .detail(sessionId) }; message = nil }
   func accountChanged() {
     gym.coachUnavailable = false
-    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []
+    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []; typedLoad = nil
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps); paging = false
     receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }
@@ -554,6 +587,10 @@ enum WorkoutHandoff: Equatable {
   case keep(ID<Session>)
   case coach
   case writtenProgram
+  case keepRoutines
+  case you
+  case routine(ID<Routine>)
+  case buildRoutine
   static let coachQuestion = "Check my last workout."
 }
 
@@ -593,6 +630,12 @@ extension GymModel {
     var next = workout.walk; next.hidden = true
     guard workout.keep(next) else { return false }
     telemetry.event("gym_hidden_workout", properties: ["action": "hide"])
+    return true
+  }
+  // A door that leads out of the workout hides it first; the room opens the door once the cover has gone.
+  @discardableResult func hideWorkout(handingOff handoff: WorkoutHandoff) -> Bool {
+    guard hideWorkout() else { return false }
+    workout.handoff = handoff
     return true
   }
   static let restoreFailed = "Gym could not restore this workout. Try again."

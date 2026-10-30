@@ -204,6 +204,17 @@ import SyncTesting
     #expect(!reopened.hideWorkout() && !reopened.workoutHidden && reopened.workout.isPresented)
   }
 
+  // A door Coach opens over the workout hides it and hands the door to the room; a workout that cannot hide keeps the lifter
+  // where they are and hands nothing on.
+  @Test(arguments: [WorkoutHandoff.keepRoutines, .you, .routine(ID("coach-made")), .buildRoutine])
+  func aDoorOutOfTheWorkoutHidesItAndHandsTheDoorOn(door: WorkoutHandoff) throws {
+    let (harness, gym) = try fixture(), workout = try begin(gym)
+    harness.failNextCommit()
+    #expect(!gym.hideWorkout(handingOff: door) && workout.isPresented && workout.handoff == nil)
+    #expect(gym.hideWorkout(handingOff: door) && gym.workoutHidden && !workout.isPresented && workout.handoff == door)
+    #expect(gym.openSession?.id == workout.sessionId)
+  }
+
   @Test func explicitStartRestoresHiddenWorkoutWhilePreservingItsRefusal() throws {
     let (_, gym) = try fixture(), workout = try begin(gym), id = try #require(workout.sessionId)
     #expect(gym.hideWorkout())
@@ -629,6 +640,33 @@ import SyncTesting
     #expect(WorkoutClocks.reading(3_661_000) == "1:01:01")
   }
 
+  // The rest a movement asks comes from its plan entry, else the rest preference, else none; each rest reaches its target
+  // once, however often the facts row reports it, and the event carries no duration. VoiceOver hears the clock in words.
+  @Test func eachRestReachesItsTargetOnceAndTheTargetFollowsThePlanThenThePreference() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder)
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [
+      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 80)], restSeconds: 120), RoutineEntry(exerciseId: second),
+    ]))
+    #expect(saved(gym.save(&draft)))
+    let planned = try #require(gym.routines.first(where: { $0.id == draft.current.id })), workout = try begin(gym, routine: planned)
+    #expect([workout.restTarget(first), workout.restTarget(second), workout.restTarget(third)] == [RestTarget(seconds: 120), nil, nil])
+    gym.restSettings = RestSettings(seconds: 90)
+    #expect([workout.restTarget(first), workout.restTarget(second), workout.restTarget(third)] ==
+            [RestTarget(seconds: 120), RestTarget(seconds: 90), RestTarget(seconds: 90)])
+    let reached = { recorder.entries.withLock { $0.filter { $0.name == "gym_rest_target_reached" }.map(\.properties) } }
+    workout.reachRest()
+    #expect(workout.restReaches == 0 && reached().isEmpty, "no set, no rest")
+    #expect(workout.logSet())
+    workout.reachRest(); workout.reachRest()
+    #expect(workout.restReaches == 1 && reached() == [["screen": "workout"]])
+    #expect(workout.logSet())
+    workout.reachRest()
+    #expect(workout.restReaches == 2 && reached() == [["screen": "workout"], ["screen": "workout"]])
+    #expect([WorkoutFacts.spokenRest(sinceMs: 134_000, target: RestTarget(seconds: 120)), WorkoutFacts.spokenRest(sinceMs: 97_000, target: nil),
+             WorkoutClocks.spoken(3_661_000), WorkoutClocks.spoken(0)] ==
+            ["2 minutes 14 seconds, target 2 minutes", "1 minute 37 seconds", "1 hour 1 minute 1 second", "0 seconds"])
+  }
+
   @Test func setsLoggedOnAStillClockKeepTheirLoggedOrderOnTheLedgerAndTheReceipt() async throws {
     let (_, gym) = try fixture(), workout = try begin(gym)
     for load in [60.0, 80, 70, 90, 50] { workout.weightKg = load; #expect(workout.logSet()) }
@@ -832,6 +870,26 @@ import SyncTesting
     #expect(workout.weightKg == 37.5 && workout.reps == 6)
     workout.select(second)
     #expect(workout.weightKg == 70 && workout.reps == 3)
+  }
+
+  // A load typed on the rack lands on its own movement before the lifter moves on, so it never reaches the next one, and
+  // another account drops it: the field letting go after the change lands nothing.
+  @Test func aTypedLoadLandsOnItsMovementBeforeTheLifterMovesOnAndAnotherAccountDropsIt() throws {
+    let (_, gym) = try fixture(), workout = try begin(gym)
+    workout.weightKg = 40; workout.add(second); workout.weightKg = 60; workout.select(first)
+    workout.typeLoad(); #expect(workout.typedLoad == 40)
+    workout.typedLoad = 123; workout.select(second)
+    #expect(workout.typedLoad == nil && workout.selected == second && workout.weightKg == 60)
+    workout.select(first)
+    #expect(workout.weightKg == 123)
+    workout.typeLoad(); workout.typedLoad = 125; workout.add(third)
+    #expect(workout.typedLoad == nil && workout.selected == third)
+    workout.select(first)
+    #expect(workout.weightKg == 125)
+    workout.typeLoad(); workout.typedLoad = 99; workout.accountChanged()
+    let restored = workout.weightKg
+    workout.landTypedLoad()
+    #expect(workout.typedLoad == nil && workout.weightKg == restored && restored != 99)
   }
 
   @Test func lastTimePrefillsFreeWorkoutAndPlanOverridesIt() throws {

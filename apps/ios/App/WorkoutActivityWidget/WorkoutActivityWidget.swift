@@ -29,34 +29,47 @@ struct WorkoutControl: ControlWidget {
   }
 }
 
-// The ledger's current row outside the app: the routine and the rest clock on top, which the expanded Island draws in its
-// leading and trailing regions, then the set it would log, and Log set. The compact Island keeps the clocks at .caption,
-// its slots too narrow to scale.
+// The ledger's current row outside the app: the Lock Screen card (04.7) and the expanded Island (04.6) each draw the
+// movement's rest target static under the since clock. The Island's fixed shape holds its regions at .xxLarge text and the
+// compact Island its clocks at .caption, its slots too narrow to scale. Neither says what is unsent; the room does.
 struct WorkoutActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          Label(context.state.title, systemImage: "dumbbell.fill").lineLimit(1)
-          Spacer(minLength: 8)
-          WorkoutActivityClock.rest(context.state).frame(maxWidth: 96, alignment: .trailing)
-        }.font(.headline)
-        WorkoutActivityDetails(state: context.state, isStale: context.isStale)
-      }.padding(16).foregroundStyle(GymPalette.ink)
+      WorkoutLockScreenCard(state: context.state, isStale: context.isStale)
         .activityBackgroundTint(GymPalette.card)
         .widgetURL(WorkoutActivityAttributes.workoutURL)
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Label(context.state.title, systemImage: "dumbbell.fill").font(.headline).lineLimit(1).padding(.leading, 4)
+          VStack(alignment: .leading, spacing: 2) {
+            if context.state.movement.isEmpty {
+              Text("Pick a movement in the app.").font(.headline).lineLimit(2).minimumScaleFactor(0.8)
+            } else {
+              Text(context.state.movement).font(.headline).lineLimit(1).minimumScaleFactor(0.7)
+              if let place = context.state.place {
+                Text(place.uppercased()).font(.caption2).fontDesign(.monospaced).tracking(0.7).foregroundStyle(.secondary).lineLimit(1)
+                  .minimumScaleFactor(0.7)
+              }
+            }
+          }.padding(.leading, 4).dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          WorkoutActivityClock.rest(context.state)
-            .font(.headline).frame(maxWidth: 96, alignment: .trailing).padding(.trailing, 12)
+          WorkoutRestClock(state: context.state, numeral: .title.weight(.heavy), target: .caption)
+            .frame(maxWidth: 120, alignment: .trailing).padding(.trailing, 4).dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          WorkoutActivityDetails(state: context.state, isStale: context.isStale)
-            .controlSize(.small).padding(.horizontal, 12).padding(.bottom, 8)
+          Group {
+            if context.isStale {
+              Text("Open workout to continue").font(.subheadline).foregroundStyle(.secondary)
+            } else if let offer = context.state.offer {
+              Button(intent: WorkoutLogSetIntent(offer: offer)) {
+                Text(["Log set", context.state.effort].compactMap(\.self).joined(separator: "  ·  ")).font(.headline).lineLimit(1)
+                  .frame(maxWidth: .infinity, minHeight: 46)
+                  .background(GymPalette.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                  .foregroundStyle(GymPalette.onAccent)
+              }.buttonStyle(.plain).accessibilityLabel("Log set").accessibilityValue(context.state.effort ?? "")
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 10).padding(.horizontal, 4).dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
       } compactLeading: {
         HStack(spacing: 4) {
@@ -76,46 +89,58 @@ struct WorkoutActivityWidget: Widget {
   }
 }
 
-// The movement, the prefilled set as the one large line, its place in the plan, and Log set; before a movement is chosen,
-// where to choose it. The rest is the clock's alone. What is not yet sent is said beside the button, or above it where the
-// row is too narrow for both.
-struct WorkoutActivityDetails: View {
+// The compact card (04.7): the routine, the movement and the set's place over the set it would log, and at the trailing
+// edge the since clock over the rest target, then Log set. Stale, *Open workout to continue* takes the button's place;
+// before a movement is chosen, where to choose it fills the movement's lines. The card sizes to its content, under
+// ActivityKit's 160 pt.
+struct WorkoutLockScreenCard: View {
   let state: WorkoutActivityAttributes.ContentState
   let isStale: Bool
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    HStack(alignment: .top, spacing: 8) {
       VStack(alignment: .leading, spacing: 2) {
+        Label(state.title, systemImage: "dumbbell.fill").font(.subheadline.weight(.semibold)).lineLimit(1)
         if state.movement.isEmpty {
-          Text("Pick a movement in the app.").font(.title3.weight(.semibold)).lineLimit(2)
+          Text("Pick a movement in the app.").font(.subheadline).foregroundStyle(GymPalette.inkDim).lineLimit(2)
         } else {
-          Text(state.movement).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+          Text(state.movement).font(.subheadline).foregroundStyle(GymPalette.inkDim).lineLimit(1)
+          if let place = state.place { Text(place).font(.footnote).fontDesign(.monospaced).foregroundStyle(GymPalette.inkDim).lineLimit(1) }
+          Spacer(minLength: 4)
           if !state.load.isEmpty, state.reps > 0 {
-            Text("\(state.load) × \(state.reps)").font(.title2.weight(.bold)).monospacedDigit().lineLimit(1)
+            Text("\(state.load) × \(state.reps)").font(.title2.weight(.bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
           }
         }
-        if let place = state.place { Text(place).font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1) }
       }
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .center) { aside; Spacer(minLength: 8); logSet }
-        VStack(alignment: .leading, spacing: 8) { aside; logSet }
+      Spacer(minLength: 8)
+      VStack(alignment: .trailing, spacing: 0) {
+        WorkoutRestClock(state: state, numeral: .title2.weight(.bold), target: .footnote).frame(maxWidth: 110, alignment: .trailing)
+        Spacer(minLength: 15)
+        if isStale {
+          Text("Open workout to continue").font(.caption).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.trailing)
+        } else if let offer = state.offer {
+          Button(intent: WorkoutLogSetIntent(offer: offer)) {
+            Text("Log set").font(.headline).frame(width: 150, height: 52)
+              .background(GymPalette.accent, in: Capsule()).foregroundStyle(GymPalette.onAccent)
+          }.buttonStyle(.plain)
+        }
       }
-    }
+    }.fixedSize(horizontal: false, vertical: true).padding(16).foregroundStyle(GymPalette.ink)
   }
+}
 
-  @ViewBuilder var aside: some View {
-    if isStale || state.unsentSetCount > 0 {
-      VStack(alignment: .leading, spacing: 2) {
-        if isStale { Text("Open workout to continue") }
-        if state.unsentSetCount > 0 { Text("\(state.unsentSetCount) not sent yet") }
-      }.font(.caption).foregroundStyle(.secondary).fixedSize()
-    }
-  }
-
-  @ViewBuilder var logSet: some View {
-    if !isStale, let offer = state.offer {
-      Button(intent: WorkoutLogSetIntent(offer: offer)) {
-        Text("Log set").font(.subheadline.weight(.semibold)).fixedSize()
-      }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
+// The since clock over the movement's rest target, static: it never counts down and never changes colour. Before the first
+// set the clock is the workout's time, which no target measures.
+struct WorkoutRestClock: View {
+  let state: WorkoutActivityAttributes.ContentState
+  let numeral: Font
+  let target: Font
+  var body: some View {
+    VStack(alignment: .trailing, spacing: 0) {
+      WorkoutActivityClock.rest(state).font(numeral)
+      if state.lastSetAt != nil, let rest = state.restReading {
+        Text("/ " + rest).font(target).fontDesign(.monospaced).foregroundStyle(.secondary)
+          .accessibilityLabel("Rest target").accessibilityValue(rest)
+      }
     }
   }
 }

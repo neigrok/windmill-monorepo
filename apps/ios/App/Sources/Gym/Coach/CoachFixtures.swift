@@ -181,16 +181,10 @@ enum CoachFixture {
     }
     switch CoachBoard.current?.secondSend {
     case .connectionGone: connectionGone.withLock { $0 = true }
-    case .workoutOpen: _ = gym.run(StartSession(id: gym.runner.mint(Session.self)))
     case .tooLong: coach.edit("Week 1 — Mon: Squat 3×5, Bench 3×5, Row 3×5. " + String(repeating: "Tue: rest. ", count: 850))
     default: break
     }
-    if let runtime = gym.runtime {
-      Task {
-        await runtime.engine.flushOnLeave(); gym.refresh()
-        if CoachBoard.current?.secondSend == .workoutOpen { gym.hideWorkout() }
-      }
-    }
+    if let runtime = gym.runtime { Task { await runtime.engine.flushOnLeave(); gym.refresh() } }
     #endif
   }
 
@@ -508,7 +502,7 @@ nonisolated struct CoachBoard {
   }
   // What the send after the board's first answer meets (08.38–08.45): the server's refusal by status and code, with
   // the moment a shared pool refills, or this phone's own admission.
-  enum SecondSend: Equatable { case refused(Int, String, resetsAtMs: Int64?), connectionGone, workoutOpen, logArriving, tooLong }
+  enum SecondSend: Equatable { case refused(Int, String, resetsAtMs: Int64?), connectionGone, logArriving, tooLong }
   // A situation the fixture seeds around the board: the phone's own workouts signed out (01.19), a turn another device
   // is answering (08.51), the account changing under a draft (08.6), a turn that resumes from its snapshot (08.52).
   enum Situation: Equatable { case signedOutWorkouts, anotherDevice, accountChanging, resumable }
@@ -650,7 +644,6 @@ nonisolated struct CoachBoard {
     "stopped": ended("Thursday is still a Push day. I set Pull-up to bodyweight first, then", .held, movement: pullUp),
     "interrupted": ended("Thursday is still a Push day. I set Pull-up to bodyweight first, then", .lost, movement: pullUp),
     "no-connection": after(.connectionGone),
-    "workout-open": after(.workoutOpen),
     "log-arriving": after(.logArriving),
     "too-long": after(.tooLong),
     "invalid-installation": after(.refused(401, "invalid_installation", resetsAtMs: nil), of: squats),
