@@ -142,7 +142,12 @@ public struct ProposeWorkout: Action {
         throw Violation(rule: WorkoutPlanRules.duplicate, path: Path("entries") + index + "exerciseId", reason: .custom("duplicate"))
       }
     }
-    if let movement = workout.loggedChange(to: entries) {
+    // The first logged movement whose entries the proposal changes, in the order the plan and then the proposal name
+    // movements: a logged movement may move, but its entries stay exactly as they stand.
+    let entriesOf = { (plan: [RoutineEntry], movement: ID<Exercise>) in plan.filter { $0.exerciseId == movement } }
+    if let movement = (workout.plan.entries + entries).map(\.exerciseId).first(where: {
+      workout.logged.contains($0) && entriesOf(workout.plan.entries, $0) != entriesOf(entries, $0)
+    }) {
       return .refuse(GymRefusal(Refused(Gym.Codes.planLogged, subject: id.ref, detail: ["exerciseId": movement.json], path: .predicted)))
     }
     var plan = Plan()
@@ -196,6 +201,11 @@ public struct WorkoutProposalState: Sendable {
     guard proposal.state == "pending", let workout, let session = workout.session else { return nil }
     if workout.isClosed { return OutOfDate(.workoutFinished) }
     if let base = proposal.baseRevision, base != session.planRevision ?? 1 { return OutOfDate(.workoutChanged) }
+    // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
+    // plan the proposal diffs, its kept lines included.
+    if let plan = session.plan, RoutineChange.lines(from: plan.entries, to: proposal.document).map(\.json) != proposal.changes.map(\.json) {
+      return OutOfDate(.workoutChanged)
+    }
     guard let moved = proposal.changes.first(where: { $0.kind != "kept" && workout.logged.contains($0.exerciseId) }) else { return nil }
     return OutOfDate(.workoutMoved, exerciseId: moved.exerciseId)
   }

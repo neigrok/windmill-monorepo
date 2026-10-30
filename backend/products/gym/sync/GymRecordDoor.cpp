@@ -135,11 +135,17 @@ ProposalMintOutcome GymDoor::mintProposal(const UserId& user, const ProposalId& 
 // its base revision are the ones the rules check. A spent id splits as a routine proposal's does.
 WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const WorkoutProposalWrite& incoming) {
   WorkoutProposalOutcome outcome{std::nullopt, WorkoutProposalError::none, std::nullopt};
+  std::string refusedCode;
+  const auto refuse = [&](WorkoutProposalError error, std::string code) -> std::optional<Json::Value> {
+    outcome.error = error;
+    refusedCode = std::move(code);
+    return std::nullopt;
+  };
   const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const std::optional<sync::Row> session = locked(txn, user, "session", incoming.session.str());
-    if (!session || !session->alive()) { outcome.error = WorkoutProposalError::unknownSession; return std::nullopt; }
+    if (!session || !session->alive()) return refuse(WorkoutProposalError::unknownSession, sync::code::unknownRecord);
     const std::optional<PlanSnapshot> plan = planFrom(engine::value(&*session, "plan"));
-    if (!plan) { outcome.error = WorkoutProposalError::noPlan; return std::nullopt; }
+    if (!plan) return refuse(WorkoutProposalError::noPlan, "no-plan");
     const Json::Value revision = engine::value(&*session, "planRevision");
     WorkoutProposal proposal{incoming.id, incoming.session, incoming.source, incoming.summary, *plan,
                              revision.isNull() ? 1 : revision.asInt(), incoming.entries};
@@ -148,11 +154,11 @@ WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const Workout
       for (const auto& [field, reg] : stored->lattice.f) record[field] = reg.value;
       record["id"] = incoming.id.str();
       outcome.proposal = workoutProposalFrom(record);
-      if (!outcome.proposal->replays(proposal)) outcome.error = WorkoutProposalError::idReused;
+      if (!outcome.proposal->replays(proposal)) return refuse(WorkoutProposalError::idReused, "id-reused");
       return std::nullopt;
     }
-    if (proposal.changeCount == 0) { outcome.error = WorkoutProposalError::noChange; return std::nullopt; }
-    if (recordTaken(txn, user, "workoutProposal", incoming.id.str())) { outcome.error = WorkoutProposalError::idTaken; return std::nullopt; }
+    if (proposal.changeCount == 0) return refuse(WorkoutProposalError::noChange, "no-change");
+    if (recordTaken(txn, user, "workoutProposal", incoming.id.str())) return refuse(WorkoutProposalError::idTaken, sync::code::idTaken);
     Json::Value fields(Json::objectValue);
     fields["sessionId"] = proposal.session.str();
     fields["summary"] = proposal.summary;
@@ -166,7 +172,7 @@ WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const Workout
     Json::Value built = intent();
     built["d"].append(delta("workoutProposal", incoming.id.str(), fields, true));
     return built;
-  });
+  }, &refusedCode);
   if (outcome.error != WorkoutProposalError::none) return {std::nullopt, outcome.error, std::nullopt};
   const std::string code = refusal(result);
   const auto refused = [](WorkoutProposalError error) { return WorkoutProposalOutcome{std::nullopt, error, std::nullopt}; };

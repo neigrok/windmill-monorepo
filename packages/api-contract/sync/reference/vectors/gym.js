@@ -512,6 +512,9 @@ function workoutProposals() {
       state: inFlight([pending], openWorkout({ planRevision: 2 })), intent: apply() }),
     admitted('apply of a pending workout proposal whose changed movement was logged since is refused proposal-superseded: workout-moved', {
       state: inFlight([pending, dipSet]), intent: apply() }),
+    admitted('apply of a pending workout proposal with a set on the movement it retargets, in one intent, is refused plan-logged', {
+      state: inFlight([pending]), intent: gym([create('set', 'set00000006', s(T + 9 * H), { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 9 * H })],
+        { cmd: apply().cmd }) }),
     admitted('apply of a pending workout proposal of a finished workout is refused proposal-superseded: workout-finished', {
       state: base({ a: [workoutProposalRow('wproposal01', 6, { sessionId: 'session0001' })] }), intent: apply() }),
     admitted('apply of an absent workout proposal is refused unknown-record', { state: inFlight(), intent: apply('wproposal07') }),
@@ -715,6 +718,9 @@ function conversations() {
     admitted('a server-origin proposal create names the conversation it was minted in', { state: conversation(COMPLETED), origin: SERVER_A,
       intent: gym([create('proposal', 'proposal003', null, { routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier squat', changes: CHANGES, door: 'ask', connection: '', agent: '', threadId: 'thread000001' })]) }),
     admitted('a conversation delete kills its messages and unlinks the proposals naming it', { state: conversation(COMPLETED, LINKED), intent: gym([{ t: 'thread', id: 'thread000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
+    admitted('a conversation delete unlinks the workout proposals naming it', {
+      state: conversation(COMPLETED, openWorkout(), workoutProposalRow('wproposal01', 10, { threadId: 'thread000001', door: 'ask', connection: '', agent: '' })),
+      intent: gym([{ t: 'thread', id: 'thread000001', born: s(T + 6), life: ['dead', s(T + 9)] }]) }),
   ];
 }
 

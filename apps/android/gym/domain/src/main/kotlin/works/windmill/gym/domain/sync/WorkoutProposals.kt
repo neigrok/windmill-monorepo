@@ -70,8 +70,9 @@ class ProposeWorkout(val id: Id<WorkoutProposal>, val sessionId: Id<Session>, va
     }
 }
 
-// A workout proposal with its workout as this phone holds it. Out of date, it can no longer be applied: a newer proposal
-// replaced it, the plan changed since it was made, its workout closed, or a movement it changes was logged since.
+// A workout proposal with its workout as this phone stores it. Out of date, it can no longer be applied, by the first that
+// holds: a newer proposal replaced it, its workout closed, the plan changed since it was made, or a movement it changes
+// was logged since.
 data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: OpenWorkout?, val moment: Moment) {
     data class OutOfDate(val reason: String, val exerciseId: Id<Exercise>? = null) {
         val json: Json get() = Json.Obj(listOfNotNull("reason" to Json.of(reason), exerciseId?.let { "exerciseId" to it.json }))
@@ -83,10 +84,14 @@ data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: Ope
     val outOfDate: OutOfDate? get() {
         val value = proposal ?: return null
         if (value.state == "superseded") return OutOfDate(if (value.supersededBy != null) "replaced" else "workout-changed")
-        val session = workout?.drawn
+        val session = workout?.session
         if (value.state != "pending" || session == null) return null
-        if (!session.isOpen) return OutOfDate("workout-finished")
+        if (workout.isClosed) return OutOfDate("workout-finished")
         if (value.baseRevision != null && (session.planRevision ?: 1) != value.baseRevision) return OutOfDate("workout-changed")
+        // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
+        // plan the proposal diffs, its kept lines included.
+        val plan = session.plan
+        if (plan != null && RoutineChange.between(plan.entries, value.document).map { it.json } != value.changes.map { it.json }) return OutOfDate("workout-changed")
         return value.changes.firstOrNull { it.kind != "kept" && it.exerciseId in workout.logged }?.let { OutOfDate("workout-moved", it.exerciseId) }
     }
 
@@ -97,7 +102,7 @@ data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: Ope
         when (value.state) {
             "pending" -> {
                 if (!applying) return null
-                if (workout?.drawn == null) return GymRefusal.of(Refused(RefusalCode.unknownRecord, value.sessionId.ref, path = Refused.Path.predicted))
+                if (workout?.session == null || !workout.visible) return GymRefusal.of(Refused(RefusalCode.unknownRecord, value.sessionId.ref, path = Refused.Path.predicted))
             }
             "superseded" -> {}
             if (applying) "applied" else "dismissed" -> return null

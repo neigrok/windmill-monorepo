@@ -39,7 +39,7 @@ fatal exception. Host timing is kept separate from device readiness and the comp
 
 The app model, rack acceptance, performed rows and saved-workout recovery have no set-kind API or
 control. Every set contributes to counters, totals, history, last-time prefill and early-finish rules.
-Sets carry no kind (registry v11/minimum 11): no read, write or command argument names one.
+Sets carry no kind (registry v12/minimum 11): no read, write or command argument names one.
 Debug and Release real-wire suites each pass 17 cases with zero skips. A further
 Debug run passes all 17 against the backend auth-receipt/schema prerequisite on main.
 

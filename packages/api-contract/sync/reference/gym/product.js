@@ -144,12 +144,17 @@ function changedLoggedMovement(before, after, logged) {
 }
 
 // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known
-// movements, no second entry of a movement the plan held once or not at all, and logged movements kept.
-function checkPlanRevision(ctx, { before, after, sessionId, current, rowsOf }) {
+// movements, and no second entry of a movement the plan held once or not at all.
+function checkPlanShape(ctx, { before, after, current }) {
   if (after.some((entry) => entry.sets !== undefined && entry.sets.length === 0)) throw new Refusal('invalid');
   if (after.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
   const count = (entries, exerciseId) => entries.filter((entry) => entry.exerciseId === exerciseId).length;
   if (after.some((entry) => count(after, entry.exerciseId) > Math.max(count(before, entry.exerciseId), 1))) throw new Refusal('invalid');
+}
+
+// A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a
+// workout proposal's document keep every logged movement's entries.
+function checkLoggedKept({ before, after, sessionId, rowsOf }) {
   const logged = changedLoggedMovement(before, after, loggedMovements(rowsOf('set'), sessionId));
   if (logged !== undefined) throw new Refusal('plan-logged', { exerciseId: logged });
 }
@@ -603,7 +608,8 @@ const RULES = {
   },
 
   // A session's death kills its sets and workout proposals; a plan write is held to the plan revision rules,
-  // and a net plan change moves planRevision and supersedes the workout's pending proposals, every door's.
+  // and a net plan change, a delta's or an apply's, keeps its logged movements, moves planRevision and
+  // supersedes the workout's pending proposals, every door's.
   session(ctx, record, { current, rowsOf, append }) {
     if (created(record)) {
       if (record.createdBy.some((source) => source !== 'command')) throw new Refusal('invalid');
@@ -629,9 +635,10 @@ const RULES = {
       const plan = valueOf(after, 'plan');
       if (!isSet(before) || !isSet(plan) || !sameJson(plan.routine, before.routine)) throw new Refusal('invalid');
       if (isClosed({ ...ctx, rowsOf }, original)) throw new Refusal('session-finished');
-      checkPlanRevision(ctx, { before: before.entries ?? [], after: plan.entries, sessionId: after.id, current, rowsOf });
+      checkPlanShape(ctx, { before: before.entries ?? [], after: plan.entries, current });
     }
     if (sameJson(valueOf(original, 'plan') ?? null, valueOf(after, 'plan') ?? null)) return;
+    checkLoggedKept({ before: valueOf(original, 'plan')?.entries ?? [], after: valueOf(after, 'plan')?.entries ?? [], sessionId: after.id, rowsOf });
     const revision = (valueOf(original, 'planRevision') ?? 1) + 1;
     if (revision > MAX_REVISION) throw new Refusal('invalid');
     append({ t: 'session', id: after.id, born: after.born, f: { planRevision: [revision, null] } });
@@ -712,15 +719,15 @@ const RULES = {
     }
   },
 
-  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals naming it.
+  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals of both kinds naming it.
   thread(ctx, record, { rowsOf, append }) {
     if (created(record) && !isSet(valueOf(record.after, 'title'))) throw new Refusal('invalid');
     if (!died(record)) return;
     for (const message of rowsOf('message')) {
       if (isAlive(message) && valueOf(message, 'threadId') === record.after.id) append({ t: 'message', id: message.id, born: message.born, life: ['dead', null] });
     }
-    for (const proposal of rowsOf('proposal')) {
-      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: 'proposal', id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
+    for (const proposal of [...rowsOf('proposal'), ...rowsOf('workoutProposal')]) {
+      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: proposal.t, id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
     }
   },
 
@@ -795,7 +802,8 @@ const RULES = {
     const changes = valueOf(after, 'changes');
     const proposed = documentOf(changes);
     if (proposed.length > 50 || !sameJson(changes, proposalChanges(base, proposed))) throw new Refusal('invalid');
-    checkPlanRevision(ctx, { before: base, after: proposed, sessionId, current, rowsOf });
+    checkPlanShape(ctx, { before: base, after: proposed, current });
+    checkLoggedKept({ before: base, after: proposed, sessionId, rowsOf });
     append({ t: 'workoutProposal', id: after.id, born: after.born, f: {
       baseRevision: [valueOf(session, 'planRevision') ?? 1, null], changeCount: [changeCountOf(base, changes), null],
     } });

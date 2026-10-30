@@ -33,9 +33,10 @@ public:
   static void requireOk(const Json::Value&);
 
   // One server-origin call on the door's worker: the builder runs under the scope lock and answers the
-  // intent to admit, or nothing to admit nothing; the answer is the engine's result.
+  // intent to admit, or nothing to admit nothing; the answer is the engine's result. A builder that refuses before
+  // admitting names the refusal in `refused`, and the call's write line carries that code.
   using Builder = std::function<std::optional<Json::Value>(sync::SyncTxn&)>;
-  Json::Value execute(const UserId&, const Builder&);
+  Json::Value execute(const UserId&, const Builder&, const std::string* refused = nullptr);
   Json::Value command(const UserId&, const std::string& name, const Json::Value& args);
 
   void closeStale(const UserId&) override;

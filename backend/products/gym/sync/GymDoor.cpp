@@ -97,7 +97,7 @@ std::optional<sync::Row> GymDoor::locked(sync::SyncTxn& txn, const UserId& user,
   return std::move(row->second);
 }
 
-Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
+Json::Value GymDoor::execute(const UserId& user, const Builder& builder, const std::string* refused) {
   auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
   WriteContext context(*observation);
   auto answer = std::make_shared<std::promise<Json::Value>>();
@@ -135,7 +135,7 @@ Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
       // A call with no requestId is admitted or asked to retry, and a retry is the engine being busy.
       const auto* admitted = std::get_if<sync::Admitted>(&outcome);
       if (!admitted) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
-      observation->finish(impl_->catalog->observationOutcome(admitted->result));
+      observation->finish(refused && !refused->empty() ? *refused : impl_->catalog->observationOutcome(admitted->result));
       answer->set_value(admitted->result);
     } catch (const GymUnavailable& refused) {
       observation->finish(refused.code);
@@ -170,12 +170,15 @@ void GymDoor::closeStale(const UserId& user) {
 
 void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const auto rows = sync::sqlOf(txn).exec("select id from gym_proposals where user_id=$1::uuid and thread_id=$2 order by id", pqxx::params{user.str(), thread.str()});
+    const auto rows = sync::sqlOf(txn).exec(
+        "select 'proposal', id from gym_proposals where user_id=$1::uuid and thread_id=$2 "
+        "union all select 'workoutProposal', id from gym_workout_proposals where user_id=$1::uuid and thread_id=$2 order by 1, 2",
+        pqxx::params{user.str(), thread.str()});
     if (rows.empty()) return std::nullopt;
     auto value = intent();
     Json::Value fields(Json::objectValue);
     fields["threadId"] = Json::nullValue;
-    for (const auto& row : rows) value["d"].append(delta("proposal", row[0].as<std::string>(), fields));
+    for (const auto& row : rows) value["d"].append(delta(row[0].as<std::string>(), row[1].as<std::string>(), fields));
     return value;
   });
   requireOk(result);

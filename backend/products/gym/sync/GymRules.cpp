@@ -409,8 +409,8 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     });
   };
   // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements,
-  // no second entry of a movement the plan held once or not at all, and logged movements kept.
-  auto checkPlanRevision = [&](const Json::Value& before, const Json::Value& after, const Json::Value& session) {
+  // and no second entry of a movement the plan held once or not at all.
+  auto checkPlanShape = [&](const Json::Value& before, const Json::Value& after) {
     auto count = [](const Json::Value& entries, const Json::Value& exercise) {
       return std::count_if(entries.begin(), entries.end(), [&](const Json::Value& entry) { return entry["exerciseId"] == exercise; });
     };
@@ -418,6 +418,10 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     for (const Json::Value& entry : after) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
     for (const Json::Value& entry : after)
       if (count(after, entry["exerciseId"]) > std::max<std::ptrdiff_t>(count(before, entry["exerciseId"]), 1)) throw Refusal(code::invalid);
+  };
+  // A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a workout
+  // proposal's document keep every logged movement's entries.
+  auto checkLoggedKept = [&](const Json::Value& before, const Json::Value& after, const Json::Value& session) {
     if (const auto logged = changedLoggedMovement(before, after, loggedMovements(rowsOf("set"), session)))
       throw Refusal("plan-logged", object({{"exerciseId", *logged}}));
   };
@@ -498,9 +502,10 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
         const Json::Value plan = value(&after, "plan");
         if (before.isNull() || plan.isNull() || !same(plan["routine"], before["routine"])) throw Refusal(code::invalid);
         if (closed(prior, activity(prior), now)) throw Refusal("session-finished");
-        checkPlanRevision(planEntries(before), planEntries(plan), after.id.json());
+        checkPlanShape(planEntries(before), planEntries(plan));
       }
       if (same(value(&prior, "plan"), value(&after, "plan"))) continue;
+      checkLoggedKept(planEntries(value(&prior, "plan")), planEntries(value(&after, "plan")), after.id.json());
       const std::int64_t revision = planRevision(prior) + 1;
       if (revision > 2'147'483'647) throw Refusal(code::invalid);
       append(fields(after, object({{"planRevision", Json::Int64(revision)}})));
@@ -527,7 +532,8 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       const Json::Value changes = value(&after, "changes");
       const Json::Value proposed = documentOf(changes);
       if (proposed.size() > 50 || !same(changes, proposalChanges(base, proposed))) throw Refusal(code::invalid);
-      checkPlanRevision(base, proposed, sessionId);
+      checkPlanShape(base, proposed);
+      checkLoggedKept(base, proposed, sessionId);
       append(fields(after, object({{"baseRevision", Json::Int64(planRevision(*session))}, {"changeCount", changeCountOf(base, changes)}})));
       for (const Row* other : rowsOf("workoutProposal")) {
         if (other->id == after.id || futureProposals.contains(other->id.column())) continue;
@@ -612,7 +618,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       for (const auto& [key, row] : joined) {
         if (!row.alive() || value(&row, "threadId") != after.id.json()) continue;
         if (row.t == "message") append(death(row));
-        if (row.t == "proposal") append(fields(row, object({{"threadId", Json::Value()}})));
+        if (row.t == "proposal" || row.t == "workoutProposal") append(fields(row, object({{"threadId", Json::Value()}})));
       }
       continue;
     }
