@@ -25,8 +25,8 @@ class AskOutcomeTests {
             allowance = JsonObject(mapOf("resetsAtMs" to JsonPrimitive(1_800_000_000_123L))))), null)
         assertEquals(AskOutcome.Capped(AskCap.Allowance.wordless, AskCap.Allowance, retryAtMs = 1_800_000_000_123L), cap)
         for (code in listOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required"))
-            assertEquals(AskOutcome.Refused("Server sentence"), refused(429, code, "Server sentence"))
-        assertEquals(AskOutcome.Refused("Server sentence"), refused(403, "subject_exhausted", "Server sentence"))
+            assertEquals(AskOutcome.Refused("Server sentence", terminal = true), refused(429, code, "Server sentence"))
+        assertEquals(AskOutcome.Refused("Server sentence", terminal = true), refused(403, "subject_exhausted", "Server sentence"))
     }
 
     @Test
@@ -69,7 +69,7 @@ class AskOutcomeTests {
     @Test
     fun testAWorkoutStillOpenIsAnAnswerAndNotAFailure() {
         assertEquals(
-            AskOutcome.Refused("finish your workout first — Coach reads a log that has stopped moving"),
+            AskOutcome.Refused("finish your workout first — Coach reads a log that has stopped moving", terminal = true),
             refused(409, code = "ask-session-open", message = "finish your workout first — Coach reads a log that has stopped moving"),
         )
     }
@@ -94,12 +94,12 @@ class AskOutcomeTests {
 
     @Test
     fun testATerminalRefusalCarriesTheLogsOwnSentence() {
-        assertEquals(AskOutcome.Refused("that isn’t a conversation Coach can answer"),
+        assertEquals(AskOutcome.Refused("that isn’t a conversation Coach can answer", terminal = true),
             refused(400, message = "that isn’t a conversation Coach can answer"))
-        assertEquals(AskOutcome.Refused("sign in to open your training log"),
+        assertEquals(AskOutcome.Refused("sign in to open your training log", terminal = true),
             refused(401, message = "sign in to open your training log"))
         assertEquals("a refusal that arrived wordless still says something true",
-            AskOutcome.Refused("Coach couldn’t take that one"), refused(400))
+            AskOutcome.Refused("Coach couldn’t take that one", terminal = true), refused(400))
     }
 
     // The partial reply already on screen stays with every outcome that can still show it.
@@ -110,7 +110,7 @@ class AskOutcomeTests {
         assertEquals(AskOutcome.Failed("Coach didn’t answer. Try again in a moment", partial), refusing(WindmillApiException.Offline))
         assertEquals(AskOutcome.Capped(Ask.capReached, AskCap.Daily, partial),
             refusing(WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit"))))
-        assertEquals(AskOutcome.Refused("Coach couldn’t take that one", partial), refusing(WindmillApiException.Refused(400, Refusal())))
+        assertEquals(AskOutcome.Refused("Coach couldn’t take that one", partial, terminal = true), refusing(WindmillApiException.Refused(400, Refusal())))
         assertEquals(AskOutcome.Fresh("This conversation is unavailable. Start a new one."),
             refusing(WindmillApiException.Refused(409, Refusal(code = "ask-thread-full"))))
         assertEquals(AskOutcome.Absent, refusing(WindmillApiException.Refused(404, Refusal())))

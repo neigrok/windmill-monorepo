@@ -4,19 +4,23 @@
 - 01.17 Coach asks a choice, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40111) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40235)
 - 01.18 Draft kept on this phone, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40674) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40774)
 - System parts: M3 kit Filter chips, the kit text button; `Android / Chat bubble` `337:2761`.
-- iOS ships both and is the model: the chips in `CoachChoicesView` (`apps/ios/App/Sources/Gym/Coach/CoachSetup.swift:44-71`), the wire type and its limits in `CoachClarification` (`apps/ios/App/Sources/Gym/Coach/CoachWire.swift:128-148`), the kept drafts in `CoachTab.swift:163-176` and their adoption at sign-in in `CoachConversation.swift:83-101`.
+- The shared wire authority is `backend/products/gym/domain/Thread.cpp:41` (`validClarification`) and `backend/products/gym/adapters/json/GymJson.cpp` (`clarificationFromJson`).
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `backend/`)
-- The server sends a clarification with a generation: `clarification` with `id`, `question` and one or two `groups` (`days` single choice, `equipment` multiple), each with options (`backend/products/gym/adapters/json/GymJson.cpp:477-514`, attached at :554 and in `backend/products/gym/adapters/http/AskApi.cpp:307`).
-- Android has no clarification type: the field is dropped and only the answer's text is drawn.
-- A draft is one per seat (`CoachDraft`, `coach/Ask.kt:69`); a draft written signed out is not carried into the account's Coach after sign-in.
+**Current implementation**
+- Android retains optional clarification metadata through live answers, persisted generations and History. Invalid optional metadata leaves the normal answer readable and emits no Issue.
+- Clarifications use one or two unique `days`/`equipment` groups, up to six unique options each, a 500-byte question, 80-byte labels and bounded IDs. Days is single choice; equipment follows the server's `multiple` flag, including its valid single-choice mode.
+- Choices and kept drafts live under the existing owner/chat identity in the same atomic Coach document. A draft includes text, a photo reference and its setup purpose. Selected chips write ordinary composer text; only Send requests an answer.
+- Sign-in moves the phone draft only after a copied photo and its account reference are durable. An existing account draft or pending request holds the complete phone draft separately. Source removal and destination publication share one document write, preventing repeated adoption after restart or account cycling.
+- Continue swaps complete drafts. The approved card displays text only; a photo-only held draft omits the text row and restores its photo through the existing composer. Kept photos participate in reference cleanup.
+- Draft publication reconciles a thrown post-rename write against the actual document. An unreadable result retains attachments and its pending operation; recovery publishes that operation before a stale Continue or chip callback can flush or toggle again. Technical failures use static boundaries.
+- Native captures and installed-event acceptance for these four frames remain pending. Source/JVM acceptance is separate from native acceptance.
 
 **Change**
 - 01.17, choices:
   - Under Coach's question bubble, each group's label (*Days each week*, *Equipment*) over a row of kit Filter chips that wraps (*2 days* · *3 days* · *4 days*; *Barbell* · *Dumbbells* · *Bodyweight*).
-  - `days` takes one choice, `equipment` several. Selected: check, `color/brand-soft` fill, `color/brand` outline and label; unselected: `border/default` outline, `text/primary` label. Each chip is a 48 dp target and says *selected* to TalkBack.
-  - Choosing writes the answer into the composer as iOS does (*3 days. Dumbbells, Bodyweight.*); Send sends it like any question.
-  - The question and labels are the model's words; drop a clarification that breaks iOS's limits (`CoachClarification.valid`) and draw the question as plain text.
+  - `days` takes one choice; `equipment` uses the server’s single/multiple mode (the approved example allows several). Selected: check, `color/brand-soft` fill, `color/brand` outline and label; unselected: `border/default` outline, `text/primary` label. Each chip is a 48 dp target and says *selected* to TalkBack.
+  - Choosing writes the answer into the composer (*3 days. Dumbbells, Bodyweight.*); Send sends it like any question.
+  - The question and labels are the model's words; drop a clarification that breaks the shared backend limits and draw the question as plain text.
 - 01.18, a kept draft:
   - When a draft written signed out on this phone meets an account that already has its own draft, the phone's draft waits in the thread as a card: overline *Draft kept on this phone*, the draft's text, and the text button **Continue saved draft**. The composer keeps the account's draft (*Swap chin-ups for pulldowns*).
   - **Continue saved draft** swaps the two: the kept draft goes into the composer and the composer's draft becomes the kept card.
