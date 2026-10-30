@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -17,6 +18,30 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_event_snapshot_survives_capture_failure_before_database_cleanup(self):
+        for failing in (False, True):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                fixture = capture.Fixture("http://127.0.0.1:8120", "unused")
+                events = '[{"name":"gym_setup_step","props":{"action":"shown"}}]'
+                order = []
+                def query(sql):
+                    order.append("events")
+                    self.assertNotIn("dropped", order)
+                    self.assertIn("ORDER BY id", sql)
+                    return events
+                with patch.object(fixture, "sql", side_effect=query):
+                    try:
+                        with ExitStack() as stack:
+                            stack.callback(order.append, "dropped")
+                            stack.callback(fixture.save_events, output)
+                            if failing:
+                                raise RuntimeError("capture stopped")
+                    except RuntimeError as error:
+                        self.assertEqual("capture stopped", str(error))
+                self.assertEqual(["events", "dropped"], order)
+                self.assertEqual(events + "\n", (output / "events.json").read_text())
+
     def test_launcher_capture_requires_an_empty_account_and_a_boolean_choice(self):
         scenario = {"board": "A4", "name": "onboarding-gym", "account": "empty", "launcher": True}
         capture.validate_scenarios([scenario])
@@ -104,6 +129,22 @@ class DesignCaptureTests(unittest.TestCase):
                 path.write_text(json.dumps(invalid))
                 with self.subTest(fixture=invalid), self.assertRaises(ValueError):
                     capture.read_fixture(path)
+
+    def test_capture_only_accepts_only_an_explicit_empty_training_fixture(self):
+        fixture = {"exercises": [], "routines": [], "history": []}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(json.dumps(fixture))
+            self.assertEqual(fixture, capture.read_fixture(path, capture_only=True))
+            with self.assertRaises(ValueError):
+                capture.read_fixture(path)
+            for invalid in ({"exercises": [], "routines": []}, {**fixture, "connections": True},
+                            {**fixture, "history": [{"routine": 0}]}):
+                path.write_text(json.dumps(invalid))
+                with self.subTest(fixture=invalid), self.assertRaises(ValueError):
+                    capture.read_fixture(path, capture_only=True)
+        with self.assertRaises(ValueError):
+            capture.read_fixture(None, capture_only=True)
 
     def test_connections_fixture_is_an_explicit_boolean_choice(self):
         fixture = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}]}

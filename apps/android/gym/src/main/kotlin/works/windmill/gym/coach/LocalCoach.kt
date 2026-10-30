@@ -22,6 +22,7 @@ data class LocalChat(
     val followEnd: Boolean = true,
     val cap: String? = null,
     val absent: Boolean = false,
+    val setup: Boolean = false,
 ) {
     val title: String get() = history?.title ?: exchanges.firstOrNull()?.question.orEmpty()
 }

@@ -182,6 +182,7 @@ fun ThreadScreen(
     seat: String? = null,
     composerEnabled: Boolean = true,
     onSignIn: (() -> Unit)? = null,
+    onBuildRoutine: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val coach = store.coach
@@ -231,6 +232,7 @@ fun ThreadScreen(
         onAskNew = onAskNew, seed = "", origin = origin, backTo = backTo, onBack = onBack, seat = seat, composerEnabled = composerEnabled,
         composerVisible = !coach.anonymous || coach.anonymousAccess == works.windmill.gym.coach.onboarding.AnonymousCoachAccess.Available,
         onSignIn = onSignIn,
+        onBuildRoutine = onBuildRoutine,
         onThreads = onThreads, onNotes = onNotes, onConnections = onConnections, onOpenRoutine = onOpenRoutine,
         onOpenWorkout = onOpenWorkout, onOpenChat = onOpenChat,
         onReview = { onReview(ThreadProposal(it.id, it.state, it.changeCount, it.routineId, it.routineName, it.createdAtMs)) },

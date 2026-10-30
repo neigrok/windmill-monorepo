@@ -151,14 +151,14 @@ class CoachStore internal constructor(
     val selectedChatId: String?
         get() { restoreArchive(archiveOwner); return selected[archiveOwner] }
 
-    fun freshChat(seed: String = "", id: String = Ids.thread()): String {
+    fun freshChat(seed: String = "", id: String = Ids.thread(), setup: Boolean = false): String {
         val seat = archiveOwner
         restoreArchive(seat)
         archive[seat to id]?.let {
             if (selected[seat] != id) select(seat, id)
             return id
         }
-        val chat = LocalChat(id)
+        val chat = LocalChat(id, setup = setup)
         keepChat(seat, chat, select = true)
         selected[seat] = chat.id
         if (seed.isNotEmpty()) saveDraft(chat.id, CoachDraft(seed))
@@ -471,10 +471,10 @@ class CoachStore internal constructor(
         } catch (failure: Exception) { unsavedDrafts += seat to key; reportFailure("gym.saveDraft", failure); throw failure }
     }
 
-    suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) =
-        importPhoto(key) { withContext(storageDispatcher) {
-            CoachPhotos.read(resolver, uri, maxBytes = if (owner == null) CoachOnboardingLimits.photoBytes else CoachPhotos.maxBytes)
-        } }
+    suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) {
+        val maxBytes = if (owner == null) CoachOnboardingLimits.photoBytes else CoachPhotos.maxBytes
+        importPhoto(key) { withContext(storageDispatcher) { CoachPhotos.read(resolver, uri, maxBytes = maxBytes) } }
+    }
 
     internal suspend fun importPhoto(key: String, prepare: suspend () -> Pair<CoachAttachment, ByteArray>) {
         val seat = archiveOwner

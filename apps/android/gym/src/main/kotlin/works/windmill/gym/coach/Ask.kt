@@ -169,7 +169,6 @@ data class AskExchange(
 
 object Ask {
     const val title = "Coach"
-    const val subtitle = "reads your log · helps with your routines"
     const val placeholder = "Ask about your training"
 
     // The server's own ceiling on one turn.
@@ -213,12 +212,11 @@ object Ask {
     const val interrupted = "Response interrupted. Retry to continue this response."
     const val stopped = "Response stopped."
 
-    const val signedOut = "Coach needs your workout log. Please sign in."
+    const val accessNeedsSignIn = "Coach needs your workout log. Please sign in."
 
     const val notHere = "This Windmill does not have Coach. You can still read your log."
     const val accountRequired = "I need your account to change a routine. Sign in, then ask again."
 
-    val openers = listOf("What’s stalled?", "Which lifts are moving?", "Is my week too light?")
 
     // One phrase per tool the catalog offers Coach, in the lifter's words — the same table the web
     // draws from. A tool absent here is dropped from the step list, never printed by name.
