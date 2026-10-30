@@ -55,8 +55,8 @@ Coach is offered (`agent` other than `withheld`), each an array of
   `propose_routine_change`, `propose_routine_removal` and `share_session` carries it, and an executor
   is handed it as an input: `reviewUrl` is `<appBaseUrl>/#/gym/proposals/<id>` and a share's `url`
   `<appBaseUrl>/#/gym/shared/<token>`. A case whose result links into the app without it fails.
-- `expect` is `{result, sha256, writes}` or `{refused: <code>}`. `propose_workout_change.json`'s
-  cases carry none yet: the server writes them with `WM_GENERATE_ABILITIES=1` once it runs catalog/2. `sha256` is the SHA-256 of the JCS
+- `expect` is `{result, sha256, writes}` or `{refused: <code>}`, written by the server with
+  `WM_GENERATE_ABILITIES=1` (`AbilitiesCorpusTest.cpp`). `sha256` is the SHA-256 of the JCS
   bytes of `result`. A `result` carries only what every executor knows (INV-3): no `rc`, `ru` or
   server admission instant (a proposal's `createdAt`, a note's `updatedAt`), and a server-written
   register only where a replica computes it by rule, as a routine's `revision`.

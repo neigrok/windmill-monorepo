@@ -16,8 +16,9 @@ earlier versions kept and imports the routines they drafted. Its installation id
 
 Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
-records. No executor runs catalog/2 yet; the server and iOS speak catalog/1, in which Coach is
-refused while a workout is open (§4.1).
+records. The server serves catalog/1 and catalog/2 side by side, and its executor runs
+`propose_workout_change`; iOS speaks catalog/1, in which Coach is refused while a workout is open
+(§4.1).
 
 **Adoption:**
 
@@ -196,12 +197,10 @@ The corpus MUST include ties, empty pages, a 10,000-set history, fractional load
 emoji and combining marks.
 
 The corpora hold `abilities/` (18 files), `rules/bodyweight.json` and `turns/`; no case holds a
-10,000-set history yet. `abilities/propose_workout_change.json` holds catalog/2's calls and givens
-without an `expect`, which the server executor writes when it runs catalog/2; no executor claims it
-yet. The server executor writes the `abilities/` expectations and claims every case of the other
-files (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
+10,000-set history yet. The server executor writes the `abilities/` expectations, catalog/2's
+`propose_workout_change.json` included, and claims every case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
 `domain/training-reads.json`, apart from the cases its test lists as other rules. The Swift replica
-executor claims every case of those files; the share cases, which run on the server executor (§4.3),
+executor claims every case of catalog/1's files; the share cases, which run on the server executor (§4.3),
 it checks as refused on the phone. The Swift, Kotlin and web domain suites claim
 `rules/bodyweight.json`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
 Android runs no replica executor. The server loop and the iOS turn driver replay `turns/`.

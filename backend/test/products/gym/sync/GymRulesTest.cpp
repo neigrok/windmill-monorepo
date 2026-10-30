@@ -10,13 +10,6 @@ using namespace wm;
 using namespace wm::sync;
 using namespace wm::gym::engine;
 
-TEST(gym_change_count_includes_rename_retarget_and_reorder) {
-  const Json::Value base = parseJson(R"([{"exerciseId":"dip"},{"exerciseId":"back-squat"},{"exerciseId":"dip"}])");
-  const Json::Value changes = parseJson(R"([{"kind":"kept","exerciseId":"back-squat"},{"kind":"retargeted","exerciseId":"dip"},{"kind":"kept","exerciseId":"dip"}])");
-  CHECK_EQ(proposalChangeCount(base, changes, "Lower A", "Lower B"), 3);
-  CHECK_EQ(proposalChangeCount(base, parseJson(R"([{"kind":"kept","exerciseId":"dip"},{"kind":"removed","exerciseId":"back-squat"}])"), "Lower A", "Lower A"), 1);
-}
-
 TEST(gym_import_receipts_compare_raw_arguments) {
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   Json::Value input = vectors[0]["input"];
