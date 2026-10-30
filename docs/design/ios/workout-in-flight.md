@@ -1,10 +1,6 @@
 # The workout in flight — iOS Gym
 
-Status: ✅ Ready for dev — owner approved 2026-10-30. Built: the rest target (03.20–03.22), the typed
-load and the reps wheel (03.23–03.25), Coach during a workout with its routine proposals applied for
-next time (08.54, 08.56's routine card), and the rest target outside the app on the expanded Island
-and the compact Lock Screen card (04.6, 04.7). Not built yet: the editable plan (03.26–03.32,
-08.55–08.57's workout cards). Boards are on
+Status: ✅ Ready for dev — owner approved 2026-10-30. Every board below is built. Boards are on
 the Gym file's iOS page: 03.20–03.32 in [03 · Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513)
 with the wave's READ ME (`1717:15737`), 04.6 and 04.7 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
 and 08.54–08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
