@@ -838,7 +838,8 @@ import SyncTesting
       RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 10, weightKg: 30)]),
     ]))
     #expect(saved(gym.save(&draft)))
-    let workout = try begin(gym, routine: try #require(gym.routines.first { $0.id == draft.current.id }))
+    let stored: Routine = try #require(gym.routines.first { $0.id == draft.current.id })
+    let workout = try begin(gym, routine: stored)
     #expect(workout.walk.order == [first, second] && workout.selected == first)
     workout.remove(first)
     workout.reconcile()
@@ -966,7 +967,8 @@ import SyncTesting
     ]))
     #expect(saved(gym.save(&draft)))
     harness.sync(); gym.refresh()
-    let workout = try begin(gym, routine: try #require(gym.routines.first { $0.id == draft.current.id }))
+    let stored: Routine = try #require(gym.routines.first { $0.id == draft.current.id })
+    let workout = try begin(gym, routine: stored)
     harness.sync(); gym.refresh(); workout.reconcile()
     #expect(workout.session?.planRevision == nil && workout.selected == first && workout.weightKg == 40 && workout.reps == 5)
     if edits { #expect(workout.revise([.retarget(index: 1, set: 0, target: SetTarget(reps: 6, weightKg: 25))], against: workout.session?.plan)) }
