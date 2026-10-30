@@ -92,7 +92,9 @@ CHANGES · {n} changes*, every edit against the routine — the lifter's and app
 proposals alike — in the proposal card's change rows, and one row
 *Save to {routine}* with a native switch, off by default. Done saves it through the routine save;
 otherwise nothing is written. The receipt keeps one primary. If the routine changed since the workout
-started, the switch gives way to *{routine} changed since you started.* The offer appears once, on
+started, the switch gives way to *{routine} changed since you started.* When the phone cannot tell
+which routine revision the workout started from, the card lists the changes with neither the switch
+nor that sentence. The offer appears once, on
 this receipt; swiping the receipt away saves nothing.
 
 ## Coach during a workout
@@ -114,9 +116,11 @@ this receipt; swiping the receipt away saves nothing.
 ## Outside the app
 
 The expanded Dynamic Island (04.6) shows the rest target under the clock, static, from the plan. The
-Lock Screen card carries it the same way in its compact form, 04.7 (🚧 In progress, task 69): 124 pt
-tall with a 150 × 52 pt Log set. Neither counts it down, fills a bar or changes colour on its own. The
-island stays black in both appearances; compact and minimal are unchanged (04.3).
+Lock Screen card carries it the same way in its compact form, 04.7 (✅ Ready for dev, task 69): 141 pt
+tall, *Set 3 of 4* on its own line and a 150 × 52 pt Log set. Neither counts the target down, fills a
+bar or changes colour on its own. Neither the card nor the island says what is unsent (owner ruling
+2026-10-30); unsent sets are said in the room only, and 04.4 draws the remaining states. The island
+stays black in both appearances; compact and minimal are unchanged (04.3).
 
 ## Events
 
