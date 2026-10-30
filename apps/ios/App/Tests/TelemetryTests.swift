@@ -127,12 +127,12 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   @Test func workoutPlanChangesCarryOnlyTheirActionOutcomeAndDoor() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_plan_changed"))
     for action in ["retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest"] {
-      for door in ["workout", "proposal"] {
-        #expect(TelemetryPrivacy.properties(["action": action, "outcome": "refused", "door": door, "exerciseId": "private-id",
-                                             "name": "private-marker", "weightKg": "105", "reps": "5", "restSeconds": "120"]) ==
-                ["action": .label(action), "outcome": .label("refused"), "door": .label(door)])
-      }
+      #expect(TelemetryPrivacy.properties(["action": action, "outcome": "refused", "door": "workout", "exerciseId": "private-id",
+                                           "name": "private-marker", "weightKg": "105", "reps": "5", "restSeconds": "120"]) ==
+              ["action": .label(action), "outcome": .label("refused"), "door": .label("workout")])
     }
+    // A Coach change applied to the workout reports as gym_proposal_outcome, so no plan change carries a proposal door.
+    #expect(TelemetryPrivacy.properties(["action": "swap", "outcome": "ok", "door": "proposal"]) == ["action": .label("swap"), "outcome": .label("ok")])
   }
 
   @Test func editSetsIsAScreenOfItsOwn() {

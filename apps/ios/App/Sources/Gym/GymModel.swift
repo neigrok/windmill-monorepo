@@ -78,10 +78,10 @@ final class GymModel {
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
   // Coach's changes to the open workout, which of them can no longer be applied and why, and the decisions on them still
-  // waiting on the log's answer.
+  // waiting on the log's answer, by the replica whose queue holds them.
   var workoutProposals: [WorkoutProposal] = []
   var outOfDateWorkoutProposals: [ID<WorkoutProposal>: CoachOutOfDate] = [:]
-  @ObservationIgnored var awaitedWorkoutDecisions: [ID<WorkoutProposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var awaitedWorkoutDecisions: [String: [ID<WorkoutProposal>: CoachQueuedDecision]] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
@@ -373,7 +373,7 @@ final class GymModel {
     case .planLogged: "That movement already has a logged set."
     case .badInstant: "Check the workout's start and finish times."
     case .proposalSettled: "This proposal has already been answered."
-    case .proposalSuperseded: "A newer proposal is available."
+    case .proposalSuperseded(let refused): supersededReason(refused)
     case .other: "Gym could not accept this change. Try again."
     }
   }

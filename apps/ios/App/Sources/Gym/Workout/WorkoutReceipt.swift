@@ -19,6 +19,8 @@ import SyncCore
   var savesPlan = false
   // The routine moved after the card was drawn, so the switch gives way to its sentence.
   var routineMoved = false
+  // Done saved the plan: a second Done closes without saving or reporting again.
+  var planSaved = false
   init(session: Session, sets: [TrainingSet], suggestsKeep: Bool = false, routine: Routine? = nil) {
     self.session = session; self.suggestsKeep = suggestsKeep
     self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
@@ -29,7 +31,7 @@ import SyncCore
   // Done with the switch on saves this workout's plan as the routine, only while the routine stands at the revision the
   // workout started from; true when the receipt may close. A refused or failed save keeps the receipt and says so.
   @MainActor func savePlan(_ gym: GymModel) -> Bool {
-    guard savesPlan, offersSave else { return true }
+    guard savesPlan, offersSave, !planSaved else { return true }
     let report = { (outcome: String) in gym.telemetry.event("gym_receipt_plan_saved", properties: ["outcome": outcome]) }
     let current = gym.routines.first { $0.id == session.routineId }
     guard let current, let plan = session.plan, PlanChanges(session: session, routine: current).offer == .save else {
@@ -40,7 +42,7 @@ import SyncCore
       gym.error = "\(routine) wasn’t changed. Try again."; report("failed"); return false
     }
     switch outcome.refusal {
-    case nil: report("ok"); return true
+    case nil: planSaved = true; report("ok"); return true
     case .stale?: gym.refusal = nil; gym.error = nil; routineMoved = true; report("refused"); return false
     case _?: gym.error = "\(routine) wasn’t changed. Try again."; report("refused"); return false
     }

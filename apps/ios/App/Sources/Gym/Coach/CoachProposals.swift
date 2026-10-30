@@ -84,17 +84,37 @@ extension GymModel {
     return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate,
                               workoutProposals: workouts, workoutQueued: workoutQueued, workoutOutOfDate: workoutOutOfDate)
   }
+  // The log's refusal of a proposal out of date, said as its card says it (08.57): the refusal's reason, the movement a
+  // change to this workout touches that took a set since, and the routine a routine proposal changes.
+  func supersededReason(_ refused: Refused) -> String {
+    let workout = workoutProposals.first { $0.id.ref == refused.subject }
+    let routine = proposals.first { $0.id.ref == refused.subject }
+    let moved = workout.flatMap { proposal in
+      proposal.changes.first { change in change.kind != "kept" && sets.contains { $0.sessionId == proposal.sessionId && $0.exerciseId == change.exerciseId } }
+    }
+    let reason: CoachOutOfDate? = switch try? refused.detail?.member("reason").asString() {
+    case "replaced": .replaced
+    case "routine-changed": .routineChanged
+    case "workout-changed": .workoutChanged
+    case "workout-finished": .workoutFinished
+    case "workout-moved": moved.map { .workoutMoved($0.exerciseId) } ?? .workoutChanged
+    default: nil
+    }
+    guard let reason else { return "This suggestion is out of date. Nothing was applied." }
+    return CoachCopy.outOfDateReason(reason, routine: routine.flatMap { $0.baseName ?? coachRoutine($0)?.name } ?? "The routine", catalogue: catalogue)
+  }
   func updateCoachProposals(_ read: CoachProposalsRead) {
     if proposalReadReplica != read.replica || isAnonymous {
       shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:]
-      sentCoachApplies = []; landedCoachApplies = []; refusedCoachApplies = []; awaitedWorkoutDecisions = [:]
+      sentCoachApplies = []; landedCoachApplies = []; refusedCoachApplies = []
     }
     proposalReadReplica = read.replica
     publish(\.workoutProposals, read.workoutProposals)
     publish(\.outOfDateWorkoutProposals, read.workoutOutOfDate)
-    // A decision on a workout proposal is recorded once the log's answer reaches the phone, as a routine proposal's is.
-    for (id, decision) in awaitedWorkoutDecisions where !read.workoutQueued.contains(id) {
-      awaitedWorkoutDecisions[id] = nil
+    // A decision on a workout proposal is recorded once the log's answer reaches the replica that queued it, as a routine
+    // proposal's is; a read of another replica, another account's or a signed-out one, leaves it waiting.
+    for (id, decision) in awaitedWorkoutDecisions[read.replica] ?? [:] where !read.workoutQueued.contains(id) {
+      awaitedWorkoutDecisions[read.replica]?[id] = nil
       let taken = read.workoutProposals.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
       telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "workout", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])
     }
@@ -265,14 +285,15 @@ extension GymModel {
     let decision: CoachQueuedDecision = apply ? .apply : .reject
     let outcome = apply ? run(ApplyWorkoutProposal(proposal.id)) : run(DismissWorkoutProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
-    let queued: Bool
+    // The replica whose queue holds the decision, nil once the log has answered it or when the queue cannot be read.
+    let queuedIn: String?
     do {
-      queued = try runner.read(Gym.scope) { read in
+      queuedIn = try runner.read(Gym.scope) { read in
         try read.commands().contains { [Gym.Commands.applyWorkoutProposal, Gym.Commands.dismissWorkoutProposal].contains($0.command.name)
-          && $0.command.args["proposalId"] == proposal.id.json }
+          && $0.command.args["proposalId"] == proposal.id.json } ? read.replica : nil
       }
-    } catch { report("gym_read", error); queued = false }
-    if ok && queued { awaitedWorkoutDecisions[proposal.id] = decision }
+    } catch { report("gym_read", error); queuedIn = nil }
+    if ok, let queuedIn { awaitedWorkoutDecisions[queuedIn, default: [:]][proposal.id] = decision }
     else { telemetry.event("gym_proposal_outcome", properties: ["screen": "coach", "target": "workout", "action": decision.rawValue, "outcome": ok ? "decided" : "failed"]) }
     if ok, let runtime { Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() } }
     return ok

@@ -125,6 +125,6 @@ stays black in both appearances; compact and minimal are unchanged (04.3).
 ## Events
 
 Product events through `/v1/events`, allowlisted labels only:
-`gym_workout_plan_changed {action: retarget | add_set | remove_set | swap | add_movement | remove_movement | rest, outcome: ok | refused | failed, door: workout | proposal}`,
+`gym_workout_plan_changed {action: retarget | add_set | remove_set | swap | add_movement | remove_movement | rest, outcome: ok | refused | failed, door: workout}` for the lifter's own edits,
 `gym_rest_target_reached` (no duration), `gym_receipt_plan_saved {outcome}`, and
-`gym_proposal_outcome` with `target: workout | routine`.
+`gym_proposal_outcome` with `target: workout | routine`, which alone reports a Coach change applied to the workout.
