@@ -645,3 +645,9 @@ The typed `subject_exhausted` notice preserves the refused input and emits `gym_
 `outcome=capped`, `cap=allowance`; anonymous sends also carry `state=anonymous`. Its Sign in door
 emits `gym_setup_step` with `action=sign_in`. Expected 429 responses produce no Issue. Reset dates,
 allowance amounts, server sentences and draft text are excluded from these events.
+
+The You sheet opens Notes and Connected log directly. Their existing `gym_screen_viewed`
+values remain `notes` and `connections`; the retired `settings` route emits no view event.
+About Windmill retains its onboarding replay events. Restoring malformed or unknown navigation
+reports `gym.restoreNavigation`; removal of a known retired Settings entry is a migration, not a failure.
+The removed units control emits no events. Android reads confirmation feedback without changing shared wire units; no preferences-write UI remains.

@@ -30,4 +30,21 @@ class GymTabsTests {
         assertEquals(listOf("Routines", "The log", "Coach"), Tab.entries.map { it.title })
         assertEquals("home is the first seat on the rail", Tab.Routines, Tab.entries.first())
     }
+    @Test fun retiredSettingsIsRemovedWithoutLosingOtherRoutes() {
+        val raw = """[{"type":"works.windmill.gym.Away.Notes"},{"type":"works.windmill.gym.Away.Settings"},{"type":"works.windmill.gym.Away.Connections"}]"""
+        assertEquals(listOf(Away.Notes, Away.Connections), awaySaver(works.windmill.platform.telemetry.Telemetry.None).restore(raw))
+    }
+
+    @Test fun unknownOrMalformedRoutesStillReportOneStaticRestoreFailure() {
+        val failures = mutableListOf<String>()
+        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+            override fun event(name: String, properties: Map<String, String>) = Unit
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        for (raw in listOf("""[{"type":"unknown"}]""", "null", "not json")) {
+            assertEquals(emptyList<Away>(), awaySaver(telemetry).restore(raw))
+        }
+        assertEquals(List(3) { "gym.restoreNavigation" }, failures)
+    }
+
 }
