@@ -142,6 +142,18 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   proposal.removeMember("position");
   proposal["routineId"] = routineId;
   REQUIRE(!proposals.callTool("propose_routine_change", proposal, caller).isError);
+  Json::Value start = startBody("ses_coach001", h.clock.now - 120000);
+  start["routineId"] = routineId;
+  REQUIRE(!h.call("start_session", start).isError);
+  std::vector<RoutineEntry> plan = h.repo.program.routine(h.user, RoutineId{routineId})->entries;
+  plan.push_back(RoutineEntry{static_cast<int>(plan.size()) + 1, ExerciseId{"back-squat"}, {}, std::nullopt});
+  REQUIRE(h.door.proposeWorkout(h.user, WorkoutProposalWrite{ProposalId{"wprop_coach01"}, SessionId{"ses_coach001"}, "Add squats",
+                                plan, ProposalSource{ProposalDoor::ask, "", "", thread}}).proposal);
+  {
+    PgLease connection{*doortest::pool()};
+    pqxx::work read{*connection};
+    CHECK_EQ(read.exec("select thread_id from gym_workout_proposals where id='wprop_coach01'")[0][0].as<std::string>(), thread.str());
+  }
   const auto stored = h.repo.program.proposal(h.user, ProposalId{"prop_coach001"});
   REQUIRE(stored);
   CHECK_EQ(stored->head.source.door, ProposalDoor::ask);
@@ -171,6 +183,10 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE_EQ(unlink.size(), std::size_t{1});
   CHECK(unlink[0]["thread_id"].is_null());
   CHECK_FALSE(unlink[0]["thread_id_stamp"].is_null());
+  const auto unlinkedWorkout = txn.exec("select thread_id,thread_id_stamp from gym_workout_proposals where id='wprop_coach01'");
+  REQUIRE_EQ(unlinkedWorkout.size(), std::size_t{1});
+  CHECK(unlinkedWorkout[0]["thread_id"].is_null());
+  CHECK_FALSE(unlinkedWorkout[0]["thread_id_stamp"].is_null());
   CHECK(h.failures.messages.empty());
 }
 

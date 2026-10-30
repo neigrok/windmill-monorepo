@@ -719,15 +719,15 @@ const RULES = {
     }
   },
 
-  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals naming it.
+  // A conversation (gym Coach §9.1): its death kills its messages and unlinks the proposals of both kinds naming it.
   thread(ctx, record, { rowsOf, append }) {
     if (created(record) && !isSet(valueOf(record.after, 'title'))) throw new Refusal('invalid');
     if (!died(record)) return;
     for (const message of rowsOf('message')) {
       if (isAlive(message) && valueOf(message, 'threadId') === record.after.id) append({ t: 'message', id: message.id, born: message.born, life: ['dead', null] });
     }
-    for (const proposal of rowsOf('proposal')) {
-      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: 'proposal', id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
+    for (const proposal of [...rowsOf('proposal'), ...rowsOf('workoutProposal')]) {
+      if (isAlive(proposal) && valueOf(proposal, 'threadId') === record.after.id) append({ t: proposal.t, id: proposal.id, born: proposal.born, f: { threadId: [null, null] } });
     }
   },
 

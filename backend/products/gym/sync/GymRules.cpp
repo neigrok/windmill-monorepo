@@ -618,7 +618,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       for (const auto& [key, row] : joined) {
         if (!row.alive() || value(&row, "threadId") != after.id.json()) continue;
         if (row.t == "message") append(death(row));
-        if (row.t == "proposal") append(fields(row, object({{"threadId", Json::Value()}})));
+        if (row.t == "proposal" || row.t == "workoutProposal") append(fields(row, object({{"threadId", Json::Value()}})));
       }
       continue;
     }

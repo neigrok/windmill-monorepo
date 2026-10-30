@@ -170,12 +170,15 @@ void GymDoor::closeStale(const UserId& user) {
 
 void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const auto rows = sync::sqlOf(txn).exec("select id from gym_proposals where user_id=$1::uuid and thread_id=$2 order by id", pqxx::params{user.str(), thread.str()});
+    const auto rows = sync::sqlOf(txn).exec(
+        "select 'proposal', id from gym_proposals where user_id=$1::uuid and thread_id=$2 "
+        "union all select 'workoutProposal', id from gym_workout_proposals where user_id=$1::uuid and thread_id=$2 order by 1, 2",
+        pqxx::params{user.str(), thread.str()});
     if (rows.empty()) return std::nullopt;
     auto value = intent();
     Json::Value fields(Json::objectValue);
     fields["threadId"] = Json::nullValue;
-    for (const auto& row : rows) value["d"].append(delta("proposal", row[0].as<std::string>(), fields));
+    for (const auto& row : rows) value["d"].append(delta(row[0].as<std::string>(), row[1].as<std::string>(), fields));
     return value;
   });
   requireOk(result);

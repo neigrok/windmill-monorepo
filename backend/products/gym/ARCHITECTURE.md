@@ -964,7 +964,7 @@ between a door's read and its admission reaches the engine's own refusal.
 | `createExercise` · `create_exercise` | the caller's custom movement under the id → it; else an `exercise` create, `stepKg` at the column's precision | `id-taken`, `id-spent` → `idTaken` |
 | `saveInsight` · `save_note` | its `gym_note_saves` receipt, the caller's with this text → the saved note, else `idTaken`; a note under the id that is another account's or holds other text → `idTaken`; a standing note with this title and body → that note, the id spent, at ten too; the id held or spent → `idTaken`; ten notes → `full`; else a `note` create after the last `ord`, its receipt written before the commit | `cap` → `full`; `id-taken`, `id-spent` → `idTaken` |
 | `closeStale` · every settling read, `start`, `importSession` | before the call: the open session and its sets; none open, or not `isStale` → nothing admitted; else `gym.closeStale` | none mapped |
-| `unlinkThread` · a Coach conversation's delete | the proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
+| `unlinkThread` · a Coach conversation's delete | the routine and workout proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
 | `interrupt` · no caller yet; gym Coach §4.5 | the `message` under the id: absent, dead or its `state` not `running` (unset reads as `running`) → nothing admitted; else `state = interrupted` | none mapped |
 
 An engine refusal a door does not map is `GymUnavailable` (`gym-engine-unavailable`); an internal

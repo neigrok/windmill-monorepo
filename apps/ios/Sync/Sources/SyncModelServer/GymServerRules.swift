@@ -505,7 +505,7 @@ public struct GymServerRules: ServerRules {
         for message in records("message") where message.isAlive && value(message, "threadId") == row.key.id.json {
           append(.serverDelete(message.key, born: message.lattice.born))
         }
-        for proposal in records("proposal") where proposal.isAlive && value(proposal, "threadId") == row.key.id.json {
+        for proposal in records("proposal") + records("workoutProposal") where proposal.isAlive && value(proposal, "threadId") == row.key.id.json {
           append(.serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["threadId": .null]))
         }
       case "message":
