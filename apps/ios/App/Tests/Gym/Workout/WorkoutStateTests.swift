@@ -898,6 +898,23 @@ import SyncTesting
     #expect(workout.sets.map(\.weightKg) == [52.5])
   }
 
+  // Numbers the lifter left on a movement come back as theirs, so an edit of its current slot leaves them; a movement left
+  // untouched still follows the edit.
+  @Test func aDraftBroughtBackIsTheLiftersAndAPlanEditLeavesIt() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40), SetTarget(reps: 5, weightKg: 40)])
+    let workout = try begin(gym, routine: plan)
+    workout.select(second); workout.select(first)
+    #expect(workout.revise([.retarget(index: 0, set: 0, target: SetTarget(reps: 4, weightKg: 45))], against: workout.session?.plan))
+    #expect(workout.weightKg == 45 && workout.reps == 4)
+    workout.weightKg = 55
+    #expect(workout.flushRack())
+    workout.select(second); workout.select(first)
+    #expect(workout.weightKg == 55 && workout.reps == 4)
+    #expect(workout.revise([.retarget(index: 0, set: 0, target: SetTarget(reps: 3, weightKg: 70))], against: workout.session?.plan))
+    #expect(workout.weightKg == 55 && workout.reps == 4)
+    #expect(workout.ledger(first).current.target == SetTarget(reps: 3, weightKg: 70))
+  }
+
   // The log confirming the start, or a plan edit of another movement, stamps revisions the rack does not read: the rack the
   // lifter adjusted and the durable offer minted over it both stand, and the offer logs.
   @Test(arguments: [true, false]) func theLogsConfirmationKeepsTheAdjustedRackAndItsOffer(edits: Bool) throws {

@@ -142,7 +142,7 @@ extension WorkoutState {
   func restoreActivityDraft() {
     guard let record = try? activityRecord(), record.baseline == activityBaseline, let offer = record.offer,
           offer.movementID == selected?.description else { return }
-    restoreRack(weightKg: offer.weightKg, reps: offer.reps)
+    restoreDraft(Prefill(weightKg: offer.weightKg, reps: offer.reps))
   }
   // Every outside Log set that logs nothing says why: refused when the rack has moved past it or a rule of the log refuses
   // the set, failed when the phone cannot read or save it.

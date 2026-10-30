@@ -266,8 +266,9 @@ struct FinishWorkout: Action {
   }
   // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
   private(set) var adjustments = 0
-  // The count at the last prefill: a plan edit moves the rack only while the lifter has not touched it since.
-  @ObservationIgnored private var prefilledAt = 0
+  // The rack holds what the last prefill put there: a plan edit moves the rack only while the lifter has not touched it, nor
+  // brought back numbers of their own, since.
+  @ObservationIgnored private var rackPrefilled = true
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
   var message: String?
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
@@ -306,6 +307,7 @@ struct FinishWorkout: Action {
   }
   func editRack(weightKg: Double, reps: Int) {
     guard weightKg != self.weightKg || reps != self.reps else { return }
+    rackPrefilled = false
     if rackBase == nil { rackBase = Prefill(weightKg: self.weightKg, reps: self.reps) }
     rackWeightKg = weightKg; rackReps = reps
     rackSave?.cancel()
@@ -450,12 +452,18 @@ struct FinishWorkout: Action {
     guard let session, let selected else { offerSession = nil; return }
     let value = Prefill.of(todaySets: currentSets, planEntry: entry, lastTime: gym.log?.lastTime(for: selected))
     restoreRack(weightKg: value.weightKg, reps: min(99, value.reps))
-    offerSession = session; offerSets = sets; prefilledAt = adjustments
+    offerSession = session; offerSets = sets; rackPrefilled = true
+  }
+  // Numbers the lifter left on the rack come back as theirs: a draft kept for the movement, or the offer outside the app.
+  func restoreDraft(_ draft: Prefill) {
+    guard draft.weightKg != weightKg || draft.reps != reps else { return }
+    restoreRack(weightKg: draft.weightKg, reps: draft.reps)
+    rackPrefilled = false
   }
   // A plan edit prefills the rack again only when it changed the selected movement's current slot and the lifter has not
   // touched the rack since its last prefill.
   func rackFollows(from previous: Session, to next: Session) -> Bool {
-    guard let selected, rackBase == nil, adjustments == prefilledAt else { return false }
+    guard let selected, rackBase == nil, rackPrefilled else { return false }
     let slot = { (session: Session) in
       MovementLedger(sets: self.currentSets, plan: session.plan?.entries.first { $0.exerciseId == selected }).current.target
     }
@@ -474,7 +482,7 @@ struct FinishWorkout: Action {
     var next = walk; next.selected = id
     guard keep(next) else { return }
     prefill()
-    if let draft = drafts[id] { restoreRack(weightKg: draft.weightKg, reps: draft.reps) }
+    if let draft = drafts[id] { restoreDraft(draft) }
   }
   @discardableResult func add(_ id: ID<Exercise>) -> Bool {
     guard session?.isOpen == true, !walk.order.contains(id), gym.catalogue.find(id) != nil,
