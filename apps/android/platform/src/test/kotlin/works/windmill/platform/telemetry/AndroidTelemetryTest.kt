@@ -29,6 +29,16 @@ import works.windmill.platform.net.WindmillJson
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class AndroidTelemetryTest {
+    @Test fun coachSetupKeepsBoundedActionsAndDropsDraftAndPhotoMetadata() {
+        for (action in listOf("shown", "screenshot", "build_manually")) {
+            val labels = mapOf("screen" to "coach", "action" to action)
+            assertEquals(labels, TelemetryPolicy.eventProperties("gym_setup_step", labels + mapOf(
+                "question" to "private", "file_name" to "private", "photo_bytes" to "100", "operation" to "private")))
+        }
+        assertEquals(mapOf("screen" to "coach"), TelemetryPolicy.eventProperties("gym_setup_step",
+            mapOf("screen" to "coach", "action" to "private-draft-text")))
+    }
+
     @Test fun routineFormAndOuterSaveKeepOnlyBoundedOutcomes() {
         val allowed = listOf("open" to "ok", "cancel" to "ok", "stage" to "ok", "stage" to "refused")
             .map { (action, outcome) -> mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome) } +

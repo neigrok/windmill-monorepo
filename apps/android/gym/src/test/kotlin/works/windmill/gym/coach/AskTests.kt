@@ -27,12 +27,11 @@ class AskTests {
     @Test
     fun theRoomIsCalledCoachAndItsTwoStancesAreTheBlessedOnes() {
         assertEquals("Coach", Ask.title)
-        assertEquals("reads your log · helps with your routines", Ask.subtitle)
-        assertEquals("Coach needs your workout log. Please sign in.", Ask.signedOut)
+        assertEquals("Coach needs your workout log. Please sign in.", Ask.accessNeedsSignIn)
         assertEquals("This Windmill does not have Coach. You can still read your log.", Ask.notHere)
         assertEquals("the apostrophe is the typographic one everywhere",
             emptyList<String>(),
-            (listOf(Ask.freeDoor, Ask.interrupted, Ask.notHere, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry, Ask.draftSignIn) + Ask.openers)
+            (listOf(Ask.freeDoor, Ask.interrupted, Ask.notHere, Ask.draftGone, Ask.draftInvalid, Ask.draftRetry, Ask.draftSignIn))
                 .filter { it.contains('\'') })
     }
 

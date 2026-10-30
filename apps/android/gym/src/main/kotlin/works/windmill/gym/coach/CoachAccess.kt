@@ -31,7 +31,7 @@ import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.YouSeat
 
 @Composable
-fun AskSignedOutStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
+fun CoachAccessStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null, bound: Boolean = false) {
     val skin = LocalGymColors.current
     GymScreen(title = Ask.title, actions = {
         onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
@@ -49,7 +49,7 @@ fun AskSignedOutStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Uni
                 }
             } else {
                 Spacer(Modifier.weight(1f))
-                Text(Ask.signedOut, style = CoachType.body(18).copy(lineHeight = 26.sp), color = skin.inkDim,
+                Text(Ask.accessNeedsSignIn, style = CoachType.body(18).copy(lineHeight = 26.sp), color = skin.inkDim,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.weight(1f))
             }
