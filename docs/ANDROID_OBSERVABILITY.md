@@ -127,7 +127,7 @@ result updates the retained credential's state before another Send; bound reques
 their original result by GET.
 
 Coach setup emits `gym_setup_step` with `screen=coach` and the bounded actions
-`shown|screenshot|build_manually|photo_selected|photo_removed`. Photo selection and removal emit only
+`shown|screenshot|build_manually|photo_selected|photo_removed|sign_in`. Photo selection and removal emit only
 after the draft reference is saved; failed removal retains the previous reference. Picking a photo
 does not send a model request. No photo bytes, size, filename, URI or identifier enters these events.
 Signed-out photo preparation failures report once under `gym.coachOnboarding`; signed-in preparation
@@ -632,3 +632,8 @@ The Record native recipe reaches first-party intake with four `gym_screen_viewed
 workout identity, estimate or load. Opening the menu/editor and cancelling writes no edit; the
 accepted local fixture retains all 18 sets and six finished workouts. Existing progress failures
 stay at `gym.loadProgress`; the native capture does not inject a storage failure.
+
+The typed `subject_exhausted` notice preserves the refused input and emits `gym_ask_outcome` with
+`outcome=capped`, `cap=allowance`; anonymous sends also carry `state=anonymous`. Its Sign in door
+emits `gym_setup_step` with `action=sign_in`. Expected 429 responses produce no Issue. Reset dates,
+allowance amounts, server sentences and draft text are excluded from these events.
