@@ -88,6 +88,7 @@ class SyncRuntimeTests {
         val maximumPushes = AtomicInteger()
         @Volatile var failPush = false
         val opened = CompletableDeferred<Socket>()
+        var liveAnswer: CompletableDeferred<Reply<LiveConnection>>? = null
         val hellos = Channel<String?>(Channel.UNLIMITED)
         var holdsRecords = false
         var schema = 2L
@@ -125,6 +126,7 @@ class SyncRuntimeTests {
         }
         override suspend fun openLive(token: String): Reply<LiveConnection> {
             opening.incrementAndGet()
+            liveAnswer?.let { return it.await() }
             liveRefusal?.let { return Reply.Failed(it) }
             if (refuseReopen && opened.isCompleted) return Reply.Unreachable
             opened.complete(socket); return Reply.Answer(socket)
@@ -133,14 +135,15 @@ class SyncRuntimeTests {
     private inner class Fixture(bound: Boolean = true, snapshot: Json? = null,
         sleeper: EngineSleeper = object : EngineSleeper { override suspend fun sleep(ms: Long) = awaitCancellation() },
         pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
-        registry: Registry = this@SyncRuntimeTests.registry) : AutoCloseable {
+        registry: Registry = this@SyncRuntimeTests.registry, activityAllowed: () -> Boolean = { true },
+        signOutDrainAllowed: () -> Boolean = activityAllowed) : AutoCloseable {
         val events = CopyOnWriteArrayList<EngineEvent>()
         val tokens = Tokens()
         val clock = Clock()
         val identities = Identities()
         val engine = Engine.memory(registry, snapshot, clock, identities, "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
-        val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"))
+        val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"), activityAllowed = activityAllowed, signOutDrainAllowed = signOutDrainAllowed)
         init { if (bound) tokens.save("A", "token:A"); if (bound && snapshot == null) engine.signIn("A", mapOf("probe" to false)) }
         fun create(held: Boolean = false) = engine.commit(product, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001")),
             mapOf("title" to Json.of("Title")))), hold = held))
@@ -157,6 +160,144 @@ class SyncRuntimeTests {
     private suspend fun until(body: () -> Boolean) = withTimeout(2_000) { while (!body()) delay(5) }
     private suspend fun <T> settles(expected: T, actual: () -> T) { withTimeoutOrNull(2_000) { while (actual() != expected) delay(5) }; assertEquals(expected, actual()) }
     private val upgradeRequired = SyncResponse(426, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "error" to Json.of("upgrade-required")))
+
+    @Test fun pendingDiscardDoesNotLaunchPruneReleaseOrSendBeforeExactRecovery() = runBlocking {
+        val permitted = AtomicBoolean(false)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            fixture.tokens.save("older-account", "older-token")
+            fixture.create(held = true)
+            fixture.clock.wall = 100_000
+            var guardReads = 0
+            val guard = object : ForkGuardStore {
+                override fun load(): String? { guardReads++; return null }
+                override fun save(value: String) = Unit
+            }
+            val before = fixture.engine.snapshot()
+            fixture.runtime.launch(guard)
+            fixture.runtime.connectivity(true)
+            fixture.runtime.enter()
+            assertFalse(fixture.runtime.senderStep(leaving = true))
+            delay(50)
+            assertEquals(before, fixture.engine.snapshot())
+            assertEquals(0, guardReads)
+            assertEquals(mapOf("A" to "token:A", "older-account" to "older-token"), fixture.tokens.values.toMap())
+            assertEquals("held", fixture.engine.device.current().entries().single().state)
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            assertTrue(fixture.transport.hellos.tryReceive().isFailure)
+            val recovery = fixture.runtime.signOut()
+            assertEquals("A", recovery.account)
+            assertEquals(1, recovery.unsent)
+            recovery.finish(SignOutChoice.discard)
+            assertEquals("anon", fixture.engine.device.current().state)
+            assertTrue(fixture.engine.dormantReplicas().isEmpty())
+            assertNull(fixture.tokens.token("A"))
+            assertEquals("older-token", fixture.tokens.token("older-account"))
+        }
+    }
+
+    @Test fun cancellingAHoldResumesOnlyAfterLatestOnlineAndForegroundStateAreApplied() = runBlocking {
+        val permitted = AtomicBoolean(false)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            fixture.create()
+            val question = fixture.runtime.signOut()
+            fixture.runtime.enter()
+            fixture.runtime.connectivity(true)
+            question.cancel()
+            permitted.set(true)
+            fixture.runtime.connectivity(false)
+            assertFalse(fixture.runtime.senderStep())
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            fixture.runtime.connectivity(true)
+            assertFalse(fixture.runtime.senderStep())
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            fixture.runtime.enter()
+            val push = fixture.push()
+            assertEquals("token:A", push.token)
+            push.answer.complete(ok(push.request))
+            until { fixture.engine.device.current().entries().all { it.state != "sent" } }
+        }
+    }
+
+    @Test fun explicitPreparationDrainsBeforeCountingButDurableRecoveryNeverFlushes() = runBlocking {
+        val durable = AtomicBoolean(false)
+        Fixture(activityAllowed = { false }, signOutDrainAllowed = { !durable.get() }).use { fixture ->
+            fixture.create()
+            assertFalse(fixture.runtime.senderStep(leaving = true))
+            val preparing = async { fixture.runtime.signOut() }
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            val prepared = preparing.await()
+            assertEquals(0, prepared.unsent)
+            prepared.cancel()
+            fixture.engine.commit(product, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0002")), mapOf("title" to Json.of("Another"))))))
+            durable.set(true)
+            val before = fixture.engine.device.current().entries().map { it.json }
+            val recovery = fixture.runtime.signOut()
+            assertEquals(1, recovery.unsent)
+            assertEquals(before, fixture.engine.device.current().entries().map { it.json })
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            recovery.finish(SignOutChoice.discard)
+            assertTrue(fixture.engine.dormantReplicas().isEmpty())
+        }
+    }
+
+    @Test fun aDelayedPullCannotApplyOrStartAnotherBatchAfterTheFenceCloses() = runBlocking {
+        val permitted = AtomicBoolean(true)
+        Fixture(bound = false, activityAllowed = permitted::get).use { fixture ->
+            fixture.transport.controlPulls = true
+            repeat(Constants.PULL_MAX_SCOPES + 1) { fixture.engine.subscribe(ScopeRef.tree("b_${(it + 1).toString().padStart(8, '0')}")) }
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            assertEquals(Constants.PULL_MAX_SCOPES, pull.request.member("scopes").arr().size)
+            permitted.set(false)
+            val before = fixture.engine.snapshot()
+            pull.answer.complete(Reply.Failed(upgradeRequired))
+            assertFalse(fixture.runtime.pullerStep())
+            assertFalse(fixture.runtime.upgradeRequired)
+            assertEquals(before, fixture.engine.snapshot())
+            assertEquals(1, fixture.transport.pulling.get())
+            assertTrue(fixture.transport.pulls.tryReceive().isFailure)
+        }
+    }
+
+    @Test fun aDelayedLiveHandshakeIsClosedWithoutProcessingAfterTheFenceCloses() = runBlocking {
+        val permitted = AtomicBoolean(true)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            val answer = CompletableDeferred<Reply<LiveConnection>>()
+            fixture.transport.liveAnswer = answer
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            until { fixture.transport.opening.get() == 1 }
+            permitted.set(false)
+            val before = fixture.engine.snapshot()
+            answer.complete(Reply.Answer(fixture.transport.socket))
+            pull.answer.complete(Reply.Unreachable)
+            withTimeout(2_000) { fixture.transport.socket.closed.await() }
+            assertEquals(before, fixture.engine.snapshot())
+            assertTrue(fixture.transport.socket.sends.isEmpty())
+            assertEquals(1, fixture.transport.opening.get())
+        }
+    }
+
+    @Test fun aDelayedLiveFrameCannotMutateTheHeldAccount() = runBlocking {
+        val permitted = AtomicBoolean(true)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val socket = withTimeout(2_000) { fixture.transport.opened.await() }
+            until { socket.sends.any { it["op"] == Json.of("sub") } }
+            permitted.set(false)
+            val before = fixture.engine.snapshot()
+            socket.frames.send(Json.objectOf("op" to Json.of("change"), "scope" to Json.of(product.text),
+                "as" to Json.of("different-account"), "epoch" to Json.of("ep-1"), "seq" to Json.of(1)))
+            pull.answer.complete(Reply.Unreachable)
+            withTimeout(2_000) { socket.closed.await() }
+            assertEquals(before, fixture.engine.snapshot())
+            assertFalse(fixture.engine.device.current().meta.member("authPaused").bool())
+        }
+    }
 
     @Test fun deliveryUsesTheRegistryMinimumRatherThanItsAdditiveVersion() = runBlocking {
         val client = Registry(registry.json.with("version" to Json.of(7), "minVersion" to Json.of(4)))

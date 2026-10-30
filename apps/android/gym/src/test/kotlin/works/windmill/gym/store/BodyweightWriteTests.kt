@@ -12,6 +12,36 @@ import works.windmill.gym.domain.*
 class BodyweightWriteTests {
     @get:Rule val tmp = TemporaryFolder()
 
+    @Test fun transitionFenceBlocksQueuedHoldUndoAndReleaseWithoutLosingTheOffer() = runTest {
+        var permitted = true
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, workoutAuthority = { permitted },
+            writeAuthority = { permitted }).use { room ->
+            room.select("a")
+            val day = "2026-01-01"
+            assertNull(room.store.weighIn(day, 82.0))
+            val before = room.engine.snapshot()
+            room.store.withhold(Deletion.Bodyweight(day))
+            permitted = false
+            runCurrent()
+            assertEquals(before, room.engine.snapshot())
+            assertTrue(room.store.withheld.isEmpty())
+            permitted = true
+            room.store.withhold(Deletion.Bodyweight(day))
+            runCurrent()
+            val offer = room.store.withheld.single()
+            val held = room.engine.snapshot()
+            permitted = false
+            assertNull(room.store.keepWithheld())
+            assertTrue(room.store.settleWithheld(offer.subjectId) is WriteFailure.Refused)
+            assertEquals(held, room.engine.snapshot())
+            assertEquals(listOf(offer), room.store.withheld)
+            permitted = true
+            assertEquals(offer, room.store.keepWithheld())
+            assertEquals(listOf(day), room.training.weighins().map { it.dateLocal })
+            assertTrue(room.store.withheld.isEmpty())
+        }
+    }
+
     @Test
     fun aCorrectionUsesTheCommitMomentEvenWhenTheOldRecordedAtIsAhead() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

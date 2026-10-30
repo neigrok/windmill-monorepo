@@ -18,6 +18,11 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import works.windmill.platform.User
+import works.windmill.platform.auth.AuthLifecycle
+import works.windmill.platform.auth.AuthSignOutChoice
+import works.windmill.platform.auth.AuthSignOutSession
+import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.auth.MagicLink
@@ -30,6 +35,78 @@ class YouSheetTests {
     private val server = MockWebServer()
     @Before fun start() { server.start() }
     @After fun stop() { server.shutdown() }
+
+    private class HeldSignOut(private val count: Int) : AuthLifecycle {
+        var prepares = 0
+        var cancels = 0
+        val choices = mutableListOf<AuthSignOutChoice>()
+        override suspend fun signedIn(user: User, token: String, restoring: Boolean) = Unit
+        override suspend fun signOut(): Unit = error("Only the confirmed prepared handle can sign out.")
+        override suspend fun prepareSignOut(account: String): AuthSignOutSession {
+            prepares++
+            return object : AuthSignOutSession {
+                override val account = account
+                override val unsent = count
+                override suspend fun finish(choice: AuthSignOutChoice) { choices += choice }
+                override suspend fun cancel() { cancels++ }
+            }
+        }
+    }
+
+    @Test fun unsentQuestionSurvivesRecreationAndCancelLeavesTheAccountWritable() {
+        val user = User("u1", "lifter@example.com")
+        val sessions = MemorySessions("secret", user)
+        val lifecycle = HeldSignOut(3)
+        server.enqueue(MockResponse().setResponseCode(503))
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = lifecycle)
+        runBlocking { auth.restore() }
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { WindmillMaterial { YouSheet(auth, {}) } }
+        compose.onNodeWithText("Sign out").performClick()
+        compose.onNodeWithText("Sign out?").assertIsDisplayed()
+        compose.onNodeWithText("3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.").assertIsDisplayed()
+        assertTrue(auth.transitionPending)
+        assertFalse(sessions.signOutPending)
+        assertEquals(emptyList<AuthSignOutChoice>(), lifecycle.choices)
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Sign out?").assertIsDisplayed()
+        assertEquals(1, lifecycle.prepares)
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithTag("sign-out-question").assertDoesNotExist()
+        assertEquals(AuthStatus.SignedIn(user, false), auth.status)
+        assertFalse(auth.transitionPending)
+        assertEquals(1, lifecycle.cancels)
+        assertEquals(emptyList<AuthSignOutChoice>(), lifecycle.choices)
+    }
+
+    @Test fun noUnsentQuestionRequiresTheExplicitSignOutAction() = confirmedQuestion(0, AuthSignOutChoice.Keep)
+    @Test fun unsentKeepUsesTheHeldChoice() = confirmedQuestion(1, AuthSignOutChoice.Keep)
+    @Test fun unsentDiscardUsesTheHeldChoice() = confirmedQuestion(3, AuthSignOutChoice.Discard)
+
+    private fun confirmedQuestion(count: Int, choice: AuthSignOutChoice) {
+        val user = User("u1", "lifter@example.com")
+        val sessions = MemorySessions("secret", user)
+        val lifecycle = HeldSignOut(count)
+        server.enqueue(MockResponse().setResponseCode(503))
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = lifecycle)
+        runBlocking { auth.restore() }
+        var visible by mutableStateOf(true)
+        compose.setContent { WindmillMaterial { if (visible) YouSheet(auth, { visible = false }) } }
+        compose.onNodeWithText("Sign out").performClick()
+        compose.onNodeWithText("Sign out?").assertIsDisplayed()
+        assertEquals(emptyList<AuthSignOutChoice>(), lifecycle.choices)
+        if (count == 0) {
+            compose.onNodeWithText("Your log stays in your account and leaves this phone.").assertIsDisplayed()
+            compose.onNodeWithText("Discard").assertDoesNotExist()
+        }
+        val label = if (count == 0) "Sign out" else if (choice == AuthSignOutChoice.Keep) "Keep" else "Discard"
+        compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("sign-out-question"))).performClick()
+        compose.waitUntil(5_000) { !visible }
+        assertEquals(listOf(choice), lifecycle.choices)
+        assertEquals(AuthStatus.SignedOut, auth.status)
+        assertFalse(auth.transitionPending)
+        assertNull(sessions.read())
+    }
 
     @Test fun signedOutYouShowsCanonicalDestinationsInOrder() = canonicalOverview(false)
 
