@@ -66,6 +66,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -131,7 +135,6 @@ import works.windmill.gym.ui.RoutineSheet
 import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
-import works.windmill.gym.ui.SettingsScreen
 import works.windmill.gym.coach.ThreadScreen
 import works.windmill.gym.coach.ThreadsScreen
 import works.windmill.gym.notification.WorkoutNotifications
@@ -217,7 +220,7 @@ internal val tabSaver: Saver<Tab, Any> = Saver(save = { it.name }, restore = ::r
 // thread — the thread is hoisted into the room below so it outlives this stack. A proposal review is
 // not a destination at all: it is a sheet over whichever of these is standing.
 @Serializable
-private sealed interface Away {
+internal sealed interface Away {
     @Serializable
     data class Session(val summary: SessionSummary, val detail: SessionDetail? = null) : Away
     @Serializable
@@ -228,8 +231,6 @@ private sealed interface Away {
     data object Threads : Away
     @Serializable
     data class Thread(val threadId: String) : Away
-    @Serializable
-    data object Settings : Away
     @Serializable
     data object Connections : Away
     @Serializable
@@ -263,9 +264,14 @@ private data class Reviewing(val proposalId: String, val routineId: String, val 
 //
 // The application owns the store; this room owns only navigation and transient UI state.
 
-private fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
+internal fun awaySaver(telemetry: Telemetry) = Saver<List<Away>, String>(
     save = { WindmillJson.encodeToString(ListSerializer(Away.serializer()), it) },
-    restore = { runCatching { WindmillJson.decodeFromString(ListSerializer(Away.serializer()), it) }
+    restore = { raw -> runCatching {
+        val retained = WindmillJson.parseToJsonElement(raw).jsonArray.filterNot {
+            it.jsonObject["type"]?.jsonPrimitive?.content == "works.windmill.gym.Away.Settings"
+        }
+        WindmillJson.decodeFromJsonElement(ListSerializer(Away.serializer()), JsonArray(retained))
+    }
         .onFailure { telemetry.failure("gym.restoreNavigation", it) }.getOrDefault(emptyList()) },
 )
 
@@ -445,7 +451,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             is Away.Coach -> "coach"
             Away.Threads -> "threads"
             is Away.Thread -> "thread"
-            Away.Settings -> "settings"
             Away.Connections -> "connections"
             Away.Notes -> "notes"
             is Away.NoteEditor -> "note_editor"
@@ -477,7 +482,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // refused for good.
     val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
     val destinations = remember(shell, store) {
-        listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
+        listOf(YouDestination("notes", "Notes") { openDestination(Away.Notes) },
             YouDestination("connections", "Connected log") { openDestination(Away.Connections) })
     }
     SideEffect { shell.present(destinations) }
@@ -1055,7 +1060,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 Away.Threads -> Threads.title
                 // The noun, not the thread's title: a title is the lifter's first message verbatim.
                 is Away.Thread -> Threads.conversation
-                Away.Settings -> "Gym settings"
                 Away.Connections -> ConnectedLog.title
                 Away.Notes -> Notes.title
                 is Away.NoteEditor -> Notes.title
@@ -1151,17 +1155,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             backTo = beneath,
                             onBack = { back() },
                             onDraftOpen = { pushedDraftOpen = it },
-                        )
-                        standing is Away.Settings -> SettingsScreen(
-                            store = store,
-                            isSignedIn = account.isSignedIn,
-                            backTo = beneath,
-                            onBack = { back() },
-                            onNotes = { look(Away.Notes) },
-                            onConnectedLog = { look(Away.Connections) },
-                            accountEmail = account.user?.email,
-                            onAccount = shell.openYou,
-                            say = { note = it },
                         )
                         standing is Away.Connections -> ConnectedLogScreen(
                             store = store,

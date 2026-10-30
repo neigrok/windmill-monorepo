@@ -65,8 +65,8 @@ class WorkoutTileRoutingTests {
                 compose.runOnIdle { room.store.requestRoutines() }
                 compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             }
-            compose.runOnIdle { shell.destinations.single { it.id == "settings" }.onOpen() }
-            compose.onNodeWithText("Gym settings").assertIsDisplayed()
+            compose.runOnIdle { shell.destinations.single { it.id == "notes" }.onOpen() }
+            compose.onNodeWithText("Notes").assertIsDisplayed()
             compose.runOnIdle { room.store.requestRoutines() }
             compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
             compose.onNodeWithContentDescription("New routine").performClick()
@@ -81,7 +81,7 @@ class WorkoutTileRoutingTests {
                 assertNull(room.store.session)
                 assertTrue(room.store.routines.isEmpty())
                 assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_session_started" })
-                assertEquals(listOf("routines", "log", "routines", "coach", "routines", "settings", "routines", "routine_editor", "routine_editor"),
+                assertEquals(listOf("routines", "log", "routines", "coach", "routines", "notes", "routines", "routine_editor", "routine_editor"),
                     events.filter { it.first == "gym_screen_viewed" }.map { it.second["screen"] })
             }
         } finally {

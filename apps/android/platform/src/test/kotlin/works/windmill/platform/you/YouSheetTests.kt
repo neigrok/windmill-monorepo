@@ -3,6 +3,7 @@ package works.windmill.platform.you
 import androidx.activity.ComponentDialog
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -29,6 +30,32 @@ class YouSheetTests {
     private val server = MockWebServer()
     @Before fun start() { server.start() }
     @After fun stop() { server.shutdown() }
+
+    @Test fun signedOutYouShowsCanonicalDestinationsInOrder() = canonicalOverview(false)
+
+    @Test fun signedInYouShowsEmailAndCanonicalDestinationsInOrder() = canonicalOverview(true)
+
+    private fun canonicalOverview(signedIn: Boolean) {
+        val user = works.windmill.platform.User("u1", "lifter@example.com", "Lifter")
+        val sessions = if (signedIn) MemorySessions("secret", user) else MemorySessions()
+        if (signedIn) server.enqueue(MockResponse().setResponseCode(503))
+        val auth = AuthStore(server.url("/"), sessions)
+        runBlocking { auth.restore() }
+        val rows = listOf("Notes", "Connected log", "About Windmill")
+        compose.setContent { WindmillMaterial { YouSheet(auth, {},
+            destinations = rows.map { YouDestination(it, it) {} }) } }
+        compose.onNodeWithText("You").assertIsDisplayed()
+        compose.onNodeWithTag("you-sheet-handle", useUnmergedTree = true)
+            .assertWidthIsEqualTo(32.dp).assertHeightIsEqualTo(4.dp)
+        if (signedIn) compose.onNodeWithText(user.email).assertIsDisplayed()
+        else compose.onNodeWithText(user.email).assertDoesNotExist()
+        compose.onNodeWithText(if (signedIn) "Sign out" else "Sign in").assertIsDisplayed()
+        val bounds = rows.map { compose.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
+        assertTrue(bounds.zipWithNext().all { (first, next) -> first.bottom < next.top })
+        listOf("Gym settings", "Units", "lb", "One account across Windmill.").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
+    }
 
     @Test fun signedOutOverviewKeepsDestinationsAndDismissesBeforeOpeningOneOnce() {
         val auth = AuthStore(server.url("/"), MemorySessions())
