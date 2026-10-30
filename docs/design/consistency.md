@@ -208,7 +208,7 @@ and Android disagree.
   (`--accent-terracotta-500`). Figma Theme roles `ios/gym/accent`, `ios/gym/accent-soft`,
   `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
-  the Gym boards state none. The sync registry (v11) and the shared gym vectors carry no set kind:
+  the Gym boards state none. The sync registry (v12) and the shared gym vectors carry no set kind:
   every logged set counts, and no surface carries one. Copy: every surface labels a workout's count
   *Sets* / *N sets* (finish receipts, workout detail, Coach's read card and sources, the web review tile
   and landing). The Gym boards say the same (mirrored 2026-10-29): iOS tiles 05.3 `1185:5019`
