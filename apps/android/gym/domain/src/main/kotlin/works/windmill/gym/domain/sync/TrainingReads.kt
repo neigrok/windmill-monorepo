@@ -132,6 +132,16 @@ data class Prefill(val weightKg: Double = emptyBarKg, val reps: Int = emptyBarRe
     }
 }
 
+// The rest a movement asks between its sets: its plan entry's, else the lifter's rest preference, else none. The rest is
+// reached the moment the time since the last set comes to it.
+data class RestTarget(val seconds: Int) {
+    fun isReached(sinceMs: Long): Boolean = sinceMs >= seconds * 1_000L
+
+    companion object {
+        fun of(entry: RoutineEntry?, rest: RestSettings): RestTarget? = (entry?.restSeconds ?: rest.seconds)?.let(::RestTarget)
+    }
+}
+
 data class PerformedFact(val setId: Id<TrainingSet>, val weightKg: Double, val reps: Int, val rpe: Double? = null) {
     constructor(set: TrainingSet) : this(set.id, set.weightKg, set.reps, set.rpe)
     val json: Json get() = Json.Obj(buildList {
