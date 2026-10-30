@@ -339,7 +339,8 @@ and Android disagree.
     remove by the trash circle 02.8 `1149:2275`.
   - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
     hit areas 03.11 `1150:2638`, Bodyweight with added load 03.12 `1150:2793`.
-  - 04: Live Activity with since-last-set top right 04.2 `1152:2533`.
+  - 04: the compact Lock Screen card 04.7 `1723:15733` (🚧, task 69); the shipped card measures
+    ≈172 pt at default text, over ActivityKit's 160 pt cap.
   - 05: The log with its labelled Weigh in 05.1 `1153:2765`; Edit movement 05.9 `1153:2559`; the
     Equipment menu 05.10 `1153:2603`.
   - 08: Coach updates a movement 08.9, listed under 10q.
@@ -349,11 +350,11 @@ and Android disagree.
     adds.
   - The rack names its equipment as a symbol in the movement header (03.1, 03.10–03.12); the
     build's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
-  - Tapping the load or reps opens a native wheel, 03.2 `1180:3930`, load in the movement's steps
-    and reps beside it; the ladder keys stay for one-tap nudges. Fix set, 03.3 `1180:4021`, is
-    rebuilt on the same wheel with Effort and Note and Delete set as its last row. The weigh-in
-    (06.1 `1191:5884`) uses the system `.decimalPad` in a focused field. The owner settled each of
-    these.
+  - The build opens one sheet with a load wheel beside a reps wheel from the rack, and Fix set draws
+    the same two wheels above Effort, Note and Delete set. Their targets are ✅ boards in 10z: load
+    on the system `.decimalPad`, reps on one wheel (03.23 `1708:14353`, 03.24 `1708:14490`, Fix set
+    03.25 `1709:14337`); the ladder keys stay for one-tap nudges. The weigh-in (06.1 `1191:5884`)
+    uses the system `.decimalPad` in a focused field.
 
   Choices the build forced or left open, for the owner:
   - The build's words win: *Equipment* (not *load basis*), *Dumbbells*, *Add screenshot*, *Sign in
@@ -471,6 +472,13 @@ and Android disagree.
   The combined editor's Daylight board is `1367:10387`; references to removed `1181:4611` must use
   it. The original checkout's untracked `iosgym_tasks/done-30-targets.md` still points to the removed
   board and describes the separate Targets destination; its owner must reconcile that local task.
+- **10z · The workout in flight (✅ Ready for dev, owner approved 2026-10-30).** Boards 03.20–03.32,
+  04.6 and 08.54–08.57 with a READ ME in section 03 (`1717:15737`); the written half is
+  [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`68`.
+  Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build differs from these
+  targets everywhere they draw something new: no rest target, two load-and-reps wheels, a frozen
+  plan, no Coach while a workout is open, and routine proposals refused mid-workout. 04.3's expanded
+  presentation draws a moving rest bar the build does not carry; 04.6 is its target.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
@@ -939,8 +947,7 @@ iOS. It and the product differ in these places.
   receipt `1589:39083` / `1690:14725` / `1589:39289`; 08.35 step line from catalog phrases `1588:12617` /
   `1690:13258` / `1590:13207`; 08.36 What Coach read `1589:12790` / `1690:13279` / `1590:13212`;
   08.37 Made a movement `1589:12859` / `1690:13300` / `1590:13217`; send refusals 08.38 no connection
-  `1588:11903` / `1690:13319` / `1590:13222`, 08.39 workout open `1588:11944` / `1690:13340` /
-  `1590:13227`, 08.40 coach-replica-syncing `1588:11985` / `1690:13361` / `1590:13232`, 08.41 over
+  `1588:11903` / `1690:13319` / `1590:13222`, 08.40 coach-replica-syncing `1588:11985` / `1690:13361` / `1590:13232`, 08.41 over
   8,000 bytes `1588:12026` / `1690:13380` / `1590:13237`, 08.42 invalid_installation `1588:12075` /
   `1690:13399` / `1590:13242`, 08.43 device_bound `1588:12116` / `1690:13420` / `1590:13247`, 08.44
   free_month_exhausted `1588:12157` / `1690:13441` / `1590:13252`, 08.45 coach-update-required
@@ -950,7 +957,9 @@ iOS. It and the product differ in these places.
   interrupted `1588:12489` / `1690:13564` / `1590:13282`; 08.51 answering on another device
   `1588:12556` / `1690:13590` / `1590:13287`; 08.52 resume from the snapshot `1588:12654` /
   `1690:13605` / `1590:13292`; 08.53 empty History under R5 `1589:12977` / `1690:13626` /
-  `1590:13297`. Three redraws took their originals' slots and the originals were deleted: 08.6 is now
+  `1590:13297`. The build still refuses a send while a workout is open (*Coach waits until you finish
+  this workout.*); that board, 08.39, is deleted and its slot holds the ✅ target 08.54 (10z). Three
+  redraws took their originals' slots and the originals were deleted: 08.6 is now
   the account-changing state `1589:13033` / `1690:13247` / `1590:13302` (replaced the no-seat pair
   `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 carries the picture line under R8
   `1589:39166` / `1690:14706` / `1589:39294` (replaced `1173:4111` / `1173:4983` and caption
