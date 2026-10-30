@@ -221,7 +221,8 @@ export class PlanChanges {
     if (session === null || plan === null || routine === null
       || sameJson(plan.entries.map((entry) => entry.json), routine.entries.map((entry) => entry.json))) return PlanChanges.none;
     const changes = RoutineChange.between(routine.entries, plan.entries);
-    const offer = routine.revision !== null && routine.revision === session.routineRevision ? 'save' : 'routineChanged';
+    const offer = routine.revision === null || session.routineRevision === null ? 'none'
+      : routine.revision === session.routineRevision ? 'save' : 'routineChanged';
     return new PlanChanges(changes, RoutineChange.count(routine.entries, changes), offer);
   }
 
