@@ -1928,6 +1928,19 @@ class TrainingStore(
         older = if (page.size < logPage) Older.End else Older.More
     }
 
+    suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
+        if (!accountReady) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        return try {
+            GymResult.Ok(readTraining { training.routineHistory(routineId, withheldIds) })
+        } catch (_: TrainingReadChanged) {
+            GymResult.Failed(WriteFailure.Refused(accountChanged))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.routineHistory", failure)
+            GymResult.Failed(WriteFailure.NoAnswer)
+        }
+    }
+
     // Nothing is held: the store keeps no copy to invalidate. The replica's answer stands ALONE and
     // a refused import kept on this phone is not merged into it, so a strict refusal cannot change
     // aggregate history.

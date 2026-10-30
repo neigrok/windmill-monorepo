@@ -359,6 +359,15 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
+    fun routineHistory(routineId: String, excluded: Set<String> = emptySet()): List<SessionSummary> = read {
+        val catalog = catalogue()
+        details().asSequence()
+            .filter { !it.session.isOpen && it.session.routineId == routineId && it.session.id !in excluded }
+            .sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
+            .take(20)
+            .map { SessionSummary(it.session, it.sets, catalog) }
+            .toList()
+    }
     fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
     fun restoredSession(id: String): SessionDetail? = read { reader ->
         session(id)?.let { return@read it }
