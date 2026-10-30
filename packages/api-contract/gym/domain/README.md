@@ -146,7 +146,7 @@ and otherwise dropping every `weightKg`; `{op:"add_movement",exerciseId}` append
 `{op:"remove_movement",index}`; `{op:"set_rest",index,restSeconds}`, null for the rest preference.
 
 **Plan rules.** In order: a session `drawn` lacks is `gone`; a finished session, or one the client stale rule
-draws closed, is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
+closes over its `stored` sets (a held delete of its last set keeps it open), is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
 `base` is `stale`. Then per operation: an index or set the entry
 lacks is `session.plan.operation` (`outOfRange`, at `operations.<k>`); an entry whose movement has a set alive
 in `drawn` or `stored` is `planLogged` with `{exerciseId}`; a target movement neither a seed nor drawn is

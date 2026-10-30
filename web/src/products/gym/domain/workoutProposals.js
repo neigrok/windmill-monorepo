@@ -108,8 +108,9 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
   });
 }
 
-// A workout proposal with its workout as this device holds it. Out of date, it can no longer be applied: a newer proposal
-// replaced it, the plan changed since it was made, its workout closed, or a movement it changes was logged since.
+// A workout proposal with its workout as this device stores it. Out of date, it can no longer be applied, by the first
+// that holds: a newer proposal replaced it, its workout closed, the plan changed since it was made, or a movement it
+// changes was logged since.
 export class WorkoutProposalState {
   /** @param {{ proposal: WorkoutProposalValue | null, workout: OpenWorkout | null, moment: Moment }} parts */
   constructor({ proposal, workout, moment }) {
@@ -131,9 +132,9 @@ export class WorkoutProposalState {
     if (proposal === null) return null;
     if (proposal.state === 'superseded') return { reason: proposal.supersededBy !== null ? 'replaced' : 'workout-changed' };
     const workout = this.workout;
-    const session = workout?.drawn ?? null;
+    const session = workout?.session ?? null;
     if (proposal.state !== 'pending' || workout === null || session === null) return null;
-    if (!session.isOpen) return { reason: 'workout-finished' };
+    if (workout.isClosed) return { reason: 'workout-finished' };
     if (proposal.baseRevision !== null && (session.planRevision ?? 1) !== proposal.baseRevision) return { reason: 'workout-changed' };
     const moved = proposal.changes.find((change) => change.kind !== 'kept' && workout.isLogged(change.exerciseId));
     return moved === undefined ? null : { reason: 'workout-moved', exerciseId: moved.exerciseId.json };
@@ -147,7 +148,7 @@ export class WorkoutProposalState {
     if (proposal === null) return GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted'));
     if (proposal.state === 'pending') {
       if (!applying) return null;
-      if ((this.workout?.drawn ?? null) === null) return GymRefusals.ofRefused(new Refused('unknown-record', proposal.sessionId.ref, null, 'predicted'));
+      if (this.workout?.session == null || !this.workout.visible) return GymRefusals.ofRefused(new Refused('unknown-record', proposal.sessionId.ref, null, 'predicted'));
     } else if (proposal.state === (applying ? 'applied' : 'dismissed')) {
       return null;
     } else if (proposal.state !== 'superseded') {
