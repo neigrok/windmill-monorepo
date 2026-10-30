@@ -964,6 +964,42 @@ import SyncTesting
             == "You logged Seated Cable Row since this suggestion. Nothing was applied.")
   }
 
+  // A workout decision queued on one replica waits there for the log's answer: a read of another replica between, as an
+  // account switch makes, neither records it nor forgets it.
+  @Test func aQueuedWorkoutDecisionOutlivesAReadOfAnotherReplica() async throws {
+    let connectivity = SwitchedConnectivity(), transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder()
+    let runtime = try WorkoutStateTests.faultRuntime(transport, connectivity: connectivity, drivesLoops: true)
+    let owner = transport.model.identity(email: "workout-queued-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    let row = RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 10, weightKg: 50)])
+    var routine = Draft(new: Routine(id: ID("queued-routine"), name: "Upper A", entries: [row]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    let session = gym.runner.mint(Session.self)
+    #expect(gym.run(StartSession(id: session, routineId: routine.id))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.openSession?.plan != nil && gym.openSession?.routineRevision != nil }
+    let lighter = [RoutineEntry(exerciseId: ID("seated-cable-row"), sets: [SetTarget(reps: 12, weightKg: 40)])]
+    #expect(gym.run(ProposeWorkout(id: ID("queued-change"), sessionId: session, entries: lighter, summary: ""))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.workoutProposals.first?.baseRevision == 1 }
+    connectivity.set(online: false)
+    try await settle { runtime.engine.status.online == false }
+    let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
+    #expect(gym.coachDecideWorkoutProposal(try #require(gym.workoutProposals.first), apply: true))
+    gym.updateCoachProposals(CoachProposalsRead(replica: "another-replica", receipts: [], proposals: [], queued: [], outOfDate: [:],
+                                                workoutProposals: [], workoutQueued: [], workoutOutOfDate: [:]))
+    #expect(outcomes().isEmpty)
+    connectivity.set(online: true)
+    try await settle { runtime.engine.foreground(); gym.refresh(); return !outcomes().isEmpty }
+    #expect(outcomes() == [["screen": "coach", "target": "workout", "action": "apply", "outcome": "decided"]])
+    #expect(gym.openSession?.plan?.entries == lighter)
+  }
+
   // An Apply the log refuses as out of date says the refusal's own reason, in its card's sentence.
   @Test func aRefusedApplySaysWhyTheProposalIsOutOfDate() throws {
     let gym = GymModel(runner: Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000)).runner)

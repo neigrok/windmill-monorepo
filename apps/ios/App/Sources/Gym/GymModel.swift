@@ -78,10 +78,10 @@ final class GymModel {
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
   // Coach's changes to the open workout, which of them can no longer be applied and why, and the decisions on them still
-  // waiting on the log's answer.
+  // waiting on the log's answer, by the replica whose queue holds them.
   var workoutProposals: [WorkoutProposal] = []
   var outOfDateWorkoutProposals: [ID<WorkoutProposal>: CoachOutOfDate] = [:]
-  @ObservationIgnored var awaitedWorkoutDecisions: [ID<WorkoutProposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var awaitedWorkoutDecisions: [String: [ID<WorkoutProposal>: CoachQueuedDecision]] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
