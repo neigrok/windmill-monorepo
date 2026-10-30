@@ -405,6 +405,18 @@ Json::Value toJson(const std::vector<Routine>& routines, const std::vector<Propo
   return array;
 }
 
+namespace {
+// A proposal's provenance: the door always, the connection, agent and thread where it has one.
+Json::Value sourceJson(const ProposalSource& source) {
+  Json::Value body(Json::objectValue);
+  body["door"] = toString(source.door);
+  if (!source.connection.empty()) body["connection"] = source.connection;
+  if (!source.agent.empty()) body["agent"] = source.agent;
+  if (source.thread) body["thread"] = source.thread->str();
+  return body;
+}
+}
+
 Json::Value toJson(const ProposalHead& head) {
   Json::Value body(Json::objectValue);
   body["id"] = head.id.str();
@@ -416,12 +428,7 @@ Json::Value toJson(const ProposalHead& head) {
   body["changeCount"] = head.changes;
   body["createdAt"] = Json::Value::UInt64(head.createdAtMs);
   if (head.settledAtMs) body["settledAt"] = Json::Value::UInt64(*head.settledAtMs);
-  Json::Value source(Json::objectValue);
-  source["door"] = toString(head.source.door);
-  if (!head.source.connection.empty()) source["connection"] = head.source.connection;
-  if (!head.source.agent.empty()) source["agent"] = head.source.agent;
-  if (head.source.thread) source["thread"] = head.source.thread->str();
-  body["source"] = source;
+  body["source"] = sourceJson(head.source);
   return body;
 }
 
@@ -705,15 +712,6 @@ Json::Value changeJson(const RoutineChange& change) {
   if (change.before) line["before"] = targetsJson(*change.before);
   if (change.after) line["after"] = targetsJson(*change.after);
   return line;
-}
-
-Json::Value sourceJson(const ProposalSource& source) {
-  Json::Value body(Json::objectValue);
-  body["door"] = toString(source.door);
-  if (!source.connection.empty()) body["connection"] = source.connection;
-  if (!source.agent.empty()) body["agent"] = source.agent;
-  if (source.thread) body["thread"] = source.thread->str();
-  return body;
 }
 
 // A stored side of a diff, clamped as planFrom clamps an entry.
