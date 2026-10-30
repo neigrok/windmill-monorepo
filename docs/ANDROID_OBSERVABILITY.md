@@ -114,7 +114,7 @@ workout or chat identifier, question, routine name, amount or failure sentence e
 
 ## Coach archive and navigation
 
-The nonvisual signed-out onboarding transport uses `ai_installation` for installation issue/read/bind and sealed-state failures, and `gym.coachOnboarding` for request transport, archive persistence and atomic import failures. Binding runs after the existing authentication lifecycle in the application scope; its failure cannot invalidate an accepted account sign-in. Installation state is retained separately from account credentials on sign-out. Consumers of a reported outcome do not report it again.
+The signed-out onboarding transport uses `ai_installation` for installation issue/read/bind and sealed-state failures, and `gym.coachOnboarding` for request transport, archive persistence and atomic import failures. Binding runs after the existing authentication lifecycle in the application scope; its failure cannot invalidate an accepted account sign-in. Installation state is retained separately from account credentials on sign-out. Consumers of a reported outcome do not report it again.
 
 Onboarding attempts emit `gym_ask_started` and `gym_ask_outcome` with `state=anonymous`, bounded outcomes `answered|refused|capped|failed|cancelled`, `duration_ms` and `cap=allowance` only when applicable. `gym_coach_import` emits `started`, then `committed|replayed|refused|failed`; installation binding refusal/failure emits `ai_installation_outcome` with `action=bind`. Expected 401/409/429 refusals and the declared anonymous-unavailable or allowance 503 codes are events, not Issues. Unexpected accounting/server failures remain Issues. No credential, owner/chat/request/result/record ID, fingerprint, draft, photo or routine name is included.
 
@@ -130,6 +130,13 @@ Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
 `action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
 Recreation restores the selected chat without a fresh-entry event. Ask transport retains
 `gym_ask_started`, `gym_ask_outcome` and the `gym.ask` failure boundary.
+Anonymous access changes emit `gym_action` with `screen=coach`, `action=access` and
+`outcome=available|bound|unavailable`. The typed `account_required` response emits the existing
+anonymous `refused` outcome and no client Issue. Its original input remains in its own chat;
+model prose is not the displayed policy sentence. Sign in keeps the existing auth-door events.
+Daily/ceiling notices retain the refused composer and existing Connected log navigation. Retry
+deadlines persist on the exchange, are recomputed for clock/locale/timezone changes and never
+enter telemetry. Deadline expiry performs no automatic Send.
 
 The existing local Coach document owns archive failures at `gym.saveConversation` and
 `gym.restoreConversation`; draft writes use `gym.saveDraft`, photo preparation uses
@@ -157,10 +164,9 @@ properties or diagnostics. Plain taps and opening the menu do not claim a copy. 
 emits `action=jump_latest`, `outcome=ok` when the local scroll command is accepted.
 
 The native state-input pipeline retains draft/selection ownership while Material3 supplies its
-filled-field decoration. Signed-out local History uses the existing disabled native component:
-text/photo drafts stay retained, while editing, adding/removing a photo and Send stay disabled.
-Anonymous network composition remains gated by the installation implementation. The signed-out
-access-screen body belongs to task 36.
+filled-field decoration. An available anonymous installation can ask within its original local
+chat. Bound or unavailable installations retain History and their drafts without an anonymous
+composer; already submitted work can recover by GET. No replacement installation is issued.
 
 Routine-editor History and the summary’s `· yours` marker emit no events or writes. Unexpected history-read failures report under `gym.routineHistory`; owner or replica changes are expected refusals.
 
@@ -443,6 +449,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach archive navigation | `gym_action` | screen: `coach`; action: `fresh_entry`, `history_open`, `draft_restored`, `reply_open`, `read_sources`; outcome: `ok` |
+| Coach anonymous access | `gym_action` | screen: `coach`; action: `access`; outcome: `available`, `bound`, `unavailable` |
 | Coach messages | `gym_action` | screen: `coach`; action: `copy`; outcome: `ok`, `failed`; or action: `jump_latest`, outcome: `ok` |
 | Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |

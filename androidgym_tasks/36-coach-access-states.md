@@ -8,15 +8,22 @@
 - 08.31 signed out, a change needs an account: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-38214) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41909)
 - Components: `Android / Chat bubble` `337:2761`, `Android / Chat notice` `337:2764`, `Android / Button` `210:181`, `Android / Top app bar` `342:2953`.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
-- Signed out, `AskSignedOutStance` (`coach/AskScreen.kt:268-278`): *Coach reads your log, so it needs you signed in.* at body 26 Bold at the top (`coach/Ask.kt:216`), then a primary *Sign in* at the bottom.
-- Day's cap (429 `ask-daily-limit`, `coach/CoachStore.kt:405`):
-  - The backend supplies `retryAtMs` and `Retry-After` for `ask-daily-limit` (`backend/products/gym/adapters/http/AskApi.cpp`). The legacy client reads only its generic sentence/fallback and loses the actual next-question time.
-  - It is drawn as body 15 ink after the thread (`coach/AskScreen.kt:221-227`).
-  - The composer is replaced by `CapDoors` (`coach/AskScreen.kt:244-246`, `:339-345`): *Ask something new* and a *Connect own agent* / *Use your own AI tool* row (`:318-336`).
-- Coach absent (`AskAbsentStance`, `coach/AskScreen.kt:282-316`, shown from `GymRoom.kt:1154`): a *Notes* / *What Coach should know* door, *Coach isn’t part of this Windmill. Your log is still yours to read.* (`Ask.notHere`, `coach/Ask.kt:218`) and a *Connected log* / *Use your own AI tool* door (`ConnectDoor`, :318-336). The bar holds only the seat.
-- The 30-day ceiling (429 `ask-out-of-budget`, `coach/CoachStore.kt:406`) reads *This account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on.* (`coach/Ask.kt:184-186`).
-- There is no signed-out conversation, so no signed-out change request.
+**Implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/`)
+
+`coach/CoachAccess.kt` owns the Ready no-seat, retained-History bound and absent stances, plus the
+Daily/Ceiling notice. The cap keeps the native composer and uses the persisted actual retry deadline;
+missing/invalid timing uses the nonnumeric fallback. `CoachStore` projects task 38's retained request
+into its original anonymous chat and keeps accepted photo metadata after the composer clears.
+The application injects the existing onboarding coordinator through `TrainingStore`; installation
+binding and AuthStore's handoff remain separate collaborators. `AnthropicOnboarding.cpp` validates
+conversation-only `errorCode:null|account_required`, preserving the public durable POST/GET shape
+and existing routine decoder. Exact typed policy results use the fixed approved bubble and Sign in.
+The composed schema-11 source passes App compilation, 83 domain, 43 platform and 113 focused Gym
+checks. The anonymous History composer cannot cancel a retained request. Mounted HTTP verification covers
+ordinary dialogue, typed account-required replies, exact replay, a complete photo, binding and
+switches-off fallback. Invalid provider output reaches the backend failure reporter once under
+`gym.coach.onboarding.model`; expected account-required replies create no Issue. Native visual,
+installed-process recovery and device event acceptance remain pending.
 
 **Change**
 - No seat (08.6): shown when there is no account and the signed-out Coach (38) is not available.
@@ -35,7 +42,7 @@
 - A change needs an account (08.31), signed out:
   - Lifter: *Make Push A harder*. Coach: *I need your account to change a routine. Sign in, then ask again.*
   - One primary **Sign in** under the bubble opens the sign-in door.
-  - Draw it when the signed-out reply says the request needs an account (38 pins the field). Signed-out Coach only drafts routines.
+  - Draw it only for the durable onboarding `errorCode=account_required`. The model-only policy enum is validated in the existing adapter; unknown or contradictory documents become `invalid_result`. Signed-out Coach only drafts routines.
 
 **Out of scope:**
 - Allowance used (43).

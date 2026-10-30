@@ -13,12 +13,18 @@ from anonymous_coach import photo_bytes, fixture_result
 class AnonymousCoachTest(unittest.TestCase):
     def test_dialogue_fixture_greets_and_continues_without_a_routine(self):
         self.assertEqual(fixture_result({"mode": "conversation", "text": "Hi", "context": []}),
-                         {"message": "Hello. What would you like to work on?", "routines": []})
+                         {"message": "Hello. What would you like to work on?", "routines": [], "errorCode": None})
         self.assertEqual(fixture_result({"mode": "conversation", "text": "Three days", "context": [{"role": "user", "text": "Hi"}]}),
-                         {"message": "Three days gives us room to build gradually. Would you like a routine draft?", "routines": []})
+                         {"message": "Three days gives us room to build gradually. Would you like a routine draft?", "routines": [], "errorCode": None})
         draft = fixture_result({"mode": "conversation", "text": "Make a routine", "context": []})
         self.assertEqual(draft["message"], "Here are your routine drafts. Review them before saving.")
         self.assertEqual(draft["routines"], fixture_result({"mode": "program"})["routines"])
+        self.assertIsNone(draft["errorCode"])
+
+    def test_policy_fixture_is_a_typed_empty_refusal_without_changing_legacy_output(self):
+        self.assertEqual(fixture_result({"mode": "conversation", "text": "fixture_account_required", "context": []}),
+                         {"message": "", "routines": [], "errorCode": "account_required"})
+        self.assertEqual(set(fixture_result({"mode": "program"})), {"routines"})
 
     def test_maximum_photo_preserves_the_original_png_pixels(self):
         original = photo_bytes()

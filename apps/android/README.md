@@ -165,8 +165,10 @@ existing receipt/control presentation and wording. Ordinary messages use native 
 Nunito typography; a long press opens the message's Copy action. Markdown tables keep structured
 cells and plain-text copy. The reveal stays mounted from the empty pending message through its
 terminal answer; Stop exposes all received text. Material3 decorates the existing state input, so
-selection and draft ownership remain in one place. Signed-out local History reuses the existing
-disabled composer state; its text/photo draft remains retained and no edit or Send door is enabled.
+selection and draft ownership remain in one place. An available anonymous installation can ask in its original local chat. Bound or unavailable
+installations retain History and drafts without an anonymous composer; submitted work can recover
+by GET. Typed account-required replies use the fixed Sign in state. Daily caps retain the composer
+and persist the server retry deadline; expiration never sends automatically.
 Every ask declares `routineReview`, and new Coach routines
 remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the
