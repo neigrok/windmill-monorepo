@@ -160,6 +160,114 @@ class AskScreenTests {
         }
     }
 
+    @Test fun choicesFillTheActualComposerWithoutSendingAndPersistTheSelectedOptions() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "choices.json")
+        val disk = LocalCoach(file)
+        val clarification = CoachClarification("choice-123", "What works for you?", listOf(
+            CoachClarification.Group("days", "Days each week", false, listOf(CoachClarification.Option("two", "2 days"), CoachClarification.Option("three", "3 days"))),
+            CoachClarification.Group("equipment", "Equipment", true, listOf(CoachClarification.Option("dumbbells", "Dumbbells"), CoachClarification.Option("bodyweight", "Bodyweight")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Build a routine", answer = AskAnswer("What works for you?", ReadTally(), clarification = raw), requestId = "request-123")
+        disk.saveChat("u1", LocalChat("chat-123", exchanges = listOf(exchange)), true)
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        val sent = mutableListOf<String>()
+        compose.setContent { GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "chat-123") } }
+        compose.onNodeWithText("2 days").performScrollTo().performClick()
+        compose.onNodeWithText("3 days").performScrollTo().performClick()
+        compose.onNodeWithText("Bodyweight").performScrollTo().performClick()
+        compose.onNodeWithText("Dumbbells").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText("3 days. Dumbbells, Bodyweight."))
+        compose.onNodeWithText("2 days").assert(androidx.compose.ui.test.isNotSelected())
+        compose.onNodeWithText("3 days").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("Dumbbells").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("Bodyweight").assert(androidx.compose.ui.test.isSelected())
+        compose.onNodeWithText("read nothing from your log").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), sent)
+            assertEquals(CoachDraft("3 days. Dumbbells, Bodyweight."), LocalCoach(file).draft("u1", "chat-123"))
+            assertEquals(mapOf("days" to listOf("three"), "equipment" to listOf("dumbbells", "bodyweight")), LocalCoach(file).choices("u1", "chat-123", "request-123:choice-123"))
+        }
+        compose.onNodeWithContentDescription("Send").performClick()
+        compose.runOnIdle { assertEquals(listOf("3 days. Dumbbells, Bodyweight."), sent) }
+    }
+
+    @Test fun continuingAKeptDraftPreservesTheCurrentComposerAndRestoresAPhotoOnlyDraft() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "held.json")
+        val disk = LocalCoach(file)
+        val phone = disk.anonymousOwner()
+        val bitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+        val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bitmap.recycle()
+        val photo = CoachAttachment("photo-123", "image/png", 1, 1, bytes.size.toLong())
+        disk.saveChat(phone, LocalChat("phone-chat", setup = true), true)
+        disk.savePhoto(phone, photo.id, bytes); disk.saveDraft(phone, "phone-chat", CoachDraft(photo = photo))
+        disk.saveChat("u1", LocalChat("account-chat"), true); disk.saveDraft("u1", "account-chat", CoachDraft("Account draft"))
+        disk.adoptPhoneDraft("u1") { true }
+        val held = disk.keptDrafts("u1", "account-chat").single()
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        val sent = mutableListOf<String>()
+        compose.setContent { GymMaterial { AskScreen(room.store, emptyList(), emptyList(), emptySet(), false, null,
+            { sent += it }, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+        compose.onNodeWithText("Draft kept on this phone").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").performTextReplacement("Just typed")
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText(""))
+        compose.onNodeWithContentDescription("Attached photo").assertIsDisplayed()
+        compose.onNodeWithText("Just typed").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(emptyList<String>(), sent)
+            assertEquals(held.draft, LocalCoach(file).draft("u1", "account-chat"))
+            assertEquals(listOf(held.copy(draft = CoachDraft("Just typed"))), LocalCoach(file).keptDrafts("u1", "account-chat"))
+        }
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Question").assert(hasText("Just typed"))
+        compose.onNodeWithContentDescription("Attached photo").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(held), LocalCoach(file).keptDrafts("u1", "account-chat")) }
+    }
+
+    @Test fun anUnreadablePublishedSwapKeepsTheVisibleDraftAndChoicesSafeDuringRecomposition() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = java.io.File(tmp.root, "unreadable-ui.json")
+        val published = java.io.File(tmp.root, "published-ui.json")
+        var unreadable = false
+        val disk = LocalCoach(file) { target, text ->
+            works.windmill.platform.storage.AtomicDocument.write(target, text)
+            if (unreadable) { check(target.renameTo(published)); check(target.mkdir()); throw java.io.IOException("unreadable publication") }
+        }
+        val phone = disk.anonymousOwner()
+        disk.saveChat(phone, LocalChat("phone-chat"), true); disk.saveDraft(phone, "phone-chat", CoachDraft("Phone draft"))
+        val clarification = CoachClarification("choice-123", "Days?", listOf(CoachClarification.Group("days", "Days", false,
+            listOf(CoachClarification.Option("three", "3 days")))))
+        val raw = works.windmill.platform.net.WindmillJson.encodeToJsonElement(CoachClarification.serializer(), clarification)
+        val exchange = AskExchange("Question", answer = AskAnswer("Days?", ReadTally(), clarification = raw), requestId = "request-123")
+        disk.saveChat("u1", LocalChat("account-chat", exchanges = listOf(exchange)), true)
+        disk.saveDraft("u1", "account-chat", CoachDraft("Account draft")); disk.adoptPhoneDraft("u1") { true }
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = disk).also { rooms += it }
+        runBlocking { room.select("u1") }
+        var shown by mutableStateOf(true)
+        compose.setContent { if (shown) GymMaterial { AskScreen(room.store, listOf(exchange), emptyList(), emptySet(), false, null,
+            {}, {}, {}, "", "http://localhost", onThreads = {}, onNotes = {}, onReview = {}, conversationId = "account-chat") } }
+        compose.runOnIdle { unreadable = true }
+        compose.onNodeWithText("Continue saved draft").performScrollTo().performClick()
+        compose.onNodeWithText("Your draft couldn’t be saved. Try again.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Question").assert(hasText("Account draft"))
+        compose.onNodeWithText("Phone draft").assertIsDisplayed()
+        compose.onNodeWithText("3 days").performScrollTo().assert(androidx.compose.ui.test.isNotSelected())
+        compose.runOnIdle {
+            assertTrue(file.isDirectory)
+            assertEquals(CoachDraft("Phone draft"), LocalCoach(published).draft("u1", "account-chat"))
+            shown = false
+        }
+        compose.waitForIdle()
+        assertTrue(file.isDirectory)
+        assertEquals(CoachDraft("Phone draft"), LocalCoach(published).draft("u1", "account-chat"))
+    }
+
     @Test fun anEmptyPendingMessagePacesBothTheFirstChunkAndItsTerminalTextInsideTheBubble() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
