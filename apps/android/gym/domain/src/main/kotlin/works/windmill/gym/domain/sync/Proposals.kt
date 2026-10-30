@@ -8,31 +8,96 @@ import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
 
-data class EntryTargets(val sets: List<SetTarget>? = null, val restSeconds: Int? = null) : ValueObject<EntryTargets> {
+data class EntryTargets(val sets: List<SetTarget>? = null, val restSeconds: Int? = null) {
     constructor(value: RoutineEntry) : this(value.sets, value.restSeconds)
-    override val json: Json get() = Json.Obj(buildList {
+    val json: Json get() = Json.Obj(buildList {
         sets?.let { add("sets" to Json.Arr(it.map(SetTarget::json))) }; restSeconds?.let { add("restSeconds" to Json.of(it)) }
     })
-    override fun validated(at: Path) = (if (at.text.endsWith(".before")) ProposalRules.before else ProposalRules.after).validate(this, at)
-    companion object : ValueType<EntryTargets> {
-        override fun decode(f: Fields) = EntryTargets(f.optionalList("sets", SetTarget), f.optionalInt("restSeconds"))
+    companion object {
+        fun decode(f: Fields) = EntryTargets(f.optionalList("sets", SetTarget), f.optionalInt("restSeconds"))
     }
 }
 
-data class RoutineChange(val kind: String, val exerciseId: Id<Exercise>, val before: EntryTargets? = null, val after: EntryTargets? = null) : ValueObject<RoutineChange> {
-    override val json: Json get() = Json.Obj(buildList {
+data class RoutineChange(val kind: String, val exerciseId: Id<Exercise>, val before: EntryTargets? = null, val after: EntryTargets? = null) {
+    val json: Json get() = Json.Obj(buildList {
         add("kind" to Json.of(kind)); add("exerciseId" to exerciseId.json)
         before?.let { add("before" to it.json) }; after?.let { add("after" to it.json) }
     })
-    override fun validated(at: Path): RoutineChange {
-        ProposalRules.kind.apply(kind, at + "kind")
-        ProposalRules.exercise.apply(exerciseId.record.string ?: "", at + "exerciseId")
-        if ((kind == "added") != (before == null) || (kind == "removed") != (after == null))
-            throw Violation("proposal.changes", at, Violation.Reason.Custom("side"))
-        return copy(before = before?.validated(at + "before"), after = after?.validated(at + "after"))
+    companion object {
+        fun decode(f: Fields) = RoutineChange(f.string("kind"), f.ref("exerciseId", Exercise), f.optionalValue("before", EntryTargets::decode),
+            f.optionalValue("after", EntryTargets::decode))
+
+        // Each proposed entry against the first unmatched base entry of its movement, in the proposed order, then every base
+        // entry left unmatched as a removal.
+        fun between(base: List<RoutineEntry>, proposed: List<RoutineEntry>): List<RoutineChange> {
+            val matched = mutableSetOf<Int>()
+            val changes = proposed.map { entry ->
+                val index = base.indices.firstOrNull { it !in matched && base[it].exerciseId == entry.exerciseId }
+                if (index == null) return@map RoutineChange("added", entry.exerciseId, after = EntryTargets(entry))
+                matched += index
+                val previous = EntryTargets(base[index])
+                val next = EntryTargets(entry)
+                RoutineChange(if (previous == next) "kept" else "retargeted", entry.exerciseId, previous, next)
+            }
+            return changes + base.withIndex().filter { it.index !in matched }.map { RoutineChange("removed", it.value.exerciseId, before = EntryTargets(it.value)) }
+        }
+
+        fun document(changes: List<RoutineChange>): List<RoutineEntry> =
+            changes.filter { it.kind != "removed" }.map { RoutineEntry(it.exerciseId, it.after?.sets, it.after?.restSeconds) }
+
+        // R118's count: every line that is not kept, and one more when the kept movements left the base's order.
+        fun count(base: List<RoutineEntry>, changes: List<RoutineChange>): Int {
+            val unmatched = base.indices.toMutableList()
+            val retained = changes.filter { it.kind == "kept" || it.kind == "retargeted" }.mapNotNull { change ->
+                val at = unmatched.indexOfFirst { base[it].exerciseId == change.exerciseId }
+                if (at < 0) null else unmatched.removeAt(at)
+            }
+            return changes.count { it.kind != "kept" } + (if (retained != retained.sorted()) 1 else 0)
+        }
     }
-    companion object : ValueType<RoutineChange> {
-        override fun decode(f: Fields) = RoutineChange(f.string("kind"), f.ref("exerciseId", Exercise), f.optionalValue("before", EntryTargets), f.optionalValue("after", EntryTargets))
+}
+
+// The rules every proposal's change lines obey, each proposal type under its own paths: a routine's at `proposal.*`, a
+// workout's at `workoutProposal.*`.
+class ChangeRules(val type: String) {
+    class Targets(path: String, private val zeroTarget: String) {
+        val sets = CountSpec("$path.sets", 1, 20)
+        val reps = NumberSpec("$path.sets.reps", 1.0, 100.0, integer = true)
+        val weight = NumberSpec("$path.sets.weightKg", quantum = 0.01)
+        val rest = NumberSpec("$path.restSeconds", 15.0, 900.0, integer = true)
+        val specs: List<ValueSpec> get() = listOf(sets, reps, weight, rest)
+        fun validate(value: EntryTargets, at: Path): EntryTargets = value.copy(
+            sets = value.sets?.let { items -> sets.apply(items, at + "sets") { target, path ->
+                if (target.reps == 0) throw Violation(zeroTarget, path + "reps", Violation.Reason.Custom("zeroTarget"))
+                val checkedReps = reps.applyOptional(target.reps, path + "reps")
+                val checkedWeight = weight.applyOptional(target.weightKg, path + "weightKg")
+                if (checkedWeight == 0.0 && target.weightKg != 0.0) throw Violation(zeroTarget, path + "weightKg", Violation.Reason.Custom("zeroTarget"))
+                SetTarget(checkedReps, checkedWeight)
+            } }, restSeconds = rest.applyOptional(value.restSeconds, at + "restSeconds"),
+        )
+    }
+    val zeroTarget = "$type.zeroTarget"
+    val before = Targets("$type.changes.before", zeroTarget)
+    val after = Targets("$type.changes.after", zeroTarget)
+    val summary = TextSpec("$type.summary", MeasureUnit.bytes, 0, 400, trim = true, nfc = true)
+    val changes = CountSpec("$type.changes", 0, 100)
+    val kind = ChoiceSpec("$type.changes.kind", listOf("kept", "added", "removed", "retargeted"))
+    val door = ChoiceSpec("$type.door", listOf("ask"))
+    val connection = TextSpec("$type.connection", MeasureUnit.bytes, 0, 0, trim = false, nfc = false)
+    val agent = TextSpec("$type.agent", MeasureUnit.chars, 0, 0, trim = false, nfc = false)
+    val exercise = TextSpec("$type.changes.exerciseId", MeasureUnit.chars, 1, 64, false, false)
+    val specs: List<ValueSpec> get() = listOf(summary, changes, kind, door, connection, agent, exercise) + before.specs + after.specs
+
+    fun validated(lines: List<RoutineChange>, at: Path): List<RoutineChange> {
+        val checked = changes.apply(lines, at) { change, path ->
+            kind.apply(change.kind, path + "kind")
+            exercise.apply(change.exerciseId.record.string ?: "", path + "exerciseId")
+            if ((change.kind == "added") != (change.before == null) || (change.kind == "removed") != (change.after == null))
+                throw Violation(changes.path, path, Violation.Reason.Custom("side"))
+            change.copy(before = change.before?.let { before.validate(it, path + "before") }, after = change.after?.let { after.validate(it, path + "after") })
+        }
+        if (checked.dropWhile { it.kind != "removed" }.any { it.kind != "removed" }) throw Violation(changes.path, at, Violation.Reason.Custom("removalsLast"))
+        return checked
     }
 }
 
@@ -42,83 +107,34 @@ data class Proposal(override val id: Id<Proposal>, val routineId: Id<Routine>, v
     val baseRevision: Int? = null, val baseName: String? = null, val threadId: String? = null, val changeCount: Int? = null) : Writable<Proposal> {
     override fun fields(): Map<String, Json> = mapOf("routineId" to routineId.json, "intent" to Json.of(intent), "proposedName" to Json.of(proposedName),
         "summary" to Json.of(summary), "changes" to Json.Arr(changes.map { it.json }), "door" to Json.of(door), "connection" to Json.of(connection), "agent" to Json.of(agent))
-    val document: List<RoutineEntry> get() = changes.filter { it.kind != "removed" }.map { RoutineEntry(it.exerciseId, it.after?.sets, it.after?.restSeconds) }
-    fun changeCount(base: Routine): Int {
-        changeCount?.let { return it }
-        val unmatched = base.entries.indices.toMutableList()
-        val retained = changes.filter { it.kind == "kept" || it.kind == "retargeted" }.mapNotNull { change ->
-            val at = unmatched.indexOfFirst { base.entries[it].exerciseId == change.exerciseId }
-            if (at < 0) null else unmatched.removeAt(at)
-        }
-        return changes.count { it.kind != "kept" } + (if (base.name != proposedName) 1 else 0) + (if (retained != retained.sorted()) 1 else 0)
-    }
+    val document: List<RoutineEntry> get() = RoutineChange.document(changes)
+    fun changeCount(base: Routine): Int = changeCount ?: (RoutineChange.count(base.entries, changes) + if (base.name != proposedName) 1 else 0)
     companion object : WritableType<Proposal> {
         override val type = Gym.Types.proposal
         override val scope = ScopeRef(Gym.scope)
         override fun decode(f: Fields) = Proposal(Id(f.id, this), f.ref("routineId", Routine), f.string("intent"), f.string("proposedName", ""), f.string("summary", ""),
-            f.list("changes", RoutineChange), f.string("door", "ask"), f.string("connection", ""), f.string("agent", ""), f.string("state", "pending"),
+            f.list("changes", RoutineChange::decode), f.string("door", "ask"), f.string("connection", ""), f.string("agent", ""), f.string("state", "pending"),
             f.optionalRef("supersededBy", this), f.optionalInstant("settledAt"), f.optionalInt("baseRevision"), f.optionalString("baseName"), f.optionalString("threadId"),
             f.optionalInt("changeCount"))
         override val checks = listOf(
             Check<Proposal>("intent") { value, _ -> value.copy(intent = ProposalRules.intent.apply(value.intent, Path("intent"))) },
             Check<Proposal>("proposedName") { value, _ -> value.copy(proposedName = ProposalRules.name.apply(value.proposedName, Path("proposedName"))) },
-            Check<Proposal>("summary") { value, _ -> value.copy(summary = ProposalRules.summary.apply(value.summary, Path("summary"))) },
-            Check<Proposal>("changes") { value, _ ->
-                val checked = ProposalRules.changes.apply(value.changes, Path("changes"))
-                if (checked.dropWhile { it.kind != "removed" }.any { it.kind != "removed" }) throw Violation("proposal.changes", Path("changes"), Violation.Reason.Custom("removalsLast"))
-                value.copy(changes = checked)
-            },
-            Check<Proposal>("door") { value, _ -> value.copy(door = ProposalRules.door.apply(value.door, Path("door"))) },
-            Check<Proposal>("connection") { value, _ -> value.copy(connection = ProposalRules.connection.apply(value.connection, Path("connection"))) },
-            Check<Proposal>("agent") { value, _ -> value.copy(agent = ProposalRules.agent.apply(value.agent, Path("agent"))) },
+            Check<Proposal>("summary") { value, _ -> value.copy(summary = ProposalRules.change.summary.apply(value.summary, Path("summary"))) },
+            Check<Proposal>("changes") { value, _ -> value.copy(changes = ProposalRules.change.validated(value.changes, Path("changes"))) },
+            Check<Proposal>("door") { value, _ -> value.copy(door = ProposalRules.change.door.apply(value.door, Path("door"))) },
+            Check<Proposal>("connection") { value, _ -> value.copy(connection = ProposalRules.change.connection.apply(value.connection, Path("connection"))) },
+            Check<Proposal>("agent") { value, _ -> value.copy(agent = ProposalRules.change.agent.apply(value.agent, Path("agent"))) },
         )
     }
 }
 
 object ProposalRules {
-    class Targets(path: String) {
-        val sets = CountSpec("$path.sets", 1, 20)
-        val reps = NumberSpec("$path.sets.reps", 1.0, 100.0, integer = true)
-        val weight = NumberSpec("$path.sets.weightKg", quantum = 0.01)
-        val rest = NumberSpec("$path.restSeconds", 15.0, 900.0, integer = true)
-        val specs: List<ValueSpec> get() = listOf(sets, reps, weight, rest)
-        fun validate(value: EntryTargets, at: Path): EntryTargets = value.copy(
-            sets = value.sets?.let { items -> sets.apply(items, at + "sets") { target, path ->
-                if (target.reps == 0) throw Violation("proposal.zeroTarget", path + "reps", Violation.Reason.Custom("zeroTarget"))
-                val checkedReps = reps.applyOptional(target.reps, path + "reps")
-                val checkedWeight = weight.applyOptional(target.weightKg, path + "weightKg")
-                if (checkedWeight == 0.0 && target.weightKg != 0.0) throw Violation("proposal.zeroTarget", path + "weightKg", Violation.Reason.Custom("zeroTarget"))
-                SetTarget(checkedReps, checkedWeight)
-            } }, restSeconds = rest.applyOptional(value.restSeconds, at + "restSeconds"),
-        )
-    }
-    val before = Targets("proposal.changes.before")
-    val after = Targets("proposal.changes.after")
+    val change = ChangeRules("proposal")
     val intent = ChoiceSpec("proposal.intent", listOf("revise", "remove"))
     val name = TextSpec("proposal.proposedName", MeasureUnit.bytes, 0, 240, trim = true, nfc = true)
-    val summary = TextSpec("proposal.summary", MeasureUnit.bytes, 0, 400, trim = true, nfc = true)
-    val changes = CountSpec("proposal.changes", 0, 100)
-    val kind = ChoiceSpec("proposal.changes.kind", listOf("kept", "added", "removed", "retargeted"))
-    val door = ChoiceSpec("proposal.door", listOf("ask"))
-    val connection = TextSpec("proposal.connection", MeasureUnit.bytes, 0, 0, trim = false, nfc = false)
-    val agent = TextSpec("proposal.agent", MeasureUnit.chars, 0, 0, trim = false, nfc = false)
-    val exercise = TextSpec("proposal.changes.exerciseId", MeasureUnit.chars, 1, 64, false, false)
-    val rules = (listOf(intent, name, summary, changes, kind, door, connection, agent, exercise) + before.specs + after.specs).map(Rule::local) +
-        Rule.local("proposal.zeroTarget", Proposal.type)
-    fun changesBetween(base: List<RoutineEntry>, proposed: List<RoutineEntry>): List<RoutineChange> {
-        val before = base
-        val after = proposed.map { it.validated(Path("entries")) }
-        val matched = mutableSetOf<Int>()
-        val changes = after.map { entry ->
-            val index = before.indices.firstOrNull { it !in matched && before[it].exerciseId == entry.exerciseId }
-            if (index == null) return@map RoutineChange("added", entry.exerciseId, after = EntryTargets(entry))
-            matched += index
-            val previous = EntryTargets(before[index])
-            val next = EntryTargets(entry)
-            RoutineChange(if (previous == next) "kept" else "retargeted", entry.exerciseId, previous, next)
-        }
-        return changes + before.withIndex().filter { it.index !in matched }.map { RoutineChange("removed", it.value.exerciseId, before = EntryTargets(it.value)) }
-    }
+    val rules = (listOf(intent, name) + change.specs).map(Rule::local) + Rule.local(change.zeroTarget, Proposal.type)
+    fun changesBetween(base: List<RoutineEntry>, proposed: List<RoutineEntry>): List<RoutineChange> =
+        RoutineChange.between(base, proposed.map { it.validated(Path("entries")) })
 }
 
 class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name: String, val entries: List<RoutineEntry>, val summary: String,
@@ -134,7 +150,7 @@ class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name:
         val proposedName = if (removing) "" else RoutineRules.name.apply(name, Path("name"))
         if (proposed.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), id.ref, path = Refused.Path.predicted)))
         if (!removing && base.name == proposedName && base.entries == proposed) return Decision.Unchanged(id)
-        val proposal = Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, ProposalRules.changesBetween(base.entries, proposed))
+        val proposal = Proposal(id, base.id, if (removing) "remove" else "revise", proposedName, summary, RoutineChange.between(base.entries, proposed))
         val plan = Plan()
         plan.create(Valid(proposal, Proposal, at = loaded.moment))
         plan.guardRead(base.id, listOf("entries", "name"))

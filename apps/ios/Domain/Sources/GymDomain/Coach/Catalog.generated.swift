@@ -3,7 +3,7 @@
 import SyncCore
 
 extension Catalog {
-  public static let version = "catalog/1"
+  public static let version = "catalog/2"
 
   static let declared: [Ability] = [
     Ability(
@@ -1584,6 +1584,155 @@ extension Catalog {
           "reviewUrl": ["type": "string"],
         ],
         "required": ["proposal", "reviewUrl", "note"],
+        "type": "object",
+      ]),
+    Ability(
+      name: "propose_workout_change", kind: .change, agent: .proposes, seats: .any, declared: true,
+      phrase: "wrote a change to this workout",
+      input: [
+        "additionalProperties": false,
+        "properties": [
+          "entries": [
+            "description": "This workout's plan, in order: every movement it asks for, the logged ones included. At most 50.",
+            "items": [
+              "additionalProperties": false,
+              "properties": [
+                "exerciseId": [
+                  "description": "The movement's id \u{2014} get_session and list_exercises answer with it.",
+                  "type": "string",
+                ],
+                "restSeconds": [
+                  "description": "Rest between this movement's sets, 15\u{2013}900. Omit to fall back to the rest target they set in the app, and to no timer at all when they have set none.",
+                  "maximum": 900,
+                  "minimum": 15,
+                  "type": "integer",
+                ],
+                "sets": [
+                  "description": "The movement's target for THIS workout as a SCHEME: one item per set, in the order lifted, 1 to 20. A straight `3 \u{D7} 8 \u{B7} 60` is three identical items. OMIT the whole key to leave the movement OPEN \u{2014} the numbers are decided at the rack. An empty array is refused: a zero target is no target.",
+                  "items": [
+                    "additionalProperties": false,
+                    "properties": [
+                      "reps": [
+                        "description": "Reps for THIS set (1\u{2013}100). OMIT to mean `max` \u{2014} as many as you can.",
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                      ],
+                      "weightKg": [
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
+                        "type": "number",
+                      ],
+                    ],
+                    "required": [],
+                    "type": "object",
+                  ],
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array",
+                ],
+              ],
+              "required": ["exerciseId"],
+              "type": "object",
+            ],
+            "maxItems": 50,
+            "minItems": 0,
+            "type": "array",
+          ],
+          "id": [
+            "description": "The id YOU mint for this proposal (`prop_` + hex is the house shape).",
+            "type": "string",
+          ],
+          "sessionId": [
+            "description": "The open workout's id \u{2014} list_sessions and get_session answer with it.",
+            "type": "string",
+          ],
+          "summary": [
+            "description": "One sentence saying what this changes and why \u{2014} the line the lifter reads on the card before the diff. Omit it and they read the diff alone.",
+            "maxLength": 400,
+            "type": "string",
+          ],
+        ],
+        "required": ["id", "sessionId", "entries"],
+        "type": "object",
+      ],
+      result: [
+        "additionalProperties": false,
+        "properties": [
+          "note": ["type": "string"],
+          "proposal": [
+            "additionalProperties": false,
+            "properties": [
+              "baseRevision": ["type": "integer"],
+              "changeCount": ["type": "integer"],
+              "changes": [
+                "items": [
+                  "additionalProperties": false,
+                  "properties": [
+                    "after": [
+                      "additionalProperties": false,
+                      "properties": [
+                        "restSeconds": ["type": "integer"],
+                        "sets": [
+                          "items": [
+                            "additionalProperties": false,
+                            "properties": ["reps": ["type": "integer"], "weightKg": ["type": "number"]],
+                            "required": [],
+                            "type": "object",
+                          ],
+                          "type": "array",
+                        ],
+                      ],
+                      "required": [],
+                      "type": "object",
+                    ],
+                    "before": [
+                      "additionalProperties": false,
+                      "properties": [
+                        "restSeconds": ["type": "integer"],
+                        "sets": [
+                          "items": [
+                            "additionalProperties": false,
+                            "properties": ["reps": ["type": "integer"], "weightKg": ["type": "number"]],
+                            "required": [],
+                            "type": "object",
+                          ],
+                          "type": "array",
+                        ],
+                      ],
+                      "required": [],
+                      "type": "object",
+                    ],
+                    "exerciseId": ["type": "string"],
+                    "kind": ["enum": ["kept", "added", "removed", "retargeted"], "type": "string"],
+                    "position": ["type": "integer"],
+                  ],
+                  "required": ["position", "kind", "exerciseId"],
+                  "type": "object",
+                ],
+                "type": "array",
+              ],
+              "id": ["type": "string"],
+              "sessionId": ["type": "string"],
+              "settledAt": ["type": "integer"],
+              "source": [
+                "additionalProperties": false,
+                "properties": [
+                  "agent": ["type": "string"],
+                  "connection": ["type": "string"],
+                  "door": ["enum": ["ask", "mcp"], "type": "string"],
+                  "thread": ["type": "string"],
+                ],
+                "required": ["door"],
+                "type": "object",
+              ],
+              "state": ["enum": ["pending", "applied", "dismissed", "superseded"], "type": "string"],
+              "summary": ["type": "string"],
+            ],
+            "required": ["id", "sessionId", "state", "summary", "changeCount", "source", "baseRevision", "changes"],
+            "type": "object",
+          ],
+        ],
+        "required": ["proposal", "note"],
         "type": "object",
       ]),
     Ability(

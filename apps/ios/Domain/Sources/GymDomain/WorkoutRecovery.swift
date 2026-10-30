@@ -29,7 +29,7 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
       case .invalid: self = .invalidSet
       case .unknownExercise: self = .unknownMovement
       case .sessionFinished: self = .strandedSets
-      case .full, .stale, .gone, .future, .proposalSettled, .proposalSuperseded, .other: self = .other
+      case .full, .stale, .gone, .future, .proposalSettled, .proposalSuperseded, .planLogged, .other: self = .other
       }
     }
   }

@@ -16,6 +16,7 @@ import { Routine, RoutineEntry, SetTarget } from './routines.js';
 /** @typedef {import('../../../platform/domain-kit/time.js').Moment} Moment */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
 /** @typedef {import('./routines.js').RoutineValue} RoutineValue */
+/** @typedef {import('./gymRules.js').ChangeRules} ChangeRules */
 
 export class EntryTargets {
   /** @param {readonly SetTarget[] | null} sets @param {number | null} restSeconds */
@@ -37,18 +38,6 @@ export class EntryTargets {
       ...(this.restSeconds === null ? {} : { restSeconds: this.restSeconds }) };
   }
 
-  /** @param {Path} path */
-  validated(path) {
-    const specs = path.text.endsWith('.before') ? ProposalRules.before : ProposalRules.after;
-    const sets = specs.sets.applyOptional(this.sets === null ? null : [...this.sets], path.plus('sets'), (target, at) => {
-      if (target.reps === 0) throw new Violation('proposal.zeroTarget', at.plus('reps'), { kind: 'custom', custom: 'zeroTarget' });
-      const reps = specs.reps.applyOptional(target.reps, at.plus('reps'));
-      const weightKg = specs.weight.applyOptional(target.weightKg, at.plus('weightKg'));
-      if (weightKg === 0 && target.weightKg !== 0) throw new Violation('proposal.zeroTarget', at.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
-      return new SetTarget(reps, weightKg);
-    });
-    return new EntryTargets(sets, specs.rest.applyOptional(this.restSeconds, path.plus('restSeconds')));
-  }
 }
 
 export class RoutineChange {
@@ -73,16 +62,78 @@ export class RoutineChange {
       ...(this.before === null ? {} : { before: this.before.json }), ...(this.after === null ? {} : { after: this.after.json }) };
   }
 
-  /** @param {Path} path */
-  validated(path) {
-    const kind = ProposalRules.kind.apply(this.kind, path.plus('kind'));
-    ProposalRules.exercise.apply(typeof this.exerciseId.record === 'string' ? this.exerciseId.record : '', path.plus('exerciseId'));
-    if ((kind === 'added') !== (this.before === null) || (kind === 'removed') !== (this.after === null)) {
-      throw new Violation('proposal.changes', path, { kind: 'custom', custom: 'side' });
+  // Each proposed entry against the first unmatched base entry of its movement, in the proposed order, then every base entry
+  // left unmatched as a removal.
+  /** @param {readonly RoutineEntry[]} base @param {readonly RoutineEntry[]} proposed */
+  static between(base, proposed) {
+    const matched = new Set();
+    const changes = proposed.map((entry) => {
+      const index = base.findIndex((before, at) => !matched.has(at) && before.exerciseId.equals(entry.exerciseId));
+      const next = EntryTargets.fromEntry(entry);
+      if (index === -1) return new RoutineChange('added', entry.exerciseId, null, next);
+      matched.add(index);
+      const before = base[index];
+      precondition(before !== undefined, 'a matched base entry is present');
+      const previous = EntryTargets.fromEntry(before);
+      return new RoutineChange(sameJson(previous.json, next.json) ? 'kept' : 'retargeted', entry.exerciseId, previous, next);
+    });
+    for (const [index, entry] of base.entries()) {
+      if (!matched.has(index)) changes.push(new RoutineChange('removed', entry.exerciseId, EntryTargets.fromEntry(entry)));
     }
-    return new RoutineChange(kind, this.exerciseId, this.before?.validated(path.plus('before')) ?? null,
-      this.after?.validated(path.plus('after')) ?? null);
+    return Object.freeze(changes);
   }
+
+  /** @param {readonly RoutineChange[]} changes */
+  static document(changes) {
+    return Object.freeze(changes.filter((change) => change.kind !== 'removed')
+      .map((change) => new RoutineEntry(change.exerciseId, change.after?.sets ?? null, change.after?.restSeconds ?? null)));
+  }
+
+  // R118's count: every line that is not kept, and one more when the kept movements left the base's order.
+  /** @param {readonly RoutineEntry[]} base @param {readonly RoutineChange[]} changes */
+  static count(base, changes) {
+    const unmatched = base.map((entry, index) => ({ entry, index }));
+    let greatest = -1;
+    let reordered = false;
+    for (const change of changes) {
+      if (change.kind !== 'kept' && change.kind !== 'retargeted') continue;
+      const at = unmatched.findIndex(({ entry }) => entry.exerciseId.equals(change.exerciseId));
+      if (at === -1) continue;
+      const [matched] = unmatched.splice(at, 1);
+      precondition(matched !== undefined, 'a matched base entry is present');
+      if (matched.index < greatest) reordered = true;
+      greatest = Math.max(greatest, matched.index);
+    }
+    return changes.filter((change) => change.kind !== 'kept').length + (reordered ? 1 : 0);
+  }
+}
+
+// A proposal's change lines checked by its type's rules: their count, each line's kind, movement and sides, then removals last.
+/** @param {ChangeRules} rules @param {readonly RoutineChange[]} changes @param {Path} path */
+export function validatedChanges(rules, changes, path) {
+  /** @param {import('./gymRules.js').TargetSpecs} specs @param {EntryTargets} value @param {Path} at */
+  const targets = (specs, value, at) => new EntryTargets(specs.sets.applyOptional(value.sets === null ? null : [...value.sets], at.plus('sets'),
+    (/** @type {SetTarget} */ target, /** @type {Path} */ place) => {
+      if (target.reps === 0) throw new Violation(rules.zeroTarget, place.plus('reps'), { kind: 'custom', custom: 'zeroTarget' });
+      const reps = specs.reps.applyOptional(target.reps, place.plus('reps'));
+      const weightKg = specs.weight.applyOptional(target.weightKg, place.plus('weightKg'));
+      if (weightKg === 0 && target.weightKg !== 0) throw new Violation(rules.zeroTarget, place.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
+      return new SetTarget(reps, weightKg);
+    }), specs.rest.applyOptional(value.restSeconds, at.plus('restSeconds')));
+  const checked = rules.changes.apply([...changes], path, (change, at) => {
+    const kind = rules.kind.apply(change.kind, at.plus('kind'));
+    rules.exercise.apply(typeof change.exerciseId.record === 'string' ? change.exerciseId.record : '', at.plus('exerciseId'));
+    if ((kind === 'added') !== (change.before === null) || (kind === 'removed') !== (change.after === null)) {
+      throw new Violation(rules.changes.path, at, { kind: 'custom', custom: 'side' });
+    }
+    return new RoutineChange(kind, change.exerciseId, change.before === null ? null : targets(rules.before, change.before, at.plus('before')),
+      change.after === null ? null : targets(rules.after, change.after, at.plus('after')));
+  });
+  const removed = checked.findIndex((change) => change.kind === 'removed');
+  if (removed >= 0 && checked.slice(removed).some((change) => change.kind !== 'removed')) {
+    throw new Violation(rules.changes.path, path, { kind: 'custom', custom: 'removalsLast' });
+  }
+  return checked;
 }
 
 export class ProposalValue {
@@ -118,10 +169,7 @@ export class ProposalValue {
       changes: this.changes.map((change) => change.json), door: this.door, connection: this.connection, agent: this.agent };
   }
 
-  get document() {
-    return Object.freeze(this.changes.filter((change) => change.kind !== 'removed')
-      .map((change) => new RoutineEntry(change.exerciseId, change.after?.sets ?? null, change.after?.restSeconds ?? null)));
-  }
+  get document() { return RoutineChange.document(this.changes); }
 
   /** @returns {Record<string, Json>} */
   get provenance() {
@@ -132,19 +180,7 @@ export class ProposalValue {
   /** @param {RoutineValue} base */
   countChanges(base) {
     if (this.changeCount !== null) return this.changeCount;
-    const unmatched = base.entries.map((entry, index) => ({ entry, index }));
-    let greatest = -1;
-    let reordered = false;
-    for (const change of this.changes) {
-      if (change.kind !== 'kept' && change.kind !== 'retargeted') continue;
-      const at = unmatched.findIndex(({ entry }) => entry.exerciseId.equals(change.exerciseId));
-      if (at === -1) continue;
-      const [matched] = unmatched.splice(at, 1);
-      precondition(matched !== undefined, 'a matched routine entry is present');
-      if (matched.index < greatest) reordered = true;
-      greatest = Math.max(greatest, matched.index);
-    }
-    return this.changes.filter((change) => change.kind !== 'kept').length + (base.name === this.proposedName ? 0 : 1) + (reordered ? 1 : 0);
+    return RoutineChange.count(base.entries, this.changes) + (base.name === this.proposedName ? 0 : 1);
   }
 }
 
@@ -160,18 +196,11 @@ export const Proposal = new EntityType({
   checks: [
     new Check('intent', (value) => new ProposalValue({ ...value, intent: ProposalRules.intent.apply(value.intent, new Path('intent')) })),
     new Check('proposedName', (value) => new ProposalValue({ ...value, proposedName: ProposalRules.name.apply(value.proposedName, new Path('proposedName')) })),
-    new Check('summary', (value) => new ProposalValue({ ...value, summary: ProposalRules.summary.apply(value.summary, new Path('summary')) })),
-    new Check('changes', (value) => {
-      const changes = ProposalRules.changes.apply([...value.changes], new Path('changes'));
-      const removed = changes.findIndex((change) => change.kind === 'removed');
-      if (removed >= 0 && changes.slice(removed).some((change) => change.kind !== 'removed')) {
-        throw new Violation('proposal.changes', new Path('changes'), { kind: 'custom', custom: 'removalsLast' });
-      }
-      return new ProposalValue({ ...value, changes });
-    }),
-    new Check('door', (value) => new ProposalValue({ ...value, door: ProposalRules.door.apply(value.door, new Path('door')) })),
-    new Check('connection', (value) => new ProposalValue({ ...value, connection: ProposalRules.connection.apply(value.connection, new Path('connection')) })),
-    new Check('agent', (value) => new ProposalValue({ ...value, agent: ProposalRules.agent.apply(value.agent, new Path('agent')) })),
+    new Check('summary', (value) => new ProposalValue({ ...value, summary: ProposalRules.change.summary.apply(value.summary, new Path('summary')) })),
+    new Check('changes', (value) => new ProposalValue({ ...value, changes: validatedChanges(ProposalRules.change, value.changes, new Path('changes')) })),
+    new Check('door', (value) => new ProposalValue({ ...value, door: ProposalRules.change.door.apply(value.door, new Path('door')) })),
+    new Check('connection', (value) => new ProposalValue({ ...value, connection: ProposalRules.change.connection.apply(value.connection, new Path('connection')) })),
+    new Check('agent', (value) => new ProposalValue({ ...value, agent: ProposalRules.change.agent.apply(value.agent, new Path('agent')) })),
   ],
 });
 
@@ -199,22 +228,7 @@ export const RoutineCreation = new EntityType({ type: 'routineCreation', scope: 
 
 /** @param {readonly RoutineEntry[]} base @param {readonly RoutineEntry[]} proposed */
 export function changesBetween(base, proposed) {
-  const matched = new Set();
-  const changes = proposed.map((raw) => {
-    const entry = raw.validated(new Path('entries'));
-    const index = base.findIndex((before, at) => !matched.has(at) && before.exerciseId.equals(entry.exerciseId));
-    const next = EntryTargets.fromEntry(entry);
-    if (index === -1) return new RoutineChange('added', entry.exerciseId, null, next);
-    matched.add(index);
-    const before = base[index];
-    precondition(before !== undefined, 'a matched routine entry is present');
-    const previous = EntryTargets.fromEntry(before);
-    return new RoutineChange(sameJson(previous.json, next.json) ? 'kept' : 'retargeted', entry.exerciseId, previous, next);
-  });
-  for (const [index, entry] of base.entries()) {
-    if (!matched.has(index)) changes.push(new RoutineChange('removed', entry.exerciseId, EntryTargets.fromEntry(entry)));
-  }
-  return Object.freeze(changes);
+  return RoutineChange.between(base, proposed.map((entry) => entry.validated(new Path('entries'))));
 }
 
 /**
@@ -245,7 +259,7 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
         return Decision.unchanged(id);
       }
       const proposal = new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName,
-        summary, changes: changesBetween(base.entries, proposed) });
+        summary, changes: RoutineChange.between(base.entries, proposed) });
       const plan = new Plan();
       plan.create(new Valid(proposal, loaded.moment));
       plan.guardRead(base.id, ['entries', 'name']);

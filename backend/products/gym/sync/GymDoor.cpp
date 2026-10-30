@@ -89,6 +89,14 @@ bool GymDoor::recordTaken(sync::SyncTxn& txn, const UserId& user, const std::str
   return !impl_->store.spentIn(txn, scope, def, ids).empty() || !impl_->store.spentElsewhere(txn, scope, def, ids).empty();
 }
 
+std::optional<sync::Row> GymDoor::locked(sync::SyncTxn& txn, const UserId& user, const std::string& type, const std::string& id) {
+  const sync::RecordId record(id);
+  auto rows = impl_->catalog->store(type).lock(txn, sync::ScopeKey::product(user, "gym"), {record});
+  const auto row = rows.find(record.key());
+  if (row == rows.end()) return std::nullopt;
+  return std::move(row->second);
+}
+
 Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
   auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
   WriteContext context(*observation);
@@ -175,11 +183,9 @@ void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
 
 void GymDoor::interrupt(const UserId& user, const std::string& messageId) {
   const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const sync::RecordId id(messageId);
-    const auto rows = impl_->catalog->store("message").lock(txn, sync::ScopeKey::product(user, "gym"), {id});
-    const auto message = rows.find(id.key());
-    if (message == rows.end()) return std::nullopt;
-    const Json::Value state = engine::value(&message->second, "state");
+    const std::optional<sync::Row> message = locked(txn, user, "message", messageId);
+    if (!message) return std::nullopt;
+    const Json::Value state = engine::value(&*message, "state");
     if (!state.isNull() && state != "running") return std::nullopt;
     Json::Value fields(Json::objectValue);
     fields["state"] = "interrupted";

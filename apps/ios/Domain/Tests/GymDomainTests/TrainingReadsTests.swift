@@ -121,6 +121,9 @@ struct TrainingReadsTests {
         let today = try fields.optionalRef("todaySessionId", Session.self).map { log.sets(session: $0).filter { $0.exerciseId == last.exerciseId } } ?? []
         let prefill = Prefill.of(todaySets: today, planEntry: try fields.optionalValue("planEntry", of: RoutineEntry.self), lastTime: last)
         return ["weightKg": .of(prefill.weightKg), "reps": JSON(prefill.reps)]
+      case "RestTarget":
+        guard let target = RestTarget.of(try fields.optionalValue("planEntry", of: RoutineEntry.self), rest: try restSettings(read)) else { return .null }
+        return ["seconds": JSON(target.seconds), "reached": .bool(target.isReached(sinceMs: Int64(try fields.int("sinceMs"))))]
       case "StatsProgress": return log.progress.json
       case "BodyweightReps":
         let progress = log.progress.movement(try fields.ref("exerciseId", Exercise.self))

@@ -48,7 +48,9 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   note["body"] = "Build strength";
   admit("save_note", note);
   admit("update_exercise", parse(R"({"exerciseId":"bench-press","equipment":"dumbbell","loadCount":2})"));
-  const auto started = admit("start_session", startBody("ses_door0001", h.clock.now - 120000));
+  Json::Value start = startBody("ses_door0001", h.clock.now - 120000);
+  start["routineId"] = "rt_door0001";
+  const auto started = admit("start_session", start);
   CHECK_EQ(started.payload["id"].asString(), "ses_door0001");
   Json::Value set = setBody("set_door0001", "bench-press", 80, h.clock.now - 100000);
   set["sessionId"] = "ses_door0001";
@@ -57,6 +59,12 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   batch["sets"] = Json::Value(Json::arrayValue);
   batch["sets"].append(setBody("set_door0002", "bench-press", 82.5, h.clock.now - 80000));
   admit("log_sets", batch);
+  Json::Value workout(Json::objectValue);
+  workout["id"] = "prop_door003";
+  workout["sessionId"] = "ses_door0001";
+  workout["entries"] = routineBody("rt_door0001")["entries"];
+  workout["entries"].append(parse(R"({"exerciseId":"back-squat"})"));
+  admit("propose_workout_change", workout);
   Json::Value finish = sessionArgs("ses_door0001");
   finish["finishedAt"] = Json::UInt64(h.clock.now - 60000);
   admit("finish_session", finish);
@@ -82,11 +90,12 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   admit("discard_session", sessionArgs("ses_door0001"));
   for (const auto& tool : h.tools.declareTools())
     if (tool.access != Access::read) CHECK(written.contains(tool.name()));
-  CHECK_EQ(written.size(), std::size_t{14});
+  CHECK_EQ(written.size(), std::size_t{15});
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   const auto spent = txn.exec_params("select type,id from sync_spent where scope_key=$1 order by type,id", "acct:" + h.user.str() + "/gym");
-  CHECK_EQ(spent.size(), std::size_t{3});
+  // The discarded workout, its two sets and the workout proposal it killed.
+  CHECK_EQ(spent.size(), std::size_t{4});
   const auto metadata = txn.exec("select seq,born,name_stamp from gym_routines where id='rt_door0001'");
   REQUIRE_EQ(metadata.size(), std::size_t{1});
   CHECK(metadata[0]["seq"].as<long long>() > 0);

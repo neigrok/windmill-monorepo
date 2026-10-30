@@ -22,6 +22,8 @@ enum class AbilitySeats { any, bound };
 // Where a phone turn runs the ability: on the phone's replica, or — ruling R2, shares being server
 // records — on the server executor.
 enum class AbilityHost { phone, server };
+// What a `proposes` ability proposes a change to: G-4 admits one proposal per turn for each.
+enum class ProposalTarget { routine, workout };
 
 std::string_view nameOf(AbilityClass cls);
 std::string_view nameOf(AgentRule rule);
@@ -32,6 +34,8 @@ struct Ability {
   AgentRule agent = AgentRule::withheld;
   AbilitySeats seats = AbilitySeats::any;
   AbilityHost host = AbilityHost::phone;
+  int since = kOldestCatalog;  // D-3: the catalog version that added it
+  ProposalTarget target = ProposalTarget::routine;
 
   std::string name() const { return declaration.name(); }
   // G-7: a call that creates a record on the phone carries the record's id in `id`; the server mints it.
@@ -42,8 +46,11 @@ class AbilityCatalog {
 public:
   // Appendix C over the declarations; a declared name the appendix does not list is withheld.
   static AbilityCatalog of(const std::vector<ToolDeclaration>& declarations);
+  // D-3: catalog/N, every ability whose `since` is at most N, which a turn opened with that version is
+  // offered and gated by.
+  AbilityCatalog at(int version) const;
 
-  const std::string& version() const { return version_; }
+  int version() const { return version_; }
   const std::vector<Ability>& abilities() const { return abilities_; }
   const Ability* find(std::string_view name) const;
   // G-1 and G-2 as the tool list a seat's turn sends the vendor: declared, not withheld, and
@@ -51,7 +58,7 @@ public:
   std::vector<ToolDeclaration> offered(Seat seat) const;
 
 private:
-  std::string version_ = kCatalogVersion;
+  int version_ = kNewestCatalog;
   std::vector<Ability> abilities_;
 };
 

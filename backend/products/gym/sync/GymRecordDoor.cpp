@@ -5,6 +5,7 @@
 #include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
+#include "products/gym/sync/GymRules.h"
 
 #include <algorithm>
 
@@ -128,6 +129,55 @@ ProposalMintOutcome GymDoor::mintProposal(const UserId& user, const ProposalId& 
   if (code == "unknown-exercise") return {std::nullopt, ProposalMintError::unknownExercise};
   requireOk(result);
   return {held ? held : program_.proposal(user, id), ProposalMintError::none};
+}
+
+// The workout's plan is read where admission reads it, from the engine row under the scope lock, so the diff and
+// its base revision are the ones the rules check. A spent id splits as a routine proposal's does.
+WorkoutProposalOutcome GymDoor::proposeWorkout(const UserId& user, const WorkoutProposalWrite& incoming) {
+  WorkoutProposalOutcome outcome{std::nullopt, WorkoutProposalError::none, std::nullopt};
+  const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+    const std::optional<sync::Row> session = locked(txn, user, "session", incoming.session.str());
+    if (!session || !session->alive()) { outcome.error = WorkoutProposalError::unknownSession; return std::nullopt; }
+    const std::optional<PlanSnapshot> plan = planFrom(engine::value(&*session, "plan"));
+    if (!plan) { outcome.error = WorkoutProposalError::noPlan; return std::nullopt; }
+    const Json::Value revision = engine::value(&*session, "planRevision");
+    WorkoutProposal proposal{incoming.id, incoming.session, incoming.source, incoming.summary, *plan,
+                             revision.isNull() ? 1 : revision.asInt(), incoming.entries};
+    if (const std::optional<sync::Row> stored = locked(txn, user, "workoutProposal", incoming.id.str())) {
+      Json::Value record(Json::objectValue);
+      for (const auto& [field, reg] : stored->lattice.f) record[field] = reg.value;
+      record["id"] = incoming.id.str();
+      outcome.proposal = workoutProposalFrom(record);
+      if (!outcome.proposal->replays(proposal)) outcome.error = WorkoutProposalError::idReused;
+      return std::nullopt;
+    }
+    if (proposal.changeCount == 0) { outcome.error = WorkoutProposalError::noChange; return std::nullopt; }
+    if (recordTaken(txn, user, "workoutProposal", incoming.id.str())) { outcome.error = WorkoutProposalError::idTaken; return std::nullopt; }
+    Json::Value fields(Json::objectValue);
+    fields["sessionId"] = proposal.session.str();
+    fields["summary"] = proposal.summary;
+    fields["door"] = toString(proposal.source.door);
+    fields["connection"] = proposal.source.connection;
+    fields["agent"] = proposal.source.agent;
+    fields["threadId"] = proposal.source.thread ? Json::Value(proposal.source.thread->str()) : Json::Value();
+    fields["changes"] = toJson(proposal)["changes"];
+    for (auto& change : fields["changes"]) change.removeMember("position");
+    outcome.proposal = std::move(proposal);
+    Json::Value built = intent();
+    built["d"].append(delta("workoutProposal", incoming.id.str(), fields, true));
+    return built;
+  });
+  if (outcome.error != WorkoutProposalError::none) return {std::nullopt, outcome.error, std::nullopt};
+  const std::string code = refusal(result);
+  const auto refused = [](WorkoutProposalError error) { return WorkoutProposalOutcome{std::nullopt, error, std::nullopt}; };
+  if (code == "id-taken" || code == "id-spent") return refused(WorkoutProposalError::idTaken);
+  if (code == "unknown-record") return refused(WorkoutProposalError::unknownSession);
+  if (code == "session-finished") return refused(WorkoutProposalError::finished);
+  if (code == "unknown-exercise") return refused(WorkoutProposalError::unknownExercise);
+  if (code == "invalid") return refused(WorkoutProposalError::invalidPlan);
+  if (code == "plan-logged") return {std::nullopt, WorkoutProposalError::planLogged, ExerciseId{result["detail"]["exerciseId"].asString()}};
+  requireOk(result);
+  return outcome;
 }
 
 ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const ExerciseWrite& write) {

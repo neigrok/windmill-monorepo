@@ -1298,10 +1298,10 @@ create index if not exists gym_proposal_changes_user on gym_proposal_changes (us
 -- id is client-minted ('ses_<hex>') and is the idempotency key: a double-tapped start, an offline
 -- replay and a retried call all conflict on the PK and no-op. One open session per user, enforced by
 -- the partial unique index: starting while another is open joins that session, unless the caller
--- states it will not join, in which case the no-op is a refusal. plan is a frozen jsonb copy of the
--- routine at start, composed by the server and never by a client (null = ad-hoc); routine_id is
--- informational and the snapshot is the truth. started_at/finished_at are client wall-clock
--- instants.
+-- states it will not join, in which case the no-op is a refusal. plan is the jsonb copy of the
+-- routine a start takes (null = ad-hoc), which the lifter's own edits and an applied workout proposal
+-- revise while the workout is open, never on a movement with a logged set; routine_id is
+-- informational and the plan is the truth. started_at/finished_at are client wall-clock instants.
 create table if not exists gym_sessions (
   id          text primary key,
   user_id     uuid not null references users(id) on delete cascade,
@@ -1802,6 +1802,60 @@ alter table gym_proposals
   add column if not exists base_name_stamp text,
   add column if not exists change_count_stamp text;
 create index if not exists gym_proposals_sync_feed on gym_proposals (user_id, seq);
+
+-- The open workout's plan revisions (engine A.2): plan_revision is unset until the first net change, which
+-- writes 2; routine_revision is the routine revision the plan froze at.
+alter table gym_sessions
+  add column if not exists plan_revision int,
+  add column if not exists plan_revision_stamp text,
+  add column if not exists routine_revision int,
+  add column if not exists routine_revision_stamp text;
+
+-- A change to one open workout's plan an agent proposes (gym Coach §5 G-4): the diff against the plan at
+-- base_revision, kept whole as the wire's `changes` array. Nothing moves until the lifter applies it, and the
+-- workout's delete kills it in the same admission, which the deferred FK lets land in one transaction.
+create table if not exists gym_workout_proposals (
+  id                   text primary key,
+  user_id              uuid not null references users(id) on delete cascade,
+  session_id           text references gym_sessions(id) deferrable initially deferred,
+  base_revision        int,
+  change_count         int,
+  summary              text,
+  changes              jsonb,
+  door                 text check (door in ('mcp','ask')),
+  connection           text,
+  agent                text,
+  thread_id            text,
+  state                text check (state in ('pending','applied','dismissed','superseded')),
+  superseded_by        text,
+  settled_at           timestamptz,
+  seq                  bigint,
+  rc                   bigint,
+  ru                   bigint,
+  born                 text,
+  life_stamp           text,
+  session_id_stamp     text,
+  base_revision_stamp  text,
+  change_count_stamp   text,
+  summary_stamp        text,
+  changes_stamp        text,
+  door_stamp           text,
+  connection_stamp     text,
+  agent_stamp          text,
+  thread_id_stamp      text,
+  state_stamp          text,
+  superseded_by_stamp  text,
+  settled_at_stamp     text
+);
+create index if not exists gym_workout_proposals_sync_feed on gym_workout_proposals (user_id, seq);
+create index if not exists gym_workout_proposals_session on gym_workout_proposals (session_id);
+
+-- Successful workout proposal applies outlive the proposal and its workout.
+create table if not exists gym_workout_proposal_applies (
+  id      text primary key,
+  user_id uuid not null references users(id) on delete cascade
+);
+create index if not exists gym_workout_proposal_applies_owner on gym_workout_proposal_applies(user_id);
 
 -- Coach conversations on the engine (gym Coach §9.1): nullable registers with one stamp each, a message's
 -- `text` in `body`, `at` in epoch milliseconds; the deferred thread FK lets a death kill its messages in one admission.

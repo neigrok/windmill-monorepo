@@ -29,6 +29,7 @@ SessionImport parseSessionImport(const Json::Value& body); // throws InvalidTrai
 RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTraining
 // `position` is not a field here.
 ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source);
+WorkoutProposalWrite parseWorkoutProposalWrite(const Json::Value& body, const ProposalSource& source);
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining
 // The id and the owner are the caller's; the entity applies the three bounds.
 Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user);  // throws InvalidTraining
@@ -52,6 +53,10 @@ Json::Value toJson(const Routine& routine, const std::optional<ProposalHead>& pe
 Json::Value toJson(const std::vector<Routine>& routines, const std::vector<ProposalHead>& pending);
 Json::Value toJson(const ProposalHead& head);
 Json::Value toJson(const RoutineProposal& proposal);
+// The proposal as every executor knows it: no admission instant (INV-3), and no review link.
+Json::Value toJson(const WorkoutProposal& proposal);
+// A workoutProposal record's registers by name, its id beside them; clamps as planFrom does.
+WorkoutProposal workoutProposalFrom(const Json::Value& record);
 Json::Value toJson(const std::vector<ProposalHead>& heads);
 Json::Value toJson(const ThreadOutcome& outcome);
 Json::Value toJson(const std::vector<CoachResult>& results);

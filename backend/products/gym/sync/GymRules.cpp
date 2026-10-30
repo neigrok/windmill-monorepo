@@ -186,7 +186,10 @@ Delta newSession(const GymFacts& facts, const Json::Value& args, bool finished) 
   const Json::Value plan = readable ? object({{"routine", value(routine, "name")}, {"entries", value(routine, "entries")}}) : Json::Value();
   delta.lattice.f.emplace("routineId", Reg(readable ? args["routineId"] : Json::Value(), Stamp{}));
   delta.lattice.f.emplace("plan", Reg(plan, Stamp{}));
-  if (readable) delta.lattice.f.emplace("historyRoutineId", Reg(args["routineId"], Stamp{}));
+  if (!readable) return delta;
+  delta.lattice.f.emplace("historyRoutineId", Reg(args["routineId"], Stamp{}));
+  // The routine revision the plan froze at, which a workout's receipt reads to say the routine moved since.
+  if (!value(routine, "revision").isNull()) delta.lattice.f.emplace("routineRevision", Reg(value(routine, "revision"), Stamp{}));
   return delta;
 }
 
@@ -234,11 +237,122 @@ Json::Value proposalChanges(const Json::Value& base, const Json::Value& proposed
   return changes;
 }
 
+// The document a diff proposes: every line but the removed ones, in order.
+Json::Value documentOf(const Json::Value& changes) {
+  Json::Value document(Json::arrayValue);
+  for (const Json::Value& change : changes) {
+    if (change["kind"] == "removed") continue;
+    Json::Value entry = change["after"];
+    entry["exerciseId"] = change["exerciseId"];
+    document.append(entry);
+  }
+  return document;
+}
+
+// R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines, matched to
+// their base lines in proposed order, take a base line before one already visited.
+int changeCountOf(const Json::Value& base, const Json::Value& changes) {
+  int count = 0;
+  for (const Json::Value& change : changes) if (change["kind"] != "kept") ++count;
+  std::set<Json::ArrayIndex> matched;
+  int highest = -1;
+  for (const Json::Value& change : changes) {
+    if (change["kind"] == "added" || change["kind"] == "removed") continue;
+    for (Json::ArrayIndex i = 0; i < base.size(); ++i) {
+      if (matched.contains(i) || base[i]["exerciseId"] != change["exerciseId"]) continue;
+      matched.insert(i);
+      if (static_cast<int>(i) < highest) return count + 1;
+      highest = static_cast<int>(i);
+      break;
+    }
+  }
+  return count;
+}
+
+Json::Value planEntries(const Json::Value& plan) {
+  return plan["entries"].isArray() ? plan["entries"] : Json::Value(Json::arrayValue);
+}
+
+std::int64_t planRevision(const Row& session) {
+  const Json::Value revision = value(&session, "planRevision");
+  return revision.isNull() ? 1 : revision.asInt64();
+}
+
+// A session takes no plan revision once finished, or once open 4 h or more past its last activity.
+bool closed(const Row& session, Ms lastActivity, Ms now) {
+  return !value(&session, "finishedAt").isNull() || (now >= lastActivity && now - lastActivity >= kStaleMs);
+}
+
+// The movements a session holds an alive set of, among the rows given.
+std::set<std::string> loggedMovements(const std::vector<const Row*>& rows, const Json::Value& session) {
+  std::set<std::string> logged;
+  for (const Row* set : rows)
+    if (set->t == "set" && set->alive() && value(set, "sessionId") == session) logged.insert(value(set, "exerciseId").asString());
+  return logged;
+}
+
+// A.2's logged-movement rule: the first logged movement, in the order the two plans name movements, whose entries
+// differ between them. A movement with a logged set keeps its plan.
+std::optional<std::string> changedLoggedMovement(const Json::Value& before, const Json::Value& after, const std::set<std::string>& logged) {
+  auto entriesOf = [](const Json::Value& entries, const Json::Value& exercise) {
+    Json::Value named(Json::arrayValue);
+    for (const Json::Value& entry : entries) if (entry["exerciseId"] == exercise) named.append(entry);
+    return named;
+  };
+  for (const Json::Value* plan : {&before, &after}) {
+    for (const Json::Value& entry : *plan) {
+      const Json::Value& exercise = entry["exerciseId"];
+      if (logged.contains(exercise.asString()) && !same(entriesOf(before, exercise), entriesOf(after, exercise))) return exercise.asString();
+    }
+  }
+  return std::nullopt;
+}
+
+// Why a workout proposal cannot apply, first match wins: a newer proposal replaced it, its workout closed, the plan
+// moved past its base, or a movement it changes was logged since. Nothing: it applies.
+std::optional<std::string> workoutReason(const GymFacts& facts, const Row& proposal, Ms now) {
+  if (!value(&proposal, "supersededBy").isNull()) return "replaced";
+  const Row* session = facts.row("session", value(&proposal, "sessionId").asString());
+  if (!session || !session->alive() || closed(*session, lastActivity(facts, *session), now)) return "workout-finished";
+  if (stateOf(proposal) == "superseded" || planRevision(*session) != value(&proposal, "baseRevision").asInt64()) return "workout-changed";
+  std::vector<const Row*> rows;
+  for (const Row& row : facts.rows) rows.push_back(&row);
+  if (changedLoggedMovement(planEntries(value(session, "plan")), documentOf(value(&proposal, "changes")), loggedMovements(rows, session->id.json())))
+    return "workout-moved";
+  return std::nullopt;
+}
+
+// gym.applyWorkoutProposal and gym.dismissWorkoutProposal: an apply writes the proposal's document as the workout's
+// plan and keeps a receipt; a dismissal runs no workout check on a pending proposal.
+GymOutcome settleWorkoutProposal(bool apply, const std::string& id, const GymFacts& facts, Ms now) {
+  GymOutcome result;
+  if (apply && facts.books["workoutProposalApplies"].isMember(id)) return result;
+  requireAlive(facts, "workoutProposal", id);
+  const Row& proposal = *facts.row("workoutProposal", id);
+  const std::string state = stateOf(proposal);
+  if (apply) {
+    result.receiptKind = "workoutProposalApplies";
+    result.receiptId = id;
+    result.receipt = true;
+  }
+  if (state == (apply ? "applied" : "dismissed")) return result;
+  if (state == "applied" || state == "dismissed") throw Refusal("proposal-settled", object({{"state", state}}));
+  if (apply || state == "superseded")
+    if (const auto reason = workoutReason(facts, proposal, now)) throw Refusal("proposal-superseded", object({{"reason", *reason}}));
+  append(result.command, fields(proposal, object({{"state", apply ? "applied" : "dismissed"}, {"settledAt", Json::UInt64(now)}})));
+  if (!apply) return result;
+  const Row& session = *facts.row("session", value(&proposal, "sessionId").asString());
+  const Json::Value plan = object({{"routine", value(&session, "plan")["routine"]}, {"entries", documentOf(value(&proposal, "changes"))}});
+  append(result.command, fields(session, object({{"plan", plan}})));
+  return result;
+}
+
 }
 
 std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& changes, const Intent& intent, bool server, Ms now) {
   const std::map<std::string, std::vector<std::string>> authored{
-      {"routine", {"revision", "createdEntries"}}, {"proposal", {"baseRevision", "baseName", "changeCount"}}, {"note", {"updatedAt"}}};
+      {"routine", {"revision", "createdEntries"}}, {"proposal", {"baseRevision", "baseName", "changeCount"}}, {"note", {"updatedAt"}},
+      {"session", {"planRevision", "routineRevision"}}, {"workoutProposal", {"baseRevision", "changeCount"}}};
   for (const Delta& delta : intent.d) {
     if (delta.t == "routineCreation") throw Refusal(code::invalid);
     const auto found = authored.find(delta.t);
@@ -259,7 +373,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
   }
   for (const Change& change : changes) {
     joined.insert_or_assign({change.after.t, change.after.id.column()}, change.after);
-    if (change.after.t == "proposal" && created(change)) futureProposals.insert(change.after.id.column());
+    if ((change.after.t == "proposal" || change.after.t == "workoutProposal") && created(change)) futureProposals.insert(change.after.id.column());
   }
   auto current = [&](const std::string& type, const Json::Value& id) -> const Row* {
     if (!id.isString()) return nullptr;
@@ -280,6 +394,32 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       last = std::max(last.value_or(at), at);
     }
     return last.value_or(value(&session, "startedAt").asUInt64());
+  };
+  auto rowsOf = [&](const std::string& type) {
+    std::vector<const Row*> rows;
+    for (const auto& [key, row] : joined) if (row.t == type) rows.push_back(&row);
+    return rows;
+  };
+  // A replica's write held to D-19: the intent guards the register at the stamp it read, the absent one included.
+  auto guarded = [&](const std::string& type, const Json::Value& id, const std::string& field, const Row* row) {
+    std::optional<Stamp> stamp;
+    if (row) if (const auto reg = row->lattice.f.find(field); reg != row->lattice.f.end()) stamp = reg->second.stamp;
+    return std::any_of(intent.guard.begin(), intent.guard.end(), [&](const Guard& guard) {
+      return guard.t == type && guard.id.json() == id && guard.field == field && guard.stamp == stamp;
+    });
+  };
+  // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements,
+  // no second entry of a movement the plan held once or not at all, and logged movements kept.
+  auto checkPlanRevision = [&](const Json::Value& before, const Json::Value& after, const Json::Value& session) {
+    auto count = [](const Json::Value& entries, const Json::Value& exercise) {
+      return std::count_if(entries.begin(), entries.end(), [&](const Json::Value& entry) { return entry["exerciseId"] == exercise; });
+    };
+    for (const Json::Value& entry : after) if (entry.isMember("sets") && entry["sets"].empty()) throw Refusal(code::invalid);
+    for (const Json::Value& entry : after) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
+    for (const Json::Value& entry : after)
+      if (count(after, entry["exerciseId"]) > std::max<std::ptrdiff_t>(count(before, entry["exerciseId"]), 1)) throw Refusal(code::invalid);
+    if (const auto logged = changedLoggedMovement(before, after, loggedMovements(rowsOf("set"), session)))
+      throw Refusal("plan-logged", object({{"exerciseId", *logged}}));
   };
   std::vector<Delta> appended;
   auto append = [&](Delta delta) {
@@ -338,11 +478,63 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
         if (std::any_of(change.createdBy.begin(), change.createdBy.end(), [](Source source) { return source != Source::command; })) throw Refusal(code::invalid);
         continue;
       }
-      if (!died(change)) continue;
+      if (died(change)) {
+        const Row& prior = *change.stored;
+        const Ms at = activity(prior);
+        if (value(&prior, "finishedAt").isNull() && (now < at || now - at < kStaleMs)) throw Refusal("session-open");
+        for (const auto& [key, row] : joined) {
+          if ((row.t == "set" || row.t == "workoutProposal") && row.alive() && value(&row, "sessionId") == after.id.json()) append(death(row));
+        }
+        continue;
+      }
+      if (!after.alive() || !change.stored) continue;
       const Row& prior = *change.stored;
-      const Ms at = activity(prior);
-      if (value(&prior, "finishedAt").isNull() && (now < at || now - at < kStaleMs)) throw Refusal("session-open");
-      for (const auto& [key, set] : joined) if (set.t == "set" && set.alive() && value(&set, "sessionId") == after.id.json()) append(death(set));
+      const bool planWritten = std::any_of(intent.d.begin(), intent.d.end(), [&](const Delta& delta) {
+        return delta.t == "session" && delta.id == after.id && delta.lattice.f.contains("plan");
+      });
+      if (planWritten) {
+        if (!server && !guarded("session", after.id.json(), "plan", &prior)) throw Refusal(code::invalid);
+        const Json::Value before = value(&prior, "plan");
+        const Json::Value plan = value(&after, "plan");
+        if (before.isNull() || plan.isNull() || !same(plan["routine"], before["routine"])) throw Refusal(code::invalid);
+        if (closed(prior, activity(prior), now)) throw Refusal("session-finished");
+        checkPlanRevision(planEntries(before), planEntries(plan), after.id.json());
+      }
+      if (same(value(&prior, "plan"), value(&after, "plan"))) continue;
+      const std::int64_t revision = planRevision(prior) + 1;
+      if (revision > 2'147'483'647) throw Refusal(code::invalid);
+      append(fields(after, object({{"planRevision", Json::Int64(revision)}})));
+      for (const Row* proposal : rowsOf("workoutProposal")) {
+        if (!proposal->alive() || value(proposal, "sessionId") != after.id.json() || stateOf(*proposal) != "pending") continue;
+        append(fields(*proposal, object({{"state", "superseded"}, {"settledAt", Json::UInt64(now)}})));
+      }
+      continue;
+    }
+    if (after.t == "workoutProposal") {
+      if (!created(change)) continue;
+      futureProposals.erase(after.id.column());
+      const Json::Value sessionId = value(&after, "sessionId");
+      const Row* session = current("session", sessionId);
+      if (!server) {
+        if (value(&after, "door") != "ask" || !value(&after, "connection").asString().empty() || !value(&after, "agent").asString().empty()) throw Refusal(code::invalid);
+        if (!guarded("session", sessionId, "plan", session)) throw Refusal(code::invalid);
+      }
+      if (!session || !session->alive()) throw Refusal(code::unknownRecord);
+      const Json::Value plan = value(session, "plan");
+      if (plan.isNull()) throw Refusal(code::invalid);
+      if (closed(*session, activity(*session), now)) throw Refusal("session-finished");
+      const Json::Value base = planEntries(plan);
+      const Json::Value changes = value(&after, "changes");
+      const Json::Value proposed = documentOf(changes);
+      if (proposed.size() > 50 || !same(changes, proposalChanges(base, proposed))) throw Refusal(code::invalid);
+      checkPlanRevision(base, proposed, sessionId);
+      append(fields(after, object({{"baseRevision", Json::Int64(planRevision(*session))}, {"changeCount", changeCountOf(base, changes)}})));
+      for (const Row* other : rowsOf("workoutProposal")) {
+        if (other->id == after.id || futureProposals.contains(other->id.column())) continue;
+        if (!other->alive() || stateOf(*other) != "pending" || value(other, "sessionId") != sessionId || value(other, "door") != value(&after, "door")) continue;
+        if (value(other, "connection").asString() != value(&after, "connection").asString()) continue;
+        append(fields(*other, object({{"state", "superseded"}, {"supersededBy", after.id.json()}, {"settledAt", Json::UInt64(now)}})));
+      }
       continue;
     }
     if (after.t == "routine") {
@@ -446,20 +638,9 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     const Json::Value routineId = value(&after, "routineId");
     const Row* routine = current("routine", routineId);
     if (!routine || !routine->alive()) throw Refusal(code::unknownRecord);
-    if (!server) {
-      for (const char* field : {"entries", "name"}) {
-        const auto reg = routine->lattice.f.find(field);
-        const std::optional<Stamp> stamp = reg == routine->lattice.f.end() ? std::nullopt : std::optional(reg->second.stamp);
-        if (std::none_of(intent.guard.begin(), intent.guard.end(), [&](const Guard& guard) { return guard.t == "routine" && guard.id.json() == routineId && guard.field == field && guard.stamp == stamp; })) throw Refusal(code::invalid);
-      }
-    }
-    Json::Value proposed(Json::arrayValue);
-    for (const Json::Value& line : value(&after, "changes")) {
-      if (line["kind"] == "removed") continue;
-      Json::Value entry = line["after"];
-      entry["exerciseId"] = line["exerciseId"];
-      proposed.append(entry);
-    }
+    if (!server)
+      for (const char* field : {"entries", "name"}) if (!guarded("routine", routineId, field, routine)) throw Refusal(code::invalid);
+    const Json::Value proposed = documentOf(value(&after, "changes"));
     if (value(&after, "intent") == "remove" ? !proposed.empty() : proposed.empty() || proposed.size() > 50 || isBlank(value(&after, "proposedName").asString())) throw Refusal(code::invalid);
     for (const Json::Value& entry : proposed) {
       if (entry.isMember("sets") && entry["sets"].empty()) throw Refusal(code::invalid);
@@ -468,7 +649,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     for (const Json::Value& entry : proposed) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
     append(fields(after, object({{"baseRevision", value(routine, "revision")},
         {"baseName", value(routine, "name")},
-        {"changeCount", proposalChangeCount(value(routine, "entries"), value(&after, "changes"), value(routine, "name"), value(&after, "proposedName"))}})));
+        {"changeCount", changeCountOf(value(routine, "entries"), value(&after, "changes")) + (value(routine, "name") == value(&after, "proposedName") ? 0 : 1)}})));
     for (const auto& [key, other] : joined) {
       if (other.t != "proposal" || other.id == after.id || futureProposals.contains(other.id.column())) continue;
       if (!other.alive() || stateOf(other) != "pending" || value(&other, "routineId") != routineId || value(&other, "door") != value(&after, "door")) continue;
@@ -599,6 +780,8 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     append(outcome, fields(session, object({{"finishedAt", Json::UInt64(at)}, {"closedBy", "finish"}})));
     return result;
   }
+  if (name == "gym.applyWorkoutProposal" || name == "gym.dismissWorkoutProposal")
+    return settleWorkoutProposal(name == "gym.applyWorkoutProposal", args["proposalId"].asString(), facts, now);
   const std::string id = args["proposalId"].asString();
   const bool apply = name == "gym.applyProposal";
   if (apply && facts.books["proposalApplies"].isMember(id)) return result;
@@ -625,35 +808,9 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     outcome.deltas = {settle, death(routine)};
     return result;
   }
-  Json::Value entries(Json::arrayValue);
-  for (const Json::Value& change : value(&proposal, "changes")) {
-    if (change["kind"] == "removed") continue;
-    Json::Value entry = change["after"];
-    entry["exerciseId"] = change["exerciseId"];
-    entries.append(entry);
-  }
   append(outcome, std::move(settle));
-  append(outcome, fields(routine, object({{"name", value(&proposal, "proposedName")}, {"entries", entries}})));
+  append(outcome, fields(routine, object({{"name", value(&proposal, "proposedName")}, {"entries", documentOf(value(&proposal, "changes"))}})));
   return result;
 }
-
-int proposalChangeCount(const Json::Value& base, const Json::Value& changes, const Json::Value& baseName, const Json::Value& proposedName) {
-  int count = baseName == proposedName ? 0 : 1;
-  for (const Json::Value& change : changes) if (change["kind"] != "kept") ++count;
-  std::set<Json::ArrayIndex> matched;
-  int highest = -1;
-  for (const Json::Value& change : changes) {
-    if (change["kind"] == "added" || change["kind"] == "removed") continue;
-    for (Json::ArrayIndex i = 0; i < base.size(); ++i) {
-      if (matched.contains(i) || base[i]["exerciseId"] != change["exerciseId"]) continue;
-      matched.insert(i);
-      if (static_cast<int>(i) < highest) return count + 1;
-      highest = static_cast<int>(i);
-      break;
-    }
-  }
-  return count;
-}
-
 
 }
