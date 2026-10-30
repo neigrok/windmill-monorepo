@@ -7,6 +7,15 @@ import GymDomain
 private enum CoachDestination: Hashable { case history, notes, connectedLog }
 
 struct CoachTab: View {
+  struct Viewport: Equatable {
+    var bottomInset: CGFloat = 0
+    var latest = true
+  }
+  struct ReturnToLatest {
+    let owner: String?
+    let thread: String
+    let bottomInset: CGFloat
+  }
   let gym: GymModel
   var escapeSetup: ((CoachSetupChoice) -> Void)?
   @Binding var handoff: CoachHandoff?
@@ -19,7 +28,10 @@ struct CoachTab: View {
   @State var photo: PhotosPickerItem?
   @State var preparing = false
   @State var choosePhoto = false
-  @State var atLatest = true
+  @State var viewport = Viewport()
+  @State var position = ScrollPosition()
+  @State var returnToLatest: ReturnToLatest?
+  @State var conversationVisible = false
   @Environment(\.coachOpenAccount) var openAccount
   @Environment(\.coachKeepRoutines) var keepRoutines
   @Environment(\.coachOpenRoutine) var openRoutine
@@ -38,7 +50,7 @@ struct CoachTab: View {
       .toolbar {
         if coach.allowed {
           ToolbarItem(placement: .topBarTrailing) {
-            Button("History", systemImage: "clock") { destination = .history }
+            Button("History", systemImage: "clock") { open(.history) }
               .accessibilityIdentifier("coach-history")
           }
           if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
@@ -145,7 +157,7 @@ struct CoachTab: View {
               else {
                 CoachAnswerView(gym: gym, message: message, elsewhere: message.state == .running && message.replica != replica,
                                 offersSignIn: coach.anonymous && message.id == messages.last?.id, signIn: signIn,
-                                read: { sources = $0 }, notes: { destination = .notes }).id(message.id.description)
+                                read: { sources = $0 }, notes: { open(.notes) }).id(message.id.description)
               }
             }
             if coach.sending {
@@ -154,25 +166,52 @@ struct CoachTab: View {
               CoachTyping()
             }
             if let notice { CoachNoticeView(notice: notice, recover: recover) }
-            Color.clear.frame(height: 1).id("latest")
+            Color.clear.frame(height: 1)
           }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
         }.contentShape(Rectangle()).onTapGesture { composing = false }
       }.defaultScrollAnchor(greets ? .top : .bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-          geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 40
-        } action: { _, latest in atLatest = latest }
+        .scrollPosition($position)
+        .onScrollGeometryChange(for: Viewport.self) { geometry in
+          Viewport(bottomInset: geometry.contentInsets.bottom,
+            latest: geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 40)
+        } action: { _, next in
+          viewport = next
+          guard conversationVisible, destination == nil, let held = returnToLatest else { return }
+          guard held.owner == coach.owner, held.thread == coach.saved.threadId else { returnToLatest = nil; return }
+          guard next.bottomInset >= held.bottomInset else { return }
+          returnToLatest = nil
+          position.scrollTo(edge: .bottom)
+        }
+        .onAppear {
+          conversationVisible = true
+          if let held = returnToLatest, held.owner == coach.owner, held.thread == coach.saved.threadId {
+            position.scrollTo(edge: .bottom)
+          }
+        }
+        .onDisappear {
+          conversationVisible = false
+          if destination == nil { returnToLatest = nil }
+        }
+        .onScrollPhaseChange { _, phase in
+          if phase == .tracking || phase == .interacting { returnToLatest = nil }
+        }
+        .onChange(of: coach.saved.threadId) { _, _ in returnToLatest = nil }
+        .onChange(of: coach.owner) { _, _ in returnToLatest = nil }
+        .onChange(of: composing) { _, _ in returnToLatest = nil }
         .overlay(alignment: .bottomTrailing) {
-          if !atLatest, !composing {
-            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { glassSymbol("chevron.down") }
+          if !viewport.latest, !composing {
+            Button { withAnimation { position.scrollTo(edge: .bottom) } } label: { glassSymbol("chevron.down") }
               .buttonStyle(RoomSeatStyle(diameter: 36)).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
           }
         }
         .onChange(of: coach.asking) { _, asking in
+          returnToLatest = nil
           if asking { composing = false }
-          proxy.scrollTo("latest", anchor: .bottom)
+          position.scrollTo(edge: .bottom)
         }
         .task(id: revealedProposal) {
           guard let id = revealedProposal else { return }
+          returnToLatest = nil
           revealedProposal = nil
           guard let turn = coach.proposalTurn(id) else { return }
           // The answer first, which the lazy stack can always reach, then the card it now holds, from its head.
@@ -182,6 +221,12 @@ struct CoachTab: View {
           withAnimation { proxy.scrollTo(ProposalCard.anchor(id), anchor: .top) }
         }
     }
+  }
+
+  private func open(_ next: CoachDestination) {
+    returnToLatest = viewport.latest ? ReturnToLatest(owner: coach.owner, thread: coach.saved.threadId,
+      bottomInset: viewport.bottomInset) : nil
+    destination = next
   }
 
   // The band keeps this phone's own faults and the stream's reconnects; every refusal is a notice in the conversation,
@@ -223,7 +268,7 @@ struct CoachTab: View {
     case .signIn: signIn()
     case .ownAgent:
       gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "connect"])
-      destination = .connectedLog
+      open(.connectedLog)
     case .update: openURL(AppSettings.updateDestination)
     }
   }
