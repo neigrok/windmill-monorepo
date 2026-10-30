@@ -64,6 +64,8 @@ class AuthStore(
     val telemetry: Telemetry = Telemetry.None,
     private val lifecycle: AuthLifecycle = AuthLifecycle.None,
     private val handoffScope: CoroutineScope? = null,
+    private val externalTransitionPending: () -> Boolean = { false },
+    private val onVerifiedSignIn: (User) -> Unit = {},
 ) {
     var status: AuthStatus by mutableStateOf(AuthStatus.Unknown)
         private set
@@ -91,7 +93,7 @@ class AuthStore(
     private var signOutJob: Deferred<Unit>? = null
     private var signOutError: Exception? = null
     private var signOutTransition by mutableStateOf(false)
-    val transitionPending: Boolean get() = signOutTransition || sessions.signOutPending
+    val transitionPending: Boolean get() = signOutTransition || sessions.signOutPending || externalTransitionPending()
     var signOutQuestion by mutableStateOf<AuthSignOutQuestion?>(null)
         private set
     var signOutBusy by mutableStateOf(false)
@@ -113,6 +115,10 @@ class AuthStore(
 
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
     suspend fun restore() {
+        if (externalTransitionPending()) {
+            status = sessions.localSession.user?.let { AuthStatus.SignedIn(it, verified = false) } ?: AuthStatus.SignedOut
+            return
+        }
         if (signOutBusy) return
         if (sessions.signOutPending || signOutOpening?.choice != null) {
             runSignOutWork { recoverSignOut() }
@@ -330,6 +336,7 @@ class AuthStore(
         try {
             lifecycle.signedIn(proposed.user, proposed.secret, restoring)
             if (attempt != generation || sessions.proposed != proposed) throw CancellationException("Authentication changed.")
+            if (!restoring) onVerifiedSignIn(proposed.user)
             sessions.publishProposed(proposed)
         } catch (cancelled: CancellationException) {
             val completed = withContext(NonCancellable) { lifecycle.cancelSignIn(proposed.user, proposed.secret) }
@@ -404,6 +411,7 @@ class AuthStore(
         sessions.user()?.id == opening.user.id && sessions.read() == opening.secret
 
     suspend fun prepareSignOut() = runSignOutWork {
+        if (externalTransitionPending()) return@runSignOutWork
         if (sessions.signOutPending || signOutOpening?.choice != null) { recoverSignOut(); return@runSignOutWork }
         signOutOpening?.let { opening ->
             if (current(opening) && opening.handle != null) {
@@ -508,6 +516,28 @@ class AuthStore(
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: WindmillApiException) { }
             catch (failure: Exception) { telemetry.failure("auth_logout", failure) }
+        }
+    }
+
+    fun beginAccountDeletion(user: User, credential: String): Long {
+        requireNoTransition()
+        check(!handoffPending && status.user == user && sessions.localSession == LocalSession.Owned(user) && sessions.read() == credential) {
+            "The account changed."
+        }
+        generation += 1
+        return generation
+    }
+
+    fun validateAccountDeletion(user: User, credential: String) { sessions.validateDeletedIdentity(user, credential) }
+
+    fun completeAccountDeletion(user: User, credential: String) {
+        if (!sessions.clearDeleted(user, credential)) return
+        if (status != AuthStatus.SignedOut) {
+            identityRevision += 1
+            generation += 1
+            status = AuthStatus.SignedOut
+            linkSentTo = null
+            telemetry.identity(null)
         }
     }
 
@@ -638,6 +668,18 @@ interface SessionStore {
     fun user(): User?
     fun remember(user: User)
     fun clear()
+    fun validateDeletedIdentity(user: User, credential: String): Boolean {
+        if (localSession == LocalSession.Absent && !signOutPending && proposed == null) return true
+        val savedUser = this.user()
+        if (savedUser != null && savedUser.id != user.id) return false
+        check(savedUser == user && read() == credential && proposed == null && !signOutPending) { "The account changed." }
+        return true
+    }
+    fun clearDeleted(user: User, credential: String): Boolean {
+        if (!validateDeletedIdentity(user, credential)) return false
+        clear()
+        return true
+    }
 }
 
 // A secret that cannot be sealed is not written at all — never fall back to plaintext.
@@ -681,6 +723,28 @@ class PrefsSessions(
             signOutPending && (intent?.account != user.id || intent?.choice != choice)) return SignOutStorage.Unavailable
         unavailable = false
         return SignOutStorage.Current
+    }
+
+    override fun validateDeletedIdentity(user: User, credential: String): Boolean {
+        val identityKeys = listOf(bundleKey, secretKey, secretKey + sealed, userKey, userKey + sealed, proposedKey)
+        fun absent() = identityKeys.none { prefs.read(it) != null } && !signOutPending
+        if (absent()) return true
+        val stored = saved()
+        if (stored != null && stored.user.id != user.id) return false
+        check(stored == SavedSession(credential, user) && prefs.read(proposedKey) == null && !signOutPending) { "The account changed." }
+        return true
+    }
+
+    override fun clearDeleted(user: User, credential: String): Boolean {
+        if (!validateDeletedIdentity(user, credential)) return false
+        unavailable = false
+        try { clear() }
+        catch (failure: Exception) {
+            val identityKeys = listOf(bundleKey, secretKey, secretKey + sealed, userKey, userKey + sealed, proposedKey)
+            if (identityKeys.any { prefs.read(it) != null } || signOutPending) throw failure
+            unavailable = false
+        }
+        return true
     }
 
     override val localSession: LocalSession get() {

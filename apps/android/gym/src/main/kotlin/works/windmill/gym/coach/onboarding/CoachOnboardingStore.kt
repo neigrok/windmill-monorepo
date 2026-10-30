@@ -149,7 +149,8 @@ class CoachOnboardingStore(
     private fun start(record: CoachOnboardingRecord, attempt: Attempt): Deferred<CoachOnboardingOutcome> = synchronized(jobs) {
         val key = record.owner to record.requestId
         jobs[key]?.let { return@synchronized it.job }
-        val job = scope.async(start = CoroutineStart.LAZY) { execute(record, attempt) }
+        val authority = local.admit(record.owner)
+        val job = scope.async(start = CoroutineStart.LAZY) { execute(record, attempt, authority) }
         jobs[key] = Active(record, job)
         revision.update { it + 1 }
         job.invokeOnCompletion { synchronized(jobs) {
@@ -159,7 +160,7 @@ class CoachOnboardingStore(
         job
     }
 
-    private suspend fun execute(original: CoachOnboardingRecord, attempt: Attempt): CoachOnboardingOutcome {
+    private suspend fun execute(original: CoachOnboardingRecord, attempt: Attempt, authority: LocalCoach.Authority): CoachOnboardingOutcome {
         val began = elapsedNanos()
         var record = original
         telemetry.event("gym_ask_started", mapOf("state" to "anonymous"))
@@ -169,24 +170,24 @@ class CoachOnboardingStore(
             val violation = withContext(storageDispatcher) { CoachOnboardingLimits.violation(record.request()) }
             if (violation != null) {
                 record = record.copy(refusalCode = "input_limit")
-                keep(record)
+                keep(record, authority)
                 outcome = "refused"
                 return CoachOnboardingOutcome.Limited(violation, record)
             }
-            keep(record)
+            keep(record, authority)
             var response = if (attempt == Attempt.Send) {
-                try { post(record).also { record = local.onboarding(record.owner, record.requestId) ?: record } }
+                try { post(record, authority).also { record = local.onboarding(record.owner, record.requestId) ?: record } }
                 catch (failure: WindmillApiException) {
                     if (failure !is WindmillApiException.Timeout && failure !is WindmillApiException.Transport &&
                         failure !is WindmillApiException.Offline) throw failure
                     record = local.onboarding(record.owner, record.requestId) ?: record
-                    get(record)
+                    get(record, authority)
                 }
             } else {
-                try { get(record) }
+                try { get(record, authority) }
                 catch (failure: WindmillApiException.Refused) {
                     if (failure.status != 404 || attempt != Attempt.Retry) throw failure
-                    post(record)
+                    post(record, authority)
                 }
             }
             while (true) {
@@ -196,7 +197,7 @@ class CoachOnboardingStore(
                     throw WindmillApiException.Malformed
                 }
                 record = record.copy(response = response, refusalCode = null, refusalMessage = null)
-                keep(record)
+                keep(record, authority)
                 if (response.terminal) {
                     if (response.status == "completed") {
                         outcome = "answered"
@@ -210,7 +211,7 @@ class CoachOnboardingStore(
                     return CoachOnboardingOutcome.Refused(response.errorCode ?: response.status, record)
                 }
                 delay(1_000)
-                response = get(record)
+                response = get(record, authority)
             }
         } catch (cancelled: CancellationException) {
             outcome = "cancelled"
@@ -226,7 +227,7 @@ class CoachOnboardingStore(
                 if (code == "invalid_installation") installation.markInvalid()
                 record = (local.onboarding(record.owner, record.requestId) ?: record).copy(refusalCode = code,
                     refusalMessage = failure.refusal.message?.takeIf { code in allowanceCodes && it.isNotBlank() })
-                keep(record)
+                keep(record, authority)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 reportUnexpected(failure)
@@ -251,21 +252,26 @@ class CoachOnboardingStore(
         }
     }
 
-    private suspend fun post(record: CoachOnboardingRecord): CoachOnboardingResponse {
+    private suspend fun post(record: CoachOnboardingRecord, authority: LocalCoach.Authority): CoachOnboardingResponse {
         val origin = CoachOnboardingSeat(record.owner, record.replica)
         if (seat() != origin) throw WindmillApiException.Refused(409, works.windmill.platform.net.Refusal(code = "seat_changed"))
+        if (!local.current(authority)) throw CancellationException("coach-owner-retired")
         val credential = installation.forAnonymousSend()
         if (seat() != origin) throw WindmillApiException.Refused(409, works.windmill.platform.net.Refusal(code = "seat_changed"))
-        keep(record.copy(submitted = true, refusalCode = null, refusalMessage = null))
+        keep(record.copy(submitted = true, refusalCode = null, refusalMessage = null), authority)
         return api.start(record.body, credential)
     }
 
-    private suspend fun get(record: CoachOnboardingRecord): CoachOnboardingResponse =
-        api.get(record.requestId, installation.forRecovery())
+    private suspend fun get(record: CoachOnboardingRecord, authority: LocalCoach.Authority): CoachOnboardingResponse {
+        if (!local.current(authority)) throw CancellationException("coach-owner-retired")
+        val credential = installation.forRecovery()
+        if (!local.current(authority)) throw CancellationException("coach-owner-retired")
+        return api.get(record.requestId, credential)
+    }
 
-    private suspend fun keep(record: CoachOnboardingRecord) {
+    private suspend fun keep(record: CoachOnboardingRecord, authority: LocalCoach.Authority) {
         try {
-            if (!withContext(storageDispatcher) { local.keepOnboarding(record) }) throw CancellationException("coach-request-deleted")
+            if (!withContext(storageDispatcher) { local.withAuthority(authority) { local.keepOnboarding(record) } }) throw CancellationException("coach-request-deleted")
             revision.update { it + 1 }
         }
         catch (cancelled: CancellationException) { throw cancelled }
