@@ -6,8 +6,10 @@ import SyncSchema
 // The gym's rule book, every gym feature's entities and rules, pinned by packages/api-contract/gym/domain/rules.json.
 public enum GymRules {
   public static let book = RuleBook(registry: SyncSchema.registry,
-    entities: [Note.self, WeighIn.self, Routine.self, Exercise.self, ExerciseName.self, Session.self, TrainingSet.self, GymPreferences.self, Proposal.self],
+    entities: [Note.self, WeighIn.self, Routine.self, Exercise.self, ExerciseName.self, Session.self, TrainingSet.self, GymPreferences.self, Proposal.self,
+               WorkoutProposal.self],
     rules: NoteRules.rules + WeighInRules.rules + RoutineRules.rules + ExerciseRules.rules + SetRules.rules + SessionRules.rules + PreferencesRules.rules + ProposalRules.rules +
+      WorkoutPlanRules.rules + WorkoutProposalRules.rules +
       ImportSessionCommand.specs.map { .local($0) } + CorrectSessionCommand.specs.map { .local($0) } + [
         .local("routine.order", subject: Routine.type),
         .serverDecided("routine.exercise", codes: [Gym.Codes.unknownExercise], subject: Routine.type),
@@ -40,6 +42,8 @@ public enum GymRefusal: ProductRefusal, Equatable {
   case badInstant(Refused)
   case proposalSettled(Refused)
   case proposalSuperseded(Refused)
+  // A change to an open workout's movement that has a logged set; the detail names the movement.
+  case planLogged(Refused)
   case other(Refused)
 
   public init(_ v: Violation) {
@@ -61,6 +65,7 @@ public enum GymRefusal: ProductRefusal, Equatable {
     case (Gym.Codes.unknownExercise, _, _): self = .unknownExercise(r)
     case (Gym.Codes.proposalSettled, _, _): self = .proposalSettled(r)
     case (Gym.Codes.proposalSuperseded, _, _): self = .proposalSuperseded(r)
+    case (Gym.Codes.planLogged, _, _): self = .planLogged(r)
     default: self = .other(r)
     }
   }
