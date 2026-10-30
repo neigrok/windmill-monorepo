@@ -97,7 +97,7 @@ struct WorkoutMovementPicker: View {
   var body: some View {
     NavigationStack {
       MovementPicker(gym: gym, purpose: .workout, selected: Set(workout.walk.order),
-                     onBuildRoutine: { if gym.hideWorkout() { workout.handoff = .writtenProgram } },
+                     onBuildRoutine: { gym.hideWorkout(handingOff: .writtenProgram) },
                      onSelect: { entry in
                        let accepted = workout.add(entry.exerciseId)
                        gym.telemetry.event("gym_workout_picker", properties: ["action": "select", "outcome": accepted ? "ok" : "refused"])

@@ -554,6 +554,10 @@ enum WorkoutHandoff: Equatable {
   case keep(ID<Session>)
   case coach
   case writtenProgram
+  case keepRoutines
+  case you
+  case routine(ID<Routine>)
+  case buildRoutine
   static let coachQuestion = "Check my last workout."
 }
 
@@ -593,6 +597,12 @@ extension GymModel {
     var next = workout.walk; next.hidden = true
     guard workout.keep(next) else { return false }
     telemetry.event("gym_hidden_workout", properties: ["action": "hide"])
+    return true
+  }
+  // A door that leads out of the workout hides it first; the room opens the door once the cover has gone.
+  @discardableResult func hideWorkout(handingOff handoff: WorkoutHandoff) -> Bool {
+    guard hideWorkout() else { return false }
+    workout.handoff = handoff
     return true
   }
   static let restoreFailed = "Gym could not restore this workout. Try again."

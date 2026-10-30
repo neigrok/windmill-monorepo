@@ -89,8 +89,13 @@ struct WorkoutScreen: View {
         SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
                       weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
       case .coach:
-        NavigationStack { CoachTab(gym: gym, coach: coach, close: { activeSheet = nil }) }
-          .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        NavigationStack {
+          CoachTab(gym: gym, coach: coach, escapeSetup: { choice in if choice == .buildManually { leave(for: .buildRoutine) } },
+                   close: { activeSheet = nil })
+        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+          .environment(\.coachOpenAccount, { leave(for: .you) })
+          .environment(\.coachKeepRoutines, { leave(for: .keepRoutines) })
+          .environment(\.coachOpenRoutine, { id in leave(for: .routine(ID(RecordID(id)))) })
       }
     }
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
@@ -140,6 +145,12 @@ struct WorkoutScreen: View {
       _ = coach.fresh(door: "workout")
       activeSheet = .coach
     }
+  }
+  // Coach's doors to the rest of the gym, its account, Keep, a routine and a new one, close the sheet and hide the workout
+  // as Build my routine does; the room opens them once the cover has gone.
+  func leave(for handoff: WorkoutHandoff) {
+    activeSheet = nil
+    gym.hideWorkout(handingOff: handoff)
   }
 
   func disappear() {
