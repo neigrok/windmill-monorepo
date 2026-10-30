@@ -154,12 +154,15 @@ must be public.
 ## Coordinated client cutoff
 
 The repository registry is schema 11 / minimum 11 with explicit gym `other`, finite normalized loads
-without a fixed kg cap, nullable derived metrics and sets without a kind. Production's last verified registry is schema 8 /
-minimum 4; source and web versions do not prove the live backend version. Production cutoff remains
-held until coordinated Android and iOS replacement artifacts and their upgrade destinations are
-verified. A source merge does not authorize a minimum change.
+without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
+schema 11 / minimum 11, verified on 2026-10-30 after
+[deployment 40873633845](https://github.com/neigrok/windmill-monorepo/actions/runs/40873633845).
+The latest published Android release is 0.12.1 / code 184. iOS 0.2.0 (23) is uploaded and VALID,
+with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; intended tester access
+is unverified. Current web promotion, queued client delivery and digest resum completion still need
+verification. The deployment guard requires exact acknowledgement for any further minimum change.
 
-1. Keep a schema 8 / minimum 4 maintenance image available during preparation. Automatic deployment
+1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.
 2. Prepare schema 11 readers on every surface. Preserve stored equipment/count values, exact zero,
    absent targets and pending writes. Web Deploy retains the complete pinned `dist`, source/file-hash
@@ -170,16 +173,16 @@ verified. A source merge does not authorize a minimum change.
    design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
    fresh hello advertises a server schema at least the client's generated registry minimum.
 3. Verify the signed Android update over the public replacement floor, including retained local work
-   and delivery against the schema 8 server. Upload the exact iOS version/build through the manual
+   and delivery against the schema 11 server. Upload the exact iOS version/build through the manual
    `ios-release.yml` workflow and check processing, beta readiness and intended tester availability.
    Verify both native replacements against the schema 11 candidate, publish the Android release,
-   and verify both upgrade destinations before cutoff. TestFlight status alone proves no tester access.
+   and verify both upgrade destinations. TestFlight status alone proves no tester access.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
    '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch
    **Deploy to VPS** from `main` with that `image_tag`, its exact `expected_old_minimum`,
    `expected_new_minimum=11` and `expected_image_id`. Both raises and lowers require exact
    acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
-5. Run `windmill_resum_sync_digests` once ("Resum the scope digests" below), then verify schema 11 /
+5. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below), then verify schema 11 /
    minimum 11 at hello and schema 10 or older `426 upgrade-required` refusals at
    hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
    header and return `426 client-update-required` for missing/old carriers before JSON, image or
