@@ -23,7 +23,7 @@ import XCTest
     weight.tap()
     app.typeLoad("105"); app.buttons["workout-log"].tap()
     app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-    XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
     XCTAssertEqual(app.alerts.count, 0, "A set above the plan is just logged")
     XCTAssertFalse(app.staticTexts["plan 3 × 6 · 82.5"].exists, "The planned rows already say the plan")
     app.buttons["workout-assembly"].tap()
@@ -34,7 +34,7 @@ import XCTest
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5))
     app.buttons["gym-movement-bench-press"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Bench Press"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Bench Press").waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 20 kg total")
     XCTAssertEqual(app.collectionViews["workout-ledger"].frame.height, 44, accuracy: 1)
     app.buttons["workout-log"].tap()
@@ -42,7 +42,7 @@ import XCTest
     XCTAssertTrue(chosenSet.waitForExistence(timeout: 5))
     XCTAssertEqual(chosenSet.label, "Set 1, logged, 20 kilograms, 5 reps")
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
-    XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 0)
   }
 
@@ -74,14 +74,14 @@ import XCTest
     let name = app.textFields["gym-movement-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Incline press UI")
     app.buttons["gym-movement-create-commit"].tap()
-    XCTAssertTrue(app.buttons["Incline press UI"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Incline press UI").waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-log"].exists)
     XCTAssertFalse(app.descendants(matching: .any)["gym-movement-creation"].exists)
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 0)
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
-    XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
-    XCTAssertTrue(app.buttons["Back Squat"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Back Squat").waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 105 kg total")
   }
 
@@ -217,7 +217,8 @@ import XCTest
     let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Upper A,")).firstMatch
     XCTAssertTrue(routine.waitForExistence(timeout: 10)); routine.tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-face-pull"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-pull-up"].firstMatch.label.contains("12.5"))
+    XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@",
+                                                                       "routine-detail-movement-pull-up", "12.5")).firstMatch.exists)
   }
 
   func back(_ app: XCUIApplication) {
