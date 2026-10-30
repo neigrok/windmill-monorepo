@@ -4,8 +4,8 @@ The shared gym vectors follow [the domain kit](../../../../docs/foundation/domai
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
 Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
-`workout-plan-actions.json` and `workout-proposals-actions.json`, the open workout's editable plan and its
-workout proposals, are claimed by none of the three yet. R118 metadata reads remain optional
+`workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
+workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
 decodes separately.
 
