@@ -29,7 +29,7 @@ class WorkoutRecovery(val workout: SignedOutWorkout, val reason: Reason, val ref
                 is GymRefusal.UnknownExercise -> unknownMovement
                 is GymRefusal.SessionFinished -> strandedSets
                 is GymRefusal.Full, is GymRefusal.Stale, is GymRefusal.Gone, is GymRefusal.Future,
-                is GymRefusal.ProposalSettled, is GymRefusal.ProposalSuperseded, is GymRefusal.Other -> other
+                is GymRefusal.ProposalSettled, is GymRefusal.ProposalSuperseded, is GymRefusal.PlanLogged, is GymRefusal.Other -> other
             }
         }
     }
