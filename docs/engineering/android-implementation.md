@@ -615,11 +615,11 @@ enough for the registry minimum. Explicit older-client refusal checks remain int
 deployment-workflow checks and YAML parsing pass; the admission regression compares all four
 probe headers with the current registries. CI 40659885808 passes the five Postgres targets and
 479 deployment-conformance cases before the obsolete readiness header refuses, so the workflow
-repair changes neither server validation nor the held production cutoff.
+repair changes neither server validation nor deployment compatibility admission.
 
-Android's generated-schema composition check explicitly expects minimum 9. Its seven-case class
-passes with zero failures/errors/skips. CI 40659886043 passed 1,599 of 1,600 sync-testing cases and
-failed only this obsolete minimum-4 assertion; the long property run completed rather than timing
+The seven-case generated-schema composition receipt covers minimum 9 with zero failures/errors/skips;
+the current composed source uses schema 11 / minimum 11. CI 40659886043 passed 1,599 of 1,600
+sync-testing cases and failed only this obsolete minimum-4 assertion; the long property run completed rather than timing
 out. Deliberate older-client and probe fixtures retain their original versions.
 
 ## Task 09 — compact rack
@@ -814,7 +814,8 @@ proposal/action visuals.
 The acceptance packet attributes Sentry envelopes by Android SDK/release as well as time; a shared
 collector can receive another backend's probes during native verification. Exact owned resources
 are cleaned while evidence remains available. These checks add no production storage or telemetry
-framework. Both coordinated distributions and their compatibility cutoff remain pending.
+framework. Android 0.13.0 and the coordinated iOS replacement remain pending; production already
+advertises schema 11 / minimum 11. The release runbook records distribution evidence separately.
 
 ## Task 14 · Finish receipt and confirmed workout discard
 
@@ -947,11 +948,13 @@ No production injection hook or extra telemetry framework is added for acceptanc
 Web promotion checks the live sync interval before mkdir or rsync and retains a complete pinned
 source/schema/file-hash artifact first. The helper passes 33 script checks plus the final seven-case
 web class, including rejection of symlinks before hashing. An actual local anonymous hello at
-schema 10/minimum 10 admits the matching client and holds both mismatch directions. This proves
-the local decision and modeled workflow boundary; production promotion and queued delivery are
-pending. Source schema 10/minimum 10 activates neither the production cutoff nor either mobile
-distribution. The compatible served website stays in place until both replacement distributions,
-the pinned web artifact and the acknowledged cutoff are ready.
+schema 10/minimum 10 admits the matching client and holds both mismatch directions. That receipt
+proves the local decision and modeled workflow boundary at its recorded schema. Current source and
+production advertise schema 11 / minimum 11 after deployment `40873633845`. Digest resum
+`41101251226` completed across three scopes and corrected two digests. Web promotion `41101256320`
+serves verified source `667bbc88`. Read-only availability run `41117835993` verifies iOS 0.2.0 (23)
+in one established internal beta group with two testers. Android 0.13.0 and the coordinated iOS
+replacement remain pending; queued client delivery remains unverified.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and
@@ -1145,14 +1148,14 @@ all non-AVD evidence and leaves the shared collector unchanged. The source is on
 ## Main batch verification and canon status
 
 Main `b40dd5e0` contains tasks 18, 22, 23, 24, 45, 51 and 52 as separate task commits.
-The active task pack has 30 of 42 tasks on main. The canonical shipped frames and complete
-Weigh-in/Connected-log flows are marked In production; mixed Routines/Workout parents and
-unfinished creation, History and Coach states retain their own statuses. Shell A4 reuses the
+The active task pack has 33 of 42 tasks on main; tasks 19, 25 and 50 are also shipped. The canonical
+shipped frames and complete Weigh-in/Connected-log flows are marked In production. Other frames
+retain their own scoped statuses. Shell A4 reuses the
 approved headerless rack without changing its surrounding composition. The Target-summary
 proposal and postponed Coach actions remain outside the release scope.
 
-The web workflow retains the complete pinned `b40dd5e0` artifact, then holds before rsync because
-the live backend does not admit the new client interval. No compatibility cutoff is activated.
+The retained `b40dd5e0` web artifact is source evidence, not the served release. Web promotion
+`41101256320` serves verified source `667bbc88` against production schema 11 / minimum 11.
 The Lift CLI fixture includes its valid 900 kg set; all 66 tests pass with accurate finite-weight
 summary/docs. Hidden-workout tests use LocalActivity: lintDebug has zero errors/fatals and all
 five affected tests pass. Python HTTP probes use the configured API-contract directory, including

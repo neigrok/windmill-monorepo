@@ -17,16 +17,18 @@ or explanatory field footer. Web preserves Other reads and includes only positiv
 
 ## Compatibility and deployment
 
-Both source registries are schema 10 / minimum 10 and retain the additive Coach records. Explicit Other is
+The composed source registry is schema 11 / minimum 11 and retains the additive Coach records. Explicit Other is
 accepted by the backend parser, database checks, generated schemas and all shared domains. Legacy
 records are retained without coercion. The conditional database upgrade widens the two existing
 checks once; an unchanged reapplication keeps their identities and every existing trigger.
 
 The deployment compatibility guard and Android fresh-hello delivery gate are on main. Production
-cutoff remains held until the coordinated Android/iOS replacement artifacts and their distribution
-availability are verified. Android keeps queued writes ready against a server below its registry
-minimum. Existing iOS/web selectors cannot originate Other. Any rollback after Other data exists
-must retain Other, finite unbounded loads and nullable metrics at schema 10 / minimum 10.
+advertises schema 11 / minimum 11 after deployment `40873633845`; the
+[release runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records verified web, digest
+and iOS 0.2.0 (23) availability receipts. Android 0.13.0 and the coordinated iOS replacement remain
+pending. Android keeps queued writes ready against a server below its registry minimum. Existing
+iOS/web selectors cannot originate Other. Rollbacks must retain Other, finite unbounded loads,
+nullable metrics and sets without a kind at schema 11 / minimum 11.
 
 ## Verification
 

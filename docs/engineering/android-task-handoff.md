@@ -49,7 +49,7 @@ the Android app behaves as these tasks require.
 
 ## Coordinated equipment compatibility
 
-[Task 20](../../androidgym_tasks/20-edit-exercise.md) uses explicit Other under source schema 10 / minimum 10,
+[Task 20](../../androidgym_tasks/20-edit-exercise.md) uses explicit Other under source schema 11 / minimum 11,
 preserving all legacy records and the additive Coach records. The human-approved Android control is
 [Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642),
 with plain labels and no Name/Equipment hints. The canonical combined 18/19 forms use that control.
@@ -57,7 +57,9 @@ The [iOS Other read states](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?
 are approved and Ready on page `11:2`: no Other glyph, kg, signed existing load/Fix wheels and removal
 of Name/Equipment footers. Existing iOS picker choices and target controls remain unchanged.
 
-The deployment guard and Android delivery-readiness gate are on main. The coordinated Android/iOS
-cutoff remains held until replacement builds and distribution availability are verified; Android's
-new writes stay ready until a fresh hello meets its registry minimum. No implicit migration or
-physical-equipment alias is part of the release.
+The deployment guard and Android delivery-readiness gate are on main. Production advertises schema
+11 / minimum 11 after deployment `40873633845`. Android 0.13.0 and the coordinated iOS replacement
+remain pending; iOS 0.2.0 (23) has verified internal beta availability. The
+[release runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records the exact deployment,
+web, digest and distribution receipts. Android's new writes stay ready until a fresh hello meets
+its registry minimum. No implicit migration or physical-equipment alias is part of the release.
