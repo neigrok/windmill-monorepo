@@ -8,6 +8,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.robolectric.shadows.ShadowDialog
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextRange
@@ -177,19 +178,20 @@ class CreateMovementTargetTests {
     }
 
     @Test fun aPendingLiveCreateRejectsSecondTapAndRetainsItsIdentityAfterRefusal() {
-        val pending = CompletableDeferred<GymResult<Exercise>>()
+        val pending = CompletableDeferred<MovementCreateOutcome>()
         val calls = mutableListOf<ExerciseWrite>()
         val picked = mutableListOf<String>()
+        var completed = 0
         val exercise = Exercise("ex_pending", "Cable row", Exercise.unclassified, "barbell", custom = true)
         val state = MovementPickerState(createName = exercise.name, requestId = exercise.id)
         lateinit var view: View
         compose.setContent { GymMaterial {
             view = LocalView.current
             MovementPicker(TheSix.movements, emptyList(), null, 0, "Add movement", onPick = { picked += it },
-                onCreate = { name, equipment, id ->
-                    calls += ExerciseWrite(id, name, Exercise.unclassified, equipment)
-                    if (calls.size == 1) pending.await() else GymResult.Ok(exercise)
-                }, state = state)
+                onCreate = { write ->
+                    calls += write
+                    if (calls.size == 1) pending.await() else MovementCreateOutcome.Added(exercise)
+                }, state = state, onAdded = { completed++ })
         } }
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
         val hidden = WindowInsets.Builder().setInsets(WindowInsets.Type.ime(), Insets.NONE)
@@ -206,13 +208,62 @@ class CreateMovementTargetTests {
         val submit = compose.onNodeWithText("Create and add").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { submit(); submit() }
         compose.onNodeWithText("Creating…").assertIsNotEnabled()
-        assertEquals(listOf(ExerciseWrite(exercise.id, exercise.name, Exercise.unclassified, "barbell")), calls)
+        assertEquals(listOf(ExerciseWrite(exercise.id, exercise.name, Exercise.unclassified, "barbell", loadCount = 1)), calls)
         assertEquals(emptyList<String>(), picked)
-        compose.runOnIdle { pending.complete(GymResult.Failed(WriteFailure.Refused("Try again"))) }
+        compose.runOnIdle { pending.complete(MovementCreateOutcome.Failed(WriteFailure.Refused("Try again"))) }
         compose.onNodeWithText("Try again").assertIsDisplayed()
         compose.onNodeWithText("Create and add").assertIsEnabled().performClick()
         compose.waitForIdle()
-        assertEquals(List(2) { ExerciseWrite(exercise.id, exercise.name, Exercise.unclassified, "barbell") }, calls)
-        assertEquals(listOf(exercise.id), picked)
+        assertEquals(List(2) { ExerciseWrite(exercise.id, exercise.name, Exercise.unclassified, "barbell", loadCount = 1) }, calls)
+        assertEquals(emptyList<String>(), picked)
+        assertEquals(1, completed)
     }
+    @Test fun aKnownCreationRestoresAndRetriesOnlyItsRetainedInsertion() {
+        val restorer = StateRestorationTester(compose)
+        val calls = mutableListOf<ExerciseWrite>()
+        val picked = mutableListOf<String>()
+        var completed = 0
+        val created = Exercise("ex_created", "Shrug", Exercise.unclassified, "dumbbell", custom = true, loadCount = 2)
+        lateinit var view: View
+        restorer.setContent { GymMaterial {
+            view = LocalView.current
+            MovementPicker(TheSix.movements, emptyList(), null, 0, "Add movement", onPick = { picked += it },
+                onCreate = { write ->
+                    calls += write
+                    if (calls.size == 1) MovementCreateOutcome.Failed(WriteFailure.Refused("Retry adding"), created)
+                    else MovementCreateOutcome.Added(created)
+                }, state = rememberSaveable(saver = MovementPickerState.saver) {
+                    MovementPickerState(createName = created.name, requestId = created.id, equipment = "dumbbell")
+                }, onAdded = { completed++ })
+        } }
+        fun hideIme() {
+            val hidden = WindowInsets.Builder().setInsets(WindowInsets.Type.ime(), Insets.NONE)
+                .setVisible(WindowInsets.Type.ime(), false).build()
+            compose.runOnIdle {
+                view.dispatchApplyWindowInsets(hidden)
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .forEach { it.window.decorView.dispatchApplyWindowInsets(hidden) }
+                ShadowDialog.getShownDialogs().filter { it.isShowing }
+                    .forEach { it.window!!.decorView.dispatchApplyWindowInsets(hidden) }
+            }
+            compose.mainClock.advanceTimeBy(64)
+            compose.waitForIdle()
+        }
+        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+        hideIme()
+        compose.onNodeWithText("Create and add").performClick()
+        compose.onNodeWithText("Retry adding").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Movement name").assertIsNotEnabled()
+        restorer.emulateSavedInstanceStateRestore()
+        hideIme()
+        compose.onNodeWithText("Retry adding").assertIsDisplayed()
+        assertEquals(created.name, raw("Movement name"))
+        compose.onNodeWithContentDescription("Movement name").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Equipment").assertIsNotEnabled()
+        compose.onNodeWithText("Create and add").performClick()
+        assertEquals(List(2) { ExerciseWrite(created.id, created.name, Exercise.unclassified, "dumbbell", loadCount = 2) }, calls)
+        assertEquals(emptyList<String>(), picked)
+        assertEquals(1, completed)
+    }
+
 }

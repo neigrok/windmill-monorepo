@@ -36,10 +36,19 @@ class AndroidTelemetryTest {
         val content = mapOf("name" to "private", "targets" to "private", "equipment" to "private", "exercise_id" to "private")
         for (labels in allowed) assertEquals(labels, TelemetryPolicy.eventProperties("gym_action", labels + content))
         for (labels in listOf(
-            mapOf("screen" to "movement_form", "action" to "create", "outcome" to "ok"),
+            mapOf("screen" to "movement_form", "action" to "create", "outcome" to "staged"),
             mapOf("screen" to "movement_form", "action" to "stage", "outcome" to "private"),
             mapOf("screen" to "routine_editor", "action" to "save", "outcome" to "staged"),
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", labels + content))
+    }
+
+    @Test fun liveMovementCreationAndInsertionKeepOnlyTheirBoundedOutcomes() {
+        for (action in listOf("create", "add")) for (outcome in listOf("ok", "refused", "failed")) {
+            val labels = mapOf("screen" to "movement_form", "action" to action, "outcome" to outcome)
+            assertEquals(labels, TelemetryPolicy.eventProperties("gym_action", labels + mapOf(
+                "name" to "PRIVATE_MOVEMENT", "id" to "PRIVATE_ID", "equipment" to "PRIVATE_EQUIPMENT",
+                "weight" to "PRIVATE_WEIGHT", "search" to "PRIVATE_SEARCH")))
+        }
     }
 
     @Test fun deletionActionsKeepOnlyTheirBoundedLabelsAndPreserveNotificationAndTileEvents() {

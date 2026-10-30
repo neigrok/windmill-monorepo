@@ -119,6 +119,8 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FixOrigin
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.MovementCreateOutcome
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillSpace
 
 // A pinned head and a scrolling set ledger above a fixed rack. All loads remain kilograms.
@@ -161,7 +163,7 @@ fun LoggerScreen(
     val telemetry = LocalTelemetry.current
     val weightKg = store.rack?.weightKg ?: store.prefill.weightKg
     val reps = store.rack?.reps ?: store.prefill.reps
-    val pickerState = rememberMovementPickerState()
+    val pickerState = rememberMovementPickerState(store.accountKey, store.session?.id)
     var sheet by rememberSaveable(stateSaver = loggerSheetSaver) { mutableStateOf<LoggerSheet?>(null) }
     val rackOwner = store.accountKey
     val rackSession = store.session?.id
@@ -352,7 +354,11 @@ fun LoggerScreen(
                     title = "What are you lifting?",
                     subtitle = if (store.session?.plan == null) null else "nothing in this plan is left to walk",
                     onPick = { picked -> scope.launch { store.choose(picked) } },
-                    onCreate = { name, equipment, id -> store.create(name, equipment, id) },
+                    onCreate = { write ->
+                        val result = store.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.workoutReplica)
+                        if (store.accountKey == rackOwner && store.session?.id == rackSession) result
+                        else MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
+                    },
                     state = pickerState,
                     modifier = Modifier.weight(1f),
                 )
@@ -461,14 +467,14 @@ fun LoggerScreen(
         ModalBottomSheet(
             onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
             sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = open == LoggerSheet.Assembly),
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
             WindmillSheetWindow()
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
-                LoggerSheet.Assembly -> AssemblySheet(
+                LoggerSheet.Assembly -> WindmillSheetBack(onDismiss = { close() }) { AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,
                                                   store.catalog, store.exerciseId, store.stalled),
                     routine = store.session?.plan?.routine,
@@ -497,6 +503,7 @@ fun LoggerScreen(
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_open", "outcome" to "ok"))
                     },
                 )
+                }
                 LoggerSheet.Picker -> WindmillSheetBack(onDismiss = { cancelPicker() }) { MovementPicker(
                     catalog = store.catalog,
                     taken = store.order,
@@ -505,7 +512,21 @@ fun LoggerScreen(
                     sessions = store.recent,
                     title = "Add movement",
                     onPick = { move(it, fromPicker = true) },
-                    onCreate = { name, equipment, id -> store.create(name, equipment, id) },
+                    onCreate = { write ->
+                        val previous = store.exerciseId
+                        val result = store.createForWorkout(write, rackSession.orEmpty(), rackOwner, store.workoutReplica)
+                        if (store.accountKey != rackOwner || store.session?.id != rackSession)
+                            MovementCreateOutcome.Failed(WriteFailure.Refused("The workout changed. Open this again."))
+                        else {
+                            if (result is MovementCreateOutcome.Added && previous != result.movement.id)
+                                telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "movement_switch", "outcome" to "ok"))
+                            result
+                        }
+                    },
+                    onAdded = {
+                        telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_add", "outcome" to "ok"))
+                        close()
+                    },
                     state = pickerState,
                     modifier = Modifier
                         .heightIn(max = pickerMaxHeight())

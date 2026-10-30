@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import androidx.activity.ComponentDialog
+import android.window.OnBackInvokedCallback
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
@@ -16,6 +18,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.robolectric.shadows.ShadowDialog
+import org.robolectric.util.ReflectionHelpers
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -31,6 +36,51 @@ import works.windmill.platform.telemetry.Telemetry
 class LoggerManagementTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun reusedAssemblyWindowRoutesNativeBackThroughPickerCancelThenClosesAssembly() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val room = EngineRoomFixture(temporary.newFolder(), scope)
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
+        try {
+            runBlocking {
+                room.select("owner")
+                room.pull(EngineRoomFixture.server())
+                room.startExternalWorkout()
+                room.store.choose("bench-press")
+                room.store.editRack(82.5, 8)
+            }
+            val session = room.store.session
+            compose.setContent { CompositionLocalProvider(LocalTelemetry provides telemetry) { LoggerScreen(room.store, {}, {}) } }
+            compose.onNode(hasText("Bench Press") and hasClickAction()).performClick()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
+            val dialog = ShadowDialog.getLatestDialog() as ComponentDialog
+            compose.onNodeWithText("Add movement").performClick()
+            compose.onNodeWithText("Cancel").assertIsDisplayed()
+            assertSame(dialog, ShadowDialog.getLatestDialog())
+            fun nativeBack() = compose.runOnIdle {
+                val layout = ReflectionHelpers.getField<Any>(dialog, "dialogLayout")
+                val callback = ReflectionHelpers.getField<Any?>(layout, "backCallback") as? OnBackInvokedCallback
+                if (callback != null) callback.onBackInvoked() else dialog.onBackPressedDispatcher.onBackPressed()
+            }
+            nativeBack()
+            compose.onNodeWithText("This workout").assertIsDisplayed()
+            nativeBack()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasText("This workout")).fetchSemanticsNodes().isEmpty() }
+            compose.runOnIdle {
+                assertEquals(session, room.store.session)
+                assertEquals(82.5, room.store.rack!!.weightKg, 0.0)
+                assertEquals(8, room.store.rack!!.reps)
+            }
+            assertEquals(listOf("open_workout", "picker_open", "picker_cancel").map {
+                "gym_action" to mapOf("screen" to "workout", "action" to it, "outcome" to "ok")
+            }, events)
+        } finally { scope.cancel(); room.close() }
+    }
 
     @Test
     fun pickerCancelRecreationAndSelectionPreserveTheWorkoutAndEachRackDraft() {

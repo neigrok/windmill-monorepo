@@ -569,12 +569,14 @@ data class SessionStart(
     val routineId: String? = null,
 )
 
+@Serializable
 data class ExerciseWrite(
     val id: String,
     val name: String,
     val pattern: String,
     val equipment: String,
     val stepKg: Double? = null,
+    val loadCount: Int? = null,
 )
 
 // An open line has no targets: its scheme is empty.
