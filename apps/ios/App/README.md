@@ -514,7 +514,8 @@ confirm Apple's acceptance of the upload. The read-only status step then checks 
 version and build through App Store Connect for up to ten minutes. `testflight-status-RUN_NUMBER`
 records `processingState`, `internalBuildState`, `externalBuildState`, the checked plist hash, source
 SHA and workflow run. Optional paired `reference_version`/`reference_build` dispatch inputs identify
-an independently verified prior upload. The helper discovers that upload’s internal groups, reads
+an independently verified prior upload. The helper lists the app’s groups, selects internal groups
+whose build relationships contain that prior upload, reads
 the target build’s exact membership and counts existing tester relationships. Each group reports
 Apple’s literal `hasAccessToAllBuilds` flag, membership and count; no tester IDs, names or emails enter receipts.
 `betaAccess=VERIFIED` requires the target to be `VALID` and internally `READY_FOR_BETA_TESTING` or
@@ -527,6 +528,8 @@ The separate [read-only status workflow](../../../.github/workflows/ios-beta-sta
 exact target and reference version/build pairs without uploading again. Its receipt labels identity
 as dispatch inputs; the release workflow reads identity from the actual archive plist. Both use only
 signed GET requests and retain bounded status artifacts. Pagination stays on the same Apple endpoint.
+A failed read reports only its static route and allowlisted Apple error code/parameter; response text,
+resource IDs and user fields are excluded. A failed read leaves access unverified.
 If the status step fails after upload, do not rerun the release workflow: the upload already exists.
 Record the verified version, build, source SHA, run URL,
 upload result and any processing or symbol limitations in `WORK_LOG.md`.
