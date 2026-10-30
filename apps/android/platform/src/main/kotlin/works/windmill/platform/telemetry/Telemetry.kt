@@ -52,7 +52,7 @@ object TelemetryPolicy {
         ),
     )
     private val coachOnboardingEvents = mapOf(
-        "gym_setup_step" to mapOf("screen" to setOf("coach"), "action" to setOf("shown", "screenshot", "build_manually")),
+        "gym_setup_step" to mapOf("screen" to setOf("coach"), "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed")),
         "gym_coach_import" to mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed")),
         "ai_installation_outcome" to mapOf("action" to setOf("bind"), "outcome" to setOf("refused", "failed")),
     )

@@ -30,7 +30,7 @@ import works.windmill.platform.net.WindmillJson
 @Config(sdk = [35])
 class AndroidTelemetryTest {
     @Test fun coachSetupKeepsBoundedActionsAndDropsDraftAndPhotoMetadata() {
-        for (action in listOf("shown", "screenshot", "build_manually")) {
+        for (action in listOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed")) {
             val labels = mapOf("screen" to "coach", "action" to action)
             assertEquals(labels, TelemetryPolicy.eventProperties("gym_setup_step", labels + mapOf(
                 "question" to "private", "file_name" to "private", "photo_bytes" to "100", "operation" to "private")))
