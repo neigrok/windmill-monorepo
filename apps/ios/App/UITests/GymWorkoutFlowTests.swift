@@ -221,6 +221,69 @@ import XCTest
                                                                        "routine-detail-movement-pull-up", "12.5")).firstMatch.exists)
   }
 
+  // Edit sets over Pull-up (03.29), opened from its menu; `-log-set-on-signal` lets the test land a set on it from outside.
+  func openEditSets(signal: Bool = false) -> (XCUIApplication, current: XCUIElement) {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-inflight", "-onboarding-appearance", "dark"] + (signal ? ["-log-set-on-signal"] : [])
+    app.launch()
+    let menu = app.buttons["workout-movement-menu"]
+    XCTAssertTrue(menu.waitForExistence(timeout: 60) && menu.waitForValue("Pull-up"))
+    let current = app.descendants(matching: .any)["workout-current-set"]
+    XCTAssertTrue(current.waitForExistence(timeout: 10))
+    menu.tap()
+    XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+    XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForExistence(timeout: 5))
+    return (app, current)
+  }
+
+  // A set that lands on the movement while its sheet is open closes the sheet, the plan as it was, and the room says why.
+  func testASetLandingOnTheMovementClosesEditSetsAndChangesNothing() {
+    let (app, current) = openEditSets(signal: true)
+    let planned = current.label
+    app.buttons["edit-sets-set-1"].tap()
+    app.typeLoad("12.5", into: "edit-sets-load")
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName("works.windmill.fixture.log-set" as CFString), nil, nil, true)
+    XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.otherElements["workout-refusal"].staticTexts["Pull-up has a logged set now. Nothing changed."].waitForExistence(timeout: 5))
+    XCTAssertTrue(current.waitForLabel(planned.replacingOccurrences(of: "Set 1,", with: "Set 2,")))
+    app.buttons["workout-movement-menu"].tap()
+    XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["Edit sets"].exists, "A logged movement keeps its plan")
+  }
+
+  // Cancel leaves the plan as it was, whatever the sheet drafted.
+  func testCancelLeavesThePlanAsItWas() {
+    let (app, current) = openEditSets()
+    let planned = current.label
+    app.buttons["edit-sets-set-1"].tap()
+    app.typeLoad("12.5", into: "edit-sets-load")
+    app.buttons["edit-sets-add"].tap()
+    app.buttons["edit-sets-cancel"].tap()
+    XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(current.waitForLabel(planned))
+    app.buttons["workout-movement-menu"].tap()
+    XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+    XCTAssertTrue(app.buttons["edit-sets-set-3"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["edit-sets-set-4"].exists)
+    XCTAssertEqual(app.buttons["edit-sets-set-1"].label, planned.replacingOccurrences(of: ", current, target ", with: ", planned, "))
+  }
+
+  // ✓ tapped twice saves the sheet once: one set added, no refusal said.
+  func testSavingTwiceSavesOnce() {
+    let (app, current) = openEditSets()
+    app.buttons["edit-sets-add"].tap()
+    app.typeLoad("12.5", into: "edit-sets-load")
+    app.buttons["edit-sets-save"].doubleTap()
+    XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(current.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.otherElements["workout-refusal"].exists)
+    app.buttons["workout-movement-menu"].tap()
+    XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+    XCTAssertTrue(app.buttons["edit-sets-set-4"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["edit-sets-set-5"].exists)
+    XCTAssertEqual(app.buttons["edit-sets-set-4"].label, "Set 4, planned, 12.5 kilograms, 8 reps")
+  }
+
   func back(_ app: XCUIApplication) {
     let button = app.navigationBars.firstMatch.buttons.element(boundBy: 0)
     XCTAssertTrue(button.wait(for: \.isHittable, toEqual: true, timeout: 10)); button.tap()

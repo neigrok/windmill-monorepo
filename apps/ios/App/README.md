@@ -37,6 +37,8 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
+On the `workout-inflight` boards, `-log-set-on-signal` logs a Pull-up set each time a UI test posts the Darwin notification
+`works.windmill.fixture.log-set`, as a set logged outside the app lands under a sheet open over the workout.
 `-scenario <name>` isolates a launch's storage under that name.
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local

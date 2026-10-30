@@ -122,8 +122,21 @@ enum WorkoutFixture {
     // The sign-in can land while the shell still holds its first screen, so the gym opens again once the workout stands.
     for _ in 0..<100 where model.editorReadOnly { try? await Task.sleep(for: .milliseconds(100)) }
     model.openRoom(.gym)
+    if ProcessInfo.processInfo.arguments.contains("-log-set-on-signal") {
+      landsSet = {
+        _ = gym.run(AppendSet(TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("pull-up"), weightKg: 10, reps: 8,
+                                          completedAt: (try? gym.runner.moment().now) ?? Instant(ms: BoardClock().nowMs()))))
+      }
+      CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, _, _, _ in
+        Task { @MainActor in WorkoutFixture.landsSet?() }
+      }, logSetSignal as CFString, nil, .deliverImmediately)
+    }
     return true
   }
+  // `-log-set-on-signal`: Pull-up takes a set when a UI test posts this Darwin notification, as a set logged outside the
+  // app lands while a sheet is open over the workout.
+  static let logSetSignal = "works.windmill.fixture.log-set"
+  @MainActor static var landsSet: (() -> Void)?
   #endif
 }
 
