@@ -365,6 +365,7 @@ final class GymModel {
     case .sessionOverlap: "This workout overlaps another workout."
     case .payloadConflict: "This workout changed elsewhere. Review the latest version."
     case .unknownExercise: "This movement is no longer available."
+    case .planLogged: "That movement already has a logged set."
     case .badInstant: "Check the workout's start and finish times."
     case .proposalSettled: "This proposal has already been answered."
     case .proposalSuperseded: "A newer proposal is available."
