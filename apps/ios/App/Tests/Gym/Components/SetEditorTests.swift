@@ -7,26 +7,24 @@ import SyncCore
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct SetEditorTests {
-  // The decimal pad's text reads in either separator; a sign reads only where the basis is signed, and the load stays within
-  // 500 kg of zero at the hundredth.
-  @Test func aTypedLoadReadsEitherSeparatorItsSignOnlyWhereSignedAndStaysInBounds() {
+  // The decimal pad's text reads in any separator and any script's digits; a sign reads only where the basis is signed, and
+  // the load stays within 500 kg of zero at the hundredth.
+  @Test func aTypedLoadReadsAnySeparatorAndScriptItsSignOnlyWhereSignedAndStaysInBounds() {
     let typed = ["16", "12.5", "12,5", ".5", "5.", "102.256", "500", "500.004", "−12.5", "-7,5", "-0", "", " ", ".", "-", "1.2.3",
-                 "1,2.3", "1e2", "12a", "500.01", "−500.01", "٣"]
+                 "1,2.3", "1e2", "12a", "500.01", "−500.01", "٣", "١٢٫٥", "۱۲٫۵", "12٫5", "\u{200F}−١٢٫٥", "٫", "١٢٫٥٫"]
     #expect(typed.map { LoadText.parse($0, signed: true) } == [16, 12.5, 12.5, 0.5, 5, 102.26, 500, 500, -12.5, -7.5, 0,
-                                                              nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil])
+                                                              nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, 3, 12.5, 12.5,
+                                                              12.5, -12.5, nil, nil])
     #expect(["−12.5", "-7,5", "-0", "12,5"].map { LoadText.parse($0, signed: false) } == [nil, nil, nil, 12.5])
   }
 
-  // The field writes a load in the locale's separator, and ± flips the sign of whatever is typed.
-  @Test func theFieldWritesTheLocaleSeparatorAndFlipsTheSign() {
-    #expect(LoadText.typed(12.5, locale: Locale(identifier: "de_DE")) == "12,5")
-    #expect(LoadText.typed(12.5, locale: Locale(identifier: "en_US")) == "12.5")
-    #expect(LoadText.typed(-5, locale: Locale(identifier: "en_US")) == "−5")
-    #expect([LoadText.flipped("12,5"), LoadText.flipped("−12,5"), LoadText.flipped("-3"), LoadText.flipped("")] == ["−12,5", "12,5", "3", "−"])
+  // The field writes a load in the locale's separator, and reads back every load it writes, in every locale's separator.
+  @Test(arguments: ["de_DE", "en_US", "fr_FR", "ar_SA", "ar_EG", "fa_IR", "ps_AF", "ur_IN"])
+  func theFieldReadsBackTheLoadItWritesInTheLocale(identifier: String) {
+    let locale = Locale(identifier: identifier)
+    #expect([LoadText.typed(12.5, locale: locale), LoadText.typed(-5, locale: locale)] == ["12" + (locale.decimalSeparator ?? ".") + "5", "−5"])
     for load in [12.5, -12.5, 0, 102.25, -500] {
-      for locale in ["de_DE", "en_US", "fr_FR"] {
-        #expect(LoadText.parse(LoadText.typed(load, locale: Locale(identifier: locale)), signed: true) == load)
-      }
+      #expect(LoadText.parse(LoadText.typed(load, locale: locale), signed: true, locale: locale) == load)
     }
   }
 

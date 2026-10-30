@@ -1,15 +1,28 @@
 import SwiftUI
+import UIKit
 import Observation
 import DomainKit
 import GymDomain
 
-// A load as typed: either decimal separator, and a leading minus or its typographic sign where the basis is signed, rounded
-// to the hundredth and within 500 kg of zero; nil for anything else, an empty field included.
+// A load as typed: decimal digits of any script, the point, the comma or the locale's separator, and a leading minus or its
+// typographic sign where the basis is signed, rounded to the hundredth and within 500 kg of zero; nil for anything else, an
+// empty field included.
 nonisolated enum LoadText {
   static let bound = 500.0
+  static let separators: Set<Character> = [".", ",", "٫"]
+  static let directionMarks: Set<Character> = ["\u{200E}", "\u{200F}", "\u{061C}"]
 
-  static func parse(_ text: String, signed: Bool) -> Double? {
-    var digits = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "−", with: "-").replacingOccurrences(of: ",", with: ".")
+  static func parse(_ text: String, signed: Bool, locale: Locale = .current) -> Double? {
+    let separators = separators.union(locale.decimalSeparator.map { Set($0) } ?? [])
+    var digits = String(text.trimmingCharacters(in: .whitespaces).compactMap { (character: Character) -> Character? in
+      if directionMarks.contains(character) { return nil }
+      if character == "−" { return "-" }
+      if separators.contains(character) { return "." }
+      if character.unicodeScalars.first?.properties.numericType == .decimal, let digit = character.wholeNumberValue {
+        return Character(String(digit))
+      }
+      return character
+    })
     let negative = digits.hasPrefix("-")
     if negative { digits.removeFirst() }
     let digit = { (character: Character) in ("0"..."9").contains(character) }
@@ -23,59 +36,50 @@ nonisolated enum LoadText {
   static func typed(_ weightKg: Double, locale: Locale = .current) -> String {
     Readout.weight(weightKg).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
   }
-
-  static func flipped(_ text: String) -> String {
-    text.hasPrefix("−") || text.hasPrefix("-") ? String(text.dropFirst()) : "−" + text
-  }
 }
 
-// One load on the system decimal pad (03.23, 03.25, 03.30). Focus selects its text, so the first key replaces it; each
-// readable value lands on `weightKg` as it is typed, and when the field lets go an empty or unreadable one gives way to the
-// load it opened on. Bodyweight and Other add ± to the keyboard row, the pad having no minus; `done` adds its ✓.
+// One load on the system decimal pad (03.23, 03.25, 03.30). Editing selects its text, so the first key replaces it. While
+// it is typed in, `weightKg` holds the load the field stands for: a readable value, else the load it opened on, which is
+// what the field shows again when it lets go. Bodyweight and Other add ± to the keyboard row, the pad having no minus,
+// unless the host draws its own; ± flips the load, whatever is typed. `focus` asks for the keyboard; whether the field is
+// being typed in comes from the text field's own editing callback, since SwiftUI's focus does not report back from the
+// rack's reach band.
 struct LoadField: View {
   @Binding var weightKg: Double
   let basis: MovementEquipment
   let focus: FocusState<Bool>.Binding
   let identifier: String
-  var done = false
-  var ended: (Double) -> Void = { _ in }
+  var signInKeyboardRow = true
+  var ended: () -> Void = {}
   @State private var typed = ""
-  @State private var selection: TextSelection?
   @State private var opening = 0.0
+  @State private var editing = false
 
-  var signed: Bool { ["bodyweight", "other"].contains(basis.value) }
+  var standsFor: Double { LoadText.parse(typed, signed: basis.signed) ?? opening }
 
   var body: some View {
-    TextField("Load", text: $typed, selection: $selection)
+    TextField("Load", text: $typed, onEditingChanged: { editing = $0 })
       .keyboardType(.decimalPad)
       .focused(focus)
       .onAppear { typed = LoadText.typed(weightKg) }
-      .onChange(of: weightKg) { _, value in if !focus.wrappedValue { typed = LoadText.typed(value) } }
-      .onChange(of: focus.wrappedValue) { _, focused in
-        if focused {
+      .onChange(of: editing) { _, began in
+        if began {
           opening = weightKg; typed = LoadText.typed(weightKg)
-          selection = TextSelection(range: typed.startIndex..<typed.endIndex)
+          // Focus from code leaves the caret at the end; the editing field is the first responder, which selects its text.
+          DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil) }
           return
         }
-        if LoadText.parse(typed, signed: signed) == nil { weightKg = opening }
-        typed = LoadText.typed(weightKg)
-        ended(weightKg)
+        weightKg = standsFor; typed = LoadText.typed(weightKg)
+        ended()
       }
-      .onChange(of: typed) { _, text in
-        if focus.wrappedValue, let value = LoadText.parse(text, signed: signed) { weightKg = value }
-      }
+      .onChange(of: weightKg) { _, value in if !editing || value != standsFor { typed = LoadText.typed(value) } }
+      .onChange(of: typed) { _, _ in if editing { weightKg = standsFor } }
       .toolbar {
-        if focus.wrappedValue {
+        if editing, basis.signed, signInKeyboardRow {
           ToolbarItemGroup(placement: .keyboard) {
-            if signed {
-              Button("Flip the sign", systemImage: "plus.forwardslash.minus") {
-                typed = LoadText.flipped(typed); selection = TextSelection(insertionPoint: typed.endIndex)
-              }.accessibilityIdentifier("\(identifier)-sign")
-            }
+            Button("Flip the sign", systemImage: "plus.forwardslash.minus") { weightKg = -weightKg }
+              .accessibilityIdentifier("\(identifier)-sign")
             Spacer()
-            if done {
-              Button("Done", systemImage: "checkmark") { focus.wrappedValue = false }.accessibilityIdentifier("\(identifier)-done")
-            }
           }
         }
       }
@@ -284,7 +288,7 @@ struct SetEditor: View {
         .modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
         .roomTitle(place, subtitle: movement)
         .sheetCommit("Save", identifier: "\(identifier)-save", dismissalIdentifier: "\(identifier)-cancel", disabled: draft.problem != nil || gym.accountTransition,
-                     busy: draft.busy, dismiss: { dismiss() }, commit: save)
+                     busy: draft.busy, prominent: false, dismiss: { dismiss() }, commit: save)
         .reachBand {
           GymTransient(gym: gym, message: draft.failure ?? draft.problem,
                        dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")

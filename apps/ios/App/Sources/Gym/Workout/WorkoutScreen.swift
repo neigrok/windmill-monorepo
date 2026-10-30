@@ -30,7 +30,6 @@ struct WorkoutScreen: View {
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
-  @FocusState var loadFocused: Bool
 
   init(gym: GymModel, coach: CoachConversation? = nil) {
     self.gym = gym; workout = gym.workout
@@ -100,10 +99,7 @@ struct WorkoutScreen: View {
         RepsWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement",
                        reps: workout.reps) { reps in workout.adjustRack(weightKg: workout.weightKg, reps: reps) }
       case .coach:
-        NavigationStack {
-          CoachTab(gym: gym, coach: coach, escapeSetup: { choice in if choice == .buildManually { leave(for: .buildRoutine) } },
-                   close: { activeSheet = nil })
-        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        NavigationStack { coachRoom }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
           .environment(\.coachOpenAccount, { leave(for: .you) })
           .environment(\.coachKeepRoutines, { leave(for: .keepRoutines) })
           .environment(\.coachOpenRoutine, { id in leave(for: .routine(ID(RecordID(id)))) })
@@ -116,8 +112,8 @@ struct WorkoutScreen: View {
 
   var observedWorkout: some View {
     presentation
-    .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in workout.rackEditing = destination == Sheet.wheel || loadFocused }
-    .onChange(of: loadFocused) { (_: Bool, focused: Bool) in workout.rackEditing = activeSheet == Sheet.wheel || focused }
+    .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in workout.rackEditing = destination == Sheet.wheel || workout.typedLoad != nil }
+    .onChange(of: workout.typedLoad != nil) { (_: Bool, typing: Bool) in workout.rackEditing = activeSheet == Sheet.wheel || typing }
     .sensoryFeedback(.impact(weight: .light), trigger: workout.restReaches) { (_: Int, _: Int) in
       activeSheet == nil && workout.receipt == nil && scenePhase == .active && gym.preferences.confirmHaptic
     }
@@ -135,10 +131,10 @@ struct WorkoutScreen: View {
     observedWorkout
     .onAppear(perform: appear)
     .onChange(of: gym.account) { _, _ in
-      nextSheet = nil; activeSheet = nil; loadFocused = false; finishTask?.cancel(); workout.accountChanged(); updateAwake()
+      nextSheet = nil; activeSheet = nil; finishTask?.cancel(); workout.accountChanged(); updateAwake()
     }
     .onChange(of: gym.accountTransition) { _, changing in
-      if changing { nextSheet = nil; activeSheet = nil; finishTask?.cancel() }
+      if changing { nextSheet = nil; activeSheet = nil; workout.typedLoad = nil; finishTask?.cancel() }
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { workout.flushRack(); finishTask?.cancel() }
@@ -154,10 +150,20 @@ struct WorkoutScreen: View {
     gym.telemetry.event("gym_screen_viewed", properties: ["screen": "workout"])
   }
 
+  // Coach over the workout keeps its answers clear of its bar at the large detent: the bar's edge is hard (08.54).
+  @ViewBuilder var coachRoom: some View {
+    let room = CoachTab(gym: gym, coach: coach, escapeSetup: { choice in if choice == .buildManually { leave(for: .buildRoutine) } },
+                        close: { activeSheet = nil })
+    if #available(iOS 26.0, *) { room.scrollEdgeEffectStyle(.hard, for: .top) } else { room }
+  }
+
   // Coach over the workout is a deliberate entry, so it opens on a fresh chat (08.54); closing it leaves the rack as it was.
   func openCoach() {
+    let account = gym.account, session = workout.sessionId
     Task {
       await coach.activate()
+      guard activeSheet == nil, workout.receipt == nil, gym.account == account, workout.sessionId == session,
+            workout.session?.isOpen == true else { return }
       _ = coach.fresh(door: "workout")
       activeSheet = .coach
     }
@@ -191,7 +197,9 @@ struct WorkoutScreen: View {
       } else {
         WorkoutPager(gym: gym, workout: workout, present: { activeSheet = $0 })
           .overlay {
-            if loadFocused { Color.clear.contentShape(Rectangle()).onTapGesture { loadFocused = false }.accessibilityHidden(true) }
+            if workout.typedLoad != nil {
+              Color.clear.contentShape(Rectangle()).onTapGesture { workout.landTypedLoad() }.accessibilityHidden(true)
+            }
           }
       }
     }
@@ -202,7 +210,7 @@ struct WorkoutScreen: View {
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
-          WorkoutRack(workout: workout, loadFocus: $loadFocused, editReps: { activeSheet = .wheel })
+          WorkoutRack(workout: workout, editReps: { activeSheet = .wheel })
             .padding(RoomSpace.inset)
             .background {
               UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
@@ -344,7 +352,7 @@ struct WorkoutPageControl: UIViewRepresentable {
     let order = workout.walk.order
     control.numberOfPages = order.count
     control.currentPage = order.firstIndex(of: exerciseId) ?? 0
-    control.isEnabled = !(workout.paging || workout.rackEditing || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+    control.isEnabled = !(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
   final class Coordinator: NSObject {
     let workout: WorkoutState
@@ -443,15 +451,15 @@ struct WorkoutFacts: View {
 }
 
 // The rack drafts the next set. Its numeral, the unit at its baseline or under it at accessibility sizes, turns into a field
-// on the decimal pad in place (03.23) and rolls to each new load; while it is typed in, the rest of the rack steps aside for
-// the keyboard and the load lands when the field lets go. The ladder steps by the load's own band, the reps value opens one
-// wheel (03.24); each change the lifter makes to load or reps ticks, and Log set stays silent.
+// on the decimal pad in place (03.23) and rolls to each new load. While it is typed in, the rest of the rack steps aside
+// for the keyboard and the numeral's line carries the keyboard row's keys, which the pad cannot hold from the rack's band:
+// ± leading for bodyweight and Other, ✓ trailing. The load lands when the field lets go, by ✓, a tap outside or a change
+// of movement. The ladder steps by the load's own band, the reps value opens one wheel (03.24); each change the lifter
+// makes to load or reps ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
-  let loadFocus: FocusState<Bool>.Binding
   let editReps: () -> Void
-  @State private var typing = false
-  @State private var typedLoad: Double?
+  @FocusState private var loadFocused: Bool
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.dynamicTypeSize) var typeSize
   // VoiceOver hears the numeral in its load basis, *Weight, 100 kg total*, and Log set with the set it logs.
@@ -461,31 +469,50 @@ struct WorkoutRack: View {
     let basis = MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })
     let numeral = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
+    let typing = workout.typedLoad != nil
     VStack(spacing: RoomSpace.inset) {
-      numeral {
-        if typing {
-          // The field takes the width of the load it holds, so the unit stays at the numeral's side.
-          Text(LoadText.typed(typedLoad ?? workout.weightKg) + " ").modifier(GymNumeral()).hidden().overlay {
-            LoadField(weightKg: Binding(get: { typedLoad ?? workout.weightKg }, set: { typedLoad = $0 }), basis: basis, focus: loadFocus,
-                      identifier: "workout-load", done: true,
-                      ended: { load in typing = false; typedLoad = nil; workout.adjustRack(weightKg: load, reps: workout.reps) })
-              .modifier(GymNumeral()).tint(GymPalette.accent)
-              .onAppear { loadFocus.wrappedValue = true }
+      HStack(spacing: RoomSpace.related) {
+        if typing && basis.signed {
+          key("Flip the sign", symbol: "plus.forwardslash.minus", identifier: "workout-load-sign") {
+            workout.typedLoad = -(workout.typedLoad ?? workout.weightKg)
           }
-        } else {
-          Button { typing = true } label: {
-            Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
-              .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
-          }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
-            .accessibilityHint("Opens the keypad.")
-            .accessibilityIdentifier("workout-weight")
+        } else if typing {
+          Color.clear.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
         }
-        Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
-      }.roomMotion(workout.weightKg)
+        numeral {
+          if let typedLoad = workout.typedLoad {
+            // The field takes the width of the load it holds, so the unit stays at the numeral's side.
+            Text(LoadText.typed(typedLoad) + " ").modifier(GymNumeral()).hidden().overlay {
+              LoadField(weightKg: Binding(get: { workout.typedLoad ?? workout.weightKg },
+                                          set: { load in if workout.typedLoad != nil { workout.typedLoad = load } }),
+                        basis: basis, focus: $loadFocused, identifier: "workout-load", signInKeyboardRow: false,
+                        ended: { workout.landTypedLoad() })
+                .modifier(GymNumeral()).tint(GymPalette.accent)
+                .onAppear { loadFocused = true }
+            }
+          } else {
+            Button { workout.typeLoad() } label: {
+              Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+                .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
+            }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
+              .accessibilityHint("Opens the keypad.")
+              .accessibilityIdentifier("workout-weight")
+          }
+          Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
+        }.roomMotion(workout.weightKg).frame(maxWidth: .infinity)
+        if typing {
+          key("Done", symbol: "checkmark", identifier: "workout-load-done") { loadFocused = false; workout.landTypedLoad() }
+        }
+      }
       if !typing { controls(basis) }
     }.frame(maxWidth: .infinity).dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
       .sensoryFeedback(.selection, trigger: workout.adjustments)
+  }
+
+  func key(_ title: String, symbol: String, identifier: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) { Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink) }
+      .buttonStyle(RoomSeatStyle()).accessibilityLabel(title).accessibilityIdentifier(identifier)
   }
 
   @ViewBuilder func controls(_ basis: MovementEquipment) -> some View {
@@ -565,7 +592,7 @@ struct WorkoutPager: UIViewControllerRepresentable {
       if pager.viewControllers?.first !== current { pager.setViewControllers([current], direction: .forward, animated: false) }
     }
     func neighbor(_ view: UIViewController, direction: Int) -> UIViewController? {
-      guard !parent.workout.finishing, !parent.workout.rackEditing,
+      guard !parent.workout.finishing,
             let id = identity(view), let position = parent.workout.walk.order.firstIndex(of: id),
             parent.workout.walk.order.indices.contains(position + direction) else { return nil }
       return page(parent.workout.walk.order[position + direction])

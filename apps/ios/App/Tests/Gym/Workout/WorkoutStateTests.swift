@@ -957,6 +957,26 @@ import SyncTesting
     #expect(workout.weightKg == 70 && workout.reps == 3)
   }
 
+  // A load typed on the rack lands on its own movement before the lifter moves on, so it never reaches the next one, and
+  // another account drops it: the field letting go after the change lands nothing.
+  @Test func aTypedLoadLandsOnItsMovementBeforeTheLifterMovesOnAndAnotherAccountDropsIt() throws {
+    let (_, gym) = try fixture(), workout = try begin(gym)
+    workout.weightKg = 40; workout.add(second); workout.weightKg = 60; workout.select(first)
+    workout.typeLoad(); #expect(workout.typedLoad == 40)
+    workout.typedLoad = 123; workout.select(second)
+    #expect(workout.typedLoad == nil && workout.selected == second && workout.weightKg == 60)
+    workout.select(first)
+    #expect(workout.weightKg == 123)
+    workout.typeLoad(); workout.typedLoad = 125; workout.add(third)
+    #expect(workout.typedLoad == nil && workout.selected == third)
+    workout.select(first)
+    #expect(workout.weightKg == 125)
+    workout.typeLoad(); workout.typedLoad = 99; workout.accountChanged()
+    let restored = workout.weightKg
+    workout.landTypedLoad()
+    #expect(workout.typedLoad == nil && workout.weightKg == restored && restored != 99)
+  }
+
   @Test func lastTimePrefillsFreeWorkoutAndPlanOverridesIt() throws {
     let (_, gym) = try fixture(), workout = try begin(gym)
     workout.weightKg = 65; workout.reps = 7; workout.logSet()

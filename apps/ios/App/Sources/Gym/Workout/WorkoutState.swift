@@ -254,6 +254,16 @@ struct FinishWorkout: Action {
     get { rackReps }
     set { adjustRack(weightKg: weightKg, reps: newValue) }
   }
+  // The load the rack's numeral stands for while it is a field, nil while the numeral shows. It lands when the field lets
+  // go and before the lifter changes movement; a movement the walk changes under it, another workout or another account
+  // drops it.
+  var typedLoad: Double?
+  func typeLoad() { if typedLoad == nil { typedLoad = weightKg } }
+  func landTypedLoad() {
+    guard let load = typedLoad else { return }
+    typedLoad = nil
+    adjustRack(weightKg: load, reps: reps)
+  }
   // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
   private(set) var adjustments = 0
   // The count at the last prefill: a plan edit moves the rack only while the lifter has not touched it since.
@@ -401,7 +411,7 @@ struct FinishWorkout: Action {
       message = Self.orderUnread
       gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
     }
-    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
+    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil; typedLoad = nil }
     sessionId = open.id; (walk, finishQueued) = restored
     if message == Self.orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
@@ -423,7 +433,7 @@ struct FinishWorkout: Action {
     }
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
-    if previousSelected != selected { prefill(); restoreActivityDraft() }
+    if previousSelected != selected { typedLoad = nil; prefill(); restoreActivityDraft() }
     else if let previous = offerSession, previous != session, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
             !rackFollows(from: previous, to: session) {
       // The plan changed and the rack's numbers stand: they are offered against the plan as it is now.
@@ -457,7 +467,9 @@ struct FinishWorkout: Action {
     walk = next; activityChanged(); return true
   }
   func select(_ id: ID<Exercise>) {
-    guard walk.order.contains(id), id != selected, !finishing, flushRack() else { return }
+    guard walk.order.contains(id), id != selected, !finishing else { return }
+    landTypedLoad()
+    guard flushRack() else { return }
     if let selected { drafts[selected] = Prefill(weightKg: weightKg, reps: reps) }
     var next = walk; next.selected = id
     guard keep(next) else { return }
@@ -466,7 +478,9 @@ struct FinishWorkout: Action {
   }
   @discardableResult func add(_ id: ID<Exercise>) -> Bool {
     guard session?.isOpen == true, !walk.order.contains(id), gym.catalogue.find(id) != nil,
-          !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed, flushRack() else { return false }
+          !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed else { return false }
+    landTypedLoad()
+    guard flushRack() else { return false }
     var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
     // A workout that follows a plan takes the movement into it, with no targets; one with no plan holds it in the walk.
@@ -480,6 +494,7 @@ struct FinishWorkout: Action {
   }
   func canRemove(_ id: ID<Exercise>) -> Bool { !sets.contains { $0.exerciseId == id } }
   func remove(_ id: ID<Exercise>) {
+    landTypedLoad()
     guard flushRack() else { return }
     guard canRemove(id) else { message = "A movement with a logged set stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
@@ -644,7 +659,7 @@ struct FinishWorkout: Action {
   func closeReceipt() { receipt = nil; if handoff == nil { handoff = .detail(sessionId) }; message = nil }
   func accountChanged() {
     gym.coachUnavailable = false
-    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []
+    sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []; typedLoad = nil
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps); paging = false
     receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }
