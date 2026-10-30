@@ -139,6 +139,8 @@ struct MovementEquipment {
   var choice: String { value == "dumbbell" ? "Dumbbells" : value.capitalized }
   // A pair of dumbbells, whose load is the weight of one, said per hand.
   var each: Bool { value == "dumbbell" && loadCount == 2 }
+  // Bodyweight and Other take a load below zero: a band's help, or a machine's counterweight.
+  var signed: Bool { ["bodyweight", "other"].contains(value) }
   var symbol: String? {
     switch value {
     case "barbell": "figure.strengthtraining.traditional"
