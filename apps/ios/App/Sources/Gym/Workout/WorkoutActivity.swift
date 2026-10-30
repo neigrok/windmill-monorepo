@@ -126,7 +126,7 @@ extension WorkoutState {
     do {
       guard var record = try activityRecord() else { return nil }
       guard canLog, !rackEditing, !gym.workoutHidden, weightKg.isFinite, (1...99).contains(reps),
-            let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
+            let session, session.holdsRack(of: offerSession), LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
         if record.offer != nil { record.offer = nil; _ = keepActivity(record) }
         return nil
       }

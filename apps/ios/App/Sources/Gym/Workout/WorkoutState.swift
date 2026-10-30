@@ -333,7 +333,7 @@ struct FinishWorkout: Action {
         record.offer = nil; revoke = record
         if canLog, !rackEditing, !gym.workoutHidden,
            weightKg.isFinite, (1...99).contains(reps),
-           let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
+           let session, session.holdsRack(of: offerSession), LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
             movementID: selected.description, weightKg: weightKg, reps: reps, setID: gym.runner.mint(TrainingSet.self).description)
           record.baseline = activityBaseline
@@ -434,11 +434,11 @@ struct FinishWorkout: Action {
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
     if previousSelected != selected { typedLoad = nil; prefill(); restoreActivityDraft() }
-    else if let previous = offerSession, previous != session, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
+    else if let previous = offerSession, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
             !rackFollows(from: previous, to: session) {
       // The plan changed and the rack's numbers stand: they are offered against the plan as it is now.
       offerSession = session; activityChanged()
-    } else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
+    } else if !session.holdsRack(of: offerSession) || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
       let pending = rackBase.map { _ in Prefill(weightKg: weightKg, reps: reps) }
       prefill()
       if let pending { editRack(weightKg: pending.weightKg, reps: pending.reps) }
@@ -535,7 +535,7 @@ struct FinishWorkout: Action {
   @discardableResult func logSet(offered: WorkoutActivityOffer? = nil) -> Bool {
     guard flushRack() else { return false }
     guard canLog, let selected, let session else { message = "Check the weight and reps before logging."; return false }
-    guard offerSession == session && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
+    guard session.holdsRack(of: offerSession) && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
     guard weightKg.isFinite, (1...99).contains(reps) else { message = "Check the weight and reps before logging."; return false }
     let offer = offered ?? activityOffer()
     let now: Instant
@@ -663,6 +663,12 @@ struct FinishWorkout: Action {
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps); paging = false
     receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }
+}
+
+extension Session {
+  // The workout as the rack and its durable offer read it: what the phone writes, so the revisions the log stamps when it
+  // confirms a start or a plan edit move neither.
+  func holdsRack(of other: Session?) -> Bool { other?.id == id && other?.fields == fields }
 }
 
 enum HiddenWorkoutDoor: String { case accessory, row }

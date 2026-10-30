@@ -898,6 +898,34 @@ import SyncTesting
     #expect(workout.sets.map(\.weightKg) == [52.5])
   }
 
+  // The log confirming the start, or a plan edit of another movement, stamps revisions the rack does not read: the rack the
+  // lifter adjusted and the durable offer minted over it both stand, and the offer logs.
+  @Test(arguments: [true, false]) func theLogsConfirmationKeepsTheAdjustedRackAndItsOffer(edits: Bool) throws {
+    let (harness, gym) = try fixture(anonymous: false)
+    let press = Exercise(id: ID("confirmed-press"), name: "Confirmed press", pattern: "squat", equipment: "barbell", stepKg: 2.5)
+    #expect(try harness.runner.run(CreateExercise(press)).receipt != nil)
+    harness.sync(); gym.refresh()
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "R", entries: [
+      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)]), RoutineEntry(exerciseId: press.id, sets: [SetTarget(reps: 8, weightKg: 20)]),
+    ]))
+    #expect(saved(gym.save(&draft)))
+    harness.sync(); gym.refresh()
+    let workout = try begin(gym, routine: try #require(gym.routines.first { $0.id == draft.current.id }))
+    harness.sync(); gym.refresh(); workout.reconcile()
+    #expect(workout.session?.planRevision == nil && workout.selected == first && workout.weightKg == 40 && workout.reps == 5)
+    if edits { #expect(workout.revise([.retarget(index: 1, set: 0, target: SetTarget(reps: 6, weightKg: 25))], against: workout.session?.plan)) }
+    workout.weightKg = 85
+    #expect(workout.flushRack())
+    let offer = try #require(workout.activityOffer())
+    harness.sync(); gym.refresh(); workout.reconcile()
+    #expect(try harness.notices(GymRefusal.self).isEmpty)
+    #expect(workout.session?.planRevision == (edits ? 2 : nil))
+    #expect(workout.weightKg == 85 && workout.reps == 5)
+    #expect(workout.activityOffer() == offer)
+    #expect(workout.logActivityOffer(offer))
+    #expect(workout.sets.map(\.weightKg) == [85])
+  }
+
   @Test func swapTakesThePlacePlannedSetsAndSelectionOfTheMovement() throws {
     let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
     let workout = try begin(gym, routine: plan)
