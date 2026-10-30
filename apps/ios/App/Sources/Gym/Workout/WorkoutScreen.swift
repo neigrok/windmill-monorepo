@@ -24,6 +24,7 @@ struct WorkoutScreen: View {
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
+  @FocusState var loadFocused: Bool
 
   init(gym: GymModel) { self.gym = gym; workout = gym.workout }
   var navigation: some View {
@@ -79,8 +80,8 @@ struct WorkoutScreen: View {
         SetEditor(gym: gym, set: set, identifier: "workout-fix")
       case .wheel:
         let movement = workout.selected.flatMap { gym.catalogue.find($0) }
-        SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
-                      weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
+        RepsWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement",
+                       reps: workout.reps) { reps in workout.adjustRack(weightKg: workout.weightKg, reps: reps) }
       }
     }
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
@@ -90,7 +91,11 @@ struct WorkoutScreen: View {
 
   var observedWorkout: some View {
     presentation
-    .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in workout.rackEditing = destination == Sheet.wheel }
+    .onChange(of: activeSheet) { (_: Sheet?, destination: Sheet?) in workout.rackEditing = destination == Sheet.wheel || loadFocused }
+    .onChange(of: loadFocused) { (_: Bool, focused: Bool) in workout.rackEditing = activeSheet == Sheet.wheel || focused }
+    .sensoryFeedback(.impact(weight: .light), trigger: workout.restReaches) { (_: Int, _: Int) in
+      activeSheet == nil && workout.receipt == nil && scenePhase == .active && gym.preferences.confirmHaptic
+    }
     .onChange(of: gym.sets) { (_: [TrainingSet], _: [TrainingSet]) in workout.reconcile() }
     .onChange(of: gym.openSession?.id) { (_: ID<Session>?, _: ID<Session>?) in workout.reconcile(); updateAwake() }
     .onChange(of: gym.notices.map(\.id)) { (_: [String], _: [String]) in workout.reconcile() }
@@ -104,7 +109,7 @@ struct WorkoutScreen: View {
     observedWorkout
     .onAppear(perform: appear)
     .onChange(of: gym.account) { _, _ in
-      nextSheet = nil; activeSheet = nil; finishTask?.cancel(); workout.accountChanged(); updateAwake()
+      nextSheet = nil; activeSheet = nil; loadFocused = false; finishTask?.cancel(); workout.accountChanged(); updateAwake()
     }
     .onChange(of: gym.accountTransition) { _, changing in
       if changing { nextSheet = nil; activeSheet = nil; finishTask?.cancel() }
@@ -144,6 +149,9 @@ struct WorkoutScreen: View {
         }.padding(.horizontal, RoomSpace.inset).padding(.bottom, 120).frame(maxWidth: .infinity)
       } else {
         WorkoutPager(gym: gym, workout: workout, assembly: { activeSheet = .assembly }, fix: { activeSheet = .fix($0) })
+          .overlay {
+            if loadFocused { Color.clear.contentShape(Rectangle()).onTapGesture { loadFocused = false }.accessibilityHidden(true) }
+          }
       }
     }
     .modifier(GymPage())
@@ -153,7 +161,7 @@ struct WorkoutScreen: View {
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
-          WorkoutRack(workout: workout, edit: { activeSheet = .wheel })
+          WorkoutRack(workout: workout, loadFocus: $loadFocused, editReps: { activeSheet = .wheel })
             .padding(RoomSpace.inset)
             .background {
               UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
@@ -238,7 +246,7 @@ struct WorkoutLedger: View {
   var details: some View {
     VStack(spacing: RoomSpace.related) {
       WorkoutPageControl(workout: workout, exerciseId: exerciseId).frame(height: RoomSpace.minimumTarget)
-      WorkoutFacts(workout: workout)
+      WorkoutFacts(workout: workout, exerciseId: exerciseId).padding(.horizontal, RoomSpace.inset * 2)
     }
   }
 }
@@ -261,7 +269,7 @@ struct WorkoutPageControl: UIViewRepresentable {
     let order = workout.walk.order
     control.numberOfPages = order.count
     control.currentPage = order.firstIndex(of: exerciseId) ?? 0
-    control.isEnabled = !(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+    control.isEnabled = !(workout.paging || workout.rackEditing || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
   final class Coordinator: NSObject {
     let workout: WorkoutState
@@ -320,33 +328,55 @@ struct WorkoutLedgerRow: View {
   }
 }
 
+// The workout clock leads; at the trailing edge the time since the last set stands before the movement's rest target, which
+// never moves (03.20). Reaching it turns the since clock and its glyph gym/accent (03.21); with no target the since clock
+// stands alone (03.22). The selected movement's row reports the reach, once per rest, and VoiceOver announces nothing.
 struct WorkoutFacts: View {
   let workout: WorkoutState
+  let exerciseId: ID<Exercise>
   @Environment(\.dynamicTypeSize) var typeSize
+  static func spokenRest(sinceMs: Int64, target: RestTarget?) -> String {
+    WorkoutClocks.spoken(sinceMs) + (target.map { ", target " + WorkoutClocks.spoken(Int64($0.seconds) * 1_000) } ?? "")
+  }
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { _ in
       if let clocks = workout.clocks {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
-          : AnyLayout(HStackLayout(spacing: RoomSpace.panel))
+        let target = workout.restTarget(exerciseId)
+        let reached = clocks.sinceSetMs.map { since in target?.isReached(sinceMs: since) ?? false } ?? false
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
+          : AnyLayout(HStackLayout(spacing: RoomSpace.related))
         layout {
           Label(WorkoutClocks.reading(clocks.workoutMs), systemImage: "clock")
-            .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
+            .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.spoken(clocks.workoutMs))
+          if !typeSize.isAccessibilitySize { Spacer(minLength: RoomSpace.related) }
           if let since = clocks.sinceSetMs {
-            Label(WorkoutClocks.reading(since), systemImage: "timer")
-              .accessibilityLabel("Since last set").accessibilityValue(WorkoutClocks.reading(since))
+            HStack(spacing: RoomSpace.related) {
+              Label {
+                Text(WorkoutClocks.reading(since)).foregroundStyle(reached ? GymPalette.accent : GymPalette.ink)
+              } icon: {
+                Image(systemName: "timer").foregroundStyle(reached ? GymPalette.accent : GymPalette.inkDim)
+              }
+              if let target { Text("/ " + WorkoutClocks.reading(Int64(target.seconds) * 1_000)) }
+            }.accessibilityElement(children: .ignore)
+              .accessibilityLabel("Since last set").accessibilityValue(Self.spokenRest(sinceMs: since, target: target))
           }
         }.font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+          .onChange(of: reached) { (_: Bool, now: Bool) in if now, exerciseId == workout.selected { workout.reachRest() } }
       }
     }
   }
 }
 
-// The rack drafts the next set: the numeral, its unit at its baseline or under it at accessibility sizes, opens the
-// wheels and rolls to each new load; the ladder steps by the load's own band; each change the lifter makes to load or
-// reps ticks, and Log set stays silent.
+// The rack drafts the next set. Its numeral, the unit at its baseline or under it at accessibility sizes, turns into a field
+// on the decimal pad in place (03.23) and rolls to each new load; while it is typed in, the rest of the rack steps aside for
+// the keyboard and the load lands when the field lets go. The ladder steps by the load's own band, the reps value opens one
+// wheel (03.24); each change the lifter makes to load or reps ticks, and Log set stays silent.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
-  let edit: () -> Void
+  let loadFocus: FocusState<Bool>.Binding
+  let editReps: () -> Void
+  @State private var typing = false
+  @State private var typedLoad: Double?
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.dynamicTypeSize) var typeSize
   // VoiceOver hears the numeral in its load basis, *Weight, 100 kg total*, and Log set with the set it logs.
@@ -358,13 +388,32 @@ struct WorkoutRack: View {
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
     VStack(spacing: RoomSpace.inset) {
       numeral {
-        Button(action: edit) {
-          Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
-            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
-        }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
-          .accessibilityIdentifier("workout-weight")
+        if typing {
+          // The field takes the width of the load it holds, so the unit stays at the numeral's side.
+          Text(LoadText.typed(typedLoad ?? workout.weightKg) + " ").modifier(GymNumeral()).hidden().overlay {
+            LoadField(weightKg: Binding(get: { typedLoad ?? workout.weightKg }, set: { typedLoad = $0 }), basis: basis, focus: loadFocus,
+                      identifier: "workout-load", done: true,
+                      ended: { load in typing = false; typedLoad = nil; workout.adjustRack(weightKg: load, reps: workout.reps) })
+              .modifier(GymNumeral()).tint(GymPalette.accent)
+              .onAppear { loadFocus.wrappedValue = true }
+          }
+        } else {
+          Button { typing = true } label: {
+            Text(Readout.weight(workout.weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+              .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: workout.weightKg))
+          }.buttonStyle(.plain).accessibilityLabel(Self.spokenWeight(workout.weightKg, basis: basis))
+            .accessibilityHint("Opens the keypad.")
+            .accessibilityIdentifier("workout-weight")
+        }
         Text(basis.unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("workout-weight-unit")
       }.roomMotion(workout.weightKg)
+      if !typing { controls(basis) }
+    }.frame(maxWidth: .infinity).dynamicTypeSize(...DynamicTypeSize.accessibility1)
+      .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+      .sensoryFeedback(.selection, trigger: workout.adjustments)
+  }
+
+  @ViewBuilder func controls(_ basis: MovementEquipment) -> some View {
       LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
         ForEach(0..<4) { index in
           let label = WeightLadder.labels(workout.weightKg)[index]
@@ -377,11 +426,12 @@ struct WorkoutRack: View {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= 1)
-        Button(action: edit) {
+        Button(action: editReps) {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
             .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
-        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Opens the reps wheel.")
+          .accessibilityIdentifier("workout-reps")
         Button { workout.reps = min(99, workout.reps + 1) } label: {
           Image(systemName: "plus").frame(width: 56, height: 56).contentShape(Rectangle())
         }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= 99)
@@ -391,9 +441,6 @@ struct WorkoutRack: View {
       }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
         .accessibilityLabel(Self.spokenLog(workout.weightKg, reps: workout.reps))
         .accessibilityIdentifier("workout-log")
-    }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
-      .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
-      .sensoryFeedback(.selection, trigger: workout.adjustments)
   }
 }
 
@@ -444,7 +491,7 @@ struct WorkoutPager: UIViewControllerRepresentable {
       if pager.viewControllers?.first !== current { pager.setViewControllers([current], direction: .forward, animated: false) }
     }
     func neighbor(_ view: UIViewController, direction: Int) -> UIViewController? {
-      guard !parent.workout.finishing,
+      guard !parent.workout.finishing, !parent.workout.rackEditing,
             let id = identity(view), let position = parent.workout.walk.order.firstIndex(of: id),
             parent.workout.walk.order.indices.contains(position + direction) else { return nil }
       return page(parent.workout.walk.order[position + direction])

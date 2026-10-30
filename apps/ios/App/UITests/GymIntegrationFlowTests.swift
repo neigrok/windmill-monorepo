@@ -46,7 +46,7 @@ import XCTest
     return request
   }
 
-  func testFiniteLoadWheelsSaveAndSyncBeyondTheOldLimitIncludingZero() async throws {
+  func testFiniteLoadsKeepTheirValueOnThePadAndSyncBeyondTheOldLimitIncludingZero() async throws {
     guard server != nil, let file = ProcessInfo.processInfo.environment["WM_GYM_LOAD_CASES"] else {
       throw XCTSkip("requires the isolated schema10 load fixture")
     }
@@ -58,11 +58,9 @@ import XCTest
       XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
       return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
-    func selected(_ wheel: XCUIElement) throws -> Double {
-      let value = try XCTUnwrap(wheel.value as? String)
-      let number = value.components(separatedBy: " kg")[0].replacingOccurrences(of: ",", with: "")
-        .replacingOccurrences(of: "−", with: "-")
-      return try XCTUnwrap(Double(number))
+    func shown(_ field: XCUIElement) throws -> Double {
+      let value = try XCTUnwrap(field.value as? String)
+      return try XCTUnwrap(Double(value.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: "−", with: "-")))
     }
     for item in cases {
       let load = try XCTUnwrap(item["weightKg"] as? Double), routine = try XCTUnwrap(item["routineId"] as? String)
@@ -73,19 +71,9 @@ import XCTest
       XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
       XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
-      let wheel = app.pickerWheels.element(boundBy: 0)
-      XCTAssertTrue(wheel.waitForExistence(timeout: 5)); XCTAssertEqual(try selected(wheel), load)
-      if abs(load) < 1_000 {
-        let unit = try XCTUnwrap(wheel.value as? String).components(separatedBy: " kg").last!
-        let neighbor = load == 0 ? -5.0 : load > 0 ? 505.0 : -505.0
-        let neighborLabel = String(Int(neighbor)).replacingOccurrences(of: "-", with: "−")
-        let openingLabel = String(Int(load)).replacingOccurrences(of: "-", with: "−")
-        wheel.adjust(toPickerWheelValue: "\(neighborLabel) kg\(unit)")
-        XCTAssertEqual(try selected(wheel), neighbor)
-        wheel.adjust(toPickerWheelValue: "\(openingLabel) kg\(unit)")
-        XCTAssertEqual(try selected(wheel), load)
-      }
-      app.buttons["set-wheel-done"].tap()
+      let field = app.textFields["workout-load"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5)); XCTAssertEqual(try shown(field), load)
+      app.buttons["workout-load-done"].tap()
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.waitForExistence(timeout: 5))
       app.buttons["workout-finish"].tap()
@@ -121,7 +109,7 @@ import XCTest
     for _ in 0..<count { app.buttons["workout-log"].tap() }
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
-    app.turnLoadWheel(to: "62.5")
+    app.typeLoad("62.5", into: "workout-fix-load")
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
@@ -192,7 +180,7 @@ import XCTest
     let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(first.waitForExistence(timeout: 10)); first.tap()
     XCTAssertTrue(app.buttons["gym-fix-save"].waitForExistence(timeout: 5))
-    app.turnLoadWheel(to: "70"); app.buttons["gym-fix-save"].tap()
+    app.typeLoad("70", into: "gym-fix-load"); app.buttons["gym-fix-save"].tap()
     XCTAssertTrue(first.waitForLabel("1 · 70 × 8, +10 over plan"), first.label)
     back(app)
     XCTAssertTrue(session.waitForExistence(timeout: 10))

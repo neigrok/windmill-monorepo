@@ -22,6 +22,12 @@ struct WorkoutClocks: Equatable {
     if seconds < 3_600 { return "\(seconds / 60):\(tail)" }
     return "\(seconds / 3_600):\(String(format: "%02lld", seconds / 60 % 60)):\(tail)"
   }
+  // A clock in words, its empty parts left out: *2 minutes 14 seconds*.
+  static func spoken(_ ms: Int64) -> String {
+    let seconds = Int(max(0, ms / 1_000))
+    let parts = [(seconds / 3_600, "hour"), (seconds / 60 % 60, "minute"), (seconds % 60, "second")].filter { $0.0 > 0 }
+    return parts.isEmpty ? "0 seconds" : parts.map { GymCount.of($0.0, $0.1) }.joined(separator: " ")
+  }
 }
 
 // One movement in this workout: its sets in the order they were logged, then the current set and the plan still ahead.
@@ -239,6 +245,9 @@ struct FinishWorkout: Action {
   @ObservationIgnored var offerSession: Session?
   @ObservationIgnored var offerSets: [TrainingSet] = []
   @ObservationIgnored var drafts: [ID<Exercise>: Prefill] = [:]
+  // The set whose rest last reached its target, so each rest is reached once; each reach the lifter may feel counts here.
+  @ObservationIgnored var restReachedAfter: ID<TrainingSet>?
+  private(set) var restReaches = 0
 
   init(gym: GymModel) { self.gym = gym; restore() }
   func restoreRack(weightKg: Double, reps: Int) {
@@ -317,6 +326,15 @@ struct FinishWorkout: Action {
   var selected: ID<Exercise>? { walk.selected }
   var currentSets: [TrainingSet] { sets.filter { $0.exerciseId == selected } }
   var entry: RoutineEntry? { session?.plan?.entries.first { $0.exerciseId == selected } }
+  func restTarget(_ id: ID<Exercise>) -> RestTarget? {
+    RestTarget.of(session?.plan?.entries.first { $0.exerciseId == id }, rest: gym.restSettings)
+  }
+  func reachRest() {
+    guard let latest = sets.max(by: { $0.completedAt.ms < $1.completedAt.ms })?.id, latest != restReachedAfter else { return }
+    restReachedAfter = latest
+    restReaches += 1
+    gym.telemetry.event("gym_rest_target_reached", properties: ["screen": "workout"])
+  }
   func ledger(_ id: ID<Exercise>) -> MovementLedger {
     MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id })
   }

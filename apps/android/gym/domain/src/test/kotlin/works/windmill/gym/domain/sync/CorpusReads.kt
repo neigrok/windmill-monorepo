@@ -63,6 +63,9 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
             val prefill = Prefill.of(today, f.optionalValue("planEntry", RoutineEntry), last)
             Json.objectOf("weightKg" to Json.of(prefill.weightKg), "reps" to Json.of(prefill.reps))
         }
+        "RestTarget" -> RestTarget.of(f.optionalValue("planEntry", RoutineEntry), restSettings(read))?.let {
+            Json.objectOf("seconds" to Json.of(it.seconds), "reached" to Json.of(it.isReached(f.int("sinceMs").toLong())))
+        } ?: Json.Null
         "StatsProgress" -> log.progress.json
         "BodyweightReps" -> {
             val progress = log.progress.movement(f.ref("exerciseId", Exercise))

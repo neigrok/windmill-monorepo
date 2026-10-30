@@ -3,74 +3,143 @@ import Observation
 import DomainKit
 import GymDomain
 
-// Load and reps on two native wheels, one beside the other: the load in the movement's steps and labelled by its basis,
-// bodyweight and Other running from assistance through zero to added load, the reps 1 to 99. A value off the steps keeps its row,
-// so the wheels never move a number they were opened on. The rack's sheet (03.2) and Fix set (03.3) both draw them.
-struct SetWheels: View {
+// A load as typed: either decimal separator, and a leading minus or its typographic sign where the basis is signed, rounded
+// to the hundredth and within 500 kg of zero; nil for anything else, an empty field included.
+nonisolated enum LoadText {
+  static let bound = 500.0
+
+  static func parse(_ text: String, signed: Bool) -> Double? {
+    var digits = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "−", with: "-").replacingOccurrences(of: ",", with: ".")
+    let negative = digits.hasPrefix("-")
+    if negative { digits.removeFirst() }
+    let digit = { (character: Character) in ("0"..."9").contains(character) }
+    guard !negative || signed, digits.contains(where: digit), digits.allSatisfy({ digit($0) || $0 == "." }),
+          digits.filter({ $0 == "." }).count <= 1, let magnitude = Double(digits) else { return nil }
+    let value = WeightLadder.round(negative ? -magnitude : magnitude)
+    return abs(value) <= bound ? value : nil
+  }
+
+  // The field's text for a load, in the locale's decimal separator.
+  static func typed(_ weightKg: Double, locale: Locale = .current) -> String {
+    Readout.weight(weightKg).replacingOccurrences(of: ".", with: locale.decimalSeparator ?? ".")
+  }
+
+  static func flipped(_ text: String) -> String {
+    text.hasPrefix("−") || text.hasPrefix("-") ? String(text.dropFirst()) : "−" + text
+  }
+}
+
+// One load on the system decimal pad (03.23, 03.25, 03.30). Focus selects its text, so the first key replaces it; each
+// readable value lands on `weightKg` as it is typed, and when the field lets go an empty or unreadable one gives way to the
+// load it opened on. Bodyweight and Other add ± to the keyboard row, the pad having no minus; `done` adds its ✓.
+struct LoadField: View {
   @Binding var weightKg: Double
-  @Binding var reps: Int
   let basis: MovementEquipment
-  @State private var loads: [Double]
-  @State private var repCounts: [Int]
+  let focus: FocusState<Bool>.Binding
+  let identifier: String
+  var done = false
+  var ended: (Double) -> Void = { _ in }
+  @State private var typed = ""
+  @State private var selection: TextSelection?
+  @State private var opening = 0.0
 
-  init(weightKg: Binding<Double>, reps: Binding<Int>, basis: MovementEquipment) {
-    _weightKg = weightKg; _reps = reps; self.basis = basis
-    _loads = State(initialValue: Self.loads(around: weightKg.wrappedValue, basis: basis))
-    _repCounts = State(initialValue: Self.reps(around: reps.wrappedValue))
-  }
+  var signed: Bool { ["bodyweight", "other"].contains(basis.value) }
 
-  static func loads(around weightKg: Double, basis: MovementEquipment) -> [Double] {
-    guard weightKg.isFinite else { return [0] }
-    let signed = ["bodyweight", "other"].contains(basis.value)
-    var values = [weightKg]
-    let grid = WeightLadder.onGrid(weightKg)
-    let anchor = grid.isFinite ? grid : weightKg
-    for direction in [-1, 1] {
-      var current = weightKg < 0 && !signed ? 0 : anchor
-      if current != weightKg { values.append(current) }
-      for _ in 0..<60 {
-        let next = WeightLadder.bump(current, direction: direction)
-        guard next.isFinite, next != current, signed || next >= 0 else { break }
-        values.append(next)
-        current = next
+  var body: some View {
+    TextField("Load", text: $typed, selection: $selection)
+      .keyboardType(.decimalPad)
+      .focused(focus)
+      .onAppear { typed = LoadText.typed(weightKg) }
+      .onChange(of: weightKg) { _, value in if !focus.wrappedValue { typed = LoadText.typed(value) } }
+      .onChange(of: focus.wrappedValue) { _, focused in
+        if focused {
+          opening = weightKg; typed = LoadText.typed(weightKg)
+          selection = TextSelection(range: typed.startIndex..<typed.endIndex)
+          return
+        }
+        if LoadText.parse(typed, signed: signed) == nil { weightKg = opening }
+        typed = LoadText.typed(weightKg)
+        ended(weightKg)
       }
-    }
-    return Array(Set(values)).sorted()
+      .onChange(of: typed) { _, text in
+        if focus.wrappedValue, let value = LoadText.parse(text, signed: signed) { weightKg = value }
+      }
+      .toolbar {
+        if focus.wrappedValue {
+          ToolbarItemGroup(placement: .keyboard) {
+            if signed {
+              Button("Flip the sign", systemImage: "plus.forwardslash.minus") {
+                typed = LoadText.flipped(typed); selection = TextSelection(insertionPoint: typed.endIndex)
+              }.accessibilityIdentifier("\(identifier)-sign")
+            }
+            Spacer()
+            if done {
+              Button("Done", systemImage: "checkmark") { focus.wrappedValue = false }.accessibilityIdentifier("\(identifier)-done")
+            }
+          }
+        }
+      }
+      .accessibilityLabel("Load, \(basis.unit)")
+      .accessibilityIdentifier(identifier)
+  }
+}
+
+// Reps on one native wheel, 1 to 99, the unit beside the selected row as Clock's timer draws it. A count outside the band
+// keeps its row, so the wheel never moves a number it opened on.
+struct RepsWheel: View {
+  @Binding var reps: Int
+  let identifier: String
+  @State private var counts: [Int]
+
+  init(reps: Binding<Int>, identifier: String) {
+    _reps = reps; self.identifier = identifier
+    _counts = State(initialValue: Self.counts(around: reps.wrappedValue))
   }
 
-  static func reps(around reps: Int) -> [Int] {
+  static func counts(around reps: Int) -> [Int] {
     (1...99).contains(reps) ? Array(1...99) : (Array(1...99) + [reps]).sorted()
   }
 
   var body: some View {
-    HStack(spacing: 0) {
-      wheel("Load", unit: basis.unit, selection: $weightKg, values: loads, reading: { Readout.weight($0) }, identifier: "set-wheel-load")
-      wheel("Reps", unit: "reps", selection: $reps, values: repCounts, reading: { "\($0)" }, identifier: "set-wheel-reps")
-    }
-    .onChange(of: weightKg) { _, value in
-      guard let index = loads.firstIndex(of: value), index < 15 || index >= loads.count - 15 else { return }
-      loads = Self.loads(around: value, basis: basis)
-    }
-  }
-
-  // One wheel: its numbers end at the column's middle and the unit stands beside the selected one, as Clock's timer does.
-  func wheel<Value: Hashable>(_ name: String, unit: String, selection: Binding<Value>, values: [Value], reading: @escaping (Value) -> String,
-                              identifier: String) -> some View {
-    Picker(name, selection: selection) {
-      ForEach(values, id: \.self) { value in
+    Picker("Reps", selection: $reps) {
+      ForEach(counts, id: \.self) { count in
         HStack(spacing: RoomSpace.related) {
-          Text(reading(value)).monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing)
-          Text(unit).hidden().frame(maxWidth: .infinity, alignment: .leading)
-        }.accessibilityElement(children: .ignore).accessibilityLabel("\(reading(value)) \(unit)")
+          Text("\(count)").monospacedDigit().frame(maxWidth: .infinity, alignment: .trailing)
+          Text("reps").hidden().frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityElement(children: .ignore).accessibilityLabel(GymCount.of(count, "rep"))
       }
     }.pickerStyle(.wheel)
       .overlay {
         HStack(spacing: RoomSpace.related) {
           Color.clear.frame(maxWidth: .infinity)
-          Text(unit).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, alignment: .leading)
+          Text("reps").foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, alignment: .leading)
         }.allowsHitTesting(false).accessibilityHidden(true)
       }
       .accessibilityIdentifier(identifier)
+  }
+}
+
+// A set's numbers as Fix set and Edit sets draw them (03.25, 03.30): the Load row on the decimal pad, its field outlined in
+// the accent while it is typed in, over the reps wheel.
+struct SetFields: View {
+  @Binding var weightKg: Double
+  @Binding var reps: Int
+  let basis: MovementEquipment
+  let focus: FocusState<Bool>.Binding
+  let identifier: String
+
+  var body: some View {
+    LabeledContent("Load") {
+      HStack(spacing: RoomSpace.related) {
+        LoadField(weightKg: $weightKg, basis: basis, focus: focus, identifier: "\(identifier)-load")
+          .multilineTextAlignment(.trailing).monospacedDigit()
+          .padding(.horizontal, 10).frame(width: 120, height: 36)
+          .background(GymPalette.control, in: RoundedRectangle(cornerRadius: 10))
+          .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(focus.wrappedValue ? GymPalette.accent : .clear, lineWidth: 1.5) }
+        Text(basis.unit).foregroundStyle(GymPalette.inkDim).fixedSize()
+      }
+    }.foregroundStyle(GymPalette.ink)
+    RepsWheel(reps: $reps, identifier: "\(identifier)-reps").frame(height: 140).clipped()
   }
 }
 
@@ -135,7 +204,7 @@ struct SetWheels: View {
   }
 }
 
-// Fix set (03.3): the set's place as the title over its movement, the load and reps on the wheels, Effort and Note, and
+// Fix set (03.25): the set's place as the title over its movement, its load and reps, Effort and Note, and
 // Delete set as the last row; `identifier` prefixes each control's accessibility identifier. A logged set's fix lands on
 // the log; a saved workout's set returns to the caller's draft, and may take another movement and time, since a copy can
 // carry either wrong.
@@ -151,6 +220,8 @@ struct SetEditor: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @State private var draft: SetFixDraft
   @State private var saved = false
+  @State private var detent = PresentationDetent.height(470)
+  @FocusState private var loadFocused: Bool
 
   init(gym: GymModel, set: TrainingSet, identifier: String) {
     self.gym = gym; landing = .log; self.identifier = identifier
@@ -177,8 +248,8 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            SetWheels(weightKg: $draft.weightKg, reps: $draft.reps, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)))
-              .frame(height: 180).clipped().id(draft.exerciseId)
+            SetFields(weightKg: $draft.weightKg, reps: $draft.reps, basis: MovementEquipment(gym.catalogue.find(draft.exerciseId)),
+                      focus: $loadFocused, identifier: identifier).id(draft.exerciseId)
           }
           Section {
             Picker("Effort", selection: $draft.rpe) {
@@ -218,7 +289,10 @@ struct SetEditor: View {
           GymTransient(gym: gym, message: draft.failure ?? draft.problem,
                        dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")
         }
-    }.modifier(GymPage()).presentationDetents(logged && !typeSize.isAccessibilitySize ? [.height(470), .large] : [.large])
+    }.modifier(GymPage())
+      .presentationDetents(logged && !typeSize.isAccessibilitySize ? [.height(470), .large] : [.large], selection: $detent)
+      .onAppear { if !logged || typeSize.isAccessibilitySize { detent = .large } }
+      .onChange(of: loadFocused) { _, focused in if focused { detent = .large } }
       .sensoryFeedback(.success, trigger: saved)
       .onChange(of: draft.value) { _, _ in draft.failure = nil }
       .onChange(of: gym.sets) { _, sets in

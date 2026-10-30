@@ -24,6 +24,8 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     let plannedWorkingSetCount: Int?
     let startedAt: Date
     let lastSetAt: Date?
+    // The rest the selected movement asks, in seconds; none when it asks none, or the Activity began before the build drew it.
+    let restSeconds: Int?
     let staleAt: Date
     let unsentSetCount: Int
     let offer: WorkoutActivityOffer?
@@ -34,6 +36,9 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
       let planned = plannedWorkingSetCount.flatMap { $0 >= workingSetOrdinal ? $0 : nil }
       return planned.map { "Set \(workingSetOrdinal) of \($0)" } ?? "Set \(workingSetOrdinal)"
     }
+
+    // The rest target as the app's facts row writes it, *2:00*; none without one.
+    var restReading: String? { restSeconds.map { "\($0 / 60):" + String(format: "%02d", $0 % 60) } }
   }
 }
 
@@ -51,6 +56,7 @@ nonisolated extension WorkoutActivityAttributes.ContentState {
     plannedWorkingSetCount = try values.decodeIfPresent(Int.self, forKey: .plannedWorkingSetCount)
     startedAt = try values.decode(Date.self, forKey: .startedAt)
     lastSetAt = try values.decodeIfPresent(Date.self, forKey: .lastSetAt)
+    restSeconds = try values.decodeIfPresent(Int.self, forKey: .restSeconds)
     staleAt = try values.decode(Date.self, forKey: .staleAt)
     offer = try values.decodeIfPresent(WorkoutActivityOffer.self, forKey: .offer)
     let previous = try decoder.container(keyedBy: PreviousKeys.self)
