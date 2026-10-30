@@ -1405,19 +1405,23 @@ class TrainingStore(
     // The equipment is the CALLER's and is never guessed. The pattern is the domain's value for "we
     // did not ask": nothing on this surface reads it, because the ladder is taken off the MAGNITUDE
     // of the load.
-    suspend fun create(name: String, equipment: String, id: String = mintExercise()): GymResult<Exercise> {
+    suspend fun create(name: String, equipment: String, id: String = mintExercise(), loadCount: Int? = null,
+        expectedReplica: String? = controls.engineReplica, expectedSession: String? = null): GymResult<Exercise> {
         val named = Program.named(name)
             ?: return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
-        if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings) {
+        if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings + "other" ||
+            loadCount != null && (loadCount !in 1..2 || equipment != "dumbbell" && loadCount != 1)) {
             return GymResult.Failed(WriteFailure.Refused("check the movement name and equipment"))
         }
-        val write = ExerciseWrite(id, named, Exercise.unclassified, equipment)
+        val write = ExerciseWrite(id, named, Exercise.unclassified, equipment, loadCount = loadCount)
         val seat = owner
         return try {
-            val made = training.createExercise(write)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            val made = training.createExercise(write, expectedReplica ?: return GymResult.Failed(WriteFailure.Refused(accountChanged)),
+                seat == null, expectedSession)
+            if (seat != owner || expectedReplica != controls.engineReplica || expectedReplica != training.engine.activeReplica()) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             catalog = catalog.filterNot { it.id == made.id } + made
-            if (made.id != write.id || made.name != write.name || made.equipment != write.equipment || made.pattern != write.pattern) {
+            if (made.id != write.id || made.name != works.windmill.gym.domain.sync.ExerciseRules.name.apply(write.name, works.windmill.domain.kit.Path("name")) || made.equipment != write.equipment || made.pattern != write.pattern ||
+                write.loadCount != null && made.loadCount != write.loadCount) {
                 return GymResult.Failed(WriteFailure.Refused("already saved as ${made.name} (${made.equipment}) — choose it from the movement list"))
             }
             GymResult.Ok(made)
@@ -1428,6 +1432,61 @@ class TrainingStore(
             if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             GymResult.Failed(WriteFailure(refusing))
         }
+    }
+
+    private data class MovementCreationKey(val account: String, val replica: String?, val workout: String, val id: String)
+    private val movementCreations = mutableMapOf<MovementCreationKey,
+        Pair<ExerciseWrite, kotlinx.coroutines.Deferred<MovementCreateOutcome>>>()
+
+    suspend fun createForWorkout(write: ExerciseWrite, workoutId: String,
+        expectedAccountKey: String = accountKey, expectedReplica: String? = controls.engineReplica): MovementCreateOutcome {
+        val key = MovementCreationKey(expectedAccountKey, expectedReplica, workoutId, write.id)
+        movementCreations[key]?.let { (submitted, pending) ->
+            if (submitted != write) return MovementCreateOutcome.Failed(WriteFailure.Refused("Creation is already in progress."))
+            return pending.await()
+        }
+        val seat = owner
+        val openingAccount = seated
+        val job = scope.async(start = CoroutineStart.UNDISPATCHED) {
+            fun current() = workoutAuthorized && seated == openingAccount && expectedAccountKey == accountKey && seat == owner &&
+                expectedReplica != null && expectedReplica == controls.engineReplica &&
+                expectedReplica == training.engine.activeReplica() && session?.id == workoutId
+            val known = catalog.any { it.id == write.id }
+            if (!current()) {
+                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to if (known) "add" else "create",
+                    "outcome" to "refused"))
+                return@async MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged))
+            }
+            val created = create(write.name, write.equipment, write.id, write.loadCount, expectedReplica, workoutId)
+            if (!known) telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "create",
+                "outcome" to when (created) {
+                    is GymResult.Ok -> "ok"
+                    is GymResult.Failed -> if (created.why is WriteFailure.Refused) "refused" else "failed"
+                }))
+            if (created is GymResult.Failed) return@async MovementCreateOutcome.Failed(created.why)
+            val movement = (created as GymResult.Ok).value
+            val result = try {
+                if (!current()) MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged), movement)
+                else {
+                    choose(movement.id)
+                    MovementCreateOutcome.Added(movement)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                reportFailure("gym.choose", failure)
+                if (!controls.writable) refuseWorkout()
+                MovementCreateOutcome.Failed(WriteFailure(failure), movement)
+            }
+            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "add",
+                "outcome" to when (result) {
+                    is MovementCreateOutcome.Added -> "ok"
+                    is MovementCreateOutcome.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+                }))
+            result
+        }
+        movementCreations[key] = write to job
+        job.invokeOnCompletion { if (movementCreations[key]?.second === job) movementCreations.remove(key) }
+        return job.await()
     }
 
     // The local commit controls the next frame; domain drafts preserve fields owned by other surfaces.
@@ -2086,6 +2145,11 @@ class TrainingStore(
 
 // There is no state for "empty": a log with no rows has no foot.
 enum class Older { More, Loading, End, Failed }
+
+sealed interface MovementCreateOutcome {
+    data class Added(val movement: Exercise) : MovementCreateOutcome
+    data class Failed(val why: WriteFailure, val created: Exercise? = null) : MovementCreateOutcome
+}
 
 sealed interface GymResult<out T> {
     data class Ok<T>(val value: T) : GymResult<T>

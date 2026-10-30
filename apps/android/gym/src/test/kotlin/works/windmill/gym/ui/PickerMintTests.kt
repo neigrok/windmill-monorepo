@@ -16,6 +16,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -156,7 +157,7 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { name, equipment, id -> works.windmill.gym.store.GymResult.Ok(works.windmill.gym.domain.Exercise(id, name, equipment = equipment, custom = true)) },
+                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.domain.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
             )
         }
 
@@ -182,7 +183,7 @@ class PickerMintTests {
                 nowMs = 0,
                 title = "Add movement",
                 onPick = {},
-                onCreate = { name, equipment, id -> works.windmill.gym.store.GymResult.Ok(works.windmill.gym.domain.Exercise(id, name, equipment = equipment, custom = true)) },
+                onCreate = { write -> works.windmill.gym.store.MovementCreateOutcome.Added(works.windmill.gym.domain.Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
             )
         }
 
@@ -192,15 +193,16 @@ class PickerMintTests {
         hideSearchIme()
         compose.waitForIdle()
         compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("Zercher Carry")
-        compose.onNodeWithText("Dumbbell").performClick()
+        compose.onNodeWithContentDescription("Equipment").performClick()
+        compose.onNodeWithText("Dumbbells").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
+        compose.onNodeWithText("Dumbbells").assertIsDisplayed()
 
         restorer.emulateSavedInstanceStateRestore()
         hideSearchIme()
 
         compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("Zercher Carry").assertIsDisplayed()
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
+        compose.onNodeWithText("Dumbbells").assertIsDisplayed()
     }
 }

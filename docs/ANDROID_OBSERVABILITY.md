@@ -152,6 +152,13 @@ access-screen body belongs to task 36.
 
 ## Deletion actions
 
+Live custom movement open/cancel emits `gym_action` with `screen=movement_form`, `action=open/cancel`, `outcome=ok` once at the UI transition; recreation does not reopen the event. Creation emits store-owned `gym_action` steps with `screen=movement_form`:
+`create` records catalogue creation and `add` records insertion into the current workout. Both use
+`ok|refused|failed`; retrying a known created identity emits only the remaining insertion result.
+Routine Add remains a `stage` step and creates no catalogue-success event. Unexpected catalogue
+failures use `gym.create`; insertion failures use `gym.choose`. Names, search text, equipment,
+load counts, targets and identities are excluded.
+
 Routine, set and note deletion emits one `gym_action` after the settled application-owned job finishes:
 `screen=routines|session|notes|note_editor`, `action=delete`, `outcome=ok|refused|failed`. Row disposal does not
 cancel that job or suppress its result. `ok` means the exact local receipt was released to the queue;
@@ -436,7 +443,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Notes editor | `gym_action` | screen: `note_editor`; action: `save`, `delete`; outcome: `ok`, `refused`, `failed` |
 | Notes list | `gym_action` | screen: `notes`; action: `delete`; outcome: `ok`, `refused`, `failed` |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
-| Routine movement form | `gym_action` | screen: `movement_form`; action: `open`, `cancel`; outcome: `ok`; or action: `stage`; outcome: `ok`, `refused` |
+| Routine and live movement form | `gym_action` | screen: `movement_form`; action: `open`, `cancel`; outcome: `ok`; action: `stage`; outcome: `ok`, `refused`; or action: `create`, `add`; outcome: `ok`, `refused`, `failed` |
 | Outer routine Save | `gym_action` | screen: `routine_editor`; action: `save`; outcome: `ok`, `refused`, `failed` |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action: `inspect`, `keep`, `fix`, `retry`, `discard`; bounded state and outcome labels above |

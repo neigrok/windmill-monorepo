@@ -176,12 +176,12 @@ class PlanningRestorationTests {
             compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
             hideSearchIme()
             compose.onNodeWithContentDescription("Movement name").performTextReplacement("Farmer carry")
-            val dumbbell = hasText("Dumbbell") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
-            compose.onNode(dumbbell).performClick()
+            compose.onNodeWithContentDescription("Equipment").performClick()
+            compose.onNodeWithText("Dumbbells").performClick()
             restorer.emulateSavedInstanceStateRestore()
             hideSearchIme()
-            compose.onNodeWithContentDescription("Movement name").assertTextEquals("Farmer carry")
-            compose.onNode(dumbbell).assertIsSelected()
+            assertEquals("Farmer carry", raw("Movement name"))
+            compose.onNodeWithText("Dumbbells").assertIsDisplayed()
             compose.onNodeWithText("Create and add").performClick()
             compose.waitForIdle()
             assertEquals(session, store.session?.id)
@@ -196,23 +196,24 @@ class PlanningRestorationTests {
     @Test
     fun deferredCreateRejectsSecondTapAndRestorationReleasesBusyWithoutChangingTheRequestIdentity() {
         val restorer = StateRestorationTester(compose)
-        val first = CompletableDeferred<GymResult<Exercise>>()
+        val first = CompletableDeferred<MovementCreateOutcome>()
         val calls = mutableListOf<ExerciseWrite>()
         val picked = mutableListOf<String>()
         restorer.setContent {
             contentView = LocalView.current
             MovementPicker(catalog = TheSix.movements, taken = emptyList(), lastSets = null,
                 nowMs = 0, title = "Add movement", onPick = { picked += it },
-                onCreate = { name, equipment, id ->
-                    calls += ExerciseWrite(id, name, Exercise.unclassified, equipment)
+                onCreate = { write ->
+                    calls += write
                     if (calls.size == 1) first.await()
-                    else GymResult.Failed(WriteFailure.Refused("That name needs checking"))
+                    else MovementCreateOutcome.Failed(WriteFailure.Refused("That name needs checking"))
                 })
         }
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
         hideSearchIme()
-        compose.onNodeWithText("Dumbbell").performClick()
+        compose.onNodeWithContentDescription("Equipment").performClick()
+        compose.onNodeWithText("Dumbbells").performClick()
         compose.onNodeWithText("Create and add").performClick()
         compose.onNodeWithText("Creating…").assertIsNotEnabled().performClick()
         assertEquals(1, calls.size)
@@ -223,8 +224,8 @@ class PlanningRestorationTests {
         assertEquals(listOf(calls.first(), calls.first()), calls)
         assertEquals("Zercher", calls.first().name)
         compose.onNodeWithText("That name needs checking").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher")
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
+        assertEquals("Zercher", raw("Movement name"))
+        compose.onNodeWithText("Dumbbells").assertIsDisplayed()
         assertEquals(emptyList<String>(), picked)
     }
     @Test
@@ -265,7 +266,7 @@ class PlanningRestorationTests {
             contentView = LocalView.current
             MovementPicker(catalog = TheSix.movements, taken = listOf("bench-press"), lastSets = null,
                 nowMs = 0, title = "Add movement", onPick = { picked += it },
-                onCreate = { _, _, _ -> error("no creation") })
+                onCreate = { _ -> error("no creation") })
         }
         compose.onNodeWithText("Bench Press").assertIsSelected().assertIsNotEnabled().performClick()
         compose.onNodeWithText("Back Squat").assertIsEnabled().performClick()
@@ -279,12 +280,13 @@ class PlanningRestorationTests {
             contentView = LocalView.current
             MovementPicker(state = state, catalog = TheSix.movements, taken = emptyList(), lastSets = null,
                 nowMs = 0, title = "Add movement", onPick = {},
-                onCreate = { _, _, _ -> error("no creation") })
+                onCreate = { _ -> error("no creation") })
         }
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
         hideSearchIme()
         compose.onNodeWithContentDescription("Movement name").performTextReplacement("Ring Row")
-        compose.onNode(hasText("Bodyweight") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).performClick()
+        compose.onNodeWithContentDescription("Equipment").performClick()
+        compose.onNodeWithText("Other").performClick()
         compose.onNodeWithText("Cancel").performClick()
         compose.waitForIdle()
         compose.onNode(hasSetTextAction()).performTextReplacement("Ring")
@@ -299,8 +301,8 @@ class PlanningRestorationTests {
             .setVisible(WindowInsets.Type.ime(), false).build()
         compose.runOnIdle { contentView.dispatchApplyWindowInsets(hidden) }
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("Movement name").assertTextEquals("Ring Row")
-        compose.onNode(hasText("Bodyweight") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).assertIsSelected()
+        assertEquals("Ring Row", raw("Movement name"))
+        compose.onNodeWithText("Other").assertIsDisplayed()
         compose.onNodeWithText("Create and add").assertIsDisplayed().assertIsEnabled()
     }
 

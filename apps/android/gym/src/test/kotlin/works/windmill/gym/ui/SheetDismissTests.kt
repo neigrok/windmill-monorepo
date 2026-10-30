@@ -7,6 +7,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -180,13 +183,18 @@ class SheetDismissTests {
     @Test
     fun testTheCreateStepDismissesFromItsHandleMintsNothingAndHandsTheQueryBack() {
         val minted = mutableListOf<String>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) = Unit
+        }
         compose.setContent {
             contentView = LocalView.current
-            MovementPicker(
+            CompositionLocalProvider(LocalTelemetry provides telemetry) { MovementPicker(
                 catalog = listOf(Exercise(id = "bench-press", name = "Bench Press")),
                 taken = emptyList(), lastSets = null, nowMs = 0, title = "Add movement",
-                onPick = {}, onCreate = { name, equipment, id -> minted += name; works.windmill.gym.store.GymResult.Ok(Exercise(id, name, equipment = equipment, custom = true)) },
-            )
+                onPick = {}, onCreate = { write -> minted += write.name; works.windmill.gym.store.MovementCreateOutcome.Added(Exercise(write.id, write.name, equipment = write.equipment, custom = true, loadCount = write.loadCount!!)) },
+            ) }
         }
         compose.onNode(hasSetTextAction()).performTextReplacement("Zercher")
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
@@ -215,6 +223,11 @@ class SheetDismissTests {
             compose.onAllNodes(hasText("Create movement") and !hasClickAction()).fetchSemanticsNodes().isEmpty()
         }
 
+        compose.runOnIdle { handle.single().config[SemanticsActions.Dismiss].action!!.invoke() }
+        compose.waitForIdle()
+        assertEquals(listOf("open", "cancel").map {
+            "gym_action" to mapOf("screen" to "movement_form", "action" to it, "outcome" to "ok")
+        }, events)
         assertTrue("nothing was minted", minted.isEmpty())
         compose.onNode(hasText("Create movement") and hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("Zercher").assertIsDisplayed()

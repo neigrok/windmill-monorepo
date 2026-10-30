@@ -55,6 +55,7 @@ internal fun MovementForm(
     creating: Boolean = false,
     busy: Boolean = false,
     refusal: String? = null,
+    movementEditable: Boolean = true,
 ) {
     val skin = LocalGymColors.current
     val problem = Program.nameProblem(movement.current.name)
@@ -86,7 +87,7 @@ internal fun MovementForm(
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     MovementFields(movement.current.name, movement.current.equipment, movement.current.loadCount,
                         onName = { onMovement(movement.named(it)) }, onEquipment = { onMovement(movement.equipped(it)) },
-                        enabled = !busy, problem = problem.takeIf { movement.current.name.isNotEmpty() })
+                        enabled = !busy && movementEditable, problem = problem.takeIf { movement.current.name.isNotEmpty() })
                     scheme?.let { RoutineTargets(it, movement, onScheme, enabled = !busy, creating = creating) }
                     refusal?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.error,
                         modifier = Modifier.semantics { error(it) }) }

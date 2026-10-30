@@ -1,14 +1,17 @@
 package works.windmill.gym.ui
 
 import works.windmill.platform.design.WindmillSheetWindow
+import works.windmill.platform.design.WindmillSheetBack
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,8 +20,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -29,17 +30,18 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -48,14 +50,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -72,6 +69,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import works.windmill.gym.R
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.ExerciseWrite
+import works.windmill.gym.domain.RoutineMovement
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LastSet
 import works.windmill.gym.domain.Program
@@ -80,8 +79,10 @@ import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TargetEntry
 import works.windmill.platform.net.WindmillJson
-import works.windmill.gym.store.GymResult
+import works.windmill.gym.store.MovementCreateOutcome
+import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
+import works.windmill.platform.telemetry.LocalTelemetry
 
 // A movement is a stable identity and never a typed string, so the only way to lift something the
 // catalog has never heard of is to MINT it here. The last-done read is SPARSE, so `never logged` is
@@ -206,6 +207,9 @@ class MovementPickerState(
     refusal: String? = null,
     createOpen: Boolean = false,
     scheme: TargetEntry.Draft = TargetEntry.Draft(),
+    loadCount: Int = if (equipment == "dumbbell") 2 else 1,
+    created: Exercise? = null,
+    submitted: ExerciseWrite? = null,
 ) {
     var createOpen by mutableStateOf(createOpen)
     var query by mutableStateOf(query)
@@ -215,23 +219,31 @@ class MovementPickerState(
     var refusal by mutableStateOf(refusal)
     var busy by mutableStateOf(false)
     var scheme by mutableStateOf(scheme)
+    var loadCount by mutableStateOf(loadCount)
+    var created by mutableStateOf(created)
+    var submitted by mutableStateOf(submitted)
 
     companion object {
         val saver = listSaver<MovementPickerState, Any>(
             save = { listOf(it.query, it.createName.orEmpty(), it.createName != null,
                 it.equipment, it.requestId, it.refusal.orEmpty(), it.createOpen,
-                WindmillJson.encodeToString(TargetEntry.Draft.serializer(), it.scheme)) },
+                WindmillJson.encodeToString(TargetEntry.Draft.serializer(), it.scheme), it.loadCount,
+                it.created?.let { value -> WindmillJson.encodeToString(Exercise.serializer(), value) }.orEmpty(),
+                it.submitted?.let { value -> WindmillJson.encodeToString(ExerciseWrite.serializer(), value) }.orEmpty()) },
             restore = { MovementPickerState(it[0] as String,
                 (it[1] as String).takeIf { _ -> it[2] as Boolean }, it[3] as String,
                 it[4] as String, (it[5] as String).takeIf(String::isNotEmpty), it[6] as Boolean,
                 it.getOrNull(7)?.let { raw -> WindmillJson.decodeFromString(TargetEntry.Draft.serializer(), raw as String) }
-                    ?: TargetEntry.Draft()) },
+                    ?: TargetEntry.Draft(),
+                (it.getOrNull(8) as? Int) ?: if (it[3] == "dumbbell") 2 else 1,
+                (it.getOrNull(9) as? String)?.takeIf(String::isNotEmpty)?.let { raw -> WindmillJson.decodeFromString(Exercise.serializer(), raw) },
+                (it.getOrNull(10) as? String)?.takeIf(String::isNotEmpty)?.let { raw -> WindmillJson.decodeFromString(ExerciseWrite.serializer(), raw) }) },
         )
     }
 }
 
 @Composable
-fun rememberMovementPickerState(): MovementPickerState = rememberSaveable(saver = MovementPickerState.saver) {
+fun rememberMovementPickerState(vararg inputs: Any?): MovementPickerState = rememberSaveable(*inputs, saver = MovementPickerState.saver) {
     MovementPickerState()
 }
 
@@ -244,18 +256,20 @@ fun MovementPicker(
     nowMs: Long,
     title: String,
     onPick: (String) -> Unit,
-    onCreate: (suspend (name: String, equipment: String, id: String) -> GymResult<Exercise>)?,
+    onCreate: (suspend (ExerciseWrite) -> MovementCreateOutcome)?,
     modifier: Modifier = Modifier,
     sessions: List<SessionSummary> = emptyList(),
     subtitle: String? = null,
     onClose: (() -> Unit)? = null,
     state: MovementPickerState = rememberMovementPickerState(),
     onCreateDraft: ((Exercise, TargetEntry.Draft) -> Unit)? = null,
+    onAdded: () -> Unit = {},
 ) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val telemetry = LocalTelemetry.current
     val imeVisible by rememberUpdatedState(WindowInsets.isImeVisible)
     var createReady by remember { mutableStateOf(false) }
     LaunchedEffect(state.createOpen) {
@@ -264,7 +278,7 @@ fun MovementPicker(
         if (onCreateDraft != null) {
             state.createOpen = false
             onCreateDraft(Exercise(state.requestId.ifEmpty { Ids.exercise() }, state.createName.orEmpty(),
-                pattern = Exercise.unclassified, equipment = state.equipment, custom = true), state.scheme)
+                pattern = Exercise.unclassified, equipment = state.equipment, custom = true, loadCount = state.loadCount), state.scheme)
             return@LaunchedEffect
         }
         focusManager.clearFocus(force = true)
@@ -321,120 +335,92 @@ fun MovementPicker(
             onClick = {
                 if (state.createName == null) {
                     state.createName = Program.capped(state.query.trim())
-                    state.equipment = Exercise.loadings.first()
+                    state.equipment = "barbell"
+                    state.loadCount = 1
+                    state.created = null
+                    state.submitted = null
                     state.requestId = Ids.exercise()
                     state.refusal = null
                     state.scheme = TargetEntry.Draft()
                 }
                 if (onCreateDraft != null) {
                     onCreateDraft(Exercise(state.requestId, state.createName.orEmpty(), pattern = Exercise.unclassified,
-                        equipment = state.equipment, custom = true), state.scheme)
-                } else {
+                        equipment = state.equipment, custom = true, loadCount = state.loadCount), state.scheme)
+                } else if (!state.createOpen) {
                     createReady = false
                     state.createOpen = true
+                    telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "open", "outcome" to "ok"))
                 }
             },
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         ) { Text("Create movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink) }
     }
     if (state.createOpen && createReady) {
-        val name = state.createName.orEmpty()
         val createSheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
             confirmValueChange = { !state.busy })
+        fun cancelCreate() {
+            if (state.busy || !state.createOpen) return
+            state.createOpen = false
+            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "cancel", "outcome" to "ok"))
+        }
         ModalBottomSheet(
-            onDismissRequest = { if (!state.busy) state.createOpen = false }, sheetState = createSheet,
+            onDismissRequest = ::cancelCreate, sheetState = createSheet,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface, scrimColor = skin.scrim,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = {
+                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(32.dp).height(4.dp).background(skin.inkDim, RoundedCornerShape(2.dp)))
+                }
+            },
         ) {
             WindmillSheetWindow()
-            BackHandler(enabled = state.busy) {}
-            CreateMovementSheet(
-                name = name, onName = { state.createName = Program.capped(it); state.refusal = null },
-                equipment = state.equipment, onEquipment = { state.equipment = it; state.refusal = null },
-                busy = state.busy, refusal = state.refusal,
-                onCancel = { state.createOpen = false },
-                onCreate = {
-                    if (!state.busy) {
-                        state.busy = true
-                        scope.launch {
-                            try {
-                                when (val result = requireNotNull(onCreate)(name.trim(), state.equipment, state.requestId)) {
-                                    is GymResult.Ok -> {
-                                        state.createOpen = false
-                                        state.createName = null
-                                        state.refusal = null
-                                        onPick(result.value.id)
+            WindmillSheetBack(onDismiss = ::cancelCreate) {
+                val sheetKeyboard = LocalSoftwareKeyboardController.current
+                BackHandler(enabled = WindowInsets.isImeVisible) { sheetKeyboard?.hide() }
+                val submitted = state.submitted
+                val movement = state.created ?: Exercise(state.requestId, submitted?.name ?: state.createName.orEmpty(),
+                    Exercise.unclassified, submitted?.equipment ?: state.equipment, custom = true,
+                    loadCount = submitted?.loadCount ?: state.loadCount)
+                MovementForm(RoutineMovement(null, movement), scheme = null, title = "Create movement",
+                    commitLabel = if (state.busy) "Creating…" else "Create and add", creating = true,
+                    onMovement = {
+                        state.createName = it.current.name
+                        state.equipment = it.current.equipment
+                        state.loadCount = it.current.loadCount
+                        state.refusal = null
+                    }, onScheme = {}, onCancel = ::cancelCreate, busy = state.busy,
+                    movementEditable = submitted == null && state.created == null,
+                    refusal = state.refusal,
+                    onCommit = {
+                        if (!state.busy) {
+                            state.busy = true
+                            val write = state.submitted ?: ExerciseWrite(state.requestId, movement.name.trim(),
+                                Exercise.unclassified, movement.equipment, loadCount = movement.loadCount)
+                            state.submitted = write
+                            scope.launch {
+                                try {
+                                    when (val result = requireNotNull(onCreate)(write)) {
+                                        is MovementCreateOutcome.Added -> {
+                                            state.createOpen = false
+                                            state.createName = null
+                                            state.created = null
+                                            state.submitted = null
+                                            state.refusal = null
+                                            onAdded()
+                                        }
+                                        is MovementCreateOutcome.Failed -> {
+                                            state.created = result.created
+                                            if (result.created == null && result.why is WriteFailure.Refused) state.submitted = null
+                                            state.refusal = result.why.line(if (result.created == null)
+                                                "check this movement before retrying" else "the movement was created; retry adding it to this workout")
+                                        }
                                     }
-                                    is GymResult.Failed -> state.refusal = result.why.line("“$name” wasn’t created")
-                                }
-                            } finally { state.busy = false }
-                        }
-                    }
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun CreateMovementSheet(
-    name: String,
-    onName: (String) -> Unit,
-    equipment: String,
-    onEquipment: (String) -> Unit,
-    busy: Boolean,
-    refusal: String?,
-    onCancel: () -> Unit,
-    onCreate: () -> Unit,
-) {
-    val skin = LocalGymColors.current
-    val focus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val equipmentColumns = if (LocalDensity.current.fontScale > 1.3f || LocalConfiguration.current.screenWidthDp < 360) 1 else 2
-    LaunchedEffect(Unit) { focus.requestFocus(); keyboard?.show() }
-    Column(Modifier.fillMaxWidth().heightIn(max = pickerMaxHeight()).imePadding()) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Create movement", style = WindmillFont.body(22, FontWeight.Bold), color = skin.ink,
-                modifier = Modifier.weight(1f))
-            TextButton(onClick = onCancel, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Cancel", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
-            }
-        }
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            PlanningNameField(name, onName, "Movement name", "", enabled = !busy, container = skin.raised,
-                modifier = Modifier.focusRequester(focus))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Equipment", style = WindmillFont.body(14), color = skin.inkDim)
-                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Exercise.loadings.chunked(equipmentColumns).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            pair.forEach { loading ->
-                                val selected = loading == equipment
-                                Row(Modifier.weight(1f).heightIn(min = 56.dp)
-                                    .clip(RoundedCornerShape(12.dp)).background(skin.raised)
-                                    .border(1.dp, if (selected) skin.accent else Color.Transparent, RoundedCornerShape(12.dp))
-                                    .selectable(selected, enabled = !busy, role = Role.RadioButton) { onEquipment(loading) }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    RadioButton(selected, onClick = null, enabled = !busy, modifier = Modifier.size(20.dp))
-                                    Text(loading.replaceFirstChar { it.uppercase() }, style = WindmillFont.body(16),
-                                        color = skin.ink, modifier = Modifier.weight(1f))
-                                }
+                                } finally { state.busy = false }
                             }
                         }
-                    }
-                }
+                    })
             }
-            refusal?.let { Text(it, style = WindmillFont.body(14), color = skin.alarmInk) }
-        }
-        Button(onClick = onCreate, enabled = Program.named(name) != null && !busy,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).heightIn(min = 56.dp)) {
-            Text(if (busy) "Creating…" else "Create and add",
-                style = WindmillFont.body(16, FontWeight.Bold))
         }
     }
 }
