@@ -100,8 +100,8 @@ struct GymRoom: View {
     // Only a cover closed under a workout still on screen hides it; a close the workout already made records nothing.
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0, gym.workout.isPresented { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
       if risingFromAccessory {
-        WorkoutScreen(gym: gym).interactiveDismissDisabled().navigationTransition(.zoom(sourceID: GymRoom.accessoryZoom, in: zoom))
-      } else { WorkoutScreen(gym: gym).interactiveDismissDisabled() }
+        WorkoutScreen(gym: gym, coach: coach).interactiveDismissDisabled().navigationTransition(.zoom(sourceID: GymRoom.accessoryZoom, in: zoom))
+      } else { WorkoutScreen(gym: gym, coach: coach).interactiveDismissDisabled() }
     }
     .onChange(of: gym.workout.handoff) { _, handoff in
       guard let handoff else { return }

@@ -6,18 +6,20 @@ import SyncCore
 
 struct WorkoutScreen: View {
   nonisolated enum Sheet: Identifiable, Equatable {
-    case assembly, movement, fix(TrainingSet), wheel
+    case assembly, movement, fix(TrainingSet), wheel, coach
     var id: String {
       switch self {
       case .assembly: "assembly"
       case .movement: "movement"
       case .fix(let set): "fix-\(set.id)"
       case .wheel: "wheel"
+      case .coach: "coach"
       }
     }
   }
   let gym: GymModel
   @Bindable var workout: WorkoutState
+  @State var coach: CoachConversation
   @Environment(\.scenePhase) var scenePhase
   @State var activeSheet: Sheet?
   @State var nextSheet: Sheet?
@@ -25,7 +27,10 @@ struct WorkoutScreen: View {
   @State var idleTimerWasDisabled = false
   @State var awake = false
 
-  init(gym: GymModel) { self.gym = gym; workout = gym.workout }
+  init(gym: GymModel, coach: CoachConversation? = nil) {
+    self.gym = gym; workout = gym.workout
+    _coach = State(initialValue: coach ?? CoachConversation(gym: gym))
+  }
   var navigation: some View {
     let dates = gym.dates
     return NavigationStack {
@@ -49,9 +54,11 @@ struct WorkoutScreen: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if workout.session?.isOpen == true {
-          ToolbarItem(placement: .topBarLeading) {
+          ToolbarItemGroup(placement: .topBarLeading) {
             Button("This workout", systemImage: "list.bullet.clipboard") { activeSheet = .assembly }.labelStyle(.iconOnly)
               .accessibilityIdentifier("workout-assembly")
+            Button("Coach", systemImage: "bubble.left.and.bubble.right", action: openCoach).labelStyle(.iconOnly)
+              .accessibilityIdentifier("workout-coach")
           }
           ToolbarItem(placement: .confirmationAction) {
             Button(workout.finishing ? "Finishing…" : "Finish") {
@@ -81,6 +88,9 @@ struct WorkoutScreen: View {
         let movement = workout.selected.flatMap { gym.catalogue.find($0) }
         SetWheelSheet(title: "Set \(workout.currentSets.count + 1)", movement: movement?.name ?? "Movement", basis: MovementEquipment(movement),
                       weightKg: workout.weightKg, reps: workout.reps) { weightKg, reps in workout.adjustRack(weightKg: weightKg, reps: reps) }
+      case .coach:
+        NavigationStack { CoachTab(gym: gym, coach: coach, close: { activeSheet = nil }) }
+          .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
       }
     }
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
@@ -121,6 +131,15 @@ struct WorkoutScreen: View {
     workout.reconcile()
     updateAwake()
     gym.telemetry.event("gym_screen_viewed", properties: ["screen": "workout"])
+  }
+
+  // Coach over the workout is a deliberate entry, so it opens on a fresh chat (08.54); closing it leaves the rack as it was.
+  func openCoach() {
+    Task {
+      await coach.activate()
+      _ = coach.fresh(door: "workout")
+      activeSheet = .coach
+    }
   }
 
   func disappear() {
