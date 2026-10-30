@@ -13,12 +13,13 @@ at hello, push, pull and WebSocket upgrade for excluded schemas. Workflow failur
 commands, environment values, credentials and response bodies are not exposed by the compatibility
 helper. This operational flow has no product events or additional backend write route.
 
-The source registry is 10 / minimum 10. Production's last verified backend is 8 / minimum 4;
-web's deployed schema 9 does not change that backend receipt. The coordinated cutoff remains held
-until replacement Android/iOS artifacts and upgrade availability are verified. The
-[deployment runbook](../../backend/deploy/README.md#coordinated-client-cutoff) covers independent web
-deployment, TestFlight readiness versus tester access, Android publication and the compatible
-rollback floor. Approved Android equipment controls do not approve new iOS or web pickers.
+Source and production advertise schema 11 / minimum 11 after deployment `40873633845`. Digest resum
+`41101251226` completed across three scopes and corrected two digests. Web promotion `41101256320`
+serves verified source `667bbc88`. Read-only run `41117835993` verifies iOS 0.2.0 (23) availability in
+one established internal beta group with two testers. Android 0.13.0 and the coordinated iOS
+replacement remain pending; queued client delivery remains unverified. The
+[deployment runbook](../../backend/deploy/README.md#coordinated-client-cutoff) records exact receipts
+and the compatible rollback floor. Approved Android equipment controls do not approve new iOS or web pickers.
 
 Each replacement sender requires a fresh hello for its current owner, token, replica and epoch
 before numbering or delivering work, with server schema at least its generated registry minimum.
@@ -31,7 +32,6 @@ The deployment guard validates image metadata and exact live/candidate minimums 
 promotion. Candidate runtime verification must cover all four sync doors, current-header successful
 Gym payloads and queued delivery after a fresh compatible hello. A passing mount/auth rejection
 matrix does not prove successful payload decoding, nullable metrics or distribution availability.
-No production cutoff is performed by the shared-load source change.
 
 Web promotion has its own fail-closed check under the same `deploy-vps` serialization. Its composed
 client schema must be at least the live backend minimum, and the live backend schema must be at
@@ -43,6 +43,6 @@ steps still run; a source merge cannot promote an incompatible web client.
 Before that check, Web Deploy retains the complete `dist`, composed compatibility metadata and a
 release manifest with the full source SHA and every file's size/SHA256. The artifact name includes
 the source, workflow run and attempt, so retrying a held run retains its earlier candidate. The
-coordinated cutoff verifies native upgrade availability, performs the acknowledged backend cutoff,
-then retries the compatible web promotion and proves queued delivery. An artifact or passing
-compatibility check alone proves neither that delivery nor production availability.
+release still requires verification of native replacement availability and queued delivery. The
+completed backend cutoff and web promotion do not establish those remaining checks. An artifact or
+passing compatibility check alone proves neither delivery nor production availability.

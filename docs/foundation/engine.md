@@ -14,17 +14,17 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**Registry contract:** The composed source registry is version 10 with minimum version 10. Gym's
-finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
+**Registry contract:** The composed source registry is version 11 with minimum version 11. Sets have
+no `kind` field. Gym's finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
-whose versions rise together (§2.4); journal's field shape is unchanged. Production cutoff is held
-behind the [coordinated release guard](../../backend/deploy/README.md#coordinated-client-cutoff) until
-Android and iOS replacement artifacts and upgrade availability are verified. Every other product
-starts from empty stores.
+whose versions rise together (§2.4); journal's field shape is unchanged. Production advertises
+schema 11 / minimum 11. The [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+records verified deployment and distribution receipts and the pending Android 0.13.0 / coordinated
+iOS replacement release. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
@@ -2717,8 +2717,8 @@ routine id, including when that routine is spent.
 **Evidence:** [gym architecture §§3.7–3.9](../../backend/products/gym/ARCHITECTURE.md),
 [stored columns](../../backend/db/schema.sql) (`gym_routines`, `gym_proposals`, `gym_notes`,
 `gym_routine_creations`),
-[TypeStore reads/writes](../../backend/products/gym/sync/adapters/postgres/PgGym.cpp),
-[count and revision rules](../../backend/products/gym/sync/domain/GymRules.cpp),
+[TypeStore reads/writes](../../backend/products/gym/sync/PgGym.cpp),
+[count and revision rules](../../backend/products/gym/sync/GymRules.cpp),
 and [nullable history count and creation replay](../../backend/products/gym/adapters/postgres/PgProgramRepository.cpp).
 `packages/api-contract/gym/domain/training-reads.json` includes the 36 captured read cases; the
 web, Swift and Kotlin domain suites claim them alongside training-rule regressions.
