@@ -29,6 +29,7 @@ struct CoachTab: View {
   @State var preparing = false
   @State var choosePhoto = false
   @State var viewport = Viewport()
+  @State var position = ScrollPosition()
   @State var returnToLatest: ReturnToLatest?
   @State var conversationVisible = false
   @Environment(\.coachOpenAccount) var openAccount
@@ -165,10 +166,11 @@ struct CoachTab: View {
               CoachTyping()
             }
             if let notice { CoachNoticeView(notice: notice, recover: recover) }
-            Color.clear.frame(height: 1).id("latest")
+            Color.clear.frame(height: 1)
           }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
         }.contentShape(Rectangle()).onTapGesture { composing = false }
       }.defaultScrollAnchor(greets ? .top : .bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
+        .scrollPosition($position)
         .onScrollGeometryChange(for: Viewport.self) { geometry in
           Viewport(bottomInset: geometry.contentInsets.bottom,
             latest: geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 40)
@@ -178,12 +180,12 @@ struct CoachTab: View {
           guard held.owner == coach.owner, held.thread == coach.saved.threadId else { returnToLatest = nil; return }
           guard next.bottomInset >= held.bottomInset else { return }
           returnToLatest = nil
-          proxy.scrollTo("latest", anchor: .bottom)
+          position.scrollTo(edge: .bottom)
         }
         .onAppear {
           conversationVisible = true
           if let held = returnToLatest, held.owner == coach.owner, held.thread == coach.saved.threadId {
-            proxy.scrollTo("latest", anchor: .bottom)
+            position.scrollTo(edge: .bottom)
           }
         }
         .onDisappear {
@@ -198,14 +200,14 @@ struct CoachTab: View {
         .onChange(of: composing) { _, _ in returnToLatest = nil }
         .overlay(alignment: .bottomTrailing) {
           if !viewport.latest, !composing {
-            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { glassSymbol("chevron.down") }
+            Button { withAnimation { position.scrollTo(edge: .bottom) } } label: { glassSymbol("chevron.down") }
               .buttonStyle(RoomSeatStyle(diameter: 36)).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
           }
         }
         .onChange(of: coach.asking) { _, asking in
           returnToLatest = nil
           if asking { composing = false }
-          proxy.scrollTo("latest", anchor: .bottom)
+          position.scrollTo(edge: .bottom)
         }
         .task(id: revealedProposal) {
           guard let id = revealedProposal else { return }
