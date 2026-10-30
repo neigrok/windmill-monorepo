@@ -203,7 +203,6 @@ Android runs no replica executor. The server loop and the iOS turn driver replay
 1. **Admit locally.** Refuse, keeping the draft, when:
    - there is no connection;
    - the seat is `anon` and the phone holds no installation credential with lifetime USD capacity (§8);
-   - a workout is open, since Coach is refused mid-workout;
    - the replica has not completed its first pull of history (`coach-replica-syncing`);
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
      are attached.
@@ -211,8 +210,8 @@ Android runs no replica executor. The server loop and the iOS turn driver replay
    `running`, with id `turnId` and `replica` set to the id of the replica the commit writes to, which
    the engine gives the commit (engine §7.12), and the device row `runningTurn := turnId` (engine §2.5
    `DeviceRow`), cleared with the terminal state.
-3. **Context.** Run `list_sessions` (first page), `list_notes`, `list_exercises` and
-   `list_routines` through the executor, together within `CONTEXT_READ_BYTES`. Record them as
+3. **Context.** Run `list_sessions` (first page, which an open workout heads), `list_notes`,
+   `list_exercises` and `list_routines` through the executor, together within `CONTEXT_READ_BYTES`. Record them as
    ability calls on the Coach message. They count toward the read receipt.
 4. **History.** Take the text of the newest completed turns of the conversation: at most
    `CONTEXT_TURNS` turns and `CONTEXT_BYTES` bytes.
