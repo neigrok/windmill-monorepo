@@ -150,6 +150,8 @@ text/photo drafts stay retained, while editing, adding/removing a photo and Send
 Anonymous network composition remains gated by the installation implementation. The signed-out
 access-screen body belongs to task 36.
 
+Routine-editor History and the summary’s `· yours` marker emit no events or writes. Unexpected history-read failures report under `gym.routineHistory`; owner or replica changes are expected refusals.
+
 ## Deletion actions
 
 Live custom movement open/cancel emits `gym_action` with `screen=movement_form`, `action=open/cancel`, `outcome=ok` once at the UI transition; recreation does not reopen the event. Creation emits store-owned `gym_action` steps with `screen=movement_form`:

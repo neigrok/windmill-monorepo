@@ -100,6 +100,32 @@ class RoutineSheetTests {
             } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
         } } finally { scope.cancel() }
     }
+    @Test fun yoursBelongsOnlyToCustomMovementsInTheSummary() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking {
+                room.select(null)
+                assertTrue(room.store.create("Landmine Press", "other", "ex_landmine", loadCount = 1) is GymResult.Ok)
+                val draft = RoutineDraft(name = "Push", creationId = "routine_yours")
+                    .adding("bench-press").adding("ex_landmine").capturingMovements(room.store.catalog)
+                assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
+            }
+            val before = room.engine.snapshot()
+            val visible = mutableStateOf(true)
+            compose.setContent { if (visible.value) GymMaterial { GymRoom(room.account(), room.store) } }
+            try {
+                compose.onNodeWithText("Push").performClick()
+                compose.onNodeWithText("Landmine Press · yours").assertIsDisplayed()
+                compose.onNodeWithText("Bench Press · yours").assertDoesNotExist()
+                compose.onNodeWithText("Bench Press").assertIsDisplayed()
+                compose.onNodeWithText("Edit routine").performClick()
+                compose.onNodeWithText("Landmine Press").assertIsDisplayed()
+                compose.onNodeWithText("Landmine Press · yours").assertDoesNotExist()
+                assertEquals(before, room.engine.snapshot())
+            } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
+        } } finally { scope.cancel() }
+    }
+
     @Test
     fun routineSummaryAndEditorShowEquipmentBasisAndSignedAddedLoad() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

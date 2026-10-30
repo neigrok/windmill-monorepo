@@ -94,6 +94,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import works.windmill.gym.R
+import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.RoutineMovement
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Program
@@ -101,6 +102,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.TargetEntry
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.GymResult
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
@@ -218,6 +220,16 @@ fun RoutineBuilder(
         }
     }
 
+    var history by remember(store.accountKey, store.editReplica, draft.id) { mutableStateOf(emptyList<SessionSummary>()) }
+    LaunchedEffect(store.accountKey, store.editReplica, store.replicaReadRevision, store.accountReady, store.withheldIds, draft.id) {
+        val id = draft.id ?: return@LaunchedEffect
+        if (!store.accountReady) { history = emptyList(); return@LaunchedEffect }
+        history = when (val read = store.routineHistory(id)) {
+            is GymResult.Ok -> read.value
+            is GymResult.Failed -> emptyList()
+        }
+    }
+
     val editing = draft.id != null
     BackHandler(enabled = saving) {}
     LaunchedEffect(saving) {
@@ -225,7 +237,7 @@ fun RoutineBuilder(
     }
 
     BuildStep(
-        draft = draft, store = store, editing = editing, editable = !saving,
+        draft = draft, store = store, history = history, editing = editing, editable = !saving,
         savable = draft.savable && draft.changed && !saving,
         onDraft = { if (!saving) onDraft(it) },
         onOpenTarget = { id ->
@@ -344,6 +356,7 @@ internal fun PlanningNameField(
 private fun BuildStep(
     draft: RoutineDraft,
     store: TrainingStore,
+    history: List<SessionSummary>,
     editing: Boolean,
     editable: Boolean,
     savable: Boolean,
@@ -480,6 +493,25 @@ private fun BuildStep(
                     Icon(Icons.Filled.Add, null, tint = skin.ink)
                     Spacer(Modifier.width(8.dp))
                     Text("Add movement", style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+                }
+            }
+            if (history.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("routine-history"),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("History", style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = skin.ink)
+                Column(Modifier.fillMaxWidth()) {
+                    val dates = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
+                    history.forEachIndexed { index, workout ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 7.dp).testTag("routine-history-row"),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(dates.format(java.time.Instant.ofEpochMilli(workout.startedAtMs).atZone(java.time.ZoneId.systemDefault())),
+                                style = WindmillFont.body(17, FontWeight.Bold).copy(lineHeight = 23.sp), color = skin.ink)
+                            val sets = if (workout.setCount == 1) "set" else "sets"
+                            val movements = if (workout.exercises.size == 1) "movement" else "movements"
+                            Text("${workout.setCount} $sets · ${workout.exercises.size} $movements",
+                                style = GymType.numeral(13).copy(lineHeight = 18.sp), color = skin.inkDim)
+                        }
+                        if (index != history.lastIndex) HorizontalDivider(color = skin.line)
+                    }
                 }
             }
             Text(said, style = WindmillFont.body(13), color = skin.inkDim,

@@ -51,6 +51,7 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -224,7 +225,9 @@ fun RoutineSheet(
                                     Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(Readout.movement(entry.exerciseId, store.catalog),
+                                    val name = Readout.movement(entry.exerciseId, store.catalog)
+                                    val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
+                                    Text(if (yours) "$name · yours" else name,
                                         style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                                     val target = Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId })
                                     Text(target, style = GymType.numeral(13), color = skin.inkDim)
