@@ -143,7 +143,7 @@ and otherwise dropping every `weightKg`; `{op:"add_movement",exerciseId}` append
 
 **Plan rules.** In order: a session `drawn` lacks is `gone`; a finished session, or one the client stale rule
 draws closed, is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
-`base`, or a drawn plan unequal to the stored one, is `stale`. Then per operation: an index or set the entry
+`base` is `stale`. Then per operation: an index or set the entry
 lacks is `session.plan.operation` (`outOfRange`, at `operations.<k>`); an entry whose movement has a set alive
 in `drawn` or `stored` is `planLogged` with `{exerciseId}`; a target movement neither a seed nor drawn is
 `unknownExercise`; one the plan already names is `session.plan.duplicate` (at `operations.<k>.exerciseId`);
@@ -152,8 +152,7 @@ validates the proposal, then refuses an unknown movement, a duplicate entry (at 
 changed logged movement, the first in the order the stored and then the proposed plan name movements, its
 refusals about the proposal. Applying a pending workout proposal is refused `proposalSuperseded` with reason
 `workout-finished` when its session is closed, `workout-changed` when `planRevision` (1 when unset) is not its
-`baseRevision` or the drawn plan differs from the stored one, and `workout-moved` when a movement it changes has
-a logged set; `replaced` and `workout-changed` name a superseded one with and without `supersededBy`.
+`baseRevision`, and `workout-moved` when a movement it changes has a logged set; `replaced` and `workout-changed` name a superseded one with and without `supersededBy`.
 
 A decision is `{decision:{write:{gesture,result}}}`, `{decision:{unchanged:{result}}}` or
 `{decision:{refuse:<GymRefusal>}}`. The gym refusal is `{invalid:<violation>}`, or
