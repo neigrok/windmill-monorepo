@@ -114,7 +114,9 @@ fun AskScreen(
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
     val savedPosition = store.coach.chat(conversationId)
     val account = store.coach.accountKey
-    val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible
+    val keptDrafts = store.coach.keptDrafts(conversationId)
+    val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible && keptDrafts.isEmpty()
+    var syncDraft by remember(account, conversationId) { mutableStateOf<(() -> Boolean)?>(null) }
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var photoRequest by remember(account, conversationId) { mutableStateOf(0) }
     val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
@@ -212,7 +214,21 @@ fun AskScreen(
                             val text = rememberRevealedText(messageKeys[index], answered?.answer.orEmpty(), exchange.generation?.status in listOf("failed", "stopped"))
                             if (exchange.pending && text.isEmpty()) CoachTyping()
                             answered?.let { answer ->
-                                Answer(answer, text, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
+                                val clarification = remember(answer.clarification) { CoachClarification.from(answer.clarification) }
+                                val setupOnly = clarification != null && answer.proposals.isEmpty() && answer.results.isEmpty() && answer.routineDrafts.isEmpty() &&
+                                    !(answer.receipt?.read ?: answer.read).anything &&
+                                    (answer.receipt?.steps ?: answer.steps).all { it.tool == "ask_setup_details" }
+                                if (setupOnly) CoachAnswer(text.ifEmpty { requireNotNull(clarification).question }, null, store.catalog, nowMs,
+                                    copyText = answer.answer.ifEmpty { requireNotNull(clarification).question })
+                                else Answer(answer, text, exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking, onOpenWorkout, index == thread.lastIndex && headerProposals.isNotEmpty()) { sourcesTop = it }
+                                if (clarification != null) CoachChoices(clarification,
+                                    store.coach.choices(conversationId, exchange.requestId, clarification.id),
+                                    enabled = composerVisible && composerEnabled && !asking && syncDraft != null) { group, option ->
+                                    if (store.coach.accountKey == account && store.coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
+                                        try { store.coach.choose(conversationId, exchange.requestId, clarification, group, option); draftFailure = null }
+                                        catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
+                                    }
+                                }
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
                                     else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
@@ -245,6 +261,14 @@ fun AskScreen(
                 val shown = (minted + store.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { receipt ->
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
+                }
+                keptDrafts.forEach { kept ->
+                    key(kept.id) { CoachKeptDraft(kept.draft, composerVisible && composerEnabled && !asking && syncDraft != null) {
+                        if (store.coach.accountKey == account && store.coach.draftChangeReady(conversationId) && syncDraft?.invoke() == true) {
+                            try { store.coach.continueDraft(conversationId, kept.id); draftFailure = null }
+                            catch (_: Exception) { draftFailure = "Your draft couldn’t be saved. Try again." }
+                        }
+                    } }
                 }
                 cap?.let {
                     CoachCapNotice(it, thread.lastOrNull(), anonymous = store.coach.anonymous,
@@ -294,7 +318,7 @@ fun AskScreen(
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
                         else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
-                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest)
+                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest, onDraftSync = { syncDraft = it })
             }
         }
       }
