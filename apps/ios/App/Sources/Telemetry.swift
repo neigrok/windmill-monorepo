@@ -63,7 +63,7 @@ nonisolated enum TelemetryPrivacy {
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "proposal"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
