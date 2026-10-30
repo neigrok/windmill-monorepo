@@ -629,6 +629,33 @@ import SyncTesting
     #expect(WorkoutClocks.reading(3_661_000) == "1:01:01")
   }
 
+  // The rest a movement asks comes from its plan entry, else the rest preference, else none; each rest reaches its target
+  // once, however often the facts row reports it, and the event carries no duration. VoiceOver hears the clock in words.
+  @Test func eachRestReachesItsTargetOnceAndTheTargetFollowsThePlanThenThePreference() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder)
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [
+      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 80)], restSeconds: 120), RoutineEntry(exerciseId: second),
+    ]))
+    #expect(saved(gym.save(&draft)))
+    let planned = try #require(gym.routines.first(where: { $0.id == draft.current.id })), workout = try begin(gym, routine: planned)
+    #expect([workout.restTarget(first), workout.restTarget(second), workout.restTarget(third)] == [RestTarget(seconds: 120), nil, nil])
+    gym.restSettings = RestSettings(seconds: 90)
+    #expect([workout.restTarget(first), workout.restTarget(second), workout.restTarget(third)] ==
+            [RestTarget(seconds: 120), RestTarget(seconds: 90), RestTarget(seconds: 90)])
+    let reached = { recorder.entries.withLock { $0.filter { $0.name == "gym_rest_target_reached" }.map(\.properties) } }
+    workout.reachRest()
+    #expect(workout.restReaches == 0 && reached().isEmpty, "no set, no rest")
+    #expect(workout.logSet())
+    workout.reachRest(); workout.reachRest()
+    #expect(workout.restReaches == 1 && reached() == [["screen": "workout"]])
+    #expect(workout.logSet())
+    workout.reachRest()
+    #expect(workout.restReaches == 2 && reached() == [["screen": "workout"], ["screen": "workout"]])
+    #expect([WorkoutFacts.spokenRest(sinceMs: 134_000, target: RestTarget(seconds: 120)), WorkoutFacts.spokenRest(sinceMs: 97_000, target: nil),
+             WorkoutClocks.spoken(3_661_000), WorkoutClocks.spoken(0)] ==
+            ["2 minutes 14 seconds, target 2 minutes", "1 minute 37 seconds", "1 hour 1 minute 1 second", "0 seconds"])
+  }
+
   @Test func setsLoggedOnAStillClockKeepTheirLoggedOrderOnTheLedgerAndTheReceipt() async throws {
     let (_, gym) = try fixture(), workout = try begin(gym)
     for load in [60.0, 80, 70, 90, 50] { workout.weightKg = load; #expect(workout.logSet()) }

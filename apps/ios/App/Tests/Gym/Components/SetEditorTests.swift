@@ -7,24 +7,32 @@ import SyncCore
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct SetEditorTests {
-  @Test func loadWheelUsesFiniteDistinctBoundedNeighborsAndKeepsTheEnteredLoad() {
-    for weight in [0, 16, 16.25, -12.5, 501, 1e16, Double.greatestFiniteMagnitude, -Double.greatestFiniteMagnitude] {
-      for equipment in ["barbell", "bodyweight", "other"] {
-        let values = SetWheels.loads(around: weight, basis: MovementEquipment(equipment))
-        #expect(values.contains(weight))
-        #expect(values.count <= 123 && Set(values).count == values.count)
-        #expect(values.allSatisfy(\.isFinite) && values == values.sorted())
+  // The decimal pad's text reads in either separator; a sign reads only where the basis is signed, and the load stays within
+  // 500 kg of zero at the hundredth.
+  @Test func aTypedLoadReadsEitherSeparatorItsSignOnlyWhereSignedAndStaysInBounds() {
+    let typed = ["16", "12.5", "12,5", ".5", "5.", "102.256", "500", "500.004", "−12.5", "-7,5", "-0", "", " ", ".", "-", "1.2.3",
+                 "1,2.3", "1e2", "12a", "500.01", "−500.01", "٣"]
+    #expect(typed.map { LoadText.parse($0, signed: true) } == [16, 12.5, 12.5, 0.5, 5, 102.26, 500, 500, -12.5, -7.5, 0,
+                                                              nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil])
+    #expect(["−12.5", "-7,5", "-0", "12,5"].map { LoadText.parse($0, signed: false) } == [nil, nil, nil, 12.5])
+  }
+
+  // The field writes a load in the locale's separator, and ± flips the sign of whatever is typed.
+  @Test func theFieldWritesTheLocaleSeparatorAndFlipsTheSign() {
+    #expect(LoadText.typed(12.5, locale: Locale(identifier: "de_DE")) == "12,5")
+    #expect(LoadText.typed(12.5, locale: Locale(identifier: "en_US")) == "12.5")
+    #expect(LoadText.typed(-5, locale: Locale(identifier: "en_US")) == "−5")
+    #expect([LoadText.flipped("12,5"), LoadText.flipped("−12,5"), LoadText.flipped("-3"), LoadText.flipped("")] == ["−12,5", "12,5", "3", "−"])
+    for load in [12.5, -12.5, 0, 102.25, -500] {
+      for locale in ["de_DE", "en_US", "fr_FR"] {
+        #expect(LoadText.parse(LoadText.typed(load, locale: Locale(identifier: locale)), signed: true) == load)
       }
     }
-    #expect(SetWheels.loads(around: 500, basis: MovementEquipment("barbell")).contains(502.5))
-    #expect(SetWheels.loads(around: -500, basis: MovementEquipment("other")).contains(-502.5))
-    #expect(SetWheels.loads(around: 16.25, basis: MovementEquipment("barbell")).contains(16))
-    #expect(SetWheels.loads(around: Double.greatestFiniteMagnitude, basis: MovementEquipment("other")) == [Double.greatestFiniteMagnitude])
   }
 
   @Test func repsWheelRunsOneToNinetyNineAndKeepsACountOutsideIt() {
-    #expect(SetWheels.reps(around: 8) == Array(1...99))
-    #expect(SetWheels.reps(around: 120) == Array(1...99) + [120])
+    #expect(RepsWheel.counts(around: 8) == Array(1...99))
+    #expect(RepsWheel.counts(around: 120) == Array(1...99) + [120])
   }
 
   @Test func draftAcceptsSignedLoadsClearEffortAndNotesAndRefusesEachBoundInOrder() throws {

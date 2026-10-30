@@ -14,12 +14,15 @@ import SyncTesting
 @testable import Windmill
 
 @MainActor final class WorkoutRenderingTests: XCTestCase {
-  struct LoadWheelProbe: View {
+  struct SetFieldsProbe: View {
     @State var load: Double
-    let changed: (Double) -> Void
+    @State var reps: Int
+    let changed: (Double, Int) -> Void
+    @FocusState var focused: Bool
     var body: some View {
-      SetWheels(weightKg: $load, reps: .constant(5), basis: MovementEquipment("other"))
-        .onChange(of: load) { _, value in changed(value) }
+      Form { SetFields(weightKg: $load, reps: $reps, basis: MovementEquipment("other"), focus: $focused, identifier: "probe") }
+        .onChange(of: load) { _, value in changed(value, reps) }
+        .onChange(of: reps) { _, value in changed(load, value) }
     }
   }
   var models: [GymModel] = []
@@ -105,7 +108,7 @@ import SyncTesting
       try await capture(WorkoutAssembly(workout: gym.workout, add: {}), name: "assembly-" + name, appearance: appearance)
       try await capture(WorkoutMovementPicker(gym: gym, workout: gym.workout), name: "movements-" + name, appearance: appearance)
       try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), purpose: .workout, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(GymPage()), name: "create-movement-" + name, appearance: appearance)
-      try await capture(SetWheelSheet(title: "Set 4", movement: "Back squat", basis: MovementEquipment("barbell"), weightKg: 100, reps: 5, commit: { _, _ in }), name: "wheel-" + name, appearance: appearance)
+      try await capture(RepsWheelSheet(title: "Set 4", movement: "Back squat", reps: 5, commit: { _ in }), name: "wheel-" + name, appearance: appearance)
       let set = try XCTUnwrap(gym.workout.sets.last)
       try await capture(SetEditor(gym: gym, set: set, identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
       let (_, free) = try fixture(planned: false, count: 5)
@@ -223,43 +226,42 @@ import SyncTesting
                    ["Log set, 100 kilograms, 5 reps", "Log set, 67.5 kilograms, 1 rep"])
   }
 
-  func testNativeLoadWheelsOpenUnchangedAcrossZeroAndFiniteExtremes() async throws {
-    func pickers(_ view: UIView) -> [UIPickerView] {
-      if let picker = view as? UIPickerView { return [picker] }
-      return view.subviews.flatMap(pickers)
+  // Fix set's numbers are one decimal-pad field and one native wheel: the field opens on the load, a typed load in either
+  // separator lands, and an empty one gives way to the load before it; the wheel holds the reps alone.
+  func testSetFieldsTypeTheLoadAndTurnOneRepsWheel() async throws {
+    func views<V: UIView>(_ view: UIView, _ type: V.Type) -> [V] {
+      if let match = view as? V { return [match] }
+      return view.subviews.flatMap { views($0, type) }
     }
-    for load in [501, -501, 0, Double.greatestFiniteMagnitude, -Double.greatestFiniteMagnitude] {
-      let basis = MovementEquipment("other")
-      var selectedLoad = load
-      let window = try host(LoadWheelProbe(load: load, changed: { selectedLoad = $0 }), appearance: .light)
+    var seen = (load: -5.0, reps: 8)
+    let window = try host(SetFieldsProbe(load: -5, reps: 8, changed: { seen = ($0, $1) }), appearance: .light)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    try await Task.sleep(for: .milliseconds(300))
+    window.layoutIfNeeded()
+    let pickers = views(window, UIPickerView.self)
+    XCTAssertEqual(pickers.count, 1)
+    let picker = try XCTUnwrap(pickers.first)
+    XCTAssertEqual(picker.numberOfComponents, 1)
+    XCTAssertEqual(picker.numberOfRows(inComponent: 0), 99)
+    XCTAssertEqual(picker.selectedRow(inComponent: 0), 7)
+    let field = try XCTUnwrap(views(window, UITextField.self).first)
+    XCTAssertEqual(field.keyboardType, .decimalPad)
+    XCTAssertEqual(field.text, "−5")
+    for (typed, expected) in [("12,5", 12.5), ("", 12.5), ("abc", 12.5), ("-7.25", -7.25)] {
+      XCTAssertTrue(field.becomeFirstResponder())
       try await Task.sleep(for: .milliseconds(150))
-      window.layoutIfNeeded()
-      let native = pickers(window)
-      XCTAssertEqual(native.count, 2)
-      let picker = try XCTUnwrap(native.first)
-      let values = SetWheels.loads(around: load, basis: basis)
-      XCTAssertEqual(picker.numberOfRows(inComponent: 0), values.count)
-      XCTAssertLessThanOrEqual(values.count, 123)
-      let selected = picker.selectedRow(inComponent: 0)
-      XCTAssertTrue(values.indices.contains(selected))
-      if values.indices.contains(selected) { XCTAssertEqual(values[selected], load) }
-      if values.count > 30 {
-        let edge = values.count - 5, target = values[edge]
-        picker.selectRow(edge, inComponent: 0, animated: false)
-        picker.delegate?.pickerView?(picker, didSelectRow: edge, inComponent: 0)
-        try await Task.sleep(for: .milliseconds(150))
-        window.layoutIfNeeded()
-        XCTAssertEqual(selectedLoad, target)
-        let recentered = SetWheels.loads(around: target, basis: basis)
-        XCTAssertEqual(picker.numberOfRows(inComponent: 0), recentered.count)
-        let current = picker.selectedRow(inComponent: 0)
-        XCTAssertTrue(recentered.indices.contains(current))
-        if recentered.indices.contains(current) { XCTAssertEqual(recentered[current], target) }
-        XCTAssertGreaterThanOrEqual(current, 15)
-        XCTAssertLessThan(current, recentered.count - 15)
-      }
-      window.isHidden = true; window.rootViewController = nil
+      field.selectAll(nil)
+      if typed.isEmpty { field.deleteBackward() } else { field.insertText(typed) }
+      try await Task.sleep(for: .milliseconds(150))
+      XCTAssertTrue(field.resignFirstResponder())
+      try await Task.sleep(for: .milliseconds(150))
+      XCTAssertEqual(seen.load, expected, "after typing \(typed)")
+      XCTAssertEqual(field.text, LoadText.typed(expected))
     }
+    picker.selectRow(11, inComponent: 0, animated: false)
+    picker.delegate?.pickerView?(picker, didSelectRow: 11, inComponent: 0)
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(seen.reps, 12)
   }
 
   func testUnavailableEstimateNeverRendersAnIneligibilityClaim() async throws {
@@ -290,7 +292,7 @@ import SyncTesting
         let (_, gym) = try fixture()
         gym.workout.weightKg = -500
         try await capture(WorkoutScreen(gym: gym), name: "live-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(SetWheelSheet(title: "Set 4", movement: "Pull-up", basis: MovementEquipment("bodyweight"), weightKg: -500, reps: 5, commit: { _, _ in }), name: "wheel-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(RepsWheelSheet(title: "Set 4", movement: "Pull-up", reps: 5, commit: { _ in }), name: "wheel-\(name)-\(skin)", appearance: appearance, type: type)
         try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
       }
     }
