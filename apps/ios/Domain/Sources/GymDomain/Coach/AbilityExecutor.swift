@@ -210,6 +210,10 @@ public struct RunAbility: Action {
       let proposing = ProposeRoutine(id: try given("id", f, Proposal.self), routineId: try f.ref("routineId", Routine.self), name: nil, entries: [],
                                      summary: try f.string("summary", default: ""), removing: true)
       return AbilityRun(ProposeRoutineCall(proposing, appBaseUrl: appBaseUrl))
+    case "propose_workout_change":
+      let proposing = ProposeWorkout(id: try given("id", f, WorkoutProposal.self), sessionId: try f.ref("sessionId", Session.self),
+                                     entries: try f.list("entries", of: RoutineEntry.self), summary: try f.string("summary", default: ""))
+      return AbilityRun(ProposeWorkoutCall(proposing))
     default: throw DecodeError(type: request.name, field: "name", reason: "no replica ability")
     }
   }

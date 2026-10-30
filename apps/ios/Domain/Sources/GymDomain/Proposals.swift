@@ -23,7 +23,7 @@ public struct EntryTargets: ValueObject, Equatable {
   }
 
   public func validated(at path: Path) throws(Violation) -> EntryTargets {
-    try (path.text.hasSuffix(".before") ? ProposalRules.before : ProposalRules.after).validate(self, at: path)
+    try (path.text.hasSuffix(".before") ? ProposalRules.lines.before : ProposalRules.lines.after).validate(self, at: path)
   }
 }
 
@@ -50,13 +50,123 @@ public struct RoutineChange: ValueObject, Equatable {
   }
 
   public func validated(at path: Path) throws(Violation) -> RoutineChange {
-    let kind = try ProposalRules.kind.apply(kind, at: path + "kind")
-    _ = try ProposalRules.exercise.apply(exerciseId.record.string ?? "", at: path + "exerciseId")
-    if (kind == "added") != (before == nil) || (kind == "removed") != (after == nil) {
-      throw Violation(rule: "proposal.changes", path: path, reason: .custom("side"))
+    try ProposalRules.lines.validate(self, at: path)
+  }
+
+  // The shared diff rule: each proposed entry in its order, kept or retargeted against the first unmatched base entry of
+  // its movement and added when none is left, then every base entry no proposed one matched, removed.
+  public static func lines(from base: [RoutineEntry], to proposed: [RoutineEntry]) -> [RoutineChange] {
+    var matched = Set<Int>()
+    var result: [RoutineChange] = []
+    for entry in proposed {
+      guard let index = base.indices.first(where: { !matched.contains($0) && base[$0].exerciseId == entry.exerciseId }) else {
+        result.append(RoutineChange(kind: "added", exerciseId: entry.exerciseId, after: EntryTargets(entry)))
+        continue
+      }
+      matched.insert(index)
+      let previous = EntryTargets(base[index])
+      let next = EntryTargets(entry)
+      result.append(RoutineChange(kind: previous == next ? "kept" : "retargeted", exerciseId: entry.exerciseId, before: previous, after: next))
     }
-    return RoutineChange(kind: kind, exerciseId: exerciseId, before: try before?.validated(at: path + "before"),
-                         after: try after?.validated(at: path + "after"))
+    for index in base.indices where !matched.contains(index) {
+      result.append(RoutineChange(kind: "removed", exerciseId: base[index].exerciseId, before: EntryTargets(base[index])))
+    }
+    return result
+  }
+
+  // R118's count of what a diff changes: every line not kept, and one more when the movements it keeps moved.
+  public static func count(_ changes: [RoutineChange], against base: [RoutineEntry]) -> Int {
+    var unmatched = Array(base.indices)
+    let retained = changes.filter { $0.kind == "kept" || $0.kind == "retargeted" }.compactMap { change -> Int? in
+      guard let at = unmatched.firstIndex(where: { base[$0].exerciseId == change.exerciseId }) else { return nil }
+      return unmatched.remove(at: at)
+    }
+    return changes.filter { $0.kind != "kept" }.count + (retained != retained.sorted() ? 1 : 0)
+  }
+}
+
+// The rules of a proposal's change lines at `<type>.changes`: a routine proposal's and a workout proposal's.
+public struct ChangeRules: Sendable {
+  public struct Targets: Sendable {
+    public let sets: CountSpec
+    public let reps: NumberSpec
+    public let weight: NumberSpec
+    public let rest: NumberSpec
+    let zeroTarget: String
+
+    init(_ path: String, zeroTarget: String) {
+      sets = CountSpec("\(path).sets", min: 1, max: 20)
+      reps = NumberSpec("\(path).sets.reps", min: 1, max: 100, integer: true)
+      weight = NumberSpec("\(path).sets.weightKg", quantum: 0.01)
+      rest = NumberSpec("\(path).restSeconds", min: 15, max: 900, integer: true)
+      self.zeroTarget = zeroTarget
+    }
+
+    var rules: [Rule] { [.local(sets), .local(reps), .local(weight), .local(rest)] }
+
+    func validate(_ value: EntryTargets, at path: Path) throws(Violation) -> EntryTargets {
+      var validated: [SetTarget]?
+      if let items = value.sets {
+        if items.isEmpty { throw Violation(rule: sets.path, path: path + "sets", reason: .tooFew(min: 1)) }
+        if items.count > 20 { throw Violation(rule: sets.path, path: path + "sets", reason: .tooMany(max: 20)) }
+        var result: [SetTarget] = []
+        for (index, item) in items.enumerated() {
+          let at = path + "sets" + index
+          if item.reps == 0 { throw Violation(rule: zeroTarget, path: at + "reps", reason: .custom("zeroTarget")) }
+          let checkedReps = try reps.apply(item.reps, at: at + "reps")
+          let checkedWeight = try weight.apply(item.weightKg, at: at + "weightKg")
+          if checkedWeight == 0 && item.weightKg != 0 { throw Violation(rule: zeroTarget, path: at + "weightKg", reason: .custom("zeroTarget")) }
+          result.append(SetTarget(reps: checkedReps, weightKg: checkedWeight))
+        }
+        validated = result
+      }
+      return EntryTargets(sets: validated, restSeconds: try rest.apply(value.restSeconds, at: path + "restSeconds"))
+    }
+  }
+
+  public let changes: CountSpec
+  public let kind: ChoiceSpec
+  public let exercise: TextSpec
+  public let before: Targets
+  public let after: Targets
+  let type: String
+  let zeroTarget: String
+
+  init(_ type: String) {
+    self.type = type
+    zeroTarget = "\(type).zeroTarget"
+    changes = CountSpec("\(type).changes", min: 0, max: 100)
+    kind = ChoiceSpec("\(type).changes.kind", values: ["kept", "added", "removed", "retargeted"])
+    exercise = TextSpec("\(type).changes.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false)
+    before = Targets("\(type).changes.before", zeroTarget: zeroTarget)
+    after = Targets("\(type).changes.after", zeroTarget: zeroTarget)
+  }
+
+  var rules: [Rule] {
+    [.local(changes), .local(kind), .local(exercise)] + before.rules + after.rules + [.local(zeroTarget, subject: type)]
+  }
+
+  // Every line, then the removals last, where the diff writes them.
+  public func validate(_ lines: [RoutineChange], at path: Path) throws(Violation) -> [RoutineChange] {
+    if lines.count > 100 { throw Violation(rule: changes.path, path: path, reason: .tooMany(max: 100)) }
+    var validated: [RoutineChange] = []
+    for (index, line) in lines.enumerated() { validated.append(try validate(line, at: path + index)) }
+    if validated.drop(while: { $0.kind != "removed" }).contains(where: { $0.kind != "removed" }) {
+      throw Violation(rule: changes.path, path: path, reason: .custom("removalsLast"))
+    }
+    return validated
+  }
+
+  public func validate(_ line: RoutineChange, at path: Path) throws(Violation) -> RoutineChange {
+    let kind = try kind.apply(line.kind, at: path + "kind")
+    _ = try exercise.apply(line.exerciseId.record.string ?? "", at: path + "exerciseId")
+    if (kind == "added") != (line.before == nil) || (kind == "removed") != (line.after == nil) {
+      throw Violation(rule: changes.path, path: path, reason: .custom("side"))
+    }
+    var validated = RoutineChange(kind: kind, exerciseId: line.exerciseId)
+    if let targets = line.before { validated.before = try before.validate(targets, at: path + "before") }
+    if let targets = line.after { validated.after = try after.validate(targets, at: path + "after") }
+    return validated
   }
 }
 
@@ -138,25 +248,14 @@ public struct Proposal: Writable, Equatable {
 
   public func countChanges(comparedTo base: Routine) -> Int {
     if let changeCount { return changeCount }
-    var unmatched = Array(base.entries.indices)
-    let retained = changes.filter { $0.kind == "kept" || $0.kind == "retargeted" }.compactMap { change -> Int? in
-      guard let at = unmatched.firstIndex(where: { base.entries[$0].exerciseId == change.exerciseId }) else { return nil }
-      return unmatched.remove(at: at)
-    }
-    let reordered = retained != retained.sorted()
-    return changes.filter { $0.kind != "kept" }.count + (!base.name.utf8.elementsEqual(proposedName.utf8) ? 1 : 0) + (reordered ? 1 : 0)
+    return RoutineChange.count(changes, against: base.entries) + (base.name.utf8.elementsEqual(proposedName.utf8) ? 0 : 1)
   }
 
   public static let checks: [Check<Proposal>] = [
     Check("intent") { p, _ in p.intent = try ProposalRules.intent.apply(p.intent, at: "intent") },
     Check("proposedName") { p, _ in p.proposedName = try ProposalRules.name.apply(p.proposedName, at: "proposedName") },
     Check("summary") { p, _ in p.summary = try ProposalRules.summary.apply(p.summary, at: "summary") },
-    Check("changes") { p, _ in
-      p.changes = try ProposalRules.changes.apply(p.changes, at: "changes")
-      if p.changes.drop(while: { $0.kind != "removed" }).contains(where: { $0.kind != "removed" }) {
-        throw Violation(rule: "proposal.changes", path: "changes", reason: .custom("removalsLast"))
-      }
-    },
+    Check("changes") { p, _ in p.changes = try ProposalRules.lines.validate(p.changes, at: "changes") },
     Check("door") { p, _ in p.door = try ProposalRules.door.apply(p.door, at: "door") },
     Check("connection") { p, _ in p.connection = try ProposalRules.connection.apply(p.connection, at: "connection") },
     Check("agent") { p, _ in p.agent = try ProposalRules.agent.apply(p.agent, at: "agent") },
@@ -174,73 +273,19 @@ public struct RoutineCreation: Entity {
 }
 
 public enum ProposalRules {
-  public struct Targets: Sendable {
-    public let sets: CountSpec
-    public let reps: NumberSpec
-    public let weight: NumberSpec
-    public let rest: NumberSpec
-
-    init(_ path: String) {
-      sets = CountSpec("\(path).sets", min: 1, max: 20)
-      reps = NumberSpec("\(path).sets.reps", min: 1, max: 100, integer: true)
-      weight = NumberSpec("\(path).sets.weightKg", quantum: 0.01)
-      rest = NumberSpec("\(path).restSeconds", min: 15, max: 900, integer: true)
-    }
-
-    var rules: [Rule] { [.local(sets), .local(reps), .local(weight), .local(rest)] }
-
-    func validate(_ value: EntryTargets, at path: Path) throws(Violation) -> EntryTargets {
-      var validated: [SetTarget]?
-      if let items = value.sets {
-        if items.isEmpty { throw Violation(rule: sets.path, path: path + "sets", reason: .tooFew(min: 1)) }
-        if items.count > 20 { throw Violation(rule: sets.path, path: path + "sets", reason: .tooMany(max: 20)) }
-        var result: [SetTarget] = []
-        for (index, item) in items.enumerated() {
-          let at = path + "sets" + index
-          if item.reps == 0 { throw Violation(rule: "proposal.zeroTarget", path: at + "reps", reason: .custom("zeroTarget")) }
-          let checkedReps = try reps.apply(item.reps, at: at + "reps")
-          let checkedWeight = try weight.apply(item.weightKg, at: at + "weightKg")
-          if checkedWeight == 0 && item.weightKg != 0 { throw Violation(rule: "proposal.zeroTarget", path: at + "weightKg", reason: .custom("zeroTarget")) }
-          result.append(SetTarget(reps: checkedReps, weightKg: checkedWeight))
-        }
-        validated = result
-      }
-      return EntryTargets(sets: validated, restSeconds: try rest.apply(value.restSeconds, at: path + "restSeconds"))
-    }
-  }
-
-  public static let before = Targets("proposal.changes.before")
-  public static let after = Targets("proposal.changes.after")
+  public static let lines = ChangeRules("proposal")
   public static let intent = ChoiceSpec("proposal.intent", values: ["revise", "remove"])
   public static let name = TextSpec("proposal.proposedName", unit: .bytes, min: 0, max: 240, trim: true, nfc: true)
   public static let summary = TextSpec("proposal.summary", unit: .bytes, min: 0, max: 400, trim: true, nfc: true)
-  public static let changes = CountSpec("proposal.changes", min: 0, max: 100)
-  public static let kind = ChoiceSpec("proposal.changes.kind", values: ["kept", "added", "removed", "retargeted"])
   public static let door = ChoiceSpec("proposal.door", values: ["ask"])
   public static let connection = TextSpec("proposal.connection", unit: .bytes, min: 0, max: 0, trim: false, nfc: false)
   public static let agent = TextSpec("proposal.agent", unit: .chars, min: 0, max: 0, trim: false, nfc: false)
-  public static let exercise = TextSpec("proposal.changes.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false)
-  static let rules: [Rule] = [.local(intent), .local(name), .local(summary), .local(changes), .local(kind), .local(door),
-                             .local(connection), .local(agent), .local(exercise)] + before.rules + after.rules + [.local("proposal.zeroTarget", subject: Proposal.type)]
+  static let rules: [Rule] = [.local(intent), .local(name), .local(summary), .local(door), .local(connection), .local(agent)] + lines.rules
 
   public static func changesBetween(base: [RoutineEntry], proposed: [RoutineEntry]) throws(Violation) -> [RoutineChange] {
-    var matched = Set<Int>()
-    var result: [RoutineChange] = []
-    for raw in proposed {
-      let entry = try raw.validated(at: "entries")
-      guard let index = base.indices.first(where: { !matched.contains($0) && base[$0].exerciseId == entry.exerciseId }) else {
-        result.append(RoutineChange(kind: "added", exerciseId: entry.exerciseId, after: EntryTargets(entry)))
-        continue
-      }
-      matched.insert(index)
-      let previous = EntryTargets(base[index])
-      let next = EntryTargets(entry)
-      result.append(RoutineChange(kind: previous == next ? "kept" : "retargeted", exerciseId: entry.exerciseId, before: previous, after: next))
-    }
-    for index in base.indices where !matched.contains(index) {
-      result.append(RoutineChange(kind: "removed", exerciseId: base[index].exerciseId, before: EntryTargets(base[index])))
-    }
-    return result
+    var validated: [RoutineEntry] = []
+    for entry in proposed { validated.append(try entry.validated(at: "entries")) }
+    return RoutineChange.lines(from: base, to: validated)
   }
 }
 
@@ -295,7 +340,7 @@ public struct ProposeRoutine: Action {
     }
     if !removing && base.name.utf8.elementsEqual(proposedName.utf8) && JSON.array(base.entries.map(\.json)) == JSON.array(proposed.map(\.json)) { return .unchanged }
     let proposal = try Valid(Proposal(id: id, routineId: base.id, intent: removing ? "remove" : "revise", proposedName: proposedName,
-                                      summary: summary, changes: try ProposalRules.changesBetween(base: base.entries, proposed: proposed)), at: loaded.moment)
+                                      summary: summary, changes: RoutineChange.lines(from: base.entries, to: proposed)), at: loaded.moment)
     var plan = Plan()
     plan.create(proposal)
     plan.guardRead(base.id, fields: ["entries", "name"])
