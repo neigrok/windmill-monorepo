@@ -358,10 +358,16 @@ class TrainingStore(
 
     // Before the account changes, confirmed starts settle, the sets they owe follow, and the
     // workout's controls are in the replica the next account's room projects from.
-    suspend fun prepareEngineTransition() {
-        training.recoverAcceptedSets(controls)
-        training.reconcileImports()
-        training.persistControls(controls)
+    suspend fun prepareEngineTransition(transitionCurrent: () -> Boolean = { true }) {
+        val seat = owner
+        val replica = training.engine.activeReplica()
+        val controlsReplica = controls.engineReplica
+        val drain = EngineTraining(training.engine, writeAuthority = {
+            transitionCurrent() && owner == seat && training.engine.activeReplica() == replica && controls.engineReplica == controlsReplica
+        })
+        drain.recoverAcceptedSets(controls)
+        drain.reconcileImports()
+        drain.persistControls(controls)
     }
 
     private fun refuseWorkout(): String {
@@ -839,6 +845,7 @@ class TrainingStore(
     }
 
     suspend fun refreshEngine() {
+        if (!workoutAuthority(owner)) return
         pendingConnection?.let { account ->
             if (!connecting) connect(account)
             return
@@ -1132,6 +1139,7 @@ class TrainingStore(
         val replica = expectedReplica
         return scope.async(start = CoroutineStart.UNDISPATCHED) {
             val result = try {
+                if (!workoutAuthorized) throw TrainingRefused("account-changed", accountChanged)
                 if (Program.nameProblem(draft.name) == Program.nameTooLong) throw TrainingRefused("invalid", Program.nameTooLong)
                 if (Program.named(draft.name) == null) throw TrainingRefused("invalid", "a routine needs a name")
                 if (draft.entries.isEmpty()) throw TrainingRefused("invalid", "a routine needs at least one movement")
@@ -1172,6 +1180,7 @@ class TrainingStore(
     // The sessions that named it keep every set and their frozen plan: a snapshot is a copy, not a
     // reference. A routine already gone is a deletion that succeeded.
     suspend fun dropRoutine(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = owner == null): WriteFailure? {
+        if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
         val seat = owner
         return try {
             training.deleteRoutine(id, replica ?: return WriteFailure.Refused(accountChanged), anonymous)
@@ -1220,6 +1229,7 @@ class TrainingStore(
     suspend fun dismissProposal(id: String): ProposalOutcome = decide(id, applying = false)
 
     private suspend fun decide(id: String, applying: Boolean): ProposalOutcome {
+        if (!workoutAuthorized) return ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
         val seat = owner
         return proposalWrite.withLock {
             if (seat != owner) return@withLock ProposalOutcome.Failed(WriteFailure.Refused(accountChanged))
@@ -1338,6 +1348,7 @@ class TrainingStore(
     }
 
     suspend fun saveNote(id: String, write: NoteWrite): GymResult<Note> {
+        if (!workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
         val seat = owner
         val result: GymResult<Note> = notebookWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
@@ -1365,6 +1376,7 @@ class TrainingStore(
 
     // A note already gone answers as success: the row goes either way.
     suspend fun deleteNote(id: String, replica: String? = controls.engineReplica, anonymous: Boolean = owner == null): WriteFailure? {
+        if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
         val seat = owner
         return notebookWrite.withLock {
             if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
@@ -1388,6 +1400,7 @@ class TrainingStore(
 
     // A drop moves its one note below the drawn neighbor.
     suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> {
+        if (!workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
         val seat = owner
         return notebookWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
@@ -1413,6 +1426,7 @@ class TrainingStore(
     // of the load.
     suspend fun create(name: String, equipment: String, id: String = mintExercise(), loadCount: Int? = null,
         expectedReplica: String? = controls.engineReplica, expectedSession: String? = null): GymResult<Exercise> {
+        if (!workoutAuthorized) return GymResult.Failed(WriteFailure.Refused(accountChanged))
         val named = Program.named(name)
             ?: return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
         if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings + "other" ||
@@ -1496,6 +1510,7 @@ class TrainingStore(
     }
 
     fun clearRefusals() {
+        if (!workoutAuthorized) return
         training.dismissRefusals()
         refusals = emptyList()
         noteRefusals = emptyList()
@@ -1510,6 +1525,7 @@ class TrainingStore(
     }
 
     suspend fun weighIn(dateLocal: String, weightKg: Double): WriteFailure? {
+        if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
         if (!weightKg.isFinite() || weightKg !in Bodyweight.minKg..Bodyweight.maxKg)
             return WriteFailure.Refused(Bodyweight.outOfRange)
         val date = runCatching { java.time.LocalDate.parse(dateLocal) }.getOrNull()
@@ -1519,7 +1535,7 @@ class TrainingStore(
         val replica = controls.engineReplica
         val anonymous = seat == null
         return bodyweightWrite.withLock {
-            if (seat != owner || replica == null) return@withLock WriteFailure.Refused(accountChanged)
+            if (!workoutAuthorized || seat != owner || replica == null) return@withLock WriteFailure.Refused(accountChanged)
             try {
                 val saved = training.putBodyweight(dateLocal, weightKg, replica, anonymous)
                 if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
@@ -1747,18 +1763,19 @@ class TrainingStore(
 
     // Weigh-ins are durable engine holds; workout recovery stays room-owned.
     fun withhold(deletion: Deletion.Recoverable) {
+        if (!workoutAuthorized) return
         if (deletion is Deletion.Bodyweight) {
             val seat = owner
             val replica = controls.engineReplica ?: return
             val anonymous = seat == null
             scope.launch {
                 bodyweightWrite.withLock {
-                    if (seat != owner || replica != training.engine.activeReplica()) return@withLock
+                    if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                     try {
                         val weight = training.weighins(deletion.dateLocal, deletion.dateLocal).singleOrNull()
                             ?: return@withLock
                         val receipt = training.holdBodyweight(deletion.dateLocal, replica, anonymous) ?: return@withLock
-                        if (seat != owner || replica != training.engine.activeReplica()) return@withLock
+                        if (!workoutAuthorized || seat != owner || replica != training.engine.activeReplica()) return@withLock
                         val offer = training.engine.undoOffers().firstOrNull { it.id == receipt.gestureId }
                         if (offer != null) {
                             withheld = withheld.filterNot { it.subjectId == deletion.subjectId } +
@@ -1807,6 +1824,7 @@ class TrainingStore(
 
     // Undo takes the newest available offer and reports only an actual restoration.
     fun keepWithheld(): WithheldDelete? {
+        if (!workoutAuthorized) return null
         val taking = withheld.lastOrNull { it.takeable } ?: return null
         taking.receipt?.let { receipt ->
             if (receipt.replica != training.engine.activeReplica() || receipt.anonymous != training.anonymous) {
@@ -1846,9 +1864,11 @@ class TrainingStore(
 
     // Explicit settlement releases only this receipt; background release belongs to the engine.
     suspend fun settleWithheld(subjectId: String): WriteFailure? {
+        if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
         val settling = withheld.firstOrNull { it.subjectId == subjectId } ?: return null
         settling.receipt?.let { receipt ->
             return bodyweightWrite.withLock {
+                if (!workoutAuthorized) return@withLock WriteFailure.Refused(accountChanged)
                 if (receipt.replica != training.engine.activeReplica() || receipt.anonymous != training.anonymous) {
                     withheld = withheld - settling
                     return@withLock WriteFailure.Refused(accountChanged)
@@ -1946,7 +1966,7 @@ class TrainingStore(
         base: Exercise? = null, expectedAccountKey: String = accountKey, expectedReplica: String? = editReplica): GymResult<Exercise> {
         val seat = owner
         val result = try {
-            if (expectedAccountKey != accountKey || expectedReplica == null)
+            if (!workoutAuthorized || expectedAccountKey != accountKey || expectedReplica == null)
                 throw TrainingRefused("account-changed", accountChanged)
             Program.nameProblem(name)?.let { throw TrainingRefused("invalid", it) }
             val edited = training.editExercise(exerciseId, name, equipment, loadCount, base, expectedReplica, seat == null)

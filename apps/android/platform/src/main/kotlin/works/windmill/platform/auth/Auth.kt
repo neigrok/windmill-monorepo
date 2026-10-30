@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -24,6 +25,25 @@ import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 
 class AuthHandoffFailure internal constructor() : Exception()
+
+@Serializable
+enum class AuthSignOutChoice { Keep, Discard }
+
+@Serializable
+data class SignOutIntent(val account: String, val choice: AuthSignOutChoice, val engineFinished: Boolean = false) {
+    init { require(account.isNotBlank()) }
+}
+
+enum class SignOutStorage { Current, Cleared, Unavailable }
+
+data class AuthSignOutQuestion(val unsent: Int)
+
+interface AuthSignOutSession {
+    val account: String
+    val unsent: Int
+    suspend fun finish(choice: AuthSignOutChoice)
+    suspend fun cancel()
+}
 
 enum class AuthHandoffResult { Accepted, Refused, Failed, Retired }
 
@@ -53,6 +73,7 @@ class AuthStore(
     val api = WindmillApi(baseUrl, sessions::read, client, telemetry)
     val localSession: LocalSession get() = sessions.localSession
     private var generation = 0L
+    val accountOperationRevision: Long get() = generation
     private class Handoff(val proposed: ProposedSignIn, val attempt: Long, val revision: Long, val work: Deferred<Unit>)
     private var handoff: Handoff? = null
     var handoffPending by mutableStateOf(false)
@@ -64,29 +85,42 @@ class AuthStore(
     var identityRevision by mutableStateOf(0L)
         private set
 
+    private data class SignOutOpening(val user: User, val secret: String?, val attempt: Long, val revision: Long,
+        var handle: AuthSignOutSession? = null, var engineFinished: Boolean = false, var choice: AuthSignOutChoice? = null)
+    private var signOutOpening: SignOutOpening? = null
+    private var signOutJob: Deferred<Unit>? = null
+    private var signOutError: Exception? = null
+    private var signOutTransition by mutableStateOf(false)
+    val transitionPending: Boolean get() = signOutTransition || sessions.signOutPending
+    var signOutQuestion by mutableStateOf<AuthSignOutQuestion?>(null)
+        private set
+    var signOutBusy by mutableStateOf(false)
+        private set
+    var signOutFailure by mutableStateOf<String?>(null)
+        private set
+
+    private fun requireNoTransition() {
+        if (transitionPending) throw CancellationException("An account transition is pending.")
+    }
+
     fun accountApi(user: User?): WindmillApi {
         val secret = sessions.read()
         return WindmillApi(baseUrl, credential = {
             val local = sessions.localSession
-            if (user != null && local is LocalSession.Owned && local.user.id == user.id && sessions.read() == secret) secret else null
+            if (!transitionPending && user != null && local is LocalSession.Owned && local.user.id == user.id && sessions.read() == secret) secret else null
         }, client = client, telemetry = telemetry)
     }
 
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
     suspend fun restore() {
-        val attempt = generation
-        if (sessions.signOutPending) {
-            try {
-                lifecycle.signOut()
-                if (attempt != generation) return
-                sessions.clear()
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) {
-                telemetry.failure("auth_sign_out_restore", failure)
-                if (attempt == generation) status = AuthStatus.Unresolved(sessions.user())
-                return
-            }
+        if (signOutBusy) return
+        if (sessions.signOutPending || signOutOpening?.choice != null) {
+            runSignOutWork { recoverSignOut() }
+            if (signOutFailure != null) status = AuthStatus.Unresolved(sessions.user() ?: signOutOpening?.user)
+            return
         }
+        if (signOutTransition) return
+        val attempt = generation
         sessions.proposed?.let { proposed ->
             try { finishOwned(proposed, attempt, restoring = true) }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -138,6 +172,7 @@ class AuthStore(
     }
 
     suspend fun reverify() {
+        if (transitionPending) return
         if (handoffPending || handoffResult == AuthHandoffResult.Failed || handoffResult == AuthHandoffResult.Refused) return
         if (status is AuthStatus.Unresolved) { restore(); return }
         val standing = status as? AuthStatus.SignedIn ?: return
@@ -147,6 +182,7 @@ class AuthStore(
 
     // `door: "app"` makes the mail carry a 6-digit code rather than a link.
     suspend fun requestLink(email: String) {
+        requireNoTransition()
         telemetry.event("auth_code_requested")
         val attempt = generation
         val address = email.trim()
@@ -157,6 +193,7 @@ class AuthStore(
     }
 
     suspend fun completeCode(email: String, code: String, beforeCommit: (User) -> Unit = {}) {
+        requireNoTransition()
         telemetry.event("auth_sign_in_started", mapOf("method" to "code"))
         val attempt = ++generation
         retireHandoff()
@@ -172,6 +209,7 @@ class AuthStore(
 
     // Accepts either the whole magic-link URL or the bare token.
     suspend fun completeLink(pasted: String, beforeCommit: (User) -> Unit = {}) {
+        requireNoTransition()
         telemetry.event("auth_sign_in_started", mapOf("method" to "link"))
         val attempt = ++generation
         retireHandoff()
@@ -244,6 +282,7 @@ class AuthStore(
     }
 
     suspend fun resumePendingSignIn(email: String): Boolean {
+        requireNoTransition()
         if (handoffScope == null) return false
         val proposed = sessions.proposed?.takeIf { it.user.email.equals(email.trim(), ignoreCase = true) } ?: return false
         finishOwned(proposed, generation, restoring = false)
@@ -251,6 +290,7 @@ class AuthStore(
     }
 
     suspend fun cancelPendingSignIn() {
+        requireNoTransition()
         val attempt = ++generation
         val opening = handoff
         val proposed = sessions.proposed
@@ -316,30 +356,190 @@ class AuthStore(
         telemetry.event(if (restoring) "auth_restore" else "auth_signed_in", if (restoring) mapOf("outcome" to "verified") else emptyMap())
     }
 
-    suspend fun signOut() {
-        val attempt = ++generation
-        retireHandoff()
-        if (attempt != generation) return
-        sessions.beginSignOut()
-        lifecycle.signOut()
-        try {
-            api.send<Unit>("POST", "/v1/auth/logout")
-        } catch (unreachable: WindmillApiException) {
-            // Sign-out is local.
+    private suspend fun runSignOutWork(body: suspend () -> Unit) {
+        signOutJob?.takeIf { it.isActive }?.let { it.await(); return }
+        suspend fun run() {
+            signOutBusy = true
+            signOutFailure = null
+            signOutError = null
+            try { body() }
+            catch (cancelled: CancellationException) {
+                if (!sessions.signOutPending && signOutOpening?.choice == null) {
+                    val opening = signOutOpening
+                    try { withContext(NonCancellable) { opening?.handle?.cancel() } }
+                    catch (failure: Exception) {
+                        telemetry.failure("auth_sign_out", failure)
+                        signOutFailure = "Sign-out could not be saved. Your work is still on this phone. Try again."
+                        signOutQuestion = opening?.handle?.let { AuthSignOutQuestion(it.unsent) }
+                        throw cancelled
+                    }
+                    if (signOutOpening === opening) {
+                        signOutOpening = null
+                        signOutQuestion = null
+                        signOutTransition = false
+                        generation += 1
+                    }
+                }
+                throw cancelled
+            }
+            catch (failure: Exception) {
+                telemetry.failure("auth_sign_out", failure)
+                signOutError = failure
+                signOutFailure = "Sign-out could not be saved. Your work is still on this phone. Try again."
+                signOutQuestion = null
+                if (!sessions.signOutPending && signOutOpening?.handle == null && signOutOpening?.choice == null) {
+                    signOutTransition = false
+                    signOutOpening = null
+                    generation += 1
+                }
+            } finally { signOutBusy = false }
         }
-        if (attempt != generation) return
+        val owner = handoffScope
+        if (owner == null) run()
+        else owner.async(start = CoroutineStart.LAZY) { run() }.also { signOutJob = it; it.start() }.await()
+    }
+
+    private fun current(opening: SignOutOpening): Boolean = signOutOpening === opening &&
+        opening.attempt == generation && opening.revision == identityRevision &&
+        sessions.user()?.id == opening.user.id && sessions.read() == opening.secret
+
+    suspend fun prepareSignOut() = runSignOutWork {
+        if (sessions.signOutPending || signOutOpening?.choice != null) { recoverSignOut(); return@runSignOutWork }
+        signOutOpening?.let { opening ->
+            if (current(opening) && opening.handle != null) {
+                signOutQuestion = AuthSignOutQuestion(requireNotNull(opening.handle).unsent)
+                return@runSignOutWork
+            }
+        }
+        requireNoTransition()
+        if (handoffPending) return@runSignOutWork
+        val user = (status as? AuthStatus.SignedIn)?.user ?: return@runSignOutWork
+        if (sessions.localSession != LocalSession.Owned(user)) return@runSignOutWork
+        val opening = SignOutOpening(user, sessions.read(), ++generation, identityRevision)
+        signOutOpening = opening
+        signOutTransition = true
+        retireHandoff()
+        if (!current(opening)) throw CancellationException("The account changed.")
+        val handle = lifecycle.prepareSignOut(user.id)
+        if (!current(opening) || handle.account != user.id) {
+            withContext(NonCancellable) { handle.cancel() }
+            signOutTransition = false
+            signOutOpening = null
+            throw CancellationException("The account changed.")
+        }
+        opening.handle = handle
+        signOutQuestion = AuthSignOutQuestion(handle.unsent)
+    }
+
+    suspend fun cancelSignOut() = runSignOutWork {
+        if (sessions.signOutPending) return@runSignOutWork
+        val opening = signOutOpening ?: return@runSignOutWork
+        opening.handle?.cancel()
+        if (signOutOpening !== opening) return@runSignOutWork
+        signOutOpening = null
+        signOutQuestion = null
+        signOutTransition = false
+        generation += 1
+    }
+
+    suspend fun confirmSignOut(choice: AuthSignOutChoice) = runSignOutWork {
+        val opening = signOutOpening ?: return@runSignOutWork
+        if (!current(opening) || signOutQuestion == null) return@runSignOutWork
+        opening.choice = choice
+        sessions.beginSignOut(SignOutIntent(opening.user.id, choice))
+        finishSignOut(opening, requireNotNull(sessions.pendingSignOut))
+    }
+
+    private suspend fun recoverSignOut() {
+        signOutTransition = true
+        val retained = signOutOpening?.takeIf { it.attempt == generation && it.revision == identityRevision && it.choice != null }
+        if (retained != null) {
+            val choice = requireNotNull(retained.choice)
+            when (sessions.reconcileSignOut(retained.user, retained.secret, choice, retained.engineFinished)) {
+                SignOutStorage.Unavailable -> error("The saved sign-out could not be recovered.")
+                SignOutStorage.Cleared -> { completeSignOut(retained); return }
+                SignOutStorage.Current -> Unit
+            }
+            val intent = sessions.pendingSignOut ?: SignOutIntent(retained.user.id, choice, retained.engineFinished)
+                .also(sessions::beginSignOut)
+            finishSignOut(retained, intent)
+            return
+        }
+        val intent = requireNotNull(sessions.pendingSignOut) { "The saved sign-out could not be read." }
+        val user = requireNotNull(sessions.user()) { "The saved account could not be read." }
+        check(user.id == intent.account) { "The account changed." }
+        val opening = SignOutOpening(user, sessions.read(), ++generation, identityRevision, choice = intent.choice)
+        signOutOpening = opening
+        finishSignOut(opening, intent)
+    }
+
+    private suspend fun finishSignOut(opening: SignOutOpening, intent: SignOutIntent) {
+        check(current(opening) && intent.account == opening.user.id) { "The account changed." }
+        signOutQuestion = null
+        opening.engineFinished = opening.engineFinished || intent.engineFinished
+        if (!opening.engineFinished) {
+            val handle = opening.handle
+            if (handle != null) handle.finish(intent.choice)
+            else lifecycle.recoverSignOut(intent.account, intent.choice)
+            opening.engineFinished = true
+        }
+        check(current(opening)) { "The account changed." }
+        if (!intent.engineFinished) sessions.beginSignOut(intent.copy(engineFinished = true))
+        lifecycle.cleanupSignOut(intent.account)
+        check(current(opening)) { "The account changed." }
         sessions.clear()
+        completeSignOut(opening)
+    }
+
+    private fun completeSignOut(opening: SignOutOpening) {
+        check(signOutOpening === opening && opening.attempt == generation && opening.revision == identityRevision)
         identityRevision += 1
+        generation += 1
         linkSentTo = null
         status = AuthStatus.SignedOut
+        signOutOpening = null
+        signOutQuestion = null
+        signOutTransition = false
         telemetry.identity(null)
         telemetry.event("auth_signed_out")
+        val secret = opening.secret
+        if (secret != null) handoffScope?.launch {
+            try { WindmillApi(baseUrl, { secret }, client, telemetry).send<Unit>("POST", "/v1/auth/logout") }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: WindmillApiException) { }
+            catch (failure: Exception) { telemetry.failure("auth_logout", failure) }
+        }
     }
+
+    suspend fun signOut() {
+        if (status == AuthStatus.Unknown) (sessions.localSession as? LocalSession.Owned)?.let {
+            status = AuthStatus.SignedIn(it.user, verified = false)
+        }
+        prepareSignOut()
+        signOutError?.let { throw it }
+        if (signOutQuestion != null) confirmSignOut(AuthSignOutChoice.Keep)
+        signOutError?.let { throw it }
+    }
+
 }
 
 interface AuthLifecycle {
     suspend fun signedIn(user: User, token: String, restoring: Boolean)
     suspend fun signOut()
+    suspend fun prepareSignOut(account: String): AuthSignOutSession = object : AuthSignOutSession {
+        override val account = account
+        override val unsent = 0
+        override suspend fun finish(choice: AuthSignOutChoice) {
+            check(choice == AuthSignOutChoice.Keep) { "Discard requires an account-aware lifecycle." }
+            signOut()
+        }
+        override suspend fun cancel() = Unit
+    }
+    suspend fun recoverSignOut(account: String, choice: AuthSignOutChoice) {
+        check(choice == AuthSignOutChoice.Keep) { "Discard requires an account-aware lifecycle." }
+        signOut()
+    }
+    suspend fun cleanupSignOut(account: String) = Unit
     suspend fun cancelSignIn(user: User, token: String): Boolean = false
 
     object None : AuthLifecycle {
@@ -411,8 +611,17 @@ private data class SavedSession(val secret: String, val user: User, val version:
 data class ProposedSignIn(val secret: String, val user: User)
 
 interface SessionStore {
-    val signOutPending: Boolean get() = false
-    fun beginSignOut() {}
+    val pendingSignOut: SignOutIntent? get() = null
+    val signOutPending: Boolean get() = pendingSignOut != null
+    fun beginSignOut(intent: SignOutIntent) {}
+    fun beginSignOut() { user()?.let { beginSignOut(SignOutIntent(it.id, AuthSignOutChoice.Keep)) } }
+    fun reconcileSignOut(user: User, secret: String?, choice: AuthSignOutChoice, engineFinished: Boolean): SignOutStorage {
+        if (engineFinished && this.user() == null && read() == null && !signOutPending) return SignOutStorage.Cleared
+        val intent = pendingSignOut
+        if (this.user() != user || read() != secret || signOutPending &&
+            (intent?.account != user.id || intent?.choice != choice)) return SignOutStorage.Unavailable
+        return SignOutStorage.Current
+    }
     val proposed: ProposedSignIn? get() = null
     fun stage(proposed: ProposedSignIn) { commit(proposed.secret, proposed.user) }
     fun publishProposed(expected: ProposedSignIn) {}
@@ -440,8 +649,39 @@ class PrefsSessions(
     constructor(context: Context, vault: SecretVault, telemetry: Telemetry) : this(SharedPrefsValues(context), vault, telemetry)
 
     private var unavailable = false
-    override val signOutPending: Boolean get() = prefs.read(signOutKey) != null
-    override fun beginSignOut() { persist(mapOf(signOutKey to "1")) }
+    override val signOutPending: Boolean get() = prefs.read(signOutKey) != null || prefs.read(signOutIntentKey) != null
+    override val pendingSignOut: SignOutIntent? get() {
+        prefs.read(signOutIntentKey)?.let { sealed ->
+            return vault.open(sealed)?.let { raw -> runCatching { WindmillJson.decodeFromString<SignOutIntent>(raw) }
+                .onFailure { telemetry.failure("session_sign_out_decode", java.io.IOException("The sign-out choice could not be read.")) }.getOrNull() }
+        }
+        return if (prefs.read(signOutKey) == "1") user()?.let { SignOutIntent(it.id, AuthSignOutChoice.Keep) } else null
+    }
+    override fun beginSignOut(intent: SignOutIntent) {
+        check(user()?.id == intent.account) { "The account changed." }
+        val encoded = vault.seal(WindmillJson.encodeToString(SignOutIntent.serializer(), intent))
+            ?: throw java.io.IOException("The sign-out choice could not be sealed.")
+        persist(mapOf(signOutIntentKey to encoded, signOutKey to null))
+    }
+
+    override fun reconcileSignOut(user: User, secret: String?, choice: AuthSignOutChoice, engineFinished: Boolean): SignOutStorage {
+        val identityKeys = listOf(bundleKey, secretKey, secretKey + sealed, userKey, userKey + sealed, proposedKey)
+        if (engineFinished && identityKeys.none { prefs.read(it) != null } && !signOutPending) {
+            unavailable = false
+            return SignOutStorage.Cleared
+        }
+        val stored = if (prefs.read(bundleKey) != null) saved() else {
+            val token = prefs.read(secretKey) ?: prefs.read(secretKey + sealed)?.let(vault::open)
+            val encodedUser = prefs.read(userKey) ?: prefs.read(userKey + sealed)?.let(vault::open)
+            val known = encodedUser?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.getOrNull() }
+            if (token != null && known != null) SavedSession(token, known) else null
+        }
+        val intent = pendingSignOut
+        if (stored?.user != user || stored?.secret != secret || prefs.read(proposedKey) != null ||
+            signOutPending && (intent?.account != user.id || intent?.choice != choice)) return SignOutStorage.Unavailable
+        unavailable = false
+        return SignOutStorage.Current
+    }
 
     override val localSession: LocalSession get() {
         if (unavailable) return LocalSession.Unresolved()
@@ -483,7 +723,7 @@ class PrefsSessions(
     override fun publishProposed(expected: ProposedSignIn) {
         check(proposed == expected) { "The proposed account changed. Sign in again." }
         val encoded = requireNotNull(prefs.read(proposedKey))
-        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
+        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, signOutIntentKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
@@ -494,7 +734,7 @@ class PrefsSessions(
     override fun commit(secret: String, user: User) {
         val value = WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(secret, user))
         val encoded = vault.seal(value) ?: throw java.io.IOException("The session could not be sealed.")
-        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
+        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, signOutIntentKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
@@ -516,7 +756,7 @@ class PrefsSessions(
 
     override fun clear() {
         persist(mapOf(
-            bundleKey to null, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
+            bundleKey to null, proposedKey to null, signOutKey to null, signOutIntentKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
@@ -537,6 +777,7 @@ class PrefsSessions(
         const val bundleKey = "wm_identity.sealed"
         const val proposedKey = "wm_proposed.sealed"
         const val signOutKey = "wm_sign_out"
+        const val signOutIntentKey = "wm_sign_out.sealed"
         const val secretKey = "wm_session"
         const val userKey = "wm_user"
         const val sealed = ".sealed"
@@ -566,12 +807,16 @@ private class SharedPrefsValues(context: Context) : KeptValues {
 
 class MemorySessions(private var secret: String? = null, private var known: User? = null) : SessionStore {
     private var staged: ProposedSignIn? = null
+    override var pendingSignOut: SignOutIntent? = null
+        private set
+    override fun beginSignOut(intent: SignOutIntent) { check(known?.id == intent.account); pendingSignOut = intent }
+    override val localSession: LocalSession get() = if (signOutPending) LocalSession.Absent else super.localSession
     override val proposed: ProposedSignIn? get() = synchronized(this) { staged }
-    @Synchronized override fun commit(secret: String, user: User) { this.secret = secret; known = user; staged = null }
+    @Synchronized override fun commit(secret: String, user: User) { this.secret = secret; known = user; staged = null; pendingSignOut = null }
     @Synchronized override fun stage(proposed: ProposedSignIn) { staged = proposed }
     @Synchronized override fun publishProposed(expected: ProposedSignIn) {
         check(staged == expected) { "The proposed account changed." }
-        secret = expected.secret; known = expected.user; staged = null
+        secret = expected.secret; known = expected.user; staged = null; pendingSignOut = null
     }
     @Synchronized override fun clearProposed(expected: ProposedSignIn?) { if (expected == null || staged == expected) staged = null }
     @Synchronized override fun read(): String? = secret
@@ -582,5 +827,6 @@ class MemorySessions(private var secret: String? = null, private var known: User
         secret = null
         known = null
         staged = null
+        pendingSignOut = null
     }
 }

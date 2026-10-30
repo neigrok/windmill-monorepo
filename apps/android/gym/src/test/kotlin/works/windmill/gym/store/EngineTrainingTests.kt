@@ -44,6 +44,52 @@ class EngineTrainingTests {
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
 
+    @Test fun aNoteAcceptedAtTheStoreEntryCannotCommitAfterItsTransitionFenceCloses() = runTest {
+        var permitted = true
+        var closeAfterEntry = false
+        EngineRoomFixture(tmp.newFolder(), backgroundScope,
+            workoutAuthority = { permitted.also { if (closeAfterEntry) permitted = false } },
+            writeAuthority = { permitted }).use { room ->
+            room.select(null)
+            val before = room.engine.snapshot()
+            val replica = room.engine.activeReplica()
+            closeAfterEntry = true
+            val result = room.store.saveNote("note0001", NoteWrite("Queued note", ""))
+            assertTrue(result is GymResult.Failed && result.why is WriteFailure.Refused)
+            assertEquals(before, room.engine.snapshot())
+            assertEquals(replica, room.engine.activeReplica())
+            assertEquals(emptyList<Note>(), room.training.notes())
+            assertNull(room.selected)
+        }
+    }
+
+    @Test fun onlyTheCurrentTransitionCanDrainAlreadyAcceptedControlsWhileOrdinaryWritesStayFenced() = runTest {
+        engine().use { engine ->
+            val initial = EngineTraining(engine)
+            val session = initial.startSession(SessionStart("session1", now))
+            val accepted = TrainingSet("accepted1", "bench-press", weightKg = 40.0, reps = 8, completedAtMs = now + 1)
+            val controls = WorkoutControls(java.io.File(tmp.newFolder(), "controls.json"))
+            controls.project(engine.activeReplica(), session, emptyList())
+            controls.store(accepted, session.id)
+            controls.control(controls.workout.copy(consumed = setOf(accepted.id)))
+            val fenced = EngineTraining(engine, writeAuthority = { false })
+            val store = TrainingStore(controls, fenced, backgroundScope, workoutAuthority = { false })
+            val before = engine.snapshot()
+            try { store.prepareEngineTransition { false }; fail("A replaced transition cannot drain.") }
+            catch (_: TrainingRefused) { }
+            assertEquals(before, engine.snapshot())
+            assertEquals(emptyList<TrainingSet>(), initial.session(session.id)!!.sets)
+            store.prepareEngineTransition { true }
+            assertEquals(listOf(accepted), initial.session(session.id)!!.sets)
+            val drained = engine.snapshot()
+            try { fenced.writeNote("note0001", NoteWrite("Blocked", "")); fail("Ordinary writes remain fenced.") }
+            catch (_: TrainingRefused) { }
+            assertEquals(drained, engine.snapshot())
+            store.prepareEngineTransition { true }
+            assertEquals(drained, engine.snapshot())
+        }
+    }
+
     @Test fun restoredReceiptAbsenceRequiresAReadReplicaOrAReleasedLocalDeletion() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")

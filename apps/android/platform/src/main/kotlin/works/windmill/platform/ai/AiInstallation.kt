@@ -267,5 +267,9 @@ class AiInstallationLifecycle(
     }
 
     override suspend fun signOut() = delegate.signOut()
+    override suspend fun prepareSignOut(account: String) = delegate.prepareSignOut(account)
+    override suspend fun recoverSignOut(account: String, choice: works.windmill.platform.auth.AuthSignOutChoice) =
+        delegate.recoverSignOut(account, choice)
+    override suspend fun cleanupSignOut(account: String) = delegate.cleanupSignOut(account)
     override suspend fun cancelSignIn(user: User, token: String): Boolean = delegate.cancelSignIn(user, token)
 }

@@ -69,8 +69,9 @@ again, not even for a read already in flight. Restoring an unchanged account, or
 credential already stored, seals and writes nothing. Backup is disabled by both manifest and
 extraction rules; a Keystore failure has no plaintext fallback.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
-identity. A durable sign-out fence prevents a restart between Keep and credential removal from
-signing the account back in.
+identity. Sign-out stores the exact account, Keep/Discard choice and engine completion phase in a
+sealed intent. Startup resolves that intent before ordinary auth restore, credential bootstrap or
+sync workers; a finished engine transition retries only the original account’s credential cleanup.
 Verified sign-in proposals have a separate sealed credential. The current account changes only
 after the engine accepts the decision; cancelling a proposal keeps the previous account and work.
 
@@ -78,8 +79,10 @@ The application owns one SQLite engine and runtime, with separate anonymous, bou
 account replicas. Android subscribes only to gym; signed-out work never pushes. An empty account
 accepts signed-out training automatically. When both sides hold training, sign-in presents pinned
 **Add** / **Discard** counts, including refused imports retained on this phone. Work changed while
-the choice is open requires a fresh decision. Sign-out uses **Keep**, retaining unsent account work
-in its dormant replica and selecting an independent anonymous replica.
+the choice is open requires a fresh decision. Sign-out asks before ending the account. Unconfirmed
+changes offer **Keep** in the dormant account replica or **Discard** from this phone; **Cancel**
+restores the current account’s writable standing. The held question survives UI recreation, and
+local writes and ordinary sync activity remain fenced until the choice resolves.
 
 Before numbering each nonempty outgoing batch, the runtime makes a fresh authenticated hello and
 requires the server's `schema` to meet the client's registry `minVersion`. An unknown or older
