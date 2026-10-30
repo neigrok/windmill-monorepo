@@ -512,6 +512,9 @@ function workoutProposals() {
       state: inFlight([pending], openWorkout({ planRevision: 2 })), intent: apply() }),
     admitted('apply of a pending workout proposal whose changed movement was logged since is refused proposal-superseded: workout-moved', {
       state: inFlight([pending, dipSet]), intent: apply() }),
+    admitted('apply of a pending workout proposal with a set on the movement it retargets, in one intent, is refused plan-logged', {
+      state: inFlight([pending]), intent: gym([create('set', 'set00000006', s(T + 9 * H), { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 9 * H })],
+        { cmd: apply().cmd }) }),
     admitted('apply of a pending workout proposal of a finished workout is refused proposal-superseded: workout-finished', {
       state: base({ a: [workoutProposalRow('wproposal01', 6, { sessionId: 'session0001' })] }), intent: apply() }),
     admitted('apply of an absent workout proposal is refused unknown-record', { state: inFlight(), intent: apply('wproposal07') }),

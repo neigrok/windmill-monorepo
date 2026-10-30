@@ -2760,11 +2760,14 @@ the historical `baseName` as a new name.
   `session-finished`;
 - leaves no entry with an empty `sets` (`invalid`), names only seeds and the owner's movements
   (`unknown-exercise`), and adds no second entry of a movement the stored plan held once or not at
-  all (`invalid`): a plan the routine froze keeps its repeated entries;
-- keeps, for every movement with an alive set in the session among the joined records, the
-  entries naming it, in their order, equal (JCS) to the stored plan's; otherwise → `plan-logged`
-  with detail `{exerciseId}`, the first such movement in the order the stored plan, then the written
-  one, name movements. A movement with a logged set keeps its plan; its entries may move.
+  all (`invalid`): a plan the routine froze keeps its repeated entries.
+
+A net change of `plan`, whatever wrote it (a delta or `gym.applyWorkoutProposal`), keeps, for every
+movement with an alive set in the session among the joined records, the entries naming it, in their
+order, equal (JCS) to the stored plan's; otherwise → `plan-logged` with detail `{exerciseId}`, the
+first such movement in the order the stored plan, then the new one, name movements. A movement with
+a logged set keeps its plan; its entries may move. So an apply whose intent also logs a set on a
+movement the proposal changes is `plan-logged`.
 
 A net change of `plan` (a delta's or `gym.applyWorkoutProposal`'s) writes `planRevision :=` the stored
 revision, 1 when unset, plus 1, and supersedes the session's pending workout proposals. An equal-value

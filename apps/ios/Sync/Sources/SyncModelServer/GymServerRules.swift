@@ -418,8 +418,8 @@ public struct GymServerRules: ServerRules {
           continue
         }
         guard row.isAlive else { continue }
-        // A plan write is held to the plan revision rules; a net plan change moves planRevision and supersedes the
-        // workout's pending proposals, every door's.
+        // A plan write is held to the plan revision rules; a net plan change, a delta's or an apply's, keeps its logged
+        // movements, moves planRevision and supersedes the workout's pending proposals, every door's.
         if context.deltas.contains(where: { $0.key == row.key && $0.fields["plan"] != nil }) {
           if context.origin.isReplica,
              !context.guards.contains(where: { $0.key == row.key && $0.field == "plan" && $0.stamp == before.lattice.fields["plan"]?.stamp }) {
@@ -429,10 +429,11 @@ public struct GymServerRules: ServerRules {
             throw Refusal(.invalid)
           }
           if closed(before, sets: records("set"), now: context.serverNow) { throw refuse("session-finished") }
-          try checkPlanRevision(before: prior["entries"]?.arrayValue ?? [], after: plan["entries"]?.arrayValue ?? [], session: row.key.id.json,
-                                sets: records("set"), knownExercise: knownExercise)
+          try checkPlanShape(before: prior["entries"]?.arrayValue ?? [], after: plan["entries"]?.arrayValue ?? [], knownExercise: knownExercise)
         }
         guard (value(before, "plan") ?? .null) != (value(row, "plan") ?? .null) else { continue }
+        try checkLoggedKept(before: value(before, "plan")?["entries"]?.arrayValue ?? [], after: value(row, "plan")?["entries"]?.arrayValue ?? [],
+                            session: row.key.id.json, sets: records("set"))
         guard let revision = try? planRevision(before).asInteger(), revision < 2_147_483_647 else { throw Refusal(.invalid) }
         append(.serverUpdate(row.key, born: row.lattice.born, fields: ["planRevision": JSON(revision + 1)]))
         for proposal in records("workoutProposal") where proposal.isAlive && value(proposal, "sessionId") == row.key.id.json && proposalState(proposal) == "pending" {
@@ -564,7 +565,8 @@ public struct GymServerRules: ServerRules {
         let lines = value(row, "changes")?.arrayValue ?? []
         let proposed = try document(lines)
         guard proposed.count <= 50, lines == diff(base, proposed) else { throw Refusal(.invalid) }
-        try checkPlanRevision(before: base, after: proposed, session: session.key.id.json, sets: records("set"), knownExercise: knownExercise)
+        try checkPlanShape(before: base, after: proposed, knownExercise: knownExercise)
+        try checkLoggedKept(before: base, after: proposed, session: session.key.id.json, sets: records("set"))
         append(.serverUpdate(row.key, born: row.lattice.born, fields: ["baseRevision": planRevision(session), "changeCount": JSON(changeCount(base, lines))]))
         for other in records("workoutProposal") {
           guard (!newlyCreated.contains(other.key) || checkedProposals.contains(other.key)),
@@ -652,13 +654,18 @@ public struct GymServerRules: ServerRules {
     return count
   }
 
-  // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements, no
-  // second entry of a movement the plan held once or not at all, and logged movements kept.
-  func checkPlanRevision(before: [JSON], after: [JSON], session: JSON, sets: [Row], knownExercise: (JSON?) -> Bool) throws(Refusal) {
+  // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements, and no
+  // second entry of a movement the plan held once or not at all.
+  func checkPlanShape(before: [JSON], after: [JSON], knownExercise: (JSON?) -> Bool) throws(Refusal) {
     if after.contains(where: { $0["sets"].map { $0.arrayValue.isEmpty } ?? false }) { throw Refusal(.invalid) }
     guard after.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
     let count = { (entries: [JSON], exerciseId: JSON?) in entries.filter { $0["exerciseId"] == exerciseId }.count }
     if after.contains(where: { count(after, $0["exerciseId"]) > max(count(before, $0["exerciseId"]), 1) }) { throw Refusal(.invalid) }
+  }
+
+  // A.2's logged-movement rule over the intent's joined sets: a net plan change, whatever wrote it, and a workout
+  // proposal's document keep every logged movement's entries.
+  func checkLoggedKept(before: [JSON], after: [JSON], session: JSON, sets: [Row]) throws(Refusal) {
     if let logged = changedLoggedMovement(before: before, after: after, logged: loggedMovements(sets, session: session)) {
       throw refuse("plan-logged", detail: ["exerciseId": logged])
     }
