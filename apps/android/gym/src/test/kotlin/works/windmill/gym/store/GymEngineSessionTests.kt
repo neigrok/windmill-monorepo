@@ -72,6 +72,55 @@ class GymEngineSessionTests {
         room.sync(server)
     }
 
+    @Test fun deletionRecoveryDiscardsOnlyThePinnedReplicaAndRecognizesAlreadyFinished() = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        engine.signIn("A", mapOf("gym" to false))
+        val original = engine.activeReplica()
+        val tokens = Tokens().apply { save("A", "old-token") }
+        val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+        GymEngineSession(engine, runtime).use { session ->
+            localMovement(engine)
+            session.finishAccountDeletion("A", original, null)
+            val completed = engine.snapshot()
+            session.finishAccountDeletion("A", original, null)
+            assertEquals(completed, engine.snapshot())
+            engine.signIn("A", mapOf("gym" to false))
+            assertNull(tokens.token("A"))
+            tokens.save("A", "replacement-token")
+            val replacement = engine.snapshot()
+            assertNotEquals(original, engine.activeReplica())
+            assertTrue(runCatching { session.finishAccountDeletion("A", original, null) }.exceptionOrNull() is IllegalStateException)
+            assertEquals(replacement, engine.snapshot())
+            assertEquals("replacement-token", tokens.token("A"))
+        }
+    }
+
+    @Test fun deletionCountObservesDeviceWorkWithoutChangingSyncStatusOrWriting() = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry, pendingDeviceWork = WorkoutImports.pendingDeviceWork)
+        engine.signIn("A", mapOf("gym" to false))
+        val tokens = Tokens().apply { save("A", "token-A") }
+        val runtime = SyncRuntime(engine, transport(false), tokens, "test", activityAllowed = { false })
+        GymEngineSession(engine, runtime).use { session ->
+            val initialStatus = engine.status.state.value
+            val initial = engine.snapshot()
+            assertEquals(0, session.deletionUnsent("A"))
+            assertEquals(initial, engine.snapshot())
+            val revision = engine.readRevision()
+            val observed = async(start = CoroutineStart.UNDISPATCHED) { engine.revisions().first { it > revision } }
+            val key = WorkoutImports.journalPrefix + "count-test"
+            engine.commit(gym) { Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(key,
+                Json.objectOf("count" to Json.objectOf("set" to Json.of(2)))))) to Unit }
+            assertTrue(withTimeout(2_000) { observed.await() } > revision)
+            assertEquals(1, session.deletionUnsent("A"))
+            assertEquals(initialStatus, engine.status.state.value)
+            val beforeRead = engine.snapshot()
+            assertEquals(1, session.deletionUnsent("A"))
+            assertEquals(beforeRead, engine.snapshot())
+            engine.commit(gym) { Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(key, null))) to Unit }
+            assertEquals(0, session.deletionUnsent("A"))
+        }
+    }
+
     @Test fun preparedKeepDiscardAndCancelUseTheExactHeldAccount() = runBlocking {
         for (choice in works.windmill.platform.auth.AuthSignOutChoice.entries) {
             val engine = Engine.memory(SyncSchema.registry)

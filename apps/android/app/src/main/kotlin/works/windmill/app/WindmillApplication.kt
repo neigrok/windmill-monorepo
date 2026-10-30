@@ -1,5 +1,9 @@
 package works.windmill.app
 
+import works.windmill.platform.you.AccountDeletionStorage
+import works.windmill.platform.you.AccountDeletionStore
+import works.windmill.platform.you.AccountDeletionHttp
+import works.windmill.platform.you.DeletionIdentity
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.onboarding.CoachOnboardingHttp
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
@@ -70,6 +74,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         private set
     lateinit var auth: AuthStore
         private set
+    lateinit var accountDeletion: AccountDeletionStore
+        private set
     lateinit var gym: GymRuntime
         private set
     lateinit var engineSession: GymEngineSession
@@ -93,8 +99,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         if (telemetryEnabled) AndroidTelemetry.startSentry(this, BuildConfig.WM_SENTRY_DSN, release, environment, BuildConfig.VERSION_CODE.toString())
         val bootstrap = if (telemetryEnabled) SentryErrors else Telemetry.None
         val vault = SecretVault.onThisDevice(bootstrap)
+        val deletionStorage = AccountDeletionStorage.onThisDevice(this, vault, bootstrap)
         val sessions = PrefsSessions(this, vault, bootstrap)
-        fun accountWritable() = !sessions.signOutPending && (!::auth.isInitialized || !auth.transitionPending)
+        fun deletionPending() = deletionStorage.blocked || (::accountDeletion.isInitialized && accountDeletion.transitionPending)
+        fun accountWritable() = !deletionPending() && !sessions.signOutPending && (!::auth.isInitialized || !auth.transitionPending)
         val local = sessions.localSession
         val owner = (local as? LocalSession.Owned)?.user?.id
         val baseUrl = WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL)
@@ -128,11 +136,11 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         }
         val syncRuntime = SyncRuntime(engine, reportedTransport,
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"), activityAllowed = ::accountWritable,
-            signOutDrainAllowed = { !sessions.signOutPending })
+            signOutDrainAllowed = { !sessions.signOutPending && !deletionStorage.blocked })
         val training = EngineTraining(engine, writeAuthority = ::accountWritable)
-        val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName))
+        val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName), writesAllowed = { !deletionPending() })
         val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry)
-        if (local is LocalSession.Owned) {
+        if (local is LocalSession.Owned && !deletionPending()) {
             try { installation.retainBindingIntent() }
             catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }
         }
@@ -159,12 +167,43 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = {
             val revision = auth.accountOperationRevision
-            store.prepareEngineTransition { auth.accountOperationRevision == revision }
+            val deletionRevision = if (::accountDeletion.isInitialized) accountDeletion.operationRevision else 0L
+            store.prepareEngineTransition { auth.accountOperationRevision == revision &&
+                (!::accountDeletion.isInitialized || accountDeletion.operationRevision == deletionRevision) }
         }, clearAccountCredential = engineStorage::delete)
+        val accountLifecycle = AiInstallationLifecycle(engineSession, installation, scope, telemetry)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry,
-            lifecycle = AiInstallationLifecycle(engineSession, installation, scope, telemetry), handoffScope = scope)
+            lifecycle = accountLifecycle, handoffScope = scope, externalTransitionPending = ::deletionPending,
+            onVerifiedSignIn = { localCoach.reopenVerifiedOwner(it.id) })
+        fun deletionIdentity(): DeletionIdentity? {
+            val user = sessions.user() ?: return null
+            val credential = sessions.read() ?: return null
+            if (sessions.localSession != LocalSession.Owned(user)) return null
+            return DeletionIdentity(user, credential, engine.activeReplica(), auth.accountOperationRevision)
+        }
+        accountDeletion = AccountDeletionStore(deletionStorage, AccountDeletionHttp(baseUrl, telemetry), scope,
+            identity = ::deletionIdentity,
+            begin = { identity -> identity.copy(revision = auth.beginAccountDeletion(identity.user, identity.credential)) },
+            unsent = { sessions.user()?.id?.let(engineSession::deletionUnsent) ?: 0 },
+            prepare = { identity ->
+                check(deletionIdentity() == identity) { "The account changed." }
+                accountLifecycle.prepareSignOut(identity.user.id)
+            },
+            finishEngine = { pending, held ->
+                val stored = sessions.user()
+                check(stored?.id != pending.user.id || stored == pending.user && sessions.read() == pending.credential) { "The account changed." }
+                engineSession.finishAccountDeletion(pending.user.id, pending.replica, held)
+            },
+            cleanup = { pending ->
+                auth.validateAccountDeletion(pending.user, pending.credential)
+                val credential = engineStorage.token(pending.user.id)
+                check(credential == null || credential == pending.credential) { "The account credential changed." }
+                store.eraseDeletedOwner(pending.user.id, pending.replica)
+                if (credential != null) engineStorage.delete(pending.user.id)
+                auth.completeAccountDeletion(pending.user, pending.credential)
+            }, telemetry = telemetry)
         scope.launch {
-            try { coachOnboarding.resume() }
+            try { if (!deletionPending()) coachOnboarding.resume() }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
         }
@@ -179,6 +218,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         workoutNotifications.start()
         workoutTile = WorkoutTile(gym, ComponentName(this, MainActivity::class.java), store::requestRoutines, telemetry)
         store.observeEngine()
+        scope.launch { engine.revisions().collect { accountDeletion.refreshCount() } }
         val manager = getSystemService(ConnectivityManager::class.java)
         var knownOnline: Boolean? = null
         fun applyRuntimeActivity() {

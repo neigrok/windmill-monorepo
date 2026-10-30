@@ -130,7 +130,7 @@ class CoachRequestLifecycleTests {
             assertTrue(store.submit(chat, "Question", requestId = "request-a"))
             runCurrent(); io.last(); runCurrent()
             assertTrue(secondEntered.isCompleted)
-            val request = AskQuestion(chat, "Question", "request-a")
+            val request = AskQuestion(chat, "Question", "request-a", purpose = "conversation")
             assertEquals(listOf(request), LocalCoach(file).pending("alice"))
             io.next(); runCurrent()
             assertTrue(store.isAsking(chat))

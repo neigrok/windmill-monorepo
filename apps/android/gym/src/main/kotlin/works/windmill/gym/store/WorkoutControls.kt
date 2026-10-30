@@ -136,6 +136,29 @@ class WorkoutControls private constructor(
         saved = next
     }
 
+    fun eraseOwner(owner: String, replica: String) {
+        val ownerKey = Seat.of(owner)
+        val source = storage.tree() ?: if (!file.exists()) JsonObject(emptyMap()) else error("Workout controls could not be read.")
+        val queues = source["queues"] as? JsonObject ?: if (source.isEmpty()) JsonObject(emptyMap()) else error("Workout controls could not be read.")
+        val original = queues[ownerKey] as? JsonObject
+        if (ownerKey in queues) {
+            check(original != null) { "Workout controls could not be read." }
+            val storedReplica = original["engineReplica"]
+            check(storedReplica == null || storedReplica == kotlinx.serialization.json.JsonNull ||
+                storedReplica == kotlinx.serialization.json.JsonPrimitive(replica)) { "The account replica changed." }
+            val next = JsonObject(source + ("queues" to JsonObject(queues - ownerKey)))
+            try { write(file, next.toString()) }
+            catch (failure: Exception) {
+                writeFailed = true
+                if (storage.tree() != next) throw failure
+            }
+        }
+        unreadable = false
+        held = open()
+        saved = held
+        writeFailed = false
+    }
+
     // Selecting a seat never transfers a workout from another seat.
     fun adopt(owner: String?) {
         val nextSeat = Seat.of(owner)
