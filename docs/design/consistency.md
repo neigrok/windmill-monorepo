@@ -475,9 +475,10 @@ and Android disagree.
 - **10z · The workout in flight (✅ Ready for dev, owner approved 2026-10-30).** Boards 03.20–03.32,
   04.6 and 08.54–08.57 with a READ ME in section 03 (`1717:15737`); the written half is
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`68`.
-  Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build differs from these
-  targets everywhere they draw something new: no rest target, two load-and-reps wheels, a frozen
-  plan, no Coach while a workout is open, and routine proposals refused mid-workout. 04.3's expanded
+  Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build draws the rest
+  target, the typed load and the reps wheel, Coach over the workout (08.54) and both proposal cards
+  (08.55–08.57): a change to this workout applies to the running plan, a routine change applies for
+  next time. It still differs where the lifter edits the plan: the plan stays frozen. 04.3's expanded
   presentation draws a moving rest bar the build does not carry; 04.6 is its target.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
@@ -957,8 +958,8 @@ iOS. It and the product differ in these places.
   interrupted `1588:12489` / `1690:13564` / `1590:13282`; 08.51 answering on another device
   `1588:12556` / `1690:13590` / `1590:13287`; 08.52 resume from the snapshot `1588:12654` /
   `1690:13605` / `1590:13292`; 08.53 empty History under R5 `1589:12977` / `1690:13626` /
-  `1590:13297`. The build still refuses a send while a workout is open (*Coach waits until you finish
-  this workout.*); that board, 08.39, is deleted and its slot holds the ✅ target 08.54 (10z). Three
+  `1590:13297`. Board 08.39, the send refused while a workout was open, is deleted; its slot holds 08.54
+  (10z), which the build draws. Three
   redraws took their originals' slots and the originals were deleted: 08.6 is now
   the account-changing state `1589:13033` / `1690:13247` / `1590:13302` (replaced the no-seat pair
   `1186:5415` / `1186:5477` and caption `1117:1740`); 01.5 carries the picture line under R8

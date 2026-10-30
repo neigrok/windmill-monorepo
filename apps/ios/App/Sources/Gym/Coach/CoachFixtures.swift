@@ -344,7 +344,10 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
         if let resetsAtMs { refusal["allowance"] = ["code": code, "budgetResetsAtMs": resetsAtMs] }
         respond(status, refusal); return
       }
-      let said = CoachFixtureConversation(asked: body["question"] as? String)
+      // The open workout the turn read, which a board's change to this workout names, under an id minted from the turn's.
+      let context = body["context"] as? [[String: Any]] ?? []
+      let workout = context.first { $0["name"] as? String == "get_session" }.flatMap { ($0["input"] as? [String: Any])?["sessionId"] as? String }
+      let said = CoachFixtureConversation(asked: body["question"] as? String, workout: workout.map { (session: $0, proposal: (body["turnId"] as? String ?? "turn") + "-w") })
       open()
       let owed = Held(self, frames: said.frames, finishes: said.end != .held, onStop: [Self.frame("done", ["state": "stopped"])])
       guard !said.calls.isEmpty else { Self.held.withLock { $0 = owed.deliver() }; return }
@@ -400,12 +403,12 @@ nonisolated struct CoachFixtureConversation {
   var end = End.completed
   var calls: [(String, [String: Any])] = []
 
-  init(arguments: [String] = ProcessInfo.processInfo.arguments, asked: String? = nil) {
+  init(arguments: [String] = ProcessInfo.processInfo.arguments, asked: String? = nil, workout: (session: String, proposal: String)? = nil) {
     let session: (String, [String: Any]) = ("get_session", ["sessionId": "coach-fixture-session"])
     if let board = CoachBoard.current {
       let turn = board.turns.first { $0.question == asked } ?? board.turns[0]
       question = turn.question; text = turn.answer; end = turn.end
-      calls = turn.calls(board)
+      calls = turn.calls(board, workout: workout)
     } else if arguments.contains("-coach-markdown") || arguments.contains("-coach-streaming") || arguments.contains("-coach-thinking") {
       let held = !arguments.contains("-coach-markdown")
       question = arguments.contains("-coach-thinking") ? "My program, 3 days a week" : "What should Thursday look like?"
@@ -476,14 +479,19 @@ nonisolated struct CoachBoard {
     var creates: [(id: String, name: String, entries: [RoutineEntry])] = []
     var note: (String, String)?
     var movement: Exercise?
+    // The whole plan Coach proposes for the open workout, when the turn read one.
+    var workout: [RoutineEntry]?
     // Signed out, a note Coach wants to save needs the account: the phone refuses it, and the answer offers Sign in.
     var needsAccount = false
     var end = CoachFixtureConversation.End.completed
 
-    // The batch the server asks of the phone for this turn: the proposals it writes, the routines it creates, the note,
-    // the movement.
-    func calls(_ board: CoachBoard) -> [(String, [String: Any])] {
+    // The batch the server asks of the phone for this turn: the change to the open workout, the proposals it writes, the
+    // routines it creates, the note, the movement.
+    func calls(_ board: CoachBoard, workout open: (session: String, proposal: String)? = nil) -> [(String, [String: Any])] {
       var calls: [(String, [String: Any])] = []
+      if let workout, let open {
+        calls.append(("propose_workout_change", ["id": open.proposal, "sessionId": open.session, "entries": CoachBoard.json(workout), "summary": ""]))
+      }
       for id in proposals {
         guard let proposed = board.proposals.first(where: { $0.id == id }) else { continue }
         if proposed.removing { calls.append(("propose_routine_removal", ["id": proposed.id, "routineId": proposed.routine, "summary": "You have not done it in 8 weeks."])) }
@@ -574,6 +582,16 @@ nonisolated struct CoachBoard {
     var next = board; next.situation = situation; return next
   }
   static let pullUp = Exercise(id: ID("board-pull-up"), name: "Pull-up", pattern: "pull", equipment: "bodyweight", stepKg: 2.5)
+  // Upper A's workout in flight (08.55–08.57): bench logged, so it keeps its plan; Coach lightens the row and rests it longer,
+  // then, asked again, takes the belt off the pull-ups; one answer may also change Upper A for next time.
+  static let upperA = [entry("dumbbell-bench-press", 3, 8, 16, rest: 120), entry("seated-cable-row", 3, 10, 50), entry("pull-up", 3, 8, 10, rest: 120),
+                       entry("back-squat", 4, 5, 100, rest: 180)]
+  static let lighterRow = [upperA[0], entry("seated-cable-row", 3, 12, 40, rest: 120), upperA[2], upperA[3]]
+  static let shoulder = "Shoulder feels off on bench. What should I change today?"
+  static let workout = CoachBoard(routines: [(id: "board-routine", name: "Upper A", entries: upperA)], proposals: [], turns: [
+    Turn(question: shoulder, answer: "Bench is logged, so it stays. Go lighter on the row and rest longer.", workout: lighterRow),
+    Turn(question: "And the pull-ups?", answer: "Take the belt off for pull-ups today.", workout: [lighterRow[0], lighterRow[1], entry("pull-up", 3, 8, rest: 120), lighterRow[3]]),
+  ])
   static let all: [String: CoachBoard] = [
     "after-sign-in": CoachBoard(routines: [], proposals: [
         Proposed(id: "board-proposal", routine: "setup-routine-B", name: "Full body B",
@@ -589,6 +607,10 @@ nonisolated struct CoachBoard {
       turns: [Turn(question: "My left shoulder hurts on wide-grip bench.", answer: "I saved this as a note. I will use it when I plan.",
                    note: ("Shoulder", "Left shoulder hurts on wide-grip bench. Use a close grip."))]),
     "change": change,
+    "workout": workout,
+    "workout-and-routine": CoachBoard(routines: workout.routines,
+      proposals: [Proposed(id: "board-proposal", routine: "board-routine", name: "Upper A", entries: [entry("dumbbell-bench-press", 3, 8, 14, rest: 120)] + upperA.dropFirst())],
+      turns: [Turn(question: shoulder, answer: "Bench stays as logged. One change for today, one for next time.", proposals: ["board-proposal"], workout: lighterRow)]),
     "summary": CoachBoard(
       routines: change.routines + [(id: "board-lower", name: "Lower A", entries: [entry("back-squat", 1, 5, 80), entry("romanian-deadlift", 3, 8, 82.5),
                                                                                    entry("landmine-squat", 3, 10, 140), entry("standing-calf-raise", 3, 12, 45)])],

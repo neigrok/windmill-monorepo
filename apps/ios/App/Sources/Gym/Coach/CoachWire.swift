@@ -70,6 +70,17 @@ nonisolated enum CoachCopy {
     }
     return [cause, notApplied + "."].compactMap { $0 }.joined(separator: " ")
   }
+  // Why an out-of-date card has no buttons (08.57), one cause and then that nothing was applied.
+  static func outOfDateReason(_ reason: CoachOutOfDate, routine: String, catalogue: Catalogue) -> String {
+    let cause = switch reason {
+    case .replaced: "A newer suggestion replaced this one."
+    case .routineChanged: routine + " changed after this suggestion."
+    case .workoutChanged: "This workout changed after this suggestion."
+    case .workoutFinished: "This workout has finished."
+    case .workoutMoved(let movement): "You logged " + (catalogue.find(movement)?.name ?? "a movement") + " since this suggestion."
+    }
+    return cause + " Nothing was applied."
+  }
   // How a proposal settled, one word on its card and its History row; a waiting one says nothing. The wire keeps
   // *dismissed* for a rejected proposal.
   static func settled(_ state: String, removal: Bool) -> String? {

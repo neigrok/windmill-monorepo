@@ -149,6 +149,9 @@ struct CoachReading: Identifiable {
         let removal = proposal.intent == "remove"
         return CoachCopy.proposalTitle(routine: proposal.baseName ?? gym.coachRoutine(proposal)?.name, changes: gym.coachChangeCount(proposal), removal: removal)
       }
+      case WorkoutProposal.type: gym.workoutProposals.first { $0.id.record == ref.id }.map { proposal in
+        CoachCopy.proposalTitle(routine: "This workout", changes: gym.coachWorkoutChangeCount(proposal), removal: false)
+      }
       default: nil
       }
     }
@@ -169,18 +172,21 @@ struct CoachReading: Identifiable {
   }
 }
 
-// What an answer's calls wrote, read from the records they created: the routines, the notes, the movements, the proposals.
+// What an answer's calls wrote, read from the records they created: the routines, the notes, the movements, the proposals
+// and the changes to the open workout.
 struct CoachWrites {
   let routines: [Routine]
   let notes: [Note]
   let exercises: [Exercise]
   let proposals: [String]
+  let workoutProposals: [String]
   init(calls: [AbilityCall], gym: GymModel) {
     let created = calls.filter { $0.outcome == .ok }.flatMap(\.created)
     routines = created.filter { $0.type == Routine.type }.compactMap { ref in gym.routines.first { $0.id.record == ref.id } }
     notes = created.filter { $0.type == Note.type }.compactMap { ref in gym.notes.first { $0.id.record == ref.id } }
     exercises = created.filter { $0.type == Exercise.type }.compactMap { ref in gym.catalogue.find(ID<Exercise>(ref.id)) }
     proposals = created.filter { $0.type == Proposal.type }.map { $0.id.description }
+    workoutProposals = created.filter { $0.type == WorkoutProposal.type }.map { $0.id.description }
   }
 }
 
@@ -217,6 +223,8 @@ struct CoachAnswerView: View {
         Button(action: signIn) { Text("Sign in").frame(maxWidth: .infinity) }.buttonStyle(ChangeCardButtonStyle(prominent: true))
           .accessibilityIdentifier("coach-sign-in")
       }
+      // One answer may carry a change to this workout and one to a routine, each decided on its own card (08.56).
+      ForEach(writes.workoutProposals, id: \.self) { id in WorkoutProposalCard(gym: gym, id: id) }
       ForEach(writes.proposals, id: \.self) { id in ProposalCard(gym: gym, id: id).id(ProposalCard.anchor(id)) }
       if !writes.routines.isEmpty {
         // One receipt per routine created, each a door to its summary and Start.
