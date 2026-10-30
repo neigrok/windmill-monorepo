@@ -335,7 +335,7 @@ class ModelFixture(BaseHTTPRequestHandler):
         start_delay, chunk_chars, chunk_delay = getattr(self.server, "timing", (0, None, 0))
         stop_reason = "tool_use" if any(block["type"] == "tool_use" for block in content) else "end_turn"
         response = {"id": "msg_capture", "type": "message", "role": "assistant", "model": body.get("model", "fixture"),
-                    "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25}}
+                    "content": content, "stop_reason": stop_reason, "usage": {"input_tokens": 100, "output_tokens": 25, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}
         if body.get("stream"):
             events = [{"type": "message_start", "message": {**response, "content": [], "stop_reason": None}}]
             for index, block in enumerate(content):
