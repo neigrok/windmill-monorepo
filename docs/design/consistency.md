@@ -478,7 +478,12 @@ and Android disagree.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build differs from these
   targets everywhere they draw something new: no rest target, two load-and-reps wheels, no Coach
   while a workout is open, and routine proposals refused mid-workout. 04.3's expanded
-  presentation draws a moving rest bar the build does not carry; 04.6 is its target.
+  presentation draws a moving rest bar the build does not carry; 04.6 is its target. Where 03.32 and
+  the build differ, for the designer to settle: the receipt's PLAN CHANGES card speaks the proposal
+  card's diff language, so a changed set reads *Set 1 · 8 × 10 kg → 8 × 12.5 kg* and every set line
+  of a changed movement stands (03.32 draws *10 × 8 → 12.5 × 8* and the changed set alone); and a
+  reorder an applied Coach change made counts in *‹n› changes* but draws no Moved block, since the
+  plan's diff carries no order lines.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
