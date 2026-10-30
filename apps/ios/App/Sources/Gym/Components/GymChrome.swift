@@ -14,7 +14,8 @@ struct GymPage: ViewModifier {
 
 // A sheet that edits a record commits from its bar: the dismissal leading,
 // the commit trailing in the room's accent — the system's prominent checkmark on iOS 26, a bold label before it — so
-// nothing stands at the sheet's foot. Its destructive act is the form's last row.
+// nothing stands at the sheet's foot; a sheet over the workout's rack (03.25) keeps its checkmark in plain glass. Its
+// destructive act is the form's last row.
 struct SheetCommit: ViewModifier {
   let title: String
   let identifier: String
@@ -22,6 +23,7 @@ struct SheetCommit: ViewModifier {
   var dismissalIdentifier: String?
   var disabled = false
   var busy = false
+  var prominent = true
   let dismiss: () -> Void
   let commit: () -> Void
 
@@ -30,8 +32,14 @@ struct SheetCommit: ViewModifier {
       ToolbarItem(placement: .cancellationAction) {
         Button(dismissal, action: dismiss).disabled(busy).accessibilityIdentifier(dismissalIdentifier ?? dismissal)
       }
-      ToolbarItem(placement: .confirmationAction) {
-        confirm.disabled(disabled || busy).accessibilityIdentifier(identifier).tint(GymPalette.accent)
+      if prominent {
+        ToolbarItem(placement: .confirmationAction) {
+          confirm.disabled(disabled || busy).accessibilityIdentifier(identifier).tint(GymPalette.accent)
+        }
+      } else {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button(title, systemImage: "checkmark", action: commit).disabled(disabled || busy).accessibilityIdentifier(identifier)
+        }
       }
     }.roomBar(.gym)
   }
@@ -99,9 +107,10 @@ extension View {
     toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
   }
   func sheetCommit(_ title: String, identifier: String, dismissal: String = "Cancel", dismissalIdentifier: String? = nil,
-                   disabled: Bool = false, busy: Bool = false, dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
+                   disabled: Bool = false, busy: Bool = false, prominent: Bool = true, dismiss: @escaping () -> Void,
+                   commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,
-                         disabled: disabled, busy: busy, dismiss: dismiss, commit: commit))
+                         disabled: disabled, busy: busy, prominent: prominent, dismiss: dismiss, commit: commit))
   }
 }
 
