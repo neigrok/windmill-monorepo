@@ -163,7 +163,11 @@ data class PlanChanges(val changes: List<RoutineChange>, val changeCount: Int, v
             val plan = session?.plan ?: return none
             if (routine == null || plan.entries == routine.entries) return none
             val changes = RoutineChange.between(routine.entries, plan.entries)
-            val offer = if (routine.revision != null && routine.revision == session.routineRevision) Offer.save else Offer.routineChanged
+            val offer = when {
+                routine.revision == null || session.routineRevision == null -> Offer.none
+                routine.revision == session.routineRevision -> Offer.save
+                else -> Offer.routineChanged
+            }
             return PlanChanges(changes, RoutineChange.count(routine.entries, changes), offer)
         }
     }

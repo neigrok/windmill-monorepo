@@ -223,8 +223,9 @@ bests yet.
 
 `PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card: the
 proposal diff of the session's plan against its routine as drawn, with R118's count and no name term; `offer` is
-`save` when the routine's `revision` equals the session's `routineRevision`, `routineChanged` otherwise, and
-`none`, with no changes, when the plan matches, has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
+`save` when the routine's `revision` equals the session's `routineRevision`, `routineChanged` when both are known
+and differ, and `none` when either is unknown — the changes still listed, neither save nor sentence offered — or,
+with no changes, when the plan matches, has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
 `{outOfDate}`) is null for a current, applied or dismissed proposal, else `{reason}` with apply's reasons,
 `workout-moved` naming the movement as `exerciseId`.
 

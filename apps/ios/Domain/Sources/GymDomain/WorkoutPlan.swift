@@ -237,7 +237,10 @@ public struct PlanChanges: Equatable, Sendable {
     }
     changes = RoutineChange.lines(from: routine.entries, to: plan.entries)
     changeCount = RoutineChange.count(changes, against: routine.entries)
-    offer = routine.revision != nil && routine.revision == session.routineRevision ? .save : .routineChanged
+    offer = switch (routine.revision, session.routineRevision) {
+    case let (now?, started?): now == started ? .save : .routineChanged
+    default: .none
+    }
   }
 
   public init(_ read: Reader, session id: ID<Session>) throws {
