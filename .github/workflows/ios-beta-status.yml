@@ -1,0 +1,96 @@
+name: iOS beta access status
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_version:
+        description: Exact uploaded marketing version
+        required: true
+        type: string
+      target_build:
+        description: Exact uploaded build number
+        required: true
+        type: string
+      reference_version:
+        description: Independently verified prior version with established internal distribution
+        required: true
+        type: string
+      reference_build:
+        description: Independently verified prior build number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-beta-access-status
+  cancel-in-progress: false
+
+jobs:
+  read:
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      TARGET_VERSION: ${{ inputs.target_version }}
+      TARGET_BUILD: ${{ inputs.target_build }}
+      ASC_REFERENCE_VERSION: ${{ inputs.reference_version }}
+      ASC_REFERENCE_BUILD: ${{ inputs.reference_build }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate exact build inputs
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, plistlib, re
+          version = re.compile(r'[0-9]{1,4}(\.[0-9]{1,4}){0,2}')
+          build = re.compile(r'[1-9][0-9]{0,9}')
+          if any(not pattern.fullmatch(os.environ[name]) for name, pattern in (
+              ('TARGET_VERSION', version), ('TARGET_BUILD', build),
+              ('ASC_REFERENCE_VERSION', version), ('ASC_REFERENCE_BUILD', build))):
+              raise SystemExit('Exact target and reference version/build inputs are required.')
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          info = plistlib.dumps({'CFBundleIdentifier': 'works.windmill.app',
+              'CFBundleShortVersionString': os.environ['TARGET_VERSION'], 'CFBundleVersion': os.environ['TARGET_BUILD']})
+          (root / 'status-input.plist').write_bytes(info)
+          receipt = {'identitySource': 'dispatch_inputs', 'sourceRevision': os.environ['GITHUB_SHA'],
+              'workflowRunID': os.environ['GITHUB_RUN_ID'], 'infoPlistSHA256': hashlib.sha256(info).hexdigest(),
+              'targetVersion': os.environ['TARGET_VERSION'], 'targetBuild': os.environ['TARGET_BUILD'],
+              'referenceVersion': os.environ['ASC_REFERENCE_VERSION'], 'referenceBuild': os.environ['ASC_REFERENCE_BUILD']}
+          (root / 'beta-status-request.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+
+      - name: Verify the read-only helper
+        run: |
+          python3 -m unittest discover -s apps/ios/App/Tools/tests -p test_app_store_build_status.py
+          xcrun swiftc -parse-as-library apps/ios/App/Tools/AppStoreBuildStatus.swift -o "$RUNNER_TEMP/app-store-build-status"
+
+      - name: Read established internal group access
+        timeout-minutes: 12
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          test -n "$ASC_KEY_ID" && test -n "$ASC_ISSUER_ID" && test -n "$ASC_KEY_P8_BASE64" || { echo 'App Store Connect read credentials are required.'; exit 1; }
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/beta-status-key.p8"' EXIT
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/beta-status-key.p8"
+          ASC_KEY_PATH="$RUNNER_TEMP/beta-status-key.p8" "$RUNNER_TEMP/app-store-build-status" \
+            "$RUNNER_TEMP/status-input.plist" "$RUNNER_TEMP/testflight-status.json"
+
+      - name: Retain bounded status and input provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-beta-access-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/testflight-status.json
+            ${{ runner.temp }}/beta-status-request.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Remove the ephemeral read key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/beta-status-key.p8"

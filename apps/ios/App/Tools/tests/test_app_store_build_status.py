@@ -36,3 +36,14 @@ class AppStoreBuildStatusTests(unittest.TestCase):
                              "The upload already exists; do not upload a duplicate.\n")
             self.assertEqual(result.stderr, "")
             self.assertFalse((Path(directory) / "status.json").exists())
+            for extra in ({"ASC_REFERENCE_VERSION": "0.2.0"},
+                          {"ASC_REFERENCE_VERSION": "private-reference-canary", "ASC_REFERENCE_BUILD": "23"},
+                          {"GITHUB_SHA": "private-source-canary"}, {"GITHUB_RUN_ID": "private-run-canary"}):
+                invalid = subprocess.run([str(binary), str(info), str(Path(directory) / "status.json")],
+                    env={"ASC_KEY_PATH": "private-path-canary", "ASC_KEY_ID": "key-id-canary", "ASC_ISSUER_ID": "issuer-canary", **extra},
+                    capture_output=True, text=True)
+                self.assertEqual(invalid.returncode, 1)
+                self.assertEqual(invalid.stdout, "::error::app_store_status outcome=unverified code=configuration. "
+                                 "The upload already exists; do not upload a duplicate.\n")
+                self.assertEqual(invalid.stderr, "")
+                self.assertFalse((Path(directory) / "status.json").exists())

@@ -2,6 +2,15 @@ name: iOS release
 
 on:
   workflow_dispatch:
+    inputs:
+      reference_version:
+        description: Prior verified TestFlight version used to discover established internal groups (optional pair)
+        required: false
+        type: string
+      reference_build:
+        description: Prior verified TestFlight build used with reference_version
+        required: false
+        type: string
 
 concurrency:
   group: ios-release
@@ -23,9 +32,22 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_REFERENCE_VERSION: ${{ inputs.reference_version }}
+      ASC_REFERENCE_BUILD: ${{ inputs.reference_build }}
       WM_APPLE_SIGN_IN_ENABLED: ${{ vars.IOS_APPLE_SIGN_IN_ENABLED || 'NO' }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Validate optional distribution reference
+        run: |
+          python3 - <<'PY'
+          import os, re
+          version, build = os.environ['ASC_REFERENCE_VERSION'], os.environ['ASC_REFERENCE_BUILD']
+          if bool(version) != bool(build) or version and (
+              not re.fullmatch(r'[0-9]{1,4}(\.[0-9]{1,4}){0,2}', version) or
+              not re.fullmatch(r'[1-9][0-9]{0,9}', build)):
+              raise SystemExit('Provide both valid distribution reference inputs, or leave both empty.')
+          PY
 
       - name: Select Xcode 26.3
         run: |
