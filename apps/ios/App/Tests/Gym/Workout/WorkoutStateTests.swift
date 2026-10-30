@@ -829,6 +829,27 @@ import SyncTesting
             [["action": "remove_movement", "outcome": "ok", "door": "workout"]])
   }
 
+  // A routine that names a movement twice gives the workout both entries; Remove from workout takes both, so the walk
+  // cannot bring the movement back with the second entry's targets.
+  @Test func aMovementTheRoutineNamesTwiceLeavesTheWorkoutWhole() throws {
+    let recorder = TelemetryRecorder(), (harness, gym) = try fixture(telemetry: recorder)
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Twice", entries: [
+      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)]), RoutineEntry(exerciseId: second),
+      RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 10, weightKg: 30)]),
+    ]))
+    #expect(saved(gym.save(&draft)))
+    let workout = try begin(gym, routine: try #require(gym.routines.first { $0.id == draft.current.id }))
+    #expect(workout.walk.order == [first, second] && workout.selected == first)
+    workout.remove(first)
+    workout.reconcile()
+    #expect(workout.session?.plan?.entries == [RoutineEntry(exerciseId: second)])
+    #expect(workout.walk.order == [second] && workout.selected == second && workout.message == nil)
+    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
+    #expect(reopened.walk.order == [second] && reopened.session?.plan?.entries == [RoutineEntry(exerciseId: second)])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
+            [["action": "remove_movement", "outcome": "ok", "door": "workout"]])
+  }
+
   // Removing another movement leaves the rack as the lifter set it; removing the one it stands at moves it to the next
   // movement, with that movement's draft.
   @Test func aRemovalMovesTheRackOnlyWhenItsMovementLeaves() throws {

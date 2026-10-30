@@ -508,7 +508,10 @@ struct FinishWorkout: Action {
     var next = walk; next.order.removeAll { $0 == id }
     let leaving = selected == id
     if leaving { next.selected = next.order.first }
-    guard planIndex(id).map({ revise([.removeMovement(index: $0)], walk: next, against: session?.plan) }) ?? keep(next) else { return }
+    // A routine may name a movement twice: it leaves whole, each of its entries last to first so every earlier place stands.
+    let entries = (session?.plan?.entries ?? []).enumerated().filter { $0.element.exerciseId == id }.map(\.offset)
+    let removals = entries.reversed().map { WorkoutPlan.Operation.removeMovement(index: $0) }
+    guard removals.isEmpty ? keep(next) : revise(removals, walk: next, against: session?.plan) else { return }
     drafts[id] = nil
     // The rack moves only when the movement it stood at left.
     guard leaving else { return }
