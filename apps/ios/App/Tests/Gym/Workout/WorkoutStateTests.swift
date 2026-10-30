@@ -829,6 +829,24 @@ import SyncTesting
             [["action": "remove_movement", "outcome": "ok", "door": "workout"]])
   }
 
+  // Removing another movement leaves the rack as the lifter set it; removing the one it stands at moves it to the next
+  // movement, with that movement's draft.
+  @Test func aRemovalMovesTheRackOnlyWhenItsMovementLeaves() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
+    let workout = try begin(gym, routine: plan)
+    #expect(workout.add(third))
+    workout.weightKg = 30; workout.reps = 12
+    workout.select(first)
+    workout.weightKg = 55; workout.reps = 7
+    #expect(workout.flushRack())
+    workout.remove(second)
+    #expect(workout.session?.plan?.entries.map(\.exerciseId) == [first, third] && workout.walk.order == [first, third])
+    #expect(workout.selected == first && workout.weightKg == 55 && workout.reps == 7)
+    workout.remove(first)
+    #expect(workout.session?.plan?.entries.map(\.exerciseId) == [third] && workout.walk.order == [third])
+    #expect(workout.selected == third && workout.weightKg == 30 && workout.reps == 12)
+  }
+
   @Test func addedMovementJoinsThePlanWithTheWalkInOneGestureOrNotAtAll() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixture(telemetry: recorder), workout = try begin(gym)
     let before = try #require(workout.session?.plan)

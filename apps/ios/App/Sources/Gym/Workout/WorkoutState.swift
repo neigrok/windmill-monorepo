@@ -506,9 +506,14 @@ struct FinishWorkout: Action {
     guard flushRack() else { return }
     guard canRemove(id) else { message = "A movement with a logged set stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
-    if selected == id { next.selected = next.order.first }
+    let leaving = selected == id
+    if leaving { next.selected = next.order.first }
     guard planIndex(id).map({ revise([.removeMovement(index: $0)], walk: next, against: session?.plan) }) ?? keep(next) else { return }
+    drafts[id] = nil
+    // The rack moves only when the movement it stood at left.
+    guard leaving else { return }
     prefill()
+    if let selected, let draft = drafts[selected] { restoreDraft(draft) }
   }
   // The movement takes `id`'s place, its planned sets and rest, after the edits `operations` stage, in one save.
   @discardableResult func swap(_ id: ID<Exercise>, to replacement: ID<Exercise>, after operations: [WorkoutPlan.Operation] = [],
