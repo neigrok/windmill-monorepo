@@ -13,7 +13,7 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
 class RegistryAndPersonalFactsTests {
-    @Test fun everyGymEntityDeclarationMatchesRegistryIncludingReadOnlySessionAndRoutineCreation() {
+    @Test fun everyGymEntityDeclarationMatchesRegistryIncludingSessionAndRoutineCreation() {
         val book = GymRules.book
         RegistryCheck.entity(Note, Note(Id("note0001", Note), "Title", "Body"), book)
         RegistryCheck.entity(WeighIn, WeighIn(testMoment.today, 80.0, testMoment.now), book)
@@ -24,9 +24,12 @@ class RegistryAndPersonalFactsTests {
         RegistryCheck.entity(Preferences, Preferences(), book)
         RegistryCheck.entity(Proposal, Proposal(proposalId, routineId, "revise", "Lower B", "Summary",
             listOf(RoutineChange("kept", squat, EntryTargets(entry), EntryTargets(entry)))), book)
+        RegistryCheck.entity(WorkoutProposal, WorkoutProposal(Id("wproposal1", WorkoutProposal), Id("session1", Session), "Summary",
+            listOf(RoutineChange("kept", squat, EntryTargets(entry), EntryTargets(entry)))), book)
+        // A session's fields are the server's but its plan, whose entries a revision bounds by the routine entry's rules.
         RegistryCheck.entity(Session, SyncSchema.registry)
         RegistryCheck.entity(RoutineCreation, SyncSchema.registry)
-        assertEquals(setOf(Note.type, WeighIn.type, Routine.type, Exercise.type, ExerciseName.type, TrainingSet.type, Preferences.type, Proposal.type, Session.type),
+        assertEquals(setOf(Note.type, WeighIn.type, Routine.type, Exercise.type, ExerciseName.type, TrainingSet.type, Preferences.type, Proposal.type, Session.type, WorkoutProposal.type),
             book.entities.map { it.type }.toSet())
     }
 
@@ -105,10 +108,10 @@ class RegistryAndPersonalFactsTests {
     @Test fun generatedGymSchemaPinsTypesCodesDeviceRowsAndCoachDefaults() {
         val gym = SyncSchema.registry.products.getValue("gym")
         assertEquals(listOf(Gym.Types.routine, Gym.Types.routineCreation, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set,
-            Gym.Types.note, Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.thread, Gym.Types.message),
+            Gym.Types.note, Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Gym.Types.workoutProposal, Gym.Types.thread, Gym.Types.message),
             SyncSchema.registry.types.filter { it.scope == "product:gym" }.map { it.name })
         assertEquals(listOf(Gym.Codes.payloadConflict, Gym.Codes.sessionFinished, Gym.Codes.sessionOpen, Gym.Codes.sessionOverlap, Gym.Codes.unknownExercise,
-            Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Gym.Codes.messageFinal), gym.member("codes").arr().map(Json::str))
+            Gym.Codes.badInstant, Gym.Codes.proposalSettled, Gym.Codes.proposalSuperseded, Gym.Codes.messageFinal, Gym.Codes.planLogged), gym.member("codes").arr().map(Json::str))
         assertEquals(listOf("movement", "movementOrder", "offer", "picture", "rack", "runningTurn"), gym.member("device").obj().keys.sorted())
         assertEquals(listOf("picture"), gym.member("device").obj().filterValues { it["localOnly"] == Json.of(true) }.keys.toList())
         assertEquals("running", Gym.Defaults.Message.state)
@@ -117,7 +120,7 @@ class RegistryAndPersonalFactsTests {
 
     @Test fun everyPublicGymReplicaCommandAppliesSpecsPinnedByRuleBook() {
         val public = setOf(Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession, Gym.Commands.finish,
-            Gym.Commands.applyProposal, Gym.Commands.dismissProposal)
+            Gym.Commands.applyProposal, Gym.Commands.dismissProposal, Gym.Commands.applyWorkoutProposal, Gym.Commands.dismissWorkoutProposal)
         val registered = SyncSchema.registry.commands.filter { it.member("name").str().startsWith("gym.") &&
             it.member("origins").arr().any { origin -> origin == Json.of("replica") } }.map { it.member("name").str() }.toSet()
         assertEquals(public, registered)

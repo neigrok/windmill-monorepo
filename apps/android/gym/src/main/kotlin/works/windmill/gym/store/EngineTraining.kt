@@ -874,6 +874,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             is GymRefusal.BadInstant -> refusal.refused.code.text to "Check the workout times and retry."
             is GymRefusal.ProposalSettled -> refusal.refused.code.text to "That proposal has already been decided."
             is GymRefusal.ProposalSuperseded -> refusal.refused.code.text to "That proposal has been replaced."
+            is GymRefusal.PlanLogged -> refusal.refused.code.text to "That movement already has a logged set."
             is GymRefusal.Other -> refusal.refused.code.text to "That change could not be saved."
         }
         return TrainingRefused(code, message)
