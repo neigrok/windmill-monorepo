@@ -142,11 +142,7 @@ data class AnswerReceipt(
         .groupBy { it.sessionId }.values.map { it.last() }
 }
 
-// Which ceiling took the composer down. ONE state serves both, because the connect door beneath it
-// is unrationed under either; which one it is decides only what is said and which door leads. Read
-// off the CODE and never off the sentence. `wordless` is what the room says for a reply that carried
-// no words of its own — and the two may never say the same thing, or an account at its 30-day
-// ceiling is told the next question comes back in a couple of hours.
+// The typed cap chooses its notice while the refused input remains editable.
 enum class AskCap(val wordless: String) {
     Daily(Ask.capReached),
     Ceiling(Ask.ceilingReached),
@@ -165,6 +161,8 @@ data class AskExchange(
     val attachments: List<CoachAttachment> = emptyList(),
     val atMs: Long = 0,
     val position: Long = 0,
+    val retryAtMs: Long? = null,
+    val refusalCode: String? = null,
 ) {
     val pending: Boolean get() = answer == null && trouble == null
 }
@@ -180,7 +178,7 @@ object Ask {
     const val fromLifter = "lifter"
 
     const val allowance = "Ten questions a day, three back to back."
-    const val capReached = "The next question frees up in a couple of hours."
+    const val capReached = "Coach cannot take another question yet. Try again later."
 
     // The account's 30-day ceiling. A different fact from the daily bucket and never the same
     // sentence: nothing frees up in a couple of hours under this one.
@@ -215,9 +213,10 @@ object Ask {
     const val interrupted = "Response interrupted. Retry to continue this response."
     const val stopped = "Response stopped."
 
-    const val signedOut = "Coach reads your log, so it needs you signed in."
+    const val signedOut = "Coach needs your workout log. Please sign in."
 
-    const val notHere = "Coach isn’t part of this Windmill. Your log is still yours to read."
+    const val notHere = "This Windmill does not have Coach. You can still read your log."
+    const val accountRequired = "I need your account to change a routine. Sign in, then ask again."
 
     val openers = listOf("What’s stalled?", "Which lifts are moving?", "Is my week too light?")
 

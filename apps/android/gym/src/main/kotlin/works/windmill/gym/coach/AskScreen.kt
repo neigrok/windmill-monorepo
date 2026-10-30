@@ -104,6 +104,8 @@ fun AskScreen(
     onOpenWorkout: ((String) -> Unit)? = null,
     onOpenChat: ((String) -> Unit)? = null,
     composerEnabled: Boolean = true,
+    composerVisible: Boolean = true,
+    onSignIn: (() -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
@@ -129,6 +131,7 @@ fun AskScreen(
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
 
 
@@ -198,7 +201,13 @@ fun AskScreen(
                                     else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim, modifier = Modifier.padding(horizontal = 4.dp))
                                 }
                             }
-                            exchange.trouble?.let { said ->
+                            if (exchange.refusalCode == "account_required") {
+                                CoachBubble(copyText = { Ask.accountRequired }) {
+                                    Text(Ask.accountRequired, style = CoachType.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+                                }
+                                onSignIn?.let { CoachAction("Sign in", it, primary = true) }
+                            }
+                            exchange.trouble?.takeUnless { exchange.refusalCode == "account_required" }?.let { said ->
                                 if ((cap != null || exchange.needsNew) && index == thread.lastIndex) return@let
                                 Trouble(
                                     said = said,
@@ -221,11 +230,10 @@ fun AskScreen(
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
                 }
                 cap?.let {
-                    Text(
-                        thread.lastOrNull()?.trouble ?: it.wordless,
-                        style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-                        color = skin.ink,
-                    )
+                    CoachCapNotice(it, thread.lastOrNull()) {
+                        if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
+                            .onFailure { telemetry.failure("gym.openConnections", it) }
+                    }
                 }
             }
             if (!presentation.followEnd && thread.isNotEmpty() && presentation.awayFromEnd) ElevatedButton(onClick = {
@@ -253,17 +261,13 @@ fun AskScreen(
                 .fillMaxWidth(),
         ) {
             when {
-                cap != null -> Column {
-                    if (thread.lastOrNull()?.again == true) CoachAction("Try again", onRetry)
-                    CapDoors(cap, origin, onAskNew, onConnections)
-                }
                 Ask.needsNew(thread) -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(thread.lastOrNull()?.takeIf { it.needsNew }?.trouble ?: Ask.threadFull, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
                     CoachAction("Ask new", onClick = {
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
                 }
-                else -> CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking,
+                else -> if (composerVisible) CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking,
                     onSend = { text, photo ->
                         val last = thread.lastOrNull()
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
@@ -273,91 +277,6 @@ fun AskScreen(
             }
         }
       }
-    }
-}
-
-@Composable
-fun AskSignedOutStance(seat: String, onSignIn: () -> Unit, onThreads: (() -> Unit)? = null) {
-    val skin = LocalGymColors.current
-    GymScreen(title = Ask.title, actions = {
-        onThreads?.let { history -> IconButton(onClick = history, modifier = Modifier.size(48.dp)) {
-            Icon(painterResource(R.drawable.gym_coach_history), "History", tint = skin.ink, modifier = Modifier.size(24.dp))
-        } }
-        YouSeat(seat)
-    }) {
-        Column(Modifier.fillMaxSize()) {
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
-                Text(Ask.signedOut, style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = skin.ink)
-            }
-            CoachAction("Sign in", onSignIn, primary = true, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-        }
-    }
-}
-
-// A bare 404 means the feature is not configured, so there is nothing to retry.
-@Composable
-fun AskAbsentStance(seat: String, onNotes: (() -> Unit)? = null, onConnections: (() -> Unit)? = null) {
-    val skin = LocalGymColors.current
-    GymScreen(title = Ask.title, actions = { YouSeat(seat) }) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            if (onNotes != null) {
-                Column(Modifier.padding(horizontal = 20.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                            .clickable(role = Role.Button, onClick = onNotes).padding(vertical = 12.dp),
-                    ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Notes", style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
-                            Text("What Coach should know", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-                        }
-                        Chevron()
-                    }
-                    Box(Modifier.fillMaxWidth().heightIn(min = 1.dp).background(skin.line))
-                }
-            }
-            Text(
-                Ask.notHere,
-                style = WindmillFont.body(15).copy(lineHeight = 23.sp),
-                color = skin.inkDim,
-                modifier = Modifier.padding(horizontal = GymLayout.gutter),
-            )
-            onConnections?.let { CoachAction("Connected log", it, modifier = Modifier.padding(horizontal = 20.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun ConnectDoor(origin: String, onConnections: (() -> Unit)?, label: String = "Connected log") {
-    val skin = LocalGymColors.current
-    val web = LocalUriHandler.current
-    val telemetry = LocalTelemetry.current
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(role = Role.Button) {
-            if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
-                .onFailure { telemetry.failure("gym.openConnections", it) }
-        }.padding(vertical = 12.dp),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.ink)
-            Text("Use your own AI tool", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-        }
-        Chevron()
-    }
-}
-
-@Composable
-private fun CapDoors(cap: AskCap, origin: String, onAskNew: () -> Unit, onConnections: (() -> Unit)?) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        if (cap == AskCap.Ceiling) ConnectDoor(origin, onConnections, "Connect own agent")
-        CoachAction(Threads.open, onAskNew)
-        if (cap == AskCap.Daily) ConnectDoor(origin, onConnections, "Connect own agent")
     }
 }
 

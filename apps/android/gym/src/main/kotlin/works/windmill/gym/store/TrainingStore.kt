@@ -69,6 +69,7 @@ import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.coach.CoachStore
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
@@ -105,12 +106,14 @@ class TrainingStore(
     private val telemetry: Telemetry = Telemetry.None,
     elapsedNanos: () -> Long = System::nanoTime,
     localCoach: LocalCoach? = null,
+    coachOnboarding: CoachOnboardingStore? = null,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds },
         onProgramChanged = { scope.launch { tried("gym.refreshWorkout") { readProgram() } } },
         rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
+        onboarding = coachOnboarding,
     )
 
     // A refusal is an answer the screen says, never a failure to report.

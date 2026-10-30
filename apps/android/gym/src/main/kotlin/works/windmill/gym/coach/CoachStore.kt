@@ -25,6 +25,15 @@ import works.windmill.gym.store.TrainingUnanswered
 import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
+import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
+import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.gym.coach.onboarding.CoachOnboardingOutcome
+import works.windmill.gym.coach.onboarding.CoachOnboardingImage
+import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import java.util.Base64
+import kotlinx.coroutines.flow.collect
 
 class CoachAdmission internal constructor() {
     private var admitted = true
@@ -44,6 +53,7 @@ class CoachStore internal constructor(
     private val elapsedNanos: () -> Long,
     private val scope: CoroutineScope,
     private val storageDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onboarding: CoachOnboardingStore? = null,
 ) {
     private val owner: String? get() = accountOwner()
     private val anonymousOwner by lazy {
@@ -64,6 +74,41 @@ class CoachStore internal constructor(
     private val chatVersions = mutableMapOf<Pair<String, String>, Long>()
     var archiveFailure by mutableStateOf<String?>(null)
         private set
+    private var onboardingRevision by mutableStateOf(0L)
+    var anonymousAccess by mutableStateOf(AnonymousCoachAccess.Checking)
+        private set
+    private var accessJob: Job? = null
+    val anonymous: Boolean get() = owner == null
+
+    init {
+        onboarding?.let { coordinator -> scope.launch {
+            coordinator.changes.collect {
+                onboardingRevision++
+                try {
+                    if (owner == null && localCoach?.onboarding()?.any { record -> record.owner == anonymousOwner &&
+                            (record.response?.errorCode ?: record.refusalCode) in setOf("device_bound", "installation_bound") } == true)
+                        anonymousAccess = AnonymousCoachAccess.Bound
+                } catch (failure: Exception) { reportFailure("gym.restoreConversation", failure) }
+            }
+        } }
+    }
+
+    fun refreshAnonymousAccess() {
+        if (owner != null) {
+            accessJob?.cancel()
+            accessJob = null
+            anonymousAccess = AnonymousCoachAccess.Checking
+            return
+        }
+        if (accessJob?.isActive == true) return
+        accessJob = scope.launch {
+            val access = onboarding?.access() ?: AnonymousCoachAccess.Unavailable
+            if (owner == null) {
+                if (access != anonymousAccess) telemetry.event("gym_action", mapOf("screen" to "coach", "action" to "access", "outcome" to access.name.lowercase()))
+                anonymousAccess = access
+            }
+        }
+    }
 
     private fun restoreArchive(seat: String) {
         if (seat in restoredOwners) return
@@ -80,7 +125,27 @@ class CoachStore internal constructor(
     fun chat(id: String): LocalChat? {
         val seat = archiveOwner
         restoreArchive(seat)
-        return archive[seat to id]
+        val chat = archive[seat to id] ?: return null
+        if (owner != null || onboarding == null) return chat
+        onboardingRevision
+        val records = onboarding.records(seat, id)
+        val recorded = records.map { it.requestId }.toSet()
+        val exchanges = chat.exchanges.filterNot { it.requestId in recorded } + records.map { record ->
+            val response = record.response
+            val code = response?.errorCode ?: record.refusalCode
+            val pending = record.pending && onboarding.active(seat, id)
+            AskExchange(record.request().text,
+                answer = response?.takeIf { it.status == "completed" }?.let { AskAnswer(it.message, ReadTally()) },
+                trouble = when {
+                    response?.status == "completed" || pending -> null
+                    code == "account_required" -> Ask.accountRequired
+                    code != null || response?.status == "expired" -> "Coach couldn’t take that one"
+                    else -> Ask.interrupted
+                },
+                again = response == null && !pending && code == null,
+                requestId = record.requestId, atMs = record.createdAtMs, refusalCode = code, attachments = listOfNotNull(record.attachment))
+        }
+        return chat.copy(exchanges = exchanges.sortedBy { it.atMs })
     }
 
     val selectedChatId: String?
@@ -132,22 +197,26 @@ class CoachStore internal constructor(
     }
 
     fun keepPosition(id: String, scroll: Int, followEnd: Boolean) {
-        val chat = chat(id) ?: return
+        val chat = archive[archiveOwner to id] ?: return
         if (chat.scroll == scroll && chat.followEnd == followEnd) return
         keepChat(archiveOwner, chat.copy(scroll = scroll.coerceAtLeast(0), followEnd = followEnd))
     }
 
-    fun isAsking(id: String): Boolean = busy[archiveOwner to id] == true
+    fun isAsking(id: String): Boolean {
+        onboardingRevision
+        return busy[archiveOwner to id] == true || owner == null && onboarding?.active(archiveOwner, id) == true
+    }
     fun upload(id: String): Float? = uploads[archiveOwner to id]
     fun pendingChat(except: String): LocalChat? {
         restoreArchive(archiveOwner)
         return archive.filterKeys { it.first == archiveOwner && it.second != except }
-            .values.firstOrNull { isAsking(it.id) || it.exchanges.lastOrNull()?.generation?.status == "running" }
+            .values.map { chat(it.id) ?: it }.firstOrNull { isAsking(it.id) || it.exchanges.lastOrNull()?.generation?.status == "running" }
     }
 
     fun submit(id: String, text: String, photo: CoachAttachment? = null, requestId: String = Ids.thread(),
         authenticatedOwner: String? = owner,
     ): Boolean {
+        if (authenticatedOwner == null && owner == null) return submitAnonymous(id, text, photo, requestId)
         if (authenticatedOwner == null || authenticatedOwner != owner) return false
         val seat = authenticatedOwner
         val chat = chat(id) ?: return false
@@ -185,7 +254,8 @@ class CoachStore internal constructor(
                 val current = archive[key] ?: chat
                 keepChat(seat, current.copy(exchanges = from + outcome.exchange(pending),
                     cap = (outcome as? AskOutcome.Capped)?.cap?.name, absent = outcome is AskOutcome.Absent))
-                if (outcome is AskOutcome.Answered && archiveOwner == seat) saveDraft(id, CoachDraft())
+                if (outcome is AskOutcome.Answered && draft(seat, id) == CoachDraft(pending.question, attachments.firstOrNull()))
+                    saveDraft(seat, id, CoachDraft())
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.saveConversation", failure) }
             finally {
@@ -195,6 +265,37 @@ class CoachStore internal constructor(
                     if (stopping[key] === admission) stopping.remove(key)
                 }
             }
+        }
+        jobs[key] = job
+        job.start()
+        return true
+    }
+
+    private fun submitAnonymous(id: String, text: String, photo: CoachAttachment?, requestId: String): Boolean {
+        val coordinator = onboarding ?: return false
+        if (anonymousAccess != AnonymousCoachAccess.Available || isAsking(id) || chat(id) == null) return false
+        if (text.trim().toByteArray().size > CoachOnboardingLimits.textBytes || text.isBlank() && photo == null) return false
+        val seat = archiveOwner
+        val held = CoachDraft(text, photo)
+        try { saveDraft(seat, id, held) } catch (_: Exception) { return false }
+        val key = seat to id
+        busy[key] = true
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val existing = coordinator.records(seat, id).firstOrNull { it.requestId == requestId && it.request().text == text }
+                val outcome = if (existing != null) coordinator.retry(seat, existing.requestId).await() else {
+                    val image = photo?.let { attachment ->
+                        val bytes = withContext(storageDispatcher) { localCoach?.photoFile(seat, attachment.id)?.readBytes() }
+                            ?: throw java.io.IOException("The attached photo is unavailable.")
+                        CoachOnboardingImage(attachment.mediaType, Base64.getEncoder().encodeToString(bytes))
+                    }
+                    if (owner != null || archiveOwner != seat || archive[key] == null) return@launch
+                    coordinator.send(id, text, image, photo).await()
+                }
+                if (outcome is CoachOnboardingOutcome.Answered && draft(seat, id) == held) saveDraft(seat, id, CoachDraft())
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.coachOnboarding", failure) }
+            finally { busy.remove(key); jobs.remove(key); onboardingRevision++ }
         }
         jobs[key] = job
         job.start()
@@ -316,7 +417,8 @@ class CoachStore internal constructor(
     val allThreads: List<AskThread> get() {
         val seat = archiveOwner
         restoreArchive(seat)
-        val local = archive.filterKeys { it.first == seat }.values.mapNotNull { chat ->
+        val local = archive.filterKeys { it.first == seat }.values.mapNotNull { saved ->
+            val chat = chat(saved.id) ?: saved
             val draft = draft(chat.id)
             if (chat.history == null && chat.exchanges.isEmpty() && draft.text.isBlank() && draft.photo == null) return@mapNotNull null
             val summary = chat.history ?: AskThread(chat.id)
@@ -370,7 +472,9 @@ class CoachStore internal constructor(
     }
 
     suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) =
-        importPhoto(key) { withContext(storageDispatcher) { CoachPhotos.read(resolver, uri) } }
+        importPhoto(key) { withContext(storageDispatcher) {
+            CoachPhotos.read(resolver, uri, maxBytes = if (owner == null) CoachOnboardingLimits.photoBytes else CoachPhotos.maxBytes)
+        } }
 
     internal suspend fun importPhoto(key: String, prepare: suspend () -> Pair<CoachAttachment, ByteArray>) {
         val seat = archiveOwner
@@ -788,14 +892,13 @@ sealed interface DraftOutcome {
 }
 
 // `Answered` carries the reply whole and the screen draws it without adding to it. `Refused` is the
-// log answering in its own words, which a retry cannot change; `Capped` is the one refusal that takes
-// the composer down, since the next question is hours away; `Failed` is the log going quiet, which
+// log answering in its own words; `Capped` retains its actual retry deadline; `Failed` is the log going quiet, which
 // is worth another tap. `Absent` is the deployment having no Coach. `Fresh` is the conversation being
 // full or another account's: the QUESTION is fine, so asking it again opens a new thread.
 sealed interface AskOutcome {
     data class Answered(val answer: AskAnswer) : AskOutcome
     data class Refused(val said: String, val generation: AskGeneration? = null) : AskOutcome
-    data class Capped(val said: String, val cap: AskCap, val generation: AskGeneration? = null) : AskOutcome
+    data class Capped(val said: String, val cap: AskCap, val generation: AskGeneration? = null, val retryAtMs: Long? = null) : AskOutcome
     data class Failed(val said: String, val generation: AskGeneration? = null) : AskOutcome
     data class Fresh(val said: String) : AskOutcome
     data object Absent : AskOutcome
@@ -809,9 +912,9 @@ sealed interface AskOutcome {
             return when {
                 refused.status == 404 -> Absent
                 refused.status >= 500 -> Failed(said ?: noAnswer, generation)
-                // Both ceilings take the composer down: the one unrationed way on, the connect door,
-                // is drawn there and is not drawn beside a live composer.
-                refused.refusal.code == "ask-daily-limit" -> Capped(said ?: AskCap.Daily.wordless, AskCap.Daily, generation)
+                refused.refusal.code == "ask-daily-limit" -> Capped(AskCap.Daily.wordless, AskCap.Daily, generation,
+                    (refused.refusal.retryAtMs as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull?.takeIf { it > 0 }
+                        ?: refused.retryAfterAtMs?.takeIf { it > 0 })
                 refused.refusal.code == "ask-out-of-budget" -> Capped(said ?: AskCap.Ceiling.wordless, AskCap.Ceiling, generation)
                 refused.refusal.code == "ask-generation-active" ->
                     Failed(said ?: "Coach is answering another message. Try again when it finishes.", generation)
@@ -830,7 +933,8 @@ sealed interface AskOutcome {
             ?: pending.copy(answer = answer)
         is Failed -> pending.copy(trouble = said, again = true, generation = generation ?: pending.generation)
         is Refused -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation)
-        is Capped -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation)
+        is Capped -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation,
+            retryAtMs = retryAtMs)
         is Fresh -> pending.copy(trouble = said, needsNew = true)
         Absent -> pending.copy(trouble = Ask.notHere)
     }

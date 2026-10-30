@@ -134,6 +134,12 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             try { installation.retainBindingIntent() }
             catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }
         }
+        val anonymousSeat = {
+            if (sessions.localSession == LocalSession.Absent && training.anonymous)
+                CoachOnboardingSeat(localCoach.anonymousOwner(), engine.activeReplica()) else null
+        }
+        coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
+        coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
         val store = TrainingStore(
             controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
             training = training,
@@ -147,16 +153,11 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                 }
             }, telemetry = telemetry,
             localCoach = localCoach,
+            coachOnboarding = coachOnboarding,
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry,
             lifecycle = AiInstallationLifecycle(engineSession, installation, scope, telemetry), handoffScope = scope)
-        val anonymousSeat = {
-            if (sessions.localSession == LocalSession.Absent && training.anonymous)
-                CoachOnboardingSeat(localCoach.anonymousOwner(), engine.activeReplica()) else null
-        }
-        coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
-        coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
         scope.launch {
             try { coachOnboarding.resume() }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }

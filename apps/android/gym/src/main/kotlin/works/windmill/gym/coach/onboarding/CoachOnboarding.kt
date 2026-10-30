@@ -13,6 +13,7 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.schema.SyncSchema
+import works.windmill.gym.coach.CoachAttachment
 
 @Serializable
 data class CoachOnboardingImage(val mimeType: String, val data: String)
@@ -48,7 +49,8 @@ data class CoachOnboardingResponse(
 @Serializable
 data class CoachOnboardingRecord(val owner: String, val chat: String, val replica: String, val requestId: String,
     val body: String, val createdAtMs: Long, val submitted: Boolean = false,
-    val response: CoachOnboardingResponse? = null, val refusalCode: String? = null) {
+    val response: CoachOnboardingResponse? = null, val refusalCode: String? = null,
+    val attachment: CoachAttachment? = null) {
     val pending: Boolean get() = refusalCode == null && response?.terminal != true
     fun request(): CoachOnboardingRequest = WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body)
 }

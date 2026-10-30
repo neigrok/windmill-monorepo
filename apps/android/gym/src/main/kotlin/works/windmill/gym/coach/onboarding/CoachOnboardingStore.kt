@@ -12,8 +12,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.LocalChat
+import works.windmill.gym.coach.CoachAttachment
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationStorageFailure
 import works.windmill.platform.net.WindmillApiException
@@ -21,6 +25,7 @@ import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
 
 data class CoachOnboardingSeat(val owner: String, val replica: String)
+enum class AnonymousCoachAccess { Checking, Available, Bound, Unavailable }
 
 private class OnboardingStorageFailure : IOException("The Coach request could not be retained.")
 
@@ -48,8 +53,30 @@ class CoachOnboardingStore(
     private data class ContextTurn(val id: String, val at: Long, val messages: List<CoachOnboardingContext>)
     private data class Active(val record: CoachOnboardingRecord, val job: Deferred<CoachOnboardingOutcome>)
     private val jobs = mutableMapOf<Pair<String, String>, Active>()
+    private val revision = MutableStateFlow(0L)
+    val changes = revision.asStateFlow()
 
-    fun send(chat: String, text: String, image: CoachOnboardingImage? = null): Deferred<CoachOnboardingOutcome> {
+    suspend fun access(): AnonymousCoachAccess {
+        val origin = seat() ?: return AnonymousCoachAccess.Unavailable
+        return try {
+            installation.forAnonymousSend()
+            if (seat() == origin) AnonymousCoachAccess.Available else AnonymousCoachAccess.Unavailable
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: WindmillApiException.Refused) {
+            if (seat() == origin && failure.refusal.code in setOf("device_bound", "installation_bound")) AnonymousCoachAccess.Bound
+            else AnonymousCoachAccess.Unavailable
+        } catch (_: WindmillApiException) { AnonymousCoachAccess.Unavailable }
+        catch (failure: Exception) {
+            reportUnexpected(failure)
+            AnonymousCoachAccess.Unavailable
+        }
+    }
+
+    fun active(owner: String, chat: String): Boolean = synchronized(jobs) {
+        jobs.values.any { it.record.owner == owner && it.record.chat == chat }
+    }
+
+    fun send(chat: String, text: String, image: CoachOnboardingImage? = null, attachment: CoachAttachment? = null): Deferred<CoachOnboardingOutcome> {
         try {
             val origin = seat() ?: return CompletableDeferred(CoachOnboardingOutcome.Refused("seat_changed", null))
             val captured = local.archivedChat(origin.owner, chat)
@@ -61,7 +88,7 @@ class CoachOnboardingStore(
                 val id = requestId()
                 val request = CoachOnboardingRequest(id, "conversation", text, context(origin.owner, captured), image)
                 val record = CoachOnboardingRecord(origin.owner, chat, origin.replica, id,
-                    WindmillJson.encodeToString(CoachOnboardingRequest.serializer(), request), now())
+                    WindmillJson.encodeToString(CoachOnboardingRequest.serializer(), request), now(), attachment = attachment)
                 return start(record, Attempt.Send)
             }
         } catch (failure: Exception) {
@@ -124,7 +151,10 @@ class CoachOnboardingStore(
         jobs[key]?.let { return@synchronized it.job }
         val job = scope.async(start = CoroutineStart.LAZY) { execute(record, attempt) }
         jobs[key] = Active(record, job)
-        job.invokeOnCompletion { synchronized(jobs) { if (jobs[key]?.job === job) jobs.remove(key) } }
+        revision.update { it + 1 }
+        job.invokeOnCompletion { synchronized(jobs) {
+            if (jobs[key]?.job === job) { jobs.remove(key); revision.update { it + 1 } }
+        } }
         job.start()
         job
     }
@@ -235,6 +265,7 @@ class CoachOnboardingStore(
     private suspend fun keep(record: CoachOnboardingRecord) {
         try {
             if (!withContext(storageDispatcher) { local.keepOnboarding(record) }) throw CancellationException("coach-request-deleted")
+            revision.update { it + 1 }
         }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {

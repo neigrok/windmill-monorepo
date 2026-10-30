@@ -103,8 +103,8 @@ The installation-scoped API supports dialogue and routine drafts before sign-in.
 seed exercise catalog, makes one bounded model call, and returns an assistant message with optional
 validated routine drafts. It
 does not create an account, a Coach conversation, a server routine or a stored photo. Account Coach,
-history, attachments and account tools still require account authentication. No client sends it new
-requests: signed out, iOS holds the whole conversation as phone turns
+history, attachments and account tools still require account authentication. Android uses this
+installation-scoped dialogue while anonymous access is available. Signed out, iOS holds the whole conversation as phone turns
 ([gym_coach.md](foundation/mobile/gym_coach.md)), and keeps the onboarding answers earlier
 versions stored so that their drafts can still be saved.
 
@@ -127,6 +127,17 @@ Conversation text is at most 4,000 UTF-8 bytes and may be empty only with an ima
 at most twelve `{role:"user"|"assistant",text}` messages, each nonblank and at most 4,000 bytes,
 with a total 16,000-byte text bound. An optional `image` uses the same validated photo shape below.
 The goal/program/photo modes remain supported for existing clients.
+
+The conversation model output requires `errorCode:null|"account_required"` beside `message` and
+`routines`. New drafts from supplied words/photos, ordinary dialogue and revisions of an unsaved
+draft remain anonymous. Reading or changing an existing account routine/log, saving a note or
+another account-only operation returns `account_required` with no drafts. The adapter validates
+the exact shape and enum; unknown codes, extra fields, malformed messages or policy plus drafts
+produce `invalid_result`. A valid null member is removed before the existing routine decoder.
+Legacy modes keep their schema. The public response shape is unchanged: the policy result is a
+durable `failed` response with `errorCode:"account_required"`, empty message and empty routines,
+available through the same POST replay and GET recovery. Clients use the typed code, never model
+prose, to show the fixed account-required Sign in state.
 
 Persist a lowercase UUID `requestId` before sending; reuse it and the exact input after a timeout or
 relaunch. Goal text is 1–1,000 UTF-8 bytes and requires 1–6 weekly days plus equipment. Supported goal
