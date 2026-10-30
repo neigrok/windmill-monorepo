@@ -823,7 +823,7 @@ import SyncTesting
     workout.remove(first)
     #expect(workout.walk == held && workout.session?.plan?.entries.map(\.exerciseId) == [first])
     #expect(workout.message == "A movement with a logged set stays in this workout.")
-    let reopened = GymModel(runner: harness.runner).workout
+    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
     #expect(reopened.walk.order == [first] && reopened.session?.plan?.entries.map(\.exerciseId) == [first])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
             [["action": "remove_movement", "outcome": "ok", "door": "workout"]])
@@ -839,7 +839,7 @@ import SyncTesting
     #expect(workout.session?.plan == SessionPlan(routine: before.routine, entries: before.entries + [RoutineEntry(exerciseId: second)]))
     #expect(workout.walk.order == [first, second] && workout.selected == second)
     #expect(workout.ledger(second).rows.map(\.place) == [.current] && workout.ledger(second).tally == "0 sets")
-    let reopened = GymModel(runner: harness.runner).workout
+    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
     #expect(reopened.walk == workout.walk && reopened.session?.plan == workout.session?.plan)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
             [["action": "add_movement", "outcome": "failed", "door": "workout"], ["action": "add_movement", "outcome": "ok", "door": "workout"]])
@@ -1432,17 +1432,20 @@ import SyncTesting
   // stands at the revision the workout started from; a failed save keeps the receipt and says the routine did not change.
   @Test func doneWithTheSwitchOnSavesThePlanToTheRoutineThatStoodAtTheStart() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixture(anonymous: false, telemetry: recorder)
-    let routine = try self.routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
+    // The model server holds no seed movements, so the routine names only the account's own.
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)])]))
+    #expect(saved(gym.save(&draft)))
+    let routine = draft.current
     harness.sync(); gym.refresh()
     let stored = try #require(gym.routines.first { $0.id == routine.id })
     let revision = try #require(stored.revision)
-    let edited = [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 3, weightKg: 50)]), RoutineEntry(exerciseId: third)]
+    let edited = [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 3, weightKg: 50), SetTarget(reps: 3, weightKg: 50)])]
     let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
                           routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: edited), routineRevision: revision)
     let saved = { recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } }
 
     let off = WorkoutReceiptData(session: session, sets: [], routine: stored)
-    #expect(off.changes.changeCount == 2 && off.offersSave && off.routine == "Private training name")
+    #expect(off.changes.changeCount == 1 && off.offersSave && off.routine == "Private training name")
     #expect(off.savePlan(gym) && gym.routines.first { $0.id == stored.id }?.entries == stored.entries && saved().isEmpty)
 
     let failing = WorkoutReceiptData(session: session, sets: [], routine: stored)
@@ -1458,11 +1461,14 @@ import SyncTesting
 
   @Test func aRoutineChangedSinceTheStartGivesTheSwitchItsSentenceAndSavesNothing() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixture(anonymous: false, telemetry: recorder)
-    let routine = try self.routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
+    // The model server holds no seed movements, so the routine names only the account's own.
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)])]))
+    #expect(saved(gym.save(&draft)))
+    let routine = draft.current
     harness.sync(); gym.refresh()
     let stored = try #require(gym.routines.first { $0.id == routine.id })
     let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
-                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: [RoutineEntry(exerciseId: first)]),
+                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 8)])]),
                           routineRevision: stored.revision)
     let receipt = WorkoutReceiptData(session: session, sets: [], routine: stored)
     receipt.savesPlan = true
