@@ -476,10 +476,14 @@ and Android disagree.
   04.6 and 08.54–08.57 with a READ ME in section 03 (`1717:15737`); the written half is
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`68`.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build draws the rest
-  target, the typed load and the reps wheel, Coach over the workout (08.54) and both proposal cards
-  (08.55–08.57): a change to this workout applies to the running plan, a routine change applies for
-  next time. It still differs where the lifter edits the plan: the plan stays frozen. 04.3's expanded
-  presentation draws a moving rest bar the build does not carry; 04.6 is its target.
+  target, the typed load and the reps wheel, Coach over the workout (08.54), both proposal cards
+  (08.55–08.57) and the in-flight plan edits (03.26–03.32): a change to this workout applies to the
+  running plan, a routine change applies for next time. 04.3's expanded presentation draws a moving
+  rest bar the build does not carry; 04.6 is its target. Where 03.32 and the build differ, for the
+  designer to settle: the receipt's PLAN CHANGES card speaks the proposal card's diff language, so a
+  changed set reads *Set 1 · 8 × 10 kg → 8 × 12.5 kg* and every set line of a changed movement stands
+  (03.32 draws *10 × 8 → 12.5 × 8* and the changed set alone); and a reorder an applied Coach change
+  made counts in *‹n› changes* but draws no Moved block, since the plan's diff carries no order lines.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

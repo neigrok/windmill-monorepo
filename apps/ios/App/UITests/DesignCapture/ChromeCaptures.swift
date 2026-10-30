@@ -77,7 +77,7 @@ final class ChromeCaptures: DesignCapture {
     workout.buttons["workout-weight"].tap()
     workout.typeLoad("105")
     workout.buttons["workout-log"].tap(); workout.descendants(matching: .any)["workout-current-set"].swipeLeft()
-    XCTAssertTrue(workout.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
+    XCTAssertTrue(workout.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
     XCTAssertTrue(workout.buttons["Done"].waitForExistence(timeout: 10))
     capture("gym-layout-receipt", look, workout)
     workout.swipeUp(velocity: .slow)

@@ -176,8 +176,14 @@ account/replica cannot publish into the active seat.
 
 The live workout uses a compact ledger with up to three 44-point rows at default text size;
 accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
-statistics strip. Assembly and Add movement share one sheet destination. Selecting a movement returns
-to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+statistics strip. Assembly, the movement menu's Add movement and the picker share one sheet destination. Selecting a
+movement returns to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+The movement's name is its native menu: a movement with nothing logged offers Edit sets and Swap movement, every one
+Add movement and Edit movement. A movement with a logged set keeps its plan. Edit sets (`Workout/EditSets.swift`) saves
+the whole entry once on ✓ as `ReviseWorkoutPlan` operations; Add movement, removal and Swap write the plan and the
+`rack:<session-id>` walk in one gesture (`ReviseWorkout`). After any plan edit the Live Activity's durable offer is
+minted again, and the rack prefills again only when the edit moved the selected movement's current slot and the lifter
+has not touched the rack since its last prefill.
 
 The finished-workout receipt places 👑 Share with Coach and the primary Done action in two full-width rows.
 A native top-trailing options menu offers Discard workout and its actual-set-count confirmation.
@@ -187,7 +193,9 @@ open events from `.menuActionTriggered`. The approved gold crown is the original
 `gym/coach-crown` image asset. Keep and review retry remain in the scrollable receipt content. Signed
 out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
 tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
-suggests it and no later receipt does, signed out or in.
+suggests it and no later receipt does, signed out or in. A workout whose plan changed carries *PLAN CHANGES*
+under the tiles, with a *Save to ‹routine›* switch that Done commits through `SaveRoutinePlan` while the routine stands
+at its revision at the start.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, the
@@ -197,7 +205,8 @@ the movement picker's written-program door opens You signed out or paused, Coach
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
 the workout's movement order, selected movement and hidden status. Lifting above the plan only
-logs the set; a routine's targets change in the routine editor or through Coach's proposals. A set logged before the clock passes the latest set completes 1 ms
+logs the set; a routine's targets change in the routine editor, through Coach's proposals or through the receipt's
+Save to ‹routine›. A set logged before the clock passes the latest set completes 1 ms
 after it, so every surface draws sets in logged order. Before the engine changes the replica,
 `GymBinding` saves the rack's pending value, ends the Live Activity and snapshots each signed-out workout for recovery; a failed
 snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's

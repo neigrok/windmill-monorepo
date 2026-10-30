@@ -811,14 +811,99 @@ import SyncTesting
     #expect(reopened.workout.selected == second && reopened.workout.weightKg == 67.5 && reopened.workout.reps == 8)
   }
 
-  @Test func plannedAndLoggedMovementsCannotBeRemoved() throws {
-    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)])
+  @Test func aMovementWithNothingLoggedLeavesThePlanAndTheWalkAndALoggedOneStays() throws {
+    let recorder = TelemetryRecorder(), (harness, gym) = try fixture(telemetry: recorder)
+    let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)])
     let workout = try begin(gym, routine: plan)
-    workout.add(third); workout.select(third); workout.logSet()
-    #expect(!workout.canRemove(first) && !workout.canRemove(second) && !workout.canRemove(third))
+    #expect(workout.logSet())
+    #expect(!workout.canRemove(first) && workout.canRemove(second))
+    workout.remove(second)
+    #expect(workout.session?.plan?.entries.map(\.exerciseId) == [first] && workout.walk.order == [first])
     let held = workout.walk
-    for id in [first, second, third] { workout.remove(id); #expect(workout.walk == held) }
-    #expect(workout.message == "A movement with sets or planned targets stays in this workout.")
+    workout.remove(first)
+    #expect(workout.walk == held && workout.session?.plan?.entries.map(\.exerciseId) == [first])
+    #expect(workout.message == "A movement with a logged set stays in this workout.")
+    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
+    #expect(reopened.walk.order == [first] && reopened.session?.plan?.entries.map(\.exerciseId) == [first])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
+            [["action": "remove_movement", "outcome": "ok", "door": "workout"]])
+  }
+
+  @Test func addedMovementJoinsThePlanWithTheWalkInOneGestureOrNotAtAll() throws {
+    let recorder = TelemetryRecorder(), (harness, gym) = try fixture(telemetry: recorder), workout = try begin(gym)
+    let before = try #require(workout.session?.plan)
+    harness.failNextCommit()
+    #expect(!workout.add(second))
+    #expect(workout.session?.plan == before && workout.walk.order == [first])
+    #expect(workout.add(second))
+    #expect(workout.session?.plan == SessionPlan(routine: before.routine, entries: before.entries + [RoutineEntry(exerciseId: second)]))
+    #expect(workout.walk.order == [first, second] && workout.selected == second)
+    #expect(workout.ledger(second).rows.map(\.place) == [.current] && workout.ledger(second).tally == "0 sets")
+    let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
+    #expect(reopened.walk == workout.walk && reopened.session?.plan == workout.session?.plan)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
+            [["action": "add_movement", "outcome": "failed", "door": "workout"], ["action": "add_movement", "outcome": "ok", "door": "workout"]])
+  }
+
+  // The ledger, its tally, the Live Activity's set count and the receipt's movements not started all read the plan as edited.
+  @Test func everyReaderOfThePlanReadsItAsEdited() async throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40), SetTarget(reps: 5, weightKg: 40)])
+    let workout = try begin(gym, routine: plan)
+    #expect(workout.revise([.retarget(index: 0, set: 1, target: SetTarget(reps: 3, weightKg: 50)), .addSet(index: 0)], against: workout.session?.plan))
+    #expect(workout.ledger(first).rows.map(\.reading) == ["40 × 5", "50 × 3", "50 × 3"] && workout.ledger(first).tally == "0 of 3 sets")
+    #expect(try WorkoutActivityController(gym: gym, board: nil).content(session: try #require(workout.session), offer: nil).state.plannedWorkingSetCount == 3)
+    #expect(workout.add(third))
+    workout.select(first)
+    #expect(workout.logSet())
+    await workout.finish()
+    let receipt = try #require(workout.receipt)
+    #expect(receipt.performed.map(\.exerciseId) == [first, second, third] && receipt.performed.map(\.reading) == ["1 × 5 · 40", "not started", "not started"])
+  }
+
+  @Test func aLoggedMovementRefusesEveryPlanEditAndSaysWhy() throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder)
+    let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)]), workout = try begin(gym, routine: plan)
+    #expect(workout.logSet())
+    let held = try #require(workout.session?.plan)
+    #expect(!workout.canEditPlan(first) && workout.canEditPlan(second))
+    for operation in [WorkoutPlan.Operation.retarget(index: 0, set: 0, target: SetTarget(reps: 3)), .addSet(index: 0), .setRest(index: 0, restSeconds: 60)] {
+      #expect(!workout.revise([operation], against: workout.session?.plan))
+      #expect(workout.message == "That movement already has a logged set.")
+    }
+    #expect(!workout.swap(first, to: third, against: workout.session?.plan))
+    #expect(workout.session?.plan == held && workout.walk.order == [first, second])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_plan_changed" }.map(\.properties) } ==
+            ["retarget", "add_set", "rest", "swap"].map { ["action": $0, "outcome": "refused", "door": "workout"] })
+  }
+
+  // A plan edit moves the rack only when it changes the current slot of a rack the lifter has not touched since its
+  // prefill; either way the durable offer is minted again against the plan as edited.
+  @Test func aPlanEditMovesAnUntouchedRackOnlyForItsCurrentSlotAndMintsTheOfferAgain() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40), SetTarget(reps: 5, weightKg: 40)])
+    let workout = try begin(gym, routine: plan)
+    let offered = try #require(workout.activityOffer())
+    #expect(workout.revise([.retarget(index: 0, set: 1, target: SetTarget(reps: 8, weightKg: 60))], against: workout.session?.plan))
+    #expect(workout.weightKg == 40 && workout.reps == 5)
+    let kept = try #require(workout.activityOffer())
+    #expect(kept.setID != offered.setID && kept.weightKg == 40 && kept.reps == 5)
+    #expect(try workout.activityRecord()?.baseline == workout.activityBaseline)
+    #expect(workout.revise([.retarget(index: 0, set: 0, target: SetTarget(reps: 3, weightKg: 50))], against: workout.session?.plan))
+    #expect(workout.weightKg == 50 && workout.reps == 3)
+    workout.weightKg = 52.5
+    #expect(workout.flushRack())
+    #expect(workout.revise([.retarget(index: 0, set: 0, target: SetTarget(reps: 2, weightKg: 70))], against: workout.session?.plan))
+    #expect(workout.weightKg == 52.5 && workout.reps == 3)
+    let adjusted = try #require(workout.activityOffer())
+    #expect(adjusted.weightKg == 52.5 && adjusted.reps == 3 && workout.logActivityOffer(adjusted))
+    #expect(workout.sets.map(\.weightKg) == [52.5])
+  }
+
+  @Test func swapTakesThePlacePlannedSetsAndSelectionOfTheMovement() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 40)])
+    let workout = try begin(gym, routine: plan)
+    #expect(workout.swap(first, to: third, against: workout.session?.plan))
+    #expect(workout.session?.plan?.entries.map(\.exerciseId) == [third, second] && workout.walk.order == [third, second])
+    #expect(workout.selected == third && workout.ledger(third).rows.map(\.place) == [.current])
   }
 
   @Test func failedWalkCommitRetainsOrderAndSelection() throws {
@@ -1341,6 +1426,58 @@ import SyncTesting
     let receipt = WorkoutReceiptData(session: session, sets: [b, value(gym, session: foreign), a])
     #expect(receipt.sets == [a, b])
     #expect(receipt.performed.map(\.exerciseId) == [first, second] && receipt.performed.map(\.reading) == ["2 × 5 · 40", "not started"])
+  }
+
+  // The receipt's switch saves this workout's plan as its routine, only on Done with the switch on and only while the routine
+  // stands at the revision the workout started from; a failed save keeps the receipt and says the routine did not change.
+  @Test func doneWithTheSwitchOnSavesThePlanToTheRoutineThatStoodAtTheStart() throws {
+    let recorder = TelemetryRecorder(), (harness, gym) = try fixture(anonymous: false, telemetry: recorder)
+    // The model server holds no seed movements, so the routine names only the account's own.
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)])]))
+    #expect(saved(gym.save(&draft)))
+    let routine = draft.current
+    harness.sync(); gym.refresh()
+    let stored = try #require(gym.routines.first { $0.id == routine.id })
+    let revision = try #require(stored.revision)
+    let edited = [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 3, weightKg: 50), SetTarget(reps: 3, weightKg: 50)])]
+    let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
+                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: edited), routineRevision: revision)
+    let saved = { recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } }
+
+    let off = WorkoutReceiptData(session: session, sets: [], routine: stored)
+    #expect(off.changes.changeCount == 1 && off.offersSave && off.routine == "Private training name")
+    #expect(off.savePlan(gym) && gym.routines.first { $0.id == stored.id }?.entries == stored.entries && saved().isEmpty)
+
+    let failing = WorkoutReceiptData(session: session, sets: [], routine: stored)
+    failing.savesPlan = true
+    harness.failNextCommit()
+    #expect(!failing.savePlan(gym) && gym.error == "Private training name wasn’t changed. Try again.")
+    #expect(gym.routines.first { $0.id == stored.id }?.entries == stored.entries)
+
+    #expect(failing.savePlan(gym))
+    #expect(gym.routines.first { $0.id == stored.id }?.entries == edited)
+    #expect(saved() == [["outcome": "failed"], ["outcome": "ok"]])
+  }
+
+  @Test func aRoutineChangedSinceTheStartGivesTheSwitchItsSentenceAndSavesNothing() throws {
+    let recorder = TelemetryRecorder(), (harness, gym) = try fixture(anonymous: false, telemetry: recorder)
+    // The model server holds no seed movements, so the routine names only the account's own.
+    var draft = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Private training name", entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 5, weightKg: 40)])]))
+    #expect(saved(gym.save(&draft)))
+    let routine = draft.current
+    harness.sync(); gym.refresh()
+    let stored = try #require(gym.routines.first { $0.id == routine.id })
+    let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
+                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 8)])]),
+                          routineRevision: stored.revision)
+    let receipt = WorkoutReceiptData(session: session, sets: [], routine: stored)
+    receipt.savesPlan = true
+    var renamed = Draft(opening: stored); renamed.current.name = "Renamed elsewhere"
+    #expect(saved(gym.save(&renamed)))
+    harness.sync(); gym.refresh()
+    #expect(receipt.offersSave && !receipt.savePlan(gym) && receipt.routineMoved && !receipt.offersSave)
+    #expect(gym.routines.first { $0.id == stored.id }?.entries == stored.entries)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } == [["outcome": "refused"]])
   }
 
   @Test func reviewDecodesPlanLastTimePerformedAndMixedComparison() throws {

@@ -124,6 +124,28 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func workoutPlanChangesCarryOnlyTheirActionOutcomeAndDoor() {
+    #expect(TelemetryPrivacy.events.contains("gym_workout_plan_changed"))
+    for action in ["retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest"] {
+      for door in ["workout", "proposal"] {
+        #expect(TelemetryPrivacy.properties(["action": action, "outcome": "refused", "door": door, "exerciseId": "private-id",
+                                             "name": "private-marker", "weightKg": "105", "reps": "5", "restSeconds": "120"]) ==
+                ["action": .label(action), "outcome": .label("refused"), "door": .label(door)])
+      }
+    }
+  }
+
+  @Test func editSetsIsAScreenOfItsOwn() {
+    #expect(TelemetryPrivacy.properties(["screen": "edit_sets", "exerciseId": "private-id"]) == ["screen": .label("edit_sets")])
+  }
+
+  @Test func receiptPlanSavesCarryOnlyTheirOutcome() {
+    #expect(TelemetryPrivacy.events.contains("gym_receipt_plan_saved"))
+    for outcome in ["ok", "refused", "failed"] {
+      #expect(TelemetryPrivacy.properties(["outcome": outcome, "routine": "private-marker", "changes": "2"]) == ["outcome": .label(outcome)])
+    }
+  }
+
   @Test func logWeightActionsExcludeMeasurementContent() {
     for item in ["weigh_in", "bodyweight"] {
       #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",
