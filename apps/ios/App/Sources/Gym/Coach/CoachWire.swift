@@ -65,7 +65,6 @@ nonisolated enum CoachCopy {
       default: "This suggestion is out of date."
       }
     case .proposalSettled: "This suggestion was already answered."
-    case .sessionOpen: "Finish your workout first."
     case .gone(let record, _) where record.type == Routine.type: routine + " is no longer in your program."
     default: nil
     }

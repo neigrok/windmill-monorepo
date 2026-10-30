@@ -36,7 +36,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
+| `training-reads.json` | Prefill, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -84,6 +84,10 @@ Coach action and review presentation keeps its existing formatter.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
 frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
+
+**Rest target.** `RestTarget` (`{planEntry?, sinceMs}`, the rest preference read from the drawn `prefs` record) is the
+plan entry's `restSeconds`, else the preference's `restSeconds`, else none: `{seconds, reached}` or `null`. `reached`
+turns true the moment `sinceMs` comes to `seconds × 1000`, and stays true past it.
 
 `ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `rpe,note`.
 `CorrectedSet` adds required `setNumber`. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
