@@ -50,8 +50,8 @@ std::vector<std::string> openObjects(const Json::Value& schema) {
 
 }
 
-TEST(gym_catalog_json_is_catalog_1_and_every_ability_carries_exactly_the_declared_fields) {
-  REQUIRE_EQ(catalog()["catalog"].asString(), std::string("catalog/1"));
+TEST(gym_catalog_json_is_catalog_2_and_every_ability_carries_exactly_the_declared_fields) {
+  REQUIRE_EQ(catalog()["catalog"].asString(), std::string("catalog/2"));
   REQUIRE(catalog()["abilities"].isArray());
   const std::set<std::string> fields{"name", "description", "input", "result", "class", "agent", "seats", "phrase", "ui"};
   std::set<std::string> names;
@@ -61,6 +61,10 @@ TEST(gym_catalog_json_is_catalog_1_and_every_ability_carries_exactly_the_declare
     if (ability.isMember("declared")) {
       CHECK(ability["declared"] == Json::Value(false));
       carried.erase("declared");
+    }
+    if (ability.isMember("since")) {
+      CHECK(ability["since"] == Json::Value("catalog/2"));
+      carried.erase("since");
     }
     CHECK(carried == fields);
     CHECK(names.insert(ability["name"].asString()).second);

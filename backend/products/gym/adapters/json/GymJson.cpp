@@ -220,6 +220,20 @@ ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& 
                        std::move(name), std::move(summary), entriesFrom(body), source};
 }
 
+// An absent `summary` draws the diff.
+WorkoutProposalWrite parseWorkoutProposalWrite(const Json::Value& body, const ProposalSource& source) {
+  if (!body.isObject()) throw InvalidTraining("a proposal must be a json object");
+  if (!body["id"].isString()) throw InvalidTraining("id must be a string");
+  if (!body["sessionId"].isString()) throw InvalidTraining("sessionId must be a string");
+  std::string summary;
+  if (body.isMember("summary") && !body["summary"].isNull()) {
+    if (!body["summary"].isString()) throw InvalidTraining("summary must be a string");
+    summary = body["summary"].asString();
+  }
+  return WorkoutProposalWrite{ProposalId{body["id"].asString()}, SessionId{body["sessionId"].asString()},
+                              std::move(summary), entriesFrom(body), source};
+}
+
 ExerciseWrite parseExerciseWrite(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a movement must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
@@ -682,6 +696,33 @@ std::string changeKindText(ChangeKind kind) {
   if (kind == ChangeKind::retargeted) return "retargeted";
   return "kept";
 }
+
+Json::Value changeJson(const RoutineChange& change) {
+  Json::Value line(Json::objectValue);
+  line["position"] = change.position;
+  line["kind"] = changeKindText(change.kind);
+  line["exerciseId"] = change.exercise.str();
+  if (change.before) line["before"] = targetsJson(*change.before);
+  if (change.after) line["after"] = targetsJson(*change.after);
+  return line;
+}
+
+Json::Value sourceJson(const ProposalSource& source) {
+  Json::Value body(Json::objectValue);
+  body["door"] = toString(source.door);
+  if (!source.connection.empty()) body["connection"] = source.connection;
+  if (!source.agent.empty()) body["agent"] = source.agent;
+  if (source.thread) body["thread"] = source.thread->str();
+  return body;
+}
+
+// A stored side of a diff, clamped as planFrom clamps an entry.
+std::optional<EntryTargets> targetsFrom(const Json::Value& stored) {
+  if (!stored.isObject()) return std::nullopt;
+  std::optional<int> restSeconds;
+  if (stored["restSeconds"].isInt()) restSeconds = stored["restSeconds"].asInt();
+  return EntryTargets{setTargetsFrom(stored["sets"]), restSeconds};
+}
 }
 
 Json::Value toJson(const RoutineProposal& proposal) {
@@ -691,18 +732,47 @@ Json::Value toJson(const RoutineProposal& proposal) {
   body["name"] = proposal.proposedName;
   Json::Value changes(Json::arrayValue);
   for (const RoutineChange& change : proposal.changes) {
-    Json::Value line(Json::objectValue);
-    line["position"] = change.position;
-    line["kind"] = changeKindText(change.kind);
-    line["exerciseId"] = change.exercise.str();
-    if (change.before) line["before"] = targetsJson(*change.before);
-    if (change.after) line["after"] = targetsJson(*change.after);
+    Json::Value line = changeJson(change);
     // On a removed row alone; zero means planned and never trained.
     if (change.kind == ChangeKind::removed) line["loggedSets"] = change.loggedSets;
     changes.append(line);
   }
   body["changes"] = changes;
   return body;
+}
+
+Json::Value toJson(const WorkoutProposal& proposal) {
+  Json::Value body(Json::objectValue);
+  body["id"] = proposal.id.str();
+  body["sessionId"] = proposal.session.str();
+  body["state"] = toString(proposal.state);
+  body["summary"] = proposal.summary;
+  body["changeCount"] = proposal.changeCount;
+  if (proposal.settledAtMs) body["settledAt"] = Json::Value::UInt64(*proposal.settledAtMs);
+  body["source"] = sourceJson(proposal.source);
+  body["baseRevision"] = proposal.baseRevision;
+  body["changes"] = Json::Value(Json::arrayValue);
+  for (const RoutineChange& change : proposal.changes) body["changes"].append(changeJson(change));
+  return body;
+}
+
+WorkoutProposal workoutProposalFrom(const Json::Value& record) {
+  std::vector<RoutineChange> changes;
+  for (const Json::Value& line : record["changes"]) {
+    const std::string kind = line["kind"].asString();
+    changes.push_back(RoutineChange{static_cast<int>(changes.size()) + 1,
+                                    kind == "added" ? ChangeKind::added : kind == "removed" ? ChangeKind::removed
+                                        : kind == "retargeted" ? ChangeKind::retargeted : ChangeKind::kept,
+                                    ExerciseId{line["exerciseId"].asString()}, targetsFrom(line["before"]), targetsFrom(line["after"]), 0});
+  }
+  const std::optional<ThreadId> thread = record["threadId"].isString() ? std::optional(ThreadId{record["threadId"].asString()}) : std::nullopt;
+  const std::optional<std::uint64_t> settled = record["settledAt"].isUInt64() ? std::optional(record["settledAt"].asUInt64()) : std::nullopt;
+  return WorkoutProposal{Stored{}, ProposalId{record["id"].asString()}, SessionId{record["sessionId"].asString()},
+                         proposalStateFromStored(record.get("state", "pending").asString()),
+                         ProposalSource{proposalDoorFromStored(record["door"].asString()), record["connection"].asString(),
+                                        record["agent"].asString(), thread},
+                         record["summary"].asString(), record["baseRevision"].asInt(), record["changeCount"].asInt(),
+                         std::move(changes), settled};
 }
 
 // Each set's absences stay absent: no `reps` is `max`, no `weightKg` is last time's set.

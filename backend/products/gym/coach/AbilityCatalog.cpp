@@ -17,10 +17,12 @@ struct AppendixRow {
   AgentRule agent;
   AbilitySeats seats;
   AbilityHost host = AbilityHost::phone;
+  int since = kOldestCatalog;
+  ProposalTarget target = ProposalTarget::routine;
 };
 
 // Appendix C with the build's rulings applied: R1 keeps every log ability withheld, R2 runs the
-// shares on the server, R3 makes save_note a bound seat's ability.
+// shares on the server, R3 makes save_note a bound seat's ability. catalog/2 adds propose_workout_change.
 constexpr AppendixRow kAppendixC[] = {
     {"list_routines", AbilityClass::read, AgentRule::runs, AbilitySeats::any},
     {"list_exercises", AbilityClass::read, AgentRule::runs, AbilitySeats::any},
@@ -41,6 +43,8 @@ constexpr AppendixRow kAppendixC[] = {
     {"share_log", AbilityClass::add, AgentRule::runs, AbilitySeats::bound, AbilityHost::server},
     {"propose_routine_change", AbilityClass::change, AgentRule::proposes, AbilitySeats::any},
     {"propose_routine_removal", AbilityClass::remove, AgentRule::proposes, AbilitySeats::any},
+    {"propose_workout_change", AbilityClass::change, AgentRule::proposes, AbilitySeats::any, AbilityHost::phone, 2,
+     ProposalTarget::workout},
     {"revoke_share", AbilityClass::remove, AgentRule::runs, AbilitySeats::bound, AbilityHost::server},
     {"start_session", AbilityClass::add, AgentRule::withheld, AbilitySeats::any},
     {"log_set", AbilityClass::add, AgentRule::withheld, AbilitySeats::any},
@@ -190,10 +194,20 @@ AbilityCatalog AbilityCatalog::of(const std::vector<ToolDeclaration>& declaratio
       ability.agent = row->agent;
       ability.seats = row->seats;
       ability.host = row->host;
+      ability.since = row->since;
+      ability.target = row->target;
     }
     catalog.abilities_.push_back(std::move(ability));
   }
   return catalog;
+}
+
+AbilityCatalog AbilityCatalog::at(int version) const {
+  AbilityCatalog older;
+  older.version_ = version;
+  for (const Ability& ability : abilities_)
+    if (ability.since <= version) older.abilities_.push_back(ability);
+  return older;
 }
 
 const Ability* AbilityCatalog::find(std::string_view name) const {

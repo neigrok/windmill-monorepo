@@ -148,6 +148,27 @@ struct ProposalMintOutcome {
   ProposalMintError error;
 };
 
+// The whole plan the open workout would take on, in order; the caller mints the id as for a routine proposal.
+struct WorkoutProposalWrite {
+  ProposalId id;
+  SessionId session;
+  std::string summary;
+  std::vector<RoutineEntry> entries;
+  ProposalSource source;
+};
+
+// The spent-id split of ProposalMintError, and the workout's own refusals: `unknownSession` is absent and another
+// account's alike, `noPlan` a workout started with no routine, `finished` a closed one, `planLogged` a change to a
+// movement with a logged set (`exercise` names it), `invalidPlan` a plan the rules refuse otherwise, as a second entry
+// of a movement the workout plans once.
+enum class WorkoutProposalError { none, idTaken, idReused, unknownSession, noPlan, finished, unknownExercise, planLogged, invalidPlan, noChange };
+
+struct WorkoutProposalOutcome {
+  std::optional<WorkoutProposal> proposal;
+  WorkoutProposalError error;
+  std::optional<ExerciseId> exercise;
+};
+
 // A seed's slug and another lifter's custom id are both simply taken.
 enum class ExerciseInsertError { none, idTaken };
 
@@ -190,6 +211,7 @@ public:
   virtual ProposalMintOutcome propose(const UserId&, const ProposalWrite&) = 0;
   virtual ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                              const std::string&, const ProposalSource&) = 0;
+  virtual WorkoutProposalOutcome proposeWorkout(const UserId&, const WorkoutProposalWrite&) = 0;
   virtual ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) = 0;
   virtual std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) = 0;
   virtual NoteWriteOutcome saveInsight(const Note&) = 0;

@@ -16,101 +16,161 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           },
-          {
-            "exerciseId": "face-pull",
-            "sets": [
-              {
-                "reps": 15,
-                "weightKg": 15
-              },
-              {
-                "reps": 15,
-                "weightKg": 15
-              }
-            ]
-          }
+          {"exerciseId":"face-pull","sets":[{"reps":15,"weightKg":15},{"reps":15,"weightKg":15}]}
         ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1",
         "summary": "Lighter pull-ups after heavy squats, and face pulls to finish. 💪"
       },
       "name": "propose_workout_change"
+    },
+    "expect": {
+      "result": {
+        "note": "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them.",
+        "proposal": {
+          "baseRevision": 1,
+          "changeCount": 2,
+          "changes": [
+            {
+              "after": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "before": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "exerciseId": "back-squat",
+              "kind": "kept",
+              "position": 1
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "exerciseId": "dumbbell-bench-press",
+              "kind": "kept",
+              "position": 2
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+              "exerciseId": "pull-up",
+              "kind": "retargeted",
+              "position": 3
+            },
+            {
+              "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "exerciseId": "seated-cable-row",
+              "kind": "kept",
+              "position": 4
+            },
+            {
+              "after": {"sets":[{"reps":15,"weightKg":15},{"reps":15,"weightKg":15}]},
+              "exerciseId": "face-pull",
+              "kind": "added",
+              "position": 5
+            }
+          ],
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "sessionId": "sesOOOOOOOOOOOO1",
+          "source": {"door":"ask"},
+          "state": "pending",
+          "summary": "Lighter pull-ups after heavy squats, and face pulls to finish. 💪"
+        }
+      },
+      "sha256": "6cdb1a289cd6025ca8e1666577bd3360e8fe59364d8ed41257b75a5b8bdf11c3",
+      "writes": [
+        {
+          "f": {
+            "agent": "",
+            "changes": [
+              {
+                "after": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "before": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "exerciseId": "back-squat",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "exerciseId": "dumbbell-bench-press",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]},
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+                "exerciseId": "pull-up",
+                "kind": "retargeted"
+              },
+              {
+                "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "exerciseId": "seated-cable-row",
+                "kind": "kept"
+              },
+              {
+                "after": {"sets":[{"reps":15,"weightKg":15},{"reps":15,"weightKg":15}]},
+                "exerciseId": "face-pull",
+                "kind": "added"
+              }
+            ],
+            "connection": "",
+            "door": "ask",
+            "sessionId": "sesOOOOOOOOOOOO1",
+            "summary": "Lighter pull-ups after heavy squats, and face pulls to finish. 💪"
+          },
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "life": "alive",
+          "t": "workoutProposal"
+        }
+      ]
     }
   },
   {
@@ -131,88 +191,149 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
         ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1",
         "summary": "Lighter pull-ups after heavy squats."
       },
       "name": "propose_workout_change"
+    },
+    "expect": {
+      "result": {
+        "note": "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them.",
+        "proposal": {
+          "baseRevision": 1,
+          "changeCount": 1,
+          "changes": [
+            {
+              "after": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "before": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "exerciseId": "back-squat",
+              "kind": "kept",
+              "position": 1
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "exerciseId": "dumbbell-bench-press",
+              "kind": "kept",
+              "position": 2
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+              "exerciseId": "pull-up",
+              "kind": "retargeted",
+              "position": 3
+            },
+            {
+              "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "exerciseId": "seated-cable-row",
+              "kind": "kept",
+              "position": 4
+            }
+          ],
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "sessionId": "sesOOOOOOOOOOOO1",
+          "source": {"door":"ask"},
+          "state": "pending",
+          "summary": "Lighter pull-ups after heavy squats."
+        }
+      },
+      "sha256": "7b64d774a739d7153b1b77b78415f9d6f1ad7ea78f718360cfc7e22689c67b40",
+      "writes": [
+        {
+          "f": {
+            "agent": "",
+            "changes": [
+              {
+                "after": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "before": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "exerciseId": "back-squat",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "exerciseId": "dumbbell-bench-press",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]},
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+                "exerciseId": "pull-up",
+                "kind": "retargeted"
+              },
+              {
+                "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "exerciseId": "seated-cable-row",
+                "kind": "kept"
+              }
+            ],
+            "connection": "",
+            "door": "ask",
+            "sessionId": "sesOOOOOOOOOOOO1",
+            "summary": "Lighter pull-ups after heavy squats."
+          },
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "life": "alive",
+          "t": "workoutProposal"
+        }
+      ]
     }
   },
   {
@@ -233,88 +354,94 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
         ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1",
         "summary": "Lighter pull-ups after heavy squats."
       },
       "name": "propose_workout_change"
+    },
+    "expect": {
+      "result": {
+        "note": "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them.",
+        "proposal": {
+          "baseRevision": 1,
+          "changeCount": 1,
+          "changes": [
+            {
+              "after": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "before": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "exerciseId": "back-squat",
+              "kind": "kept",
+              "position": 1
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "exerciseId": "dumbbell-bench-press",
+              "kind": "kept",
+              "position": 2
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+              "exerciseId": "pull-up",
+              "kind": "retargeted",
+              "position": 3
+            },
+            {
+              "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "exerciseId": "seated-cable-row",
+              "kind": "kept",
+              "position": 4
+            }
+          ],
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "sessionId": "sesOOOOOOOOOOOO1",
+          "source": {"door":"ask"},
+          "state": "pending",
+          "summary": "Lighter pull-ups after heavy squats."
+        }
+      },
+      "sha256": "7b64d774a739d7153b1b77b78415f9d6f1ad7ea78f718360cfc7e22689c67b40",
+      "writes": []
     }
   },
   {
@@ -334,87 +461,157 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "chin-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
+    },
+    "expect": {
+      "result": {
+        "note": "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them.",
+        "proposal": {
+          "baseRevision": 1,
+          "changeCount": 2,
+          "changes": [
+            {
+              "after": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "before": {
+                "restSeconds": 180,
+                "sets": [
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100},
+                  {"reps":5,"weightKg":100}
+                ]
+              },
+              "exerciseId": "back-squat",
+              "kind": "kept",
+              "position": 1
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+              "exerciseId": "dumbbell-bench-press",
+              "kind": "kept",
+              "position": 2
+            },
+            {
+              "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+              "exerciseId": "chin-up",
+              "kind": "added",
+              "position": 3
+            },
+            {
+              "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+              "exerciseId": "seated-cable-row",
+              "kind": "kept",
+              "position": 4
+            },
+            {
+              "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+              "exerciseId": "pull-up",
+              "kind": "removed",
+              "position": 5
+            }
+          ],
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "sessionId": "sesOOOOOOOOOOOO1",
+          "source": {"door":"ask"},
+          "state": "pending",
+          "summary": ""
+        }
+      },
+      "sha256": "5ba1e13ceb243996cdcfcd28eab253839e0058437a8f0f83ed6e479828a911f6",
+      "writes": [
+        {
+          "f": {
+            "agent": "",
+            "changes": [
+              {
+                "after": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "before": {
+                  "restSeconds": 180,
+                  "sets": [
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100},
+                    {"reps":5,"weightKg":100}
+                  ]
+                },
+                "exerciseId": "back-squat",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},
+                "exerciseId": "dumbbell-bench-press",
+                "kind": "kept"
+              },
+              {
+                "after": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+                "exerciseId": "chin-up",
+                "kind": "added"
+              },
+              {
+                "after": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "before": {"sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]},
+                "exerciseId": "seated-cable-row",
+                "kind": "kept"
+              },
+              {
+                "before": {"restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},
+                "exerciseId": "pull-up",
+                "kind": "removed"
+              }
+            ],
+            "connection": "",
+            "door": "ask",
+            "sessionId": "sesOOOOOOOOOOOO1",
+            "summary": ""
+          },
+          "id": "tnW0rk0ut9Lp4Wz8R-1",
+          "life": "alive",
+          "t": "workoutProposal"
+        }
+      ]
     }
   },
   {
@@ -434,88 +631,33 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   },
   {
     "case": "a change to a movement with a logged set is refused",
@@ -534,84 +676,33 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   },
   {
     "case": "leaving out a movement with a logged set is refused",
@@ -630,66 +721,28 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   },
   {
     "case": "a finished workout is refused",
@@ -699,7 +752,7 @@
     "given": {
       "records": [
         {"born":"1789913600000:0:r_aaaaaaaaaaaa","f":{"createdEntries":[4,"1789913600000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"back-squat","restSeconds":180,"sets":[{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]},{"exerciseId":"dumbbell-bench-press","restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},{"exerciseId":"pull-up","restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},{"exerciseId":"seated-cable-row","sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]}],"1789913600000:0:r_aaaaaaaaaaaa"],"name":["Upper A","1789913600000:0:r_aaaaaaaaaaaa"],"position":[0,"1789913600000:0:r_aaaaaaaaaaaa"],"revision":[3,"1789913600000:0:r_aaaaaaaaaaaa"]},"id":"rtAAAAAAAAAAAAA1","life":["alive","1789913600000:0:r_aaaaaaaaaaaa"],"rc":1789913600000,"ru":1789913600000,"seq":4,"t":"routine"},
-        {"born":"1789998080000:0:srv","f":{"historyRoutineId":["rtAAAAAAAAAAAAA1","1789998080000:0:srv"],"plan":[{"entries":[{"exerciseId":"back-squat","restSeconds":180,"sets":[{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]},{"exerciseId":"dumbbell-bench-press","restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},{"exerciseId":"pull-up","restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},{"exerciseId":"seated-cable-row","sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]}],"routine":"Upper A"},"1789998080000:0:srv"],"routineId":["rtAAAAAAAAAAAAA1","1789998080000:0:srv"],"routineRevision":[3,"1789998080000:0:srv"],"startedAt":[1789998080000,"1789998080000:0:srv"],"closedBy":["finish","1789998080000:0:srv"],"finishedAt":[1789999940000,"1789998080000:0:srv"]},"id":"sesOOOOOOOOOOOO1","life":["alive","1789998080000:0:srv"],"rc":1789998080000,"ru":1789998080000,"seq":5,"t":"session"},
+        {"born":"1789998080000:0:srv","f":{"closedBy":["finish","1789998080000:0:srv"],"finishedAt":[1789999940000,"1789998080000:0:srv"],"historyRoutineId":["rtAAAAAAAAAAAAA1","1789998080000:0:srv"],"plan":[{"entries":[{"exerciseId":"back-squat","restSeconds":180,"sets":[{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]},{"exerciseId":"dumbbell-bench-press","restSeconds":120,"sets":[{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]},{"exerciseId":"pull-up","restSeconds":120,"sets":[{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]},{"exerciseId":"seated-cable-row","sets":[{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]}],"routine":"Upper A"},"1789998080000:0:srv"],"routineId":["rtAAAAAAAAAAAAA1","1789998080000:0:srv"],"routineRevision":[3,"1789998080000:0:srv"],"startedAt":[1789998080000,"1789998080000:0:srv"]},"id":"sesOOOOOOOOOOOO1","life":["alive","1789998080000:0:srv"],"rc":1789998080000,"ru":1789998080000,"seq":5,"t":"session"},
         {"born":"1789998320000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789998320000,"1789998320000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789998320000:0:r_aaaaaaaaaaaa"],"note":["","1789998320000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789998320000:0:r_aaaaaaaaaaaa"],"sessionId":["sesOOOOOOOOOOOO1","1789998320000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789998320000:0:r_aaaaaaaaaaaa"]},"id":"setO000000000001","life":["alive","1789998320000:0:r_aaaaaaaaaaaa"],"rc":1789998320000,"ru":1789998320000,"seq":6,"t":"set","v":{"setNumber":1}},
         {"born":"1789998560000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789998560000,"1789998560000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789998560000:0:r_aaaaaaaaaaaa"],"note":["","1789998560000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789998560000:0:r_aaaaaaaaaaaa"],"sessionId":["sesOOOOOOOOOOOO1","1789998560000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789998560000:0:r_aaaaaaaaaaaa"]},"id":"setO000000000002","life":["alive","1789998560000:0:r_aaaaaaaaaaaa"],"rc":1789998560000,"ru":1789998560000,"seq":7,"t":"set","v":{"setNumber":2}},
         {"born":"1789998800000:0:r_aaaaaaaaaaaa","f":{"completedAt":[1789998800000,"1789998800000:0:r_aaaaaaaaaaaa"],"exerciseId":["back-squat","1789998800000:0:r_aaaaaaaaaaaa"],"note":["","1789998800000:0:r_aaaaaaaaaaaa"],"reps":[5,"1789998800000:0:r_aaaaaaaaaaaa"],"sessionId":["sesOOOOOOOOOOOO1","1789998800000:0:r_aaaaaaaaaaaa"],"weightKg":[100,"1789998800000:0:r_aaaaaaaaaaaa"]},"id":"setO000000000003","life":["alive","1789998800000:0:r_aaaaaaaaaaaa"],"rc":1789998800000,"ru":1789998800000,"seq":8,"t":"set","v":{"setNumber":3}},
@@ -708,88 +761,33 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              },
-              {
-                "reps": 8,
-                "weightKg": 5
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":5},{"reps":8,"weightKg":5},{"reps":8,"weightKg":5}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   },
   {
     "case": "an unknown workout is refused",
@@ -808,35 +806,19 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesXXXXXXXXXXXX9",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           }
-        ]
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesXXXXXXXXXXXX9"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   },
   {
     "case": "an unknown movement is refused",
@@ -855,90 +837,33 @@
     },
     "call": {
       "input": {
-        "id": "tnW0rk0ut9Lp4Wz8R-1",
-        "sessionId": "sesOOOOOOOOOOOO1",
         "entries": [
           {
             "exerciseId": "back-squat",
             "restSeconds": 180,
-            "sets": [
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              },
-              {
-                "reps": 5,
-                "weightKg": 100
-              }
-            ]
+            "sets": [{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100},{"reps":5,"weightKg":100}]
           },
           {
             "exerciseId": "dumbbell-bench-press",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              },
-              {
-                "reps": 8,
-                "weightKg": 16
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":16},{"reps":8,"weightKg":16},{"reps":8,"weightKg":16}]
           },
           {
             "exerciseId": "pull-up",
             "restSeconds": 120,
-            "sets": [
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              },
-              {
-                "reps": 8,
-                "weightKg": 10
-              }
-            ]
+            "sets": [{"reps":8,"weightKg":10},{"reps":8,"weightKg":10},{"reps":8,"weightKg":10}]
           },
           {
             "exerciseId": "seated-cable-row",
-            "sets": [
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              },
-              {
-                "reps": 10,
-                "weightKg": 50
-              }
-            ]
+            "sets": [{"reps":10,"weightKg":50},{"reps":10,"weightKg":50},{"reps":10,"weightKg":50}]
           },
-          {
-            "exerciseId": "no-such-movement"
-          }
-        ]
+          {"exerciseId":"no-such-movement"}
+        ],
+        "id": "tnW0rk0ut9Lp4Wz8R-1",
+        "sessionId": "sesOOOOOOOOOOOO1"
       },
       "name": "propose_workout_change"
-    }
+    },
+    "expect": {"refused":"refused"}
   }
 ]
