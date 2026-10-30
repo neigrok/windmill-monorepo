@@ -203,7 +203,8 @@ struct EditSetsSheet: View {
     LabeledContent("Load") {
       HStack(spacing: RoomSpace.related) {
         LoadField(weightKg: Binding(get: { typedLoad ?? load }, set: { typedLoad = $0 }), basis: basis, focus: $loadFocused,
-                  identifier: "edit-sets-load", ended: { value in
+                  identifier: "edit-sets-load", ended: {
+                    let value = typedLoad ?? load
                     typedLoad = nil
                     if value != load { draft.retarget(row.id) { $0.weightKg = value } }
                     let next = afterLoad; afterLoad = nil; next?()
