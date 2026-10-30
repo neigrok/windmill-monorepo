@@ -225,7 +225,7 @@ final class WorkoutCaptures: DesignCapture {
       XCUIDevice.shared.press(.home)
       showLockScreen(springboard)
       XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: 20))
-      capture("04.2-live-activity", look, springboard)
+      capture("04.7-live-activity-compact", look, springboard)
       finishOutside(app)
     }
     XCUIDevice.shared.appearance = .light

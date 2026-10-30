@@ -193,8 +193,8 @@ final class GymModel {
         guard let self, self.observationGeneration == generation else { return }
         self.observeScopes(generation)
         // The views land a change one by one, after the store holds it; the first landing reads it all. A status the
-        // store does not hold (the connection, a failed push, the update) moves only what is unsent: the views read it
-        // as they draw, and the lock screen is redrawn here.
+        // store does not hold (the connection, a failed push, the update) moves only what is unsent, which the views read
+        // as they draw; the Live Activity reconciles here, since the account it serves is a status too.
         if self.runtime?.engine.lastChange != self.readThrough { self.refresh() } else { self.existingWorkoutActivity?.schedule() }
       }
     }
