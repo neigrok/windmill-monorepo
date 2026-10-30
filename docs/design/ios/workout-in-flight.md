@@ -92,7 +92,9 @@ CHANGES · {n} changes*, every edit against the routine — the lifter's and app
 proposals alike — in the proposal card's change rows, and one row
 *Save to {routine}* with a native switch, off by default. Done saves it through the routine save;
 otherwise nothing is written. The receipt keeps one primary. If the routine changed since the workout
-started, the switch gives way to *{routine} changed since you started.* The offer appears once, on
+started, the switch gives way to *{routine} changed since you started.* When the phone cannot tell
+which routine revision the workout started from, the card lists the changes with neither the switch
+nor that sentence. The offer appears once, on
 this receipt; swiping the receipt away saves nothing.
 
 ## Coach during a workout
