@@ -17,8 +17,9 @@ earlier versions kept and imports the routines they drafted. Its installation id
 Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
 records. The server serves catalog/1 and catalog/2 side by side, and its executor runs
-`propose_workout_change`; iOS speaks catalog/1, in which Coach is refused while a workout is open
-(§4.1).
+`propose_workout_change`. iOS speaks catalog/2: Coach answers during a workout, reads the open
+workout (§4.1), and its replica executor runs `propose_workout_change`, whose card the lifter
+applies to the running plan or rejects.
 
 **Adoption:**
 
@@ -200,7 +201,7 @@ The corpora hold `abilities/` (18 files), `rules/bodyweight.json` and `turns/`; 
 10,000-set history yet. The server executor writes the `abilities/` expectations, catalog/2's
 `propose_workout_change.json` included, and claims every case (`AbilitiesCorpusTest.cpp`); it also claims the `GymEstimate` and training-read cases of
 `domain/training-reads.json`, apart from the cases its test lists as other rules. The Swift replica
-executor claims every case of catalog/1's files; the share cases, which run on the server executor (§4.3),
+executor claims every case of the `abilities/` files, catalog/2's `propose_workout_change.json` included; the share cases, which run on the server executor (§4.3),
 it checks as refused on the phone. The Swift, Kotlin and web domain suites claim
 `rules/bodyweight.json`. The Kotlin suite marks `abilities/` and `turns/` not applicable, since
 Android runs no replica executor. The server loop and the iOS turn driver replay `turns/`.
@@ -663,7 +664,7 @@ event per ability call it ran: the catalog name and the outcome (`ok` or the ref
 carries text, pictures, results or ids. iOS sends both
 ([IOS_OBSERVABILITY.md](../../IOS_OBSERVABILITY.md)): `coach_turn` with its ability calls,
 refusals and answer bytes as counts, and a `coach_ability` for every call its executor ran, the
-four context reads included. Android sends neither. The server logs its own side of a turn
+context reads included: the four list reads and, while a workout is open, its `get_session`. Android sends neither. The server logs its own side of a turn
 (`coach_turn` and `coach_batch` lines, `backend/OBSERVABILITY.md`), the calls a phone refused
 counted by code.
 
