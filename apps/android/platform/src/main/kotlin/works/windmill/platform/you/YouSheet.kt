@@ -43,12 +43,14 @@ fun YouSheet(
     onDismiss: () -> Unit,
     destinations: List<YouDestination> = emptyList(),
     startSignIn: Boolean = false,
+    deletion: AccountDeletionStore? = null,
 ) {
     val scope = rememberCoroutineScope()
     val palette = LocalWindmillPalette.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var form by rememberSaveable(startSignIn) { mutableStateOf(startSignIn) }
+    val deletionPending = deletion?.transitionPending == true
+    var form by rememberSaveable(startSignIn) { mutableStateOf(startSignIn && !deletionPending) }
     var busy by remember(auth) { mutableStateOf(false) }
     var closing by remember(auth) { mutableStateOf(false) }
     val identity = remember(auth) { Any() }
@@ -88,7 +90,7 @@ fun YouSheet(
         }) {
         WindmillSheetWindow()
         WindmillSheetBack(onDismiss = { dismiss() }) {
-            if (form) formState.SaveableStateProvider("auth") {
+            if (form && !deletionPending) formState.SaveableStateProvider("auth") {
                 SignInDoor(auth, onDone = { dismiss() }, onBusy = { busy = it })
             }
             else Column(Modifier.fillMaxWidth()) {
@@ -97,24 +99,28 @@ fun YouSheet(
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
-                        auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
+                        if (deletionPending) Text("Deletion unconfirmed", style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.inkDim)
+                        else auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
                     }
                     auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
-                    destinations.forEach { destination ->
+                    val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
+                        listOf(YouDestination("account_deletion", if (deletionPending) "Check deletion" else "Delete account", deletion::open)) else emptyList()
+                    rows.forEach { destination ->
                         key(destination.id) {
                             Row(Modifier.fillMaxWidth()
                                 .clickable(enabled = !busy && !auth.signOutBusy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
                                 .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
-                                    color = palette.ink, modifier = Modifier.weight(1f))
+                                    color = if (destination.id == "account_deletion" && !deletionPending) MaterialTheme.colorScheme.error else palette.ink, modifier = Modifier.weight(1f))
                                 Icon(painterResource(R.drawable.you_chevron), contentDescription = null,
                                     tint = palette.inkDim, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
                 }
-                TextButton(onClick = {
+                if (deletionPending) Spacer(Modifier.height(64.dp))
+                else TextButton(onClick = {
                     if (busy || auth.signOutBusy || auth.signOutQuestion != null || closing) return@TextButton
                     if (auth.status !is AuthStatus.SignedIn) form = true
                     else scope.launch {

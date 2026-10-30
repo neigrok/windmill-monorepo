@@ -37,13 +37,18 @@ internal data class CoachDraftMove(val sourceOwner: String, val sourceChat: Stri
 
 internal class CoachDraftWriteFailure(cause: Exception) : Exception(cause)
 
-class LocalCoach internal constructor(private val file: File, private val write: (File, String) -> Unit) {
-    constructor(file: File) : this(file, AtomicDocument::write)
+class LocalCoach internal constructor(private val file: File, private val write: (File, String) -> Unit,
+    private val writesAllowed: () -> Boolean,
+) {
+    constructor(file: File, writesAllowed: () -> Boolean = { true }) : this(file, AtomicDocument::write, writesAllowed)
+    internal constructor(file: File, write: (File, String) -> Unit) : this(file, write, { true })
     companion object { const val fileName = "windmill-gym-coach.json" }
 
     @Serializable
     private data class Document(
         val anonymousId: String = "",
+        val ownerEpochs: Map<String, Long> = emptyMap(),
+        val deletedOwners: Set<String> = emptySet(),
         val selected: Map<String, String> = emptyMap(),
         val chats: Map<String, Map<String, LocalChat>> = emptyMap(),
         val pending: Map<String, Map<String, AskQuestion>> = emptyMap(),
@@ -60,6 +65,83 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
     private var document = restored.getOrDefault(Document())
 
+    class Authority internal constructor(val owner: String, internal val epoch: Long)
+    private var uncertainOwnerWrite: Pair<Document, Document>? = null
+    private val ownerStateUnreadable: Boolean get() = uncertainOwnerWrite != null
+
+    @Synchronized fun admit(owner: String): Authority {
+        checkWritable(owner)
+        return Authority(owner, document.ownerEpochs[owner] ?: 0L)
+    }
+
+    @Synchronized fun writable(owner: String): Boolean = restored.isSuccess && !ownerStateUnreadable &&
+        writesAllowed() && owner !in document.deletedOwners
+
+    @Synchronized fun current(authority: Authority): Boolean = writable(authority.owner) &&
+        authority.epoch == (document.ownerEpochs[authority.owner] ?: 0L)
+
+    @Synchronized fun <T> withAuthority(authority: Authority, body: () -> T): T {
+        if (!current(authority)) throw kotlinx.coroutines.CancellationException("coach-owner-retired")
+        return body()
+    }
+
+    private fun checkWritable(owner: String) {
+        ready()
+        if (!writable(owner))
+            throw kotlinx.coroutines.CancellationException("coach-owner-unavailable")
+    }
+
+    @Synchronized fun eraseOwner(owner: String) {
+        reconcileOwnerState()
+        ready()
+        check(!ownerStateUnreadable)
+        if (owner !in document.deletedOwners) {
+            val next = document.copy(
+                ownerEpochs = document.ownerEpochs + (owner to Math.addExact(document.ownerEpochs[owner] ?: 0L, 1)),
+                deletedOwners = document.deletedOwners + owner,
+                selected = document.selected - owner, chats = document.chats - owner,
+                pending = document.pending - owner, snapshots = document.snapshots - owner,
+                drafts = document.drafts - owner, keptDrafts = document.keptDrafts - owner,
+                choices = document.choices - owner, confirmations = document.confirmations - owner,
+                onboarding = document.onboarding - owner,
+            )
+            saveOwnerState(next)
+        }
+        if (draftRecovery?.owner == owner) draftRecovery = null
+        val photos = photoFile(owner, "directory-probe").parentFile
+        check(photos == null || !photos.exists() || photos.deleteRecursively()) { "The account photos could not be removed." }
+    }
+
+    @Synchronized fun reopenVerifiedOwner(owner: String) {
+        reconcileOwnerState()
+        ready()
+        check(!ownerStateUnreadable && writesAllowed())
+        if (owner in document.deletedOwners) saveOwnerState(document.copy(deletedOwners = document.deletedOwners - owner))
+    }
+
+    private fun reconcileOwnerState() {
+        val expected = uncertainOwnerWrite ?: return
+        val retained = diskJson.decodeFromString<Document>(file.readText())
+        check(retained == expected.first || retained == expected.second) { "The account archive changed." }
+        document = retained
+        uncertainOwnerWrite = null
+    }
+
+    private fun saveOwnerState(next: Document) {
+        val before = document
+        try { write(file, diskJson.encodeToString(Document.serializer(), next)) }
+        catch (failure: Exception) {
+            val retained = runCatching { diskJson.decodeFromString<Document>(file.readText()) }.getOrNull()
+            if (retained == null || retained != before && retained != next) {
+                uncertainOwnerWrite = before to next
+                throw failure
+            }
+            document = retained
+            if (retained != next) throw failure
+        }
+        document = next
+    }
+
     private var uncertainDraftWrite: kotlinx.serialization.json.JsonElement? = null
     private var draftRecovery: CoachDraftRecovery? = null
 
@@ -74,6 +156,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     private fun saveDraftChange(next: Document, recovery: CoachDraftRecovery, publishedFailure: (Exception) -> Unit) {
+        checkWritable(recovery.owner)
+        recovery.source?.let { checkWritable(it.first) }
         val encoded = diskJson.encodeToString(Document.serializer(), next)
         try { write(file, encoded) }
         catch (failure: Exception) {
@@ -98,6 +182,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun anonymousOwner(): String {
         ready()
         if (document.anonymousId.isNotEmpty()) return document.anonymousId
+        check(writesAllowed() && !ownerStateUnreadable)
         val next = document.copy(anonymousId = "anonymous:" + Ids.thread())
         write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
@@ -110,7 +195,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun select(owner: String, id: String) {
-        ready()
+        checkWritable(owner)
         require(chats(owner).any { it.id == id })
         if (document.selected[owner] == id) return
         val next = document.copy(selected = document.selected + (owner to id))
@@ -136,7 +221,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun saveChat(owner: String, chat: LocalChat, select: Boolean = false) {
-        ready()
+        checkWritable(owner)
         if (document.chats[owner]?.get(chat.id) == chat && (!select || document.selected[owner] == chat.id)) return
         val next = document.copy(
             selected = if (select) document.selected + (owner to chat.id) else document.selected,
@@ -166,7 +251,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun keepOnboarding(record: CoachOnboardingRecord): Boolean {
-        ready()
+        checkWritable(record.owner)
         val chat = document.chats[record.owner]?.get(record.chat) ?: return false
         require(record.request().requestId == record.requestId)
         val previous = document.onboarding[record.owner]?.get(record.requestId)
@@ -183,7 +268,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun keep(owner: String, question: AskQuestion) {
-        ready()
+        checkWritable(owner)
         require(!question.requestId.isNullOrBlank())
         val original = document.pending[owner]?.get(question.requestId)
         require(original == null || original == question) { "A retry must keep the original message." }
@@ -196,7 +281,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun snapshot(owner: String, requestId: String): AskGeneration? = document.snapshots[owner]?.get(requestId)
 
     @Synchronized fun record(owner: String, generation: AskGeneration) {
-        ready()
+        checkWritable(owner)
         val request = document.pending[owner]?.get(generation.requestId) ?: return
         val current = snapshot(owner, generation.requestId)
         if (current == generation || (current != null && current.id == generation.id && current.revision > generation.revision)) return
@@ -222,7 +307,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun confirmed(owner: String, requestId: String): AskGeneration? = document.confirmations[owner]?.get(requestId)?.generation
 
     @Synchronized fun confirm(owner: String, confirmation: CoachRoutineConfirmation) {
-        ready()
+        checkWritable(owner)
         val generation = confirmation.generation
         val current = document.confirmations[owner]?.get(generation.requestId)
         if (current != null && current.generation.revision >= generation.revision) return
@@ -233,7 +318,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun pauseRequest(owner: String, chat: LocalChat, requestId: String) {
-        ready()
+        checkWritable(owner)
         val next = document.copy(
             chats = document.chats + (owner to (document.chats[owner].orEmpty() + (chat.id to chat))),
             pending = document.pending + (owner to (document.pending[owner].orEmpty() - requestId)),
@@ -245,7 +330,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun clear(owner: String, threadId: String, requestId: String? = null) {
-        ready()
+        checkWritable(owner)
         val mine = document.pending[owner].orEmpty()
         val kept = mine.filterValues { it.thread != threadId || (requestId != null && it.requestId != requestId) }
         val hasDraft = document.drafts[owner]?.containsKey(threadId) == true
@@ -314,7 +399,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
 
     @Synchronized internal fun adoptPhoneDraft(targetOwner: String, publishedFailure: (Exception) -> Unit = {},
         current: () -> Boolean): CoachDraftMove? {
-        ready()
+        checkWritable(targetOwner)
+        if (!current()) return null
         val sourceOwner = document.anonymousId.takeIf { it.isNotEmpty() && it != targetOwner } ?: return null
         val sourceId = document.selected[sourceOwner] ?: return null
         val source = document.chats[sourceOwner]?.get(sourceId) ?: return null
@@ -357,7 +443,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun saveDraft(owner: String, key: String, draft: CoachDraft) {
-        ready()
+        checkWritable(owner)
         check(draftRecovery?.let { it.owner == owner && it.chat == key } != true)
         if ((document.drafts[owner]?.get(key) ?: CoachDraft()) == draft) return
         val mine = document.drafts[owner].orEmpty() + (key to draft)
@@ -377,7 +463,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
             document.chats[owner].orEmpty().values.flatMap { chat -> chat.exchanges.flatMap { it.attachments.map { photo -> photo.id } } }).toSet()
 
     @Synchronized internal fun discardUnusedPhotos(owner: String) {
-        ready()
+        checkWritable(owner)
         val retained = retainedPhotoIds(owner)
         photoFile(owner, "directory-probe").parentFile?.listFiles()?.forEach { photo ->
             if (photo.name !in retained) photo.delete()
@@ -391,7 +477,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized internal fun attachPhoto(owner: String, key: String, photo: CoachAttachment, bytes: ByteArray): Boolean {
-        ready()
+        checkWritable(owner)
         if (draftRecovery?.let { it.owner == owner && it.chat == key } == true) return false
         if (document.chats[owner]?.containsKey(key) != true) return false
         savePhoto(owner, photo.id, bytes)
@@ -401,6 +487,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun savePhoto(owner: String, id: String, bytes: ByteArray) {
+        checkWritable(owner)
         val target = photoFile(owner, id)
         val parent = requireNotNull(target.parentFile)
         check(parent.isDirectory || parent.mkdirs())

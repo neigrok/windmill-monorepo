@@ -486,6 +486,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Workout imports | `gym_import_recovery` | action: `inspect`, `keep`, `fix`, `retry`, `discard`; bounded state and outcome labels above |
 | Sign-in decisions | `gym_sign_in_decision` | state, action, outcome |
 | Sign-out question and recovery | `gym_sign_out` | state: `shown`; action: `keep`, `discard`, `cancel`; outcome: `completed`, `failed` |
+| Account deletion and recovery | `account_delete` | state: `shown`; action: `confirm`, `check`, `cleanup`, `back`, `done`; outcome: `started`, `pending_confirmation`, `cleanup_pending`, `ok`, `refused`, `failed`, `cancelled` |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
@@ -659,3 +660,13 @@ excluded. `auth_signed_out` fires when the saved account has been cleared. Finis
 failures report under `auth_sign_out`; best-effort original-credential logout uses `auth_logout`.
 Unreadable sealed choice data reports `session_sign_out_decode`. Existing storage and vault
 boundaries report failed writes or decryption. A pending choice does not run ordinary auth restore.
+
+Account deletion emits only the finite labels above. `ok` follows a confirmed closed receipt and
+successful local cleanup; an unknown result emits `pending_confirmation`, and owed local removal
+emits `cleanup_pending`. No email, account/operation id, recovery proof, credential, deadline or
+body is an event property. `account_delete_request` and `account_delete_result` identify transport
+failures; sealed-record failures use `account_delete_storage`, preparation uses
+`account_delete_prepare`, and local cleanup/recovery use `account_delete_cleanup` and
+`account_delete_recovery`. Expected refusals and offline results do not create Issues. Local
+storage reports use static messages. The first-party intake and native failure collector checks for
+this flow remain pending.

@@ -174,6 +174,41 @@ class GymEngineSession(
         } else if (choice == AuthSignOutChoice.Discard) engine.discardDormant(account)
     }
 
+    fun deletionUnsent(account: String): Int {
+        val snapshot = engine.snapshot()
+        val active = snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") }
+        check(active.member("meta")["account"]?.str() == account && active.member("meta").member("state").str() == "bound")
+        val pending = active["device"]?.obj().orEmpty().entries.sumOf { (product, rows) ->
+            WorkoutImports.pendingDeviceWork(product, rows.obj()).distinct().count { it in rows.obj() }
+        }
+        return active["outbox"]?.arr().orEmpty().count { it.member("state").str() in setOf("held", "ready", "sent") } + pending
+    }
+
+    private var deletingSignOut: works.windmill.sync.engine.SignOutSession? = null
+
+    suspend fun finishAccountDeletion(account: String, replica: String, held: AuthSignOutSession?) {
+        val snapshot = engine.snapshot()
+        val retained = snapshot.member("replicas").arr().filter { it.member("meta")["account"]?.str() == account }
+        check(retained.all { it.member("meta").member("replica").str() == replica }) { "The account replica changed." }
+        val original = retained.singleOrNull()
+        if (original == null) { held?.cancel(); deletingSignOut = null; return }
+        val meta = original.member("meta")
+        if (meta.member("state").str() == "dormant") {
+            held?.cancel()
+            engine.discardDormant(account)
+            deletingSignOut = null
+            return
+        }
+        check(meta.member("state").str() == "bound" && snapshot.member("active").str() == replica) { "The account changed." }
+        if (held != null) held.finish(AuthSignOutChoice.Discard)
+        else {
+            val opening = deletingSignOut ?: runtime.signOut().also { deletingSignOut = it }
+            check(opening.account == account)
+            opening.finish(SignOutChoice.discard)
+        }
+        deletingSignOut = null
+    }
+
     override suspend fun cleanupSignOut(account: String) {
         check(activeAccount() != account) { "The account is still selected." }
         clearAccountCredential(account)
