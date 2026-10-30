@@ -146,6 +146,7 @@ data class AnswerReceipt(
 enum class AskCap(val wordless: String) {
     Daily(Ask.capReached),
     Ceiling(Ask.ceilingReached),
+    Allowance("You have used all of your AI allowance."),
 }
 
 // `again` marks trouble worth a second tap; a cap, a malformed thread or an open workout are not.

@@ -3,6 +3,8 @@ package works.windmill.gym.coach
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -83,11 +85,34 @@ internal fun coachDailyNotice(deadline: Long?, now: Long, locale: Locale, zone: 
     return "You can ask again on $time."
 }
 
+internal fun coachAllowanceNotice(anonymous: Boolean, deadline: Long?, locale: Locale, zone: ZoneId): String {
+    if (anonymous) return AskCap.Allowance.wordless + "\nSign in to continue."
+    if (deadline == null || deadline <= 0) return AskCap.Allowance.wordless
+    val time = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withLocale(locale).withZone(zone)
+        .format(Instant.ofEpochMilli(deadline))
+    return AskCap.Allowance.wordless + "\nYou can use Coach again on $time."
+}
+
 @Composable
-internal fun CoachCapNotice(cap: AskCap, exchange: AskExchange?, onConnections: () -> Unit) {
+internal fun CoachCapNotice(cap: AskCap, exchange: AskExchange?, anonymous: Boolean = false,
+    onSignIn: (() -> Unit)? = null, onConnections: () -> Unit) {
     val skin = LocalGymColors.current
     val lifecycle = LocalLifecycleOwner.current
     val configuration = LocalConfiguration.current
+    if (cap == AskCap.Allowance) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(coachAllowanceNotice(anonymous, exchange?.retryAtMs, configuration.locales[0], ZoneId.systemDefault()),
+                style = CoachType.body(14).copy(lineHeight = 20.sp), color = skin.inkDim, textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 300.dp))
+            if (anonymous && onSignIn != null) FilledTonalButton(onClick = onSignIn,
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = skin.raised, contentColor = skin.ink),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
+                Text("Sign in", style = CoachType.body(14, FontWeight.Bold).copy(lineHeight = 20.sp, letterSpacing = .1.sp))
+            }
+        }
+        return
+    }
     var now by remember(exchange?.requestId) { mutableLongStateOf(System.currentTimeMillis()) }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) now = System.currentTimeMillis() }
