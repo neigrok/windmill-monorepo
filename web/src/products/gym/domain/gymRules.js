@@ -10,10 +10,12 @@ import { Exercise, ExerciseName } from './catalogue.js';
 import { Routine } from './routines.js';
 import { Proposal } from './proposals.js';
 import { Session, SetRules, TrainingSet } from './training.js';
+import { WorkoutProposal } from './workoutProposals.js';
 export { Session, SessionRules, SetRules, TrainingSet } from './training.js';
 export { Exercise, ExerciseName } from './catalogue.js';
 export { Routine } from './routines.js';
 export { Proposal } from './proposals.js';
+export { WorkoutProposal } from './workoutProposals.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
@@ -25,7 +27,7 @@ export { Proposal } from './proposals.js';
  * | { kind: 'stale' | 'gone' | 'taken' | 'future', subject: RecordRef, path: RefusalPath }
  * | { kind: 'full', type: string, cap: number, path: RefusalPath }
  * | { kind: 'sessionFinished' | 'sessionOpen' | 'sessionOverlap' | 'payloadConflict' | 'unknownExercise'
- *   | 'badInstant' | 'proposalSettled' | 'proposalSuperseded' | 'other', refused: Refused }} GymRefusal
+ *   | 'badInstant' | 'proposalSettled' | 'proposalSuperseded' | 'planLogged' | 'other', refused: Refused }} GymRefusal
  */
 
 /** @type {import('../../../platform/domain-kit/refusals.js').Refusals<GymRefusal>} */
@@ -49,6 +51,7 @@ export const GymRefusals = Object.freeze({
       case 'unknown-exercise': return Object.freeze({ kind: 'unknownExercise', refused });
       case 'proposal-settled': return Object.freeze({ kind: 'proposalSettled', refused });
       case 'proposal-superseded': return Object.freeze({ kind: 'proposalSuperseded', refused });
+      case 'plan-logged': return Object.freeze({ kind: 'planLogged', refused });
       default: return Object.freeze({ kind: 'other', refused });
     }
   },
@@ -95,18 +98,40 @@ export const RoutineRules = Object.freeze({
   targets: targetSpecs('routine.entries'),
 });
 
+// The rules every proposal's change lines obey, each proposal type under its own paths: a routine's at `proposal.*`, a
+// workout's at `workoutProposal.*`.
+/** @param {string} type */
+function changeRules(type) {
+  return Object.freeze({
+    summary: new TextSpec(`${type}.summary`, { unit: 'bytes', min: 0, max: 400, trim: true, nfc: true }),
+    changes: new CountSpec(`${type}.changes`, { min: 0, max: 100 }),
+    kind: new ChoiceSpec(`${type}.changes.kind`, ['kept', 'added', 'removed', 'retargeted']),
+    exercise: new TextSpec(`${type}.changes.exerciseId`, { unit: 'chars', min: 1, max: 64, trim: false, nfc: false }),
+    door: new ChoiceSpec(`${type}.door`, ['ask']),
+    connection: new TextSpec(`${type}.connection`, { unit: 'bytes', min: 0, max: 0, trim: false, nfc: false }),
+    agent: new TextSpec(`${type}.agent`, { unit: 'chars', min: 0, max: 0, trim: false, nfc: false }),
+    before: targetSpecs(`${type}.changes.before`),
+    after: targetSpecs(`${type}.changes.after`),
+    zeroTarget: `${type}.zeroTarget`,
+  });
+}
+
+/** @typedef {ReturnType<typeof targetSpecs>} TargetSpecs */
+/** @typedef {ReturnType<typeof changeRules>} ChangeRules */
+
 export const ProposalRules = Object.freeze({
   intent: new ChoiceSpec('proposal.intent', ['revise', 'remove']),
   name: new TextSpec('proposal.proposedName', { unit: 'bytes', min: 0, max: 240, trim: true, nfc: true }),
-  summary: new TextSpec('proposal.summary', { unit: 'bytes', min: 0, max: 400, trim: true, nfc: true }),
-  changes: new CountSpec('proposal.changes', { min: 0, max: 100 }),
-  kind: new ChoiceSpec('proposal.changes.kind', ['kept', 'added', 'removed', 'retargeted']),
-  exercise: new TextSpec('proposal.changes.exerciseId', { unit: 'chars', min: 1, max: 64, trim: false, nfc: false }),
-  door: new ChoiceSpec('proposal.door', ['ask']),
-  connection: new TextSpec('proposal.connection', { unit: 'bytes', min: 0, max: 0, trim: false, nfc: false }),
-  agent: new TextSpec('proposal.agent', { unit: 'chars', min: 0, max: 0, trim: false, nfc: false }),
-  before: targetSpecs('proposal.changes.before'),
-  after: targetSpecs('proposal.changes.after'),
+  change: changeRules('proposal'),
+});
+
+export const WorkoutProposalRules = Object.freeze({ change: changeRules('workoutProposal') });
+
+export const WorkoutPlanRules = Object.freeze({
+  entries: new CountSpec('session.plan.entries', { min: 0, max: 50 }),
+  absent: 'session.plan.absent',
+  duplicate: 'session.plan.duplicate',
+  operation: 'session.plan.operation',
 });
 
 export const CommandSpecs = Object.freeze([
@@ -125,20 +150,23 @@ let book = null;
 export const GymRules = Object.freeze({
   get specs() {
     const { targets, ...routine } = RoutineRules;
-    const { before, after, ...proposal } = ProposalRules;
+    /** @param {ChangeRules} rules */
+    const changeSpecs = ({ before, after, zeroTarget, ...change }) => [...Object.values(change), ...Object.values(before), ...Object.values(after)];
     return Object.freeze([...Object.values(NoteRules), WeighInRules.kg, PreferencesRules.units,
       ...Object.values(ExerciseRules), ...Object.values(routine), ...Object.values(targets),
-      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), SetRules.weightKg, SetRules.reps, SetRules.rpe, SetRules.note, ...CommandSpecs]);
+      ProposalRules.intent, ProposalRules.name, ...changeSpecs(ProposalRules.change), ...changeSpecs(WorkoutProposalRules.change),
+      WorkoutPlanRules.entries, SetRules.weightKg, SetRules.reps, SetRules.rpe, SetRules.note, ...CommandSpecs]);
   },
   /** @param {string} path */
   spec(path) { return GymRules.specs.find((spec) => spec.path === path) ?? null; },
   get book() {
     if (book !== null) return book;
-    book = new RuleBook(registry, [Note, WeighIn, Preferences, Exercise, ExerciseName, Routine, Session, TrainingSet, Proposal], [
+    book = new RuleBook(registry, [Note, WeighIn, Preferences, Exercise, ExerciseName, Routine, Session, TrainingSet, Proposal, WorkoutProposal], [
       ...GymRules.specs.map((spec) => Rule.localSpec(spec)),
       Rule.localCheck(WeighInRules.day, 'weighin', ['bad-instant']),
-      ...['routine.order', 'routine.zeroTarget', 'proposal.zeroTarget', 'set.completedAt', 'set.identity', 'set.setNumber',
-        'session.startedAt', 'session.finishedAt', 'session.sets', 'session.requestId']
+      ...['routine.order', 'routine.zeroTarget', ProposalRules.change.zeroTarget, WorkoutProposalRules.change.zeroTarget, 'set.completedAt', 'set.identity',
+        'set.setNumber', 'session.startedAt', 'session.finishedAt', 'session.sets', 'session.requestId', WorkoutPlanRules.absent,
+        WorkoutPlanRules.duplicate, WorkoutPlanRules.operation]
         .map((name) => Rule.localCheck(name, name.split('.')[0] ?? name)),
       Rule.serverDecided('routine.exercise', ['unknown-exercise'], 'routine'),
       Rule.serverDecided('proposal.exercise', ['unknown-exercise'], 'proposal'),
@@ -150,6 +178,15 @@ export const GymRules = Object.freeze({
       Rule.serverDecided('session.payload', ['payload-conflict'], 'session'),
       Rule.serverDecided('proposal.settled', ['proposal-settled'], 'proposal'),
       Rule.serverDecided('proposal.superseded', ['proposal-superseded'], 'proposal'),
+      Rule.serverDecided('session.plan.exercise', ['unknown-exercise'], 'session'),
+      Rule.serverDecided('session.plan.logged', ['plan-logged'], 'session'),
+      Rule.serverDecided('session.finished', ['session-finished'], 'session'),
+      Rule.serverDecided('session.stale', ['stale'], 'session'),
+      Rule.serverDecided('workoutProposal.exercise', ['unknown-exercise'], 'workoutProposal'),
+      Rule.serverDecided('workoutProposal.plan', ['plan-logged'], 'workoutProposal'),
+      Rule.serverDecided('workoutProposal.session', ['session-finished'], 'workoutProposal'),
+      Rule.serverDecided('workoutProposal.settled', ['proposal-settled'], 'workoutProposal'),
+      Rule.serverDecided('workoutProposal.superseded', ['proposal-superseded'], 'workoutProposal'),
     ]);
     return book;
   },
