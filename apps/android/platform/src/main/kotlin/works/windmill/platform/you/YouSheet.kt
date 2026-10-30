@@ -1,5 +1,6 @@
 package works.windmill.platform.you
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +13,11 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.painterResource
+import works.windmill.platform.R
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +77,14 @@ fun YouSheet(
         properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = palette.inkFaint) }) {
+        dragHandle = {
+            if (form) BottomSheetDefaults.DragHandle(color = palette.inkFaint)
+            else Box(Modifier.fillMaxWidth().height(24.dp).semantics { contentDescription = "Drag handle" },
+                contentAlignment = Alignment.Center) {
+                Box(Modifier.size(width = 32.dp, height = 4.dp).testTag("you-sheet-handle")
+                    .background(palette.inkDim, RoundedCornerShape(2.dp)))
+            }
+        }) {
         WindmillSheetWindow()
         WindmillSheetBack(onDismiss = { dismiss() }) {
             if (form) formState.SaveableStateProvider("auth") {
@@ -79,21 +92,23 @@ fun YouSheet(
             }
             else Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("You", style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = palette.ink)
-                    auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim) }
-                    Text("One account across Windmill.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
+                    .padding(start = 20.dp, end = 20.dp, top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
+                        auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
+                    }
                     refusal?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
                     destinations.forEach { destination ->
                         key(destination.id) {
-                            Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                            Row(Modifier.fillMaxWidth()
                                 .clickable(enabled = !busy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
-                                .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                                .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(destination.label, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp),
+                                Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
                                     color = palette.ink, modifier = Modifier.weight(1f))
-                                Text("›", style = WindmillFont.body(24).copy(lineHeight = 34.sp), color = palette.inkDim)
+                                Icon(painterResource(R.drawable.you_chevron), contentDescription = null,
+                                    tint = palette.inkDim, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -116,9 +131,10 @@ fun YouSheet(
                         }
                     }
                 }, enabled = !busy && !closing,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).heightIn(min = 56.dp)) {
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                        .padding(top = 20.dp, bottom = 16.dp).heightIn(min = 48.dp)) {
                     Text(if (busy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
-                        style = WindmillFont.body(16, FontWeight.Bold), color = palette.ink)
+                        style = MaterialTheme.typography.labelLarge, color = palette.ink)
                 }
             }
         }

@@ -49,10 +49,6 @@ object Bodyweight {
     const val nothingYet = "No weigh-ins yet. Weigh in from the log."
     const val noneInWindow = "no weigh-in in the last 90 days"
 
-    // Said once, under the Units control in settings when lb is picked: the bodyweight screen itself
-    // draws `kg` on its axis and its readings.
-    const val kilogramsOnly = "This phone still draws kg."
-
     const val minKg = 20.0
     const val maxKg = 400.0
 

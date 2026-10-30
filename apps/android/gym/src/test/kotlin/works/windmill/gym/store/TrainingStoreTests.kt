@@ -51,7 +51,6 @@ import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.coach.ThreadOutcome
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.platform.net.Refusal
@@ -1210,16 +1209,16 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testUnitsAreADisplayTransformAndReachNoWrite() = runTest {
+    fun feedbackPreferencesDoNotChangeKilogramSetWrites() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
             val opened = room.startExternalWorkout()
             room.store.choose("bench-press")
 
-            assertNull(room.store.savePreferences(GymPreferences(units = Units.Pounds)))
+            room.seedFeedback(GymPreferences(confirmSound = true))
             room.store.logSet(weightKg = 82.5, reps = 5)
 
-            assertEquals(Units.Pounds, room.store.preferences.units)
+            assertEquals(GymPreferences(confirmSound = true), room.store.preferences)
             assertEquals(listOf(82.5), room.training.session(opened.id)!!.sets.map { it.weightKg })
             assertEquals(listOf(82.5), room.store.sets.map { it.weightKg })
             val written = room.outbox().map { it.member("intent") }
@@ -1228,7 +1227,7 @@ class TrainingStoreTests {
             assertFalse("no unit reached the set that was written: $written", written.contains("lb"))
             assertFalse(written.contains("units"))
 
-            assertNull(room.store.savePreferences(GymPreferences(units = Units.Kilograms)))
+            room.seedFeedback(GymPreferences())
             assertEquals(listOf(82.5), room.training.session(opened.id)!!.sets.map { it.weightKg })
             runCurrent()
         }
@@ -1238,15 +1237,14 @@ class TrainingStoreTests {
     fun testAnAccountsOwnSettingsArriveOnSignInAndAreNotOverwrittenByAFreshPhone() = runTest {
         val server = EngineRoomFixture.server()
         anotherPhone(server, 1_800_000_000_000L) { phone ->
-            assertNull(phone.store.savePreferences(GymPreferences(units = Units.Pounds, confirmHaptic = false)))
+            phone.seedFeedback(GymPreferences(confirmHaptic = false))
             phone.sync(server)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.now = 1_800_000_100_000L
             room.select("alice"); room.pull(server); room.store.refreshEngine()
 
-            assertEquals(Units.Pounds, room.store.preferences.units)
-            assertEquals(false, room.store.preferences.confirmHaptic)
+            assertEquals(GymPreferences(confirmHaptic = false), room.store.preferences)
             assertTrue("a phone with nothing to say says nothing", room.outbox().isEmpty())
             runCurrent()
         }
@@ -1262,7 +1260,7 @@ class TrainingStoreTests {
             room.select("alice"); room.pull(server)
             room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
 
-            assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
+            room.seedFeedback(GymPreferences(confirmSound = true))
 
             assertEquals("the row on screen is the one the lifter chose", true, room.store.preferences.confirmSound)
             assertEquals(listOf("prefs prefs"), owed(room))
@@ -2056,7 +2054,7 @@ class TrainingStoreTests {
                 .targeting("bench-press", List(3) { SetTarget() }).capturingMovements(room.store.catalog))
             room.store.edit("bench-press", "Flat press")
             room.workout()
-            room.store.savePreferences(GymPreferences(confirmSound = true))
+            room.seedFeedback(GymPreferences(confirmSound = true))
             runCurrent()
             room.sync(server); room.store.refreshEngine()
             room.store.loadLastSets()
