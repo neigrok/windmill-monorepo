@@ -269,8 +269,8 @@ re-onboarding. The first run's only job is to get one page written and be worth 
   bodyweight, at any grant level: a weigh-in is a fact only the lifter observed. Bodyweight is
   read-only to Coach.
 - **Coach waits to be asked.** Beyond its first-open greeting it never speaks first: no check-in, no
-  unread badge, count or notification. During a workout it answers from a sheet over it, and the
-  routine changes it proposes there apply next time. No grades, no streaks; factual progress stays
+  unread badge, count or notification. On iOS it answers during a workout from a sheet over it,
+  and the routine changes it proposes there apply next time; Android and web refuse it mid-workout. No grades, no streaks; factual progress stays
   apart from supportive conversation.
 - **A set note is a record; a note is directive.** Lifter-typed set notes are data, never
   instruction. Notes are written for Coach, and Coach follows them.

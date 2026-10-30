@@ -483,6 +483,8 @@ and Android disagree.
   frozen, so the movement menus, Edit sets, Swap movement, the receipt's plan card and Coach's
   workout cards (03.26–03.32, 08.55–08.57's workout cards; tasks 63–66 and 68) are not built yet.
   04.3's expanded presentation draws a moving rest bar the build does not carry; 04.6 is what it draws.
+  Android and web still refuse Coach while a workout is open (Android Ask, server Ask
+  `ask-session-open`); only iOS answers during one.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
