@@ -27,8 +27,9 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     // The rest the selected movement asks, in seconds; none when it asks none, or the Activity began before the build drew it.
     let restSeconds: Int?
     let staleAt: Date
-    let unsentSetCount: Int
     let offer: WorkoutActivityOffer?
+    // The offer's numbers as the control reads them, *100 × 5*; none without an offer, or from a build before the Island drew them.
+    let effort: String?
 
     // The set's place: *Set 2 of 4* within the plan, *Set 5* past it or without one, and none before a movement is chosen.
     var place: String? {
@@ -39,28 +40,5 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
 
     // The rest target as the app's facts row writes it, *2:00*; none without one.
     var restReading: String? { restSeconds.map { "\($0 / 60):" + String(format: "%02d", $0 % 60) } }
-  }
-}
-
-// An Activity the previous build started keeps drawing across an update: its state named this count `unsyncedSetCount`.
-nonisolated extension WorkoutActivityAttributes.ContentState {
-  enum PreviousKeys: CodingKey { case unsyncedSetCount }
-
-  init(from decoder: any Decoder) throws {
-    let values = try decoder.container(keyedBy: CodingKeys.self)
-    title = try values.decode(String.self, forKey: .title)
-    movement = try values.decode(String.self, forKey: .movement)
-    load = try values.decode(String.self, forKey: .load)
-    reps = try values.decode(Int.self, forKey: .reps)
-    workingSetOrdinal = try values.decode(Int.self, forKey: .workingSetOrdinal)
-    plannedWorkingSetCount = try values.decodeIfPresent(Int.self, forKey: .plannedWorkingSetCount)
-    startedAt = try values.decode(Date.self, forKey: .startedAt)
-    lastSetAt = try values.decodeIfPresent(Date.self, forKey: .lastSetAt)
-    restSeconds = try values.decodeIfPresent(Int.self, forKey: .restSeconds)
-    staleAt = try values.decode(Date.self, forKey: .staleAt)
-    offer = try values.decodeIfPresent(WorkoutActivityOffer.self, forKey: .offer)
-    let previous = try decoder.container(keyedBy: PreviousKeys.self)
-    unsentSetCount = try values.decodeIfPresent(Int.self, forKey: .unsentSetCount)
-      ?? previous.decodeIfPresent(Int.self, forKey: .unsyncedSetCount) ?? 0
   }
 }

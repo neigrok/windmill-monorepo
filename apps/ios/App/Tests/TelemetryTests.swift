@@ -117,6 +117,12 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func restTargetReachedCarriesItsScreenAndNoTime() {
+    #expect(TelemetryPrivacy.events.contains("gym_rest_target_reached"))
+    #expect(TelemetryPrivacy.properties(["screen": "workout", "restSeconds": "120", "since": "134", "exerciseId": "private-id",
+                                         "name": "private-marker", "weightKg": "105", "reps": "5"]) == ["screen": .label("workout")])
+  }
+
   @Test func logWeightActionsExcludeMeasurementContent() {
     for item in ["weigh_in", "bodyweight"] {
       #expect(TelemetryPrivacy.properties(["screen": "log", "action": "open", "item": item, "weightKg": "82.5",

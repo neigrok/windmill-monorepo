@@ -1,10 +1,14 @@
 # The workout in flight — iOS Gym
 
-Status: ✅ Ready for dev — owner approved 2026-10-30. Nothing here is built yet. Boards are on
+Status: ✅ Ready for dev — owner approved 2026-10-30. Built: the rest target (03.20–03.22), the typed
+load and the reps wheel (03.23–03.25), Coach during a workout with its routine proposals applied for
+next time (08.54, 08.56's routine card), and the rest target outside the app on the expanded Island
+and the compact Lock Screen card (04.6, 04.7). Not built yet: the editable plan (03.26–03.32,
+08.55–08.57's workout cards). Boards are on
 the Gym file's iOS page: 03.20–03.32 in [03 · Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513)
-with the wave's READ ME (`1717:15737`), 04.6 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
+with the wave's READ ME (`1717:15737`), 04.6 and 04.7 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
 and 08.54–08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
-Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`68`.
+Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`69`.
 
 ## The fixture
 
@@ -114,9 +118,11 @@ this receipt; swiping the receipt away saves nothing.
 ## Outside the app
 
 The expanded Dynamic Island (04.6) shows the rest target under the clock, static, from the plan. The
-Lock Screen card carries it the same way in its compact form, 04.7 (🚧 In progress, task 69): 124 pt
-tall with a 150 × 52 pt Log set. Neither counts it down, fills a bar or changes colour on its own. The
-island stays black in both appearances; compact and minimal are unchanged (04.3).
+Lock Screen card carries it the same way in its compact form, 04.7 (✅ Ready for dev, task 69): 141 pt
+tall, *Set 3 of 4* on its own line and a 150 × 52 pt Log set. Neither counts the target down, fills a
+bar or changes colour on its own. Neither the card nor the island says what is unsent (owner ruling
+2026-10-30); unsent sets are said in the room only, and 04.4 draws the remaining states. The island
+stays black in both appearances; compact and minimal are unchanged (04.3).
 
 ## Events
 

@@ -266,7 +266,8 @@ extension WorkoutState {
       movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
-      restSeconds: workout.selected.flatMap { workout.restTarget($0)?.seconds }, staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
+      restSeconds: workout.selected.flatMap { workout.restTarget($0)?.seconds }, staleAt: clocks.staleAt, offer: offer,
+      effort: offer.map { Readout.effort(weightKg: $0.weightKg, reps: $0.reps) })
     return ActivityContent(state: state, staleDate: state.staleAt)
   }
   // The workout's start, last set and four-hour stale point on this phone's wall clock, the server offset subtracted.
