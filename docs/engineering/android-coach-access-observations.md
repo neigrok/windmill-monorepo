@@ -31,3 +31,11 @@ first pull and successful owned routine and workout reads; cached navigation is 
 One room function records deliberate tab choices, and one native picker serves both photo doors.
 The capture runner has an explicit empty-training capture-only path; it makes no workout
 performance claim. Empty setup captures remain a separate native acceptance gate.
+
+## Photo composer
+
+Photo removal commits its draft reference before publishing the change, so a failed document write
+leaves the attachment reachable and retryable. Pending requests retain their independent references
+during cleanup. Photo selection remains local until Send and emits only after its reference is durable.
+The static close icon uses the approved 20 × 20 source asset and Android's native converter; the
+thumbnail remains the selected image. Native picker, IME and screenshot acceptance is pending.

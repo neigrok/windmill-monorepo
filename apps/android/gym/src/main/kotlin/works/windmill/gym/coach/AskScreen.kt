@@ -12,6 +12,8 @@ import androidx.compose.runtime.setValue
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -113,6 +115,7 @@ fun AskScreen(
     val savedPosition = store.coach.chat(conversationId)
     val account = store.coach.accountKey
     val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var photoRequest by remember(account, conversationId) { mutableStateOf(0) }
     val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
     var sourcesTop by remember(conversationId) { mutableStateOf<Int?>(null) }
@@ -175,7 +178,7 @@ fun AskScreen(
       ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { viewportBottom = (it.positionOnScreen().y + it.size.height).roundToInt() }) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp, if (greeting) Alignment.Top else Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(12.dp, if (greeting && !keyboardVisible) Alignment.Top else Alignment.Bottom),
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("coach-thread")

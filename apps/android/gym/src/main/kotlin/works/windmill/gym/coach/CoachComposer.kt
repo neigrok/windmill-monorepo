@@ -23,7 +23,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +39,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -109,15 +109,22 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     LaunchedEffect(photoRequest) {
         if (photoRequest > 0 && enabled && !asking && !preparing) pickPhoto()
     }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column {
         editor.draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CoachPhoto(store, key, photo, Modifier.size(72.dp))
-                if (!asking) TextButton(onClick = {
-                    if (editor.sync(hidden)) editor.keep(editor.draft.copy(photo = null))
-                },
-                    enabled = enabled && !preparing, modifier = Modifier.padding(start = 12.dp).heightIn(min = 48.dp)) {
-                    Text("Remove photo", style = WindmillFont.body(14), color = if (enabled) skin.inkDim else skin.ink.copy(alpha = 0.38f))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (store.anonymous) "Sent to Coach. Saved only on this phone." else "Saved only in this chat.",
+                    style = WindmillFont.body(12).copy(lineHeight = 16.sp), color = skin.inkDim,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Box(Modifier.padding(start = 40.dp).size(width = 88.dp, height = 84.dp)) {
+                    CoachPhoto(store, key, photo, Modifier.offset(y = 12.dp).size(72.dp))
+                    if (!asking) Box(Modifier.offset(x = 44.dp, y = (-8).dp).size(48.dp), contentAlignment = Alignment.Center) {
+                        FilledIconButton(onClick = { if (editor.sync(hidden)) editor.removePhoto() },
+                            enabled = enabled && !preparing, modifier = Modifier.size(32.dp),
+                            colors = IconButtonDefaults.filledIconButtonColors(containerColor = skin.raised, contentColor = skin.inkDim)) {
+                            Icon(painterResource(R.drawable.gym_coach_close), "Remove photo", Modifier.size(20.dp))
+                        }
+                    }
                 }
             }
         }
@@ -197,6 +204,15 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
         }
         if (hidden || field.text.toString() == current.text) return store.draftSaved(key)
         return keep(current.copy(text = field.text.toString()))
+    }
+
+    fun removePhoto() {
+        if (store.accountKey != account) return
+        try {
+            store.removePhoto(key)
+            draft = store.draft(key)
+            trouble = null
+        } catch (_: Exception) { trouble = "Your draft couldn’t be saved. Try again." }
     }
 
     fun keep(next: CoachDraft): Boolean {
