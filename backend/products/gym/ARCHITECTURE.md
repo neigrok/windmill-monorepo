@@ -75,7 +75,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 9, minimum 9), and
+`windmill_gym` embeds `gym.registry.json` (version 12, minimum 11), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -188,8 +188,8 @@ unsupported smaller record claims, and clients use their existing unavailable me
   The registry bounds the document to 50 lines of at most 20 sets; the `Routine` constructor checks
   the same bounds and dense 1-based positions on what a server door builds.
 
-**The plan snapshot.** `gym_sessions.plan` freezes when the session is created, each line carrying
-its scheme under `sets` and omitting the key on an open line:
+**The workout's plan.** `gym_sessions.plan` holds what the workout asks for, each line carrying its
+scheme under `sets` and omitting the key on an open line:
 
 ```json
 { "routine": "Lower A",
@@ -200,12 +200,18 @@ its scheme under `sets` and omitting the key on an open line:
                { "exerciseId": "face-pull" } ] }
 ```
 
-**The engine composes it, always**: `gym.start` and `gym.importSession` copy the named routine's
-`name` and `entries` registers into `plan`, and its id into `routineId` and `historyRoutineId`, in the
-admission that creates the session; no client sends a plan. A routine the account cannot read leaves the session
-with no routine and no plan, so the server doors refuse it before admitting: `start_session` with
-its no-routine sentence, the import with `404 no such routine`. Mid-session changes are
-session-scoped; writing one back is an ordinary `entries` write through `/v1/sync`. In C++ the plan
+**A start takes it from the routine**: `gym.start` and `gym.importSession` copy the named routine's
+`name` and `entries` registers into `plan`, its id into `routineId` and `historyRoutineId`, and its
+`revision` into `routineRevision`, in the admission that creates the session. A routine the account
+cannot read leaves the session with no routine and no plan, so the server doors refuse it before
+admitting: `start_session` with its no-routine sentence, the import with `404 no such routine`.
+**The open workout's plan is then the lifter's**: a phone writes `plan` whole through `/v1/sync`,
+guarded on the stamp it read, and `gym.applyWorkoutProposal` writes the plan an agent proposed.
+GymRules holds both to engine A.2's plan rules — a movement with a logged set keeps its entries
+(`plan-logged`), a finished or stale workout takes no plan (`session-finished`), and the plan's
+`routine` never changes — and on each net change moves the server's `planRevision` and supersedes
+the workout's pending workout proposals. A plan change reaches the routine only as an ordinary
+`entries` write through `/v1/sync`. In C++ the plan
 is a typed `PlanSnapshot`, read through `planFrom` in `adapters/json/GymJson`, which clamps
 rather than throws: `routine` is a name only when it is a string, a plan that is not an object is no
 plan at all, a `sets` that is not an array drops its line, and a set that cannot be read opens its
