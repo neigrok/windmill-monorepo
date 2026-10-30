@@ -116,6 +116,45 @@ class CoachAnonymousChatTests {
         assertEquals(1, issued)
     }
 
+    @Test fun anonymousAllowanceAndOtherBudgetSentencesStayWithTheirOriginalChatAfterReopen() = runTest {
+        for (code in listOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required")) {
+            val file = File(temporary.root, code)
+            val local = LocalCoach(file)
+            val origin = CoachOnboardingSeat(local.anonymousOwner(), "replica")
+            val api = object : CoachOnboardingApi {
+                override suspend fun start(body: String, credential: String): CoachOnboardingResponse =
+                    throw WindmillApiException.Refused(429, Refusal("Server budget sentence", code = code))
+                override suspend fun get(requestId: String, credential: String): CoachOnboardingResponse = error("Unexpected GET")
+            }
+            val events = mutableListOf<Pair<String, Map<String, String>>>()
+            val failures = mutableListOf<String>()
+            val telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            }
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val coordinator = CoachOnboardingStore(local, installation(), api, { origin }, backgroundScope,
+                telemetry = telemetry, storageDispatcher = dispatcher, requestId = { id })
+            val store = CoachStore({ null }, { emptySet() }, {}, { null }, local, telemetry, System::nanoTime,
+                backgroundScope, dispatcher, coordinator)
+            store.refreshAnonymousAccess(); runCurrent()
+            val chat = store.freshChat()
+            assertTrue(store.submit(chat, "Retained input")); runCurrent()
+            val other = store.freshChat("Other draft")
+            val restored = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(file), telemetry, System::nanoTime,
+                backgroundScope, dispatcher, coordinator)
+            val exchange = restored.chat(chat)!!.exchanges.single()
+            assertEquals(if (code == "subject_exhausted") AskCap.Allowance.wordless else "Server budget sentence", exchange.trouble)
+            assertEquals("Allowance".takeIf { code == "subject_exhausted" }, restored.chat(chat)!!.cap)
+            assertNull(restored.chat(other)!!.cap)
+            assertEquals(CoachDraft("Retained input"), restored.draft(chat))
+            assertEquals(CoachDraft("Other draft"), restored.draft(other))
+            assertEquals(emptyList<String>(), failures)
+            val outcome = events.single { it.first == "gym_ask_outcome" }.second - "duration_ms"
+            assertEquals(mapOf("state" to "anonymous", "outcome" to "capped", "cap" to "allowance"), outcome)
+        }
+    }
+
     @Test fun dailyRefusalDeadlineSurvivesChatAndDocumentRecreationWithoutRestartingTheWait() = runTest {
         val file = File(temporary.root, "archive")
         val disk = LocalCoach(file)

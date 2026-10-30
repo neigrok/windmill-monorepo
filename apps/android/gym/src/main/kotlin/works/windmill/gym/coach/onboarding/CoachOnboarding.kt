@@ -50,7 +50,7 @@ data class CoachOnboardingResponse(
 data class CoachOnboardingRecord(val owner: String, val chat: String, val replica: String, val requestId: String,
     val body: String, val createdAtMs: Long, val submitted: Boolean = false,
     val response: CoachOnboardingResponse? = null, val refusalCode: String? = null,
-    val attachment: CoachAttachment? = null) {
+    val attachment: CoachAttachment? = null, val refusalMessage: String? = null) {
     val pending: Boolean get() = refusalCode == null && response?.terminal != true
     fun request(): CoachOnboardingRequest = WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body)
 }

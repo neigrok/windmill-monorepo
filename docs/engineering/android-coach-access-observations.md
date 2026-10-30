@@ -39,3 +39,11 @@ leaves the attachment reachable and retryable. Pending requests retain their ind
 during cleanup. Photo selection remains local until Send and emits only after its reference is durable.
 The static close icon uses the approved 20 × 20 source asset and Android's native converter; the
 thumbnail remains the selected image. Native picker, IME and screenshot acceptance is pending.
+
+## Allowance notices
+
+The typed refusal survives optional malformed timing because the transport retains allowance
+metadata as raw JSON and the notice reads only a positive integer reset. Anonymous notices are
+projected from the latest record of their original chat, so switching chats cannot carry a stale
+allowance cap across owners. Other budget refusals retain their server sentence in the local archive.
+Native allowance captures and event receipts are pending.

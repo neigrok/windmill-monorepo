@@ -247,7 +247,11 @@ fun AskScreen(
                     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) { ReceiptLine(receipt) }
                 }
                 cap?.let {
-                    CoachCapNotice(it, thread.lastOrNull()) {
+                    CoachCapNotice(it, thread.lastOrNull(), anonymous = store.coach.anonymous,
+                        onSignIn = onSignIn?.let { signIn -> {
+                            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "sign_in"))
+                            signIn()
+                        } }) {
                         if (onConnections != null) onConnections() else runCatching { web.openUri(ConnectedLog.setupUrl(origin)) }
                             .onFailure { telemetry.failure("gym.openConnections", it) }
                     }
