@@ -146,7 +146,7 @@ and otherwise dropping every `weightKg`; `{op:"add_movement",exerciseId}` append
 `{op:"remove_movement",index}`; `{op:"set_rest",index,restSeconds}`, null for the rest preference.
 
 **Plan rules.** In order: a session `drawn` lacks is `gone`; a finished session, or one the client stale rule
-draws closed, is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
+closes over its `stored` sets (a held delete of its last set keeps it open), is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
 `base` is `stale`. Then per operation: an index or set the entry
 lacks is `session.plan.operation` (`outOfRange`, at `operations.<k>`); an entry whose movement has a set alive
 in `drawn` or `stored` is `planLogged` with `{exerciseId}`; a target movement neither a seed nor drawn is
@@ -156,7 +156,12 @@ validates the proposal, then refuses an unknown movement, a duplicate entry (at 
 changed logged movement, the first in the order the stored and then the proposed plan name movements, its
 refusals about the proposal. Applying a pending workout proposal is refused `proposalSuperseded` with reason
 `workout-finished` when its session is closed, `workout-changed` when `planRevision` (1 when unset) is not its
-`baseRevision`, and `workout-moved` when a movement it changes has a logged set; `replaced` and `workout-changed` name a superseded one with and without `supersededBy`.
+`baseRevision` or when its diff, recomputed against the `stored` plan, is not its `changes` (kept lines included),
+and `workout-moved` when a movement it changes has a logged set; `replaced` and `workout-changed` name a superseded one with and without `supersededBy`.
+The recomputed diff is INV-9 applied to a plan edit the server has not confirmed: `stored` holds that edit and
+moves no `planRevision`, so it still decides, and the phone omits an Apply the server would refuse once the edit
+lands. No plan operation reorders movements; an unsent Apply of a proposal that only reorders them leaves an
+identical diff, so a second proposal reads current until the server's revision arrives.
 
 A decision is `{decision:{write:{gesture,result}}}`, `{decision:{unchanged:{result}}}` or
 `{decision:{refuse:<GymRefusal>}}`. The gym refusal is `{invalid:<violation>}`, or

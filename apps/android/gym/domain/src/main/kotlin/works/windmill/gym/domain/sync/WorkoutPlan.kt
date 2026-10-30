@@ -7,24 +7,30 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.schema.Gym
 
-// An open workout as an edit of its plan reads it: the session as this phone draws it (closed once stale) and as it
-// stores it, the movements with a set alive in it on either view, and the movements the account can name.
-data class OpenWorkout(val id: Id<Session>, val drawn: Session?, val stored: Session?, val logged: Set<Id<Exercise>>,
-    val catalogue: Catalogue, val moment: Moment) {
-    constructor(read: Reader, id: Id<Session>) : this(id,
-        read.repository(Session).find(id, ViewMode.drawn)?.let { SessionRules.drawn(it, read.repository(TrainingSet).all(ViewMode.drawn), read.moment.now) },
+// An open workout as an edit of its plan reads it: the session as stored and whether it is in sight, its sets as stored,
+// the movements a set alive in either view locks (a set the lifter just deleted locks its movement until the delete
+// lands), the movements the account can name, and the moment.
+data class OpenWorkout(val id: Id<Session>, val session: Session?, val visible: Boolean, val sets: List<TrainingSet>,
+    val logged: Set<Id<Exercise>>, val catalogue: Catalogue, val moment: Moment) {
+    constructor(read: Reader, id: Id<Session>) : this(read, id, read.repository(TrainingSet).all(ViewMode.stored).filter { it.sessionId == id })
+    private constructor(read: Reader, id: Id<Session>, stored: List<TrainingSet>) : this(id,
         read.repository(Session).find(id, ViewMode.stored),
-        (read.repository(TrainingSet).all(ViewMode.drawn) + read.repository(TrainingSet).all(ViewMode.stored)).filter { it.sessionId == id }.map { it.exerciseId }.toSet(),
+        read.repository(Session).find(id, ViewMode.drawn) != null,
+        stored,
+        (read.repository(TrainingSet).all(ViewMode.drawn).filter { it.sessionId == id } + stored).map { it.exerciseId }.toSet(),
         Catalogue(read), read.moment)
 
-    // A workout this phone does not draw is gone; a closed one is finished, said of the record the edit writes.
+    // Closed by its finish, or by the stale rule four hours past its last stored set.
+    val isClosed: Boolean get() = session != null && !SessionRules.drawn(session, sets, moment.now).isOpen
+
+    // A workout out of sight is gone; a closed one is finished, said of the record the edit writes.
     fun refusal(subject: RecordRef): GymRefusal? {
-        if (drawn == null || stored == null) return GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted))
-        if (!drawn.isOpen) return GymRefusal.predicted(Gym.Codes.sessionFinished, subject)
+        if (session == null || !visible) return GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted))
+        if (isClosed) return GymRefusal.predicted(Gym.Codes.sessionFinished, subject)
         return null
     }
 
-    val plan: PlanSnapshot get() = stored?.plan ?: throw Violation(WorkoutPlanRules.absent, Path("plan"), Violation.Reason.Custom("absent"))
+    val plan: PlanSnapshot get() = session?.plan ?: throw Violation(WorkoutPlanRules.absent, Path("plan"), Violation.Reason.Custom("absent"))
 }
 
 // One edit of the plan. It names the entry it edits by `index`, a planned set of that entry by `set`, and the movement it
@@ -141,7 +147,7 @@ class ReviseWorkoutPlan(val sessionId: Id<Session>, val base: PlanSnapshot?, val
         }
         if (revised == stored) return Decision.Unchanged(Unit)
         val plan = Plan()
-        plan.update(Valid(loaded.stored!!.copy(plan = revised), Session, listOf("plan"), loaded.moment), guarded = true)
+        plan.update(Valid(loaded.session!!.copy(plan = revised), Session, listOf("plan"), loaded.moment), guarded = true)
         return Decision.Write(plan, Unit)
     }
 }

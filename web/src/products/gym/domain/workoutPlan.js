@@ -19,22 +19,25 @@ import { Readout } from './trainingReads.js';
 /** @typedef {import('../../../platform/domain-kit/entities.js').Id<any>} AnyId */
 /** @typedef {import('./catalogue.js').ExerciseValue} ExerciseValue */
 /** @typedef {import('./training.js').SessionValue} SessionValue */
+/** @typedef {import('./training.js').TrainingSetValue} TrainingSetValue */
 /** @typedef {import('./routines.js').RoutineValue} RoutineValue */
 /** @typedef {import('./gymRules.js').GymRefusal} GymRefusal */
 /** @typedef {import('../../../platform/domain-kit/entities.js').Id<ExerciseValue>} ExerciseId */
 /** @typedef {{ entry: RoutineEntry, written: boolean }} PlanLine */
 
-// An open workout as an edit of its plan reads it: the session as this device draws it (closed once stale) and as it
-// stores it, the movements with a set alive in it on either view, and the movements the account can name.
+// An open workout as an edit of its plan reads it: the session as stored and whether it is in sight, its sets as stored,
+// the movements a set alive in either view locks (a set the lifter just deleted locks its movement until the delete
+// lands), the movements the account can name, and the moment.
 export class OpenWorkout {
   /**
-   * @param {{ id: import('../../../platform/domain-kit/entities.js').Id<SessionValue>, drawn: SessionValue | null, stored: SessionValue | null,
-   *   logged: readonly ExerciseId[], catalogue: Catalogue, moment: Moment }} parts
+   * @param {{ id: import('../../../platform/domain-kit/entities.js').Id<SessionValue>, session: SessionValue | null, visible: boolean,
+   *   sets: readonly TrainingSetValue[], logged: readonly ExerciseId[], catalogue: Catalogue, moment: Moment }} parts
    */
-  constructor({ id, drawn, stored, logged, catalogue, moment }) {
+  constructor({ id, session, visible, sets, logged, catalogue, moment }) {
     this.id = id;
-    this.drawn = drawn;
-    this.stored = stored;
+    this.session = session;
+    this.visible = visible;
+    this.sets = Object.freeze([...sets]);
     this.logged = Object.freeze([...logged]);
     this.catalogue = catalogue;
     this.moment = moment;
@@ -43,28 +46,31 @@ export class OpenWorkout {
 
   /** @param {Reader} read @param {import('../../../platform/domain-kit/entities.js').Id<SessionValue>} id */
   static of(read, id) {
-    const sessions = read.repository(Session);
-    const drawnSets = read.repository(TrainingSet).all('drawn');
-    const drawn = sessions.find(id, 'drawn');
-    return new OpenWorkout({ id, drawn: drawn === null ? null : SessionRules.drawn(drawn, drawnSets, read.moment.now),
-      stored: sessions.find(id, 'stored'),
-      logged: [...drawnSets, ...read.repository(TrainingSet).all('stored')].filter((set) => set.sessionId.equals(id)).map((set) => set.exerciseId),
+    const sessions = read.repository(Session), sets = read.repository(TrainingSet);
+    const stored = sets.all('stored').filter((set) => set.sessionId.equals(id));
+    return new OpenWorkout({ id, session: sessions.find(id, 'stored'), visible: sessions.find(id, 'drawn') !== null, sets: stored,
+      logged: [...sets.all('drawn').filter((set) => set.sessionId.equals(id)), ...stored].map((set) => set.exerciseId),
       catalogue: new Catalogue(read), moment: read.moment });
   }
 
   /** @param {ExerciseId} movement */
   isLogged(movement) { return this.logged.some((id) => id.equals(movement)); }
 
-  // A workout this device does not draw is gone; a closed one is finished, said of the record the edit writes.
+  // Closed by its finish, or by the stale rule four hours past its last stored set.
+  get isClosed() {
+    return this.session !== null && !SessionRules.drawn(this.session, this.sets, this.moment.now).isOpen;
+  }
+
+  // A workout out of sight is gone; a closed one is finished, said of the record the edit writes.
   /** @param {RecordRef} subject @returns {GymRefusal | null} */
   refusal(subject) {
-    if (this.drawn === null || this.stored === null) return GymRefusals.ofRefused(new Refused('unknown-record', this.id.ref, null, 'predicted'));
-    if (!this.drawn.isOpen) return GymRefusals.ofRefused(new Refused('session-finished', subject, null, 'predicted'));
+    if (this.session === null || !this.visible) return GymRefusals.ofRefused(new Refused('unknown-record', this.id.ref, null, 'predicted'));
+    if (this.isClosed) return GymRefusals.ofRefused(new Refused('session-finished', subject, null, 'predicted'));
     return null;
   }
 
   get plan() {
-    const plan = this.stored?.plan ?? null;
+    const plan = this.session?.plan ?? null;
     if (plan === null) throw new Violation(WorkoutPlanRules.absent, new Path('plan'), { kind: 'custom', custom: 'absent' });
     return plan;
   }
@@ -188,9 +194,9 @@ export function ReviseWorkoutPlan({ sessionId, base, operations }) {
       const revision = new WorkoutPlan(stored, loaded, sessionId.ref).revised(requested);
       if (revision.kind === 'refused') return Decision.refuse(revision.refusal);
       if (sameJson(revision.plan.json, stored.json)) return Decision.unchanged(null);
-      precondition(loaded.stored !== null, 'a revised workout is stored');
+      precondition(loaded.session !== null, 'a revised workout is stored');
       const plan = new Plan();
-      plan.update(new Valid(loaded.stored.with({ plan: revision.plan }), loaded.moment, ['plan']), { guarded: true });
+      plan.update(new Valid(loaded.session.with({ plan: revision.plan }), loaded.moment, ['plan']), { guarded: true });
       return Decision.write(plan, null);
     },
   });

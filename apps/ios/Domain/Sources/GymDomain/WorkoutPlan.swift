@@ -152,15 +152,6 @@ public struct WorkoutPlan: Equatable, Sendable {
     return SessionPlan(routine: plan.routine, entries: revised)
   }
 
-  // The first movement with a logged set whose entries `entries` would change, in the order the plan and then `entries`
-  // name movements: a logged movement may move, but its entries stay exactly as they stand.
-  public func loggedChange(to entries: [RoutineEntry]) -> ID<Exercise>? {
-    let movements = (plan.entries + entries).map(\.exerciseId)
-    return movements.first { movement in
-      logged.contains(movement) && plan.entries.filter { $0.exerciseId == movement } != entries.filter { $0.exerciseId == movement }
-    }
-  }
-
   func lockedBy(_ movement: ID<Exercise>) -> GymRefusal {
     GymRefusal(Refused(Gym.Codes.planLogged, subject: session.id.ref, detail: ["exerciseId": movement.json], path: .predicted))
   }
