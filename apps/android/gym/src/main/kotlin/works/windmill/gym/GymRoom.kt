@@ -73,6 +73,7 @@ import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.AskCap
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.onboarding.AnonymousCoachAccess
 import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.sharing.WorkoutSharing
@@ -318,6 +319,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val asking = store.coach.isAsking(conversationId)
     val coachUpload = store.coach.upload(conversationId)
     val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
+    val anonymousCoachAccess = store.coach.anonymousAccess
+    LaunchedEffect(account.identityRevision, store.coach.accountKey, tab, away.lastOrNull()) {
+        if (account.isSignedIn || tab == Tab.Coach || away.lastOrNull() is Away.Coach || away.lastOrNull() is Away.Thread)
+            store.coach.refreshAnonymousAccess()
+    }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
     // drawn off it.
     var building by rememberSaveable(stateSaver = remember(telemetry) { routineDraftSaver(telemetry) }) {
@@ -567,6 +573,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) store.coach.refreshAnonymousAccess()
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
             if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
@@ -1168,6 +1175,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             say = { note = it },
                             onDraftOpen = { pushedDraftOpen = it },
                         )
+                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && !account.isSignedIn && anonymousCoachAccess != AnonymousCoachAccess.Available ->
+                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn,
+                                bound = anonymousCoachAccess == AnonymousCoachAccess.Bound && store.coach.allThreads.isNotEmpty(),
+                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
+                        (standing is Away.Coach || standing == null && tab == Tab.Coach) && askAbsent ->
+                            AskAbsentStance(seat = youInitial, onThreads = { look(Away.Threads) })
                         standing is Away.Coach -> AskScreen(
                             store = store,
                             seat = youInitial,
@@ -1182,7 +1195,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             cap = cap,
                             onAsk = { asked -> ask(asked) },
                             onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = ::stopCoach, upload = coachUpload,
+                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                            onSignIn = shell.openSignIn,
                             // Only the newest question is ever asked again: a retry further up would drop
                             // everything asked since.
                             onRetry = {
@@ -1209,7 +1223,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         standing is Away.Thread -> ThreadScreen(
                             threadId = standing.threadId,
                             seat = youInitial,
-                            composerEnabled = account.isSignedIn,
+                            composerEnabled = account.isSignedIn || anonymousCoachAccess == AnonymousCoachAccess.Available,
+                            onSignIn = shell.openSignIn,
                             onAskNew = { askSomethingNew() },
                             store = store,
                             origin = origin,
@@ -1235,12 +1250,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onShareSession = { shareWorkout(it) },
                             onDiscardSession = { discard(it, "log") },
                         ) }
-                        // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
-                        // designed stance rather than a 401.
-                        tab == Tab.Coach && !account.isSignedIn ->
-                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn,
-                                onThreads = if (store.coach.allThreads.isEmpty()) null else ({ look(Away.Threads) }))
-                        tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
                         tab == Tab.Coach -> AskScreen(
                             store = store,
                             thread = conversation,
@@ -1254,7 +1263,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             cap = cap,
                             onAsk = { asked -> ask(asked) },
                             onPhotoAsk = { asked, photo -> ask(asked, photo = photo) },
-                            onStop = ::stopCoach, upload = coachUpload,
+                            onStop = if (account.isSignedIn) ::stopCoach else null, upload = coachUpload,
+                            onSignIn = shell.openSignIn,
                             onRetry = {
                                 conversation.lastOrNull()?.let { ask(it.question, it.requestId.ifEmpty { Ids.thread() }, it.attachments.firstOrNull()) }
                             },

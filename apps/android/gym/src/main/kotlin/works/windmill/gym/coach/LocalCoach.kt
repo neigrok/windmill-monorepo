@@ -125,7 +125,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         require(record.request().requestId == record.requestId)
         val previous = document.onboarding[record.owner]?.get(record.requestId)
         require(previous == null || previous.owner == record.owner && previous.chat == record.chat &&
-            previous.replica == record.replica && previous.body == record.body)
+            previous.replica == record.replica && previous.body == record.body && previous.attachment == record.attachment)
         if (previous?.response?.terminal == true && record.response?.terminal != true) return true
         if (previous == record) return true
         val next = document.copy(
@@ -241,6 +241,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized internal fun discardUnusedPhotos(owner: String) {
         val retained = document.pending[owner].orEmpty().values.flatMap { it.attachmentIds }.toSet() +
             document.drafts[owner].orEmpty().values.mapNotNull { it.photo?.id } +
+            document.onboarding[owner].orEmpty().values.mapNotNull { it.attachment?.id } +
             document.chats[owner].orEmpty().values.flatMap { chat -> chat.exchanges.flatMap { it.attachments.map { photo -> photo.id } } }
         photoFile(owner, "directory-probe").parentFile?.listFiles()?.forEach { photo ->
             if (photo.name !in retained) photo.delete()

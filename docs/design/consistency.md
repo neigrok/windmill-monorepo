@@ -410,10 +410,10 @@ and Android disagree.
     domains also pass; no Android or web screen draws them yet.
   - 08.4 gives a conversation that proposed and created nothing a second line — *Changed a movement*, or the answer's
     first words; iOS History draws such a row on one line unless its latest turn did not complete.
-  - 08.31's **Sign in** under a signed-out answer shows when one of the answer's calls was refused for needing an
-    account, or when an onboarding answer an earlier version kept says `needsAccount`. The server sends an `anon` turn
-    no call that needs an account, and the backend's onboarding schema and prompt do not produce `needsAccount`, so the
-    button shows only on the simulator fixture.
+  - iOS 08.31 still reads refused account calls or archived `needsAccount` answers. The anonymous
+    onboarding adapter produces typed `errorCode=account_required`, which Android maps to the Ready
+    fixed sentence and existing Sign in door. Android's mounted-route and native proof is pending;
+    the iOS onboarding projection has no corresponding typed-code mapping.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
   - `ios/ios-redesign.md` §2 (the `gym/alarm-fill` row, the brick line under the table, white on
@@ -421,10 +421,10 @@ and Android disagree.
     the destructive style: iOS draws it quiet with its label in the system red and holds no
     `gym/alarm-fill` colour. §2 wants the row and the lines retired.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
-    `Program.kt`, web `routines.js`), and on Android `Ask.kt` and web `coach.js` *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. The day's cap can say 08.8's
-    *You can ask again in about 2 hours.* on both: `429 ask-daily-limit` carries `retryAtMs` (and `Retry-After` on a
-    plain reply), which iOS reads and Android and the web ignore. iOS Coach's
+    `Program.kt`, web `routines.js`), and web `coach.js` *Coach reads your log, so it needs you
+    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. Android's
+    task 36 access copy follows the Ready states and reads the 429's actual `retryAtMs` or received
+    `Retry-After`; web ignores those fields. iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
@@ -746,11 +746,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 - **11h · Coach-led setup on Android.** Journey 01 draws the iOS setup in Material form: the greeting
   with its anchors (01.1 `1252:4776`, 01.2 `1253:28196`), photos (01.4, 01.5), drafts decided on
   their card (01.7, 01.14, 01.15), receipts (01.8, 01.16), allowance used (01.10–01.12) and the
-  thread after sign-in (01.13). None is built: an empty Gym opens Routines, an empty Coach shows
-  nothing above the composer (`Ask.openers` is unused), signed out Coach is a sign-in door (6p),
-  and drafts are a *Review routine* card with *Save routine* (`coach/CoachAnswer.kt:84-133`). The
-  signed-out build needs the onboarding endpoint, which runs only with `AI_INSTALLATIONS_ENABLED`
-  and `AI_ALLOWANCES_ENABLED` (both default off).
+  thread after sign-in (01.13). An empty Gym opens Routines and an empty Coach shows
+  nothing above the composer (`Ask.openers` is unused). Available anonymous installations use the
+  retained onboarding coordinator; unavailable/bound access uses the Ready task 36 stances. The
+  greeting, photo extras and allowance states remain separate tasks; action/draft card changes stay
+  postponed. The anonymous endpoint runs only with `AI_INSTALLATIONS_ENABLED` and
+  `AI_ALLOWANCES_ENABLED` (both default off).
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
   reserved.*, 10v). Android reads only `ask-daily-limit` and `ask-out-of-budget`
@@ -869,9 +870,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   does not have Coach. You can still read your log.* with no doors;
   *No conversations*; *New chat*; *Copy question* / *Copy answer*; no ⋮ More on Coach (Android 08.5
   `1253:28654`, 08.7 `1253:28776`, 08.8 `1253:28820`, 08.26 `1254:37761`, 08.32 `1254:31101`, 08.34
-  `1254:31663`). Android: `coach/Ask.kt:180,218,225-240`, `coach/AskScreen.kt:142-153,282-315,332-343`,
-  `coach/Thread.kt:157,168`, `coach/CoachAnswer.kt:225-228`. The cap's hours come from the 429's `retryAtMs`, as iOS
-  says them (`Coach/CoachWire.swift`, `CoachCopy.daily`); Android does not read the field yet (10v).
+  `1254:31663`). Android's access and cap rendering lives in `coach/CoachAccess.kt`.
+  It prefers actual `retryAtMs`, resolves fallback `Retry-After` on receipt, persists the deadline
+  with the exchange and recomputes for clock/locale/timezone changes. Native task 36 acceptance
+  remains pending; no fixed hours are claimed when timing is unavailable.
 - **12i · Shipped iOS states, drawn on both pages.** Coach's choice chips (01.17), *Draft kept on this
   phone* / *Continue saved draft* (01.18), the routine editor's History (02.13), *· yours* on a custom
   movement (02.2) and the Copy menu (08.32). The iOS boards are drawn from the code and await a
@@ -910,12 +912,12 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
 Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md), implemented on the backend and
 iOS. It and the product differ in these places.
 
-- **6p · Android signed-out Coach.** Android's Coach is account-only (*Coach reads your log, so it
-  needs you signed in.*, `coach/AskScreen.kt` `AskSignedOutStance`); it calls neither
-  `/v1/gym/coach/onboarding`, the turn routes nor `/v1/ai/installations`. The owner decided on 2026-09-26 that Android carries signed-out Coach;
-  Android journey 01 draws it (11h), with no allowance indicator (owner ruling 2026-10-22). The
-  approved launch identity is a server-issued installation credential with IP and global budgets;
-  the identity does not guarantee protection against installation resets.
+- **6p · Android signed-out Coach.** Android composes the installation credential and durable
+  onboarding coordinator through the existing Coach store. Available anonymous access can send;
+  bound or unavailable access retains its local History without a composer. GET recovery remains
+  available for submitted work. The endpoint's deployed installation/allowance switches remain
+  off. Task 36 source and task 38 foundation await their owned live/native acceptance. The identity
+  is server-issued with IP/global budgets and does not guarantee protection against installation resets.
 - **6q · One agent rule per ability.** Coach never logs, fixes or deletes a set, finishes or
   discards a workout, or writes a bodyweight (`brand-foundations.md`, Gym). MCP runs
   `start_session`, `log_set`, `log_sets`, `finish_session`, `discard_session` and `import_session`.

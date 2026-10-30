@@ -29,6 +29,22 @@ private data class Wire(val value: String)
 class WindmillApiTest {
     private val server = MockWebServer()
 
+    @Test fun retryAfterIsResolvedAtReceiptWithoutLosingTypedRefusalsForMalformedJsonTiming() = runTest {
+        for ((header, date) in listOf("120" to null, "Thu, 29 Oct 2026 09:00:00 GMT" to 1_793_264_400_000L,
+            "-1" to null, "18446744073709551616" to null, "not a deadline" to null)) {
+            server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", header)
+                .setBody("""{"code":"ask-daily-limit","retryAtMs":"invalid"}"""))
+            val before = System.currentTimeMillis()
+            val failure = try { api().get<Wire>("/v1/fixture"); error("expected refusal") }
+                catch (failure: WindmillApiException.Refused) { failure }
+            val after = System.currentTimeMillis()
+            assertEquals(429, failure.status)
+            assertEquals("ask-daily-limit", failure.refusal.code)
+            if (header == "120") assertTrue(failure.retryAfterAtMs!! in (before + 120_000)..(after + 120_000))
+            else assertEquals(date, failure.retryAfterAtMs)
+        }
+    }
+
     @Test fun configuredHeadersCoverJsonStreamAndBytesWithoutChangingTheOriginalApi() = runTest {
         val original = api { "fixture-bearer" }
         val configured = original.withHeaders(mapOf("Fixture-Schema" to "fixture-version"))

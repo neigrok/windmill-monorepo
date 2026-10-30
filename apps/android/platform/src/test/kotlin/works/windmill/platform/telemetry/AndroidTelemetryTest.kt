@@ -113,6 +113,7 @@ class AndroidTelemetryTest {
         val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
             listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
+            listOf("available", "bound", "unavailable").map { mapOf("screen" to "coach", "action" to "access", "outcome" to it) } +
             listOf("ok", "refused", "failed", "cancelled").map { mapOf("screen" to "threads", "action" to "delete", "outcome" to it) } +
             listOf(mapOf("screen" to "threads", "action" to "delete", "state" to "shown"))
         val content = mapOf("chat_id" to "private", "question" to "private", "photo" to "private",
@@ -123,6 +124,7 @@ class AndroidTelemetryTest {
         for (properties in listOf(
             mapOf("screen" to "coach", "action" to "private", "outcome" to "ok"),
             mapOf("screen" to "coach", "action" to "history_open", "outcome" to "private"),
+            mapOf("screen" to "coach", "action" to "access", "outcome" to "private"),
             mapOf("screen" to "threads", "action" to "delete", "state" to "private"),
             mapOf("screen" to "private", "action" to "delete", "state" to "shown"),
         )) assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_action", properties + content))

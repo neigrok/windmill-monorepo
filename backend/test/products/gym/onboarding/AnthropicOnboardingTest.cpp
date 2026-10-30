@@ -142,7 +142,7 @@ TEST(gym_anonymous_dialogue_preserves_prior_context_without_tools_and_retains_an
   Entitlements entitlements{subscriptions,usage,{},{},h.budgets};
   auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
   auto messages=std::make_shared<Messages>();
-  messages->reply=readMessagesReply(200,R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"{\"message\":\"Hi. What would you like to work on?\",\"routines\":[]}"}]})");
+  messages->reply=readMessagesReply(200,R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"{\"message\":\"Hi. What would you like to work on?\",\"routines\":[],\"errorCode\":null}"}]})");
   const auto input=*readOnboardingIn(parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"Hello","context":[{"role":"user","text":"I am new"}]})"));
   AnthropicOnboarding model{messages,budget,nullptr,h.failures};
   const auto answer=model.generate(*h.issue.principal,"onb_dialogue",input,h.catalog->seeds);
@@ -153,5 +153,57 @@ TEST(gym_anonymous_dialogue_preserves_prior_context_without_tools_and_retains_an
   CHECK_EQ(parse(messages->requests[0].user)["context"],input.context);
   CHECK_FALSE(messagesBody(messages->requests[0]).isMember("tools"));
   CHECK_EQ(messages->requests[0].schema["properties"]["message"]["type"],"string");
+  CHECK_EQ(messages->requests[0].schema["properties"]["errorCode"]["enum"],parse(R"([null,"account_required"])") );
+  CHECK_EQ(messages->requests[0].schema["required"],parse(R"(["routines","message","errorCode"])") );
   CHECK(h.failures->reports.empty());
+}
+
+TEST(gym_anonymous_conversation_policy_is_strict_and_never_releases_contradictory_drafts) {
+  const auto draft=parse(R"({"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]})");
+  auto normal=parse(R"({"message":"Here is an unsaved draft.","routines":[],"errorCode":null})");
+  normal["routines"].append(draft);
+  const auto policy=parse(R"({"message":"Private model prose is not displayed","routines":[],"errorCode":"account_required"})");
+  auto emptyPolicy=policy; emptyPolicy["message"]="";
+  auto contradictory=policy; contradictory["routines"].append(draft);
+  auto unknown=policy; unknown["errorCode"]="other_policy";
+  auto missing=normal; missing.removeMember("errorCode");
+  auto extra=normal; extra["extra"]=true;
+  auto wrong=policy; wrong["message"]=12;
+  auto malformed=policy; malformed["routines"]=Json::Value();
+  auto invalidDraft=normal; invalidDraft["routines"][0]["entries"][0]["sets"][0]["reps"]=1001;
+  for (const auto& document : {normal,policy,emptyPolicy,contradictory,unknown,missing,extra,wrong,malformed,invalidDraft}) {
+    Harness h;
+    fake::FakeAuthRepository accounts;
+    fake::FakeSubscriptionRepository subscriptions;
+    fake::FakeAiUsageRepository usage;
+    Entitlements entitlements{subscriptions,usage,{},{},h.budgets};
+    auto budget=std::make_shared<AiCallBudget>(h.budgets,entitlements,accounts,*h.failures);
+    auto messages=std::make_shared<Messages>();
+    auto reply=parse(R"({"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":40,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":""}]})");
+    reply["content"][0]["text"]=dump(document);
+    messages->reply=readMessagesReply(200,dump(reply));
+    AnthropicOnboarding model{messages,budget,nullptr,h.failures};
+    const auto answer=model.generate(*h.issue.principal,"onb_policy",OnboardingIn{.mode="conversation",.text="Make Push A harder"},h.catalog->seeds);
+    if (document==normal) {
+      CHECK(answer.refusal.empty());
+      CHECK_EQ(answer.message,"Here is an unsaved draft.");
+      CHECK_EQ(onboardingRoutines(answer.routines)["routines"],normal["routines"]);
+      CHECK(h.failures->reports.empty());
+    } else if (document==policy || document==emptyPolicy) {
+      CHECK_EQ(answer.refusal,"account_required");
+      CHECK(answer.message.empty());
+      CHECK(answer.routines.empty());
+      CHECK(h.failures->reports.empty());
+    } else {
+      CHECK_EQ(answer.refusal,"invalid_result");
+      CHECK(answer.message.empty());
+      CHECK(answer.routines.empty());
+      REQUIRE_EQ(h.failures->reports.size(),1U);
+      CHECK_EQ(h.failures->reports[0],"gym:gym.coach.onboarding.model:invalid routine document");
+    }
+    CHECK_EQ(h.catalog->ownerReads.load(),0);
+  }
+  const auto legacy=onboardingMessages(OnboardingIn{.mode="program",.program="Bench press"},{});
+  CHECK_FALSE(legacy.schema["properties"].isMember("errorCode"));
+  CHECK_EQ(legacy.schema["required"],parse(R"(["routines"])") );
 }

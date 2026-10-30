@@ -1,6 +1,7 @@
 package works.windmill.gym.store
 
 import works.windmill.gym.coach.AskOutcome
+import works.windmill.gym.coach.Ask
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -1606,16 +1607,16 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testBothCeilingsTakeTheComposerDownAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
+    fun testBothCeilingsKeepTheirTypedNoticeAQuietLogIsARetryAndAnAbsentRouteTakesTheDoorDown() = runTest {
         val rest = FakeGymRest()
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice")
             rest.refuseAsk = refusal(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours")
-            assertEquals("the daily cap takes the composer down",
-                AskOutcome.Capped("the next question frees up in a couple of hours", AskCap.Daily),
+            assertEquals("the daily cap keeps its distinct typed outcome",
+                AskOutcome.Capped(Ask.capReached, AskCap.Daily),
                 room.store.coach.ask("thr_1", "what's stalled?"))
             rest.refuseAsk = refusal(429, code = "ask-out-of-budget", message = "this account has reached its AI ceiling")
-            assertEquals("and so does the account's 30-day ceiling, carrying its OWN sentence",
+            assertEquals("the account's 30-day ceiling carries its own sentence",
                 AskOutcome.Capped("this account has reached its AI ceiling", AskCap.Ceiling),
                 room.store.coach.ask("thr_1", "what's stalled?"))
 
