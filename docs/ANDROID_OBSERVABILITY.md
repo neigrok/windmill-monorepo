@@ -329,16 +329,34 @@ periodic fallback pulls; first reads, live hints, doubt resolution and socket re
 No replica/account identifier,
 record key, source document, workout content or credential enters these reports.
 
-Signed-out workout imports keep their per-replica journal on the phone; its contents and local
-refusal reasons are not telemetry. An unexpected reconciliation failure reports under
-`gym.import_reconcile`. Settings exposes inspection, correction, Keep and retry; their unexpected
-failures report under `gym_import_fix`, `gym_import_keep` and `gym_import_retry`. Account decisions
-include pending retained work, pin revisions and preserve unsent account work with Keep. A training
-write the log's rules refuse is said on screen and never becomes a Sentry issue.
-Settings Retry enters import reconciliation before its
-`gym_import_recovery` completed event. Completion means the local retry was scheduled, not that
-the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
-and emits no completed event; cancellation propagates without a failure report.
+Signed-out workout imports keep their per-replica journal on the phone; source documents and refusal
+sentences never enter telemetry. On this phone owns inspection, Keep, Fix, Retry and supported copy
+Discard. Unexpected failures report at `gym_import_keep`, `gym_import_fix`, `gym_import_retry` or
+`gym_import_discard`; read/reconciliation failures retain `gym.loadLog` and `gym.import_reconcile`.
+Expected source, account, replica and domain refusals are answers without Issues. Retry of a stranded
+set emits completed only after the existing guarded recovery action durably schedules its command.
+Completed means locally scheduled; account acceptance is read from sync. A local scheduling failure
+retains the original and emits failed. A completed local action outlives its UI waiter; replacement
+of origin, account or identity revision fences later publication.
+
+`gym_import_recovery` carries only action/state/outcome. Actions are `inspect`, `keep`, `fix`,
+`retry` and `discard`. States are `opened`, `started`, `shown`, `date_opened`, `date_confirmed`,
+`date_cancelled`, `time_opened`, `time_confirmed`, `time_cancelled`, `set_opened`, `set_staged`,
+`set_removed`, `marked_finished` and `link_changed`. Outcomes are `completed`, `cancelled`,
+`refused`, `failed` and Discard's `ok`. Opening/confirming a phone-copy discard never emits an
+account-workout delete event. No source key, identity, replica, count, time, load, note, name,
+refusal sentence or exception text is a property. Navigation retains `gym_screen_viewed` with
+`screen=on_this_phone`, `workout_inspect` or `workout_fix`.
+
+Verified sign-in proposals are sealed before application-owned handoff begins. Reattachment awaits
+the same handoff and emits no duplicate verification or success event. Unexpected owned-handoff
+failures report once under `auth_sign_in`, including after UI disposal; the attached form preserves
+its existing retry sentence without a duplicate Issue. Retrying the same sealed proposal does not
+verify the spent code again. Explicit Cancel sign-in, replacement and sign-out retire its UI result.
+An already accepted engine transition aligns only its exact sealed credential before retirement
+finishes; it does not emit the retired handoff's success event or complete a newer UI intent.
+Account decisions retain `gym_sign_in_decision` and `client_update_required`; count and source keys
+stay local to the decision. No credential, code, email, source content or identity enters properties.
 
 Quick Settings taps emit one `gym_action` when their route is handled, or one failed action if the
 activity cannot launch. A stale account or workout refuses navigation without a technical Issue.
@@ -421,7 +439,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Routine movement form | `gym_action` | screen: `movement_form`; action: `open`, `cancel`; outcome: `ok`; or action: `stage`; outcome: `ok`, `refused` |
 | Outer routine Save | `gym_action` | screen: `routine_editor`; action: `save`; outcome: `ok`, `refused`, `failed` |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
-| Workout imports | `gym_import_recovery` | action, state, outcome |
+| Workout imports | `gym_import_recovery` | action: `inspect`, `keep`, `fix`, `retry`, `discard`; bounded state and outcome labels above |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |

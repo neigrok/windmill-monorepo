@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -113,6 +115,10 @@ import works.windmill.gym.ui.GymScreen
 import works.windmill.gym.ui.LocalGymColors
 import works.windmill.gym.ui.GymSnackbarHost
 import works.windmill.gym.ui.GymNativeType
+import works.windmill.gym.ui.PhoneRecovery
+import works.windmill.gym.ui.OnThisPhoneScreen
+import works.windmill.gym.ui.WorkoutInspectScreen
+import works.windmill.gym.ui.WorkoutFixScreen
 import works.windmill.gym.ui.LogScreen
 import works.windmill.gym.ui.LoggerScreen
 import works.windmill.gym.ui.NoteEditorScreen
@@ -231,6 +237,10 @@ private sealed interface Away {
     data class NoteEditor(val note: Note?, val seedTitle: String) : Away
     @Serializable
     data object Bodyweight : Away
+    @Serializable
+    data object OnThisPhone : Away
+    @Serializable
+    data class InspectWorkout(val id: String) : Away
 }
 
 // The review sheet and the door it opened from, which is where its receipt lands: the live
@@ -413,6 +423,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (result is WorkoutChange.Unavailable) note = result.reason
     }
     val screen = when {
+        store.recoveryDraft != null -> "workout_fix"
         reviewing != null -> "proposal"
         finished != null -> "finish"
         building != null -> "routine_editor"
@@ -428,6 +439,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             Away.Notes -> "notes"
             is Away.NoteEditor -> "note_editor"
             Away.Bodyweight -> "bodyweight"
+            Away.OnThisPhone -> "on_this_phone"
+            is Away.InspectWorkout -> "workout_inspect"
         }
         loggerShown -> "workout"
         else -> tab.name.lowercase()
@@ -1012,6 +1025,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 Away.Notes -> Notes.title
                 is Away.NoteEditor -> Notes.title
                 Away.Bodyweight -> Bodyweight.title
+                Away.OnThisPhone -> "On this phone"
+                is Away.InspectWorkout -> "On this phone"
                 null -> if (loggerShown) store.session?.plan?.routine ?: Readout.noRoutine else tab.title
             }
             val coachRoom = standing is Away.Coach || standing is Away.Thread || standing == null && tab == Tab.Coach
@@ -1020,11 +1035,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                 selectedRoutineId == null && reviewing == null
             val youInitial = account.user?.email?.take(1) ?: ""
             val loggerTransient = loggerShown && standing == null
-            val engineSession = LocalGymEngineSession.current
-            val engineStatus = engineSession?.engine?.status?.state?.collectAsState()?.value
-            val importRefusals = remember(engineSession, engineStatus, screen) {
-                engineSession?.let { WorkoutImports(it.engine).refusals() }.orEmpty()
-            }
+            val recoveryRead = store.recovery?.takeIf { it.belongsTo(account) }
+            val fixRead = store.recoveryDraft?.read
+            if (fixRead?.belongsTo(account) == true) WorkoutFixScreen(store, currentOwner = { fixRead.belongsTo(currentAccount) })
 
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
@@ -1047,9 +1060,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                             }
                             if (railUp) {
-                                if (importRefusals.isNotEmpty()) TextButton(
-                                    onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
-                                ) { Text("Saved workouts need review (${importRefusals.size})", color = skin.alarmInk) }
                                 if (workoutBarUp) WorkoutBar(
                                     session = liveSession!!,
                                     onOpen = {
@@ -1062,6 +1072,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                                 TabRail(
                                     current = if (coachRoom) Tab.Coach else tab,
+                                    recoveryCount = PhoneRecovery.needsYou(recoveryRead?.workouts.orEmpty()),
                                     onPick = { picked ->
                                         note = null
                                         if (picked == Tab.Coach) askSomethingNew()
@@ -1161,6 +1172,14 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onDraftOpen = { pushedDraftOpen = it },
                         )
                         }
+                        standing is Away.OnThisPhone && recoveryRead != null -> OnThisPhoneScreen(recoveryRead,
+                            onBack = { back() }, onInspect = { look(Away.InspectWorkout(it)) })
+                        standing is Away.InspectWorkout && recoveryRead != null -> {
+                            val row = recoveryRead.workouts.firstOrNull { it.id == standing.id }
+                            if (row != null) WorkoutInspectScreen(store, recoveryRead, row, onBack = { back() },
+                                currentOwner = { recoveryRead.belongsTo(currentAccount) })
+                            else LaunchedEffect(standing.id) { back() }
+                        }
                         standing is Away.Bodyweight -> BodyweightScreen(
                             store = store,
                             backTo = beneath,
@@ -1234,6 +1253,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onOpenMovement = { exercise, session -> look(Away.Movement(exercise, session)) },
                             onShareSession = { shareWorkout(it) },
                             onDiscardSession = { discard(it, "log") },
+                            onOpenRecovery = { id -> look(if (id == null) Away.OnThisPhone else Away.InspectWorkout(id)) },
+                            recovery = recoveryRead,
                         ) }
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.
@@ -1290,7 +1311,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 }
 
 @Composable
-private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
+private fun TabRail(current: Tab, recoveryCount: Int, onPick: (Tab) -> Unit) {
     val skin = LocalGymColors.current
     Column(Modifier.fillMaxWidth().background(skin.surface)) {
         NavigationBar(
@@ -1303,7 +1324,9 @@ private fun TabRail(current: Tab, onPick: (Tab) -> Unit) {
                 NavigationBarItem(
                     selected = entry == current,
                     onClick = { onPick(entry) },
-                    icon = { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    icon = { BadgedBox(badge = {
+                        if (entry == Tab.Log && recoveryCount > 0) Badge { Text(recoveryCount.toString()) }
+                    }) { Icon(painterResource(railIcon(entry)), contentDescription = null, modifier = Modifier.size(24.dp)) } },
                     label = { Text(entry.title, maxLines = 1, style = GymChrome.tab) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = skin.accent,

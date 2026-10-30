@@ -132,7 +132,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             localCoach = LocalCoach(File(filesDir, LocalCoach.fileName)),
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
-        auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)
+        auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession, handoffScope = scope)
         delivery = { replica, reply -> if (training.reportDelivery(replica, reply)) store.refreshEngine() }
         syncRuntime.launch(engineStorage)
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },

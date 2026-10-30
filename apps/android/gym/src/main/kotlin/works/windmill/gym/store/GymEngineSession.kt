@@ -32,6 +32,10 @@ class GymEngineSession(
 ) : AuthLifecycle, AutoCloseable {
     var decision: SignInSession? by mutableStateOf(null)
         private set
+    private val decisionIdentity = java.util.UUID.randomUUID().toString()
+    val decisionKey: String get() = "$decisionIdentity:$decisionRevision"
+    var decisionRevision: Long by mutableStateOf(0L)
+        private set
     var decisionFailure: String? by mutableStateOf(null)
         private set
     var decisionBusy by mutableStateOf(false)
@@ -57,6 +61,7 @@ class GymEngineSession(
             var session = runtime.signIn(user.id, token)
             while (!session.isComplete) {
                 val completion = CompletableDeferred<Unit>()
+                decisionRevision += 1
                 decision = session
                 decisionFailure = null
                 answer = completion
@@ -92,9 +97,9 @@ class GymEngineSession(
         answer?.cancel(CancellationException("Sign-in cancelled."))
     }
 
-    suspend fun decide(choice: LineageAnswer) {
+    suspend fun decide(choice: LineageAnswer, opening: SignInSession? = decision) {
         val session = decision ?: return
-        if (decisionBusy) return
+        if (decisionBusy || session !== opening) return
         decisionBusy = true
         decisionFailure = null
         try {

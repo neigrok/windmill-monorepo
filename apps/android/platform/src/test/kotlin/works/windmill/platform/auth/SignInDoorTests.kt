@@ -10,7 +10,10 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import works.windmill.platform.design.LocalWindmillDark
+import kotlinx.coroutines.*
 import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
@@ -182,4 +185,84 @@ class SignInDoorTests {
         ), events)
         assertEquals(listOf("auth_sign_in" to emptyMap<String, String>()), failures)
     }
+    @Test fun aRecreatedFormAwaitsTheExistingHandoffAndCompletesExactlyOnce() = ownedHandoff(false)
+    @Test fun aFailedOwnedHandoffKeepsThePriorAccountAndRetriesWithoutVerification() = ownedHandoff(true)
+
+    private fun ownedHandoff(fails: Boolean) {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val prior = User("A", "a@example.com")
+        val next = User("B", "b@example.com")
+        val sessions = MemorySessions("sealed-A", prior)
+        val failures = mutableListOf<String>()
+        var visits = 0
+        val auth = AuthStore(server.url("/"), sessions, handoffScope = owner,
+            telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) = Unit
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            }, lifecycle = object : AuthLifecycle {
+                override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
+                    visits++
+                    if (visits == 1) {
+                        entered.complete(Unit); release.await()
+                        if (fails) throw IOException("fixture storage failure")
+                    }
+                }
+                override suspend fun signOut() = Unit
+            })
+        server.enqueue(MockResponse().setBody("{}"))
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
+            .addHeader("Set-Cookie", "wm_session=sealed-B; Path=/; HttpOnly"))
+        var done = 0
+        var busy = false
+        val dark = mutableStateOf(true)
+        val font = mutableFloatStateOf(1f)
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            CompositionLocalProvider(LocalWindmillDark provides dark.value, LocalDensity provides Density(1f, font.floatValue)) {
+                WindmillMaterial { SignInDoor(auth, onDone = { done++ }, onBusy = { busy = it }) }
+            }
+        }
+        try {
+            compose.onNodeWithContentDescription("Email field").performTextReplacement(next.email)
+            compose.onNodeWithText("Send code").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Code field").performTextReplacement(" 123456 ")
+            compose.onNodeWithText("Sign in").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
+            compose.onNodeWithText("Check your email").assertIsDisplayed()
+            compose.onNodeWithText("Signing in…").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Code field").assertIsNotEnabled()
+            restoration.emulateSavedInstanceStateRestore()
+            compose.runOnIdle { dark.value = false; font.floatValue = 1.4f }
+            compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ").assertIsNotEnabled()
+            compose.onNodeWithText("Change email").assertIsNotEnabled()
+            compose.runOnIdle { assertTrue(busy); assertEquals(1, visits); assertEquals(0, done); release.complete(Unit) }
+            if (fails) {
+                compose.waitUntil(10_000) { compose.onAllNodesWithText("Sign-in could not be completed. Try again.").fetchSemanticsNodes().isNotEmpty() }
+                compose.runOnIdle {
+                    assertEquals(0, done); assertFalse(busy)
+                    assertEquals(AuthStatus.SignedIn(prior, verified = false), auth.status)
+                    assertEquals("sealed-A", sessions.read())
+                    assertEquals(listOf("auth_sign_in"), failures)
+                }
+                restoration.emulateSavedInstanceStateRestore()
+                compose.onNodeWithContentDescription("Code field").assertTextContains(" 123456 ")
+                compose.onNodeWithText("Sign in").performClick()
+            }
+            compose.waitUntil(10_000) { compose.runOnIdle { done == 1 } }
+            restoration.emulateSavedInstanceStateRestore()
+            compose.runOnIdle {
+                assertEquals(1, done); assertFalse(busy)
+                assertEquals(if (fails) 2 else 1, visits)
+                assertEquals(AuthStatus.SignedIn(next), auth.status)
+                assertEquals("sealed-B", sessions.read()); assertNull(sessions.proposed)
+                assertEquals(if (fails) listOf("auth_sign_in") else emptyList<String>(), failures)
+            }
+            assertEquals(2, server.requestCount)
+            assertEquals(listOf("/v1/auth/magic-link", "/v1/auth/verify-code"), List(2) { server.takeRequest().path })
+        } finally { release.complete(Unit); owner.cancel() }
+    }
+
 }

@@ -766,7 +766,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             val id = subject.id.string ?: notice.id
             RefusedSet(id, (values["exerciseId"] as? Json.Str)?.value.orEmpty(),
                 (values["weightKg"] as? Json.Num)?.value ?: 0.0, (values["reps"] as? Json.Num)?.value?.toInt() ?: 0, reason)
-        } else RefusedChange(notice.id, "Saved change", reason)
+        } else if (subject?.type == EngineSession.type || notice.content.command?.name in setOf(Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession)) {
+            val at = subject?.let { domain.values(it)["startedAt"] } ?: notice.content.command?.args?.get("startedAt")
+            val startedAt = at?.let { runCatching { it.long() }.getOrNull() }
+            RefusedWorkout(notice.id, startedAt, reason)
+        } else RefusedChange(notice.id, "Saved training", reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
