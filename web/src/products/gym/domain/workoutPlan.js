@@ -202,8 +202,9 @@ export function ReviseWorkoutPlan({ sessionId, base, operations }) {
   });
 }
 
-// The receipt's card: the plan as the workout leaves it against its routine as drawn, R118's count with no name term, and
-// whether the routine still stands as the workout started from it. No card for a plan that matches, no routine or no plan.
+// The receipt's card for a workout whose own plan changed, which only the server's planRevision proves: the plan as the
+// workout leaves it against its routine as drawn, R118's count with no name term, and whether the routine still stands
+// as the workout started from it. No card for an unstamped plan, a plan that matches, no routine or no plan.
 export class PlanChanges {
   static none = new PlanChanges([], 0, 'none');
 
@@ -224,7 +225,7 @@ export class PlanChanges {
   /** @param {SessionValue | null} session @param {RoutineValue | null} routine */
   static between(session, routine) {
     const plan = session?.plan ?? null;
-    if (session === null || plan === null || routine === null
+    if (session === null || session.planRevision === null || plan === null || routine === null
       || sameJson(plan.entries.map((entry) => entry.json), routine.entries.map((entry) => entry.json))) return PlanChanges.none;
     const changes = RoutineChange.between(routine.entries, plan.entries);
     const offer = routine.revision === null || session.routineRevision === null ? 'none'

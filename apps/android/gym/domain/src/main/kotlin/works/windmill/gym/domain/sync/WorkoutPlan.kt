@@ -152,8 +152,9 @@ class ReviseWorkoutPlan(val sessionId: Id<Session>, val base: PlanSnapshot?, val
     }
 }
 
-// The receipt's card: the plan as the workout leaves it against its routine as drawn, R118's count with no name term, and
-// whether the routine still stands as the workout started from it. No card for a plan that matches, no routine or no plan.
+// The receipt's card for a workout whose own plan changed, which only the server's planRevision proves: the plan as the
+// workout leaves it against its routine as drawn, R118's count with no name term, and whether the routine still stands
+// as the workout started from it. No card for an unstamped plan, a plan that matches, no routine or no plan.
 data class PlanChanges(val changes: List<RoutineChange>, val changeCount: Int, val offer: Offer) {
     enum class Offer { save, routineChanged, none }
 
@@ -167,7 +168,7 @@ data class PlanChanges(val changes: List<RoutineChange>, val changeCount: Int, v
 
         fun of(session: Session?, routine: Routine?): PlanChanges {
             val plan = session?.plan ?: return none
-            if (routine == null || plan.entries == routine.entries) return none
+            if (session.planRevision == null || routine == null || plan.entries == routine.entries) return none
             val changes = RoutineChange.between(routine.entries, plan.entries)
             val offer = when {
                 routine.revision == null || session.routineRevision == null -> Offer.none

@@ -1547,7 +1547,7 @@ import SyncTesting
     let revision = try #require(stored.revision)
     let edited = [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 3, weightKg: 50), SetTarget(reps: 3, weightKg: 50)])]
     let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
-                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: edited), routineRevision: revision)
+                          routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: edited), planRevision: 2, routineRevision: revision)
     let saved = { recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } }
 
     let off = WorkoutReceiptData(session: session, sets: [], routine: stored)
@@ -1577,7 +1577,7 @@ import SyncTesting
     let stored = try #require(gym.routines.first { $0.id == routine.id })
     let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
                           routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 8)])]),
-                          routineRevision: stored.revision)
+                          planRevision: 2, routineRevision: stored.revision)
     let receipt = WorkoutReceiptData(session: session, sets: [], routine: stored)
     receipt.savesPlan = true
     var renamed = Draft(opening: stored); renamed.current.name = "Renamed elsewhere"
