@@ -101,6 +101,38 @@ struct KeepWorkoutWalk: Action {
   }
 }
 
+// One edit of this workout's plan and the walk it leaves, in one gesture: a movement the plan gains, loses or swaps does the
+// same in the walk.
+struct ReviseWorkout: Action {
+  let revision: ReviseWorkoutPlan
+  let walk: WorkoutWalk?
+  var scope: ScopeRef { Gym.scope }
+  func load(_ read: Reader) throws -> OpenWorkout { try revision.load(read) }
+  func decide(_ loaded: OpenWorkout, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    switch try revision.decide(loaded, ids: ids) {
+    case .write(var plan, _):
+      if let walk { plan.device(WorkoutWalk.key(revision.sessionId), walk.json) }
+      return .write(plan)
+    case let decision: return decision
+    }
+  }
+}
+
+extension WorkoutPlan.Operation {
+  // The label `gym_workout_plan_changed` reports the operation under.
+  var action: String {
+    switch self {
+    case .retarget: "retarget"
+    case .addSet: "add_set"
+    case .removeSet: "remove_set"
+    case .swap: "swap"
+    case .addMovement: "add_movement"
+    case .removeMovement: "remove_movement"
+    case .setRest: "rest"
+    }
+  }
+}
+
 struct StartWorkoutCommand: ServerCommand {
   static let name = Gym.Commands.start
   static let specs: [any ValueSpec] = []
@@ -224,6 +256,8 @@ struct FinishWorkout: Action {
   }
   // How often the lifter changed load or reps; a prefill or a restored value is not theirs and leaves it.
   private(set) var adjustments = 0
+  // The count at the last prefill: a plan edit moves the rack only while the lifter has not touched it since.
+  @ObservationIgnored private var prefilledAt = 0
   var paging = false { didSet { if oldValue != paging { activityChanged() } } }
   var message: String?
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
@@ -326,6 +360,11 @@ struct FinishWorkout: Action {
   var selected: ID<Exercise>? { walk.selected }
   var currentSets: [TrainingSet] { sets.filter { $0.exerciseId == selected } }
   var entry: RoutineEntry? { session?.plan?.entries.first { $0.exerciseId == selected } }
+  func planIndex(_ id: ID<Exercise>) -> Int? { session?.plan?.entries.firstIndex { $0.exerciseId == id } }
+  // A movement with a logged set keeps its plan; one with nothing logged takes edits while the workout is open.
+  func canEditPlan(_ id: ID<Exercise>) -> Bool {
+    session?.isOpen == true && planIndex(id) != nil && !sets.contains { $0.exerciseId == id }
+  }
   func restTarget(_ id: ID<Exercise>) -> RestTarget? {
     RestTarget.of(session?.plan?.entries.first { $0.exerciseId == id }, rest: gym.restSettings)
   }
@@ -385,7 +424,11 @@ struct FinishWorkout: Action {
     if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
     if previousSelected != selected { prefill(); restoreActivityDraft() }
-    else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
+    else if let previous = offerSession, previous != session, previous.plan != session.plan, LogWorkoutSet.matchesOfferedSets(sets, offerSets),
+            !rackFollows(from: previous, to: session) {
+      // The plan changed and the rack's numbers stand: they are offered against the plan as it is now.
+      offerSession = session; activityChanged()
+    } else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
       let pending = rackBase.map { _ in Prefill(weightKg: weightKg, reps: reps) }
       prefill()
       if let pending { editRack(weightKg: pending.weightKg, reps: pending.reps) }
@@ -397,7 +440,16 @@ struct FinishWorkout: Action {
     guard let session, let selected else { offerSession = nil; return }
     let value = Prefill.of(todaySets: currentSets, planEntry: entry, lastTime: gym.log?.lastTime(for: selected))
     restoreRack(weightKg: value.weightKg, reps: min(99, value.reps))
-    offerSession = session; offerSets = sets
+    offerSession = session; offerSets = sets; prefilledAt = adjustments
+  }
+  // A plan edit prefills the rack again only when it changed the selected movement's current slot and the lifter has not
+  // touched the rack since its last prefill.
+  func rackFollows(from previous: Session, to next: Session) -> Bool {
+    guard let selected, rackBase == nil, adjustments == prefilledAt else { return false }
+    let slot = { (session: Session) in
+      MovementLedger(sets: self.currentSets, plan: session.plan?.entries.first { $0.exerciseId == selected }).current.target
+    }
+    return slot(previous) != slot(next)
   }
   @discardableResult func keep(_ next: WorkoutWalk) -> Bool {
     guard !gym.readFailed, let sessionId, gym.run(KeepWorkoutWalk(sessionId: sessionId, walk: next))?.refusal == nil,
@@ -417,7 +469,8 @@ struct FinishWorkout: Action {
           !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed, flushRack() else { return false }
     var next = walk; next.order.append(id); next.selected = id
     let prior = selected, draft = Prefill(weightKg: weightKg, reps: reps)
-    guard keep(next) else { return false }
+    // A workout that follows a plan takes the movement into it, with no targets; one with no plan holds it in the walk.
+    guard session?.plan == nil ? keep(next) : revise([.addMovement(id)], walk: next, against: session?.plan) else { return false }
     if let prior { drafts[prior] = draft }
     prefill()
     return true
@@ -425,15 +478,44 @@ struct FinishWorkout: Action {
   func move(from: IndexSet, to: Int) {
     var next = walk; next.order.move(fromOffsets: from, toOffset: to); _ = keep(next)
   }
-  func canRemove(_ id: ID<Exercise>) -> Bool {
-    !sets.contains { $0.exerciseId == id } && session?.plan?.entries.contains { $0.exerciseId == id } != true
-  }
+  func canRemove(_ id: ID<Exercise>) -> Bool { !sets.contains { $0.exerciseId == id } }
   func remove(_ id: ID<Exercise>) {
     guard flushRack() else { return }
-    guard canRemove(id) else { message = "A movement with sets or planned targets stays in this workout."; return }
+    guard canRemove(id) else { message = "A movement with a logged set stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
     if selected == id { next.selected = next.order.first }
-    if keep(next) { prefill() }
+    guard planIndex(id).map({ revise([.removeMovement(index: $0)], walk: next, against: session?.plan) }) ?? keep(next) else { return }
+    prefill()
+  }
+  // The movement takes `id`'s place, its planned sets and rest, after the edits `operations` stage, in one save.
+  @discardableResult func swap(_ id: ID<Exercise>, to replacement: ID<Exercise>, after operations: [WorkoutPlan.Operation] = [],
+                               against base: SessionPlan?) -> Bool {
+    guard let index = planIndex(id) else { return false }
+    var next = walk
+    if let place = next.order.firstIndex(of: id) { next.order[place] = replacement }
+    if next.selected == id { next.selected = replacement }
+    return revise(operations + [.swap(index: index, exerciseId: replacement)], walk: next, against: base)
+  }
+  // One edit of this workout's plan, saved with the walk it leaves, against the plan its editor opened on; each kind of
+  // change it makes is reported once. The durable offer is minted again over the new
+  // plan, and the rack follows it only as `rackFollows` says.
+  @discardableResult func revise(_ operations: [WorkoutPlan.Operation], walk next: WorkoutWalk? = nil, against base: SessionPlan?) -> Bool {
+    let report = { (outcome: String) in
+      for action in operations.map(\.action).reduce(into: [String](), { if !$0.contains($1) { $0.append($1) } }) {
+        self.gym.telemetry.event("gym_workout_plan_changed", properties: ["action": action, "outcome": outcome, "door": "workout"])
+      }
+    }
+    guard !operations.isEmpty else { return true }
+    guard flushRack(), let session, session.isOpen, !finishing, !finishQueued, !paging, !gym.accountTransition, !gym.readFailed else {
+      report("refused"); return false
+    }
+    let revision = ReviseWorkoutPlan(sessionId: session.id, base: base, operations: operations)
+    guard let result = gym.run(ReviseWorkout(revision: revision, walk: next)) else { message = gym.error; report("failed"); return false }
+    guard result.refusal == nil else { message = gym.error; report("refused"); return false }
+    if let next { walk = next }
+    report("ok")
+    reconcile(); activityChanged()
+    return true
   }
   @discardableResult func logSet(offered: WorkoutActivityOffer? = nil) -> Bool {
     guard flushRack() else { return false }
@@ -457,6 +539,8 @@ struct FinishWorkout: Action {
   }
 
   static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."
+  // What a plan editor says as it closes under a set the movement just took.
+  static func loggedNow(_ movement: String) -> String { "\(movement) has a logged set now. Nothing changed." }
 
   // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
@@ -529,7 +613,8 @@ struct FinishWorkout: Action {
   func completeFinish(_ session: Session) {
     receiptOwed = false
     guard receipt == nil, handoff == nil else { return }
-    receipt = WorkoutReceiptData(session: session, sets: sets, suggestsKeep: gym.suggestsKeep(session.id))
+    receipt = WorkoutReceiptData(session: session, sets: sets, suggestsKeep: gym.suggestsKeep(session.id),
+                                 routine: gym.routines.first { $0.id == session.routineId })
     message = nil
     gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "ok"])
   }
