@@ -201,6 +201,11 @@ public struct WorkoutProposalState: Sendable {
     guard proposal.state == "pending", let workout, let session = workout.session else { return nil }
     if workout.isClosed { return OutOfDate(.workoutFinished) }
     if let base = proposal.baseRevision, base != session.planRevision ?? 1 { return OutOfDate(.workoutChanged) }
+    // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
+    // plan the proposal diffs, its kept lines included.
+    if let plan = session.plan, RoutineChange.lines(from: plan.entries, to: proposal.document).map(\.json) != proposal.changes.map(\.json) {
+      return OutOfDate(.workoutChanged)
+    }
     guard let moved = proposal.changes.first(where: { $0.kind != "kept" && workout.logged.contains($0.exerciseId) }) else { return nil }
     return OutOfDate(.workoutMoved, exerciseId: moved.exerciseId)
   }

@@ -136,6 +136,12 @@ export class WorkoutProposalState {
     if (proposal.state !== 'pending' || workout === null || session === null) return null;
     if (workout.isClosed) return { reason: 'workout-finished' };
     if (proposal.baseRevision !== null && (session.planRevision ?? 1) !== proposal.baseRevision) return { reason: 'workout-changed' };
+    // A plan edit this device has not had confirmed moves no revision yet, so the stored plan itself must still be the
+    // plan the proposal diffs, its kept lines included.
+    if (session.plan !== null
+      && !sameJson(RoutineChange.between(session.plan.entries, proposal.document).map((change) => change.json), proposal.changes.map((change) => change.json))) {
+      return { reason: 'workout-changed' };
+    }
     const moved = proposal.changes.find((change) => change.kind !== 'kept' && workout.isLogged(change.exerciseId));
     return moved === undefined ? null : { reason: 'workout-moved', exerciseId: moved.exerciseId.json };
   }

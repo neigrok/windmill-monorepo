@@ -88,6 +88,10 @@ data class WorkoutProposalState(val proposal: WorkoutProposal?, val workout: Ope
         if (value.state != "pending" || session == null) return null
         if (workout.isClosed) return OutOfDate("workout-finished")
         if (value.baseRevision != null && (session.planRevision ?: 1) != value.baseRevision) return OutOfDate("workout-changed")
+        // A plan edit this phone has not had confirmed moves no revision yet, so the stored plan itself must still be the
+        // plan the proposal diffs, its kept lines included.
+        val plan = session.plan
+        if (plan != null && RoutineChange.between(plan.entries, value.document).map { it.json } != value.changes.map { it.json }) return OutOfDate("workout-changed")
         return value.changes.firstOrNull { it.kind != "kept" && it.exerciseId in workout.logged }?.let { OutOfDate("workout-moved", it.exerciseId) }
     }
 
