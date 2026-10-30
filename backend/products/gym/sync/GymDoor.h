@@ -54,6 +54,7 @@ public:
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override;
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                      const std::string&, const ProposalSource&) override;
+  WorkoutProposalOutcome proposeWorkout(const UserId&, const WorkoutProposalWrite&) override;
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override;
   std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override;
   NoteWriteOutcome saveInsight(const Note&) override;
@@ -66,6 +67,8 @@ private:
                                    const std::vector<RoutineEntry>& lines, const ProposalOf&);
   // Whether the id is held or spent anywhere, by this account or another.
   bool recordTaken(sync::SyncTxn&, const UserId&, const std::string& type, const std::string& id);
+  // The account's record of that type and id as admission reads it under the scope lock, or nothing.
+  std::optional<sync::Row> locked(sync::SyncTxn&, const UserId&, const std::string& type, const std::string& id);
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

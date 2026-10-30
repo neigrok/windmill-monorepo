@@ -96,6 +96,36 @@ public enum CoachDocuments {
     return ["proposal": .object(proposal), "reviewUrl": .string("\(appBaseUrl)/#/gym/proposals/\(value.id)"), "note": .string(note)]
   }
 
+  // A workout proposal's receipt: the proposal with its diff against the plan it read, and the words that keep the model
+  // honest. The lifter decides it on the workout's card, which has no address.
+  public static func workoutProposal(_ value: WorkoutProposal, base: [RoutineEntry], planRevision: Int?) -> JSON {
+    let pairs: [(String, JSON?)] = [
+      ("id", value.id.json), ("sessionId", value.sessionId.json), ("state", .string(value.state)), ("summary", .string(value.summary)),
+      ("changeCount", JSON(value.changeCount ?? RoutineChange.count(value.changes, against: base))),
+      ("settledAt", value.settledAt.map(JSON.of)),
+      ("source", .object(omittingNil: ["door": .string(value.door), "connection": value.connection.isEmpty ? nil : .string(value.connection),
+                                       "agent": value.agent.isEmpty ? nil : .string(value.agent), "thread": value.threadId.map(JSON.string)])),
+      ("baseRevision", JSON(value.baseRevision ?? planRevision ?? 1)),
+      ("changes", .array(value.changes.enumerated().map { index, change in
+        .object(omittingNil: ["position": JSON(index + 1), "kind": .string(change.kind), "exerciseId": change.exerciseId.json,
+                             "before": change.before?.json, "after": change.after?.json])
+      })),
+    ]
+    let note = switch value.state {
+    case "applied": "This change was already applied by the lifter — this is the record of it, not a second change."
+    case "dismissed":
+      "The lifter dismissed this change, and the workout kept its plan. Do not resend the same id; propose again only if you have "
+        + "something different to say."
+    case "superseded":
+      "This change was superseded — the workout's plan moved, or a newer change replaced it, so it can no longer be applied. Read the "
+        + "workout again with get_session before you propose anything else."
+    default:
+      "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap "
+        + "Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them."
+    }
+    return ["proposal": .object(JSON.Object(uniqueKeysWithValues: pairs.compactMap { key, value in value.map { (key, $0) } })), "note": .string(note)]
+  }
+
   public static func note(_ value: Note, position: Int) -> JSON {
     ["id": value.id.json, "position": JSON(position), "title": .string(value.title), "body": .string(value.body)]
   }

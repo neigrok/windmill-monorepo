@@ -23,16 +23,19 @@ std::string snake(const std::string& field) {
   return result;
 }
 
-// A register kept in its own relation tables rather than a column.
-bool complex(const std::string& field) { return field == "entries" || field == "changes" || field == "aliases"; }
+// A register kept in its own relation tables rather than a column: a routine's entries, a routine proposal's
+// changes, and the aliases of a movement. A workout proposal keeps its changes whole in a jsonb column.
+bool complex(const std::string& type, const std::string& field) {
+  return field == "entries" || field == "aliases" || (type == "proposal" && field == "changes");
+}
 // A register kept whole in a jsonb column.
-bool jsonColumn(const FieldDef& field, const std::string& name) {
-  if (complex(name) || !field.domain) return false;
-  const Domain::Type type = field.domain->type;
-  return type == Domain::Type::json || type == Domain::Type::array || type == Domain::Type::object;
+bool jsonColumn(const std::string& type, const FieldDef& field, const std::string& name) {
+  if (complex(type, name) || !field.domain) return false;
+  const Domain::Type kind = field.domain->type;
+  return kind == Domain::Type::json || kind == Domain::Type::array || kind == Domain::Type::object;
 }
 bool instant(const std::string& type, const std::string& field) {
-  return field == "startedAt" || field == "finishedAt" || field == "completedAt" || (type == "proposal" && field == "settledAt") || (type == "note" && field == "updatedAt");
+  return field == "startedAt" || field == "finishedAt" || field == "completedAt" || ((type == "proposal" || type == "workoutProposal") && field == "settledAt") || (type == "note" && field == "updatedAt");
 }
 std::string column(const std::string& type, const std::string& field) {
   if (type == "proposal" && field == "changeCount") return "changes";
@@ -153,7 +156,7 @@ std::string selectColumns(const TypeDef& type, const std::string& id) {
     const std::string col = column(type.name, name);
     if (field.kind == FieldKind::serial) { select += ", " + col; continue; }
     select += ", " + snake(name) + "_stamp";
-    if (complex(name)) continue;
+    if (complex(type.name, name)) continue;
     select += instant(type.name, name) ? ", (extract(epoch from " + col + ") * 1000)::bigint as " + col : ", " + col;
   }
   return select;
@@ -176,11 +179,11 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
     if (result[(snake(name) + "_stamp").c_str()].is_null()) continue;
     Json::Value v;
     if (name == "entries") v = readEntries(txn, row.id.column());
-    else if (name == "changes") v = readChanges(txn, row.id.column());
+    else if (name == "changes" && type.name == "proposal") v = readChanges(txn, row.id.column());
     else if (name == "aliases") v = readAliases(txn, scope, row.id.column());
     else if (!result[col.c_str()].is_null()) {
       if (instant(type.name, name) || name == "recordedAt") v = Json::Int64(result[col.c_str()].template as<std::int64_t>());
-      else if (jsonColumn(field, name)) v = parseJson(result[col.c_str()].template as<std::string>());
+      else if (jsonColumn(type.name, field, name)) v = parseJson(result[col.c_str()].template as<std::string>());
       else if (field.domain && field.domain->type == Domain::Type::number) v = field.domain->integer ? Json::Value(Json::Int64(result[col.c_str()].template as<std::int64_t>())) : Json::Value(result[col.c_str()].template as<double>());
       else if (field.domain && field.domain->type == Domain::Type::boolean) v = result[col.c_str()].template as<bool>();
       else v = result[col.c_str()].template as<std::string>();
@@ -192,7 +195,7 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
 
 // An unset register's column: a placeholder its stamp marks absent on the not-null columns older than the engine.
 std::string fallback(const std::string& type, const std::string& name) {
-  if (type == "thread" || type == "message") return "null";
+  if (type == "thread" || type == "message" || type == "workoutProposal") return "null";
   if (type == "exerciseName" && (name == "name" || name == "equipment" || name == "loadCount")) return "null";
   if (name == "name" || name == "body" || name == "summary" || name == "connection" || name == "agent" || name == "proposedName" || name == "note") return "''";
   if (name == "revision" || name == "baseRevision") return "1";
@@ -227,7 +230,7 @@ void bindValue(pqxx::params& params, const Json::Value& value) {
 }
 
 PgGymType::PgGymType(const TypeDef& type) : type_(type), owner_(type.name == "exercise" ? "created_by" : "user_id"), id_("id") {
-  static const std::map<std::string, std::string> tables{{"routine","gym_routines"},{"routineCreation","gym_routine_creations"},{"exercise","gym_exercises"},{"exerciseName","gym_exercise_names"},{"session","gym_sessions"},{"set","gym_sets"},{"note","gym_notes"},{"weighin","gym_bodyweight"},{"prefs","gym_preferences"},{"proposal","gym_proposals"},{"thread","gym_threads"},{"message","gym_messages"}};
+  static const std::map<std::string, std::string> tables{{"routine","gym_routines"},{"routineCreation","gym_routine_creations"},{"exercise","gym_exercises"},{"exerciseName","gym_exercise_names"},{"session","gym_sessions"},{"set","gym_sets"},{"note","gym_notes"},{"weighin","gym_bodyweight"},{"prefs","gym_preferences"},{"proposal","gym_proposals"},{"workoutProposal","gym_workout_proposals"},{"thread","gym_threads"},{"message","gym_messages"}};
   table_ = tables.at(type.name);
   if (type.name == "routineCreation") id_ = "routine_id";
   if (type.name == "exerciseName") id_ = "exercise_id";
@@ -326,12 +329,12 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
       }
       const auto reg = row.lattice.f.find(name);
       parameter(snake(name) + "_stamp", reg == row.lattice.f.end() ? std::optional<std::string>() : std::optional(toString(reg->second.stamp)));
-      if (complex(name)) continue;
+      if (complex(type_.name, name)) continue;
       if (reg == row.lattice.f.end()) { add(col, fallback(type_.name, name)); continue; }
       if (type_.name == "set" && name == "weightKg") params.append(loadNumber(reg->second.value));
       else bindValue(params, reg->second.value);
       const std::string p = "$" + std::to_string(++index);
-      add(col, instant(type_.name, name) ? "to_timestamp(" + p + "::numeric/1000)" : p + (jsonColumn(field, name) ? "::jsonb" : ""));
+      add(col, instant(type_.name, name) ? "to_timestamp(" + p + "::numeric/1000)" : p + (jsonColumn(type_.name, field, name) ? "::jsonb" : ""));
     }
     if (type_.name == "routine" || type_.name == "exercise" || type_.name == "proposal" || type_.name == "note") add("created_at", "to_timestamp(" + std::to_string(row.rc) + "::numeric/1000)");
     if (type_.name == "exerciseName" || type_.name == "weighin" || type_.name == "prefs") add("updated_at", "to_timestamp(" + std::to_string(row.ru) + "::numeric/1000)");
@@ -408,13 +411,15 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
     if (!row[2].is_null()) books["corrections"][id]["args"] = parseJson(row[2].template as<std::string>());
   }
   for (const auto& row : sql.exec("select id from gym_proposal_applies where user_id=$1::uuid", owner)) books["proposalApplies"][row[0].template as<std::string>()] = true;
+  for (const auto& row : sql.exec("select id from gym_workout_proposal_applies where user_id=$1::uuid", owner)) books["workoutProposalApplies"][row[0].template as<std::string>()] = true;
   return books;
 }
 
 void PgGymState::receipt(SyncTxn& txn, const ScopeKey& scope, const std::string& kind, const std::string& id, const Json::Value& receipt) {
   auto& sql = sqlOf(txn);
-  if (kind == "proposalApplies") {
-    sql.exec("insert into gym_proposal_applies(id,user_id) values($1,$2::uuid) on conflict do nothing", pqxx::params{id, scope.account().str()});
+  if (kind == "proposalApplies" || kind == "workoutProposalApplies") {
+    const std::string table = kind == "proposalApplies" ? "gym_proposal_applies" : "gym_workout_proposal_applies";
+    sql.exec("insert into " + table + "(id,user_id) values($1,$2::uuid) on conflict do nothing", pqxx::params{id, scope.account().str()});
     return;
   }
   const Json::Value args = kind == "corrections" ? receipt["args"] : receipt;

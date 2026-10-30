@@ -557,6 +557,66 @@ ToolResult proposeRoutineChange(ProgramRepository& program, GymWriteDoor& door, 
   return mintOutcome(door.propose(caller, parseProposalWrite(args, source)), appBaseUrl);
 }
 
+// The workout's plan is not in this object: the proposal, its state, the diff, and what to tell the lifter. It links
+// nowhere — the card is on the phone in the lifter's hand.
+ToolResult workoutProposalReceipt(const WorkoutProposal& proposal) {
+  Json::Value out(Json::objectValue);
+  out["proposal"] = toJson(proposal);
+  if (proposal.state == ProposalState::pending)
+    out["note"] = "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the "
+                  "lifter's app until they tap Apply — no tool on this connection can apply it. Say so when you "
+                  "answer: the workout is unchanged and a change is waiting for them.";
+  else if (proposal.state == ProposalState::applied)
+    out["note"] = "This change was already applied by the lifter — this is the record of it, not a second change.";
+  else if (proposal.state == ProposalState::dismissed)
+    out["note"] = "The lifter dismissed this change, and the workout kept its plan. Do not resend the same id; "
+                  "propose again only if you have something different to say.";
+  else
+    out["note"] = "This change was superseded — the workout's plan moved, or a newer change replaced it, so it can "
+                  "no longer be applied. Read the workout again with get_session before you propose anything else.";
+  return ToolResult::json(out);
+}
+
+ToolResult proposeWorkoutChange(GymWriteDoor& door, const UserId& caller, const Json::Value& args,
+                                const ProposalSource& source) {
+  static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
+  const WorkoutProposalOutcome outcome = door.proposeWorkout(caller, parseWorkoutProposalWrite(args, source));
+  switch (outcome.error) {
+    case WorkoutProposalError::none:
+      return workoutProposalReceipt(*outcome.proposal);
+    case WorkoutProposalError::unknownSession:
+      return ToolResult::failure(kNoSession);
+    case WorkoutProposalError::noPlan:
+      return ToolResult::failure("that workout was started without a routine, so it has no plan to change. Tell the "
+                                 "lifter what to do next in your answer instead.");
+    case WorkoutProposalError::finished:
+      return ToolResult::failure("that workout is finished, and a finished workout's plan is history. For next "
+                                 "time, send the change to propose_routine_change.");
+    case WorkoutProposalError::planLogged:
+      return ToolResult::failure(outcome.exercise->str() + " has a logged set in this workout, so its plan stays "
+                                 "as it is. Send its entries exactly as get_session shows them and change only "
+                                 "movements with nothing logged.");
+    case WorkoutProposalError::unknownExercise:
+      return ToolResult::failure("an entry names a movement no catalog holds, so this change was not minted. Call "
+                                 "list_exercises for the ids, then send the whole plan again.");
+    case WorkoutProposalError::invalidPlan:
+      return ToolResult::failure("the workout cannot take that plan: an entry repeats a movement the workout plans "
+                                 "once or not at all, or a target falls outside what a plan holds. Read it with "
+                                 "get_session and send the whole plan again.");
+    case WorkoutProposalError::noChange:
+      return ToolResult::failure("that plan is what the workout already follows, so there is nothing to propose. "
+                                 "Read it again with get_session and send back what you mean to change.");
+    case WorkoutProposalError::idTaken:
+      return ToolResult::failure("that proposal id is already spent. Mint a different one and send it again — your "
+                                 "OWN id would have replayed, answering with the change already waiting under it.");
+    case WorkoutProposalError::idReused:
+      return ToolResult::failure("that proposal id already holds a DIFFERENT change of yours, so this is a second "
+                                 "idea wearing a spent id rather than the replay of a lost reply. NOTHING WAS "
+                                 "MINTED. Mint a fresh id and send this one again.");
+  }
+  return ToolResult::failure(kNoSession);
+}
+
 ToolResult createExercise(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
   ExerciseInsertOutcome outcome = door.createExercise(caller, parseExerciseWrite(args));
   if (outcome.error == ExerciseInsertError::idTaken)
@@ -766,6 +826,7 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "create_routine")  return createRoutine(program_, door_, caller, arguments, source.door);
   if (name == "propose_routine_change")
     return proposeRoutineChange(program_, door_, caller, arguments, source, appBaseUrl_);
+  if (name == "propose_workout_change") return proposeWorkoutChange(door_, caller, arguments, source);
   if (name == "update_exercise") {
     if (!arguments["exerciseId"].isString()) return ToolResult::failure("exerciseId must name an existing movement");
     ExerciseUpdate update{ExerciseId{arguments["exerciseId"].asString()}};

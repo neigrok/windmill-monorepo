@@ -1118,6 +1118,7 @@ struct ReadOnlyDoor : GymWriteDoor {
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override { refuse(); }
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
                                      const ProposalSource&) override { refuse(); }
+  WorkoutProposalOutcome proposeWorkout(const UserId&, const WorkoutProposalWrite&) override { refuse(); }
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override { refuse(); }
   std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override { refuse(); }
   NoteWriteOutcome saveInsight(const Note&) override { refuse(); }

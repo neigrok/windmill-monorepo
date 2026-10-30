@@ -183,17 +183,16 @@ TEST(gym_catalog_names_the_grant_level_that_reaches_every_tool) {
                "list_notes gym:read", "list_bodyweight gym:read", "get_sessions gym:read", "get_last_times gym:read",
                "save_note gym:write", "start_session gym:write",
                "log_set gym:write", "finish_session gym:write",
-               "create_routine gym:write", "propose_routine_change gym:write",
+               "create_routine gym:write", "propose_routine_change gym:write", "propose_workout_change gym:write",
                "create_exercise gym:write", "update_exercise gym:write", "share_session gym:write", "log_sets gym:write", "import_session gym:write",
                "discard_session gym:delete", "propose_routine_removal gym:delete",
                "revoke_share gym:delete"}));
 }
 
-// `create_routine` LANDS — a day that did not exist takes nothing away — and the two `propose_` tools land nothing.
-TEST(gym_names_the_two_tools_that_only_propose_and_the_one_that_writes) {
+// `create_routine` LANDS — a day that did not exist takes nothing away — and the three `propose_` tools land nothing.
+TEST(gym_names_the_three_tools_that_only_propose_and_the_one_that_writes) {
   for (const ToolDeclaration& tool : gymToolCatalog()) {
-    if (tool.name() != "propose_routine_change" && tool.name() != "propose_routine_removal")
-      continue;
+    if (!mintsProposal(tool.name())) continue;
     const std::string described = tool.descriptor["description"].asString();
     // Each says what it does NOT do, in the first two sentences, in words a model acts on.
     CHECK(described.find("CHANGES NOTHING") != std::string::npos ||
@@ -510,8 +509,8 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
                                        "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
   const std::vector<std::string> writes{"save_note", "start_session",  "log_set",
                                         "finish_session", "create_routine",
-                                        "propose_routine_change", "create_exercise", "update_exercise",
-                                        "share_session", "log_sets", "import_session"};
+                                        "propose_routine_change", "propose_workout_change", "create_exercise",
+                                        "update_exercise", "share_session", "log_sets", "import_session"};
   const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
                                          "revoke_share"};
 

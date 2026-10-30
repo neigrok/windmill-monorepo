@@ -22,6 +22,7 @@ public struct GymServerRules: ServerRules {
     case "gym.importSession": entry("imports", command.string("id"), in: context) != nil
     case "gym.correctSession": entry("corrections", command.string("requestId"), in: context) != nil
     case "gym.applyProposal": entry("proposalApplies", command.string("proposalId"), in: context) != nil
+    case "gym.applyWorkoutProposal": entry("workoutProposalApplies", command.string("proposalId"), in: context) != nil
     default: false
     }
   }
@@ -34,6 +35,8 @@ public struct GymServerRules: ServerRules {
     case "gym.finish": try finish(command, in: context)
     case "gym.applyProposal": try applyProposal(command, in: context)
     case "gym.dismissProposal": try dismissProposal(command, in: context)
+    case "gym.applyWorkoutProposal": try applyWorkoutProposal(command, in: context)
+    case "gym.dismissWorkoutProposal": try dismissWorkoutProposal(command, in: context)
     case "gym.closeStale": CommandOutcome(deltas: staleClose(in: context), product: context.product)
     default: throw Refusal(.invalid)
     }
@@ -65,6 +68,8 @@ public struct GymServerRules: ServerRules {
                           write: [WriteClaim(key: session, born: .minted, fields: fields.keys.sorted())], product: product)
   }
 
+  // The session registers a start or an import takes from the routine it names: its id, the plan and the routine revision
+  // the plan froze at. A routine the owner cannot read leaves the session with neither.
   func sessionFields(_ command: CheckedCommand, in context: RuleContext) -> [String: JSON] {
     var fields: [String: JSON] = ["startedAt": command.args["startedAt"]!]
     if let id = command.args["routineId"]?.stringValue {
@@ -73,6 +78,7 @@ public struct GymServerRules: ServerRules {
       fields["routineId"] = readable ? .string(id) : .null
       fields["plan"] = readable ? .object(["routine": value(routine, "name") ?? .null, "entries": value(routine, "entries") ?? .null]) : .null
       if readable { fields["historyRoutineId"] = .string(id) }
+      if readable, let revision = value(routine, "revision"), !revision.isNull { fields["routineRevision"] = revision }
     }
     return fields
   }
@@ -241,11 +247,7 @@ public struct GymServerRules: ServerRules {
     if value(proposal, "intent") == "remove" {
       return CommandOutcome(deltas: [settle, .serverDelete(routine.key, born: routine.lattice.born)], product: product)
     }
-    let entries = value(proposal, "changes")!.arrayValue.filter { $0["kind"] != "removed" }.map { change in
-      var fields = change["after"]?.objectValue ?? JSON.Object()
-      fields["exerciseId"] = change["exerciseId"]
-      return JSON.object(fields)
-    }
+    let entries = try document(value(proposal, "changes")!.arrayValue)
     return CommandOutcome(deltas: [settle, .serverUpdate(routine.key, born: routine.lattice.born,
       fields: ["name": value(proposal, "proposedName")!, "entries": .array(entries)])],
       write: [WriteClaim(key: proposal.key, fields: ["state", "settledAt"]), WriteClaim(key: routine.key, fields: ["name", "entries"])], product: product)
@@ -273,8 +275,55 @@ public struct GymServerRules: ServerRules {
     throw refuse("proposal-superseded", detail: ["reason": "superseded"])
   }
 
+  // Why a workout proposal cannot apply, first match wins: a newer proposal replaced it; its workout finished; the plan
+  // moved past its base; a movement it changes has been logged since. None: it applies.
+  func workoutReason(_ proposal: Row, in context: RuleContext) -> String? {
+    if let replaced = value(proposal, "supersededBy"), !replaced.isNull { return "replaced" }
+    guard let session = context.idState(of: key("session", value(proposal, "sessionId")?.stringValue ?? "")).row else { return "workout-finished" }
+    let sets = context.storedRecords(ofType: "set")
+    if closed(session, sets: sets, now: context.serverNow) { return "workout-finished" }
+    if proposalState(proposal) == "superseded" || planRevision(session) != value(proposal, "baseRevision") { return "workout-changed" }
+    let proposed = (try? document(value(proposal, "changes")?.arrayValue ?? [])) ?? []
+    let logged = loggedMovements(sets, session: session.key.id.json)
+    return changedLoggedMovement(before: value(session, "plan")?["entries"]?.arrayValue ?? [], after: proposed, logged: logged) == nil ? nil : "workout-moved"
+  }
+
+  func applyWorkoutProposal(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let id = command.string("proposalId")
+    var product = context.product
+    ensureBook("workoutProposalApplies", scope: context.scope, in: &product)
+    if entry("workoutProposalApplies", id, in: context) != nil { return CommandOutcome(product: product) }
+    let proposal = try alive(key("workoutProposal", id), in: context)
+    let state = proposalState(proposal)
+    if state == "applied" {
+      store(true, table: "workoutProposalApplies", id: id, scope: context.scope, in: &product)
+      return CommandOutcome(product: product)
+    }
+    if state == "dismissed" { throw refuse("proposal-settled", detail: ["state": .string(state)]) }
+    if let reason = workoutReason(proposal, in: context) { throw refuse("proposal-superseded", detail: ["reason": .string(reason)]) }
+    let session = try alive(key("session", value(proposal, "sessionId")?.stringValue ?? ""), in: context)
+    let plan: JSON = ["routine": value(session, "plan")?["routine"] ?? .null, "entries": .array(try document(value(proposal, "changes")?.arrayValue ?? []))]
+    store(true, table: "workoutProposalApplies", id: id, scope: context.scope, in: &product)
+    return CommandOutcome(deltas: [
+      .serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["state": "applied", "settledAt": JSON(context.serverNow)]),
+      .serverUpdate(session.key, born: session.lattice.born, fields: ["plan": plan]),
+    ], write: [WriteClaim(key: proposal.key, fields: ["state", "settledAt"]), WriteClaim(key: session.key, fields: ["plan"])], product: product)
+  }
+
+  func dismissWorkoutProposal(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let proposal = try alive(key("workoutProposal", command.string("proposalId")), in: context)
+    let state = proposalState(proposal)
+    if state == "dismissed" { return CommandOutcome(product: context.product) }
+    if state == "applied" { throw refuse("proposal-settled", detail: ["state": .string(state)]) }
+    if state == "superseded" { throw refuse("proposal-superseded", detail: ["reason": .string(workoutReason(proposal, in: context) ?? "workout-changed")]) }
+    return CommandOutcome(deltas: [.serverUpdate(proposal.key, born: proposal.lattice.born,
+      fields: ["state": "dismissed", "settledAt": JSON(context.serverNow)])],
+      write: [WriteClaim(key: proposal.key, fields: ["state", "settledAt"])], product: context.product)
+  }
+
   public func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
-    let metadata = ["routine": ["revision", "createdEntries"], "proposal": ["baseRevision", "baseName", "changeCount"], "note": ["updatedAt"]]
+    let metadata = ["routine": ["revision", "createdEntries"], "proposal": ["baseRevision", "baseName", "changeCount"], "note": ["updatedAt"],
+                    "session": ["planRevision", "routineRevision"], "workoutProposal": ["baseRevision", "changeCount"]]
     for delta in context.deltas {
       guard delta.key.type != "routineCreation", !(metadata[delta.key.type] ?? []).contains(where: { delta.fields[$0] != nil }) else {
         throw Refusal(.invalid)
@@ -282,7 +331,7 @@ public struct GymServerRules: ServerRules {
     }
     var appended: [PlannedDelta] = []
     var numbered = context.storedRecords(ofType: "set")
-    var staged = Dictionary(uniqueKeysWithValues: ["set", "session", "routine", "routineCreation", "proposal", "note", "exercise", "exerciseName", "thread", "message"].flatMap {
+    var staged = Dictionary(uniqueKeysWithValues: ["set", "session", "routine", "routineCreation", "proposal", "workoutProposal", "note", "exercise", "exerciseName", "thread", "message"].flatMap {
       context.records(ofType: $0)
     }.map { ($0.key, $0) })
     let newlyCreated = Set(changes.filter { $0.after.isAlive && !$0.before.isAlive }.map(\.key))
@@ -356,12 +405,38 @@ public struct GymServerRules: ServerRules {
           guard change.createdBy.allSatisfy({ $0 == .command }) else { throw Refusal(.invalid) }
           continue
         }
-        guard change.diesHere, let before else { continue }
-        let last = records("set").filter { $0.isAlive && value($0, "sessionId") == row.key.id.json }
-          .compactMap { value($0, "completedAt")?.integerValue }.max() ?? value(before, "startedAt")?.integerValue ?? 0
-        if isOpen(before), context.serverNow - last < Self.staleMs { throw refuse("session-open") }
-        for set in records("set") where set.isAlive && value(set, "sessionId") == row.key.id.json {
-          append(.serverDelete(set.key, born: set.lattice.born))
+        guard let before else { continue }
+        // A session's death kills its sets and workout proposals.
+        if change.diesHere {
+          if isOpen(before), !closed(before, sets: records("set"), now: context.serverNow) { throw refuse("session-open") }
+          for set in records("set") where set.isAlive && value(set, "sessionId") == row.key.id.json {
+            append(.serverDelete(set.key, born: set.lattice.born))
+          }
+          for proposal in records("workoutProposal") where proposal.isAlive && value(proposal, "sessionId") == row.key.id.json {
+            append(.serverDelete(proposal.key, born: proposal.lattice.born))
+          }
+          continue
+        }
+        guard row.isAlive else { continue }
+        // A plan write is held to the plan revision rules; a net plan change moves planRevision and supersedes the
+        // workout's pending proposals, every door's.
+        if context.deltas.contains(where: { $0.key == row.key && $0.fields["plan"] != nil }) {
+          if context.origin.isReplica,
+             !context.guards.contains(where: { $0.key == row.key && $0.field == "plan" && $0.stamp == before.lattice.fields["plan"]?.stamp }) {
+            throw Refusal(.invalid)
+          }
+          guard let prior = value(before, "plan"), !prior.isNull, let plan = value(row, "plan"), !plan.isNull, plan["routine"] == prior["routine"] else {
+            throw Refusal(.invalid)
+          }
+          if closed(before, sets: records("set"), now: context.serverNow) { throw refuse("session-finished") }
+          try checkPlanRevision(before: prior["entries"]?.arrayValue ?? [], after: plan["entries"]?.arrayValue ?? [], session: row.key.id.json,
+                                sets: records("set"), knownExercise: knownExercise)
+        }
+        guard (value(before, "plan") ?? .null) != (value(row, "plan") ?? .null) else { continue }
+        guard let revision = try? planRevision(before).asInteger(), revision < 2_147_483_647 else { throw Refusal(.invalid) }
+        append(.serverUpdate(row.key, born: row.lattice.born, fields: ["planRevision": JSON(revision + 1)]))
+        for proposal in records("workoutProposal") where proposal.isAlive && value(proposal, "sessionId") == row.key.id.json && proposalState(proposal) == "pending" {
+          append(.serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["state": "superseded", "settledAt": JSON(context.serverNow)]))
         }
       case "routine":
         if change.diesHere {
@@ -470,6 +545,36 @@ public struct GymServerRules: ServerRules {
             fields: ["state": "superseded", "supersededBy": row.key.id.json, "settledAt": JSON(context.serverNow)]))
         }
         checkedProposals.insert(row.key)
+      // A change to the open workout's plan an agent proposes (gym Coach §5 G-4): the whole plan, diffed against the plan
+      // as it stands and held to the rules a lifter's own plan write is.
+      case "workoutProposal":
+        guard created else { continue }
+        let sessionId = value(row, "sessionId")?.stringValue ?? ""
+        let session = staged[key("session", sessionId)]
+        if context.origin.isReplica {
+          guard value(row, "door") == "ask", (value(row, "connection") ?? "") == "", (value(row, "agent") ?? "") == "" else { throw Refusal(.invalid) }
+          guard context.guards.contains(where: { $0.key == key("session", sessionId) && $0.field == "plan" && $0.stamp == session?.lattice.fields["plan"]?.stamp }) else {
+            throw Refusal(.invalid)
+          }
+        }
+        guard let session, session.isAlive else { throw Refusal(.unknownRecord) }
+        guard let plan = value(session, "plan"), !plan.isNull else { throw Refusal(.invalid) }
+        if closed(session, sets: records("set"), now: context.serverNow) { throw refuse("session-finished") }
+        let base = plan["entries"]?.arrayValue ?? []
+        let lines = value(row, "changes")?.arrayValue ?? []
+        let proposed = try document(lines)
+        guard proposed.count <= 50, lines == diff(base, proposed) else { throw Refusal(.invalid) }
+        try checkPlanRevision(before: base, after: proposed, session: session.key.id.json, sets: records("set"), knownExercise: knownExercise)
+        append(.serverUpdate(row.key, born: row.lattice.born, fields: ["baseRevision": planRevision(session), "changeCount": JSON(changeCount(base, lines))]))
+        for other in records("workoutProposal") {
+          guard (!newlyCreated.contains(other.key) || checkedProposals.contains(other.key)),
+                other.key != row.key, other.isAlive, proposalState(other) == "pending",
+                value(other, "sessionId") == .string(sessionId), value(other, "door") == value(row, "door"),
+                (value(other, "connection") ?? "") == (value(row, "connection") ?? "") else { continue }
+          append(.serverUpdate(other.key, born: other.lattice.born,
+            fields: ["state": "superseded", "supersededBy": row.key.id.json, "settledAt": JSON(context.serverNow)]))
+        }
+        checkedProposals.insert(row.key)
       default: continue
       }
     }
@@ -479,12 +584,7 @@ public struct GymServerRules: ServerRules {
   func checkProposal(_ proposal: Row, routine: Row, knownExercise: (JSON?) -> Bool) throws(Refusal) -> Int {
     let changes = value(proposal, "changes")!.arrayValue
     let base = value(routine, "entries")!.arrayValue
-    var proposed: [JSON] = []
-    for change in changes where change["kind"] != "removed" {
-      guard var entry = change["after"]?.objectValue else { throw Refusal(.invalid) }
-      entry["exerciseId"] = change["exerciseId"]
-      proposed.append(.object(entry))
-    }
+    let proposed = try document(changes)
     if value(proposal, "intent") == "remove" {
       guard proposed.isEmpty else { throw Refusal(.invalid) }
     } else {
@@ -492,6 +592,25 @@ public struct GymServerRules: ServerRules {
             !isBlank(value(proposal, "proposedName")?.stringValue ?? ""),
             proposed.allSatisfy({ $0["sets"].map { !$0.arrayValue.isEmpty } ?? true }) else { throw Refusal(.invalid) }
     }
+    guard changes == diff(base, proposed) else { throw Refusal(.invalid) }
+    guard proposed.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
+    return changeCount(base, changes) + (value(routine, "name") == value(proposal, "proposedName") ? 0 : 1)
+  }
+
+  // The document a diff proposes: every line but the removed ones, in order.
+  func document(_ changes: [JSON]) throws(Refusal) -> [JSON] {
+    var proposed: [JSON] = []
+    for change in changes where change["kind"] != "removed" {
+      guard var entry = change["after"]?.objectValue else { throw Refusal(.invalid) }
+      entry["exerciseId"] = change["exerciseId"]
+      proposed.append(.object(entry))
+    }
+    return proposed
+  }
+
+  // A.2's diff of a proposed document against its base: each proposed line matched to the first unmatched base line of
+  // its movement, then the base lines left unmatched.
+  func diff(_ base: [JSON], _ proposed: [JSON]) -> [JSON] {
     func targets(_ entry: JSON) -> JSON {
       var result = JSON.Object()
       result["sets"] = entry["sets"]
@@ -500,16 +619,12 @@ public struct GymServerRules: ServerRules {
     }
     var matched = Set<Int>()
     var expected: [JSON] = []
-    var highest = -1
-    var reordered = false
     for entry in proposed {
       let index = base.indices.first { !matched.contains($0) && base[$0]["exerciseId"] == entry["exerciseId"] }
       let after = targets(entry)
-      var change: JSON.Object = ["exerciseId": entry["exerciseId"]!, "after": after]
+      var change: JSON.Object = ["exerciseId": entry["exerciseId"] ?? .null, "after": after]
       if let index {
         matched.insert(index)
-        if index < highest { reordered = true }
-        highest = max(highest, index)
         let before = targets(base[index])
         change["before"] = before
         change["kind"] = before == after ? "kept" : "retargeted"
@@ -517,12 +632,61 @@ public struct GymServerRules: ServerRules {
       expected.append(.object(change))
     }
     for index in base.indices where !matched.contains(index) {
-      expected.append(["kind": "removed", "exerciseId": base[index]["exerciseId"]!, "before": targets(base[index])])
+      expected.append(["kind": "removed", "exerciseId": base[index]["exerciseId"] ?? .null, "before": targets(base[index])])
     }
-    guard changes == expected else { throw Refusal(.invalid) }
-    guard proposed.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
-    return changes.filter { $0["kind"] != "kept" }.count
-      + (value(routine, "name") == value(proposal, "proposedName") ? 0 : 1) + (reordered ? 1 : 0)
+    return expected
+  }
+
+  // R118's apply count of a diff: every line not kept, and one more when the kept and retargeted lines, matched to their
+  // base lines in proposed order, take a base line before one already visited.
+  func changeCount(_ base: [JSON], _ changes: [JSON]) -> Int {
+    let count = changes.filter { $0["kind"] != "kept" }.count
+    var matched = Set<Int>()
+    var highest = -1
+    for change in changes where change["kind"] == "kept" || change["kind"] == "retargeted" {
+      guard let index = base.indices.first(where: { !matched.contains($0) && base[$0]["exerciseId"] == change["exerciseId"] }) else { continue }
+      matched.insert(index)
+      if index < highest { return count + 1 }
+      highest = index
+    }
+    return count
+  }
+
+  // A.2's plan revision rules, shared by a plan write and a workout proposal: no empty set scheme, known movements, no
+  // second entry of a movement the plan held once or not at all, and logged movements kept.
+  func checkPlanRevision(before: [JSON], after: [JSON], session: JSON, sets: [Row], knownExercise: (JSON?) -> Bool) throws(Refusal) {
+    if after.contains(where: { $0["sets"].map { $0.arrayValue.isEmpty } ?? false }) { throw Refusal(.invalid) }
+    guard after.allSatisfy({ knownExercise($0["exerciseId"]) }) else { throw refuse("unknown-exercise") }
+    let count = { (entries: [JSON], exerciseId: JSON?) in entries.filter { $0["exerciseId"] == exerciseId }.count }
+    if after.contains(where: { count(after, $0["exerciseId"]) > max(count(before, $0["exerciseId"]), 1) }) { throw Refusal(.invalid) }
+    if let logged = changedLoggedMovement(before: before, after: after, logged: loggedMovements(sets, session: session)) {
+      throw refuse("plan-logged", detail: ["exerciseId": logged])
+    }
+  }
+
+  // The movements of a session holding an alive set, among the rows given.
+  func loggedMovements(_ sets: [Row], session: JSON) -> Set<JSON> {
+    Set(sets.filter { $0.isAlive && value($0, "sessionId") == session }.compactMap { value($0, "exerciseId") })
+  }
+
+  // A.2's logged-movement rule: the first logged movement, in the order the two plans name movements, whose entries differ
+  // between them. A movement with a logged set keeps its plan.
+  func changedLoggedMovement(before: [JSON], after: [JSON], logged: Set<JSON>) -> JSON? {
+    let entries = { (plan: [JSON], exerciseId: JSON) in plan.filter { $0["exerciseId"] == exerciseId } }
+    return (before + after).compactMap { $0["exerciseId"] }.first { logged.contains($0) && entries(before, $0) != entries(after, $0) }
+  }
+
+  // A session that takes no plan revision: finished, or open 4 h or more past its last activity.
+  func closed(_ session: Row, sets: [Row], now: Int64) -> Bool {
+    if let finished = value(session, "finishedAt"), !finished.isNull { return true }
+    let last = sets.filter { $0.isAlive && value($0, "sessionId") == session.key.id.json }
+      .compactMap { value($0, "completedAt")?.integerValue }.max() ?? value(session, "startedAt")?.integerValue ?? 0
+    return now - last >= Self.staleMs
+  }
+
+  func planRevision(_ session: Row) -> JSON {
+    guard let revision = value(session, "planRevision"), !revision.isNull else { return 1 }
+    return revision
   }
 
   func changed(_ change: RecordChange, field: String) -> Bool {

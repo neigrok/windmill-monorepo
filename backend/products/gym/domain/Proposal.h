@@ -144,4 +144,33 @@ int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<Rout
 // else must be refused.
 bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming);
 
+// A change an agent proposes to the open workout's plan (gym Coach §5 G-4): the plan the workout would take on, as a
+// diff against the plan at `baseRevision`, its rows read as a routine proposal's. Nothing moves until the lifter
+// applies it on a phone, and any change to the plan underneath supersedes it.
+struct WorkoutProposal {
+  ProposalId id;
+  SessionId session;
+  ProposalState state;
+  ProposalSource source;
+  std::string summary;
+  int baseRevision;
+  int changeCount;
+  std::vector<RoutineChange> changes;
+  std::optional<std::uint64_t> settledAtMs;
+
+  // A pending proposal of `entries` against `plan` as it stands at `baseRevision`, counted as a routine proposal's
+  // lines are counted, with no name to rename.
+  WorkoutProposal(ProposalId id, SessionId session, ProposalSource source, std::string summary,
+                  const PlanSnapshot& plan, int baseRevision, const std::vector<RoutineEntry>& entries);
+  WorkoutProposal(Stored, ProposalId id, SessionId session, ProposalState state, ProposalSource source,
+                  std::string summary, int baseRevision, int changeCount, std::vector<RoutineChange> changes,
+                  std::optional<std::uint64_t> settledAtMs);
+
+  // Whether `incoming` asks for the plan this one asks for, from the same workout, door and summary: a replay
+  // answers with this proposal whatever happened to the plan since.
+  bool replays(const WorkoutProposal& incoming) const;
+
+  bool operator==(const WorkoutProposal&) const = default;
+};
+
 }

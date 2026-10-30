@@ -9,21 +9,24 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertFalse(app.images["figure.strengthtraining.functional"].exists)
       capture("other-rack", look, app)
       weight.tap()
-      let load = app.pickerWheels.element(boundBy: 0)
-      XCTAssertTrue(load.waitForValue("−5 kg"))
-      for value in ["0 kg", "1 kg", "−1 kg", "0 kg"] {
-        load.adjust(toPickerWheelValue: value)
+      let load = app.textFields["workout-load"]
+      XCTAssertTrue(load.waitForValue("−5"))
+      for value in ["5", "−5"] {
+        app.buttons["workout-load-sign"].tap()
         XCTAssertTrue(load.waitForValue(value))
       }
-      capture("other-load-and-reps", look, app)
-      app.buttons["set-wheel-cancel"].tap()
+      capture("other-load-sign", look, app)
+      app.buttons["workout-load-done"].tap()
       XCTAssertTrue(weight.waitForLabel("Weight, −5 kg"))
       let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
       XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
-      XCTAssertTrue(load.waitForValue("−5 kg"))
-      app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "8 reps")
+      let fixLoad = app.textFields["workout-fix-load"]
+      XCTAssertTrue(fixLoad.waitForValue("−5"))
+      app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "8 reps")
       capture("other-fix-set", look, app)
-      load.adjust(toPickerWheelValue: "−4 kg")
+      app.typeLoad("4", into: "workout-fix-load")
+      app.buttons["workout-fix-load-sign"].tap()
+      XCTAssertTrue(fixLoad.waitForValue("−4"))
       app.buttons["workout-fix-save"].tap()
       XCTAssertTrue(set.waitForLabel("Set 2, logged, −4 kilograms, 8 reps"))
       app.buttons["workout-finish"].tap()
@@ -94,23 +97,135 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
-  // Fix set over the second dumbbell press set.
+  // Fix set over the second dumbbell press set, its load on the decimal pad.
   func testFixSet() {
-    captureBoard("03.3-fix-set", settle: 1.5) { look in
+    captureBoard("03.25-fix-set", settle: 1.5) { look in
       let app = launch("workout-upper", look)
       let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set 2,")).firstMatch
       XCTAssertTrue(set.waitForExistence(timeout: 10))
       RunLoop.current.run(until: Date().addingTimeInterval(1)); set.tap()
       XCTAssertTrue(app.staticTexts["Set 2"].waitForExistence(timeout: 5))
+      app.textFields["workout-fix-load"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
       return app
     }
   }
 
+  // The press's load typed in place on the rack, and its reps on the one wheel.
   func testLoadAndReps() {
-    captureBoard("03.2-load-and-reps", settle: 1.5) { look in
+    captureBoard("03.23-load-in-place", settle: 1.5) { look in
       let app = launch("workout-upper", look)
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
-      XCTAssertTrue(app.pickerWheels["16 kg each"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.textFields["workout-load"].waitForValue("16"))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["workout-log"].exists)
+      return app
+    }
+    captureBoard("03.24-reps-wheel", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      XCTAssertTrue(app.buttons["workout-reps"].waitForExistence(timeout: 10)); app.buttons["workout-reps"].tap()
+      XCTAssertTrue(app.pickerWheels["8 reps"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.30-sign-key-rack", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 10 kg added")); app.buttons["workout-weight"].tap()
+      XCTAssertTrue(app.buttons["workout-load-sign"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // The workout in flight's plan boards on its fixture (workout-in-flight.md): the movement menu with nothing logged and
+  // with a logged set, past the plan, Edit sets, Swap and the receipt's plan changes.
+  func testWorkoutInFlight() {
+    let inFlight = { (look: Look, board: String) -> (XCUIApplication, XCUIElement) in
+      let app = self.launch(board, look)
+      let menu = app.buttons["workout-movement-menu"]
+      XCTAssertTrue(menu.waitForExistence(timeout: 60))
+      return (app, menu)
+    }
+    captureBoard("03.26-movement-menu-nothing-logged", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Swap movement"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.27-movement-menu-logged", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight-logged")
+      XCTAssertTrue(menu.waitForValue("Dumbbell Bench Press")); menu.tap()
+      XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["Edit sets"].exists)
+      return app
+    }
+    captureBoard("03.28-past-the-plan", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight-logged")
+      XCTAssertTrue(menu.waitForValue("Dumbbell Bench Press"))
+      app.buttons["workout-log"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 4, current, open target"))
+      return app
+    }
+    captureBoard("03.29-edit-sets", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+      XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.31-swap-movement", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Swap movement"].waitForExistence(timeout: 5)); app.buttons["Swap movement"].tap()
+      XCTAssertTrue(app.navigationBars["Swap Pull-up"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.32-receipt-plan-changes", settle: 2) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+      app.buttons["edit-sets-set-1"].tap()
+      app.typeLoad("12.5", into: "edit-sets-load")
+      app.buttons["edit-sets-save"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, target 12.5 kilograms, 8 reps"))
+      menu.tap()
+      XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
+      XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+      app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Face")
+      XCTAssertTrue(app.buttons["gym-movement-face-pull"].waitForExistence(timeout: 5)); app.buttons["gym-movement-face-pull"].tap()
+      let open = app.descendants(matching: .any)["workout-current-set"]
+      XCTAssertTrue(open.waitForLabel("Set 1, current, open target")); open.tap()
+      XCTAssertTrue(app.buttons["edit-sets-add"].waitForExistence(timeout: 5)); app.buttons["edit-sets-add"].tap()
+      app.typeLoad("15", into: "edit-sets-load")
+      app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "15 reps")
+      app.buttons["edit-sets-add"].tap()
+      app.buttons["edit-sets-save"].tap()
+      XCTAssertTrue(open.waitForLabel("Set 1, current, target 15 kilograms, 15 reps"))
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.switches["workout-receipt-save-plan"].waitForExistence(timeout: 15))
+      return app
+    }
+  }
+
+  // The facts row's rest target: resting toward the press's two minutes, past them, and the row with no target.
+  func testRestTarget() {
+    captureBoard("03.20-rest-target-resting", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      XCTAssertTrue(app.descendants(matching: .any)["Since last set"].waitForExistence(timeout: 10))
+      XCTAssertTrue((app.descendants(matching: .any)["Since last set"].value as? String ?? "").hasSuffix(", target 2 minutes"))
+      return app
+    }
+    captureBoard("03.21-rest-target-reached", settle: 1.5) { look in
+      let app = launch("workout-upper-rested", look)
+      XCTAssertTrue(app.descendants(matching: .any)["Since last set"].waitForExistence(timeout: 10))
+      return app
+    }
+    captureBoard("03.22-rest-target-none", settle: 1.5) { look in
+      let app = launch("workout-upper", look)
+      XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
+      for _ in 0..<2 { app.descendants(matching: .any)["workout-current-set"].swipeLeft(); RunLoop.current.run(until: Date().addingTimeInterval(0.6)) }
+      let since = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND NOT (value ENDSWITH %@)", "Since last set", "minutes")).firstMatch
+      XCTAssertTrue(since.waitForExistence(timeout: 5))
       return app
     }
   }
@@ -176,11 +291,11 @@ final class WorkoutCaptures: DesignCapture {
         .containing(.staticText, identifier: "Since last set").firstMatch
       XCTAssertTrue(container.wait(for: \.isHittable, toEqual: true, timeout: 30)); container.press(forDuration: 1)
       XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: 5))
-      capture("04.3-dynamic-island-expanded", look, springboard)
+      capture("04.6-dynamic-island-expanded", look, springboard)
       XCUIDevice.shared.press(.home)
       showLockScreen(springboard)
       XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: 20))
-      capture("04.2-live-activity", look, springboard)
+      capture("04.7-live-activity-compact", look, springboard)
       finishOutside(app)
     }
     XCUIDevice.shared.appearance = .light
@@ -236,10 +351,10 @@ final class WorkoutCaptures: DesignCapture {
       let app = launch("workout-planned", look)
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10))
       app.buttons["workout-weight"].tap()
-      app.turnLoadWheel(to: "105")
+      app.typeLoad("105")
       app.buttons["workout-log"].tap()
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
       app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
       app.swipeUp()
@@ -261,7 +376,7 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
       app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+      XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 10))
       XCTAssertFalse(app.buttons["workout-keep"].exists)
@@ -272,7 +387,7 @@ final class WorkoutCaptures: DesignCapture {
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
       app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
       app.descendants(matching: .any)["workout-current-set"].swipeLeft()
-      XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+      XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       app.buttons["workout-finish"].tap()
       XCTAssertTrue(app.buttons["workout-keep"].waitForExistence(timeout: 10))
       return app

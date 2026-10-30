@@ -575,12 +575,6 @@ final class CoachCaptures: DesignCapture {
       askRefused(thursday, app, door: "coach-try-again")
       return app
     }
-    captureBoard("08.39-coach-refused-workout-open", in: Look.dark) { look in
-      let app = launchSignedInCoach(look, arguments: ["-coach-board", "workout-open"])
-      askSettled(stalled, app)
-      askRefused(thursday, app, door: "coach-open-workout")
-      return app
-    }
     captureBoard("08.40-coach-refused-log-arriving", in: Look.dark) { look in
       let app = launchSignedInCoach(look, arguments: ["-coach-board", "log-arriving"])
       askSettled(stalled, app)
@@ -677,6 +671,118 @@ final class CoachCaptures: DesignCapture {
       XCTAssertTrue(app.staticTexts["Reconnecting…"].waitForNonExistence(timeout: 15))
       XCTAssertTrue(app.descendants(matching: .any)["coach-step-line"].exists && app.buttons["coach-stop"].exists)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // Push A's workout running, Coach opened from its toolbar on a fresh chat, then Close back to the rack exactly as it was.
+  func openCoachOverTheWorkout(_ look: Look, board: String = "change") -> XCUIApplication {
+    let app = launchSignedInCoach(look, arguments: ["-coach-board", board])
+    open(.routines, app)
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 10)); routine.tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10)); app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+    app.buttons["workout-weight-step-2"].tap()
+    let weight = app.buttons["workout-weight"].label, reps = app.buttons["workout-reps"].label
+    let coach = app.buttons["workout-coach"]
+    XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 5)); coach.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-history"].exists && !app.descendants(matching: .any)["coach-proposal-header"].exists)
+    app.buttons["coach-close"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
+    XCTAssertEqual([app.buttons["workout-weight"].label, app.buttons["workout-reps"].label], [weight, reps], "Close leaves the rack's draft as it was")
+    XCTAssertTrue(app.buttons["workout-log"].isHittable)
+    coach.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  func testCoachOverTheWorkout() {
+    captureBoard("08.54-coach-over-the-workout", settle: 1.5) { look in openCoachOverTheWorkout(look) }
+    captureBoard("08.56-coach-routine-card-next-time", settle: 1.5) { look in
+      let app = openCoachOverTheWorkout(look)
+      ask("Is Push A still doing anything?", app)
+      let header = app.descendants(matching: .any)["coach-proposal-header"]
+      XCTAssertTrue(header.waitForExistence(timeout: 15))
+      XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(header.label.hasPrefix("Changes to Push A · Next time"), header.label)
+      if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      let bar = app.navigationBars["Coach"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      bar.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+      RunLoop.current.run(until: Date().addingTimeInterval(1))
+      XCTAssertLessThan(app.navigationBars["Coach"].frame.minY, app.frame.height / 4, "The sheet stands at its large detent")
+      for _ in 0..<6 where header.frame.minY < app.navigationBars["Coach"].frame.maxY { app.scrollViews.firstMatch.swipeDown(velocity: .slow) }
+      return app
+    }
+  }
+
+  // Upper A's workout running with two bench sets logged, Coach opened over it and asked about the shoulder: the answer's
+  // change to this workout, and with `workout-and-routine` a change to Upper A for next time beside it.
+  func askOverUpperA(_ look: Look, board: String) -> XCUIApplication {
+    let app = launchSignedInCoach(look, arguments: ["-coach-board", board])
+    open(.routines, app)
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Upper A")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 10)); routine.tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10)); app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+    for _ in 0..<2 { app.buttons["workout-log"].tap(); RunLoop.current.run(until: Date().addingTimeInterval(0.6)) }
+    let coach = app.buttons["workout-coach"]
+    XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 5)); coach.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 10))
+    ask("Shoulder feels off on bench. What should I change today?", app)
+    XCTAssertTrue(app.descendants(matching: .any)["coach-workout-proposal-header"].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    return app
+  }
+  // The sheet at its large detent, the conversation dragged until `element` stands under its bar.
+  func raise(_ app: XCUIApplication, showing element: XCUIElement) {
+    let bar = app.navigationBars["Coach"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    bar.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+    RunLoop.current.run(until: Date().addingTimeInterval(1))
+    XCTAssertLessThan(app.navigationBars["Coach"].frame.minY, app.frame.height / 4, "The sheet stands at its large detent")
+    for _ in 0..<6 where element.frame.minY < app.navigationBars["Coach"].frame.maxY { app.scrollViews.firstMatch.swipeDown(velocity: .slow) }
+  }
+
+  func testWorkoutProposals() {
+    captureBoard("08.55-coach-proposal-this-workout", settle: 1.5) { look in
+      let app = askOverUpperA(look, board: "workout")
+      let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
+      XCTAssertTrue(header.label == "Changes to this workout, 1 change", header.label)
+      raise(app, showing: app.descendants(matching: .any)["coach-answer"].firstMatch)
+      return app
+    }
+    captureBoard("08.56-coach-proposal-one-of-each", settle: 1.5) { look in
+      let app = askOverUpperA(look, board: "workout-and-routine")
+      let apply = app.buttons["coach-apply-workout-proposal"]
+      for _ in 0..<4 where !apply.isHittable { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
+      apply.tap()
+      let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
+      XCTAssertTrue(header.waitForValue("Applied", timeout: 10))
+      XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].label.hasPrefix("Changes to Upper A · Next time"))
+      raise(app, showing: header)
+      return app
+    }
+    captureBoard("08.57-coach-proposal-out-of-date", settle: 1.5) { look in
+      let app = askOverUpperA(look, board: "workout")
+      app.buttons["coach-close"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
+      for _ in 0..<2 where !app.buttons["Seated Cable Row"].exists {
+        app.descendants(matching: .any)["workout-current-set"].swipeLeft(); RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+      }
+      XCTAssertTrue(app.buttons["Seated Cable Row"].waitForExistence(timeout: 5))
+      app.buttons["workout-log"].tap()
+      app.buttons["workout-coach"].tap()
+      XCTAssertTrue(app.buttons["coach-history"].waitForExistence(timeout: 10)); app.buttons["coach-history"].tap()
+      let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Shoulder feels off on bench.")).firstMatch
+      XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.tap()
+      let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
+      XCTAssertTrue(header.waitForValue("Out of date", timeout: 10))
+      XCTAssertEqual(app.staticTexts["coach-workout-proposal-out-of-date"].label, "You logged Seated Cable Row since this suggestion. Nothing was applied.")
+      raise(app, showing: app.descendants(matching: .any)["coach-answer"].firstMatch)
       return app
     }
   }

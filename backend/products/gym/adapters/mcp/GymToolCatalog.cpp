@@ -411,6 +411,52 @@ std::vector<ToolDeclaration> gymToolCatalog() {
         p, {"id", "routineId", "entries"}));
   }
   {
+    // catalog/2: the open workout's plan, whole, with every entry's sets closed at every depth (§3.1).
+    Json::Value sets = setArray();
+    sets["items"]["required"] = Json::Value(Json::arrayValue);
+    sets["description"] =
+        "The movement's target for THIS workout as a SCHEME: one item per set, in the order lifted, 1 to 20. A "
+        "straight `3 × 8 · 60` is three identical items. OMIT the whole key to leave the movement OPEN — the "
+        "numbers are decided at the rack. An empty array is refused: a zero target is no target.";
+    Json::Value entry = entryArray()["items"];
+    entry["properties"].removeMember("position");
+    entry["properties"]["exerciseId"] = str("The movement's id — get_session and list_exercises answer with it.");
+    entry["properties"]["sets"] = sets;
+    entry["properties"]["restSeconds"] =
+        boundedInt("Rest between this movement's sets, 15–900. Omit to fall back to the rest target they set in "
+                   "the app, and to no timer at all when they have set none.",
+                   15, 900);
+    Json::Value entries(Json::objectValue);
+    entries["type"] = "array";
+    entries["items"] = entry;
+    entries["minItems"] = 0;
+    entries["maxItems"] = static_cast<Json::UInt64>(kMaxRoutineEntries);
+    entries["description"] = "This workout's plan, in order: every movement it asks for, the logged ones included. At most 50.";
+    Json::Value p(Json::objectValue);
+    p["id"] = str("The id YOU mint for this proposal (`prop_` + hex is the house shape).");
+    p["sessionId"] = str("The open workout's id — list_sessions and get_session answer with it.");
+    p["summary"] = cappedStr("One sentence saying what this changes and why — the line the lifter reads on the "
+                             "card before the diff. Omit it and they read the diff alone.",
+                             kMaxSummaryLength);
+    p["entries"] = entries;
+    tools.push_back(tool("propose_workout_change", Access::write,
+        "Propose a change to the workout the lifter is doing RIGHT NOW. THIS CHANGES NOTHING. It puts a typed, "
+        "field-level diff of this workout's plan in front of them — `sets 3 × 8 · 16 → 3 × 10 · 14`, `rest 120 → "
+        "90`, a movement added, a movement taken out — and the workout keeps its plan until they tap Apply on the "
+        "card. Nothing on this connection can tap it for them. When you answer, say the workout has not changed "
+        "and that a change is waiting for them to apply.\n"
+        "Send the WHOLE plan every time — read it with get_session, change what you mean, and send every entry "
+        "back, the ones you are not changing included, because an entry you leave out is a movement you are "
+        "proposing to take OUT of this workout. A new proposal replaces the one you had waiting on this workout. "
+        "YOU mint `id` and it IS the idempotency key: send the SAME id with the SAME plan to replay a lost reply, "
+        "never a fresh one.\n"
+        "A movement with a logged set keeps its plan: send its entries exactly as get_session shows them, or the "
+        "proposal is refused. You may change movements with nothing logged and add movements. This changes this "
+        "workout only — never the routine it came from; for next time, propose_routine_change. It cannot reach a "
+        "logged set or a finished workout.",
+        p, {"id", "sessionId", "entries"}));
+  }
+  {
     Json::Value p(Json::objectValue);
     p["id"] = str("The id YOU mint for this movement (`ex_` + hex is the house shape).");
     p["name"] = cappedStr("What it is called on screen. Renaming it later keeps every set.", kMaxNameLength);

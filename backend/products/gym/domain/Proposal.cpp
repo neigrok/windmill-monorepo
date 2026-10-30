@@ -195,4 +195,40 @@ bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming) 
   return true;
 }
 
+WorkoutProposal::WorkoutProposal(ProposalId id, SessionId session, ProposalSource source, std::string summary,
+                                 const PlanSnapshot& plan, int baseRevision, const std::vector<RoutineEntry>& entries)
+    : WorkoutProposal(Stored{}, std::move(id), std::move(session), ProposalState::pending, std::move(source),
+                      std::move(summary), baseRevision, 0, {}, std::nullopt) {
+  if (entries.size() > static_cast<std::size_t>(kMaxRoutineEntries)) throw InvalidTraining("a workout plans at most 50 movements");
+  std::vector<RoutineEntry> base;
+  for (const PlanEntry& entry : plan.entries)
+    base.emplace_back(static_cast<int>(base.size()) + 1, entry.exercise, entry.sets, entry.restSeconds);
+  changes = changesBetween(base, entries);
+  changeCount = countedChanges(base, changes, plan.routineName, plan.routineName);
+}
+
+WorkoutProposal::WorkoutProposal(Stored, ProposalId id, SessionId session, ProposalState state, ProposalSource source,
+                                 std::string summary, int baseRevision, int changeCount, std::vector<RoutineChange> changes,
+                                 std::optional<std::uint64_t> settledAtMs)
+    : id(std::move(id)), session(std::move(session)), state(state), source(std::move(source)), summary(nfc(summary)),
+      baseRevision(baseRevision), changeCount(changeCount), changes(std::move(changes)), settledAtMs(settledAtMs) {
+  if (!wellFormedId(this->id.str())) throw InvalidTraining("bad proposal id");
+  if (this->session.empty()) throw InvalidTraining("a workout proposal names a workout");
+  if (this->summary.size() > kMaxSummaryLength) throw InvalidTraining("proposal summary too long");
+  if (!storableText(this->summary)) throw InvalidTraining("a proposal summary must be storable text");
+  if (baseRevision < 1) throw InvalidTraining("a proposal stands on a revision from 1");
+}
+
+bool WorkoutProposal::replays(const WorkoutProposal& incoming) const {
+  auto document = [](const std::vector<RoutineChange>& lines) {
+    std::vector<std::pair<ExerciseId, EntryTargets>> plan;
+    for (const RoutineChange& line : lines)
+      if (line.kind != ChangeKind::removed && line.after) plan.emplace_back(line.exercise, *line.after);
+    return plan;
+  };
+  return id == incoming.id && session == incoming.session && source.door == incoming.source.door &&
+         source.connection == incoming.source.connection && source.agent == incoming.source.agent &&
+         summary == incoming.summary && document(changes) == document(incoming.changes);
+}
+
 }

@@ -42,6 +42,7 @@ final class GymModel {
   var notes: [Note] = []
   var bodyweight: Bodyweight?
   var preferences = GymPreferences()
+  var restSettings = RestSettings()
   var proposals: [Proposal] = []
   var personalCounts: [String: Int] = [:]
   var workoutHidden = false
@@ -76,6 +77,11 @@ final class GymModel {
   var refusedCoachApplies: Set<ID<Proposal>> = []
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var waitingCoachDiffs: [ID<Proposal>: ProposalDiff] = [:]
+  // Coach's changes to the open workout, which of them can no longer be applied and why, and the decisions on them still
+  // waiting on the log's answer.
+  var workoutProposals: [WorkoutProposal] = []
+  var outOfDateWorkoutProposals: [ID<WorkoutProposal>: CoachOutOfDate] = [:]
+  @ObservationIgnored var awaitedWorkoutDecisions: [ID<WorkoutProposal>: CoachQueuedDecision] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil,
@@ -153,7 +159,7 @@ final class GymModel {
     guard observationTask == nil, let runtime else { return }
     do {
       let types = [Routine.type, Exercise.type, ExerciseName.type, Session.type, TrainingSet.type,
-                   Note.type, WeighIn.type, GymPreferences.type, Proposal.type]
+                   Note.type, WeighIn.type, GymPreferences.type, Proposal.type, WorkoutProposal.type]
       scopeViews = try types.flatMap { type in
         [try runtime.engine.records(Gym.scope, type, .drawn), try runtime.engine.records(Gym.scope, type, .stored)]
       }
@@ -192,8 +198,8 @@ final class GymModel {
         guard let self, self.observationGeneration == generation else { return }
         self.observeScopes(generation)
         // The views land a change one by one, after the store holds it; the first landing reads it all. A status the
-        // store does not hold (the connection, a failed push, the update) moves only what is unsent: the views read it
-        // as they draw, and the lock screen is redrawn here.
+        // store does not hold (the connection, a failed push, the update) moves only what is unsent, which the views read
+        // as they draw; the Live Activity reconciles here, since the account it serves is a status too.
         if self.runtime?.engine.lastChange != self.readThrough { self.refresh() } else { self.existingWorkoutActivity?.schedule() }
       }
     }
@@ -236,12 +242,14 @@ final class GymModel {
                 routines: Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
                 notes: try read.repository(Note.self).all(in: .drawn), bodyweight: try Bodyweight(read),
                 preferences: try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
+                restSettings: try GymDomain.restSettings(read),
                 coach: try Self.readCoachProposals(read), anonymous: read.isAnonymous, counts: counts, hidden: hidden,
                 planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
       if log.map({ !$0.drawsTheSame(as: snapshot.log) }) ?? true { log = snapshot.log }
       publish(\.catalogue, snapshot.catalogue); publish(\.routines, snapshot.routines); publish(\.notes, snapshot.notes)
       publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
+      publish(\.restSettings, snapshot.restSettings)
       publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
       updateCoachProposals(snapshot.coach)
@@ -362,6 +370,7 @@ final class GymModel {
     case .sessionOverlap: "This workout overlaps another workout."
     case .payloadConflict: "This workout changed elsewhere. Review the latest version."
     case .unknownExercise: "This movement is no longer available."
+    case .planLogged: "That movement already has a logged set."
     case .badInstant: "Check the workout's start and finish times."
     case .proposalSettled: "This proposal has already been answered."
     case .proposalSuperseded: "A newer proposal is available."

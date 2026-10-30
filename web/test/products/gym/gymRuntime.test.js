@@ -104,7 +104,7 @@ test('unreadable frozen plans allow unrelated set fixes and held workout deletio
 test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  assert.equal(registry.version, 11);
+  assert.equal(registry.version, 12);
   assert.equal(registry.minVersion, 11);
   const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
   const rows = [
