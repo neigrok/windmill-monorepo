@@ -1,5 +1,5 @@
 {
-  "catalog": "catalog/1",
+  "catalog": "catalog/2",
   "abilities": [
     {
       "name": "list_routines",
@@ -3077,6 +3077,250 @@
       "seats": "any",
       "phrase": "wrote a proposal to remove a routine",
       "ui": "routine delete"
+    },
+    {
+      "name": "propose_workout_change",
+      "description": "Propose a change to the workout the lifter is doing RIGHT NOW. THIS CHANGES NOTHING. It puts a typed, field-level diff of this workout's plan in front of them — `sets 3 × 8 · 16 → 3 × 10 · 14`, `rest 120 → 90`, a movement added, a movement taken out — and the workout keeps its plan until they tap Apply on the card. Nothing on this connection can tap it for them. When you answer, say the workout has not changed and that a change is waiting for them to apply.\nSend the WHOLE plan every time — read it with get_session, change what you mean, and send every entry back, the ones you are not changing included, because an entry you leave out is a movement you are proposing to take OUT of this workout. A new proposal replaces the one you had waiting on this workout. YOU mint `id` and it IS the idempotency key: send the SAME id with the SAME plan to replay a lost reply, never a fresh one.\nA movement with a logged set keeps its plan: send its entries exactly as get_session shows them, or the proposal is refused. You may change movements with nothing logged and add movements. This changes this workout only — never the routine it came from; for next time, propose_routine_change. It cannot reach a logged set or a finished workout.",
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "description": "This workout's plan, in order: every movement it asks for, the logged ones included. At most 50.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exerciseId": {
+                  "description": "The movement's id — get_session and list_exercises answer with it.",
+                  "type": "string"
+                },
+                "restSeconds": {
+                  "description": "Rest between this movement's sets, 15–900. Omit to fall back to the rest target they set in the app, and to no timer at all when they have set none.",
+                  "maximum": 900,
+                  "minimum": 15,
+                  "type": "integer"
+                },
+                "sets": {
+                  "description": "The movement's target for THIS workout as a SCHEME: one item per set, in the order lifted, 1 to 20. A straight `3 × 8 · 60` is three identical items. OMIT the whole key to leave the movement OPEN — the numbers are decided at the rack. An empty array is refused: a zero target is no target.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reps": {
+                        "description": "Reps for THIS set (1–100). OMIT to mean `max` — as many as you can.",
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "weightKg": {
+                        "description": "Load for THIS set in kg. Zero is explicit; negative is assistance. OMIT to mean what they lifted for the set of the same number last time.",
+                        "type": "number"
+                      }
+                    },
+                    "type": "object",
+                    "required": []
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "exerciseId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "minItems": 0,
+            "type": "array"
+          },
+          "id": {
+            "description": "The id YOU mint for this proposal (`prop_` + hex is the house shape).",
+            "type": "string"
+          },
+          "sessionId": {
+            "description": "The open workout's id — list_sessions and get_session answer with it.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One sentence saying what this changes and why — the line the lifter reads on the card before the diff. Omit it and they read the diff alone.",
+            "maxLength": 400,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "entries"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "proposal": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "applied",
+                  "dismissed",
+                  "superseded"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "changeCount": {
+                "type": "integer"
+              },
+              "settledAt": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "door": {
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "mcp"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "thread": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "door"
+                ],
+                "additionalProperties": false
+              },
+              "baseRevision": {
+                "type": "integer"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "kept",
+                        "added",
+                        "removed",
+                        "retargeted"
+                      ]
+                    },
+                    "exerciseId": {
+                      "type": "string"
+                    },
+                    "before": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    },
+                    "after": {
+                      "type": "object",
+                      "properties": {
+                        "sets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "reps": {
+                                "type": "integer"
+                              },
+                              "weightKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [],
+                            "additionalProperties": false
+                          }
+                        },
+                        "restSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "position",
+                    "kind",
+                    "exerciseId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "sessionId",
+              "state",
+              "summary",
+              "changeCount",
+              "source",
+              "baseRevision",
+              "changes"
+            ],
+            "additionalProperties": false
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "proposes",
+      "seats": "any",
+      "phrase": "wrote a change to this workout",
+      "ui": "This workout, Edit sets",
+      "since": "catalog/2"
     },
     {
       "name": "revoke_share",

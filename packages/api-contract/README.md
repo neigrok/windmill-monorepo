@@ -13,8 +13,11 @@ has the layout and commands; [sync/corpus/README.md](sync/corpus/README.md) the 
 ## `gym/catalog.json`
 
 The gym ability catalog ([gym_coach.md](../../docs/foundation/mobile/gym_coach.md) §3.1, Appendix C):
-`{"catalog": "catalog/1", "abilities": [...]}`, one entry per ability with `name`, `description`,
-`input`, `result`, `class`, `agent`, `seats`, `phrase` and `ui`.
+`{"catalog": "catalog/2", "abilities": [...]}`, one entry per ability with `name`, `description`,
+`input`, `result`, `class`, `agent`, `seats`, `phrase` and `ui`. An ability a later version added
+carries `since` (`propose_workout_change`: `"catalog/2"`), so the file also declares every earlier
+version: catalog/1 is the abilities with no `since` (gym_coach.md D-3), which the server serves side
+by side with catalog/2.
 
 - `name`, `description` and `input` are byte-equal under JCS to the `name`, `description` and
   `inputSchema` that `gymToolCatalog()` declares for the tool of that name, so MCP and Coach publish
@@ -30,6 +33,8 @@ The gym ability catalog ([gym_coach.md](../../docs/foundation/mobile/gym_coach.m
   of their own.
 - `class`, `agent` and `seats` follow Appendix C, with `save_note` at `seats: "bound"`. A `read` is a
   `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
+  `propose_workout_change`'s set items list an empty `required`, so they are not among the open
+  `input` objects.
 - `phrase` is the step-line text a Coach client prints for a call, the same words the web and Android
   phrase tables hold today.
 
@@ -50,7 +55,8 @@ Coach is offered (`agent` other than `withheld`), each an array of
   `propose_routine_change`, `propose_routine_removal` and `share_session` carries it, and an executor
   is handed it as an input: `reviewUrl` is `<appBaseUrl>/#/gym/proposals/<id>` and a share's `url`
   `<appBaseUrl>/#/gym/shared/<token>`. A case whose result links into the app without it fails.
-- `expect` is `{result, sha256, writes}` or `{refused: <code>}`. `sha256` is the SHA-256 of the JCS
+- `expect` is `{result, sha256, writes}` or `{refused: <code>}`. `propose_workout_change.json`'s
+  cases carry none yet: the server writes them with `WM_GENERATE_ABILITIES=1` once it runs catalog/2. `sha256` is the SHA-256 of the JCS
   bytes of `result`. A `result` carries only what every executor knows (INV-3): no `rc`, `ru` or
   server admission instant (a proposal's `createdAt`, a note's `updatedAt`), and a server-written
   register only where a replica computes it by rule, as a routine's `revision`.
