@@ -113,13 +113,15 @@ public enum CoachDocuments {
     ]
     let note = switch value.state {
     case "applied": "This change was already applied by the lifter — this is the record of it, not a second change."
-    case "dismissed": "The lifter rejected this change. Nothing changed. Do not resend the same id; propose again only if you have something different to say."
+    case "dismissed":
+      "The lifter dismissed this change, and the workout kept its plan. Do not resend the same id; propose again only if you have "
+        + "something different to say."
     case "superseded":
-      "This change was superseded — the workout moved after it was minted, so it can no longer be applied. Read the workout again with "
-        + "get_session before you propose anything else."
+      "This change was superseded — the workout's plan moved, or a newer change replaced it, so it can no longer be applied. Read the "
+        + "workout again with get_session before you propose anything else."
     default:
-      "Nothing has changed. The workout keeps its plan, and this change is waiting on the workout's card until the lifter taps Apply — "
-        + "no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them."
+      "Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter's app until they tap "
+        + "Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them."
     }
     return ["proposal": .object(JSON.Object(uniqueKeysWithValues: pairs.compactMap { key, value in value.map { (key, $0) } })), "note": .string(note)]
   }
