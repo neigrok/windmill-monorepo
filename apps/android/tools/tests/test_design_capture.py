@@ -688,7 +688,8 @@ class DesignCaptureTests(unittest.TestCase):
                 delta = {"type": "input_json_delta", "partial_json": "{}"} if block["type"] == "tool_use" else {"type": "text_delta", "text": block["text"]}
                 self.assertEqual([
                     {"type": "message_start", "message": {"id": "msg_capture", "type": "message", "role": "assistant", "model": "fixture",
-                        "content": [], "stop_reason": None, "usage": {"input_tokens": 100, "output_tokens": 25}}},
+                        "content": [], "stop_reason": None, "usage": {"input_tokens": 100, "output_tokens": 25,
+                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}},
                     {"type": "content_block_start", "index": 0, "content_block": start},
                     {"type": "content_block_delta", "index": 0, "delta": delta},
                     {"type": "content_block_stop", "index": 0},
@@ -727,7 +728,9 @@ class DesignCaptureTests(unittest.TestCase):
                 request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/messages",
                     json.dumps({"model": "fixture", "stream": False}).encode(), {"Content-Type": "application/json"})
                 with urllib.request.urlopen(request) as response:
-                    self.assertEqual(content, json.load(response)["content"])
+                    self.assertEqual({"id": "msg_capture", "type": "message", "role": "assistant", "model": "fixture",
+                        "content": content, "stop_reason": "tool_use", "usage": {"input_tokens": 100, "output_tokens": 25,
+                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}, json.load(response))
                 self.assertEqual([1], [call.args[0] for call in sleep.call_args_list])
             self.assertEqual(([], 2), (server.responses, server.calls))
         finally:
