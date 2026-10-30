@@ -3,6 +3,9 @@ package works.windmill.gym
 import android.os.Bundle
 import android.os.Parcel
 import android.os.Parcelable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import works.windmill.platform.net.WindmillJson
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
@@ -981,10 +984,17 @@ class FinishSheetTests {
 
     @Test
     fun aShareWhoseDraftWriteFailedBeforeAdmissionRecoversTheSameIdentityFromSavedState() {
-        var writes = 0
+        var failedDraftId: String? = null
         val disk = LocalCoach(File(tmp.root, "share-failure")) { file, text ->
-            writes++
-            if (writes == 2) throw IOException("fixture-local-write-failed")
+            val document = WindmillJson.parseToJsonElement(text) as JsonObject
+            val drafts = (document["drafts"] as? JsonObject)?.get("u1") as? JsonObject
+            val shareDraft = drafts?.entries?.singleOrNull {
+                ((it.value as? JsonObject)?.get("text") as? JsonPrimitive)?.content == FinishCoach.question
+            }
+            if (failedDraftId == null && shareDraft != null) {
+                failedDraftId = shareDraft.key
+                throw IOException("fixture-local-write-failed")
+            }
             AtomicDocument.write(file, text)
         }
         val failures = mutableListOf<String>()
@@ -1004,6 +1014,7 @@ class FinishSheetTests {
             compose.waitUntil(10_000) { compose.runOnIdle { failures.isNotEmpty() } }
             val request = room.store.coach.selectedChatId!!
             compose.runOnIdle {
+                assertEquals(request, failedDraftId)
                 assertEquals(listOf("gym.saveDraft"), failures)
                 assertEquals(emptyList<works.windmill.gym.coach.AskQuestion>(), server.asked)
                 assertEquals(listOf(request), disk.chats("u1").map { it.id })
