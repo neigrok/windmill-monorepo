@@ -373,7 +373,7 @@ final class GymModel {
     case .planLogged: "That movement already has a logged set."
     case .badInstant: "Check the workout's start and finish times."
     case .proposalSettled: "This proposal has already been answered."
-    case .proposalSuperseded: "A newer proposal is available."
+    case .proposalSuperseded(let refused): supersededReason(refused)
     case .other: "Gym could not accept this change. Try again."
     }
   }

@@ -84,6 +84,25 @@ extension GymModel {
     return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate,
                               workoutProposals: workouts, workoutQueued: workoutQueued, workoutOutOfDate: workoutOutOfDate)
   }
+  // The log's refusal of a proposal out of date, said as its card says it (08.57): the refusal's reason, the movement a
+  // change to this workout touches that took a set since, and the routine a routine proposal changes.
+  func supersededReason(_ refused: Refused) -> String {
+    let workout = workoutProposals.first { $0.id.ref == refused.subject }
+    let routine = proposals.first { $0.id.ref == refused.subject }
+    let moved = workout.flatMap { proposal in
+      proposal.changes.first { change in change.kind != "kept" && sets.contains { $0.sessionId == proposal.sessionId && $0.exerciseId == change.exerciseId } }
+    }
+    let reason: CoachOutOfDate? = switch try? refused.detail?.member("reason").asString() {
+    case "replaced": .replaced
+    case "routine-changed": .routineChanged
+    case "workout-changed": .workoutChanged
+    case "workout-finished": .workoutFinished
+    case "workout-moved": moved.map { .workoutMoved($0.exerciseId) } ?? .workoutChanged
+    default: nil
+    }
+    guard let reason else { return "This suggestion is out of date. Nothing was applied." }
+    return CoachCopy.outOfDateReason(reason, routine: routine.flatMap { $0.baseName ?? coachRoutine($0)?.name } ?? "The routine", catalogue: catalogue)
+  }
   func updateCoachProposals(_ read: CoachProposalsRead) {
     if proposalReadReplica != read.replica || isAnonymous {
       shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = []; waitingCoachDiffs = [:]
