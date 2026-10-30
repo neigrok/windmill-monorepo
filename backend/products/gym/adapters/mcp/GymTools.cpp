@@ -745,11 +745,17 @@ std::vector<ToolRetirement> GymTools::retiredTools() const {
   };
 }
 
-std::vector<ToolDeclaration> GymTools::declareTools() const { return gymToolCatalog(); }
+std::vector<ToolDeclaration> GymTools::declareTools() const {
+  std::vector<ToolDeclaration> declared;
+  for (ToolDeclaration& tool : gymToolCatalog())
+    if (!phoneCoachOnly(tool.name())) declared.push_back(std::move(tool));
+  return declared;
+}
 
 // Every failure names the tool it came from exactly once, here.
 ToolResult GymTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
+  if (phoneCoachOnly(name)) return ToolResult::failure(name + ": " + noSuchToolSentence());
   ReadReceipt oneReply;
   return callTool(name, arguments, caller,
                   ProposalSource{ProposalDoor::mcp, caller.connection.id, caller.connection.name,

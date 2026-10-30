@@ -25,7 +25,7 @@ public:
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller) override;
 
-  // The same tools through Ask. `source` is provenance; `run` is the receipt across a whole exchange,
+  // The same tools through Ask, and the phone Coach's own, which the ability corpus runs here. `source` is provenance; `run` is the receipt across a whole exchange,
   // merged by id, because summing replies double-counts a workout.
   ToolResult callTool(const std::string& name, const Json::Value& arguments,
                       const ToolCaller& caller, const ProposalSource& source, ReadReceipt& run);

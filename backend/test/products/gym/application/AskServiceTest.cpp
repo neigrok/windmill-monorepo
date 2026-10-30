@@ -430,7 +430,7 @@ TEST(the_run_is_handed_gyms_three_levels_and_no_other_product) {
   // workout's, which this door runs only while no workout is open.
   std::size_t allowed = 0;
   for (const ToolDeclaration& tool : gymToolCatalog())
-    if (tool.access == Access::read || (mintsProposal(tool.name()) && tool.name() != "propose_workout_change") || (tool.name() == "create_routine" || tool.name() == "save_note" || tool.name() == "update_exercise")) ++allowed;
+    if (tool.access == Access::read || (mintsProposal(tool.name()) && !phoneCoachOnly(tool.name())) || (tool.name() == "create_routine" || tool.name() == "save_note" || tool.name() == "update_exercise")) ++allowed;
   CHECK_EQ(h.agent.seenCatalog.size(), allowed);
 }
 

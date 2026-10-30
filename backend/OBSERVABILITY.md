@@ -135,8 +135,8 @@ Amplitude key intentionally disables forwarding.
 
 The inventory has 93 HTTP write registrations: REST platform 27, roadmap 13, gym 33 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
-standalone transport duplicates leaves 89 production HTTP operations. MCP has 38 write declarations
-(roadmap 23, gym 15); compatibility aliases share their canonical operation. Coach has 29 operations
+standalone transport duplicates leaves 89 production HTTP operations. MCP has 37 write declarations
+(roadmap 23, gym 14); compatibility aliases share their canonical operation. Coach has 29 operations
 (ask 2, gym abilities 6, scoped roadmap abilities 21). The catalogs have eleven production commands
 (gym 9, journal 2), plus four probe commands. Background coverage includes 23 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (26 background
@@ -288,7 +288,6 @@ listed separately because their only server writes are authentication refresh or
 | `MCP gym_finish_session` (and unambiguous `finish_session` alias) | `mcp.gym_finish_session` | completion; bounded refusal or result | unexpected |
 | `MCP gym_create_routine` (and unambiguous `create_routine` alias) | `mcp.gym_create_routine` | completion; bounded refusal or result | unexpected |
 | `MCP gym_propose_routine_change` (and unambiguous `propose_routine_change` alias) | `mcp.gym_propose_routine_change` | completion; bounded refusal or result | unexpected |
-| `MCP gym_propose_workout_change` (and unambiguous `propose_workout_change` alias) | `mcp.gym_propose_workout_change` | completion; bounded refusal or result | unexpected |
 | `MCP gym_update_exercise` (and unambiguous `update_exercise` alias) | `mcp.gym_update_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_create_exercise` (and unambiguous `create_exercise` alias) | `mcp.gym_create_exercise` | completion; bounded refusal or result | unexpected |
 | `MCP gym_share_session` (and unambiguous `share_session` alias) | `mcp.gym_share_session` | completion; bounded refusal or result | unexpected |
@@ -314,7 +313,7 @@ listed separately because their only server writes are authentication refresh or
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
 | `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 13 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
-| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout` included) | `gym.server_call` | completion; actual call result, expected training refusal, and `proposeWorkout`'s refusal before admitting (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`) | unexpected |
+| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout; `proposeWorkout`, which only the ability corpus calls, included) | `gym.server_call` | completion; actual call result, expected training refusal, and `proposeWorkout`'s refusal before admitting (`unknown-record`, `no-plan`, `id-reused`, `no-change`, `id-taken`) | unexpected |
 | `ServerCall::admit` / `admitBuilt` invalid dedupe id | `sync.server_call.admit` | completion; bounded refusal or result | log only |
 | `ServerCall::finish` dedupe metadata write | `sync.server_call.finish` | completion; bounded refusal or result | unexpected |
 | `Admission::storedAnswer` / `callAnswer` call digest disagreement | `sync.call.digest` | completion; expected digest conflict | log only |

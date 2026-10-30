@@ -64,7 +64,10 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   workout["sessionId"] = "ses_door0001";
   workout["entries"] = routineBody("rt_door0001")["entries"];
   workout["entries"].append(parse(R"({"exerciseId":"back-squat"})"));
-  admit("propose_workout_change", workout);
+  // The phone Coach's alone, so it comes through the Coach door, for the discard below to kill.
+  ReadReceipt coach;
+  REQUIRE(!h.tools.callTool("propose_workout_change", workout, ToolCaller{h.user, ToolScope::everything()},
+                            ProposalSource{ProposalDoor::ask, "", "", std::nullopt}, coach).isError);
   Json::Value finish = sessionArgs("ses_door0001");
   finish["finishedAt"] = Json::UInt64(h.clock.now - 60000);
   admit("finish_session", finish);
@@ -90,7 +93,7 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   admit("discard_session", sessionArgs("ses_door0001"));
   for (const auto& tool : h.tools.declareTools())
     if (tool.access != Access::read) CHECK(written.contains(tool.name()));
-  CHECK_EQ(written.size(), std::size_t{15});
+  CHECK_EQ(written.size(), std::size_t{14});
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   const auto spent = txn.exec_params("select type,id from sync_spent where scope_key=$1 order by type,id", "acct:" + h.user.str() + "/gym");
@@ -207,8 +210,13 @@ TEST(gym_engine_workout_proposal_refused_before_admission_names_its_refusal_on_t
   const auto before = h.seq();
   std::vector<std::string> lines;
   installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " | " + completion.outcome); });
-  CHECK(h.call("propose_workout_change", unchanged).isError);
-  CHECK(h.call("propose_workout_change", absent).isError);
+  const auto coach = [&](const Json::Value& args) {
+    ReadReceipt run;
+    return h.tools.callTool("propose_workout_change", args, ToolCaller{h.user, ToolScope::everything()},
+                            ProposalSource{ProposalDoor::ask, "", "", std::nullopt}, run);
+  };
+  CHECK(coach(unchanged).isError);
+  CHECK(coach(absent).isError);
   installWriteSink({});
   CHECK_EQ(h.seq(), before);
   CHECK_EQ(lines, (std::vector<std::string>{"sync.admit | ok", "gym.server_call | no-change", "sync.admit | ok", "gym.server_call | unknown-record"}));

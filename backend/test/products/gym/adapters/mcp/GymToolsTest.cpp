@@ -509,7 +509,7 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
                                        "list_notes",     "list_bodyweight", "get_sessions", "get_last_times"};
   const std::vector<std::string> writes{"save_note", "start_session",  "log_set",
                                         "finish_session", "create_routine",
-                                        "propose_routine_change", "propose_workout_change", "create_exercise",
+                                        "propose_routine_change", "create_exercise",
                                         "update_exercise", "share_session", "log_sets", "import_session"};
   const std::vector<std::string> deletes{"discard_session", "propose_routine_removal",
                                          "revoke_share"};
@@ -525,6 +525,22 @@ TEST(gym_tools_list_carries_exactly_the_levels_a_grant_named) {
   everything.insert(everything.end(), deletes.begin(), deletes.end());
   CHECK_EQ(namesIn(h.tools.listTools(ToolCaller{uid(), parseToolScope("gym:read gym:write gym:delete")})),
            everything);
+}
+
+// No surface draws a card for a connected agent's workout proposal, so MCP neither lists nor runs the phone Coach's one
+// door to the open workout, at any grant, and the call answers as a name no catalog declares.
+TEST(gym_mcp_neither_lists_nor_runs_the_phone_coach_workout_proposal) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  for (const std::string& name : namesIn(h.tools.listTools(ToolCaller{uid(), ToolScope::everything()})))
+    CHECK_FALSE(phoneCoachOnly(name));
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_mcpwork1";
+  args["sessionId"] = "ses_mcpwork1";
+  args["entries"] = Json::Value(Json::arrayValue);
+  const ToolResult refused = me.call("propose_workout_change", args);
+  CHECK(refused.isError);
+  CHECK_EQ(refused.content[0]["text"].asString(), "propose_workout_change: " + noSuchToolSentence());
 }
 
 // A grant naming only the OTHER product reaches nothing here — the gate is absence, not a shorter list.
@@ -548,8 +564,9 @@ TEST(gym_and_roadmap_names_coexist_in_one_composite) {
            (std::vector<std::string>{"gym_list_exercises", "gym_list_sessions", "gym_get_session", "gym_last_time",
                                      "gym_list_routines", "gym_get_stats", "gym_list_notes",
                                      "gym_list_bodyweight", "gym_get_sessions", "gym_get_last_times"}));
+  // Every gym tool but the phone Coach's workout proposal.
   CHECK_EQ(static_cast<int>(surface.declareTools().size()),
-           static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size()));
+           static_cast<int>(roadmapToolCatalog().size() + gymToolCatalog().size() - 1));
 }
 
 // The schemas publish two vocabularies and the domain refuses against them; every word round-trips.
