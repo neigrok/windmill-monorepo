@@ -95,7 +95,8 @@ struct EditSetsSheet: View {
   @State private var draft: EditSetsDraft
   @State private var plan: SessionPlan?
   @State private var typedLoad: Double?
-  @State private var saveOnEnd = false
+  // What waits on a load still being typed: the field lands its value as it lets go, then this runs.
+  @State private var afterLoad: (() -> Void)?
   @State private var swapping = false
   @FocusState private var loadFocused: Bool
   @Environment(\.dismiss) private var dismiss
@@ -120,7 +121,7 @@ struct EditSetsSheet: View {
           Section {
             ForEach(Array(draft.rows.enumerated()), id: \.element.id) { place, row in setRow(row, place: place) }
               .onDelete { draft.delete($0) }
-            Button { draft.addSet() } label: { Label("Add set", systemImage: "plus") }
+            Button { landingLoad { draft.addSet() } } label: { Label("Add set", systemImage: "plus") }
               .foregroundStyle(GymPalette.accent).disabled(draft.rows.count >= EditSetsDraft.maxSets)
               .accessibilityIdentifier("edit-sets-add")
           }
@@ -170,13 +171,13 @@ struct EditSetsSheet: View {
         dismiss()
       }
       .onChange(of: gym.account) { _, _ in dismiss() }
-      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "workout"]) }
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "edit_sets"]) }
   }
 
   @ViewBuilder func setRow(_ row: EditSetsDraft.Row, place: Int) -> some View {
     let current = place == 0, opened = draft.open == row.id
     VStack(spacing: 0) {
-      Button { loadFocused = false; draft.toggle(row) } label: {
+      Button { landingLoad { draft.toggle(row) } } label: {
         HStack(spacing: RoomSpace.related) {
           Text("\(place + 1)").font(.footnote.monospacedDigit()).foregroundStyle(current ? GymPalette.accent : GymPalette.inkFaint)
             .frame(minWidth: 20, alignment: .leading)
@@ -204,7 +205,7 @@ struct EditSetsSheet: View {
                   identifier: "edit-sets-load", ended: { value in
                     typedLoad = nil
                     if value != load { draft.retarget(row.id) { $0.weightKg = value } }
-                    if saveOnEnd { saveOnEnd = false; save() }
+                    let next = afterLoad; afterLoad = nil; next?()
                   })
           .multilineTextAlignment(.trailing).monospacedDigit()
           .padding(.horizontal, 10).frame(width: 120, height: 36)
@@ -221,11 +222,13 @@ struct EditSetsSheet: View {
               identifier: "edit-sets-reps").frame(height: 140).clipped()
   }
 
-  // A load still being typed lands first, then the save.
-  func commit() {
-    guard loadFocused else { save(); return }
-    saveOnEnd = true; loadFocused = false
+  // A load still being typed lands before anything changes which set is open, and before the save.
+  func landingLoad(_ action: @escaping () -> Void) {
+    guard loadFocused else { action(); return }
+    afterLoad = action; loadFocused = false
   }
+
+  func commit() { landingLoad(save) }
 
   func save() {
     if let problem = draft.problem { draft.open = problem.row; return }

@@ -137,6 +137,76 @@ final class WorkoutCaptures: DesignCapture {
     }
   }
 
+  // The workout in flight's plan boards on its fixture (workout-in-flight.md): the movement menu with nothing logged and
+  // with a logged set, past the plan, Edit sets, Swap and the receipt's plan changes.
+  func testWorkoutInFlight() {
+    let inFlight = { (look: Look, board: String) -> (XCUIApplication, XCUIElement) in
+      let app = self.launch(board, look)
+      let menu = app.buttons["workout-movement-menu"]
+      XCTAssertTrue(menu.waitForExistence(timeout: 60))
+      return (app, menu)
+    }
+    captureBoard("03.26-movement-menu-nothing-logged", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Swap movement"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.27-movement-menu-logged", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight-logged")
+      XCTAssertTrue(menu.waitForValue("Dumbbell Bench Press")); menu.tap()
+      XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["Edit sets"].exists)
+      return app
+    }
+    captureBoard("03.28-past-the-plan", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight-logged")
+      XCTAssertTrue(menu.waitForValue("Dumbbell Bench Press"))
+      app.buttons["workout-log"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 4, current, open target"))
+      return app
+    }
+    captureBoard("03.29-edit-sets", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+      XCTAssertTrue(app.staticTexts["Pull-up · this workout"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.31-swap-movement", settle: 1.5) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Swap movement"].waitForExistence(timeout: 5)); app.buttons["Swap movement"].tap()
+      XCTAssertTrue(app.navigationBars["Swap Pull-up"].waitForExistence(timeout: 5))
+      return app
+    }
+    captureBoard("03.32-receipt-plan-changes", settle: 2) { look in
+      let (app, menu) = inFlight(look, "workout-inflight")
+      XCTAssertTrue(menu.waitForValue("Pull-up")); menu.tap()
+      XCTAssertTrue(app.buttons["Edit sets"].waitForExistence(timeout: 5)); app.buttons["Edit sets"].tap()
+      app.buttons["edit-sets-set-1"].tap()
+      app.typeLoad("12.5", into: "edit-sets-load")
+      app.buttons["edit-sets-save"].tap()
+      XCTAssertTrue(app.descendants(matching: .any)["workout-current-set"].waitForLabel("Set 1, current, target 12.5 kilograms, 8 reps"))
+      menu.tap()
+      XCTAssertTrue(app.buttons["Add movement"].waitForExistence(timeout: 5)); app.buttons["Add movement"].tap()
+      XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
+      app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("Face")
+      XCTAssertTrue(app.buttons["gym-movement-face-pull"].waitForExistence(timeout: 5)); app.buttons["gym-movement-face-pull"].tap()
+      let open = app.descendants(matching: .any)["workout-current-set"]
+      XCTAssertTrue(open.waitForLabel("Set 1, current, open target")); open.tap()
+      XCTAssertTrue(app.buttons["edit-sets-add"].waitForExistence(timeout: 5)); app.buttons["edit-sets-add"].tap()
+      app.typeLoad("15", into: "edit-sets-load")
+      app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "15 reps")
+      app.buttons["edit-sets-add"].tap()
+      app.buttons["edit-sets-save"].tap()
+      XCTAssertTrue(open.waitForLabel("Set 1, current, target 15 kilograms, 15 reps"))
+      app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.switches["workout-receipt-save-plan"].waitForExistence(timeout: 15))
+      return app
+    }
+  }
+
   // The facts row's rest target: resting toward the press's two minutes, past them, and the row with no target.
   func testRestTarget() {
     captureBoard("03.20-rest-target-resting", settle: 1.5) { look in

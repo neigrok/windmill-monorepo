@@ -290,7 +290,7 @@ struct WorkoutReceipt: View {
         Text("Plan changes").font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
         Spacer()
         Text(GymCount.of(receipt.changes.changeCount, "change")).font(.subheadline).foregroundStyle(GymPalette.inkDim)
-      }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader)
+      }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader).accessibilityIdentifier("workout-receipt-plan-changes")
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         Divider().overlay(GymPalette.line)
         ChangeBlock(kind: block.kind, title: gym.catalogue.find(block.change.exerciseId)?.name ?? "Movement",
@@ -305,7 +305,7 @@ struct WorkoutReceipt: View {
         Text("\(receipt.routine) changed since you started.").font(.body).foregroundStyle(GymPalette.inkDim)
           .frame(minHeight: RoomSpace.minimumTarget, alignment: .leading).accessibilityIdentifier("workout-receipt-routine-changed")
       }
-    }.modifier(ChangeCard(stroke: GymPalette.accent)).accessibilityIdentifier("workout-receipt-plan-changes")
+    }.modifier(ChangeCard(stroke: GymPalette.accent))
   }
 
   var options: some View {

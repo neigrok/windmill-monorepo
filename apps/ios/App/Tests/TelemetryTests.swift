@@ -128,6 +128,10 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func editSetsIsAScreenOfItsOwn() {
+    #expect(TelemetryPrivacy.properties(["screen": "edit_sets", "exerciseId": "private-id"]) == ["screen": .label("edit_sets")])
+  }
+
   @Test func receiptPlanSavesCarryOnlyTheirOutcome() {
     #expect(TelemetryPrivacy.events.contains("gym_receipt_plan_saved"))
     for outcome in ["ok", "refused", "failed"] {
