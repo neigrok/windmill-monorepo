@@ -476,8 +476,8 @@ and Android disagree.
   04.6 and 08.54–08.57 with a READ ME in section 03 (`1717:15737`); the written half is
   [workout-in-flight.md](ios/workout-in-flight.md) and the build tasks are `iosgym_tasks/60`–`68`.
   Owner ruling 2026-10-30: a movement with a logged set keeps its plan. The build differs from these
-  targets everywhere they draw something new: no rest target, two load-and-reps wheels, a frozen
-  plan, no Coach while a workout is open, and routine proposals refused mid-workout. 04.3's expanded
+  targets everywhere they draw something new: no rest target, two load-and-reps wheels, no Coach
+  while a workout is open, and routine proposals refused mid-workout. 04.3's expanded
   presentation draws a moving rest bar the build does not carry; 04.6 is its target.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
