@@ -127,7 +127,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
 
   @Test func coachConversationActionsExcludeContentAndIdentifiers() {
     for action in ["new_chat", "view_answer", "open_conversation", "delete_conversation"] {
-      for door in ["tab", "history", "handoff", "new_chat"] {
+      for door in ["tab", "history", "handoff", "new_chat", "workout"] {
         #expect(TelemetryPrivacy.properties(["screen": "coach", "action": action, "door": door, "outcome": "ok",
                                              "draft": "private-marker", "question": "private-marker", "photo": "private-marker",
                                              "threadId": "private-id", "requestId": "private-id", "ownerId": "private-id"]) ==

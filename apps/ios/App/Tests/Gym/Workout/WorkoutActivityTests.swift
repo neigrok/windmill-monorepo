@@ -934,8 +934,8 @@ import SyncTesting
     gym.stop()
   }
 
-  // An Activity the previous build started still draws after the update: its state named the count `unsyncedSetCount`
-  // and carried a `setKind` and the offer's `kind`.
+  // An Activity the previous build started still draws after the update: its state named the count `unsyncedSetCount`,
+  // carried a `setKind` and the offer's `kind`, and no rest target.
   @Test func aContentStateFromThePreviousBuildStillDecodes() throws {
     let previous = """
       {"title":"Push A","movement":"Back squat","load":"100 kg","reps":5,"setKind":"working","workingSetOrdinal":2,
@@ -943,12 +943,17 @@ import SyncTesting
        "offer":{"ownerID":"rp:bound:s1","sessionID":"s1","movementID":"back-squat","weightKg":100,"reps":5,"kind":"working","setID":"t1"}}
       """
     let state = try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: Data(previous.utf8))
-    let current = WorkoutActivityAttributes.ContentState(title: "Push A", movement: "Back squat", load: "100 kg", reps: 5, workingSetOrdinal: 2,
-      plannedWorkingSetCount: 5, startedAt: Date(timeIntervalSinceReferenceDate: 0), lastSetAt: Date(timeIntervalSinceReferenceDate: 60),
-      staleAt: Date(timeIntervalSinceReferenceDate: 14_400), unsentSetCount: 1,
-      offer: WorkoutActivityOffer(ownerID: "rp:bound:s1", sessionID: "s1", movementID: "back-squat", weightKg: 100, reps: 5, setID: "t1"))
-    #expect(state == current)
-    #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: JSONEncoder().encode(current)) == current)
+    let current = { (restSeconds: Int?) in
+      WorkoutActivityAttributes.ContentState(title: "Push A", movement: "Back squat", load: "100 kg", reps: 5, workingSetOrdinal: 2,
+        plannedWorkingSetCount: 5, startedAt: Date(timeIntervalSinceReferenceDate: 0), lastSetAt: Date(timeIntervalSinceReferenceDate: 60),
+        restSeconds: restSeconds, staleAt: Date(timeIntervalSinceReferenceDate: 14_400), unsentSetCount: 1,
+        offer: WorkoutActivityOffer(ownerID: "rp:bound:s1", sessionID: "s1", movementID: "back-squat", weightKg: 100, reps: 5, setID: "t1"))
+    }
+    #expect(state == current(nil))
+    for rest in [nil, 180] {
+      #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: JSONEncoder().encode(current(rest))) == current(rest))
+    }
+    #expect([current(nil).restReading, current(120).restReading, current(45).restReading, current(900).restReading] == [nil, "2:00", "0:45", "15:00"])
   }
 }
 
