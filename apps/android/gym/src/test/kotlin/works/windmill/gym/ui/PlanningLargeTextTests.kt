@@ -80,12 +80,12 @@ class PlanningLargeTextTests {
     }
 
     @Test
-    fun largeTextStacksEquipmentChoicesWithFullWidthLabels() {
+    fun largeTextKeepsTheThreeEquipmentChoicesAndCreateActionReachable() {
         compose.setContent {
             contentView = LocalView.current
             MovementPicker(catalog = TheSix.movements, taken = emptyList(), lastSets = null,
                 nowMs = 0, title = "Add movement", onPick = {},
-                onCreate = { _, _, _ -> error("no creation") })
+                onCreate = { _ -> error("no creation") })
         }
         compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
         val hidden = WindowInsets.Builder()
@@ -101,15 +101,12 @@ class PlanningLargeTextTests {
         }
         compose.mainClock.advanceTimeBy(64)
         compose.waitForIdle()
-        for (label in listOf("Barbell", "Dumbbell", "Machine", "Bodyweight")) {
-            val layout = mutableListOf<TextLayoutResult>()
-            compose.onNode(hasText(label) and hasAnyAncestor(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)), useUnmergedTree = true)
-                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
-            assertEquals(label, 1, layout.single().lineCount)
-            assertTrue(label, layout.single().layoutInput.constraints.maxWidth >= 500)
+        compose.onNodeWithContentDescription("Equipment").performScrollTo().performClick()
+        for (label in listOf("Barbell", "Dumbbells", "Other")) {
+            compose.onNode(hasText(label) and hasAnyAncestor(isPopup())).assertIsDisplayed()
         }
-        compose.onNode(hasText("Bodyweight") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).performScrollTo().performClick()
-        compose.onNode(hasText("Bodyweight") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)).assertIsSelected()
+        compose.onNode(hasText("Other") and hasAnyAncestor(isPopup())).performClick()
+        compose.onNodeWithText("Other").assertIsDisplayed()
         compose.onNodeWithText("Create and add").assertIsDisplayed()
     }
 }

@@ -16,10 +16,11 @@ earlier versions kept and imports the routines they drafted. Its installation id
 
 Catalog version 2 adds `propose_workout_change`, the Coach's door to the open workout: the catalog
 declares it and its corpus holds the calls (§3.5), and engine A.2 binds its `workoutProposal`
-records. The server serves catalog/1 and catalog/2 side by side, and its executor runs
-`propose_workout_change`. iOS speaks catalog/2: Coach answers during a workout, reads the open
-workout (§4.1), and its replica executor runs `propose_workout_change`, whose card the lifter
-applies to the running plan or rejects.
+records. The server serves catalog/1 and catalog/2 side by side. The ability is the phone Coach's
+alone: no surface draws a card for a connected agent's workout proposal, so MCP does not offer it, and
+the server executor runs it only to write its corpus expectations. iOS speaks catalog/2: Coach
+answers during a workout, reads the open workout (§4.1), and its replica executor runs
+`propose_workout_change`, whose card the lifter applies to the running plan or rejects.
 
 **Adoption:**
 
@@ -57,7 +58,7 @@ agent rule.
 
 **D-2 Catalog.** The set of abilities, declared once in `packages/api-contract/gym/catalog.json`.
 The server's tool declarations (`gymToolCatalog()`), which give the model tool list and the MCP tool
-list, are written in C++ and pinned to it by test: each tool's name, description and input schema
+list (every tool but the phone Coach's `propose_workout_change`), are written in C++ and pinned to it by test: each tool's name, description and input schema
 byte-equal as JCS, and its class and agent rule against the tool's access level
 (`CatalogContractTest.cpp`). An ability the server declares no tool for is marked
 `"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)

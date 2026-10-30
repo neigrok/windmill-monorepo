@@ -127,12 +127,32 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         } }
     }.sortedWith { a, b -> compareBytes(a.pattern, b.pattern).takeIf { it != 0 }
         ?: compareBytes(a.name, b.name).takeIf { it != 0 } ?: compareBytes(a.id, b.id) }
-    suspend fun createExercise(write: ExerciseWrite): Exercise {
+    suspend fun createExercise(write: ExerciseWrite, expectedReplica: String = engine.activeReplica(),
+        expectedAnonymous: Boolean = anonymous, expectedSession: String? = null): Exercise {
         val value = EngineExercise(Id(write.id, EngineExercise), write.name, write.pattern, write.equipment,
-            write.stepKg ?: ExerciseRules.defaultStepKg(write.equipment))
-        val existing = read { it.repository(EngineExercise).find(value.id, ViewMode.drawn) }
-        if (existing == null) apply(CreateExercise(value))
-        return catalogue().first { it.id == write.id }
+            write.stepKg ?: ExerciseRules.defaultStepKg(write.equipment),
+            loadCount = write.loadCount ?: ExerciseRules.defaultLoadCount(write.equipment, write.id))
+        val action = CreateExercise(value)
+        val accepted = apply(object : Action<Pair<EngineExercise?, Moment>?, EngineExercise?, GymRefusal> {
+            override val scope = action.scope
+            override val refusals = action.refusals
+            override fun load(read: Reader): Pair<EngineExercise?, Moment>? {
+                if (engine.activeReplica() != expectedReplica || read.isAnonymous != expectedAnonymous) return null
+                if (expectedSession != null && TrainingLog(read).open?.id?.text != expectedSession) return null
+                return Catalogue(read).find(value.id) to read.moment
+            }
+            override fun decide(loaded: Pair<EngineExercise?, Moment>?, ids: IDSource): Decision<EngineExercise?, GymRefusal> {
+                if (loaded == null) return Decision.Unchanged(null)
+                val canonical = Valid(value, EngineExercise, at = loaded.second).value
+                loaded.first?.let { return Decision.Unchanged(it) }
+                return when (val decision = action.decide(loaded.second, ids)) {
+                    is Decision.Write -> Decision.Write(decision.plan, canonical)
+                    is Decision.Unchanged -> Decision.Unchanged(canonical)
+                    is Decision.Refuse -> decision
+                }
+            }
+        })
+        return accepted?.ui() ?: throw TrainingRefused("account-changed", "The workout changed. Open this again.")
     }
     suspend fun editExercise(exerciseId: String, name: String, equipment: String? = null, loadCount: Int? = null,
         base: Exercise? = null, expectedReplica: String = engine.activeReplica(), expectedAnonymous: Boolean = anonymous): Exercise {
@@ -338,6 +358,15 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 val summary = SessionSummary.of(detail, history, catalog)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
+    }
+    fun routineHistory(routineId: String, excluded: Set<String> = emptySet()): List<SessionSummary> = read {
+        val catalog = catalogue()
+        details().asSequence()
+            .filter { !it.session.isOpen && it.session.routineId == routineId && it.session.id !in excluded }
+            .sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
+            .take(20)
+            .map { SessionSummary(it.session, it.sets, catalog) }
+            .toList()
     }
     fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
     fun restoredSession(id: String): SessionDetail? = read { reader ->
@@ -766,7 +795,11 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             val id = subject.id.string ?: notice.id
             RefusedSet(id, (values["exerciseId"] as? Json.Str)?.value.orEmpty(),
                 (values["weightKg"] as? Json.Num)?.value ?: 0.0, (values["reps"] as? Json.Num)?.value?.toInt() ?: 0, reason)
-        } else RefusedChange(notice.id, "Saved change", reason)
+        } else if (subject?.type == EngineSession.type || notice.content.command?.name in setOf(Gym.Commands.start, Gym.Commands.importSession, Gym.Commands.correctSession)) {
+            val at = subject?.let { domain.values(it)["startedAt"] } ?: notice.content.command?.args?.get("startedAt")
+            val startedAt = at?.let { runCatching { it.long() }.getOrNull() }
+            RefusedWorkout(notice.id, startedAt, reason)
+        } else RefusedChange(notice.id, "Saved training", reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)

@@ -523,8 +523,21 @@ Archive, stored-certificate verification, release-symbol retention, and export/u
 The workflow retains `ios-dsyms-RUN_NUMBER` for 30 days. *Upload succeeded* and *EXPORT SUCCEEDED*
 confirm Apple's acceptance of the upload. The read-only status step then checks that archive's exact
 version and build through App Store Connect for up to ten minutes. `testflight-status-RUN_NUMBER`
-records `processingState`, `internalBuildState` and `externalBuildState`; a pending state remains
-pending, and beta readiness does not prove a particular tester can install. No tester groups change.
+records `processingState`, `internalBuildState`, `externalBuildState`, the checked plist hash, source
+SHA and workflow run. Optional paired `reference_version`/`reference_build` dispatch inputs identify
+an independently verified prior upload. The helper discovers that upload’s internal groups, reads
+the target build’s exact membership and counts existing tester relationships. Each group reports
+Apple’s literal `hasAccessToAllBuilds` flag, membership and count; no tester IDs, names or emails enter receipts.
+`betaAccess=VERIFIED` requires the target to be `VALID` and internally `READY_FOR_BETA_TESTING` or
+`IN_BETA_TESTING`, with every established group containing the target and at least one tester.
+Expired, compliance-blocked and unknown states remain incomplete even when membership is present.
+It does not prove a particular device installed the build. Missing reference, missing distribution
+or incomplete membership stays explicit; no groups, invitations or distribution settings change.
+
+The separate [read-only status workflow](../../../.github/workflows/ios-beta-status.yml) accepts
+exact target and reference version/build pairs without uploading again. Its receipt labels identity
+as dispatch inputs; the release workflow reads identity from the actual archive plist. Both use only
+signed GET requests and retain bounded status artifacts. Pagination stays on the same Apple endpoint.
 If the status step fails after upload, do not rerun the release workflow: the upload already exists.
 Record the verified version, build, source SHA, run URL,
 upload result and any processing or symbol limitations in `WORK_LOG.md`.

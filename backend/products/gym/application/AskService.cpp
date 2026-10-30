@@ -21,10 +21,6 @@ namespace wm::gym {
 
 namespace {
 
-// The server Coach answers only while no workout is open (AskRefusal::sessionOpen), so a change to the open
-// workout is never its to propose: that tool is the phone Coach's and MCP's.
-bool askOffers(const std::string& name) { return name != "propose_workout_change"; }
-
 // The properties a tool publishes, comma-joined, for a refusal message.
 std::string declaredArguments(const Json::Value& inputSchema) {
   std::string declared;
@@ -204,7 +200,6 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
   std::vector<ToolDeclaration> offered;
   const bool setup = repository_ && generation_->purpose == "routine_setup";
   for (ToolDeclaration& declaration : inner_.declareTools()) {
-    if (!askOffers(declaration.name())) continue;
     if (setup) {
       const auto name = declaration.name();
       if (name != "list_sessions" && name != "get_sessions" && name != "list_notes" &&
@@ -292,7 +287,7 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
   for (ToolDeclaration& candidate : name == "ask_setup_details" ? declareTools() : inner_.declareTools())
     if (candidate.name() == name) declared = std::move(candidate);
 
-  if (!declared || !askOffers(name)) {
+  if (!declared) {
     // A name gym retired answers with what replaced it, on this door as over MCP.
     if (std::optional<ToolRetirement> retired = inner_.retirement(name))
       return ToolResult::failure(name + ": " + retired->sentence);

@@ -74,6 +74,20 @@ import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.schema.Gym
 
+data class RecoveryRead(val origin: String, val userId: String, val identityRevision: Long, val replica: String,
+    val workouts: List<ImportRecovery>) {
+    fun belongsTo(account: Account): Boolean = account.resolved && account.locallyTrusted && origin == account.origin && userId == account.user?.id && identityRevision == account.identityRevision
+}
+
+data class RecoveryDraft(val read: RecoveryRead, val row: ImportRecovery, val copy: SavedWorkout, val markFinished: Boolean = false)
+
+enum class RecoveryAction(val wire: String) { Keep("keep"), Retry("retry"), Fix("fix"), Discard("discard") }
+sealed interface RecoveryResult {
+    data object Accepted : RecoveryResult
+    data class Refused(val line: String) : RecoveryResult
+    data object Failed : RecoveryResult
+}
+
 // Main-thread training state; Coach owns its conversations, drafts and network requests.
 class TrainingStore(
     private val controls: WorkoutControls,
@@ -431,6 +445,115 @@ class TrainingStore(
     var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
         private set
     private val logRead = Mutex()
+    var recovery: RecoveryRead? by mutableStateOf(null)
+        private set
+    var recoveryDraft: RecoveryDraft? by mutableStateOf(null)
+        private set
+    var recoveryBusy: Boolean by mutableStateOf(false)
+        private set
+    @Volatile private var recoveryOwnerVersion = 0L
+    private var recoveryAction: Any? = null
+
+    private fun resetRecovery() {
+        recoveryOwnerVersion += 1
+        recovery = null
+        recoveryDraft = null
+        recoveryAction = null
+        recoveryBusy = false
+    }
+
+    private suspend fun readRecovery() {
+        val account = seated ?: return
+        val user = account.user ?: return
+        val read = readTraining { RecoveryRead(account.origin, user.id, account.identityRevision,
+            training.engine.activeReplica(), training.imports.reviewWorkouts()) }
+        if (seated?.let(read::belongsTo) == true) recovery = read
+    }
+
+    private fun recoverySeat(read: RecoveryRead): Boolean = workoutReady && pendingConnection == null && localWorkoutAuthorized &&
+        seated?.let(read::belongsTo) == true && controls.engineReplica == read.replica
+
+    fun beginRecoveryFix(read: RecoveryRead, row: ImportRecovery): Boolean {
+        if (recoveryBusy || !recoverySeat(read)) return false
+        val copy = row.workout ?: return false
+        recoveryDraft = RecoveryDraft(read, row, copy)
+        return true
+    }
+
+    fun changeRecoveryFix(opening: RecoveryDraft, copy: SavedWorkout, markFinished: Boolean = opening.markFinished) {
+        if (recoveryBusy || recoveryDraft !== opening) return
+        recoveryDraft = opening.copy(copy = copy, markFinished = markFinished)
+    }
+
+    fun closeRecoveryFix() { if (!recoveryBusy) recoveryDraft = null }
+
+    suspend fun recoveryFixRefusal(draft: RecoveryDraft): String? = try {
+        readTraining { training.imports.preview(draft.row.openings.single(), draft.copy, draft.markFinished, now()) }
+    } catch (_: TrainingReadChanged) { "account-changed" }
+    catch (refused: TrainingRefused) { refused.code }
+    catch (cancelled: CancellationException) { throw cancelled }
+    catch (failure: Exception) {
+        reportFailure("gym_import_fix", failure)
+        "recovery-unavailable"
+    }
+
+    suspend fun recover(read: RecoveryRead, row: ImportRecovery, action: RecoveryAction,
+        draft: RecoveryDraft? = null, currentOwner: () -> Boolean = { true }): RecoveryResult? {
+        if (recoveryBusy || row.adding) return null
+        if (action == RecoveryAction.Discard && (row.operationsOnly || row.workout == null || row.refusals.any { it.code in setOf("source-unreadable", "source-needs-update") })) return RecoveryResult.Refused("This copy cannot be discarded here.")
+        val version = recoveryOwnerVersion
+        fun owns(): Boolean = recoveryOwnerVersion == version && currentOwner() && recoverySeat(read)
+        fun allowed(): Boolean = owns() && workoutAuthority(owner)
+        if (!owns()) return null
+        val token = Any()
+        recoveryAction = token
+        recoveryBusy = true
+        return scope.async {
+            try {
+                if (!allowed()) return@async null
+                withContext(readDispatcher) {
+                    when (action) {
+                        RecoveryAction.Discard -> row.openings.single().let { training.imports.discardRefusal(it.id, it, ::allowed) }
+                        RecoveryAction.Retry -> row.openings.forEach { if (row.operationsOnly) training.imports.retryOperation(it, ::allowed) else training.imports.retry(it.id, it, ::allowed) }
+                        RecoveryAction.Keep -> training.imports.keepWorkout(row.id, row.openings.single(), ::allowed)
+                        RecoveryAction.Fix -> {
+                            val fixed = requireNotNull(draft)
+                            check(fixed.read == read && fixed.row == row)
+                            val opening = row.openings.single()
+                            val refused = training.imports.preview(opening, fixed.copy, fixed.markFinished, now())
+                            if (refused != null) throw TrainingRefused(refused, WorkoutImports.reason(refused))
+                            if (row.workout?.session?.isOpen == true) {
+                                if (fixed.copy.session.isOpen) training.imports.replaceOpenAndRetry(row.id, fixed.copy, opening, ::allowed)
+                                else training.imports.keepWorkout(row.id, opening, ::allowed, fixed.copy)
+                            } else training.imports.replaceAndRetry(row.id, fixed.copy, fixed.markFinished, opening = opening, allowed = ::allowed)
+                        }
+                    }
+                    if (action != RecoveryAction.Discard) training.imports.refusals().firstOrNull { failure ->
+                        row.openings.any { it.id == failure.id }
+                    }?.let { throw TrainingRefused(it.code, it.reason) }
+                }
+                if (!owns()) return@async null
+                telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "outcome" to if (action == RecoveryAction.Discard) "ok" else "completed"))
+                if (action == RecoveryAction.Fix) recoveryDraft = null
+                tried("gym.loadLog") { refreshEngine() }
+                if (!owns()) return@async null
+                RecoveryResult.Accepted
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (refused: TrainingRefused) {
+                if (!owns()) return@async null
+                telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "outcome" to "refused"))
+                RecoveryResult.Refused(refused.line)
+            } catch (failure: Exception) {
+                reportFailure("gym_import_${action.wire}", failure)
+                if (!owns()) return@async null
+                telemetry.event("gym_import_recovery", mapOf("action" to action.wire, "outcome" to "failed"))
+                RecoveryResult.Failed
+            } finally {
+                if (recoveryAction === token) { recoveryAction = null; recoveryBusy = false }
+            }
+        }.await()
+    }
+
     var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // refused imports kept on this phone
         private set
     // Both, merged on the clock: everything the account and this device hold between them, which is
@@ -574,6 +697,7 @@ class TrainingStore(
             it.origin == account.origin && it.user?.id == account.user?.id && it.identityRevision == account.identityRevision
         } == true
         val arriving = seated != account
+        if (!sameWeightSeat) resetRecovery()
         seated = account
         owner = account.user?.id
         localWorkoutAuthorized = account.locallyTrusted
@@ -1281,19 +1405,23 @@ class TrainingStore(
     // The equipment is the CALLER's and is never guessed. The pattern is the domain's value for "we
     // did not ask": nothing on this surface reads it, because the ladder is taken off the MAGNITUDE
     // of the load.
-    suspend fun create(name: String, equipment: String, id: String = mintExercise()): GymResult<Exercise> {
+    suspend fun create(name: String, equipment: String, id: String = mintExercise(), loadCount: Int? = null,
+        expectedReplica: String? = controls.engineReplica, expectedSession: String? = null): GymResult<Exercise> {
         val named = Program.named(name)
             ?: return GymResult.Failed(WriteFailure.Refused("a movement needs a name"))
-        if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings) {
+        if (Program.length(named) > Program.maxNameLength || equipment !in Exercise.loadings + "other" ||
+            loadCount != null && (loadCount !in 1..2 || equipment != "dumbbell" && loadCount != 1)) {
             return GymResult.Failed(WriteFailure.Refused("check the movement name and equipment"))
         }
-        val write = ExerciseWrite(id, named, Exercise.unclassified, equipment)
+        val write = ExerciseWrite(id, named, Exercise.unclassified, equipment, loadCount = loadCount)
         val seat = owner
         return try {
-            val made = training.createExercise(write)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
+            val made = training.createExercise(write, expectedReplica ?: return GymResult.Failed(WriteFailure.Refused(accountChanged)),
+                seat == null, expectedSession)
+            if (seat != owner || expectedReplica != controls.engineReplica || expectedReplica != training.engine.activeReplica()) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             catalog = catalog.filterNot { it.id == made.id } + made
-            if (made.id != write.id || made.name != write.name || made.equipment != write.equipment || made.pattern != write.pattern) {
+            if (made.id != write.id || made.name != works.windmill.gym.domain.sync.ExerciseRules.name.apply(write.name, works.windmill.domain.kit.Path("name")) || made.equipment != write.equipment || made.pattern != write.pattern ||
+                write.loadCount != null && made.loadCount != write.loadCount) {
                 return GymResult.Failed(WriteFailure.Refused("already saved as ${made.name} (${made.equipment}) — choose it from the movement list"))
             }
             GymResult.Ok(made)
@@ -1304,6 +1432,61 @@ class TrainingStore(
             if (seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             GymResult.Failed(WriteFailure(refusing))
         }
+    }
+
+    private data class MovementCreationKey(val account: String, val replica: String?, val workout: String, val id: String)
+    private val movementCreations = mutableMapOf<MovementCreationKey,
+        Pair<ExerciseWrite, kotlinx.coroutines.Deferred<MovementCreateOutcome>>>()
+
+    suspend fun createForWorkout(write: ExerciseWrite, workoutId: String,
+        expectedAccountKey: String = accountKey, expectedReplica: String? = controls.engineReplica): MovementCreateOutcome {
+        val key = MovementCreationKey(expectedAccountKey, expectedReplica, workoutId, write.id)
+        movementCreations[key]?.let { (submitted, pending) ->
+            if (submitted != write) return MovementCreateOutcome.Failed(WriteFailure.Refused("Creation is already in progress."))
+            return pending.await()
+        }
+        val seat = owner
+        val openingAccount = seated
+        val job = scope.async(start = CoroutineStart.UNDISPATCHED) {
+            fun current() = workoutAuthorized && seated == openingAccount && expectedAccountKey == accountKey && seat == owner &&
+                expectedReplica != null && expectedReplica == controls.engineReplica &&
+                expectedReplica == training.engine.activeReplica() && session?.id == workoutId
+            val known = catalog.any { it.id == write.id }
+            if (!current()) {
+                telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to if (known) "add" else "create",
+                    "outcome" to "refused"))
+                return@async MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged))
+            }
+            val created = create(write.name, write.equipment, write.id, write.loadCount, expectedReplica, workoutId)
+            if (!known) telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "create",
+                "outcome" to when (created) {
+                    is GymResult.Ok -> "ok"
+                    is GymResult.Failed -> if (created.why is WriteFailure.Refused) "refused" else "failed"
+                }))
+            if (created is GymResult.Failed) return@async MovementCreateOutcome.Failed(created.why)
+            val movement = (created as GymResult.Ok).value
+            val result = try {
+                if (!current()) MovementCreateOutcome.Failed(WriteFailure.Refused(accountChanged), movement)
+                else {
+                    choose(movement.id)
+                    MovementCreateOutcome.Added(movement)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                reportFailure("gym.choose", failure)
+                if (!controls.writable) refuseWorkout()
+                MovementCreateOutcome.Failed(WriteFailure(failure), movement)
+            }
+            telemetry.event("gym_action", mapOf("screen" to "movement_form", "action" to "add",
+                "outcome" to when (result) {
+                    is MovementCreateOutcome.Added -> "ok"
+                    is MovementCreateOutcome.Failed -> if (result.why is WriteFailure.Refused) "refused" else "failed"
+                }))
+            result
+        }
+        movementCreations[key] = write to job
+        job.invokeOnCompletion { if (movementCreations[key]?.second === job) movementCreations.remove(key) }
+        return job.await()
     }
 
     // The local commit controls the next frame; domain drafts preserve fields owned by other surfaces.
@@ -1745,6 +1928,19 @@ class TrainingStore(
         older = if (page.size < logPage) Older.End else Older.More
     }
 
+    suspend fun routineHistory(routineId: String): GymResult<List<SessionSummary>> {
+        if (!accountReady) return GymResult.Failed(WriteFailure.Refused(accountChanged))
+        return try {
+            GymResult.Ok(readTraining { training.routineHistory(routineId, withheldIds) })
+        } catch (_: TrainingReadChanged) {
+            GymResult.Failed(WriteFailure.Refused(accountChanged))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            reportFailure("gym.routineHistory", failure)
+            GymResult.Failed(WriteFailure.NoAnswer)
+        }
+    }
+
     // Nothing is held: the store keeps no copy to invalidate. The replica's answer stands ALONE and
     // a refused import kept on this phone is not merged into it, so a strict refusal cannot change
     // aggregate history.
@@ -1849,6 +2045,8 @@ class TrainingStore(
         val refused = tried("gym.loadLog") { refusedImports() } ?: return
         if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         shelved = refused
+        tried("gym.loadLog") { readRecovery() }
+        if (!workoutAuthorized || seat != owner || live != controls.session?.id) return
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
         if (deeper.isEmpty()) older = if (rows.size < logPage) Older.End else Older.More
@@ -1961,6 +2159,11 @@ class TrainingStore(
 // There is no state for "empty": a log with no rows has no foot.
 enum class Older { More, Loading, End, Failed }
 
+sealed interface MovementCreateOutcome {
+    data class Added(val movement: Exercise) : MovementCreateOutcome
+    data class Failed(val why: WriteFailure, val created: Exercise? = null) : MovementCreateOutcome
+}
+
 sealed interface GymResult<out T> {
     data class Ok<T>(val value: T) : GymResult<T>
     data class Failed(val why: WriteFailure) : GymResult<Nothing>
@@ -2047,6 +2250,8 @@ data class RefusedSet(
 
 // Any other refused write, named for the banner. The id is the engine notice's, so a dismissal
 // sticks and two passes over the same refusal are one loss on the banner.
+data class RefusedWorkout(override val id: String, val startedAtMs: Long?, override val reason: String) : RefusedWrite
+
 data class RefusedChange(override val id: String, val name: String, override val reason: String) : RefusedWrite
 
 // How a write reports itself. Silence is a state: a room that has just opened says nothing.

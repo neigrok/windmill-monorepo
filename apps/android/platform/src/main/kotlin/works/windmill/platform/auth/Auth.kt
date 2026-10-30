@@ -5,6 +5,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -17,6 +22,10 @@ import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 import works.windmill.platform.telemetry.Telemetry
+
+class AuthHandoffFailure internal constructor() : Exception()
+
+enum class AuthHandoffResult { Accepted, Refused, Failed, Retired }
 
 sealed class AuthStatus {
     open val user: User? get() = null
@@ -34,6 +43,7 @@ class AuthStore(
     private val client: OkHttpClient = OkHttpClient(),
     val telemetry: Telemetry = Telemetry.None,
     private val lifecycle: AuthLifecycle = AuthLifecycle.None,
+    private val handoffScope: CoroutineScope? = null,
 ) {
     var status: AuthStatus by mutableStateOf(AuthStatus.Unknown)
         private set
@@ -43,6 +53,14 @@ class AuthStore(
     val api = WindmillApi(baseUrl, sessions::read, client, telemetry)
     val localSession: LocalSession get() = sessions.localSession
     private var generation = 0L
+    private class Handoff(val proposed: ProposedSignIn, val attempt: Long, val revision: Long, val work: Deferred<Unit>)
+    private var handoff: Handoff? = null
+    var handoffPending by mutableStateOf(false)
+        private set
+    var handoffRevision by mutableStateOf(0L)
+        private set
+    var handoffResult: AuthHandoffResult? by mutableStateOf(null)
+        private set
     var identityRevision by mutableStateOf(0L)
         private set
 
@@ -70,7 +88,7 @@ class AuthStore(
             }
         }
         sessions.proposed?.let { proposed ->
-            try { finishProposed(proposed, attempt, restoring = true) }
+            try { finishOwned(proposed, attempt, restoring = true) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (attempt != generation) return
@@ -120,6 +138,7 @@ class AuthStore(
     }
 
     suspend fun reverify() {
+        if (handoffPending || handoffResult == AuthHandoffResult.Failed || handoffResult == AuthHandoffResult.Refused) return
         if (status is AuthStatus.Unresolved) { restore(); return }
         val standing = status as? AuthStatus.SignedIn ?: return
         if (standing.verified) return
@@ -140,6 +159,8 @@ class AuthStore(
     suspend fun completeCode(email: String, code: String, beforeCommit: (User) -> Unit = {}) {
         telemetry.event("auth_sign_in_started", mapOf("method" to "code"))
         val attempt = ++generation
+        retireHandoff()
+        if (attempt != generation) throw CancellationException("Authentication changed.")
         val answer = api.sendCapturingSession<UserResponse>(
             "POST", "/v1/auth/verify-code", CodeRequest(email.trim(), code.trim()))
         if (attempt != generation) throw CancellationException("Authentication changed.")
@@ -153,6 +174,8 @@ class AuthStore(
     suspend fun completeLink(pasted: String, beforeCommit: (User) -> Unit = {}) {
         telemetry.event("auth_sign_in_started", mapOf("method" to "link"))
         val attempt = ++generation
+        retireHandoff()
+        if (attempt != generation) throw CancellationException("Authentication changed.")
         val token = MagicLink.token(pasted) ?: throw MagicLink.unreadable
         val answer = api.sendCapturingSession<UserResponse>("POST", "/v1/auth/verify", TokenRequest(token))
         if (attempt != generation) throw CancellationException("Authentication changed.")
@@ -172,7 +195,89 @@ class AuthStore(
             status = currentStanding()
             throw failure
         }
-        finishProposed(proposed, attempt, restoring = false)
+        finishOwned(proposed, attempt, restoring = false)
+    }
+
+    private suspend fun finishOwned(proposed: ProposedSignIn, attempt: Long, restoring: Boolean) {
+        val owner = handoffScope ?: return finishProposed(proposed, attempt, restoring)
+        handoff?.takeIf { handoffPending && it.proposed == proposed && it.attempt == attempt }?.let { it.work.await(); return }
+        lateinit var next: Handoff
+        val work = owner.async(start = CoroutineStart.LAZY) {
+            try {
+                finishProposed(proposed, attempt, restoring)
+                if (handoff === next && attempt == generation) handoffResult = AuthHandoffResult.Accepted
+            } catch (cancelled: CancellationException) {
+                if (handoff === next) handoffResult = AuthHandoffResult.Retired
+                throw cancelled
+            } catch (refused: WindmillApiException) {
+                if (handoff === next) handoffResult = AuthHandoffResult.Refused
+                throw refused
+            } catch (failure: Exception) {
+                if (handoff === next) handoffResult = AuthHandoffResult.Failed
+                telemetry.failure("auth_sign_in", failure)
+                throw AuthHandoffFailure()
+            } finally {
+                if (handoff === next) handoffPending = false
+            }
+        }
+        handoffRevision += 1
+        next = Handoff(proposed, attempt, handoffRevision, work)
+        handoff = next
+        handoffResult = null
+        handoffPending = true
+        work.start()
+        work.await()
+    }
+
+    suspend fun awaitExistingHandoff(revision: Long): Boolean {
+        val opening = handoff?.takeIf { it.revision == revision && it.attempt == generation } ?: return false
+        opening.work.await()
+        return handoff === opening && opening.attempt == generation && handoffResult == AuthHandoffResult.Accepted &&
+            sessions.localSession == LocalSession.Owned(opening.proposed.user) && sessions.read() == opening.proposed.secret
+    }
+
+    private suspend fun retireHandoff(opening: Handoff? = handoff) {
+        opening ?: return
+        if (handoff === opening) handoffResult = AuthHandoffResult.Retired
+        opening.work.cancelAndJoin()
+        if (handoff === opening) { handoff = null; handoffPending = false }
+    }
+
+    suspend fun resumePendingSignIn(email: String): Boolean {
+        if (handoffScope == null) return false
+        val proposed = sessions.proposed?.takeIf { it.user.email.equals(email.trim(), ignoreCase = true) } ?: return false
+        finishOwned(proposed, generation, restoring = false)
+        return true
+    }
+
+    suspend fun cancelPendingSignIn() {
+        val attempt = ++generation
+        val opening = handoff
+        val proposed = sessions.proposed
+        suspend fun cancel() {
+            if (attempt != generation) return
+            retireHandoff(opening)
+            if (attempt != generation) return
+            if (proposed != null && sessions.proposed == proposed) {
+                lifecycle.cancelSignIn(proposed.user, proposed.secret)
+                if (attempt == generation) sessions.clearProposed(proposed)
+            }
+            if (attempt != generation) return
+            val standing = currentStanding()
+            val verified = status as? AuthStatus.SignedIn
+            status = if (verified?.verified == true && standing is AuthStatus.SignedIn && verified.user == standing.user) verified else standing
+            linkSentTo = null
+        }
+        val owner = handoffScope
+        if (owner == null) cancel() else owner.async(start = CoroutineStart.UNDISPATCHED) {
+            try { cancel() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (refused: WindmillApiException) { throw refused }
+            catch (failure: Exception) {
+                telemetry.failure("auth_sign_in", failure)
+                throw AuthHandoffFailure()
+            }
+        }.await()
     }
 
     private fun currentStanding(): AuthStatus = when (val local = sessions.localSession) {
@@ -184,13 +289,13 @@ class AuthStore(
     private suspend fun finishProposed(proposed: ProposedSignIn, attempt: Long, restoring: Boolean) {
         try {
             lifecycle.signedIn(proposed.user, proposed.secret, restoring)
-            if (attempt != generation) throw CancellationException("Authentication changed.")
+            if (attempt != generation || sessions.proposed != proposed) throw CancellationException("Authentication changed.")
             sessions.publishProposed(proposed)
         } catch (cancelled: CancellationException) {
             val completed = withContext(NonCancellable) { lifecycle.cancelSignIn(proposed.user, proposed.secret) }
-            if (completed && sessions.proposed == proposed) sessions.publishProposed(proposed)
-            else sessions.clearProposed(proposed)
-            if (completed && attempt == generation && sessions.localSession == LocalSession.Owned(proposed.user)) {
+            val accepted = completed && sessions.proposed == proposed
+            if (accepted) sessions.publishProposed(proposed) else sessions.clearProposed(proposed)
+            if (accepted && sessions.localSession == LocalSession.Owned(proposed.user) && sessions.read() == proposed.secret) {
                 identityRevision += 1
                 status = AuthStatus.SignedIn(proposed.user)
                 telemetry.identity(proposed.user.id)
@@ -213,6 +318,8 @@ class AuthStore(
 
     suspend fun signOut() {
         val attempt = ++generation
+        retireHandoff()
+        if (attempt != generation) return
         sessions.beginSignOut()
         lifecycle.signOut()
         try {

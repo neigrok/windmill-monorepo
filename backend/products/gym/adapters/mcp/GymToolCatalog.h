@@ -25,6 +25,10 @@ inline bool mintsProposal(const std::string& toolName) {
   return toolName.rfind("propose_", 0) == 0;
 }
 
+// The open workout is the phone Coach's alone: no surface draws a card for a connected agent's workout proposal, and
+// the server Coach answers only while no workout is open. GymTools declares every other tool to MCP and the server Coach.
+inline bool phoneCoachOnly(const std::string& toolName) { return toolName == "propose_workout_change"; }
+
 // Every tool, its sentence, the JSON Schema its arguments are pre-validated against, and the grant
 // level that reaches it.
 std::vector<ToolDeclaration> gymToolCatalog();

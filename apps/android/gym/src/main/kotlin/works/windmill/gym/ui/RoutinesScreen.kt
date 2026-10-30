@@ -51,6 +51,8 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
+import works.windmill.gym.domain.sync.SeedExercises
+import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSheetWindow
@@ -71,6 +73,7 @@ fun RoutinesScreen(
     val routines = store.routines.sortedByDescending { it.lastTrainedAtMs ?: Long.MIN_VALUE }
     val empty = store.allRoutines.isEmpty()
     val standing = store.pendingProposals.firstOrNull()
+    val refusals = store.refusals.filterNot { it is RefusedWorkout }
 
     GymScreen(
         title = "Routines",
@@ -87,8 +90,8 @@ fun RoutinesScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (store.refusals.isNotEmpty()) item("refusals") {
-                    Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
+                if (refusals.isNotEmpty()) item("refusals") {
+                    Refusals(refusals, store.catalog, onDismiss = { store.clearRefusals() })
                 }
 
                 items(store.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
@@ -222,7 +225,9 @@ fun RoutineSheet(
                                     Text(entry.position.toString(), style = GymType.numeral(13), color = skin.inkDim)
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(Readout.movement(entry.exerciseId, store.catalog),
+                                    val name = Readout.movement(entry.exerciseId, store.catalog)
+                                    val yours = SeedExercises.all.none { it.id.record.string == entry.exerciseId }
+                                    Text(if (yours) "$name · yours" else name,
                                         style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
                                     val target = Readout.targetWithUnit(entry.sets, store.catalog.find { it.id == entry.exerciseId })
                                     Text(target, style = GymType.numeral(13), color = skin.inkDim)

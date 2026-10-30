@@ -30,6 +30,207 @@ class WorkoutImportsTests {
     private fun sources(engine: Engine) = engine.read(scope) { reader -> reader.devices(WorkoutImports.journalPrefix).values
         .flatMap { it.member("items").obj().values } }
 
+    @Test fun recoveryPreviewWritesNothingAndCorrectionPreservesTheRawLegacySet() {
+        val row = finished(start = 101_000, finish = 103_000).copy(sets = listOf(finished().sets.single().copy(completedAtMs = 102_000)))
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            imports.prepare(row)
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (_, item) ->
+                        val source = item.member("source")
+                        val sets = source.member("sets").arr().map { set -> Json.Obj((set.obj() + ("kind" to Json.of("warmup"))).toList()) }
+                        Json.Obj((item.obj() + ("source" to Json.Obj((source.obj() + ("sets" to Json.Arr(sets))).toList()))).toList())
+                    }
+                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+            }
+            val original = sources(local).single().member("source")
+            val opening = imports.opening(row.session.id)
+            val before = local.snapshot()
+            assertEquals("bad-instant", imports.preview(opening, row, false, testNow))
+            assertEquals(before, local.snapshot())
+            val corrected = finished()
+            assertNull(imports.preview(opening, corrected, false, testNow))
+            assertEquals(before, local.snapshot())
+            imports.replaceAndRetry(row.session.id, corrected, opening = opening)
+            val saved = sources(local).single()
+            assertEquals(original, saved.member("original"))
+            assertEquals(Json.of("warmup"), saved.member("source").member("sets").arr().single()["kind"])
+            assertEquals(listOf("session01"), outbox(local).map { it.member("intent").member("cmd").member("args").member("id").str() })
+            assertNull(outbox(local).single().member("intent").member("cmd").member("args").member("sets").arr().single()["kind"])
+            engine(local.snapshot()).use { reopened -> assertEquals(corrected, WorkoutImports(reopened).retainedWorkouts().single()) }
+        }
+    }
+
+    @Test fun anOpenCorrectionUpdatesItsOwedChildInTheSameGuardedGesture() {
+        val row = finished(start = 101_000, finish = 103_000).let { it.copy(session = it.session.copy(finishedAtMs = null),
+            sets = it.sets.map { set -> set.copy(completedAtMs = 102_000, note = "Retained", rpe = 7.5) }, deleted = emptyList()) }
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            imports.prepare(row)
+            val opening = imports.opening(row.session.id)
+            val corrected = row.copy(session = row.session.copy(startedAtMs = 1_000), sets = row.sets.map { it.copy(weightKg = 81.25, completedAtMs = 2_000) })
+            assertNull(imports.preview(opening, corrected, false, testNow))
+            imports.replaceOpenAndRetry(row.session.id, corrected, opening) { true }
+            val items = sources(local)
+            val start = items.single { it["kind"] == Json.of("start") }
+            val child = items.single { it["kind"] == Json.of("operation") }
+            assertEquals(start.member("source").member("entries").member("set00001"), child.member("source"))
+            assertEquals(corrected.sets.single(), diskJson.decodeFromString(OwedSet.serializer(), child.member("source").jcs).set)
+            assertEquals(Json.of("Append"), child.member("source")["write"])
+            assertEquals(Json.of("pending"), child["state"])
+            assertEquals(Json.Null, outbox(local).single().member("intent").member("cmd").member("args")["finishedAt"] ?: Json.Null)
+        }
+    }
+
+    @Test fun markFinishedKeepsTheEditedOpenCopyAndResolvesOnlyItsOwnOwedChildren() {
+        val row = finished(start = 101_000, finish = 103_000).let { it.copy(session = it.session.copy(finishedAtMs = null),
+            sets = it.sets.map { set -> set.copy(completedAtMs = 102_000, note = "Retained", rpe = 7.5) }, deleted = emptyList()) }
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            imports.prepare(row)
+            val original = sources(local).single { it["kind"] == Json.of("start") }.member("source")
+            val corrected = row.copy(session = row.session.copy(startedAtMs = 1_000, finishedAtMs = 3_000),
+                sets = row.sets.map { it.copy(weightKg = 81.25, completedAtMs = 2_000) })
+            val opening = imports.opening(row.session.id)
+            assertNull(imports.preview(opening, corrected, true, testNow))
+            imports.keepWorkout(row.session.id, opening, { true }, corrected)
+            val items = sources(local)
+            assertEquals(original, items.single { it["kind"] == Json.of("finished") }.member("original"))
+            assertEquals(corrected, imports.retainedWorkouts().single())
+            assertTrue(items.filter { it["kind"] in setOf(Json.of("start"), Json.of("operation")) }.all { it["state"] == Json.of("resolved") })
+            assertEquals(1, outbox(local).size)
+            assertEquals("gym.importSession", outbox(local).single().member("intent").member("cmd").member("name").str())
+        }
+    }
+
+    @Test fun staleRecoveryOpeningsAndOwnerChangesRefuseWithoutAnyJournalWrite() {
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            val row = finished(start = 101_000, finish = 103_000)
+            imports.prepare(row)
+            val opening = imports.opening(row.session.id)
+            val before = local.snapshot()
+            assertEquals("account-changed", assertThrows(TrainingRefused::class.java) { imports.discardRefusal(row.session.id, opening) { false } }.code)
+            assertEquals(before, local.snapshot())
+            imports.replaceAndRetry(row.session.id, row.copy(sets = row.sets.map { it.copy(note = "A correction") }), opening = opening)
+            val changed = local.snapshot()
+            assertEquals("saved-workout-changed", assertThrows(TrainingRefused::class.java) { imports.discardRefusal(row.session.id, opening) }.code)
+            assertEquals(changed, local.snapshot())
+            val fresh = imports.opening(row.session.id)
+            local.signIn("A", mapOf("gym" to false))
+            val otherReplica = local.snapshot()
+            assertEquals("account-changed", assertThrows(TrainingRefused::class.java) { imports.discardRefusal(row.session.id, fresh) }.code)
+            assertEquals(otherReplica, local.snapshot())
+        }
+    }
+
+    @Test fun refusedOperationRecoveryChecksTheOpeningAndOwnerBeforeSchedulingAndRetainsFailure() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server)).use { local ->
+            val imports = WorkoutImports(local)
+            val opening = imports.opening("set00001")
+            val before = local.snapshot()
+            assertEquals("account-changed", assertThrows(TrainingRefused::class.java) { imports.retryOperation(opening) { false } }.code)
+            assertEquals(before, local.snapshot())
+            local.failNextCommit()
+            assertThrows(CommitFailure::class.java) { imports.retryOperation(opening) { true } }
+            assertEquals(before, local.snapshot())
+            assertEquals(setOf("set00001"), imports.retainedOperationSetIds())
+            val original = sources(local).single { it["kind"] == Json.of("operation") }.member("source")
+            imports.retryOperation(opening) { true }
+            assertEquals(original, sources(local).single { it["kind"] == Json.of("operation") }.member("source"))
+            assertEquals("gym.correctSession", outbox(local).single().member("intent").member("cmd").member("name").str())
+            val adding = imports.reviewWorkouts().single()
+            assertTrue(adding.adding); assertTrue(adding.operationsOnly)
+            assertEquals(diskJson.decodeFromString(OwedSet.serializer(), original.jcs).set, adding.workout!!.sets.single())
+            val scheduled = local.snapshot()
+            assertEquals("saved-workout-changed", assertThrows(TrainingRefused::class.java) { imports.retryOperation(opening) { true } }.code)
+            assertEquals(scheduled, local.snapshot())
+        }
+    }
+
+    @Test fun discardedPhoneCopiesRejectStaleUiKeepWithoutSchedulingAndLegacyMissingKeepIsIdempotent() {
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            val row = finished(start = 101_000, finish = 103_000).let { it.copy(session = it.session.copy(finishedAtMs = null), deleted = emptyList()) }
+            imports.prepare(row)
+            val opening = imports.opening(row.session.id)
+            imports.discardRefusal(row.session.id, opening)
+            val discarded = local.snapshot()
+            assertEquals("saved-workout-changed", assertThrows(TrainingRefused::class.java) { imports.keepWorkout(row.session.id, opening) }.code)
+            assertEquals(discarded, local.snapshot()); assertTrue(outbox(local).isEmpty())
+            imports.keepWorkout(row.session.id)
+            assertEquals(discarded, local.snapshot())
+        }
+    }
+
+    @Test fun unreadableOperationParentsStayOpaqueAlongsideHealthyCopiesWithoutChangingSourceBytes() = runBlocking {
+        for (parent in listOf(Json.Null, Json.of(17))) for (state in listOf("refused", "recovering")) {
+            val healthy = engine().use { anonymous ->
+                WorkoutImports(anonymous).prepare(finished("healthy01", 101_000, 103_000).copy(sets = listOf(finished().sets.single().copy(id = "healthyset", completedAtMs = 102_000))))
+                anonymous.read(scope) { it.devices(WorkoutImports.journalPrefix).values.single() }
+            }
+            engine(stranded(EngineRoomFixture.server())).use { local ->
+                val imports = WorkoutImports(local)
+                local.commit(scope) { context ->
+                    val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                        val items = journal.member("items").obj().mapValues { (_, item) ->
+                            if (item["kind"] != Json.of("operation")) item else Json.Obj((item.obj() + mapOf(
+                                "source" to Json.Obj((item.member("source").obj() + ("sessionId" to parent)).toList()), "state" to Json.of(state))).toList())
+                        }
+                        works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                    }
+                    works.windmill.sync.api.Gesture(emptyList(), local = writes + works.windmill.sync.api.DeviceWrite(WorkoutImports.journalPrefix + "healthy", healthy)) to Unit
+                }
+                val before = local.snapshot()
+                val raw = sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs
+                val rows = imports.reviewWorkouts()
+                assertEquals(setOf("healthy01", "set00001"), rows.map { it.id }.toSet())
+                val opaque = rows.single { it.id == "set00001" }
+                assertNull(opaque.workout); assertFalse(opaque.adding); assertTrue(opaque.operationsOnly)
+                assertEquals(listOf("source-unreadable"), opaque.refusals.map { it.code })
+                assertTrue(opaque.refusals.single().sets.isEmpty())
+                assertNotNull(rows.single { it.id == "healthy01" }.workout)
+                assertEquals(raw, sources(local).single { it["kind"] == Json.of("operation") }.member("source").jcs)
+                assertEquals(before, local.snapshot())
+            }
+        }
+    }
+
+    @Test fun refusedOperationRetryUsesTheExistingV5FallbackWithoutChangingItsSource() = runBlocking {
+        val server = EngineRoomFixture.oldServer()
+        engine(stranded(server)).use { local ->
+            val imports = WorkoutImports(local)
+            val original = sources(local).single { it["kind"] == Json.of("operation") }.member("source")
+            imports.retryOperation(imports.opening("set00001")) { true }
+            assertEquals("gym.start", outbox(local).single().member("intent").member("cmd").member("name").str())
+            assertEquals(original, sources(local).single { it["kind"] == Json.of("operation") }.member("source"))
+            repeat(12) { push(local, server); pull(local, server); EngineTraining(local).reconcileImports() }
+            assertTrue(imports.refusals().isEmpty())
+            assertFalse(imports.hasOwedSets("session01"))
+        }
+    }
+
+    @Test fun failedLocalCopyDiscardRetainsTheExactSourceAndCanBeRetried() {
+        engine().use { local ->
+            val imports = WorkoutImports(local)
+            imports.prepare(finished(start = 101_000, finish = 103_000))
+            val opening = imports.opening("session01")
+            val before = local.snapshot()
+            local.failNextCommit()
+            assertThrows(CommitFailure::class.java) { imports.discardRefusal("session01", opening) }
+            assertEquals(before, local.snapshot())
+            val source = sources(local).single().member("source")
+            imports.discardRefusal("session01", opening)
+            assertEquals(source, sources(local).single().member("source"))
+            assertEquals("discarded", sources(local).single().member("state").str())
+            assertTrue(outbox(local).isEmpty())
+        }
+    }
+
     @Test fun aLateServerFinishRefusalKeepsTheAdoptedSetRecoverableAcrossRestart() = runBlocking {
         val server = EngineRoomFixture.server()
         lateinit var original: TrainingSet

@@ -374,11 +374,11 @@ class RoutinesScreenTests {
                     RoutineSheet("routine_compact", room.store, {}, {}, { edited += it })
                 }
             }
-            val first = compose.onNodeWithText(firstName).performScrollTo().assertIsDisplayed()
+            val first = compose.onNodeWithText("$firstName · yours").performScrollTo().assertIsDisplayed()
             assertTrue("the long entry expands instead of clipping into 68dp: ${first.getUnclippedBoundsInRoot()}",
                 first.getUnclippedBoundsInRoot().height > 68.dp)
             compose.onNodeWithText("Rest 1:30").assertDoesNotExist()
-            compose.onNodeWithText(secondName).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("$secondName · yours").performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Start workout").assertIsDisplayed()
             compose.onNodeWithText("Edit routine").assertIsDisplayed().performClick()
             compose.runOnIdle {

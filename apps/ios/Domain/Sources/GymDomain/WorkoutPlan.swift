@@ -212,9 +212,10 @@ public struct ReviseWorkoutPlan: Action {
   }
 }
 
-// The receipt's card for a workout whose plan the lifter changed: the plan's diff against its routine as drawn, counted
-// as R118 counts a proposal without its name, and whether the change can be saved to the routine — only while the
-// routine stands at the revision the workout started from. No card for a plan that matches, or has no routine.
+// The receipt's card for a workout whose own plan changed, which only the server's planRevision proves: the plan's diff
+// against its routine as drawn, counted as R118 counts a proposal without its name, and whether the change can be saved
+// to the routine — only while the routine stands at the revision the workout started from. No card for an unstamped
+// plan, for a plan that matches, or for one with no routine.
 public struct PlanChanges: Equatable, Sendable {
   public enum Offer: String, Sendable { case save, routineChanged, none }
 
@@ -223,7 +224,7 @@ public struct PlanChanges: Equatable, Sendable {
   public let offer: Offer
 
   public init(session: Session?, routine: Routine?) {
-    guard let session, let plan = session.plan, let routine, plan.entries != routine.entries else {
+    guard let session, session.planRevision != nil, let plan = session.plan, let routine, plan.entries != routine.entries else {
       changes = []; changeCount = 0; offer = .none; return
     }
     changes = RoutineChange.lines(from: routine.entries, to: plan.entries)

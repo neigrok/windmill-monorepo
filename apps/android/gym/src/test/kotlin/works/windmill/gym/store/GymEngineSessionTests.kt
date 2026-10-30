@@ -169,6 +169,30 @@ class GymEngineSessionTests {
         }
     }
 
+    @Test fun changedCountsCreateANewDecisionAndAnOldDiscardCallbackCannotAnswerIt() = runBlocking {
+        val engine = Engine.memory(SyncSchema.registry)
+        localMovement(engine)
+        val session = GymEngineSession(engine, SyncRuntime(engine, transport(true), Tokens(), "test"))
+        try {
+            val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+            val opening = decision(session)
+            val revision = session.decisionRevision
+            localMovement(engine, "second-movement")
+            assertEquals(mapOf("exercise" to 1), opening.decisions.single().count)
+            session.decide(LineageAnswer.discard, opening)
+            val current = withTimeout(2_000) { while (session.decision === opening) delay(5); requireNotNull(session.decision) }
+            assertTrue(session.decisionRevision > revision)
+            assertEquals(mapOf("exercise" to 2), current.decisions.single().count)
+            val before = engine.snapshot()
+            session.decide(LineageAnswer.discard, opening)
+            assertEquals(before, engine.snapshot())
+            assertFalse(signingIn.isCompleted)
+            session.decide(LineageAnswer.add, current)
+            signingIn.await()
+            assertEquals(setOf("local-movement", "second-movement"), engine.read(gym) { it.drawn("exercise").map { row -> row.id.string }.toSet() })
+        } finally { session.close() }
+    }
+
     @Test fun addWaitsForThePinnedCountsAndRetainsIdsAndAccountLineage() = runBlocking {
         val engine = Engine.memory(SyncSchema.registry)
         localMovement(engine)

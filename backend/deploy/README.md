@@ -159,8 +159,12 @@ schema 11 / minimum 11, verified on 2026-10-30 after
 [deployment 40873633845](https://github.com/neigrok/windmill-monorepo/actions/runs/40873633845).
 The latest published Android release is 0.12.1 / code 184. iOS 0.2.0 (23) is uploaded and VALID,
 with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; intended tester access
-is unverified. Current web promotion, queued client delivery and digest resum completion still need
-verification. The deployment guard requires exact acknowledgement for any further minimum change.
+is unverified. [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
+completed across three scopes and corrected two digests. [Web promotion 41101256320](https://github.com/neigrok/windmill-monorepo/actions/runs/41101256320)
+serves source `667bbc88` at schema 11 / minimum 11. Verification matched all 168 artifact file hashes
+and 82 public files exactly; five HTML files match after Cloudflare email-protection removal, and
+`gallery.html` follows its expected canonical redirect. Queued client delivery and final native
+availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
 
 1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
    refuses a candidate minimum that differs from the live server.

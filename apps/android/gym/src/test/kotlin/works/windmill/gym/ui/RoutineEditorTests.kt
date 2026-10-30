@@ -1,8 +1,6 @@
 package works.windmill.gym.ui
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,18 +8,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextReplacement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,9 +23,8 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Program
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.SetTarget
+import works.windmill.gym.domain.*
+import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.EngineRoomFixture
 
 @RunWith(RobolectricTestRunner::class)
@@ -73,6 +60,46 @@ class RoutineEditorTests {
     }
 
     private fun handle(name: String) = compose.onNodeWithContentDescription(name, useUnmergedTree = true)
+
+    @Test fun aNewRoutineHasNoHistory() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking { room.select(null) }
+            val before = room.engine.snapshot()
+            editor(room, RoutineDraft(name = "New"))
+            compose.onNodeWithText("History").assertDoesNotExist()
+            compose.onNodeWithTag("routine-history").assertDoesNotExist()
+            assertEquals(before, room.engine.snapshot())
+        } } finally { scope.cancel() }
+    }
+
+    @Test fun finishedHistoryShowsExactFactsWithoutChangingTheOuterDraft() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            runBlocking {
+                room.select(null)
+                val plan = RoutineDraft(name = "Pull", creationId = "routine_history").adding("bench-press")
+                    .capturingMovements(room.store.catalog)
+                assertTrue(room.store.saveRoutine(plan) is GymResult.Ok)
+                room.training.startSession(SessionStart("history_finished", room.now - 1_000, routineId = "routine_history"))
+                room.training.appendSet("history_finished", SetWrite("history_set_1", "bench-press", 50.0, 8, room.now - 900))
+                room.training.appendSet("history_finished", SetWrite("history_set_2", "barbell-row", 40.0, 10, room.now - 800))
+                room.training.finishSession("history_finished", room.now - 100)
+            }
+            val opening = RoutineDraft.of(requireNotNull(room.store.routine("routine_history")), room.store.catalog).named("Retained draft")
+            val before = room.engine.snapshot()
+            val draft = editor(room, opening)
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("routine-history-row").fetchSemanticsNodes().size == 1 }
+            compose.onNodeWithText("History").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("2 sets · 2 movements").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("routine-history-row").assertHasNoClickAction()
+            val date = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d", java.util.Locale.getDefault())
+                .format(java.time.Instant.ofEpochMilli(room.now - 1_000).atZone(java.time.ZoneId.systemDefault()))
+            compose.onNodeWithText(date).assertExists()
+            assertEquals(opening, draft())
+            assertEquals(before, room.engine.snapshot())
+        } } finally { scope.cancel() }
+    }
 
     @Test
     fun testAMovementRowOffersRemoveAsACustomActionAndNotOnlyAsASwipe() {

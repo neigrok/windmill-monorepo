@@ -206,7 +206,7 @@ scheme under `sets` and omitting the key on an open line:
 cannot read leaves the session with no routine and no plan, so the server doors refuse it before
 admitting: `start_session` with its no-routine sentence, the import with `404 no such routine`.
 **The open workout's plan is then the lifter's**: a phone writes `plan` whole through `/v1/sync`,
-guarded on the stamp it read, and `gym.applyWorkoutProposal` writes the plan an agent proposed.
+guarded on the stamp it read, and `gym.applyWorkoutProposal` writes the plan Coach proposed.
 GymRules holds both to engine A.2's plan rules — a movement with a logged set keeps its entries
 (`plan-logged`), a finished or stale workout takes no plan (`session-finished`), and the plan's
 `routine` never changes — and on each net change moves the server's `planRevision` and supersedes
@@ -996,7 +996,10 @@ the conversation.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-five tools; `adapters/mcp/GymTools` dispatches them.
+`adapters/mcp/GymToolCatalog` declares twenty-five tools; `adapters/mcp/GymTools` declares and dispatches
+twenty-four of them to MCP and the server Coach. `propose_workout_change` is the phone Coach's alone
+(`phoneCoachOnly`): no surface draws a card for a connected agent's workout proposal, so MCP neither lists it
+nor runs it, and GymTools runs it only for the ability corpus, which records the answers the phone reproduces.
 The table uses product-local names. External MCP publishes only `gym_<local>` names and accepts
 unambiguous raw compatibility aliases; in-process Coach uses the local catalog. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.
@@ -1008,7 +1011,6 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
 | `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
-| | `propose_workout_change` — the open workout's plan; **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
 | `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt | `save_note` — append a useful user-provided insight | |
@@ -1018,8 +1020,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
 external MCP's `create_routine` writes it; Coach holds it for explicit Save. A day that already stands is `existing` and the two routine `propose_` tools mint a
-diff and write nothing; `propose_workout_change` mints one against the open workout's plan, with no
-`reviewUrl`, since its card is on the phone in the lifter's hand. **The receipt is never shaped like a write** — it carries the proposal, its
+diff and write nothing. **The receipt is never shaped like a write** — it carries the proposal, its
 `state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent cannot tell its human the
 program changed. **Retired names answer with their replacements** (`GymTools::retiredTools()`,
 consulted only after a name misses the live catalog, by `CompositeToolHost` over MCP and `AskTools`

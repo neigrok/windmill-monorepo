@@ -226,11 +226,13 @@ its session, the best it beat (`previous`), its stated `estimate` and its `gain`
 also lists the sessions that set one. Partial history has none. It runs in all three; the web's log weaves no new
 bests yet.
 
-`PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card: the
-proposal diff of the session's plan against its routine as drawn, with R118's count and no name term; `offer` is
-`save` when the routine's `revision` equals the session's `routineRevision`, `routineChanged` when both are known
-and differ, and `none` when either is unknown — the changes still listed, neither save nor sentence offered — or,
-with no changes, when the plan matches, has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
+`PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card, drawn only for a workout whose
+own plan changed: the server's `planRevision` is set. It is the proposal diff of the session's plan against its
+routine as drawn, with R118's count and no name term; `offer` is `save` when the routine's `revision` equals the
+session's `routineRevision`, `routineChanged` when both are known and differ, and `none` when either is unknown — the
+changes still listed, neither save nor sentence offered. With no changes it is `none` when `planRevision` is unset
+(a routine that moved under an unedited plan, or a plan edit the server has not stamped yet), when the plan matches,
+has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
 `{outOfDate}`) is null for a current, applied or dismissed proposal, else `{reason}` with apply's reasons,
 `workout-moved` naming the movement as `exerciseId`.
 
