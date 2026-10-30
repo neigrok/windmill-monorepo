@@ -486,6 +486,8 @@ and Android disagree.
   *Set 1 · 8 × 10 kg → 8 × 12.5 kg* and every set line of a changed movement stands (03.32 draws
   *10 × 8 → 12.5 × 8* and the changed set alone); and a reorder an applied Coach change made counts in
   *‹n› changes* but draws no Moved block, since the plan's diff carries no order lines.
+  Android and web still refuse Coach while a workout is open (Android Ask, server Ask
+  `ask-session-open`); only iOS answers during one.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, board
   08.1 draws an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
