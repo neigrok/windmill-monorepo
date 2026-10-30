@@ -398,7 +398,6 @@ class TrainingStore(
     var bodyweightRead by mutableStateOf(false)
         private set
     private val bodyweightWrite = Mutex()
-    private val preferencesWrite = Mutex()
     private val progressRead = Mutex()
     private var progressRevision = 0L
     private var progressWanted = false
@@ -1494,22 +1493,6 @@ class TrainingStore(
         movementCreations[key] = write to job
         job.invokeOnCompletion { if (movementCreations[key]?.second === job) movementCreations.remove(key) }
         return job.await()
-    }
-
-    // The local commit controls the next frame; domain drafts preserve fields owned by other surfaces.
-    suspend fun savePreferences(document: GymPreferences): WriteFailure? {
-        if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
-        val seat = owner
-        return preferencesWrite.withLock {
-            try {
-                val saved = training.savePreferences(document)
-                if (!workoutAuthorized || seat != owner) return@withLock WriteFailure.Refused(accountChanged)
-                preferences = saved
-                refreshWorkout()
-                null
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure("gym.savePreferences", failure); WriteFailure(failure) }
-        }
     }
 
     fun clearRefusals() {

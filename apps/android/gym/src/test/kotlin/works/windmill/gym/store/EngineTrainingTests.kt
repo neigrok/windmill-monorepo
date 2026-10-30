@@ -469,27 +469,13 @@ class EngineTrainingTests {
             assertEquals("Original", gym.routine("routine1")!!.name)
         }
     }
-    @Test fun unitWritesPreserveTheFreshServerDocumentIncludingUnownedFields() = runBlocking {
+    @Test fun feedbackReadsIgnoreSharedUnitsWithoutChangingTheReplica() = runBlocking {
         engine().use { engine ->
-            seed(engine, Gym.Types.prefs, "prefs", mapOf("units" to Json.of("kg"), "restSeconds" to Json.of(180), "restSound" to Json.of(true)))
-            val gym = EngineTraining(engine)
-            assertEquals(GymPreferences(), gym.settings())
-            assertEquals(GymPreferences(units = Units.Pounds), gym.savePreferences(GymPreferences(units = Units.Pounds)))
-            assertEquals(GymPreferences(), gym.savePreferences(GymPreferences()))
-            engine.read(works.windmill.sync.core.ScopeRef(Gym.scope)) { reader ->
-                val prefs = reader.drawn(Gym.Types.prefs, RecordID("prefs"))!!
-                assertEquals(Json.of(180), prefs.values["restSeconds"])
-                assertEquals(Json.of(true), prefs.values["restSound"])
-            }
-        }
-    }
-    @Test fun aFailedPreferenceReadCannotReplaceTheServerDocumentWithDefaults() = runBlocking {
-        engine().use { engine ->
-            val gym = EngineTraining(engine)
-            gym.savePreferences(GymPreferences(units = Units.Pounds))
-            engine.failNextCommit()
-            try { gym.savePreferences(GymPreferences()); fail("Storage must preserve the saved preferences.") } catch (_: CommitFailure) {}
-            assertEquals(GymPreferences(units = Units.Pounds), gym.settings())
+            seed(engine, Gym.Types.prefs, "prefs", mapOf("units" to Json.of("lb"), "restSeconds" to Json.of(180),
+                "restSound" to Json.of(true), "confirmHaptic" to Json.of(false), "confirmSound" to Json.of(true)))
+            val before = engine.snapshot()
+            assertEquals(GymPreferences(confirmHaptic = false, confirmSound = true), EngineTraining(engine).settings())
+            assertEquals(before, engine.snapshot())
         }
     }
     @Test fun anonymousWorkoutIsDurableInTheEngineWithoutRestAndAllIdsSurviveRestore() = runBlocking {

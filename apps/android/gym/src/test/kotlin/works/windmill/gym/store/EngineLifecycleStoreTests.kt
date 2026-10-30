@@ -11,6 +11,10 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.RecordID
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
@@ -240,23 +244,13 @@ class EngineLifecycleStoreTests {
 
     @Test fun signedOutRoomSettingsSurviveRelaunchAndAdd() = runTest {
         val first = engine(); val room = room(first); room.store.connect(account())
-        assertNull(room.store.savePreferences(GymPreferences(Units.Pounds, confirmSound = true)))
+        assertTrue(first.commit(ScopeRef(Gym.scope), Gesture(listOf(Change.write(Gym.Types.prefs, RecordID("prefs"),
+            mapOf("confirmSound" to Json.of(true)))))) is CommitOutcome.Committed)
+        room.store.refreshEngine()
         val snapshot = first.snapshot(); first.close()
         engine(snapshot).use { engine ->
             val restored = room(engine); restored.store.connect(account()); restored.add(engine)
-            assertEquals(Units.Pounds, restored.store.preferences.units); assertTrue(restored.store.preferences.confirmSound)
-        }
-    }
-
-    @Test fun failedSettingStorageNeverReplaysOrReplacesTheWorkout() = runTest {
-        engine().use { engine ->
-            val room = room(engine); room.store.connect(account()); val session = room.workout(finish = false); room.add(engine)
-            val before = room.gym.session(session.id)
-            engine.failNextCommit()
-            assertNotNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertFalse(room.gym.settings().confirmSound)
-            assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertTrue(room.gym.settings().confirmSound)
+            assertEquals(GymPreferences(confirmSound = true), restored.store.preferences)
         }
     }
 
