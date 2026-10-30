@@ -128,7 +128,6 @@ extension GymModel {
   }
   func coachDecideProposal(_ proposal: Proposal, apply: Bool) -> Bool {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
-    guard openSession == nil else { error = "Finish your workout first."; return false }
     start()
     stalledCoachDecisions.remove(proposal.id); refusedCoachApplies.remove(proposal.id)
     let decision: CoachQueuedDecision = apply ? .apply : .reject

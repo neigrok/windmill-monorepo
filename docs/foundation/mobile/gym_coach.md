@@ -214,7 +214,6 @@ Android runs no replica executor. The server loop and the iOS turn driver replay
 1. **Admit locally.** Refuse, keeping the draft, when:
    - there is no connection;
    - the seat is `anon` and the phone holds no installation credential with lifetime USD capacity (§8);
-   - a workout is open and the turn speaks catalog/1, which holds no workout proposal;
    - the replica has not completed its first pull of history (`coach-replica-syncing`);
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
      are attached.
