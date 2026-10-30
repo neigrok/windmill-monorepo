@@ -215,7 +215,7 @@ test('composition.json names the composed registries: gym and journal, each a pr
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[11, 11], [11, 11]]);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[12, 11], [12, 11]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {
@@ -233,6 +233,10 @@ test('gym authoritative metadata preserves server writers, frozen values and unk
     baseName: fields('proposal').baseName,
     changeCount: fields('proposal').changeCount,
     updatedAt: fields('note').updatedAt,
+    planRevision: fields('session').planRevision,
+    routineRevision: fields('session').routineRevision,
+    workoutBaseRevision: fields('workoutProposal').baseRevision,
+    workoutChangeCount: fields('workoutProposal').changeCount,
   }, {
     revision: { kind: 'lww', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
     createdEntries: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 0, max: 2147483647 } },
@@ -240,6 +244,10 @@ test('gym authoritative metadata preserves server writers, frozen values and unk
     baseName: { kind: 'const', writer: 'server', unit: 'bytes', max: 240, domain: { type: 'string' } },
     changeCount: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 0, max: 2147483647 } },
     updatedAt: { kind: 'lww', writer: 'server', domain: { type: 'number', integer: true, min: 0 } },
+    planRevision: { kind: 'lww', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
+    routineRevision: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
+    workoutBaseRevision: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
+    workoutChangeCount: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 0, max: 2147483647 } },
   });
 });
 
@@ -264,7 +272,7 @@ test('every minted gym type is seeded, its widest seeded id in its pattern', () 
   const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
   const seeded = minted.filter((type) => type.seeded);
   assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'thread', 'message']);
+  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'workoutProposal', 'thread', 'message']);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
   }

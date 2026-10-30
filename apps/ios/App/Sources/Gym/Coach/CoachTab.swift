@@ -6,9 +6,12 @@ import GymDomain
 
 private enum CoachDestination: Hashable { case history, notes, connectedLog }
 
+// Coach's room: the Coach tab, or a sheet over the open workout (08.54), which closes from its bar and leaves the account
+// to the tabs.
 struct CoachTab: View {
   let gym: GymModel
   var escapeSetup: ((CoachSetupChoice) -> Void)?
+  var close: (() -> Void)?
   @Binding var handoff: CoachHandoff?
   // A proposal whose card the conversation scrolls to, from its Routines row.
   @Binding var revealedProposal: String?
@@ -27,8 +30,8 @@ struct CoachTab: View {
   @Environment(\.openURL) var openURL
   @FocusState var composing: Bool
   init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), revealedProposal: Binding<String?> = .constant(nil),
-       coach: CoachConversation? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil) {
-    self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; _revealedProposal = revealedProposal
+       coach: CoachConversation? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil, close: (() -> Void)? = nil) {
+    self.gym = gym; self.escapeSetup = escapeSetup; self.close = close; _handoff = handoff; _revealedProposal = revealedProposal
     _coach = State(initialValue: coach ?? CoachConversation(gym: gym))
     _fixturePrepared = State(initialValue: !gym.isAnonymous)
   }
@@ -36,14 +39,22 @@ struct CoachTab: View {
   var body: some View {
     room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
+        if let close {
+          ToolbarItem(placement: .cancellationAction) {
+            if #available(iOS 26, *) { Button(role: .close, action: close).accessibilityIdentifier("coach-close") }
+            else { Button("Close", action: close).accessibilityIdentifier("coach-close") }
+          }
+        }
         if coach.allowed {
           ToolbarItem(placement: .topBarTrailing) {
             Button("History", systemImage: "clock") { destination = .history }
               .accessibilityIdentifier("coach-history")
           }
-          if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+          if #available(iOS 26, *), close == nil { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         }
-        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
+        if close == nil {
+          ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
+        }
       }.roomBar(.gym)
       .navigationDestination(item: $destination) { destination in
         switch destination {
@@ -219,7 +230,6 @@ struct CoachTab: View {
   func recover(_ recovery: CoachRecovery) {
     switch recovery {
     case .tryAgain: coach.send()
-    case .openWorkout: _ = gym.restoreWorkout()
     case .signIn: signIn()
     case .ownAgent:
       gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "connect"])
@@ -417,7 +427,6 @@ extension CoachRecovery {
   var identifier: String {
     switch self {
     case .tryAgain: "coach-try-again"
-    case .openWorkout: "coach-open-workout"
     case .signIn: "coach-sign-in"
     case .ownAgent: "coach-own-agent"
     case .update: "coach-update"

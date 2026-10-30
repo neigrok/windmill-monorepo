@@ -22,8 +22,11 @@
 
 namespace wm::gym::coach {
 
+// D-3: the catalog versions a turn may open with, served side by side; `catalog/N` names version N.
+constexpr int kOldestCatalog = 1;
+constexpr int kNewestCatalog = 2;
+
 // Appendix A.
-constexpr const char* kCatalogVersion = "catalog/1";
 constexpr int kMaxModelCalls = 8;
 constexpr int kMaxAbilityCalls = 12;
 constexpr int kMaxAdds = 6;
@@ -80,6 +83,7 @@ struct TurnContextRead {
 // §6.2: the open body, in bounds. `digest` is the SHA-256 of the body's JCS: a seen turnId resumes
 // under the same digest and conflicts under another.
 struct TurnOpen {
+  int catalog = kNewestCatalog;
   std::string turnId;
   std::string question;
   std::vector<TurnPicture> pictures;
@@ -88,8 +92,8 @@ struct TurnOpen {
   std::string digest;
 };
 
-// §6.2 admission steps 1 and 2: `code` is `coach-update-required` for a catalog version that is
-// not the current one and `coach-bad-request` for a body out of shape or bounds.
+// §6.2 admission steps 1 and 2: `code` is `coach-update-required` for a catalog version the server
+// does not serve and `coach-bad-request` for a body out of shape or bounds.
 struct TurnOpenRead {
   std::optional<TurnOpen> open;
   std::string code;

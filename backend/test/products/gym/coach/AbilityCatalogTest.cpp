@@ -26,17 +26,28 @@ std::set<std::string> names(const std::vector<ToolDeclaration>& declarations) {
 
 TEST(gym_ability_catalog_offers_appendix_c_minus_withheld_and_seats_each_ability) {
   const AbilityCatalog& catalog = gymAbilityCatalog();
-  CHECK_EQ(catalog.version(), std::string("catalog/1"));
+  CHECK_EQ(catalog.version(), 2);
   CHECK_EQ(catalog.abilities().size(), gymToolCatalog().size());
 
   const std::set<std::string> anon = names(catalog.offered(Seat::anon));
   CHECK_EQ(anon, (std::set<std::string>{"list_exercises", "list_sessions", "get_session", "get_sessions", "last_time",
                                         "get_last_times", "list_routines", "get_stats", "list_notes", "list_bodyweight",
                                         "create_routine", "create_exercise", "propose_routine_change",
-                                        "propose_routine_removal"}));
+                                        "propose_routine_removal", "propose_workout_change"}));
   std::set<std::string> bound = anon;
   bound.insert({"save_note", "share_session", "revoke_share"});
   CHECK_EQ(names(catalog.offered(Seat::bound)), bound);
+
+  // A catalog/1 turn is offered and gated by catalog/1: everything but what catalog/2 added.
+  const AbilityCatalog first = catalog.at(1);
+  CHECK_EQ(first.version(), 1);
+  CHECK_EQ(first.abilities().size(), catalog.abilities().size() - 1);
+  CHECK_FALSE(first.find("propose_workout_change"));
+  std::set<std::string> older = bound;
+  older.erase("propose_workout_change");
+  CHECK_EQ(names(first.offered(Seat::bound)), older);
+  CHECK(catalog.find("propose_workout_change")->target == ProposalTarget::workout);
+  CHECK(catalog.find("propose_routine_removal")->target == ProposalTarget::routine);
 
   // Every declared name the appendix withholds, or does not list, is offered on no seat.
   for (const char* withheld : {"start_session", "log_set", "log_sets", "import_session", "finish_session",
@@ -67,8 +78,10 @@ TEST(gym_ability_catalog_class_agent_and_seats_are_catalog_json_s) {
     table["class"] = std::string(nameOf(ability.cls));
     table["agent"] = std::string(nameOf(ability.agent));
     table["seats"] = ability.seats == AbilitySeats::bound ? "bound" : "any";
+    if (ability.since != 1) table["since"] = "catalog/" + std::to_string(ability.since);
     Json::Value json(Json::objectValue);
-    for (const char* field : {"class", "agent", "seats"}) json[field] = found->second[field];
+    for (const char* field : {"class", "agent", "seats", "since"})
+      if (found->second.isMember(field)) json[field] = found->second[field];
     if (table != json)
       ::testing::fail((ability.name() + " drifts from catalog.json: the table says " + dump(table) + ", catalog.json " + dump(json)).c_str(),
                       __FILE__, __LINE__);
@@ -77,7 +90,8 @@ TEST(gym_ability_catalog_class_agent_and_seats_are_catalog_json_s) {
 
 TEST(gym_ability_catalog_marks_the_phone_creates_whose_ids_the_server_mints) {
   const AbilityCatalog& catalog = gymAbilityCatalog();
-  for (const char* mints : {"create_routine", "create_exercise", "save_note", "propose_routine_change", "propose_routine_removal"})
+  for (const char* mints : {"create_routine", "create_exercise", "save_note", "propose_routine_change", "propose_routine_removal",
+                            "propose_workout_change"})
     CHECK(catalog.find(mints)->mintsId());
   for (const char* keeps : {"share_session", "revoke_share", "list_routines", "last_time", "log_set"})
     CHECK_FALSE(catalog.find(keeps)->mintsId());

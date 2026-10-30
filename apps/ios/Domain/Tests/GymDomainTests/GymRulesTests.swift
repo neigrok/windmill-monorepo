@@ -12,7 +12,7 @@ struct GymRulesTests {
   @Test func everySharedFileHasARunner() throws {
     let handled = ["rules.json", "values.json", "notes-actions.json", "bodyweight-actions.json", "routines-actions.json",
                    "catalogue-actions.json", "preferences-actions.json", "proposals-actions.json", "recovery-actions.json", "training-actions.json",
-                   "training-reads.json", "units.json"]
+                   "training-reads.json", "units.json", "workout-plan-actions.json", "workout-proposals-actions.json"]
     #expect(try Contract.files(under: "gym/domain") == handled.map { "gym/domain/" + $0 }.sorted())
   }
 
@@ -67,6 +67,14 @@ struct GymRulesTests {
       default: throw ContractError("unknown proposal numeric override")
       }
       return checked(value, at: moment)
+    case "workoutProposal":
+      var value = try WorkoutProposal(form: input)
+      switch path {
+      case "changes.0.before.sets.0.weightKg": value.changes[0].before!.sets![0].weightKg = weight
+      case "changes.0.after.sets.0.weightKg": value.changes[0].after!.sets![0].weightKg = weight
+      default: throw ContractError("unknown workout proposal numeric override")
+      }
+      return checked(value, at: moment)
     default: throw ContractError("unknown numeric override entity")
     }
   }
@@ -95,6 +103,7 @@ extension GymRefusal {
     case .badInstant(let r): ["badInstant": r.form]
     case .proposalSettled(let r): ["proposalSettled": r.form]
     case .proposalSuperseded(let r): ["proposalSuperseded": r.form]
+    case .planLogged(let r): ["planLogged": r.form]
     case .other(let refused): ["other": refused.form]
     }
   }

@@ -42,6 +42,7 @@ final class GymModel {
   var notes: [Note] = []
   var bodyweight: Bodyweight?
   var preferences = GymPreferences()
+  var restSettings = RestSettings()
   var proposals: [Proposal] = []
   var personalCounts: [String: Int] = [:]
   var workoutHidden = false
@@ -236,12 +237,14 @@ final class GymModel {
                 routines: Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
                 notes: try read.repository(Note.self).all(in: .drawn), bodyweight: try Bodyweight(read),
                 preferences: try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
+                restSettings: try GymDomain.restSettings(read),
                 coach: try Self.readCoachProposals(read), anonymous: read.isAnonymous, counts: counts, hidden: hidden,
                 planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
       if log.map({ !$0.drawsTheSame(as: snapshot.log) }) ?? true { log = snapshot.log }
       publish(\.catalogue, snapshot.catalogue); publish(\.routines, snapshot.routines); publish(\.notes, snapshot.notes)
       publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
+      publish(\.restSettings, snapshot.restSettings)
       publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
       updateCoachProposals(snapshot.coach)
@@ -362,6 +365,7 @@ final class GymModel {
     case .sessionOverlap: "This workout overlaps another workout."
     case .payloadConflict: "This workout changed elsewhere. Review the latest version."
     case .unknownExercise: "This movement is no longer available."
+    case .planLogged: "That movement already has a logged set."
     case .badInstant: "Check the workout's start and finish times."
     case .proposalSettled: "This proposal has already been answered."
     case .proposalSuperseded: "A newer proposal is available."

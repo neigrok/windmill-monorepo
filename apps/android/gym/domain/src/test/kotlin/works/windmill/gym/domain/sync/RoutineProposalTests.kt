@@ -68,7 +68,7 @@ class RoutineProposalTests {
             entry.copy(exerciseId = id).validated(Path("entries.0"))
         }
         invalidValue("proposal.changes.exerciseId", "changes.0.exerciseId", Violation.Reason.Nul) {
-            proposal.changes.single().copy(exerciseId = id).validated(Path("changes.0"))
+            ProposalRules.change.validated(listOf(proposal.changes.single().copy(exerciseId = id)), Path("changes"))
         }
         for (side in listOf("before", "after")) for (target in listOf(SetTarget(0, 80.0), SetTarget(5, 0.001))) {
             val fields = EntryTargets(listOf(target))

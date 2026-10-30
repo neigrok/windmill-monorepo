@@ -20,8 +20,10 @@ import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises
 import { GymVolume, Session, SessionRules, SetRules, TrainingSet, VolumePart } from '../../../../src/products/gym/domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
-import { GymEstimate, Prefill, ProgressRecords, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
+import { GymEstimate, Prefill, ProgressRecords, Readout, RestTarget, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
+import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
+import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, momentOf, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -112,6 +114,10 @@ function trainingReadsForm(vector, read) {
       const value = Prefill.of(sets, f.optionalValue('planEntry', RoutineEntry.decode), last);
       return { weightKg: value.weightKg, reps: value.reps };
     }
+    case 'RestTarget': {
+      const target = RestTarget.of(f.optionalValue('planEntry', RoutineEntry.decode), restSettings(read));
+      return target === null ? null : { seconds: target.seconds, reached: target.isReached(f.int('sinceMs')) };
+    }
     case 'StatsProgress': return log.progress.json;
     case 'ProgressCompleteness': return { isComplete: log.progress.isComplete };
     case 'Consistency': return log.progress.consistency(read.moment.now, read.moment.zone);
@@ -160,6 +166,21 @@ function trainingReadsForm(vector, read) {
       return body.apply(history, vector.input.input.args);
     }
     default: throw new Error(`unclaimed training read ${vector.input.read}`);
+  }
+}
+
+/** @param {any} json @returns {import('../../../../src/products/gym/domain/workoutPlan.js').PlanOperation} */
+function planOperation(json) {
+  const f = Fields.object(json);
+  switch (f.string('op')) {
+    case 'retarget': return PlanOperations.retarget(f.int('index'), f.int('set'), f.value('target', SetTarget.decode));
+    case 'add_set': return PlanOperations.addSet(f.int('index'));
+    case 'remove_set': return PlanOperations.removeSet(f.int('index'), f.int('set'));
+    case 'swap': return PlanOperations.swap(f.int('index'), f.ref('exerciseId', Exercise));
+    case 'add_movement': return PlanOperations.addMovement(f.ref('exerciseId', Exercise));
+    case 'remove_movement': return PlanOperations.removeMovement(f.int('index'));
+    case 'set_rest': return PlanOperations.setRest(f.int('index'), f.optionalInt('restSeconds'));
+    default: throw new Error(`unknown plan operation ${json.op}`);
   }
 }
 
@@ -269,6 +290,32 @@ const handlers = {
     }
   },
   'gym/domain/training-reads.json': (vector) => corpus.read(vector, Session.scope, (read) => trainingReadsForm(vector, read)),
+  'gym/domain/workout-plan-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    if (vector.input.read) {
+      return corpus.read(vector, Session.scope, (read) => vector.input.read === 'PlanChanges'
+        ? PlanChanges.of(read, f.ref('sessionId', Session)).json : trainingReadsForm(vector, read));
+    }
+    assert.equal(vector.input.action, 'ReviseWorkoutPlan', 'unclaimed workout plan action');
+    return corpus.decision(ReviseWorkoutPlan({ sessionId: f.ref('sessionId', Session), base: PlanSnapshot.decode(input.base),
+      operations: input.operations.map(planOperation) }), vector, () => null, refusalForm);
+  },
+  'gym/domain/workout-proposals-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    if (vector.input.read) {
+      assert.equal(vector.input.read, 'WorkoutOutOfDate', 'unclaimed workout proposal read');
+      return corpus.read(vector, WorkoutProposal.scope, (read) => ({ outOfDate: WorkoutProposalState.of(read, f.ref('id', WorkoutProposal)).outOfDate }));
+    }
+    switch (vector.input.action) {
+      case 'ProposeWorkout': return corpus.decision(ProposeWorkout({ id: f.ref('id', WorkoutProposal), sessionId: f.ref('sessionId', Session),
+        entries: f.list('entries', RoutineEntry.decode), summary: f.string('summary', '') }), vector, (id) => id.json, refusalForm);
+      case 'ApplyWorkoutProposal': return corpus.decision(ApplyWorkoutProposal(f.ref('id', WorkoutProposal)), vector, () => null, refusalForm);
+      case 'DismissWorkoutProposal': return corpus.decision(DismissWorkoutProposal(f.ref('id', WorkoutProposal)), vector, () => null, refusalForm);
+      default: throw new Error(`unclaimed workout proposal action ${vector.input.action}`);
+    }
+  },
   'gym/domain/units.json': (vector) => unitsForm(vector.input),
   'gym/domain/notes-actions.json': (vector) => {
     const input = vector.input.input;
@@ -445,6 +492,7 @@ test('the gym corpus is closed: every file is claimed and nothing is pending', (
   for (const path of ['gym/domain/training-reads.json', 'gym/domain/units.json', ladderFile]) assert.ok(claimed.includes(path), `W5a claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/proposals-actions.json'), 'W4 proposals claim regressed');
   assert.ok(claimed.includes('gym/domain/training-actions.json'), 'W5b training actions claim regressed');
+  for (const path of ['gym/domain/workout-plan-actions.json', 'gym/domain/workout-proposals-actions.json']) assert.ok(claimed.includes(path), `in-flight claim regressed: ${path}`);
   const ladder = /** @type {{weightCases: Json[], roundCases: Json[], repCases: Json[]}} */ (Contract.json(ladderFile));
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0)
     + ladder.weightCases.length + ladder.roundCases.length + ladder.repCases.length;
@@ -458,7 +506,7 @@ test('gym-ladder.json runs byte for byte through the domain weight ladder', () =
   for (const { reps, ...expect } of ladder.repCases) assert.equal(jcs(unitsForm({ operation: 'reps', value: reps })), jcs(expect));
 });
 
-test('the complete nine-entity gym rule book equals the pinned bytes', () => RuleBookParity.check(book, rulesFile));
+test('the complete ten-entity gym rule book equals the pinned bytes', () => RuleBookParity.check(book, rulesFile));
 
 test('every gym LOCAL rule is exercised and every server code maps on both paths', () => {
   RuleBookCheck.check(book, GymRefusals, valuesFile, Contract.files('gym/domain').filter((path) => path.endsWith('-actions.json')));
@@ -467,7 +515,8 @@ test('every gym LOCAL rule is exercised and every server code maps on both paths
 test('every book entity agrees with the registry and every writable sample round trips', () => {
   const values = Contract.vectors(valuesFile);
   for (const type of book.entities) {
-    if (!type.isWritable) { RegistryCheck.entity(type, null, book); continue; }
+    // A session's fields are the server's but its plan, whose entries a revision bounds by the routine entry's rules.
+    if (!type.isWritable || type === Session) { RegistryCheck.entity(type, null, book); continue; }
     const sample = values.find((vector) => vector.input.entity === type.type
       && (type.checks ?? []).every((check) => check.field === null || (vector.input.fields[check.field] ?? null) !== null));
     assert.ok(sample, `${type.type} has no entity sample setting every checked field`);

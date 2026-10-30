@@ -239,6 +239,8 @@ INSERT INTO gym_proposal_applies (id, user_id) VALUES ('erase-apply', 'SAM');
 INSERT INTO gym_proposal_changes (proposal_id, position, user_id, kind, exercise_id) VALUES ('erase-proposal', 1, 'SAM', 'kept', 'erase-lift');
 INSERT INTO gym_sessions (id, user_id, routine_id, started_at, finished_at) VALUES ('erase-session', 'SAM', 'erase-routine', now(), now()), ('erase-eve-session', 'EVE', NULL, now(), now());
 INSERT INTO gym_write_receipts (kind, id, user_id, session_id, request_hash) VALUES ('set', 'erase-set', 'SAM', 'erase-session', 'h');
+INSERT INTO gym_workout_proposals (id, user_id, session_id, state, door) VALUES ('erase-workout-proposal', 'SAM', 'erase-session', 'pending', 'ask');
+INSERT INTO gym_workout_proposal_applies (id, user_id) VALUES ('erase-workout-apply', 'SAM');
 INSERT INTO gym_sets (id, session_id, user_id, exercise_id, set_number, weight_kg, reps, completed_at) VALUES ('erase-set', 'erase-session', 'SAM', 'erase-lift', 1, 100, 5, now());
 INSERT INTO gym_set_revisions (set_id, session_id, user_id, exercise_id, set_number, weight_kg, reps, completed_at) VALUES ('erase-set-gone', 'erase-session', 'SAM', 'erase-lift', 2, 100, 5, now());
 INSERT INTO gym_session_shares (session_id, user_id, token, expires_at) VALUES ('erase-session', 'SAM', 'erase-share-token', now() + interval '1 day');

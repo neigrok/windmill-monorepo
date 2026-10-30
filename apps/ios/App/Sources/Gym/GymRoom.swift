@@ -80,8 +80,8 @@ struct GymRoom: View {
       } else { tabs }
     }
     .environment(\.coachOpenAccount, app.openYou)
-    .environment(\.coachKeepRoutines, { app.keep(routines: true) })
-    .environment(\.coachOpenRoutine, { id in routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
+    .environment(\.coachKeepRoutines, { follow([.keepRoutines]) })
+    .environment(\.coachOpenRoutine, { id in follow([.routine(ID(RecordID(id)))]) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(isPresented: Binding(get: { routine != nil }, set: { if !$0 { routine = nil } }), onDismiss: {
       if let id = startRoutine { startRoutine = nil; gym.startWorkout(routineId: id) }
@@ -100,8 +100,8 @@ struct GymRoom: View {
     // Only a cover closed under a workout still on screen hides it; a close the workout already made records nothing.
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0, gym.workout.isPresented { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
       if risingFromAccessory {
-        WorkoutScreen(gym: gym).interactiveDismissDisabled().navigationTransition(.zoom(sourceID: GymRoom.accessoryZoom, in: zoom))
-      } else { WorkoutScreen(gym: gym).interactiveDismissDisabled() }
+        WorkoutScreen(gym: gym, coach: coach).interactiveDismissDisabled().navigationTransition(.zoom(sourceID: GymRoom.accessoryZoom, in: zoom))
+      } else { WorkoutScreen(gym: gym, coach: coach).interactiveDismissDisabled() }
     }
     .onChange(of: gym.workout.handoff) { _, handoff in
       guard let handoff else { return }
@@ -176,7 +176,7 @@ struct GymRoom: View {
     coach.allowed && coach.draftReadable && !gym.coachUnavailable && gym.historyKnown && !app.signInPending && !gym.accountTransition && app.sheet == nil
   }
   func escapeSetup(_ choice: CoachSetupChoice) {
-    if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
+    if choice == .buildManually { follow([.buildRoutine]) }
   }
   func reviewProposal(_ id: ID<Proposal>) {
     follow([GymRoomRouting.review(id.description, inConversation: coach.proposalTurn(id.description) != nil)])
@@ -192,7 +192,10 @@ struct GymRoom: View {
       switch route {
       case .log(let session): tab = .log; if let session { logPath.append(Destination.session(session.description)) }
       case .keep: app.keep()
+      case .keepRoutines: app.keep(routines: true)
       case .openYou: app.openYou()
+      case .routine(let id): routineAwaitingSync = !gym.isAnonymous; routine = id
+      case .buildRoutine: tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil)
       case .ask(let question, let send):
         coachPath = NavigationPath(); tab = .coach
         coachHandoff = CoachHandoff(account: gym.account, question: question, send: send)
@@ -204,7 +207,8 @@ struct GymRoom: View {
   }
 }
 
-// Where the room sends the lifter next. A finished workout's receipt hands on to its detail, Keep or Coach; a share or a
+// Where the room sends the lifter next. A finished workout's receipt hands on to its detail, Keep or Coach, and a door
+// Coach opened over the workout opens once the workout is hidden: Keep, You, a routine or a new one; a share or a
 // Coach question that needs an account waits for the sign-in sheet to close signed in, and is dropped when it closes
 // signed out; a proposal's row opens the conversation at its card while the conversation on screen holds it, and one it
 // does not — a connected tool's, or one from another conversation — on a sheet.
@@ -212,7 +216,10 @@ struct GymRoomRouting: Equatable {
   enum Route: Equatable {
     case log(session: ID<Session>?)
     case keep
+    case keepRoutines
     case openYou
+    case routine(ID<Routine>)
+    case buildRoutine
     case ask(String, send: Bool)
     case share(ID<Session>)
     case revealProposal(String)
@@ -230,6 +237,10 @@ struct GymRoomRouting: Equatable {
       coachAfterSignIn = true
       return [.keep]
     case .writtenProgram: return signedOut ? [.openYou] : [.ask("Help me turn my written program into a routine.", send: false)]
+    case .keepRoutines: return [.keepRoutines]
+    case .you: return [.openYou]
+    case .routine(let id): return [.routine(id)]
+    case .buildRoutine: return [.buildRoutine]
     }
   }
   // Sign in to share closes the share into You.

@@ -236,7 +236,7 @@ import SyncTesting
     #expect(try b.stored(CoachMessage.self).first { $0.id == turn.coach }?.text == "On it.")
   }
 
-  // A send refused locally keeps the draft and sends nothing: no connection, a workout open, a question past the bound.
+  // A send refused locally keeps the draft and sends nothing: no connection, a question past the bound.
   @Test func localAdmissionKeepsTheDraft() async throws {
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
@@ -248,20 +248,32 @@ import SyncTesting
     #expect(!phone.coach.asking && phone.coach.saved.text == "Private question")
     phone.connectivity.set(online: true)
     try await settle { !phone.coach.offline }
-    let session = phone.gym.runner.mint(Session.self)
-    #expect(phone.gym.run(StartSession(id: session))?.receipt != nil)
-    phone.coach.send(); try await settle { !phone.coach.sending }
-    #expect(phone.driver.refusal == .workoutOpen && phone.coach.saved.text == "Private question")
-    #expect(phone.gym.run(FinishSession(id: session))?.receipt != nil)
     phone.coach.edit(String(repeating: "x", count: CoachRules.maxQuestionBytes + 1)); phone.coach.send()
     try await settle { !phone.coach.sending }
     #expect(!phone.coach.asking && phone.coach.saved.text.utf8.count == 8001)
     let recorded = try messages(phone)
     #expect(TurnFixtureProtocol.state.withLock { $0.requests.isEmpty } && recorded.isEmpty)
-    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline", "refused"])
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["offline"])
   }
 
   // A refusal before the stream withdraws the turn: the question returns to the field, and no message or picture row stays.
+  // Coach answers during a workout, and the open workout is the first session its context reads.
+  @Test func aSendDuringAWorkoutReadsTheOpenWorkout() async throws {
+    let phone = try await phone(seat: "anon")
+    defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
+    TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [["event": "text", "data": ["delta": "Keep going."]], ["event": "done", "data": ["state": "completed"]]], lostOnResume: false) }
+    let session = phone.gym.runner.mint(Session.self)
+    #expect(phone.gym.run(StartSession(id: session))?.receipt != nil)
+    try await send(phone, "How is this workout going?")
+    #expect(phone.driver.refusal == nil && phone.gym.openSession?.id == session)
+    let body = try #require(TurnFixtureProtocol.state.withLock { $0.requests.first { $0.path == "/v1/gym/coach/turns" }?.body })
+    let sessions = try #require(try body.member("context").asArray().first { try $0.member("name").asString() == "list_sessions" })
+    let open = try sessions.member("result").member("sessions").asArray().first
+    #expect(try open?.member("id").asString() == session.record.string && (try? open?.member("finishedAt")) == nil)
+    #expect(try messages(phone).last { $0.role == .coach }.map { [$0.text, $0.state.rawValue] } == ["Keep going.", "completed"])
+    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["answered"])
+  }
+
   @Test func aRefusalBeforeTheStreamWithdrawsTheTurn() async throws {
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }

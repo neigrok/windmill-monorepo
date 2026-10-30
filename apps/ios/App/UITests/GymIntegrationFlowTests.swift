@@ -46,7 +46,7 @@ import XCTest
     return request
   }
 
-  func testFiniteLoadWheelsSaveAndSyncBeyondTheOldLimitIncludingZero() async throws {
+  func testFiniteLoadsKeepTheirValueOnThePadAndSyncBeyondTheOldLimitIncludingZero() async throws {
     guard server != nil, let file = ProcessInfo.processInfo.environment["WM_GYM_LOAD_CASES"] else {
       throw XCTSkip("requires the isolated schema10 load fixture")
     }
@@ -58,11 +58,9 @@ import XCTest
       XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
       return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
-    func selected(_ wheel: XCUIElement) throws -> Double {
-      let value = try XCTUnwrap(wheel.value as? String)
-      let number = value.components(separatedBy: " kg")[0].replacingOccurrences(of: ",", with: "")
-        .replacingOccurrences(of: "−", with: "-")
-      return try XCTUnwrap(Double(number))
+    func shown(_ field: XCUIElement) throws -> Double {
+      let value = try XCTUnwrap(field.value as? String)
+      return try XCTUnwrap(Double(value.replacingOccurrences(of: ",", with: ".").replacingOccurrences(of: "−", with: "-")))
     }
     for item in cases {
       let load = try XCTUnwrap(item["weightKg"] as? Double), routine = try XCTUnwrap(item["routineId"] as? String)
@@ -73,19 +71,9 @@ import XCTest
       XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
       XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
       XCTAssertTrue(app.buttons["workout-weight"].waitForExistence(timeout: 10)); app.buttons["workout-weight"].tap()
-      let wheel = app.pickerWheels.element(boundBy: 0)
-      XCTAssertTrue(wheel.waitForExistence(timeout: 5)); XCTAssertEqual(try selected(wheel), load)
-      if abs(load) < 1_000 {
-        let unit = try XCTUnwrap(wheel.value as? String).components(separatedBy: " kg").last!
-        let neighbor = load == 0 ? -5.0 : load > 0 ? 505.0 : -505.0
-        let neighborLabel = String(Int(neighbor)).replacingOccurrences(of: "-", with: "−")
-        let openingLabel = String(Int(load)).replacingOccurrences(of: "-", with: "−")
-        wheel.adjust(toPickerWheelValue: "\(neighborLabel) kg\(unit)")
-        XCTAssertEqual(try selected(wheel), neighbor)
-        wheel.adjust(toPickerWheelValue: "\(openingLabel) kg\(unit)")
-        XCTAssertEqual(try selected(wheel), load)
-      }
-      app.buttons["set-wheel-done"].tap()
+      let field = app.textFields["workout-load"]
+      XCTAssertTrue(field.waitForExistence(timeout: 5)); XCTAssertEqual(try shown(field), load)
+      app.buttons["workout-load-done"].tap()
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
       XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.waitForExistence(timeout: 5))
       app.buttons["workout-finish"].tap()
@@ -121,7 +109,7 @@ import XCTest
     for _ in 0..<count { app.buttons["workout-log"].tap() }
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
-    app.turnLoadWheel(to: "62.5")
+    app.typeLoad("62.5", into: "workout-fix-load")
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
@@ -192,7 +180,7 @@ import XCTest
     let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(first.waitForExistence(timeout: 10)); first.tap()
     XCTAssertTrue(app.buttons["gym-fix-save"].waitForExistence(timeout: 5))
-    app.turnLoadWheel(to: "70"); app.buttons["gym-fix-save"].tap()
+    app.typeLoad("70", into: "gym-fix-load"); app.buttons["gym-fix-save"].tap()
     XCTAssertTrue(first.waitForLabel("1 · 70 × 8, +10 over plan"), first.label)
     back(app)
     XCTAssertTrue(session.waitForExistence(timeout: 10))
@@ -486,6 +474,34 @@ import XCTest
     let evidence = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
     evidence.name = (server == nil ? "conflict-model-" : "conflict-rest-") + stage; evidence.lifetime = .keepAlways; add(evidence)
     return ids
+  }
+
+  // Coach over a signed-out workout leads out of it: Build my own closes the sheet, hides the workout and opens a new
+  // routine in Routines, and the hidden workout comes back as it was.
+  func testCoachOverTheWorkoutOpensItsDoorsBehindIt() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-scenario", "gym-coach-doors-" + UUID().uuidString, "-model-server", "-server", "http://127.0.0.1:1"]
+    app.launch()
+    XCTAssertTrue(app.buttons["open-gym"].waitForExistence(timeout: 20)); app.buttons["open-gym"].tap()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 20)); app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 20)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10)); app.buttons["workout-log"].tap()
+    let coach = app.buttons["workout-coach"]
+    XCTAssertTrue(coach.wait(for: \.isHittable, toEqual: true, timeout: 5)); coach.tap()
+    let build = app.buttons["coach-setup-build_manually"]
+    XCTAssertTrue(build.waitForExistence(timeout: 10)); build.tap()
+    XCTAssertTrue(app.textFields["routine-name"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["workout-log"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["coach-question"].exists)
+    app.navigationBars.buttons["Cancel"].tap()
+    let hidden = app.buttons["gym-hidden-workout"]
+    XCTAssertTrue(hidden.waitForExistence(timeout: 10)); hidden.tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch.exists, "The hidden workout keeps its set")
   }
 
   // Signed out, Share with Coach opens Keep your log; the sign-in it opens hands the receipt to Coach, which answers once.

@@ -22,8 +22,17 @@ bool turnIdShape(const std::string& id) {
   });
 }
 
-bool isContextRead(const std::string& name) {
+// §4.1 step 3: the four list reads, and from catalog/2 the open workout's get_session.
+bool isContextRead(const std::string& name, int catalog) {
+  if (name == "get_session") return catalog >= 2;
   return name == "list_sessions" || name == "list_notes" || name == "list_exercises" || name == "list_routines";
+}
+
+// `catalog/N` for a version the server serves; nothing for any other.
+std::optional<int> servedCatalog(const std::string& name) {
+  for (int version = kOldestCatalog; version <= kNewestCatalog; ++version)
+    if (name == "catalog/" + std::to_string(version)) return version;
+  return std::nullopt;
 }
 
 // The body's JCS, or nothing for a body JCS cannot encode (a non-finite number, a non-UTF-8 string).
@@ -64,13 +73,13 @@ std::optional<std::vector<TurnHistoryLine>> readHistory(const Json::Value& histo
   return out;
 }
 
-std::optional<std::vector<TurnContextRead>> readContext(const Json::Value& context) {
+std::optional<std::vector<TurnContextRead>> readContext(const Json::Value& context, int catalog) {
   std::vector<TurnContextRead> out;
   if (context.isNull()) return out;
-  if (!context.isArray() || context.size() > 4) return std::nullopt;
+  if (!context.isArray() || context.size() > 5) return std::nullopt;
   std::size_t bytes = 0;
   for (const Json::Value& read : context) {
-    if (!read.isObject() || !read["name"].isString() || !isContextRead(read["name"].asString())) return std::nullopt;
+    if (!read.isObject() || !read["name"].isString() || !isContextRead(read["name"].asString(), catalog)) return std::nullopt;
     if (!read["input"].isObject() || !read["result"].isObject()) return std::nullopt;
     for (const TurnContextRead& seen : out)
       if (seen.name == read["name"].asString()) return std::nullopt;
@@ -142,7 +151,8 @@ Json::Value TurnBatch::json() const {
 TurnOpenRead readTurnOpen(const Json::Value& body) {
   if (!body.isObject() || !body["catalog"].isString() || body["catalog"].asString().rfind("catalog/", 0) != 0)
     return {std::nullopt, kBadRequest};
-  if (body["catalog"].asString() != kCatalogVersion) return {std::nullopt, "coach-update-required"};
+  const std::optional<int> catalog = servedCatalog(body["catalog"].asString());
+  if (!catalog) return {std::nullopt, "coach-update-required"};
   if (!body["turnId"].isString() || !turnIdShape(body["turnId"].asString())) return {std::nullopt, kBadRequest};
   if (!body["question"].isString() || body["question"].asString().size() > kMaxQuestionBytes) return {std::nullopt, kBadRequest};
   for (const std::string& key : body.getMemberNames())
@@ -150,12 +160,12 @@ TurnOpenRead readTurnOpen(const Json::Value& body) {
       return {std::nullopt, kBadRequest};
   const auto pictures = readPictures(body["pictures"]);
   const auto history = readHistory(body["history"]);
-  const auto context = readContext(body["context"]);
+  const auto context = readContext(body["context"], *catalog);
   const std::optional<std::string> canon = canonical(body);
   if (!pictures || !history || !context || !canon) return {std::nullopt, kBadRequest};
   const std::string question = body["question"].asString();
   if (question.find_first_not_of(" \t\r\n") == std::string::npos && pictures->empty()) return {std::nullopt, kBadRequest};
-  TurnOpen open{body["turnId"].asString(), question, *pictures, *history, *context, sync::sha256(*canon).hex()};
+  TurnOpen open{*catalog, body["turnId"].asString(), question, *pictures, *history, *context, sync::sha256(*canon).hex()};
   return {std::move(open), {}};
 }
 

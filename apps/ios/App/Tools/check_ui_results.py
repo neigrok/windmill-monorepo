@@ -5,7 +5,7 @@ import re
 
 
 FIXTURE_SKIPS = {
-    ("GymIntegrationFlowTests", "testFiniteLoadWheelsSaveAndSyncBeyondTheOldLimitIncludingZero"):
+    ("GymIntegrationFlowTests", "testFiniteLoadsKeepTheirValueOnThePadAndSyncBeyondTheOldLimitIncludingZero"):
         "requires the isolated schema10 load fixture",
 }
 

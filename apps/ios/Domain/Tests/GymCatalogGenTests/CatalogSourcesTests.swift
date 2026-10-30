@@ -67,5 +67,11 @@ struct CatalogSourcesTests {
     #expect(throws: GenerationError.self) {
       try CatalogSources.text(from: ["catalog": "catalog/1", "abilities": [entry("x", kind: "read"), entry("x", kind: "read")]])
     }
+    var later = try entry("x", kind: "read").asObject()
+    later["since"] = "2"
+    #expect(throws: GenerationError.self) { try CatalogSources.text(from: ["catalog": "catalog/2", "abilities": [.object(later)]]) }
+    later["since"] = "catalog/2"
+    #expect(try CatalogSources.text(from: ["catalog": "catalog/2", "abilities": [.object(later)]])
+      == CatalogSources.text(from: ["catalog": "catalog/2", "abilities": [entry("x", kind: "read")]]))
   }
 }

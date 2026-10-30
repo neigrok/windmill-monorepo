@@ -196,7 +196,8 @@ std::shared_ptr<Turn> TurnService::find(const TurnPrincipal& principal, const st
 void TurnService::run(const std::shared_ptr<Turn>& turn) {
   const auto started = std::chrono::steady_clock::now();
   const TurnPrincipal& principal = turn->principal();
-  PhoneToolHost host(catalog_, *turn, principal.seat == Seat::bound ? &server_ : nullptr, resultTimeout_);
+  const AbilityCatalog catalog = catalog_.at(turn->open().catalog);
+  PhoneToolHost host(catalog, *turn, principal.seat == Seat::bound ? &server_ : nullptr, resultTimeout_);
   TurnState state = TurnState::failed;
   bool truncated = false;
   std::string errorCode;
