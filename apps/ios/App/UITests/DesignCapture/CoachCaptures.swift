@@ -751,7 +751,7 @@ final class CoachCaptures: DesignCapture {
     captureBoard("08.55-coach-proposal-this-workout", settle: 1.5) { look in
       let app = askOverUpperA(look, board: "workout")
       let header = app.descendants(matching: .any)["coach-workout-proposal-header"]
-      XCTAssertTrue(header.label.hasPrefix("Changes to this workout · 1 change"), header.label)
+      XCTAssertTrue(header.label == "Changes to this workout, 1 change", header.label)
       raise(app, showing: app.descendants(matching: .any)["coach-answer"].firstMatch)
       return app
     }
