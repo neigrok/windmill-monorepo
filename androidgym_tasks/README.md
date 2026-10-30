@@ -2,7 +2,7 @@
 
 These 52 tasks describe the Android implementation backlog. Numbers are stable task identities, not build order. Each task's **Depends on** line and its named backend/design prerequisites govern when it can be completed.
 
-The six revised Gym flows were approved on **2026-10-25** and their affected frames and captions are **✅ Ready for dev**. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
+The six revised Gym flows were approved on **2026-10-25**. Each task records its current implementation and design status. Approval covers the linked revisions, including the headerless Workout and retained weigh-in Undo; it does not approve every other Gym or Shell board in this backlog.
 
 | Approved flow | Canonical Figma frame | Main task contracts |
 |---|---|---|
@@ -19,6 +19,8 @@ Implement one commit per numbered task. Ship batches to main after adversarial r
 
 ## Current release scope
 
+**33 of the 42 active tasks are on main.** The nine tasks awaiting final acceptance and main shipment are **36, 38–40, 43 and 46–49**. Tasks 19, 25 and 50 are shipped; their 24 frames and 12 captions are 🚀 In production on the canonical Android page (`56:2`). Coordinated app release publication remains pending.
+
 At the user's request, tasks **29–35, 41–42 and 44 are postponed from this release**. Preserve the existing Coach action appearance: proposal/change cards, Apply/Reject controls, diff blocks and action/save receipts. Keep their existing review routes and outcome wording. The 52 task identities remain unchanged; 42 numbered tasks remain in the active release scope.
 
 Task 28's general bubbles, composer and chrome and task 37's History/chat lifecycle remain active. Task 37 does not wait for task 30's postponed outcome-word changes, and retains tool-write receipt content in its current presentation while task 35 waits. Task 17 keeps the existing proposal review route while task 29 waits. Task 49 remains active: its choices populate chat input and its kept draft is composer text, not a tool-action output.
@@ -32,9 +34,9 @@ These review follow-ups affect the named subparts, not all 52 tasks. Approved in
 | Gate | Affected task | Work that waits |
 |---|---|---|
 | `android-gym-signed-load-input-design` · resolved | [07](07-number-stepper.md), [10](10-fix-set.md), [18](18-targets.md) | Use the approved native-keyboard minus interaction and original sizing; verify negative decimal entry on the target emulator |
-| `android-regular-stepper-overflow-design` · resolved for unit-below layout | [18](18-targets.md), [19](19-create-movement.md) | [02.19 Load unit below](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960) is Ready for dev, human-approved 2026-10-28. Preserve text size, native keyboard and pinned action; the older full-width/buttons-below fallback remains unapproved. |
+| `android-regular-stepper-overflow-design` · resolved for unit-below layout | [18](18-targets.md), [19](19-create-movement.md) | [02.19 Load unit below](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960) is 🚀 In production, human-approved 2026-10-28. Preserve text size, native keyboard and pinned action; the older full-width/buttons-below fallback remains unapproved. |
 | `android-routine-target-summary-responsive-design` · postponed by human 2026-10-29 | [18](18-targets.md) | The [Target summary proposal](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1675-10931) stays unapproved on Proposals. Keep the current summary layout; its known overlap at 320 dp / 200% text is excluded from this release. The approved Load-field fix continues. |
-| `android-gym-equipment-variants-design` · resolved | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | [Canonical plain Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), Ready for dev; no Name/Equipment hints. Preserve legacy values/history. New iOS/web pickers require separate design approval. |
+| `android-gym-equipment-variants-design` · resolved | [08](08-units-by-equipment.md), [19](19-create-movement.md), [20](20-edit-exercise.md), [21](21-record.md) | [Canonical plain Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642), 🚀 In production; no Name/Equipment hints. Preserve legacy values/history. New iOS/web pickers require separate design approval. |
 | `android-gym-empty-finish-design` · resolved | [14](14-finish-receipt.md) | [Z zero-set outcome](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49458) is 🚀 In production with task 14, human-approved 2026-10-25 |
 | `android-gym-no-routine-picker-design` | [13](13-free-workout-start.md) | Changing the existing picker for an externally started workout without a routine |
 | `android-gym-mcp-proposal-row-design` | [17](17-routines-list.md), [29](29-coach-change-card.md) | New proposal route without a Coach conversation; keep its existing review path |
