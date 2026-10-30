@@ -30,8 +30,10 @@ enum WorkoutFixture {
     if other {
       guard gym.run(UpdateExercise(ID("pull-up"), name: "Pull-up", equipment: "other"))?.refusal == nil else { return true }
     }
+    // The plan's rests are the boards' (03.20): three minutes for the squat, two for the press and the pull-up, none after.
     let targets = { (id: String, count: Int, reps: Int, kg: Double) in
-      RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count))
+      RoutineEntry(exerciseId: ID(RecordID(id)), sets: Array(repeating: SetTarget(reps: reps, weightKg: kg), count: count),
+                   restSeconds: ["back-squat": 180, "dumbbell-bench-press": 120, "pull-up": 120][id])
     }
     var routineId: ID<Routine>?
     if planned {
@@ -41,10 +43,12 @@ enum WorkoutFixture {
       guard case .saved = gym.save(&draft) else { return true }
       routineId = draft.current.id
     }
-    // The board's workout began 32:10 ago and its sets were logged in turn, the last 1:37 ago, so the clocks read as at the rack.
+    // The board's workout began 32:10 ago and its sets were logged in turn, the last 1:37 ago, so the clocks read as at the rack;
+    // a rested board (03.21) stands 37 seconds later, its rest at 2:14, past the press's two minutes.
     let now = (try? gym.runner.moment().now) ?? Instant(ms: BoardClock().nowMs())
+    let rested: Int64 = board.contains("rested") ? 37_000 : 0
     let id = gym.runner.mint(Session.self)
-    guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000)))?.refusal == nil,
+    guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000 - rested)))?.refusal == nil,
           gym.restoreWorkout() else { return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
@@ -54,7 +58,7 @@ enum WorkoutFixture {
       ] : [("back-squat", 100, 5, 1_210_000), ("back-squat", 100, 5, 97_000)]
       for logged in logged {
         let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID(RecordID(logged.movement)),
-                              weightKg: other && logged.movement == "pull-up" ? -5 : logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs))
+                              weightKg: other && logged.movement == "pull-up" ? -5 : logged.kg, reps: logged.reps, completedAt: Instant(ms: now.ms - logged.agoMs - rested))
         _ = gym.run(AppendSet(set))
       }
     }

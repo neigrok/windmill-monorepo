@@ -16,7 +16,6 @@ import SyncSchema
 // as a notice at the conversation's end with the one door that exists (boards 08.38–08.45, 08.8, 01.10, 01.11, 08.7).
 nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   case offline
-  case workoutOpen
   case logArriving
   case allowance(String)
   case freeMonthExhausted(resetsAtMs: Int64?)
@@ -42,7 +41,6 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     switch self {
     case .allowance(let code), .installation(let code), .said(let code): code
     case .offline: "offline"
-    case .workoutOpen: "workout-open"
     case .logArriving: "coach-replica-syncing"
     case .freeMonthExhausted: "free_month_exhausted"
     case .rateLimited: "coach-rate-limited"
@@ -54,7 +52,6 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   var sentence: String {
     switch self {
     case .offline: "No connection. Your question is kept here."
-    case .workoutOpen: "Coach waits until you finish this workout."
     case .logArriving: "Your log is still arriving on this phone. Ask again in a moment."
     case .allowance(let code): AiAllowance.sentence(code)
     case .freeMonthExhausted: "Coach is paused for everyone this month."
@@ -68,12 +65,11 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   }
 
   // The one door the notice offers: sign-in where the phone's own AI access is spent or belongs to an account, the lifter's
-  // own agent where Coach's shared capacity is paused, the update, the workout, or Send again. Signed in, a spent allowance
+  // own agent where Coach's shared capacity is paused, the update, or Send again. Signed in, a spent allowance
   // offers nothing while paid plans are closed.
   func recovery(anonymous: Bool) -> CoachRecovery? {
     switch self {
     case .offline: .tryAgain
-    case .workoutOpen: .openWorkout
     case .logArriving, .absent, .said: nil
     case .allowance(let code): anonymous && code == "subject_exhausted" ? .signIn : nil
     case .freeMonthExhausted, .rateLimited: .ownAgent
@@ -86,7 +82,7 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
   var capped: Bool {
     switch self {
     case .allowance, .freeMonthExhausted, .rateLimited, .absent: true
-    case .offline, .workoutOpen, .logArriving, .updateRequired, .installation, .said: false
+    case .offline, .logArriving, .updateRequired, .installation, .said: false
     }
   }
 
@@ -97,18 +93,17 @@ nonisolated enum CoachTurnRefusal: Equatable, Sendable {
     case .allowance, .freeMonthExhausted: ("capped", "allowance")
     case .rateLimited: ("capped", "daily")
     case .absent: ("absent", nil)
-    case .workoutOpen, .logArriving, .updateRequired, .installation, .said: ("refused", nil)
+    case .logArriving, .updateRequired, .installation, .said: ("refused", nil)
     }
   }
 }
 
 nonisolated enum CoachRecovery: Equatable, Sendable {
-  case tryAgain, openWorkout, signIn, ownAgent, update
+  case tryAgain, signIn, ownAgent, update
 
   var title: String {
     switch self {
     case .tryAgain: "Try again"
-    case .openWorkout: "Open workout"
     case .signIn: "Sign in"
     case .ownAgent: "Use your own AI agent"
     case .update: "Update"
@@ -238,7 +233,6 @@ nonisolated struct TurnInterrupted: Error {
     }
     guard running == nil else { error = "Coach is answering another message. Try again when it finishes."; return nil }
     do {
-      if try runner.read(Gym.scope, { try TrainingLog($0).open != nil }) { refuse(.workoutOpen); return nil }
       if try logArriving { refuse(.logArriving); return nil }
       if let picture, try runner.run(KeepPicture(picture: picture)).refusal != nil { error = "Your message couldn’t be saved. Try again."; return nil }
       let pictures = picture.map { [Picture(id: $0.id, mediaType: "image/jpeg", localOnly: true)] } ?? []

@@ -29,6 +29,5 @@ std::vector<sync::Delta> checkGym(const GymFacts& facts, const std::vector<sync:
                                   const sync::Intent& intent, bool server, sync::Ms now);
 GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::Value& rawArgs,
                   const GymFacts& facts, sync::Ms now);
-int proposalChangeCount(const Json::Value& base, const Json::Value& changes, const Json::Value& baseName, const Json::Value& proposedName);
 
 }

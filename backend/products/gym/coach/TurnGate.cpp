@@ -25,8 +25,9 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
     return refuse(gate::seatRequired, name + ": needs a signed-in account; tell the lifter to sign in for this.");
   if (const auto broken = schemaViolation(ability->declaration.descriptor["inputSchema"], input))
     return refuse(gate::invalidInput, name + ": " + *broken + ".");
-  if (ability->agent == AgentRule::proposes && proposalHeld_)
-    return refuse(gate::oneProposal, name + ": you already wrote a proposal this turn; fold both into one document.");
+  if (ability->agent == AgentRule::proposes && proposalsHeld_.contains(ability->target))
+    return refuse(gate::oneProposal, name + ": you already wrote a " + (ability->target == ProposalTarget::workout ? "workout" : "routine") +
+                                         " proposal this turn; fold both into one document.");
   if (name == "save_note" && noteHeld_)
     return refuse(gate::oneNote, name + ": one note per answer; this answer already saved one.");
   if (admitted_ >= kMaxAbilityCalls || (ability->cls == AbilityClass::add && adds_ >= kMaxAdds))
@@ -35,7 +36,7 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
 
   ++admitted_;
   if (ability->cls == AbilityClass::add) ++adds_;
-  if (ability->agent == AgentRule::proposes) proposalHeld_ = true;
+  if (ability->agent == AgentRule::proposes) proposalsHeld_.insert(ability->target);
   if (name == "save_note") noteHeld_ = true;
   GateVerdict verdict;
   verdict.admitted = true;
@@ -48,7 +49,7 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
 // A phone refuses a call before it commits, so its refusal means nothing was written and the slot is free.
 void TurnGate::settle(const Ability& ability, bool ok) {
   if (ok) return;
-  if (ability.agent == AgentRule::proposes) proposalHeld_ = false;
+  if (ability.agent == AgentRule::proposes) proposalsHeld_.erase(ability.target);
   if (ability.name() == "save_note") noteHeld_ = false;
 }
 

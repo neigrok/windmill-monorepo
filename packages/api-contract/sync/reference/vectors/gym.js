@@ -398,6 +398,131 @@ function adversarial() {
   ];
 }
 
+// M10: the open workout's plan (A.2): a guarded client write, held to the plan revision rules, that moves
+// planRevision once per net change and supersedes the workout's pending proposals.
+const PLAN = { routine: 'Lower A', entries: [...SQUAT, { exerciseId: 'dip', sets: [{ reps: 8 }] }] };
+const OPENED = `${T + 8 * H}:0:srv`;
+const openWorkout = (extra = {}) => rec('session', 'session0002', {
+  stamp: OPENED, seq: 6,
+  f: { routineId: 'routine0001', historyRoutineId: 'routine0001', routineRevision: 1, plan: PLAN, startedAt: T + 8 * H, ...extra },
+});
+const SQUATTED = rec('set', 'set00000005', { stamp: s(T + 8 * H + 60_000), seq: 7, f: { sessionId: 'session0002', exerciseId: 'back-squat', weightKg: 80, reps: 5, note: '', completedAt: T + 8 * H + 60_000 }, v: { setNumber: 1 } });
+const PLAN_GUARD = { t: 'session', id: 'session0002', field: 'plan', stamp: OPENED };
+const WORKOUT_CHANGES = [
+  { kind: 'kept', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }, after: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] } },
+  { kind: 'retargeted', exerciseId: 'dip', before: { sets: [{ reps: 8 }] }, after: { sets: [{ reps: 8, weightKg: -10 }] } },
+];
+const workoutProposalRow = (id, seq, extra = {}) => rec('workoutProposal', id, {
+  stamp: `${T + 9 * H}:0:srv`, seq,
+  f: { sessionId: 'session0002', summary: 'Assisted dips', changes: WORKOUT_CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude', state: 'pending', baseRevision: 1, changeCount: 1, ...extra },
+});
+
+function workoutPlans() {
+  const inFlight = (a = [], session = openWorkout()) => base({ a: [session, SQUATTED, ...a] });
+  const entries = (...more) => [...SQUAT, ...more];
+  const write = (plan, guard = [PLAN_GUARD], extra = []) => gym([update('session', 'session0002', OPENED, s(T + 9 * H), { plan }), ...extra], { guard });
+  const revised = (entryList) => write({ ...PLAN, entries: entryList });
+  const lighterDips = entries({ exerciseId: 'dip', sets: [{ reps: 8, weightKg: -10 }] });
+  const twoDips = { routine: 'Lower A', entries: [...PLAN.entries, { exerciseId: 'dip' }] };
+  const freestyle = rec('session', 'session0002', { stamp: OPENED, seq: 6, f: { startedAt: T + 8 * H } });
+  const quiet = rec('session', 'session0002', { stamp: `${T + 5 * H}:0:srv`, seq: 6, f: { routineId: 'routine0001', historyRoutineId: 'routine0001', plan: PLAN, startedAt: T + 5 * H } });
+  const finishedPlan = { t: 'session', id: 'session0001', field: 'plan', stamp: `${T + 2}:0:srv` };
+  const dipSet = create('set', 'set00000006', s(T + 9 * H), { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 9 * H });
+  return [
+    admitted('a guarded plan write retargeting a movement with nothing logged lands, moves planRevision to 2 and supersedes the workout\'s pending proposals', {
+      state: inFlight([workoutProposalRow('wproposal01', 8), workoutProposalRow('wproposal02', 9, { door: 'ask', connection: '', agent: '' })]), intent: revised(lighterDips) }),
+    admitted('a plan write adding a movement gives it an open line', { state: inFlight(), intent: revised([...PLAN.entries, { exerciseId: 'bench-press' }]) }),
+    admitted('a plan write removing a movement with nothing logged lands', { state: inFlight(), intent: revised(SQUAT) }),
+    admitted('a plan write moving a logged movement\'s entry, unchanged, lands', { state: inFlight(), intent: revised([PLAN.entries[1], PLAN.entries[0]]) }),
+    admitted('a plan write without its guard is invalid', { state: inFlight(), intent: write({ ...PLAN, entries: lighterDips }, []) }),
+    admitted('a plan write guarded at a moved stamp is stale', { state: inFlight(), intent: write({ ...PLAN, entries: lighterDips }, [{ ...PLAN_GUARD, stamp: s(T) }]) }),
+    admitted('a plan write retargeting a logged movement is refused plan-logged, naming it', { state: inFlight(),
+      intent: revised([{ ...SQUAT[0], sets: [{ reps: 5, weightKg: 85 }] }, PLAN.entries[1]]) }),
+    admitted('a plan write adding a planned set to a logged movement is refused plan-logged', { state: inFlight(),
+      intent: revised([{ ...SQUAT[0], sets: [{ reps: 5, weightKg: 80 }, { reps: 5, weightKg: 80 }] }, PLAN.entries[1]]) }),
+    admitted('a plan write changing a logged movement\'s rest is refused plan-logged', { state: inFlight(),
+      intent: revised([{ ...SQUAT[0], restSeconds: 120 }, PLAN.entries[1]]) }),
+    admitted('a plan write removing a logged movement is refused plan-logged', { state: inFlight(), intent: revised([PLAN.entries[1]]) }),
+    admitted('a plan write and a set on the movement it retargets, in one intent, is refused plan-logged', { state: inFlight(),
+      intent: write({ ...PLAN, entries: lighterDips }, [PLAN_GUARD], [dipSet]) }),
+    admitted('a plan write on a finished workout is refused session-finished', { state: base(),
+      intent: gym([update('session', 'session0001', `${T + 2}:0:srv`, s(T + 9 * H), { plan: { routine: 'Lower A', entries: [{ exerciseId: 'dip' }] } })], { guard: [finishedPlan] }) }),
+    admitted('a plan write on an open workout 4 h past its last activity is refused session-finished', { state: base({ a: [quiet] }),
+      intent: gym([update('session', 'session0002', `${T + 5 * H}:0:srv`, s(T + 9 * H), { plan: { ...PLAN, entries: lighterDips } })], { guard: [{ ...PLAN_GUARD, stamp: `${T + 5 * H}:0:srv` }] }) }),
+    admitted('a plan write renaming the plan is invalid', { state: inFlight(), intent: write({ ...PLAN, routine: 'Legs' }) }),
+    admitted('a plan write on a workout started with no plan is invalid', { state: base({ a: [freestyle] }),
+      intent: write({ routine: 'Lower A', entries: [{ exerciseId: 'dip' }] }, [{ ...PLAN_GUARD, stamp: null }]) }),
+    admitted('a plan write clearing the plan is invalid', { state: inFlight(), intent: write(null) }),
+    admitted('a plan write naming another account\'s movement is refused unknown-exercise', { state: inFlight(), intent: revised([...PLAN.entries, { exerciseId: 'beltsquat1' }]) }),
+    admitted('a plan write adding a second entry of a movement is invalid', { state: inFlight(), intent: revised([...PLAN.entries, { exerciseId: 'dip' }]) }),
+    admitted('a plan write keeps a second entry the routine froze', { state: inFlight([], openWorkout({ plan: twoDips })),
+      intent: write({ ...twoDips, entries: [...PLAN.entries, { exerciseId: 'dip', sets: [{ reps: 5 }] }] }) }),
+    admitted('a plan write with an empty set scheme is invalid', { state: inFlight(), intent: revised(entries({ exerciseId: 'dip', sets: [] })) }),
+    admitted('a plan write off the plan\'s domain is invalid', { state: inFlight(), intent: revised(entries({ exerciseId: 'dip', sets: [{ reps: 0 }] })) }),
+    admitted('a plan write restamping the plan it holds moves no planRevision', { state: inFlight(), intent: write(PLAN) }),
+    admitted('a second net plan change moves planRevision from 2 to 3', { state: inFlight([], openWorkout({ planRevision: 2 })), intent: revised(lighterDips) }),
+    admitted('a workout\'s delete kills its sets and workout proposals', { state: base({ a: [workoutProposalRow('wproposal01', 6, { sessionId: 'session0001' })] }),
+      intent: gym([{ t: 'session', id: 'session0001', born: `${T + 2}:0:srv`, life: ['dead', s(T + 9 * H)] }]) }),
+  ];
+}
+
+// M11: workout proposals (A.2): an agent's whole plan, diffed against the plan as it stands, applied or
+// dismissed by the lifter, and out of date once replaced, outrun, moved on or finished.
+function workoutProposals() {
+  const inFlight = (a = [], session = openWorkout()) => base({ a: [session, SQUATTED, ...a] });
+  const values = (extra = {}) => ({ sessionId: 'session0002', summary: 'Assisted dips', changes: WORKOUT_CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude', ...extra });
+  const mint = (id, extra = {}) => gym([create('workoutProposal', id, null, values(extra))]);
+  const phone = (id, extra = {}, guard = [PLAN_GUARD]) => gym([create('workoutProposal', id, s(T + 9 * H), values({ door: 'ask', connection: '', agent: '', ...extra }))], { guard });
+  const apply = (id = 'wproposal01') => cmd('gym.applyWorkoutProposal', { proposalId: id });
+  const dismiss = (id = 'wproposal01') => cmd('gym.dismissWorkoutProposal', { proposalId: id });
+  const pending = workoutProposalRow('wproposal01', 8);
+  const settled = (state, extra = {}) => workoutProposalRow('wproposal01', 8, { state, settledAt: T + 9 * H, ...extra });
+  const freestyle = rec('session', 'session0002', { stamp: OPENED, seq: 6, f: { startedAt: T + 8 * H } });
+  const swap = [WORKOUT_CHANGES[0], { kind: 'added', exerciseId: 'bench-press', after: { sets: [{ reps: 8, weightKg: 60 }] } }, { kind: 'removed', exerciseId: 'dip', before: { sets: [{ reps: 8 }] } }];
+  const dipSet = rec('set', 'set00000006', { stamp: s(T + 9 * H), seq: 9, f: { sessionId: 'session0002', exerciseId: 'dip', weightKg: 0, reps: 8, note: '', completedAt: T + 9 * H }, v: { setNumber: 1 } });
+  const applied = admitted('apply writes the workout proposal\'s plan, moves planRevision and supersedes the workout\'s other pending proposals', {
+    state: inFlight([pending, workoutProposalRow('wproposal02', 9, { door: 'ask', connection: '', agent: '' })]), intent: apply() });
+  return [
+    admitted('a workout proposal freezes the plan revision and change count, and supersedes the pending one of its workout, door and connection', {
+      state: inFlight([pending]), origin: SERVER_A, intent: mint('wproposal02') }),
+    admitted('a workout proposal of another connection leaves the pending one standing', { state: inFlight([pending]), origin: SERVER_A, intent: mint('wproposal02', { connection: 'conn-2', agent: 'Other' }) }),
+    admitted('a workout proposal freezes the revision the plan stands at', { state: inFlight([], openWorkout({ planRevision: 4 })), origin: SERVER_A, intent: mint('wproposal02') }),
+    admitted('a workout proposal swapping a movement with nothing logged counts the line added and the line removed', { state: inFlight(), origin: SERVER_A, intent: mint('wproposal02', { changes: swap }) }),
+    admitted('a replica\'s workout proposal from the phone Coach door, guarded on the plan, is admitted', { state: inFlight(), intent: phone('wproposal02') }),
+    admitted('a replica\'s workout proposal without its plan guard is invalid', { state: inFlight(), intent: phone('wproposal02', {}, []) }),
+    admitted('a replica\'s workout proposal with door mcp is invalid', { state: inFlight(), intent: phone('wproposal02', { door: 'mcp' }) }),
+    admitted('a workout proposal naming an absent workout is refused unknown-record', { state: inFlight(), origin: SERVER_A, intent: mint('wproposal02', { sessionId: 'session0404' }) }),
+    admitted('a workout proposal for a finished workout is refused session-finished', { state: inFlight(), origin: SERVER_A, intent: mint('wproposal02', { sessionId: 'session0001',
+      changes: [{ kind: 'retargeted', exerciseId: 'back-squat', before: { restSeconds: 180, sets: [{ reps: 5, weightKg: 80 }] }, after: { sets: [{ reps: 5, weightKg: 80 }] } }] }) }),
+    admitted('a workout proposal for a workout started with no plan is invalid', { state: base({ a: [freestyle] }), origin: SERVER_A,
+      intent: mint('wproposal02', { changes: [{ kind: 'added', exerciseId: 'dip', after: {} }] }) }),
+    admitted('a workout proposal with a forged diff is invalid', { state: inFlight(), origin: SERVER_A, intent: mint('wproposal02', { changes: [WORKOUT_CHANGES[0], { ...WORKOUT_CHANGES[1], kind: 'kept' }] }) }),
+    admitted('a workout proposal changing a logged movement is refused plan-logged', { state: inFlight(), origin: SERVER_A, intent: mint('wproposal02', {
+      changes: [{ ...WORKOUT_CHANGES[0], kind: 'retargeted', after: { restSeconds: 180, sets: [{ reps: 3, weightKg: 90 }] } }, WORKOUT_CHANGES[1]] }) }),
+    admitted('a workout proposal naming another account\'s movement is refused unknown-exercise', { state: inFlight(), origin: SERVER_A,
+      intent: mint('wproposal02', { changes: [...WORKOUT_CHANGES, { kind: 'added', exerciseId: 'beltsquat1', after: {} }] }) }),
+    applied,
+    admitted('apply replayed after its receipt is ok and writes nothing', { state: applied.expect.state, intent: apply() }),
+    admitted('apply of an applied workout proposal records its receipt without changing records', { state: inFlight([settled('applied')]), intent: apply() }),
+    admitted('apply of a dismissed workout proposal is refused proposal-settled with its state', { state: inFlight([settled('dismissed')]), intent: apply() }),
+    admitted('apply of a workout proposal a newer one replaced is refused proposal-superseded: replaced', { state: inFlight([settled('superseded', { supersededBy: 'wproposal09' })]), intent: apply() }),
+    admitted('apply of a workout proposal a plan change superseded is refused proposal-superseded: workout-changed', {
+      state: inFlight([settled('superseded')], openWorkout({ planRevision: 2 })), intent: apply() }),
+    admitted('apply of a pending workout proposal whose base the plan outran is refused proposal-superseded: workout-changed, leaving it pending', {
+      state: inFlight([pending], openWorkout({ planRevision: 2 })), intent: apply() }),
+    admitted('apply of a pending workout proposal whose changed movement was logged since is refused proposal-superseded: workout-moved', {
+      state: inFlight([pending, dipSet]), intent: apply() }),
+    admitted('apply of a pending workout proposal of a finished workout is refused proposal-superseded: workout-finished', {
+      state: base({ a: [workoutProposalRow('wproposal01', 6, { sessionId: 'session0001' })] }), intent: apply() }),
+    admitted('apply of an absent workout proposal is refused unknown-record', { state: inFlight(), intent: apply('wproposal07') }),
+    admitted('dismiss settles a pending workout proposal with its settledAt', { state: inFlight([pending]), intent: dismiss() }),
+    admitted('dismiss runs no workout check on a pending workout proposal', { state: base({ a: [workoutProposalRow('wproposal01', 6, { sessionId: 'session0001' })] }), intent: dismiss() }),
+    admitted('dismiss of an applied workout proposal is refused proposal-settled with its state', { state: inFlight([settled('applied')]), intent: dismiss() }),
+    admitted('dismiss of a superseded workout proposal is refused proposal-superseded with its reason', { state: inFlight([settled('superseded', { supersededBy: 'wproposal09' })]), intent: dismiss() }),
+    admitted('a routine proposal applied mid-workout changes the routine and leaves the running plan as it stands', { state: inFlight(), intent: cmd('gym.applyProposal', { proposalId: 'proposal001' }) }),
+  ];
+}
+
 // M8: a display name holds more than whitespace once a writer names it; a stored one that does not stands
 // until it is next changed.
 function names() {
@@ -526,7 +651,8 @@ function metadata() {
         state: proposalState, origin: SERVER_A, intent: gym(proposalFirst ? deltas.reverse() : deltas),
       });
     }),
-    ...[['routine', 'revision'], ['routine', 'createdEntries'], ['proposal', 'baseRevision'], ['proposal', 'baseName'], ['proposal', 'changeCount'], ['note', 'updatedAt']].map(([t, field]) =>
+    ...[['routine', 'revision'], ['routine', 'createdEntries'], ['proposal', 'baseRevision'], ['proposal', 'baseName'], ['proposal', 'changeCount'], ['note', 'updatedAt'],
+      ['session', 'planRevision'], ['session', 'routineRevision'], ['workoutProposal', 'baseRevision'], ['workoutProposal', 'changeCount']].map(([t, field]) =>
       admitted(`R118 a replica cannot write ${t}.${field}`, { state: base(), intent: gym([create(t, 'forged0001', s(NOW), { [field]: field === 'baseName' ? 'Forged' : 1 })]) })),
     admitted('R118 a server door cannot supply derived routine metadata', { state: base(), origin: SERVER_A, intent: gym([create('routine', 'forged0001', null, { name: 'Forged', entries: SQUAT, revision: 99 })]) }),
     admitted('R118 a server door cannot supply metadata on an absent routine delete', { state: base(), origin: SERVER_A,
@@ -594,6 +720,6 @@ function conversations() {
 
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata(), ...conversations()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata(), ...conversations(), ...workoutPlans(), ...workoutProposals()],
   };
 }

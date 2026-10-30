@@ -2,10 +2,12 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v10/minimum-10 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
 Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
-R118 metadata reads remain optional
-for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
+`workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
+workout proposals. R118 metadata reads remain optional
+for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
+decodes separately.
 
 The server claims the `training-reads.json` cases that make an estimate, by the one e1RM rule it holds as
 `Estimate` (`backend/products/gym/domain/Progress.h`): every `GymEstimate` and `GymEstimateScore` case in its domain suite
@@ -36,7 +38,9 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
+| `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
+| `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
+| `training-reads.json` | Prefill, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -56,7 +60,7 @@ with `planUnreadable` marking its absent presentation; other session facts and w
 ## Public entities and values
 
 `Note`, `WeighIn`, `Routine`, `Exercise`, `ExerciseName`, `Session`, `TrainingSet`,
-`GymPreferences` and `Proposal` use `{id,fields}`. The writable form excludes server metadata,
+`GymPreferences`, `Proposal` and `WorkoutProposal` use `{id,fields}`. The writable form excludes server metadata,
 exercise aliases, session fields, and a set's authoritative `setNumber`. Confirmed serials come
 from scene rows; an input set's `setNumber` names the identity retained by a correction.
 Sets have no type: every logged set counts. No stored row, writable form, command argument or read
@@ -82,8 +86,18 @@ Coach action and review presentation keeps its existing formatter.
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
-Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
+Absent sets mean an open line. `SessionPlan` is `{routine,entries}`: the routine's as the start took them, then
+as the lifter and applied workout proposals revise it while the workout is open. `plan` is a session's one
+writable field; its check bounds `entries` to 0–50 (`session.plan.entries`), and a revision validates the
+entries its operations wrote as routine entries (`routine.*` rules, at `plan.entries.<i>`). An untouched entry
+stands as stored. `planRevision` and `routineRevision` are server fields outside the session's fields.
+`WorkoutProposal` carries `sessionId`, `summary`, `changes`, `door`, `connection` and `agent`, with a
+proposal's specs under `workoutProposal.*`. A session's malformed
 frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
+
+**Rest target.** `RestTarget` (`{planEntry?, sinceMs}`, the rest preference read from the drawn `prefs` record) is the
+plan entry's `restSeconds`, else the preference's `restSeconds`, else none: `{seconds, reached}` or `null`. `reached`
+turns true the moment `sinceMs` comes to `seconds × 1000`, and stays true past it.
 
 `ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `rpe,note`.
 `CorrectedSet` adds required `setNumber`. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
@@ -119,12 +133,37 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `DiscardSignedOutWorkout` | `{id}` | `null`; the copy leaves the device key |
 | `ProposeRoutine` | `{id,routineId,name,entries,summary,removing?}` | Proposal id; guards routine name and entries |
 | `ApplyProposal`, `DismissProposal` | `{id}` | `null` |
+| `ReviseWorkoutPlan` | `{sessionId,base,operations}`; `base` is the plan the editor read, `operations` a non-empty list applied in order (below) | `null`; one guarded write of the whole `plan`, or nothing when the plan stands |
+| `ProposeWorkout` | `{id,sessionId,entries,summary}`; `entries` is the whole plan proposed | Proposal id; the diff against the stored plan, guarding `plan`; the stored plan makes no proposal |
+| `ApplyWorkoutProposal`, `DismissWorkoutProposal` | `{id}` | `null`; apply predicts the settled state and the session's `plan` |
+
+**Plan operations.** Each names an entry by its `index` in the plan and a planned set by `set`, both from 0:
+`{op:"retarget",index,set,target:{reps?,weightKg?}}` replaces one planned set's target;
+`{op:"add_set",index}` appends a copy of the last target, `{}` on an open line; `{op:"remove_set",index,set}`
+removes one, and the last one leaves an open line; `{op:"swap",index,exerciseId}` puts a movement in the entry's
+place with its planned sets and rest, keeping loads only when `Readout.loadUnit` of the two movements is equal
+and otherwise dropping every `weightKg`; `{op:"add_movement",exerciseId}` appends an open line;
+`{op:"remove_movement",index}`; `{op:"set_rest",index,restSeconds}`, null for the rest preference.
+
+**Plan rules.** In order: a session `drawn` lacks is `gone`; a finished session, or one the client stale rule
+draws closed, is `sessionFinished`; a session with no plan is `session.plan.absent`; a stored plan unequal to
+`base` is `stale`. Then per operation: an index or set the entry
+lacks is `session.plan.operation` (`outOfRange`, at `operations.<k>`); an entry whose movement has a set alive
+in `drawn` or `stored` is `planLogged` with `{exerciseId}`; a target movement neither a seed nor drawn is
+`unknownExercise`; one the plan already names is `session.plan.duplicate` (at `operations.<k>.exerciseId`);
+one with a logged set is `planLogged`. Then the bounds. `ProposeWorkout` reads the same session rules, then
+validates the proposal, then refuses an unknown movement, a duplicate entry (at `entries.<i>.exerciseId`) and a
+changed logged movement, the first in the order the stored and then the proposed plan name movements, its
+refusals about the proposal. Applying a pending workout proposal is refused `proposalSuperseded` with reason
+`workout-finished` when its session is closed, `workout-changed` when `planRevision` (1 when unset) is not its
+`baseRevision`, and `workout-moved` when a movement it changes has a logged set; `replaced` and `workout-changed` name a superseded one with and without `supersededBy`.
 
 A decision is `{decision:{write:{gesture,result}}}`, `{decision:{unchanged:{result}}}` or
 `{decision:{refuse:<GymRefusal>}}`. The gym refusal is `{invalid:<violation>}`, or
 `stale/gone/taken/future:{subject,path}`, `full:{type,cap,path}`, or one of
 `sessionFinished/sessionOpen/sessionOverlap/payloadConflict/unknownExercise/badInstant/proposalSettled/proposalSuperseded/other`
-holding the complete `{code,subject,detail,path}`. Predicted and notice paths retain their meaning.
+holding the complete `{code,subject,detail,path}`; `planLogged` is `plan-logged`'s, its detail
+`{exerciseId}`. Predicted and notice paths retain their meaning.
 
 ## Proposal state
 
@@ -181,6 +220,13 @@ a later estimate is a new best when, stated to a tenth of a kilogram, it beats t
 its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
 also lists the sessions that set one. Partial history has none. It runs in all three; the web's log weaves no new
 bests yet.
+
+`PlanChanges` (`{sessionId}` → `{changes,changeCount,offer}`) is the receipt's card: the
+proposal diff of the session's plan against its routine as drawn, with R118's count and no name term; `offer` is
+`save` when the routine's `revision` equals the session's `routineRevision`, `routineChanged` otherwise, and
+`none`, with no changes, when the plan matches, has no routine or does not exist. `WorkoutOutOfDate` (`{id}` →
+`{outOfDate}`) is null for a current, applied or dismissed proposal, else `{reason}` with apply's reasons,
+`workout-moved` naming the movement as `exerciseId`.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,

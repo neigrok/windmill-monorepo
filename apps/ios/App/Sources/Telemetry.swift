@@ -39,7 +39,7 @@ nonisolated enum TelemetryPrivacy {
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_workout_adjusted", "gym_exercise_updated", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "coach_turn", "coach_ability", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
-    "gym_workout_picker",
+    "gym_workout_picker", "gym_rest_target_reached",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
     "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete"
   ]
@@ -62,7 +62,7 @@ nonisolated enum TelemetryPrivacy {
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],

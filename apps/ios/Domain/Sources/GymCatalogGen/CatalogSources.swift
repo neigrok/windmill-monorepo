@@ -55,8 +55,12 @@ enum CatalogSources {
 
   static func ability(_ json: JSON) throws -> Entry {
     let object = try unwrap(json.asObject(), "an ability is not an object")
-    try unwrap(object.expectKeys(required: fields, optional: ["declared"]), "an ability's keys")
+    try unwrap(object.expectKeys(required: fields, optional: ["declared", "since"]), "an ability's keys")
     let name = try unwrap(object.member("name").asString(), "an ability's name")
+    // The version that added the ability: the phone speaks the newest, which offers every ability, so it keeps none.
+    if let since = object["since"], !(try unwrap(since.asString(), "\(name).since")).hasPrefix("catalog/") {
+      throw GenerationError(description: "\(name).since names no catalog version")
+    }
     func word(_ field: String, of allowed: [String]) throws -> String {
       let value = try unwrap(object.member(field).asString(), "\(name).\(field)")
       guard allowed.contains(value) else { throw GenerationError(description: "\(name).\(field) is \(value), none of \(allowed)") }

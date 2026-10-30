@@ -135,7 +135,12 @@ struct ProposalCard: View {
   }
 
   // Waiting, *CHANGES TO PUSH A* with the store's count, or *REMOVE A ROUTINE*; applied, *✓ Applied · Push A*; out of
-  // date, the eyebrow says so.
+  // date, the eyebrow says so. While a workout is open a change waits for the routine's next workout, never this one (08.56).
+  var eyebrow: String {
+    if removal { return "Remove a routine" }
+    if outOfDate != nil { return "Changes to " + routineName + " · " + CoachCopy.outOfDate }
+    return "Changes to " + routineName + (gym.openSession != nil ? " · Next time" : "")
+  }
   func header(_ proposal: Proposal, stance: ProposalStance) -> some View {
     let settled = outOfDate != nil ? CoachCopy.outOfDate : stance == .applied ? CoachCopy.settled("applied", removal: removal) : nil
     return HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
@@ -146,7 +151,7 @@ struct ProposalCard: View {
           Text("Applied · " + routineName + (removal ? " · routine removed" : ""))
         }.font(.headline).foregroundStyle(GymPalette.ink)
       } else {
-        Text(removal ? "Remove a routine" : "Changes to " + routineName + (outOfDate != nil ? " · " + CoachCopy.outOfDate : ""))
+        Text(eyebrow)
           .font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(outOfDate != nil ? GymPalette.inkDim : GymPalette.accent)
       }
       Spacer(minLength: 0)

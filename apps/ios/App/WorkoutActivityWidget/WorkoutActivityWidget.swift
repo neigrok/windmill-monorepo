@@ -30,8 +30,8 @@ struct WorkoutControl: ControlWidget {
 }
 
 // The ledger's current row outside the app: the routine and the rest clock on top, which the expanded Island draws in its
-// leading and trailing regions, then the set it would log, and Log set. The compact Island keeps the clocks at .caption,
-// its slots too narrow to scale.
+// leading and trailing regions, the movement’s rest target static under the since clock (04.6), then the set it would log, and Log
+// set. The compact Island keeps the clocks at .caption, its slots too narrow to scale.
 struct WorkoutActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
@@ -51,8 +51,13 @@ struct WorkoutActivityWidget: Widget {
           Label(context.state.title, systemImage: "dumbbell.fill").font(.headline).lineLimit(1).padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          WorkoutActivityClock.rest(context.state)
-            .font(.headline).frame(maxWidth: 96, alignment: .trailing).padding(.trailing, 12)
+          VStack(alignment: .trailing, spacing: 0) {
+            WorkoutActivityClock.rest(context.state).font(.headline)
+            if context.state.lastSetAt != nil, let rest = context.state.restReading {
+              Text("/ " + rest).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                .accessibilityLabel("Rest target").accessibilityValue(rest)
+            }
+          }.frame(maxWidth: 96, alignment: .trailing).padding(.trailing, 12)
         }
         DynamicIslandExpandedRegion(.bottom) {
           WorkoutActivityDetails(state: context.state, isStale: context.isStale)
