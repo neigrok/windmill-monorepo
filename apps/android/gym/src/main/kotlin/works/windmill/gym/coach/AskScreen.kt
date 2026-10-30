@@ -106,11 +106,14 @@ fun AskScreen(
     composerEnabled: Boolean = true,
     composerVisible: Boolean = true,
     onSignIn: (() -> Unit)? = null,
+    onBuildRoutine: (() -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
     val nowMs = remember(conversationId) { System.currentTimeMillis() }
     val savedPosition = store.coach.chat(conversationId)
     val account = store.coach.accountKey
+    val greeting = savedPosition?.setup == true && thread.isEmpty() && composerVisible
+    var photoRequest by remember(account, conversationId) { mutableStateOf(0) }
     val presentation = rememberCoachPresentation(conversationId, thread, account, savedPosition?.scroll ?: 0, savedPosition?.followEnd ?: true)
     var sourcesTop by remember(conversationId) { mutableStateOf<Int?>(null) }
     var viewportBottom by remember(conversationId) { mutableStateOf(0) }
@@ -131,6 +134,9 @@ fun AskScreen(
     presentation.tolerance = with(LocalDensity.current) { 48.dp.roundToPx() }
     val scope = rememberCoroutineScope()
     val telemetry = LocalTelemetry.current
+    LaunchedEffect(account, conversationId, greeting) {
+        if (greeting) telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "shown"))
+    }
     val web = LocalUriHandler.current
     var draftFailure by remember { mutableStateOf<String?>(null) }
 
@@ -169,17 +175,25 @@ fun AskScreen(
       ) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { viewportBottom = (it.positionOnScreen().y + it.size.height).roundToInt() }) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(12.dp, if (greeting) Alignment.Top else Alignment.Bottom),
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("coach-thread")
                     .nestedScroll(presentation.gestures)
-                    .then(presentation.anchoring)
+                    .then(if (greeting) Modifier else presentation.anchoring)
                     .verticalScroll(presentation.scroll)
                     .heightIn(min = maxHeight)
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 8.dp + sourcesSpace),
             ) {
+                if (greeting) CoachGreeting(!store.coach.anonymous, composerEnabled && !asking,
+                    onScreenshot = {
+                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "screenshot"))
+                        photoRequest++
+                    }, onBuild = {
+                        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "build_manually"))
+                        onBuildRoutine?.invoke()
+                    })
                 onOlder?.let { older -> CoachAction(if (olderBusy) "Reading messages…" else "Earlier messages", older, enabled = !olderBusy && !asking) }
                 (historyFailure ?: draftFailure ?: store.coach.archiveFailure)?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
                 thread.forEachIndexed { index, exchange ->
@@ -273,7 +287,7 @@ fun AskScreen(
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
                         else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
-                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy)
+                    }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null, enabled = composerEnabled && !olderBusy, photoRequest = photoRequest)
             }
         }
       }

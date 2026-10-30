@@ -26,6 +26,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +56,7 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 @Composable
 internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking: Boolean,
     onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, upload: Float?, retainDraft: Boolean, enabled: Boolean = true,
+    photoRequest: Int = 0,
 ) {
     val skin = LocalGymColors.current
     val context = LocalContext.current
@@ -80,14 +82,32 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     var preparing by remember(account, key) { mutableStateOf(false) }
     fun canSend(next: CoachDraft) = next.text.trim().toByteArray().size <=
         (if (store.anonymous) CoachOnboardingLimits.textBytes else Ask.maxTurnBytes) && (Ask.sendable(next.text) || next.photo != null)
+    var pickerOwner by rememberSaveable { mutableStateOf<String?>(null) }
+    var pickerChat by rememberSaveable { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) scope.launch {
+        val targetOwner = pickerOwner
+        val targetChat = pickerChat
+        pickerOwner = null
+        pickerChat = null
+        if (uri != null && targetChat != null && targetOwner == store.accountKey) scope.launch {
+            if (targetOwner != store.accountKey) return@launch
             preparing = true
-            try { store.importPhoto(key, context.contentResolver, uri); editor.trouble = null }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { editor.trouble = "Choose a supported photo." }
-            finally { preparing = false }
+            try {
+                store.importPhoto(targetChat, context.contentResolver, uri)
+                if (targetChat == key && targetOwner == store.accountKey) editor.trouble = null
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (targetChat == key && targetOwner == store.accountKey) editor.trouble = "Choose a supported photo."
+            } finally { preparing = false }
         }
+    }
+    fun pickPhoto() {
+        pickerOwner = account
+        pickerChat = key
+        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+    LaunchedEffect(photoRequest) {
+        if (photoRequest > 0 && enabled && !asking && !preparing) pickPhoto()
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         editor.draft.photo?.takeIf { !asking || upload != null }?.let { photo ->
@@ -108,7 +128,7 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
         editor.trouble?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)) {
-            IconButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            IconButton(onClick = ::pickPhoto,
                 enabled = enabled && !asking && !preparing, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.gym_coach_image), "Add photo", tint = if (enabled) skin.inkDim else skin.ink.copy(alpha = 0.38f), modifier = Modifier.size(24.dp))
             }

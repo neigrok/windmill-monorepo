@@ -316,7 +316,7 @@ class AskScreenTests {
         room(signedIn(scope).store, thread = emptyList(), cap = null, doors = mutableListOf())
 
         compose.onNodeWithText(Ask.title).assertIsDisplayed()
-        compose.onNodeWithText(Ask.subtitle).assertDoesNotExist()
+        compose.onNodeWithText("reads your log · helps with your routines").assertDoesNotExist()
         compose.onNodeWithText("Ten questions a day, three back to back.").assertDoesNotExist()
         compose.onNodeWithText(Ask.placeholder).assertIsDisplayed()
         compose.onNodeWithText("There is nothing to buy here.", substring = true).assertDoesNotExist()

@@ -126,6 +126,9 @@ retain their `refused` or `capped` outcomes without an Issue. A terminal binding
 result updates the retained credential's state before another Send; bound requests can still recover
 their original result by GET.
 
+Coach setup emits `gym_setup_step` with `screen=coach` and the bounded actions
+`shown|screenshot|build_manually`. The greeting emits no model turn and no content in telemetry.
+
 Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
 `action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
 Recreation restores the selected chat without a fresh-entry event. Ask transport retains

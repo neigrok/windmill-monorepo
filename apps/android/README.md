@@ -169,6 +169,10 @@ selection and draft ownership remain in one place. An available anonymous instal
 installations retain History and drafts without an anonymous composer; submitted work can recover
 by GET. Typed account-required replies use the fixed Sign in state. Daily caps retain the composer
 and persist the server retry deadline; expiration never sends automatically.
+After successful owned routine and workout reads, an empty Gym initially opens Coach; an account
+waits for its first pull. Saved or deliberately chosen navigation wins. Setup chats retain two local
+greeting bubbles until their first accepted message, with the native photo picker and new-routine
+editor doors. Ordinary fresh chats keep the empty composer.
 Every ask declares `routineReview`, and new Coach routines
 remain drafts until **Save routine**. Review shows movements, targets, equipment and whether loads are total, per
 dumbbell or added bodyweight load. A save runs in the store's scope, so leaving Coach does not cancel it; a draft the

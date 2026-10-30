@@ -22,8 +22,8 @@ class CoachAccessTests {
 
     @Test fun noSeatHasCenteredCurrentCopyAndOnlyTheExistingSignInDoor() {
         var signIns = 0
-        compose.setContent { AskSignedOutStance("•", { signIns++ }) }
-        compose.onNodeWithText(Ask.signedOut).assertIsDisplayed()
+        compose.setContent { CoachAccessStance("•", { signIns++ }) }
+        compose.onNodeWithText(Ask.accessNeedsSignIn).assertIsDisplayed()
         compose.onNodeWithContentDescription("History").assertDoesNotExist()
         compose.onNodeWithContentDescription("Question").assertDoesNotExist()
         compose.onNodeWithText("Sign in").performClick()
@@ -32,7 +32,7 @@ class CoachAccessTests {
 
     @Test fun boundPhoneKeepsHistoryAndExplainsItsLocalArchiveWithoutAComposer() {
         val actions = mutableListOf<String>()
-        compose.setContent { AskSignedOutStance("•", { actions += "signIn" }, { actions += "history" }, bound = true) }
+        compose.setContent { CoachAccessStance("•", { actions += "signIn" }, { actions += "history" }, bound = true) }
         compose.onNodeWithText("Sign in to ask Coach.").assertIsDisplayed()
         compose.onNodeWithText("Your earlier chats stay on this phone.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Question").assertDoesNotExist()
