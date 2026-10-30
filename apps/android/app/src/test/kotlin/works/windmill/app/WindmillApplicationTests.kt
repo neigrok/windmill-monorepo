@@ -114,7 +114,7 @@ private class Keystore2 : Provider("AndroidKeyStore", 1.0, "keystore2 stand-in")
 class WindmillApplicationTests {
     private val sam = User("sam", "sam@example.com")
 
-    @Test fun aSignedInColdStartLoadsTheKeyOnceAndOpensTheAccountAndTheSyncCredentialOnMain() {
+    @Test fun aSignedInColdStartOpensAccountAndSyncCredentialsAndSealsTheInstallationBindingOnMain() {
         val keystore = Keystore2()
         Security.addProvider(keystore)
         try {
@@ -132,8 +132,12 @@ class WindmillApplicationTests {
 
             app.onCreate()
 
-            assertEquals(listOf("key", "cipher", "cipher"), keystore.calls.filter { it.second }.map { it.first })
+            assertEquals(listOf("key", "cipher", "cipher", "key", "cipher").map { it to true }, keystore.calls.toList())
             assertEquals(LocalSession.Owned(sam), app.auth.localSession)
+            assertEquals("secret-sam", EngineStorage(host, previousRun).token(sam.id))
+            val binding = host.getSharedPreferences("works.windmill.ai", Context.MODE_PRIVATE).getString("binding.sealed", null)
+            assertNotNull(binding)
+            assertEquals("bound", previousRun.open(requireNotNull(binding)))
             app.onTerminate()
         } finally { Security.removeProvider("AndroidKeyStore") }
     }
