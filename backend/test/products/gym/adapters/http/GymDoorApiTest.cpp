@@ -48,7 +48,9 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   note["body"] = "Build strength";
   admit("save_note", note);
   admit("update_exercise", parse(R"({"exerciseId":"bench-press","equipment":"dumbbell","loadCount":2})"));
-  const auto started = admit("start_session", startBody("ses_door0001", h.clock.now - 120000));
+  Json::Value start = startBody("ses_door0001", h.clock.now - 120000);
+  start["routineId"] = "rt_door0001";
+  const auto started = admit("start_session", start);
   CHECK_EQ(started.payload["id"].asString(), "ses_door0001");
   Json::Value set = setBody("set_door0001", "bench-press", 80, h.clock.now - 100000);
   set["sessionId"] = "ses_door0001";
@@ -57,6 +59,12 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   batch["sets"] = Json::Value(Json::arrayValue);
   batch["sets"].append(setBody("set_door0002", "bench-press", 82.5, h.clock.now - 80000));
   admit("log_sets", batch);
+  Json::Value workout(Json::objectValue);
+  workout["id"] = "prop_door003";
+  workout["sessionId"] = "ses_door0001";
+  workout["entries"] = routineBody("rt_door0001")["entries"];
+  workout["entries"].append(parse(R"({"exerciseId":"back-squat"})"));
+  admit("propose_workout_change", workout);
   Json::Value finish = sessionArgs("ses_door0001");
   finish["finishedAt"] = Json::UInt64(h.clock.now - 60000);
   admit("finish_session", finish);
@@ -82,11 +90,12 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   admit("discard_session", sessionArgs("ses_door0001"));
   for (const auto& tool : h.tools.declareTools())
     if (tool.access != Access::read) CHECK(written.contains(tool.name()));
-  CHECK_EQ(written.size(), std::size_t{14});
+  CHECK_EQ(written.size(), std::size_t{15});
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   const auto spent = txn.exec_params("select type,id from sync_spent where scope_key=$1 order by type,id", "acct:" + h.user.str() + "/gym");
-  CHECK_EQ(spent.size(), std::size_t{3});
+  // The discarded workout, its two sets and the workout proposal it killed.
+  CHECK_EQ(spent.size(), std::size_t{4});
   const auto metadata = txn.exec("select seq,born,name_stamp from gym_routines where id='rt_door0001'");
   REQUIRE_EQ(metadata.size(), std::size_t{1});
   CHECK(metadata[0]["seq"].as<long long>() > 0);
@@ -133,6 +142,18 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   proposal.removeMember("position");
   proposal["routineId"] = routineId;
   REQUIRE(!proposals.callTool("propose_routine_change", proposal, caller).isError);
+  Json::Value start = startBody("ses_coach001", h.clock.now - 120000);
+  start["routineId"] = routineId;
+  REQUIRE(!h.call("start_session", start).isError);
+  std::vector<RoutineEntry> plan = h.repo.program.routine(h.user, RoutineId{routineId})->entries;
+  plan.push_back(RoutineEntry{static_cast<int>(plan.size()) + 1, ExerciseId{"back-squat"}, {}, std::nullopt});
+  REQUIRE(h.door.proposeWorkout(h.user, WorkoutProposalWrite{ProposalId{"wprop_coach01"}, SessionId{"ses_coach001"}, "Add squats",
+                                plan, ProposalSource{ProposalDoor::ask, "", "", thread}}).proposal);
+  {
+    PgLease connection{*doortest::pool()};
+    pqxx::work read{*connection};
+    CHECK_EQ(read.exec("select thread_id from gym_workout_proposals where id='wprop_coach01'")[0][0].as<std::string>(), thread.str());
+  }
   const auto stored = h.repo.program.proposal(h.user, ProposalId{"prop_coach001"});
   REQUIRE(stored);
   CHECK_EQ(stored->head.source.door, ProposalDoor::ask);
@@ -162,6 +183,35 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE_EQ(unlink.size(), std::size_t{1});
   CHECK(unlink[0]["thread_id"].is_null());
   CHECK_FALSE(unlink[0]["thread_id_stamp"].is_null());
+  const auto unlinkedWorkout = txn.exec("select thread_id,thread_id_stamp from gym_workout_proposals where id='wprop_coach01'");
+  REQUIRE_EQ(unlinkedWorkout.size(), std::size_t{1});
+  CHECK(unlinkedWorkout[0]["thread_id"].is_null());
+  CHECK_FALSE(unlinkedWorkout[0]["thread_id_stamp"].is_null());
+  CHECK(h.failures.messages.empty());
+}
+
+// A workout proposal the door refuses before admitting writes nothing, and the door's write line names the refusal.
+TEST(gym_engine_workout_proposal_refused_before_admission_names_its_refusal_on_the_door_line) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  DoorApis h;
+  REQUIRE(!h.call("create_routine", routineBody("rt_doorwp01")).isError);
+  Json::Value start = startBody("ses_doorwp01", h.clock.now - 120000);
+  start["routineId"] = "rt_doorwp01";
+  REQUIRE(!h.call("start_session", start).isError);
+  Json::Value unchanged(Json::objectValue);
+  unchanged["id"] = "wprop_door01";
+  unchanged["sessionId"] = "ses_doorwp01";
+  unchanged["entries"] = routineBody("rt_doorwp01")["entries"];
+  Json::Value absent = unchanged;
+  absent["sessionId"] = "ses_absent01";
+  const auto before = h.seq();
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) { lines.push_back(completion.operation + " | " + completion.outcome); });
+  CHECK(h.call("propose_workout_change", unchanged).isError);
+  CHECK(h.call("propose_workout_change", absent).isError);
+  installWriteSink({});
+  CHECK_EQ(h.seq(), before);
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.admit | ok", "gym.server_call | no-change", "sync.admit | ok", "gym.server_call | unknown-record"}));
   CHECK(h.failures.messages.empty());
 }
 

@@ -140,27 +140,20 @@ import SyncTesting
     #expect(!workout.canLog && !workout.logActivityOffer(next) && workout.sets == retained)
   }
 
-  // The card names the routine, the movement, the set it would log and its place, a barbell's load in plain kg; before a
-  // movement it names none of them and offers nothing.
+  // The card names the routine, the movement, the set it would log and its place, a barbell's load in plain kg, and the
+  // Island's Log set the offer's numbers; before a movement it names none of them and offers nothing.
   @Test func cardReadsTheSetItWouldLogAndNothingBeforeAMovement() throws {
     let (_, gym) = try fixtures.fixture()
     #expect(gym.run(StartSession(id: gym.runner.mint(Session.self)))?.refusal == nil && gym.restoreWorkout())
     let workout = gym.workout, session = try #require(workout.session), controller = WorkoutActivityController(gym: gym)
     let blank = try controller.content(session: session, offer: workout.activityOffer()).state
-    #expect([blank.title, blank.movement, blank.load, "\(blank.workingSetOrdinal)"] == ["Free workout", "", "", "1"] && blank.offer == nil)
-    #expect(blank.place == nil)
-    workout.add(fixtures.first); workout.weightKg = 100; workout.reps = 5
+    #expect([blank.title, blank.movement, blank.load, "\(blank.workingSetOrdinal)"] == ["Free workout", "", "", "1"])
+    #expect(blank.place == nil && blank.offer == nil && blank.effort == nil)
+    workout.add(fixtures.first); workout.weightKg = 102.5; workout.reps = 5
     let offer = try #require(workout.activityOffer()), state = try controller.content(session: session, offer: offer).state
-    #expect([state.title, state.movement, state.load, "\(state.reps)", "\(state.workingSetOrdinal)", state.place] == ["Free workout", "Workout squat", "100 kg", "5", "1", "Set 1"])
+    #expect([state.title, state.movement, state.load, "\(state.reps)", "\(state.workingSetOrdinal)", state.place, state.effort] ==
+            ["Free workout", "Workout squat", "102.5 kg", "5", "1", "Set 1", "102.5 × 5"])
     #expect(state.offer == offer)
-  }
-
-  @Test(arguments: [true, false])
-  func lockScreenCountsOnlyTheSetsTheLedgerMarksUnsent(anonymous: Bool) throws {
-    let (_, gym) = try fixtures.fixture(anonymous: anonymous), workout = try fixtures.begin(gym)
-    #expect(workout.logSet() && gym.unconfirmedSets(workout.sets).count == 1)
-    let content = try WorkoutActivityController(gym: gym).content(session: try #require(workout.session), offer: nil)
-    #expect(content.state.unsentSetCount == 0 && gym.unsentSets(workout.sets).isEmpty)
   }
 
   @Test func activityPayloadReprojectsDatesWhenTheServerCorrectionChanges() throws {
@@ -909,46 +902,33 @@ import SyncTesting
     #expect(gym.routines.first { $0.id == plan.id } == plan)
   }
 
-  // The lock screen's count follows the connection: a status the store does not hold redraws it at once, not at the
-  // next clock tick.
-  @Test func goingOfflineRedrawsTheLockScreenCount() async throws {
-    let connectivity = SwitchedConnectivity(), fault = WorkoutFaultTransport()
-    let runtime = try WorkoutStateTests.faultRuntime(fault, connectivity: connectivity, drivesLoops: true), engine = runtime.engine
-    let identity = fault.model.identity(email: "activity-status@example.com")
-    #expect(try await engine.signIn(account: identity.account, token: identity.token).isComplete)
-    let gym = GymModel(runner: runtime.runner, runtime: runtime)
-    #expect(gym.run(CreateExercise(Exercise(id: fixtures.first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
-    await engine.flushOnLeave(); gym.refresh()
-    gym.start(); gym.startWorkoutActivity()
-    let controller = try #require(gym.existingWorkoutActivity)
-    let workout = try fixtures.begin(gym)
-    // The test host asks ActivityKit for nothing: the state is computed, not drawn.
-    controller.requestedSession = workout.sessionId
-    await engine.flushOnLeave(); gym.refresh(); workout.reconcile()
-    #expect(workout.logSet())
-    for _ in 0..<600 where controller.reconciled?.unsentSetCount != 0 { try await Task.sleep(for: .milliseconds(5)) }
-    #expect(controller.reconciled?.unsentSetCount == 0, "online, a set on its way is not unsent")
-    connectivity.set(online: false)
-    for _ in 0..<600 where controller.reconciled?.unsentSetCount != 1 { try await Task.sleep(for: .milliseconds(5)) }
-    #expect(controller.reconciled?.unsentSetCount == 1, "a status-only change redraws the lock screen")
-    gym.stop()
-  }
-
-  // An Activity the previous build started still draws after the update: its state named the count `unsyncedSetCount`
-  // and carried a `setKind` and the offer's `kind`.
-  @Test func aContentStateFromThePreviousBuildStillDecodes() throws {
-    let previous = """
+  // An Activity an earlier build started still draws after the update: its state counted unsent sets, as
+  // `unsyncedSetCount` and then `unsentSetCount`, carried a `setKind` and the offer's `kind`, and neither the rest target
+  // nor the offer's numbers.
+  @Test func aContentStateFromAnEarlierBuildStillDecodes() throws {
+    let earlier = ["""
       {"title":"Push A","movement":"Back squat","load":"100 kg","reps":5,"setKind":"working","workingSetOrdinal":2,
        "plannedWorkingSetCount":5,"startedAt":0,"lastSetAt":60,"staleAt":14400,"unsyncedSetCount":1,
        "offer":{"ownerID":"rp:bound:s1","sessionID":"s1","movementID":"back-squat","weightKg":100,"reps":5,"kind":"working","setID":"t1"}}
-      """
-    let state = try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: Data(previous.utf8))
-    let current = WorkoutActivityAttributes.ContentState(title: "Push A", movement: "Back squat", load: "100 kg", reps: 5, workingSetOrdinal: 2,
-      plannedWorkingSetCount: 5, startedAt: Date(timeIntervalSinceReferenceDate: 0), lastSetAt: Date(timeIntervalSinceReferenceDate: 60),
-      staleAt: Date(timeIntervalSinceReferenceDate: 14_400), unsentSetCount: 1,
-      offer: WorkoutActivityOffer(ownerID: "rp:bound:s1", sessionID: "s1", movementID: "back-squat", weightKg: 100, reps: 5, setID: "t1"))
-    #expect(state == current)
-    #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: JSONEncoder().encode(current)) == current)
+      """, """
+      {"title":"Push A","movement":"Back squat","load":"100 kg","reps":5,"workingSetOrdinal":2,"plannedWorkingSetCount":5,
+       "startedAt":0,"lastSetAt":60,"staleAt":14400,"unsentSetCount":1,
+       "offer":{"ownerID":"rp:bound:s1","sessionID":"s1","movementID":"back-squat","weightKg":100,"reps":5,"setID":"t1"}}
+      """]
+    let current = { (restSeconds: Int?, effort: String?) in
+      WorkoutActivityAttributes.ContentState(title: "Push A", movement: "Back squat", load: "100 kg", reps: 5, workingSetOrdinal: 2,
+        plannedWorkingSetCount: 5, startedAt: Date(timeIntervalSinceReferenceDate: 0), lastSetAt: Date(timeIntervalSinceReferenceDate: 60),
+        restSeconds: restSeconds, staleAt: Date(timeIntervalSinceReferenceDate: 14_400),
+        offer: WorkoutActivityOffer(ownerID: "rp:bound:s1", sessionID: "s1", movementID: "back-squat", weightKg: 100, reps: 5, setID: "t1"),
+        effort: effort)
+    }
+    for state in earlier {
+      #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: Data(state.utf8)) == current(nil, nil))
+    }
+    for (rest, effort) in [(nil, nil), (180, "100 × 5")] {
+      #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: JSONEncoder().encode(current(rest, effort))) == current(rest, effort))
+    }
+    #expect([nil, 120, 45, 900].map { current($0, nil).restReading } == [nil, "2:00", "0:45", "15:00"])
   }
 }
 

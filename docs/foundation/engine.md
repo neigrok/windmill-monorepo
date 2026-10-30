@@ -358,7 +358,11 @@ The gym Coach's `thread` and `message` types and the `runningTurn` and `picture:
 additive too. The explicit `other` equipment value extends a client-enforced enum, so version 9
 requires minimum 9. Unbounded finite normalized gym loads and nullable derived metrics require
 version 10 / minimum 10. Sets without a `kind` field require version 11 / minimum 11. Existing
-equipment rows and overrides are not migrated.
+equipment rows and overrides are not migrated. The open workout's editable plan is version 12, minimum 11
+(A.2): `session.plan` turns from a const server register into a guarded client `lww` register, which a
+client of version 11 never writes and reads as before, and the session's `planRevision` and
+`routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
+The journal registry carries version 12 with it, since the composed registries declare one version.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2666,13 +2670,14 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 | `routineCreation` | keyed string, same id pattern as routine; no ref | none | const server: `snapshot` JSON | R118: exact immutable Coach creation receipt, in `gym_routine_creations`; survives routine/conversation deletion, purged only with its account. Not a primary type. No public writer. |
 | `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell, other}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
 | `exerciseName` | keyed (`ref<exercise>`: a seed, or a custom movement of the account) | none | lww, each optional: `name` 1–240 bytes, `equipment` (the `exercise.equipment` enum), `loadCount` integer 1–2; lww server: `aliases` as an exercise's | The account's name and loading for a movement. Keyed by a seed: `name` unset reads as the seed's own name, a seed renamed back to it holds it, and a change of the displayed name writes `aliases` as an exercise's rename does. Keyed by a custom movement alive in the joined rows, stored or created in the same intent: only `equipment` and `loadCount`; a `name` → `invalid`, since a custom movement's name and aliases live on its `exercise`. Keyed by any other id → `invalid`. A null register → `invalid`. `loadCount` counts only for `dumbbell` equipment. |
-| `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
+| `session` | minted g | terminal, spent | lww: `plan` {`routine` ≤240 bytes, `entries` as a routine's `entries`} or null; lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null, `planRevision` 1–2 147 483 647 (unset reads 1); const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `routineRevision` (that routine's `revision` when the start took its plan) | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets and its workout proposals. `plan` is the workout's plan: the routine's name and entries as the start took them, then as the lifter and applied workout proposals revise it (plan rules below). Editor save guards it. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` finite quantum 0.01, `reps` 1–500, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25); lww server: `updatedAt` epoch ms ≥0 | Cap 10. Editor save guards the fields it writes. Client-derived `position` is the dense rank from 0 of `(ord, id)` among alive notes. R118 `updatedAt` is its content admission time; reorder leaves it alone. |
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`. No server-origin door writes a weigh-in. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
 | `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100 of {`kind` ∈ {kept, added, removed, retargeted}, `exerciseId`, `before`, `after`}, each side {`sets`, `restSeconds`} as a routine entry's); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; const server: `baseRevision` 1–2 147 483 647, `baseName` ≤240 bytes, `changeCount` 0–2 147 483 647; lww server: `threadId` (a Coach conversation's id) or null, `state` ranked (pending 0; applied, dismissed, superseded 1; unset reads `pending`), `supersededBy` (the proposal that replaced it), `settledAt` an epoch ms | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. `changes` lists the lines the routine takes on, in order, then the lines it drops; `before` is on kept, removed and retargeted lines, `after` on kept, added and retargeted ones. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset (`invalid`), and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. For a replica create, `check` requires both guards to match the joined routine registers (`invalid` otherwise). For every create, it matches each proposed line to the first unmatched base line of the same exercise; equal sides are `kept`, unequal sides `retargeted`, unmatched proposed lines `added`, then unmatched base lines `removed` in base order. The supplied changes must equal this diff. A revision leaves 1–50 entries, a name that is not blank (below) and no empty set scheme; a removal leaves no proposed entries. A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create supersedes the pending proposal of the same `(routine, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`, written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. R118 freezes `baseRevision`, `baseName` and `changeCount` at creation from the joined routine; later settlement never rewrites them. |
-| `thread` | minted g | terminal, spent | const: `title` 1–8 000 bytes | A Coach conversation ([gym Coach](mobile/gym_coach.md) §9.1): `title` is the first text message verbatim, or `Photo`. A create carries `title` (`invalid` otherwise). Delete kills its messages and writes `threadId = null` on every proposal naming it. Not a primary type. |
+| `workoutProposal` | minted g | terminal, spent | const: `sessionId` `ref<session>`, not a parent; `summary` ≤400 bytes; `changes` as a proposal's; `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; const server: `baseRevision` 1–2 147 483 647 (the plan revision it was based on), `changeCount` 0–2 147 483 647; lww server: `threadId` or null, `state` ranked as a proposal's, `supersededBy`, `settledAt` an epoch ms | A change to an open workout's plan an agent proposes ([gym Coach](mobile/gym_coach.md) §5 G-4): the whole plan, as a diff against the plan as it stands. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset, and carries a guard (D-19) on its session's `plan` at the stamp it read (`invalid` otherwise; a moved stamp → `stale`). For every create, `changes` must equal the proposal diff against the session's `plan.entries` (`invalid`), and the document it proposes, every line but the removed ones, meets the plan rules a plan write does. A create whose session is absent, `foreign` or dead → `unknown-record`; whose session has no plan → `invalid`; whose session is finished or 4 h past its last activity → `session-finished`. A create freezes `baseRevision := planRevision` and `changeCount` (R118's count of the diff, with no name term), and supersedes the pending workout proposal of the same `(session, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`. A net change of its session's `plan` supersedes every pending workout proposal of that session, every door's, with no `supersededBy`. Its session's death kills it. |
+| `thread` | minted g | terminal, spent | const: `title` 1–8 000 bytes | A Coach conversation ([gym Coach](mobile/gym_coach.md) §9.1): `title` is the first text message verbatim, or `Photo`. A create carries `title` (`invalid` otherwise). Delete kills its messages and writes `threadId = null` on every `proposal` and `workoutProposal` naming it. Not a primary type. |
 | `message` | minted g | terminal, spent | const: `threadId` `ref<thread>` parent; `role` ∈ {lifter, coach}; `replica` (the writer's replica id, D-3); `pictures` (`maxItems` 1 of {`id`, `mediaType` 1–255 bytes, `localOnly`}); `at` an epoch ms. lww: `text` ≤131 072 bytes; `truncated`; `receipt` ≤16 384 bytes of JCS; `calls` ≤32 768 bytes of JCS. `state` ranked (running 0; interrupted 1; completed, declined, failed, stopped 2; unset reads `running`) | One message of a conversation (gym Coach §9.1): the id of a Coach message is its turn id. A create carries `role` and `at` (`invalid` otherwise). A lifter message carries `threadId`, `role`, `text`, `pictures` and `at` only: a delta writing `replica`, `state`, `truncated`, `receipt` or `calls` on it → `invalid`, and its `text` is at most 8 000 bytes (`MAX_QUESTION_BYTES`; `invalid`). A Coach message's create carries `replica` (`invalid` otherwise). A writer's terminal state beats `interrupted` whatever the stamps (`joinRanked`). Once the stored `state` is a writer's terminal state, a delta writing `state`, `text`, `receipt` or `calls` → `message-final`; `truncated` and a delete stay admitted. The server-origin door `interrupt` writes `state = interrupted` on a `running` Coach message and nothing else (gym Coach §4.5). |
 
 **R118 — metadata and REST parity.** Today's behaviour and design canon bind gym's registry.
@@ -2728,13 +2733,13 @@ by the gym binding (§2.4) and stored in `gym_threads` and `gym_messages`. The s
 conversations (`gym_ask_threads`, `gym_ask_turns`) are not adopted: they stay the server Coach's, and
 web and Android keep writing them until they move to the phone Coach. A proposal's `threadId` is a
 plain string naming either kind of conversation. Deleting a legacy conversation first admits, as the
-server, `threadId = null` on every proposal that names it; a `thread` death does the same by
+server, `threadId = null` on every proposal and workout proposal that names it; a `thread` death does the same by
 consequence. On Android and the web the gym room holds a legacy conversation delete for the same
 window as the **Held** gestures, on the room's own clock rather than the engine's.
 
 **Cross-record checks** read stored records with the intent’s joined records and earlier staged
 consequences over them. Consequences run in intent order. A routine’s death clears `routineId` on
-sessions created by the same intent, retaining their frozen `plan` and `historyRoutineId`. For
+sessions created by the same intent, retaining their `plan` and `historyRoutineId`. For
 same-key proposal creates, each supersedes stored and earlier created pending proposals; the last
 create is pending.
 
@@ -2745,6 +2750,30 @@ blank value, whoever writes it. Clients trim before they write; admission keeps 
 A historical blank name stays readable and permits writes to other fields. A revision proposal
 may replace it with a valid name, and a removal proposal may retain it. Neither proposal validates
 the historical `baseName` as a new name.
+
+**Plan rules** (`check`). A delta writing a session's `plan`, from either origin:
+- from a replica, carries a guard (D-19) on that `plan` at the stamp it read → otherwise `invalid`;
+  a moved stamp → `stale`;
+- writes a plan over a stored plan, keeping its `routine` → a null on either side, or another
+  `routine`, → `invalid`;
+- writes an open session that is not 4 h or more past its last activity → otherwise
+  `session-finished`;
+- leaves no entry with an empty `sets` (`invalid`), names only seeds and the owner's movements
+  (`unknown-exercise`), and adds no second entry of a movement the stored plan held once or not at
+  all (`invalid`): a plan the routine froze keeps its repeated entries.
+
+A net change of `plan`, whatever wrote it (a delta or `gym.applyWorkoutProposal`), keeps, for every
+movement with an alive set in the session among the joined records, the entries naming it, in their
+order, equal (JCS) to the stored plan's; otherwise → `plan-logged` with detail `{exerciseId}`, the
+first such movement in the order the stored plan, then the new one, name movements. A movement with
+a logged set keeps its plan; its entries may move. So an apply whose intent also logs a set on a
+movement the proposal changes is `plan-logged`.
+
+A net change of `plan` (a delta's or `gym.applyWorkoutProposal`'s) writes `planRevision :=` the stored
+revision, 1 when unset, plus 1, and supersedes the session's pending workout proposals. An equal-value
+restamp, a losing write and a replayed apply add nothing. At the integer ceiling a plan change is
+`invalid`. A start freezes no revision: a session's `planRevision` stays unset until its plan first
+changes.
 
 **Set rules** (`check`):
 - A supplied or automatically assigned `setNumber` outside 1–2 147 483 647 → `invalid`. The
@@ -2760,7 +2789,7 @@ the historical `baseName` as a new name.
 - A set update or delete is admitted whatever its session's state, and moves no `finishedAt`: a
   lifter fixes and deletes sets of a finished workout.
 - Only a command moves a standing set's `completedAt`: a delta that writes it → `invalid`.
-- Every exercise reference (a set's `exerciseId`, a routine entry's `exerciseId`, a command's set)
+- Every exercise reference (a set's `exerciseId`, a routine or plan entry's `exerciseId`, a command's set)
   must be a seed or the owner's; otherwise `unknown-exercise`.
 
 **Commands.** `gym.closeStale` (`beforePull`, §2.4) runs first inside `gym.start` and
@@ -2776,8 +2805,9 @@ It is the only writer of `closedBy = stale`.
      write map carries it with its `born`, and `from: id` if it is a different session.
   2. An open session `o` exists: with `joinOpenSession` → ok, a receipt, and the write map
      `{session, o.id, from: id, born: o.born}`; otherwise → `session-open`.
-  3. Otherwise create the session with a receipt, freezing `plan` from the routine and writing
-     `historyRoutineId := routineId`. A routine the owner cannot read gives `plan = null` and
+  3. Otherwise create the session with a receipt, taking `plan` from the routine's `name` and
+     `entries` and writing `historyRoutineId := routineId` and `routineRevision :=` the routine's
+     `revision` when it has one. A routine the owner cannot read gives `plan = null` and
      `routineId = null`.
 
   Predicts the session `{id, born, startedAt, routineId}`, with `plan` composed from the drawn
@@ -2797,7 +2827,8 @@ It is the only writer of `closedBy = stale`.
     → `bad-instant`.
   - The interval crosses another finished session → `session-overlap`, with detail `{sessionId}`
     naming the earliest it crosses, a span being `[startedAt, max(finishedAt, startedAt + 1))`.
-  - A routine the owner cannot read → `plan = null` and `routineId = null`.
+  - The routine's plan, `historyRoutineId` and `routineRevision` as a start takes them; a routine the
+    owner cannot read → `plan = null` and `routineId = null`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
 - **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets, preserveOtherSets?}`.**
@@ -2851,6 +2882,26 @@ It is the only writer of `closedBy = stale`.
   `record-dead`. `dismissed` → ok; `applied` → `proposal-settled` `{state}`; `superseded` →
   `proposal-superseded` `{reason}`; otherwise `state = dismissed` and `settledAt := serverNow`, with
   no revision check. Predicts `state`.
+- **`gym.applyWorkoutProposal {proposalId: ref<workoutProposal>}`.**
+  - A durable receipt for this account and workout proposal → ok, with no new writes and an empty
+    write map. Every successful apply stores that receipt in the same transaction as its effects.
+  - Without a receipt: absent or `foreign` → `unknown-record`; dead → `record-dead`. `applied` →
+    record the receipt and answer ok. `dismissed` → `proposal-settled` with detail `{state}`.
+  - Otherwise, the first `reason` that holds → `proposal-superseded` with detail `{reason}`, changing
+    no state: `replaced` when `supersededBy` is set; `workout-finished` when its session is finished
+    or 4 h past its last activity; `workout-changed` when it is superseded, or its session's
+    `planRevision` (1 when unset) ≠ `baseRevision`; `workout-moved` when the plan it proposes changes
+    the entries of a movement logged since (the plan rules' logged-movement test).
+  - Otherwise `state = applied` and `settledAt := serverNow`, and the session takes the proposal's
+    document: `plan := {routine: plan.routine, entries:` its changes but the removed ones, in order,
+    each `{exerciseId, …after}}`. The plan change moves `planRevision` and supersedes the session's
+    other pending workout proposals (plan rules). The routine is never written.
+
+  Predicts both.
+- **`gym.dismissWorkoutProposal {proposalId}`.** Absent or `foreign` → `unknown-record`; dead →
+  `record-dead`. `dismissed` → ok; `applied` → `proposal-settled` `{state}`; `superseded` →
+  `proposal-superseded` `{reason}`, its reason as an apply's; otherwise `state = dismissed` and
+  `settledAt := serverNow`, with no workout check. Predicts `state`.
 - **`gym.closeStale`** (server-internal). An open session whose last activity (its last set's
   `completedAt`, else `startedAt`) is at least 4 h before `serverNow` gets
   `finishedAt := last activity` and `closedBy = stale`.
@@ -2874,12 +2925,13 @@ unfinished session, a replayed create, a Coach note save the notes already hold)
 presents replies and translates refusals.
 
 **Codes** (§9.6), the registry's `codes`: `payload-conflict` (`gym.importSession`,
-`gym.correctSession`), `session-finished` (the set rules), `session-open` (`gym.start`,
+`gym.correctSession`), `session-finished` (the set rules, the plan rules, a workout proposal), `session-open` (`gym.start`,
 `gym.correctSession`, a delete of an unfinished session), `session-overlap` (`gym.importSession`,
-`gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the commands; a weigh-in's
+`gym.correctSession`), `unknown-exercise` (the set and plan rules), `bad-instant` (the commands; a weigh-in's
 future day), `proposal-settled` and `proposal-superseded` (`gym.applyProposal`,
-`gym.dismissProposal`), `message-final` (a write of a Coach message's `state`, `text`, `receipt` or
-`calls` after its writer ended the turn).
+`gym.dismissProposal`, `gym.applyWorkoutProposal`, `gym.dismissWorkoutProposal`), `message-final` (a
+write of a Coach message's `state`, `text`, `receipt` or `calls` after its writer ended the turn),
+`plan-logged` (a plan write or a workout proposal that changes a logged movement's entries).
 
 ### A.3 Journal
 

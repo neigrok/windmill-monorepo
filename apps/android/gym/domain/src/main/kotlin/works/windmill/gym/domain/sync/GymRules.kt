@@ -22,6 +22,7 @@ sealed interface GymRefusal {
     data class BadInstant(val refused: Refused) : GymRefusal
     data class ProposalSettled(val refused: Refused) : GymRefusal
     data class ProposalSuperseded(val refused: Refused) : GymRefusal
+    data class PlanLogged(val refused: Refused) : GymRefusal
     data class Other(val refused: Refused) : GymRefusal
     companion object : Refusals<GymRefusal> {
         override fun of(violation: Violation): GymRefusal = Invalid(violation)
@@ -40,6 +41,7 @@ sealed interface GymRefusal {
                 Gym.Codes.unknownExercise -> UnknownExercise(refused)
                 Gym.Codes.proposalSettled -> ProposalSettled(refused)
                 Gym.Codes.proposalSuperseded -> ProposalSuperseded(refused)
+                Gym.Codes.planLogged -> PlanLogged(refused)
                 else -> Other(refused)
             }
         }
@@ -51,8 +53,9 @@ sealed interface GymRefusal {
 }
 
 object GymRules {
-    val book = RuleBook(SyncSchema.registry, listOf(Note, WeighIn, Routine, Exercise, ExerciseName, Session, TrainingSet, Preferences, Proposal),
+    val book = RuleBook(SyncSchema.registry, listOf(Note, WeighIn, Routine, Exercise, ExerciseName, Session, TrainingSet, Preferences, Proposal, WorkoutProposal),
         NoteRules.rules + WeighInRules.rules + RoutineRules.rules + ExerciseRules.rules + SetRules.rules + PreferencesRules.rules + ProposalRules.rules +
+        WorkoutPlanRules.rules + WorkoutProposalRules.rules +
         GymCommand.specs.values.flatten().map(Rule::local) + listOf(
             Rule.local("routine.order", Routine.type),
             Rule.local("set.identity", TrainingSet.type),

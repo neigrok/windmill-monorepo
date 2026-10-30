@@ -5,6 +5,7 @@
 #include <json/json.h>
 
 #include <map>
+#include <set>
 #include <string>
 
 // The gate (gym_coach.md §5): every ability call of a turn passes G-1..G-8, in order, before it
@@ -38,7 +39,7 @@ public:
   TurnGate(const AbilityCatalog& catalog, Seat seat, std::string turnId);
 
   GateVerdict admit(const std::string& name, const Json::Value& input, bool stopRequested);
-  // G-4 and G-5 count calls that SUCCEEDED: an admitted proposal or note holds its slot until its
+  // G-4 and G-5 count calls that SUCCEEDED: an admitted proposal (one per target) or note holds its slot until its
   // result says it failed, then the slot opens again.
   void settle(const Ability& ability, bool ok);
 
@@ -54,7 +55,7 @@ private:
   int admitted_ = 0;
   int adds_ = 0;
   int ordinal_ = 0;
-  bool proposalHeld_ = false;
+  std::set<ProposalTarget> proposalsHeld_;
   bool noteHeld_ = false;
   std::map<std::string, int> refusals_;
 };

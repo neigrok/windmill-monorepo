@@ -13,7 +13,7 @@ import Testing
 struct CoachAbilitiesTests {
   static let files = ["create_exercise", "create_routine", "get_last_times", "get_session", "get_sessions", "get_stats", "last_time",
                       "list_bodyweight", "list_exercises", "list_notes", "list_routines", "list_sessions", "propose_routine_change",
-                      "propose_routine_removal", "revoke_share", "save_note", "share_session"]
+                      "propose_routine_removal", "propose_workout_change", "revoke_share", "save_note", "share_session"]
   static let turn = ID<CoachMessage>("turnAAAAAAAAAAA1")
   static let thread = ID<CoachThread>("thrdAAAAAAAAAAA1")
 
@@ -61,7 +61,7 @@ struct CoachAbilitiesTests {
         let input: JSON = ["records": ["drawn": .array(try given.member("records").asArray() + conversation)], "now": JSON(now),
                            "offsetSeconds": 0, "ids": [], "seat": try spec.member("seat"), "call": try spec.member("call"),
                            "appBaseUrl": given["appBaseUrl"] ?? "https://windmill.works"]
-        return (Vector(file: "gym/abilities/\(file).json", name: try spec.member("case").asString(), input: input, expect: try spec.member("expect")),
+        return (Vector(file: "gym/abilities/\(file).json", name: try spec.member("case").asString(), input: input, expect: spec["expect"] ?? .null),
                 try given.member("records"))
       }
     }
@@ -82,6 +82,16 @@ struct CoachAbilitiesTests {
       return
     }
     let expect = vector.expect
+    // A catalog/2 case before the server executor writes its golden: the phone's answer still stands inside the ability's
+    // result schema, and a refusal is one the gate or a rule answers.
+    if expect.isNull {
+      if let result = answered["result"] {
+        #expect(JSONSchema(Catalog.ability(named: request.name)!.result).fault(in: result) == nil, "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
+      } else {
+        #expect(try AbilityRefusal(rawValue: answered.member("refused").asString()) != nil && answered["writes"] == [], "\(vector.file) · \(vector.name)")
+      }
+      return
+    }
     if let refused = expect["refused"] {
       // The corpus is the server tool's golden; on the phone the gate's G-3 stands before the tool, so an input the schema
       // refuses answers `invalid-input` where the tool answered `invalid-arguments`.
@@ -199,12 +209,12 @@ struct CoachAbilitiesTests {
     let bound = Catalog.offered(seat: .bound).map(\.name)
     #expect(bound == ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats",
                       "list_notes", "list_bodyweight", "create_routine", "create_exercise", "save_note", "share_session",
-                      "propose_routine_change", "propose_routine_removal", "revoke_share"])
+                      "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share"])
     #expect(Catalog.offered(seat: .anon).map(\.name) == bound.filter { !["save_note", "share_session", "revoke_share"].contains($0) })
     #expect(Catalog.ability(named: "log_set")?.agent == .withheld)
     #expect(Catalog.ability(named: "get_record")?.declared == false)
     #expect(Catalog.ability(named: "propose_routine_change")?.phrase == "wrote a proposal for one of your routines")
-    #expect(Catalog.version == "catalog/1")
+    #expect(Catalog.version == "catalog/2")
     #expect(Catalog.ability(named: "no_such_ability") == nil)
   }
 

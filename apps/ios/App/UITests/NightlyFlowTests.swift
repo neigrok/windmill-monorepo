@@ -136,7 +136,7 @@ import XCTest
     for cold in [false, true] {
       choose("Start Lower A", cold: cold)
       XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 15), "Start Lower A opens straight into its workout")
-      XCTAssertTrue(app.buttons["Back Squat"].exists)
+      XCTAssertTrue(app.movementHeader("Back Squat").exists)
       finishWorkout()
     }
     for cold in [false, true] {

@@ -126,7 +126,7 @@ extension WorkoutState {
     do {
       guard var record = try activityRecord() else { return nil }
       guard canLog, !rackEditing, !gym.workoutHidden, weightKg.isFinite, (1...99).contains(reps),
-            let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
+            let session, session.holdsRack(of: offerSession), LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
         if record.offer != nil { record.offer = nil; _ = keepActivity(record) }
         return nil
       }
@@ -142,7 +142,7 @@ extension WorkoutState {
   func restoreActivityDraft() {
     guard let record = try? activityRecord(), record.baseline == activityBaseline, let offer = record.offer,
           offer.movementID == selected?.description else { return }
-    restoreRack(weightKg: offer.weightKg, reps: offer.reps)
+    restoreDraft(Prefill(weightKg: offer.weightKg, reps: offer.reps))
   }
   // Every outside Log set that logs nothing says why: refused when the rack has moved past it or a rule of the log refuses
   // the set, failed when the phone cannot read or save it.
@@ -266,7 +266,8 @@ extension WorkoutState {
       movement: movement?.name ?? "", load: movement == nil ? "" : Readout.weight(workout.weightKg) + " " + unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
-      staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
+      restSeconds: workout.selected.flatMap { workout.restTarget($0)?.seconds }, staleAt: clocks.staleAt, offer: offer,
+      effort: offer.map { Readout.effort(weightKg: $0.weightKg, reps: $0.reps) })
     return ActivityContent(state: state, staleDate: state.staleAt)
   }
   // The workout's start, last set and four-hour stale point on this phone's wall clock, the server offset subtracted.

@@ -9,12 +9,43 @@ import SyncCore
   let session: Session
   let sets: [TrainingSet]
   let suggestsKeep: Bool
+  // This workout's plan against its routine as the finish found it (03.32), and the routine's name for its sentences.
+  let changes: PlanChanges
+  let routine: String
   var review: WorkoutReview?
   var reviewFailed = false
   var readingReview = false
-  init(session: Session, sets: [TrainingSet], suggestsKeep: Bool = false) {
+  // The switch, off until the lifter turns it on; Done saves only while it is on.
+  var savesPlan = false
+  // The routine moved after the card was drawn, so the switch gives way to its sentence.
+  var routineMoved = false
+  // Done saved the plan: a second Done closes without saving or reporting again.
+  var planSaved = false
+  init(session: Session, sets: [TrainingSet], suggestsKeep: Bool = false, routine: Routine? = nil) {
     self.session = session; self.suggestsKeep = suggestsKeep
     self.sets = sets.filter { $0.sessionId == session.id }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
+    changes = PlanChanges(session: session, routine: routine)
+    self.routine = routine?.name ?? session.name ?? Readout.noRoutine
+  }
+  var offersSave: Bool { changes.offer == .save && !routineMoved }
+  // Done with the switch on saves this workout's plan as the routine, only while the routine stands at the revision the
+  // workout started from; true when the receipt may close. A refused or failed save keeps the receipt and says so.
+  @MainActor func savePlan(_ gym: GymModel) -> Bool {
+    guard savesPlan, offersSave, !planSaved else { return true }
+    let report = { (outcome: String) in gym.telemetry.event("gym_receipt_plan_saved", properties: ["outcome": outcome]) }
+    let current = gym.routines.first { $0.id == session.routineId }
+    guard let current, let plan = session.plan, PlanChanges(session: session, routine: current).offer == .save else {
+      routineMoved = true; report("refused"); return false
+    }
+    var saved = current; saved.entries = plan.entries
+    guard let outcome = gym.run(SaveRoutinePlan(base: current, current: saved, isNew: false, movements: [])) else {
+      gym.error = "\(routine) wasn’t changed. Try again."; report("failed"); return false
+    }
+    switch outcome.refusal {
+    case nil: planSaved = true; report("ok"); return true
+    case .stale?: gym.refusal = nil; gym.error = nil; routineMoved = true; report("refused"); return false
+    case _?: gym.error = "\(routine) wasn’t changed. Try again."; report("refused"); return false
+    }
   }
   var slight: Bool { sets.count < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
@@ -173,6 +204,9 @@ struct WorkoutReceipt: View {
                 .listRowInsets(EdgeInsets(top: 0, leading: RoomSpace.inset, bottom: 0, trailing: 0)).listRowBackground(Color.clear)
             }
           }.listRowSeparator(.hidden)
+          if receipt.changes.changeCount > 0 {
+            Section { planChanges.listRowInsets(EdgeInsets()).listRowBackground(Color.clear) }
+          }
           if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
             Section {
               VStack(alignment: .leading, spacing: RoomSpace.small) {
@@ -236,6 +270,46 @@ struct WorkoutReceipt: View {
       .task { await receipt.loadReview(gym) }
   }
 
+  // PLAN CHANGES (03.32): every edit of this workout's plan against its routine — the lifter's and applied Coach changes
+  // alike — in the proposal card's change blocks, then one switch that saves them to the routine when Done is taken. A
+  // routine that changed since the start gives the switch's place to a sentence; a workout whose start recorded no
+  // routine revision lists its changes alone.
+  var planChanges: some View {
+    let rank: [ProposalDiff.Kind] = [.changed, .removed, .added]
+    let blocks = receipt.changes.changes.compactMap { change -> (kind: ProposalDiff.Kind, change: RoutineChange)? in
+      switch change.kind {
+      case "retargeted": (.changed, change)
+      case "removed": (.removed, change)
+      case "added": (.added, change)
+      default: nil
+      }
+    }.enumerated().sorted { a, b in
+      let left = rank.firstIndex(of: a.element.kind)!, right = rank.firstIndex(of: b.element.kind)!
+      return left != right ? left < right : a.offset < b.offset
+    }.map(\.element)
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .firstTextBaseline) {
+        Text("Plan changes").font(.footnote.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
+        Spacer()
+        Text(GymCount.of(receipt.changes.changeCount, "change")).font(.subheadline).foregroundStyle(GymPalette.inkDim)
+      }.accessibilityElement(children: .combine).accessibilityAddTraits(.isHeader).accessibilityIdentifier("workout-receipt-plan-changes")
+      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        Divider().overlay(GymPalette.line)
+        ChangeBlock(kind: block.kind, title: gym.catalogue.find(block.change.exerciseId)?.name ?? "Movement",
+                    fields: ProposalDiff.fields(before: block.change.before, after: block.change.after,
+                                                each: MovementEquipment(gym.catalogue.find(block.change.exerciseId)).each))
+          .padding(.vertical, 4)
+      }
+      if receipt.offersSave {
+        Toggle("Save to \(receipt.routine)", isOn: $receipt.savesPlan).tint(GymPalette.accent).foregroundStyle(GymPalette.ink)
+          .frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("workout-receipt-save-plan")
+      } else if receipt.routineMoved || receipt.changes.offer == .routineChanged {
+        Text("\(receipt.routine) changed since you started.").font(.body).foregroundStyle(GymPalette.inkDim)
+          .frame(minHeight: RoomSpace.minimumTarget, alignment: .leading).accessibilityIdentifier("workout-receipt-routine-changed")
+      }
+    }.modifier(ChangeCard(stroke: GymPalette.accent))
+  }
+
   var options: some View {
     WorkoutReceiptMenu(enabled: !gym.accountTransition) {
       gym.telemetry.event("gym_action", properties: ["screen": "receipt", "action": "menu"])
@@ -267,6 +341,7 @@ struct WorkoutReceipt: View {
         .disabled(gym.coachUnavailable)
       Button {
         gym.telemetry.event("first_run_choice", properties: ["screen": "workout", "action": "close"])
+        guard receipt.savePlan(gym) else { return }
         dismiss()
       } label: { Text("Done").frame(maxWidth: .infinity, minHeight: 22) }
         .modifier(RoomPrimaryStyle(room: .gym)).accessibilityIdentifier("workout-done")

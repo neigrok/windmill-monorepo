@@ -1,10 +1,10 @@
 # The workout in flight — iOS Gym
 
-Status: ✅ Ready for dev — owner approved 2026-10-30. Nothing here is built yet. Boards are on
+Status: ✅ Ready for dev — owner approved 2026-10-30. Every board below is built. Boards are on
 the Gym file's iOS page: 03.20–03.32 in [03 · Workout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513)
-with the wave's READ ME (`1717:15737`), 04.6 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
+with the wave's READ ME (`1717:15737`), 04.6 and 04.7 in [04 · Outside the app](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576)
 and 08.54–08.57 in [08 · Coach](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703).
-Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`68`.
+Every board is drawn Dark and Daylight. Build tasks: `iosgym_tasks/60`–`69`.
 
 ## The fixture
 
@@ -92,7 +92,9 @@ CHANGES · {n} changes*, every edit against the routine — the lifter's and app
 proposals alike — in the proposal card's change rows, and one row
 *Save to {routine}* with a native switch, off by default. Done saves it through the routine save;
 otherwise nothing is written. The receipt keeps one primary. If the routine changed since the workout
-started, the switch gives way to *{routine} changed since you started.* The offer appears once, on
+started, the switch gives way to *{routine} changed since you started.* When the phone cannot tell
+which routine revision the workout started from, the card lists the changes with neither the switch
+nor that sentence. The offer appears once, on
 this receipt; swiping the receipt away saves nothing.
 
 ## Coach during a workout
@@ -123,6 +125,6 @@ stays black in both appearances; compact and minimal are unchanged (04.3).
 ## Events
 
 Product events through `/v1/events`, allowlisted labels only:
-`gym_workout_plan_changed {action: retarget | add_set | remove_set | swap | add_movement | remove_movement | rest, outcome: ok | refused | failed, door: workout | proposal}`,
+`gym_workout_plan_changed {action: retarget | add_set | remove_set | swap | add_movement | remove_movement | rest, outcome: ok | refused | failed, door: workout}` for the lifter's own edits,
 `gym_rest_target_reached` (no duration), `gym_receipt_plan_saved {outcome}`, and
-`gym_proposal_outcome` with `target: workout | routine`.
+`gym_proposal_outcome` with `target: workout | routine`, which alone reports a Coach change applied to the workout.

@@ -21,7 +21,7 @@ nonisolated enum TurnSeat: Equatable, Sendable {
 
 // §6.2, the open body: the question, the model copies of its pictures, the newest completed turns and the context reads.
 nonisolated struct TurnOpenRequest: Equatable, Sendable {
-  static let catalog = "catalog/1"
+  static let catalog = "catalog/2"
 
   struct Picture: Equatable, Sendable {
     let id: String

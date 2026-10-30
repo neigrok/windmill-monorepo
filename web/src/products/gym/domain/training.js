@@ -6,6 +6,7 @@ import { NumberSpec, Path, TextSpec, Violation, precondition } from '../../../pl
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
+import { WorkoutPlanRules } from './gymRules.js';
 import { PlanSnapshot, Routine } from './routines.js';
 
 /** @typedef {import('../../../platform/domain-kit/time.js').Instant} Instant */
@@ -24,8 +25,11 @@ export class SessionValue {
    * @param {PlanSnapshot | null} plan
    * @param {string | null} displayName
    * @param {Json | null} unreadablePlan
+   * @param {number | null} planRevision
+   * @param {number | null} routineRevision
    */
-  constructor(id, startedAt, finishedAt = null, closedBy = null, routineId = null, historyRoutineId = routineId, plan = null, displayName = null, unreadablePlan = null) {
+  constructor(id, startedAt, finishedAt = null, closedBy = null, routineId = null, historyRoutineId = routineId, plan = null, displayName = null,
+    unreadablePlan = null, planRevision = null, routineRevision = null) {
     this.id = id;
     this.startedAt = startedAt;
     this.finishedAt = finishedAt;
@@ -35,7 +39,16 @@ export class SessionValue {
     this.plan = plan;
     this.displayName = displayName;
     this.unreadablePlan = unreadablePlan;
+    this.planRevision = planRevision;
+    this.routineRevision = routineRevision;
     Object.freeze(this);
+  }
+
+  /** @param {{ finishedAt?: Instant | null, closedBy?: string | null, plan?: PlanSnapshot | null }} changes */
+  with(changes) {
+    const next = { finishedAt: this.finishedAt, closedBy: this.closedBy, plan: this.plan, ...changes };
+    return new SessionValue(this.id, this.startedAt, next.finishedAt, next.closedBy, this.routineId, this.historyRoutineId, next.plan,
+      this.displayName, this.unreadablePlan, this.planRevision, this.routineRevision);
   }
 
   get isOpen() { return this.finishedAt === null; }
@@ -52,6 +65,10 @@ export class SessionValue {
 /** @type {EntityType<SessionValue>} */
 export const Session = new EntityType({
   type: 'session', scope: 'self/gym', heldRemoval: true,
+  checks: [
+    new Check('plan', (value) => value.plan === null ? value : value.with({ plan: new PlanSnapshot(value.plan.routine,
+      WorkoutPlanRules.entries.apply([...value.plan.entries], new Path('plan.entries'), (entry) => entry)) })),
+  ],
   decode: (f) => {
     let plan = null;
     let unreadablePlan = null;
@@ -62,7 +79,7 @@ export const Session = new EntityType({
     }
     return new SessionValue(new Id(f.id, Session), f.instant('startedAt'), f.optionalInstant('finishedAt'),
       f.optionalString('closedBy'), f.optionalRef('routineId', Routine), f.optionalRef('historyRoutineId', Routine),
-      plan, f.optionalString('displayName'), unreadablePlan);
+      plan, f.optionalString('displayName'), unreadablePlan, f.optionalInt('planRevision'), f.optionalInt('routineRevision'));
   },
 });
 
@@ -262,8 +279,7 @@ export const SessionRules = Object.freeze({
   /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {Instant} now */
   drawn(session, sets, now) {
     const finish = SessionRules.autoCloseAt(session, sets, now);
-    return finish === null ? session : new SessionValue(session.id, session.startedAt, finish, 'stale',
-      session.routineId, session.historyRoutineId, session.plan, session.displayName, session.unreadablePlan);
+    return finish === null ? session : session.with({ finishedAt: finish, closedBy: 'stale' });
   },
   /** @param {SessionValue} session @param {Instant} at */
   canFinishAt(session, at) { return at.ms > 0 && at.ms >= session.startedAt.ms && at.ms <= SessionRules.maxInstantMs; },
@@ -279,8 +295,7 @@ export const SessionRules = Object.freeze({
     if (session.finishedAt !== null && session.closedBy !== 'stale') return session;
     const finish = session.finishedAt;
     const selected = finish === null ? at : at.ms > finish.ms + SessionRules.staleAfterMs || finish.ms >= at.ms ? finish : at;
-    return new SessionValue(session.id, session.startedAt, selected, 'finish', session.routineId, session.historyRoutineId,
-      session.plan, session.displayName, session.unreadablePlan);
+    return session.with({ finishedAt: selected, closedBy: 'finish' });
   },
   /** @param {Instant} startedAt @param {Instant} finishedAt @param {SessionValue} other */
   crosses(startedAt, finishedAt, other) {

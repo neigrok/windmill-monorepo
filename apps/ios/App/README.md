@@ -37,6 +37,8 @@ supports subject/email matches, spent/unknown tickets, code reuse and a concurre
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
 labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
+On the `workout-inflight` boards, `-log-set-on-signal` logs a Pull-up set each time a UI test posts the Darwin notification
+`works.windmill.fixture.log-set`, as a set logged outside the app lands under a sheet open over the workout.
 `-scenario <name>` isolates a launch's storage under that name.
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
@@ -76,7 +78,7 @@ supplies account/navigation callbacks and Coach handoffs. A model extension live
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
 bar, More menu), the transient band, the
-two-line row, the set row and fact tiles, the load and reps wheels and the Fix set editor, the rename sheet with its
+two-line row, the set row and fact tiles, the load field and reps wheel and the Fix set editor, the rename sheet with its
 model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
@@ -111,7 +113,7 @@ Exercise metadata applies across the account, while targets belong to that routi
 keeps optional and per-set targets, Ramp/Match and one/two-dumbbell units without a separate Targets
 destination. Stale metadata or a changed owner refuses the whole save. Received Other movements
 retain their category and signed targets through name-only and target edits. Other uses kg without
-an equipment glyph; its load and Fix set wheels span negative, zero and positive values. The six
+an equipment glyph; its rack and Fix set loads take negative, zero and positive values through the ± key. The six
 existing equipment picker choices remain. Name/Equipment explanatory footers are absent, and the
 Other target section has no equipment help.
 
@@ -176,8 +178,14 @@ account/replica cannot publish into the active seat.
 
 The live workout uses a compact ledger with up to three 44-point rows at default text size;
 accessibility sizes expand it. Movement paging dots and clocks remain, without the duplicate set
-statistics strip. Assembly and Add movement share one sheet destination. Selecting a movement returns
-to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+statistics strip. Assembly, the movement menu's Add movement and the picker share one sheet destination. Selecting a
+movement returns to its live logger with existing sets and draft intact; cancellation leaves the workout unchanged.
+The movement's name is its native menu: a movement with nothing logged offers Edit sets and Swap movement, every one
+Add movement and Edit movement. A movement with a logged set keeps its plan. Edit sets (`Workout/EditSets.swift`) saves
+the whole entry once on ✓ as `ReviseWorkoutPlan` operations; Add movement, removal and Swap write the plan and the
+`rack:<session-id>` walk in one gesture (`ReviseWorkout`). After any plan edit the Live Activity's durable offer is
+minted again, and the rack prefills again only when the edit moved the selected movement's current slot and the lifter
+has not touched the rack since its last prefill.
 
 The finished-workout receipt places 👑 Share with Coach and the primary Done action in two full-width rows.
 A native top-trailing options menu offers Discard workout and its actual-set-count confirmation.
@@ -187,7 +195,9 @@ open events from `.menuActionTriggered`. The approved gold crown is the original
 `gym/coach-crown` image asset. Keep and review retry remain in the scrollable receipt content. Signed
 out, the phone's first receipt suggests Keep once (03.15): *Only on this phone · Keep it* under the
 tiles. The phone keeps that workout's id in its preferences, so the same receipt drawn again still
-suggests it and no later receipt does, signed out or in.
+suggests it and no later receipt does, signed out or in. A workout whose plan changed carries *PLAN CHANGES*
+under the tiles, with a *Save to ‹routine›* switch that Done commits through `SaveRoutinePlan` while the routine stands
+at its revision at the start.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, the
@@ -197,7 +207,8 @@ the movement picker's written-program door opens You signed out or paused, Coach
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
 the workout's movement order, selected movement and hidden status. Lifting above the plan only
-logs the set; a routine's targets change in the routine editor or through Coach's proposals. A set logged before the clock passes the latest set completes 1 ms
+logs the set; a routine's targets change in the routine editor, through Coach's proposals or through the receipt's
+Save to ‹routine›. A set logged before the clock passes the latest set completes 1 ms
 after it, so every surface draws sets in logged order. Before the engine changes the replica,
 `GymBinding` saves the rack's pending value, ends the Live Activity and snapshots each signed-out workout for recovery; a failed
 snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's
@@ -260,7 +271,7 @@ for pulldowns* with a change to *Full body B*, `-coach-offline` takes Coach and 
 `-coach-unavailable` answers as a deployment without Coach. The local Coach's boards are `-coach-board` cases too: `steps`
 holds a turn after its batch with the step line under it, `resume` drops that stream and answers the resume with a
 snapshot, `movement` makes a movement, `truncated`, `declined`, `failed`, `stopped` and `interrupted` end a turn each way,
-`no-connection`, `workout-open`, `log-arriving` and `too-long` refuse the send after the first answer on this phone,
+`no-connection`, `log-arriving` and `too-long` refuse the send after the first answer on this phone,
 `invalid-installation`, `device-bound`, `free-month` and `update-required` refuse it from the server, `signed-out-reads`
 seeds two workouts on the anonymous replica, `another-device` seeds a turn another phone is answering, and
 `account-changing` begins an account change under a draft.

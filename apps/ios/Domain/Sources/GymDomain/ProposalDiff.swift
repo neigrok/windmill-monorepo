@@ -3,7 +3,8 @@ import SyncCore
 
 // A proposal as its card reads it: each change a block of field lines, in the card's order — a new name, movements that
 // only moved, changed movements, removals, additions — and how many movements it leaves as they were. Moves are read
-// against the routine while the proposal waits; once it settled, the routine no longer holds the order it replaced.
+// against the routine, or the workout's plan, while the proposal waits; once it settled, they no longer hold the order it
+// replaced.
 public struct ProposalDiff: Equatable, Sendable {
   public enum Kind: String, Sendable { case renamed, moved, changed, removed, added }
   public enum State: String, Sendable { case changed, same, new, gone }
@@ -32,14 +33,22 @@ public struct ProposalDiff: Equatable, Sendable {
   public let unchanged: Int
 
   public init(_ proposal: Proposal, routine: Routine?, units: GymUnits = .kg, each: Set<ID<Exercise>> = []) {
-    guard proposal.intent != "remove" else { blocks = []; unchanged = 0; return }
+    guard proposal.intent != "remove" else { self.init([], base: nil, rename: nil, units: units, each: each); return }
     let pending = proposal.state == "pending"
-    let moves = pending ? routine.map { Self.moves(proposal, base: $0) } ?? [:] : [:]
-    var blocks: [Block] = []
     let rename = Field("Name", before: proposal.baseName ?? (pending ? routine?.name : nil), after: proposal.proposedName)
-    if rename.state == .changed { blocks.append(Block(kind: .renamed, exerciseId: nil, fields: [rename])) }
+    self.init(proposal.changes, base: pending ? routine?.entries : nil, rename: rename, units: units, each: each)
+  }
+
+  public init(_ proposal: WorkoutProposal, plan: SessionPlan?, units: GymUnits = .kg, each: Set<ID<Exercise>> = []) {
+    self.init(proposal.changes, base: proposal.state == "pending" ? plan?.entries : nil, rename: nil, units: units, each: each)
+  }
+
+  init(_ changes: [RoutineChange], base: [RoutineEntry]?, rename: Field?, units: GymUnits, each: Set<ID<Exercise>>) {
+    let moves = base.map { Self.moves(changes, base: $0) } ?? [:]
+    var blocks: [Block] = []
+    if let rename, rename.state == .changed { blocks.append(Block(kind: .renamed, exerciseId: nil, fields: [rename])) }
     var unchanged = 0
-    for (index, change) in proposal.changes.enumerated() {
+    for (index, change) in changes.enumerated() {
       let order = moves[index].map { [Field("Order", before: Self.ordinal($0.from), after: Self.ordinal($0.to))] } ?? []
       let fields = Self.fields(before: change.before, after: change.after, units: units, each: each.contains(change.exerciseId))
       switch change.kind {
@@ -99,15 +108,15 @@ public struct ProposalDiff: Equatable, Sendable {
     return "\(place)\(suffix)"
   }
 
-  // The movements a pending proposal moves, by change index, each with its place in the routine and in the proposal. A
-  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the routine's
+  // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal. A
+  // movement whose place is the same in both never moved; of the rest, those in the longest run that keeps the base's
   // order stand — of equal runs, the one whose places come first — and every other one moved.
-  static func moves(_ proposal: Proposal, base: Routine) -> [Int: (from: Int, to: Int)] {
-    var unmatched = Array(base.entries.indices)
+  static func moves(_ changes: [RoutineChange], base: [RoutineEntry]) -> [Int: (from: Int, to: Int)] {
+    var unmatched = Array(base.indices)
     var kept: [(change: Int, from: Int, to: Int)] = []
-    for (to, (index, change)) in proposal.changes.enumerated().filter({ $0.element.kind != "removed" }).enumerated() {
+    for (to, (index, change)) in changes.enumerated().filter({ $0.element.kind != "removed" }).enumerated() {
       guard ["kept", "retargeted"].contains(change.kind),
-            let at = unmatched.firstIndex(where: { base.entries[$0].exerciseId == change.exerciseId }) else { continue }
+            let at = unmatched.firstIndex(where: { base[$0].exerciseId == change.exerciseId }) else { continue }
       let from = unmatched.remove(at: at)
       if from != to { kept.append((index, from, to)) }
     }

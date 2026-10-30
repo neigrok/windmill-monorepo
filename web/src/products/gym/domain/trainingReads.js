@@ -142,6 +142,25 @@ export class Prefill {
   }
 }
 
+// The rest a movement asks between its sets: its plan entry's, else the lifter's rest preference, else none. The rest is
+// reached the moment the time since the last set comes to it.
+export class RestTarget {
+  /** @param {number} seconds */
+  constructor(seconds) {
+    this.seconds = seconds;
+    Object.freeze(this);
+  }
+
+  /** @param {number} sinceMs */
+  isReached(sinceMs) { return sinceMs >= this.seconds * 1000; }
+
+  /** @param {RoutineEntry | null} entry @param {{ seconds: number | null }} rest */
+  static of(entry, rest) {
+    const seconds = entry?.restSeconds ?? rest.seconds;
+    return seconds === null ? null : new RestTarget(seconds);
+  }
+}
+
 export class PerformedFact {
   /** @param {Pick<TrainingSetValue, 'id' | 'weightKg' | 'reps' | 'rpe'>} set */
   constructor(set) {

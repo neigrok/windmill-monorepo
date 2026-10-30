@@ -72,10 +72,10 @@ training writes. The in-memory fake (`test/products/gym/Fakes.h`) keeps one shar
 refuses every other write: the write rules are the engine's, tested on the real door. `routes.cpp` names every path in one column;
 `TrainingApi.h` holds the status ladder.
 
-**The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
+**The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the nine
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 9, minimum 9), and
+`windmill_gym` embeds `gym.registry.json` (version 12, minimum 11), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -188,8 +188,8 @@ unsupported smaller record claims, and clients use their existing unavailable me
   The registry bounds the document to 50 lines of at most 20 sets; the `Routine` constructor checks
   the same bounds and dense 1-based positions on what a server door builds.
 
-**The plan snapshot.** `gym_sessions.plan` freezes when the session is created, each line carrying
-its scheme under `sets` and omitting the key on an open line:
+**The workout's plan.** `gym_sessions.plan` holds what the workout asks for, each line carrying its
+scheme under `sets` and omitting the key on an open line:
 
 ```json
 { "routine": "Lower A",
@@ -200,12 +200,18 @@ its scheme under `sets` and omitting the key on an open line:
                { "exerciseId": "face-pull" } ] }
 ```
 
-**The engine composes it, always**: `gym.start` and `gym.importSession` copy the named routine's
-`name` and `entries` registers into `plan`, and its id into `routineId` and `historyRoutineId`, in the
-admission that creates the session; no client sends a plan. A routine the account cannot read leaves the session
-with no routine and no plan, so the server doors refuse it before admitting: `start_session` with
-its no-routine sentence, the import with `404 no such routine`. Mid-session changes are
-session-scoped; writing one back is an ordinary `entries` write through `/v1/sync`. In C++ the plan
+**A start takes it from the routine**: `gym.start` and `gym.importSession` copy the named routine's
+`name` and `entries` registers into `plan`, its id into `routineId` and `historyRoutineId`, and its
+`revision` into `routineRevision`, in the admission that creates the session. A routine the account
+cannot read leaves the session with no routine and no plan, so the server doors refuse it before
+admitting: `start_session` with its no-routine sentence, the import with `404 no such routine`.
+**The open workout's plan is then the lifter's**: a phone writes `plan` whole through `/v1/sync`,
+guarded on the stamp it read, and `gym.applyWorkoutProposal` writes the plan an agent proposed.
+GymRules holds both to engine A.2's plan rules — a movement with a logged set keeps its entries
+(`plan-logged`), a finished or stale workout takes no plan (`session-finished`), and the plan's
+`routine` never changes — and on each net change moves the server's `planRevision` and supersedes
+the workout's pending workout proposals. A plan change reaches the routine only as an ordinary
+`entries` write through `/v1/sync`. In C++ the plan
 is a typed `PlanSnapshot`, read through `planFrom` in `adapters/json/GymJson`, which clamps
 rather than throws: `routine` is a name only when it is a string, a plan that is not an object is no
 plan at all, a `sets` that is not an array drops its line, and a set that cannot be read opens its
@@ -335,8 +341,8 @@ routine is deleted.
   identical to what the routine already says is `noChange`. An applied REMOVAL kills its own proposal
   with the routine, so reading it back answers `404`; a second apply answers `ok` from its receipt.
 - **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
-  proposal reorders: `countedChanges` on the door, `proposalChangeCount` in GymRules, which writes it
-  as `changeCount`. It is what `noChange` is decided off. A removal leaves `proposedName` blank, as both
+  proposal reorders: `countedChanges` on the door, `changeCountOf` (and one for a rename) in GymRules,
+  which writes it as `changeCount`. It is what `noChange` is decided off. A removal leaves `proposedName` blank, as both
   phones mint one (engine A.2 admits the blank there), so the rule counts it as the rename it is.
 - **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, null on an open
   line — beside its rest, with presence flags for the side and each of its fields. The REST read goes
@@ -596,7 +602,8 @@ for every writer, and the door maps the engine's refusal code onto its outcome. 
 back through the repositories after the commit. Every call is one `gym.server_call` completion on
 door `server-origin`: the engine result's outcome (`ok` also when the builder answered without
 admitting, the engine's or gym's refusal code otherwise), `invalid` for malformed input, or
-`gym-engine-busy`.
+`gym-engine-busy`. A builder that refuses before admitting may name its refusal instead:
+`proposeWorkout` completes `unknown-record`, `no-plan`, `id-reused`, `no-change` or `id-taken`.
 
 - **Resolve the replay before any refusal.** A set already stored under its id in this session
   answers with itself, whatever state the session is in now; a start whose id or receipt names a
@@ -954,10 +961,11 @@ between a door's read and its admission reaches the engine's own refusal.
 | `discard` · `discard_session` | the session absent or another account's → `notFound`; unfinished, stale or not → `open`; else the session's death, which kills its sets | `unknown-record`, `record-dead` → `notFound`; `session-open` → `open` |
 | `createRoutine` · `create_routine` | the caller's standing routine under the id → it; the id held or spent anywhere → `idTaken`; a line naming a movement outside the caller's catalog → `unknownExercise`; else a `routine` create with its name, position, entries and, from an agent, `createdDoor` | `id-taken`, `id-spent` → `idTaken`; `unknown-exercise` → `unknownExercise` |
 | `propose`, `proposeRemoval` · `propose_routine_change`, `propose_routine_removal` | the routine absent or another account's → `unknownRoutine`; a change that moves nothing → `noChange`; a proposal under the id, another account's → `idTaken`, the caller's → the replay of the same document or `idReused`; the id spent elsewhere → `idTaken`; a changed line outside the caller's catalog → `unknownExercise`; else a `proposal` create carrying the diff and its provenance | `id-taken`, `id-spent` → `idTaken`; `unknown-record` → `unknownRoutine`; `unknown-exercise` → `unknownExercise` |
+| `proposeWorkout` · `propose_workout_change` | the session absent, dead or another account's → `unknownSession`; a session with no plan → `noPlan`; a workout proposal under the id → its replay when it asks for the same plan from the same workout, door and summary, else `idReused`; a plan that moves nothing → `noChange`; the id held or spent elsewhere → `idTaken`; else a `workoutProposal` create carrying the diff against the plan at its `planRevision`, and its provenance | `id-taken`, `id-spent` → `idTaken`; `unknown-record` → `unknownSession`; `session-finished` → `finished`; `unknown-exercise` → `unknownExercise`; `plan-logged` → `planLogged` with the engine's `detail.exerciseId`; `invalid` → `invalidPlan` |
 | `createExercise` · `create_exercise` | the caller's custom movement under the id → it; else an `exercise` create, `stepKg` at the column's precision | `id-taken`, `id-spent` → `idTaken` |
 | `saveInsight` · `save_note` | its `gym_note_saves` receipt, the caller's with this text → the saved note, else `idTaken`; a note under the id that is another account's or holds other text → `idTaken`; a standing note with this title and body → that note, the id spent, at ten too; the id held or spent → `idTaken`; ten notes → `full`; else a `note` create after the last `ord`, its receipt written before the commit | `cap` → `full`; `id-taken`, `id-spent` → `idTaken` |
 | `closeStale` · every settling read, `start`, `importSession` | before the call: the open session and its sets; none open, or not `isStale` → nothing admitted; else `gym.closeStale` | none mapped |
-| `unlinkThread` · a Coach conversation's delete | the proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
+| `unlinkThread` · a Coach conversation's delete | the routine and workout proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
 | `interrupt` · no caller yet; gym Coach §4.5 | the `message` under the id: absent, dead or its `state` not `running` (unset reads as `running`) → nothing admitted; else `state = interrupted` | none mapped |
 
 An engine refusal a door does not map is `GymUnavailable` (`gym-engine-unavailable`); an internal
@@ -988,7 +996,7 @@ the conversation.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-four tools; `adapters/mcp/GymTools` dispatches them.
+`adapters/mcp/GymToolCatalog` declares twenty-five tools; `adapters/mcp/GymTools` dispatches them.
 The table uses product-local names. External MCP publishes only `gym_<local>` names and accepts
 unambiguous raw compatibility aliases; in-process Coach uses the local catalog. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.
@@ -1000,6 +1008,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
 | `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
+| | `propose_workout_change` — the open workout's plan; **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
 | `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt | `save_note` — append a useful user-provided insight | |
@@ -1008,8 +1017,9 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | | `update_exercise` — rename or change equipment while retaining the movement ID | |
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
-external MCP's `create_routine` writes it; Coach holds it for explicit Save. A day that already stands is `existing` and the two `propose_` tools mint a
-diff and write nothing. **The receipt is never shaped like a write** — it carries the proposal, its
+external MCP's `create_routine` writes it; Coach holds it for explicit Save. A day that already stands is `existing` and the two routine `propose_` tools mint a
+diff and write nothing; `propose_workout_change` mints one against the open workout's plan, with no
+`reviewUrl`, since its card is on the phone in the lifter's hand. **The receipt is never shaped like a write** — it carries the proposal, its
 `state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent cannot tell its human the
 program changed. **Retired names answer with their replacements** (`GymTools::retiredTools()`,
 consulted only after a name misses the live catalog, by `CompositeToolHost` over MCP and `AskTools`

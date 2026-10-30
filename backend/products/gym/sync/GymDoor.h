@@ -33,9 +33,10 @@ public:
   static void requireOk(const Json::Value&);
 
   // One server-origin call on the door's worker: the builder runs under the scope lock and answers the
-  // intent to admit, or nothing to admit nothing; the answer is the engine's result.
+  // intent to admit, or nothing to admit nothing; the answer is the engine's result. A builder that refuses before
+  // admitting names the refusal in `refused`, and the call's write line carries that code.
   using Builder = std::function<std::optional<Json::Value>(sync::SyncTxn&)>;
-  Json::Value execute(const UserId&, const Builder&);
+  Json::Value execute(const UserId&, const Builder&, const std::string* refused = nullptr);
   Json::Value command(const UserId&, const std::string& name, const Json::Value& args);
 
   void closeStale(const UserId&) override;
@@ -54,6 +55,7 @@ public:
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override;
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                      const std::string&, const ProposalSource&) override;
+  WorkoutProposalOutcome proposeWorkout(const UserId&, const WorkoutProposalWrite&) override;
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override;
   std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override;
   NoteWriteOutcome saveInsight(const Note&) override;
@@ -66,6 +68,8 @@ private:
                                    const std::vector<RoutineEntry>& lines, const ProposalOf&);
   // Whether the id is held or spent anywhere, by this account or another.
   bool recordTaken(sync::SyncTxn&, const UserId&, const std::string& type, const std::string& id);
+  // The account's record of that type and id as admission reads it under the scope lock, or nothing.
+  std::optional<sync::Row> locked(sync::SyncTxn&, const UserId&, const std::string& type, const std::string& id);
 
   struct Impl;
   std::unique_ptr<Impl> impl_;

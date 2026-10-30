@@ -14,14 +14,20 @@ extension XCUIElement {
 }
 
 extension XCUIApplication {
-  // Turns the set wheels' load to a number, in the unit the wheel reads; the rack's wheel sheet commits it with its checkmark,
-  // Fix set holds it in its draft.
-  func turnLoadWheel(to load: String) {
-    let wheel = pickerWheels.element(boundBy: 0)
-    XCTAssertTrue(wheel.waitForExistence(timeout: 5))
-    let unit = (wheel.value as? String)?.split(separator: " ", maxSplits: 1).last.map(String.init) ?? "kg"
-    wheel.adjust(toPickerWheelValue: "\(load) \(unit)")
-    if buttons["set-wheel-done"].exists { buttons["set-wheel-done"].tap() }
+  // The workout's movement header: a menu VoiceOver hears as Movement options, its value the movement it stands on.
+  func movementHeader(_ movement: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ AND value == %@", "workout-movement-menu", movement)).firstMatch
+  }
+
+  // Types a load on the decimal pad into a load field, the rack's or Fix set's, focusing it first if it is not; the field's
+  // text is cleared before the keys, and the rack's ✓ lands the load, while Fix set holds it in its draft.
+  func typeLoad(_ load: String, into identifier: String = "workout-load") {
+    let field = textFields[identifier]
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    if !(field.value(forKey: "hasKeyboardFocus") as? Bool ?? false) { field.tap() }
+    let typed = field.value as? String ?? ""
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(1, typed.count)) + load)
+    if buttons["workout-load-done"].exists { buttons["workout-load-done"].tap() }
   }
 
   func cancelConfirmation() {

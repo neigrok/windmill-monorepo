@@ -166,6 +166,20 @@ public struct Prefill: Equatable, Sendable {
   }
 }
 
+// The rest a movement asks between its sets: its plan entry's, else the lifter's rest preference, else none. The rest is
+// reached the moment the time since the last set comes to it.
+public struct RestTarget: Equatable, Sendable {
+  public let seconds: Int
+
+  public init(seconds: Int) { self.seconds = seconds }
+
+  public static func of(_ entry: PlannedExercise?, rest: RestSettings) -> RestTarget? {
+    (entry?.restSeconds ?? rest.seconds).map(RestTarget.init(seconds:))
+  }
+
+  public func isReached(sinceMs: Int64) -> Bool { sinceMs >= Int64(seconds) * 1_000 }
+}
+
 public struct PerformedFact: Equatable, Sendable {
   public let setId: ID<TrainingSet>
   public let weightKg: Double

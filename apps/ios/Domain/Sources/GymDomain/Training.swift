@@ -3,7 +3,9 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct Session: Entity, Removable, Equatable {
+// A workout. The server writes every field but `plan`, which the lifter and applied workout proposals revise while it is
+// open; `fields` is the record as the phone holds it, without the server's two revision counters.
+public struct Session: Writable, Removable, Equatable {
   public static let type = Gym.Types.session
   public static let scope = Gym.scope
   public static let heldRemoval = true
@@ -16,13 +18,19 @@ public struct Session: Entity, Removable, Equatable {
   public var plan: SessionPlan?
   public var displayName: String?
   public let unreadablePlan: JSON?
+  // Unset until the plan's first change, which makes it 2.
+  public let planRevision: Int?
+  // The routine's revision the start took the plan from.
+  public let routineRevision: Int?
 
   public init(id: ID<Session>, startedAt: Instant, finishedAt: Instant? = nil, closedBy: String? = nil,
               routineId: ID<Routine>? = nil, historyRoutineId: ID<Routine>? = nil,
-              plan: SessionPlan? = nil, displayName: String? = nil, unreadablePlan: JSON? = nil) {
+              plan: SessionPlan? = nil, displayName: String? = nil, unreadablePlan: JSON? = nil,
+              planRevision: Int? = nil, routineRevision: Int? = nil) {
     self.id = id; self.startedAt = startedAt; self.finishedAt = finishedAt; self.closedBy = closedBy
     self.routineId = routineId; self.historyRoutineId = historyRoutineId ?? routineId
     self.plan = plan; self.displayName = displayName; self.unreadablePlan = unreadablePlan
+    self.planRevision = planRevision; self.routineRevision = routineRevision
   }
 
   public init(_ r: Fields) throws(DecodeError) {
@@ -32,6 +40,7 @@ public struct Session: Entity, Removable, Equatable {
     do { plan = try SessionPlan.decode(r.json("plan")); unreadablePlan = nil }
     catch { plan = nil; unreadablePlan = r.json("plan") }
     displayName = try r.optionalString("displayName")
+    planRevision = try r.optionalInt("planRevision"); routineRevision = try r.optionalInt("routineRevision")
   }
 
   public var isOpen: Bool { finishedAt == nil }
@@ -42,6 +51,10 @@ public struct Session: Entity, Removable, Equatable {
      "routineId": routineId?.json ?? .null, "historyRoutineId": historyRoutineId?.json ?? .null,
      "plan": unreadablePlan ?? plan?.json ?? .null, "displayName": .of(displayName)]
   }
+
+  public static let checks: [Check<Session>] = [
+    Check("plan") { s, _ in _ = try WorkoutPlanRules.plan(of: s) },
+  ]
 }
 
 public struct VolumePart: Equatable, Sendable {
