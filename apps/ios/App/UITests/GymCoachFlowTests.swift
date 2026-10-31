@@ -170,10 +170,10 @@ import XCTest
       XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForNonExistence(timeout: 5))
     }
     func page(to movement: String) {
-      for _ in 0..<4 where !app.buttons[movement].exists {
+      for _ in 0..<4 where !app.movementHeader(movement).exists {
         app.descendants(matching: .any)["workout-current-set"].swipeLeft(); RunLoop.current.run(until: Date().addingTimeInterval(0.6))
       }
-      XCTAssertTrue(app.buttons[movement].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.movementHeader(movement).waitForExistence(timeout: 5))
     }
     let lighter = askOverTheWorkout("Shoulder feels off on bench. What should I change today?")
     XCTAssertTrue(lighter.label.hasPrefix("Changes to this workout"), lighter.label)

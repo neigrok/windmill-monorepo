@@ -350,7 +350,7 @@ import XCTest
     app.buttons["workout-assembly"].tap()
     let deadlift = app.buttons["workout-movement-romanian-deadlift"]
     XCTAssertTrue(deadlift.waitForExistence(timeout: 5)); deadlift.tap()
-    XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Romanian Deadlift").waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.textFields["workout-load"].exists)
     let deadliftLoad = app.buttons["workout-weight"].label
@@ -362,9 +362,9 @@ import XCTest
     XCTAssertTrue(dots.exists)
     dots.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
     XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 77 kg total"))
-    XCTAssertTrue(app.buttons["Romanian Deadlift"].exists && app.buttons["workout-log"].exists)
+    XCTAssertTrue(app.movementHeader("Romanian Deadlift").exists && app.buttons["workout-log"].exists)
     app.descendants(matching: .any)["workout-current-set"].swipeRight()
-    XCTAssertTrue(app.buttons["Back Squat"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.movementHeader("Back Squat").waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-weight"].waitForLabel("Weight, 123 kg total"))
     XCTAssertTrue(app.buttons["workout-log"].exists)
   }
