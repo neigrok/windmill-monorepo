@@ -24,6 +24,8 @@ public:
     TreeData data;  // the fork's document (copied kinds verbatim), id and title rewritten
   };
   // requestedId and requestedTitle may be empty: the id is then server-minted, the title inherited.
+  // noSource is only an absent or unreadable source; an infrastructure failure throws, so the door
+  // reports it.
   Result fork(const TreeId& source, const std::string& requestedId, const std::string& requestedTitle,
               const UserId& owner);
 
