@@ -39,7 +39,7 @@ are removed. Focused tests pass; native visual and installed event acceptance re
 - The greeting belongs to the first-open/setup states on this page. A deliberate fresh Coach entry in an established Gym uses the approved empty-composer state in 28/37; it does not replay a previous conversation or insert the setup greeting. In the setup chat, the greeting stays until the first message is accepted, then it goes for good in that thread.
   - No goal flow, no *Just log*, no allowance indicator.
 - The account seat sits in the bar: *•* signed out, the email initial signed in (03).
-- An empty Gym opens on Coach.
+- An empty Gym opens on Coach when Coach can answer: signed in, or signed out with anonymous access available. Signed out with that access unavailable, it opens on Routines, since login is never forced.
   - "Empty" means no routines and no workouts, read once when the room opens.
   - Otherwise the room opens on Routines as today. A saved tab still wins after recreation.
 - `Ask.openers` and `Ask.subtitle` are absent. Task 36 owns the `CoachAccessStance` fallback when signed-out Coach is off.

@@ -342,7 +342,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     val cap = AskCap.entries.firstOrNull { it.name == selectedChat?.cap }
     val anonymousCoachAccess = store.coach.anonymousAccess
     LaunchedEffect(account.identityRevision, store.coach.accountKey, tab, away.lastOrNull()) {
-        if (account.isSignedIn || tab == Tab.Coach || away.lastOrNull() is Away.Coach || away.lastOrNull() is Away.Thread)
+        if (account.isSignedIn || !initialTabChosen || tab == Tab.Coach || away.lastOrNull() is Away.Coach || away.lastOrNull() is Away.Thread)
             store.coach.refreshAnonymousAccess()
     }
     // A half-typed routine exists nowhere but in memory, so the draft is saved and the builder is
@@ -542,7 +542,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     }
 
-    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, tab, away, building, selectedRoutineId) {
+    LaunchedEffect(store.initialGymEmpty, account.resolved, store.coach.accountKey, tab, away, building, selectedRoutineId, anonymousCoachAccess) {
         if (!account.resolved) return@LaunchedEffect
         val empty = store.initialGymEmpty
         if (empty != null && store.coach.selectedChatId == null && (tab == Tab.Coach || away.lastOrNull() is Away.Coach)) {
@@ -556,8 +556,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             return@LaunchedEffect
         }
         if (empty == null) return@LaunchedEffect
+        // Login is never forced: a signed-out empty Gym opens on Coach only while this phone can ask it.
+        if (empty && store.coach.anonymous && anonymousCoachAccess == AnonymousCoachAccess.Checking) return@LaunchedEffect
         initialTabChosen = true
-        if (!empty) return@LaunchedEffect
+        if (!empty || store.coach.anonymous && anonymousCoachAccess != AnonymousCoachAccess.Available) return@LaunchedEffect
         try {
             if (store.coach.selectedChatId == null) store.coach.freshChat(setup = true)
             tab = Tab.Coach

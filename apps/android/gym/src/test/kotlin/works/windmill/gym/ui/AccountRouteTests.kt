@@ -160,11 +160,11 @@ class AccountRouteTests {
         val store = room(tmp.newFolder(), scope, signedIn = false).store
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
-        compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
+        compose.onNode(hasText("Routines") and hasClickAction()).assertIsSelected()
         compose.onNodeWithContentDescription("Your account").performClick()
         compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("You").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Back to Coach").performClick()
+        compose.onNodeWithContentDescription("Back to Routines").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
         assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
         compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
@@ -236,7 +236,7 @@ class AccountRouteTests {
             SideEffect { auth = current }
             AccountRoot(current, store) { currentShell, _ -> shell = currentShell }
         }
-        compose.onNodeWithContentDescription("Your account").performClick()
+        openAccountWhenItIsReachable()
         hold.set(true)
         try {
             restoration.emulateSavedInstanceStateRestore()
@@ -247,11 +247,17 @@ class AccountRouteTests {
             compose.waitUntil(5_000) { auth.status is AuthStatus.SignedIn }
             compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
             compose.onNodeWithContentDescription("Back to Routines").performClick()
-            compose.onNodeWithContentDescription("Your account").performClick()
+            openAccountWhenItIsReachable()
             assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
             compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
             compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         } finally { release.countDown() }
+    }
+
+    // The room's semantics return a frame after a pushed screen pops; the account door is pressed once it is reachable.
+    private fun openAccountWhenItIsReachable() {
+        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription("Your account").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Your account").performClick()
     }
 
     @Test

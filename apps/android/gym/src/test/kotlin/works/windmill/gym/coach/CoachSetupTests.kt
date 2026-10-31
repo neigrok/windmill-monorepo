@@ -10,6 +10,21 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import java.io.File
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import javax.crypto.KeyGenerator
+import works.windmill.gym.coach.onboarding.CoachOnboardingApi
+import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
+import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.platform.ai.AiAllowance
+import works.windmill.platform.ai.AiInstallation
+import works.windmill.platform.ai.AiInstallationApi
+import works.windmill.platform.ai.AiInstallationResponse
+import works.windmill.platform.auth.KeptValues
+import works.windmill.platform.auth.SecretVault
+import works.windmill.platform.net.Refusal
+import works.windmill.platform.net.WindmillApiException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -119,6 +134,50 @@ class CoachSetupTests {
             }
             compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
             compose.onNodeWithText("Owned routine").assertIsDisplayed()
+            compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertDoesNotExist()
+            compose.runOnIdle { scope.cancel() }
+        }
+    }
+
+    private fun signedOutRoom(scope: CoroutineScope, available: Boolean): EngineRoomFixture {
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val kept = mutableMapOf<String, String>()
+        val allowance = AiAllowance("ok", "USD", "lifetime", "anonymous", true, null, "0", "0", "0")
+        val installation = AiInstallation(object : KeptValues {
+            override fun read(key: String) = kept[key]
+            override fun write(values: Map<String, String?>) = values.forEach { (key, value) -> if (value == null) kept.remove(key) else kept[key] = value }
+        }, SecretVault { key }, object : AiInstallationApi {
+            override suspend fun issue(): AiInstallationResponse =
+                if (available) AiInstallationResponse(false, allowance, "A".repeat(43))
+                else throw WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable"))
+            override suspend fun current(credential: String) = AiInstallationResponse(false, allowance)
+            override suspend fun bind(credential: String, token: String) = AiInstallationResponse(true, allowance)
+        })
+        val local = LocalCoach(File(temporary.root, "archive"))
+        val onboarding = CoachOnboardingStore(local, installation, object : CoachOnboardingApi {
+            override suspend fun start(body: String, credential: String) = error("No question is sent")
+            override suspend fun get(requestId: String, credential: String) = error("No question is sent")
+        }, { CoachOnboardingSeat(local.anonymousOwner(), "replica") }, scope)
+        return EngineRoomFixture(temporary.newFolder(), scope, rest = FakeGymRest(), localCoach = local, coachOnboarding = onboarding)
+            .also { runBlocking { it.select(null) } }
+    }
+
+    @Test fun aSignedOutEmptyGymOpensCoachWhileThisPhoneCanAskIt() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        signedOutRoom(scope, available = true).use { room ->
+            compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
+            compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertIsDisplayed()
+            compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
+            compose.runOnIdle { scope.cancel() }
+        }
+    }
+
+    @Test fun aSignedOutEmptyGymOpensRoutinesWhileSignedOutCoachIsUnavailable() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        signedOutRoom(scope, available = false).use { room ->
+            compose.setContent { GymMaterial { GymRoom(room.account(), room.store) } }
+            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.onNode(hasText("Routines") and hasClickAction()).assertIsSelected()
             compose.onNodeWithText("Hi, I’m Coach. I can help you with:").assertDoesNotExist()
             compose.runOnIdle { scope.cancel() }
         }

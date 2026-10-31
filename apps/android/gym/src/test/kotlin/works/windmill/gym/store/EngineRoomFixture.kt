@@ -38,6 +38,7 @@ internal class EngineRoomFixture(
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val writeAuthority: () -> Boolean = { true },
     private val localCoach: LocalCoach? = null,
+    private val coachOnboarding: works.windmill.gym.coach.onboarding.CoachOnboardingStore? = null,
     private val elapsedNanos: () -> Long = System::nanoTime,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
@@ -95,7 +96,7 @@ internal class EngineRoomFixture(
             mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
             undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
             workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-            readDispatcher = reads)
+            readDispatcher = reads, coachOnboarding = coachOnboarding)
     }
     suspend fun seedFeedback(document: GymPreferences) {
         val fields = mapOf("confirmHaptic" to Json.of(document.confirmHaptic), "confirmSound" to Json.of(document.confirmSound))

@@ -60,10 +60,10 @@ class WorkoutTileRoutingTests {
             }
         }
         try {
-            compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
+            compose.onNode(hasText("Routines") and hasClickAction()).assertIsSelected()
             compose.runOnIdle {
                 assertEquals(true, room.store.initialGymEmpty)
-                assertEquals(true, room.store.coach.selectedChatId?.let { room.store.coach.chat(it)?.setup })
+                assertNull(room.store.coach.selectedChatId)
             }
             for (tab in listOf("The log", "Coach")) {
                 compose.onNode(hasText(tab) and hasClickAction()).performClick()
@@ -86,7 +86,7 @@ class WorkoutTileRoutingTests {
                 assertNull(room.store.session)
                 assertTrue(room.store.routines.isEmpty())
                 assertEquals(emptyList<Pair<String, Map<String, String>>>(), events.filter { it.first == "gym_session_started" })
-                assertEquals(listOf("routines", "coach", "log", "routines", "coach", "routines", "notes", "routines", "routine_editor", "routine_editor"),
+                assertEquals(listOf("routines", "log", "routines", "coach", "routines", "notes", "routines", "routine_editor", "routine_editor"),
                     events.filter { it.first == "gym_screen_viewed" }.map { it.second["screen"] })
             }
         } finally {
