@@ -102,6 +102,17 @@ class EventQueue(
         Unit
     }
 
+    // Appended, not merged by time: a batch already in flight acknowledges the head of its shelf.
+    fun retire(userId: String, carrying: Set<String>) = synchronized(lock) {
+        val carried = store.shelves.filter { it.userId == userId }.flatMap { it.events }.filter { it.name in carrying }
+        val anonymous = store.shelves.firstOrNull { it.userId == null } ?: EventShelf(UUID.randomUUID().toString(), null, emptyList())
+        store = EventStore(store.shelves.filter { it !== anonymous }.map { if (it.userId == userId) it.copy(events = emptyList()) else it } +
+            anonymous.copy(events = anonymous.events + carried))
+        persist()
+        wake.trySend(Unit)
+        Unit
+    }
+
     fun add(name: String, properties: Map<String, String>) = synchronized(lock) {
         if (!TelemetryPolicy.eventName(name)) {
             failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())

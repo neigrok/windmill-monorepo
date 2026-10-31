@@ -23,12 +23,36 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EventQueueTest {
+    @Test
+    fun aRetiredAccountSendsItsCarriedEventsWithoutCredentialsAndDropsTheRest() = runTest {
+        var disk: String? = null
+        val sent = mutableListOf<Pair<List<EventIn>, String?>>()
+        val queue = EventQueue("account-a", "revoked", { disk }, { disk = it; true }, { batch, bearer ->
+            if (bearer != null) throw WindmillApiException.Refused(401, Refusal())
+            sent += batch.events to bearer
+            batch.events.size
+        }, { _, _, _ -> }, backgroundScope, now = { 7L })
+        queue.add("account_delete", mapOf("state" to "shown"))
+        queue.add("gym_screen_viewed", mapOf("screen" to "coach"))
+        queue.add("account_delete", mapOf("outcome" to "pending_confirmation"))
+        runCurrent()
+        queue.retire("account-a", setOf("account_delete"))
+        advanceTimeBy(30_001)
+        runCurrent()
+        assertEquals(listOf(listOf("account_delete" to mapOf("state" to JsonPrimitive("shown")),
+            "account_delete" to mapOf("outcome" to JsonPrimitive("pending_confirmation"))) to null),
+            sent.map { (events, bearer) -> events.map { it.name to it.props } to bearer })
+        assertFalse(disk!!.contains("gym_screen_viewed"))
+        assertFalse(disk!!.contains("account_delete"))
+    }
+
     @Test
     fun onboardingEventsRetainOnlyTheirFiniteSchemaAndReachTheQueueSender() = runTest {
         var disk: String? = null

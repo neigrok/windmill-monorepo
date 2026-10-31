@@ -38,9 +38,11 @@ class AccountDeletionTests {
     private inner class Fixture(val scope: CoroutineScope, val values: Values = Values()) {
         val events = mutableListOf<Pair<String, Map<String, String>>>()
         val failures = mutableListOf<Pair<String, String?>>()
+        val retired = mutableListOf<Triple<String, Set<String>, Int>>()
         val telemetry = object : Telemetry {
             override fun event(name: String, properties: Map<String, String>) { events += name to properties }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to error.message }
+            override fun retireAccount(userId: String, carrying: Set<String>) { retired += Triple(userId, carrying, cleanupCalls) }
         }
         val storage = AccountDeletionStorage(values, vault, telemetry)
         var identity: DeletionIdentity? = DeletionIdentity(user, "secret", "replica-a", 0)
@@ -141,7 +143,7 @@ class AccountDeletionTests {
         assertTrue(fixture.storage.blocked)
         store.back(); store.open(); store.confirm(user.email)
         fixture.resultFailure = WindmillApiException.Offline
-        store.recover(); assertEquals(AccountDeletionPage.Offline, store.page)
+        store.recover(); assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
         fixture.resultFailure = null
         store.recover()
         assertEquals(listOf(request to "secret"), fixture.closes)
@@ -218,6 +220,39 @@ class AccountDeletionTests {
         assertEquals(1, fixture.finishCalls)
         assertEquals(2, fixture.cleanupCalls)
         assertTrue(fixture.results.isEmpty())
+    }
+
+    @Test fun aReceiptReadTheServerAnswersTemporarilyUnavailableShowsD2() = runTest {
+        val fixture = Fixture(this)
+        fixture.closeFailure = WindmillApiException.Offline
+        val store = fixture.store(); store.open(); store.confirm(user.email)
+        fixture.clock += AccountDeletionStore.admissionWindowMs
+        fixture.resultFailure = WindmillApiException.Refused(503, Refusal(code = "temporarily_unavailable"))
+        store.recover()
+        assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
+        assertTrue(fixture.storage.blocked)
+        assertFalse(store.closureConfirmed)
+    }
+
+    @Test fun oneReadTimeoutFilesNoSecondReportBesideTheTransportsOwn() = runTest {
+        val fixture = Fixture(this)
+        fixture.closeFailure = WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout"))
+        val store = fixture.store(); store.open(); store.confirm(user.email)
+        assertEquals(AccountDeletionPage.Unknown, store.page)
+        assertEquals(emptyList<Pair<String, String?>>(), fixture.failures)
+        assertEquals(listOf("account_delete" to mapOf("state" to "shown"),
+            "account_delete" to mapOf("action" to "confirm", "outcome" to "started"),
+            "account_delete" to mapOf("outcome" to "pending_confirmation")), fixture.events)
+    }
+
+    @Test fun aDeletedAccountsQueuedDeletionEventsLeaveItsShelfBeforeEveryCleanupAttempt() = runTest {
+        val fixture = Fixture(this); fixture.cleanupFailure = true
+        val store = fixture.store(); store.open(); store.confirm(user.email)
+        assertTrue(store.closureConfirmed)
+        fixture.cleanupFailure = false
+        store.recover()
+        assertEquals(AccountDeletionPage.Deleted, store.page)
+        assertEquals(listOf(Triple(user.id, setOf("account_delete"), 0), Triple(user.id, setOf("account_delete"), 1)), fixture.retired)
     }
 
     @Test fun aNewConfirmedDeletionAfterGraceRestorationCannotReuseThePriorClosedProjection() = runTest {
@@ -373,7 +408,7 @@ class AccountDeletionTests {
         val fixture = Fixture(this)
         fixture.closeFailure = WindmillApiException.Offline
         val store = fixture.store(); store.open(); store.confirm(user.email)
-        assertEquals(AccountDeletionPage.Offline, store.page)
+        assertEquals(AccountDeletionPage.TemporarilyUnavailable, store.page)
         assertTrue(fixture.storage.blocked)
         fixture.closeFailure = null
         fixture.clock += AccountDeletionStore.admissionWindowMs - 1

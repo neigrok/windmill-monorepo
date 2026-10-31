@@ -71,7 +71,7 @@ extraction rules; a Keystore failure has no plaintext fallback.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
 identity. Sign-out stores the exact account, Keep/Discard choice and engine completion phase in a
 sealed intent. Startup resolves that intent before ordinary auth restore, credential bootstrap or
-sync workers; a finished engine transition retries only the original account’s credential cleanup.
+sync workers, and finishes an unreadable choice as Keep; a finished engine transition retries only the original account’s credential cleanup.
 Verified sign-in proposals have a separate sealed credential. The current account changes only
 after the engine accepts the decision; cancelling a proposal keeps the previous account and work.
 

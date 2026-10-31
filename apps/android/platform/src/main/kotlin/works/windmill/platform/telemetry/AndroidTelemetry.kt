@@ -63,6 +63,10 @@ class AndroidTelemetry(
         runCatching { events.identity(userId, credential()) }.onFailure { capture("telemetry_identity", it) }
     }
 
+    override fun retireAccount(userId: String, carrying: Set<String>) {
+        runCatching { events.retire(userId, carrying) }.onFailure { capture("telemetry_identity", it) }
+    }
+
     override fun event(name: String, properties: Map<String, String>) {
         runCatching { events.add(name, properties + metadata) }.onFailure { capture("telemetry_enqueue", it) }
     }

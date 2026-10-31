@@ -92,6 +92,16 @@ class DeleteAccountTests {
         compose.onNodeWithText("Delete account").assertDoesNotExist()
     }
 
+    @Test fun aConfirmedClosureWithCleanupOwedReadsFinishDeletionInYou() {
+        storage.replace(null, PendingAccountDeletion(AccountDeletionRequest(user.id,
+            "50000000-0000-0000-0000-000000000001", "ab".repeat(32), 1_792_940_000_123), user, "secret", "replica-a", receipt))
+        val auth = AuthStore("http://localhost/".toHttpUrl(), MemorySessions("secret", user), externalTransitionPending = { storage.blocked })
+        runBlocking { auth.restore() }
+        compose.setContent { WindmillMaterial { YouSheet(auth, {}, deletion = store) } }
+        compose.onNodeWithText("Finish deletion").assertIsEnabled()
+        compose.onNodeWithText("Check deletion").assertDoesNotExist()
+    }
+
     @Test fun signedOutYouDoesNotOfferDeletion() {
         val auth = AuthStore("http://localhost/".toHttpUrl(), MemorySessions())
         runBlocking { auth.restore() }

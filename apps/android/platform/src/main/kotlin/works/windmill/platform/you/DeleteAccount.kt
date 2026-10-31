@@ -111,7 +111,7 @@ fun DeleteAccount(store: AccountDeletionStore, onExit: (Boolean) -> Unit) {
             } else Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
                 .padding(top = 172.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val message = when (page) {
-                    AccountDeletionPage.Offline -> "Can’t check yet" to "Your account may already be closed. Try checking again when your connection is back."
+                    AccountDeletionPage.TemporarilyUnavailable -> "Can’t check yet" to "Your account may already be closed. Try checking again when your connection is back."
                     AccountDeletionPage.Unavailable -> "Confirmation unavailable" to "We can’t confirm the result on this phone. Signing in may restore a closing account."
                     AccountDeletionPage.Cleanup -> "Finishing deletion" to "Your account is closed. This phone still needs to remove its local copy."
                     else -> "Checking deletion" to "Your account may already be closed. We’re waiting for confirmation."

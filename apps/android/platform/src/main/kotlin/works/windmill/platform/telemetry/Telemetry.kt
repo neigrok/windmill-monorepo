@@ -19,6 +19,8 @@ interface Telemetry {
     fun event(name: String, properties: Map<String, String> = emptyMap())
     fun failure(operation: String, error: Throwable, properties: Map<String, String> = emptyMap())
     fun identity(userId: String?) {}
+    // An account that cannot return: its queued events named in `carrying` send without credentials, the rest are dropped.
+    fun retireAccount(userId: String, carrying: Set<String>) {}
 
     object None : Telemetry {
         override fun event(name: String, properties: Map<String, String>) {}

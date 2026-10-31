@@ -579,7 +579,8 @@ acknowledgement fails decoding and retries the batch with its original event IDs
 
 Account shelves remain isolated across sign-in and sign-out. Queued anonymous events always send
 without credentials, including after sign-in. Events belonging to another account wait until that
-account returns. Tokens never persist in the telemetry queue. A request already in flight retains
+account returns. Retiring a deleted account moves the event names it carries to the end of the
+credential-free shelf and drops the rest of its shelf; a failure there reports `telemetry_identity`. Tokens never persist in the telemetry queue. A request already in flight retains
 its original credential and only acknowledges its original shelf. The backend resolves account
 identity from that credential, independently of any client-supplied identity.
 
@@ -664,8 +665,10 @@ Sign-out preparation emits `gym_sign_out` with `state=shown`; finishing or cance
 the finite action/outcome labels above. The held count, account, credential and user content are
 excluded. `auth_signed_out` fires when the saved account has been cleared. Finish and recovery
 failures report under `auth_sign_out`; best-effort original-credential logout uses `auth_logout`.
-Unreadable sealed choice data reports `session_sign_out_decode`. Existing storage and vault
-boundaries report failed writes or decryption. A pending choice does not run ordinary auth restore.
+Unreadable sealed choice data reports `session_sign_out_decode`; a choice that cannot be decrypted reports at the
+vault's `session_open`. Recovery finishes an unreadable choice as Keep and saves that choice, so the failure reports
+once and sign-in works afterwards. Existing storage and vault boundaries report failed writes. A pending choice does
+not run ordinary auth restore.
 
 Account deletion emits only the finite labels above. `ok` follows a confirmed closed receipt and
 successful local cleanup; an unknown result emits `pending_confirmation`, and owed local removal
@@ -675,6 +678,9 @@ the original close again under `account_delete_request`. No email, account/opera
 body is an event property. `account_delete_request` and `account_delete_result` identify transport
 failures; sealed-record failures use `account_delete_storage`, preparation uses
 `account_delete_prepare`, and local cleanup/recovery use `account_delete_cleanup` and
-`account_delete_recovery`. Expected refusals and offline results do not create Issues. Local
+`account_delete_recovery`. A transport failure reports once, under its transport operation; the deletion store reports
+only failures on the phone. Expected refusals and offline results do not create Issues. Before each local cleanup
+attempt, the deleted account's queued `account_delete` events move to the credential-free shelf and its other queued
+events are dropped, so nothing waits for an account that cannot return. Local
 storage reports use static messages. The first-party intake and native failure collector checks for
 this flow remain pending.

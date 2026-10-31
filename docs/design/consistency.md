@@ -825,6 +825,12 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   leaves the editor toolbar visible. Task 02 aligns the field accent and picker surface only;
   task 18 owns the remaining editor/picker geometry, and task 03 owns the toolbar.
 
+- **11r · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
+  once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is
+  drawn only for an unknown result (*Deletion unconfirmed*); Android still shows it while the
+  confirmed closure waits for local cleanup, where it is no longer true. Designer to draw the
+  subtitle for D4's state.
+
 ### Parity rulings (owner, 2026-10-22)
 
 The owner ruled the iOS ↔ Android parity report; both Gym pages and the Shell account boards draw the

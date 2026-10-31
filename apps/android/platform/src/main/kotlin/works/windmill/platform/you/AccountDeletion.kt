@@ -54,7 +54,7 @@ data class PendingAccountDeletion(val request: AccountDeletionRequest, val user:
 
 data class DeletionIdentity(val user: User, val credential: String, val replica: String, val revision: Long)
 
-enum class AccountDeletionPage { Confirm, Deleting, Unknown, Offline, Unavailable, Cleanup, Deleted }
+enum class AccountDeletionPage { Confirm, Deleting, Unknown, TemporarilyUnavailable, Unavailable, Cleanup, Deleted }
 
 class AccountDeletionStorage(private val values: KeptValues, private val vault: SecretVault,
     private val telemetry: Telemetry = Telemetry.None) {
@@ -169,6 +169,7 @@ class AccountDeletionStore(
         private set
     private var preparing by mutableStateOf(false)
     val transitionPending: Boolean get() = preparing || storage.blocked
+    val closureConfirmed: Boolean get() = storage.pending?.receipt != null
     var operationRevision by mutableStateOf(0L)
         private set
     private var work: Deferred<Unit>? = null
@@ -329,6 +330,7 @@ class AccountDeletionStore(
                 storage.replace(pending, next)
                 pending = next
             }
+            telemetry.retireAccount(pending.user.id, carrying = setOf("account_delete"))
             cleanup(pending)
             storage.replace(pending, null)
             preparing = false
@@ -349,7 +351,9 @@ class AccountDeletionStore(
         report(failure, "account_delete_recovery")
         page = if (storage.pending?.receipt != null || finishedOperation != null && finishedOperation == storage.pending?.request?.operationId || knownClosed != null) AccountDeletionPage.Cleanup
             else if (storage.unreadable || failure is WindmillApiException.Refused && failure.status == 404) AccountDeletionPage.Unavailable
-            else if (failure is WindmillApiException.Offline) AccountDeletionPage.Offline else AccountDeletionPage.Unknown
+            else if (failure is WindmillApiException.Offline || failure is WindmillApiException.Refused && failure.status == 503)
+                AccountDeletionPage.TemporarilyUnavailable
+            else AccountDeletionPage.Unknown
         releaseHold()
         preparing = false
         telemetry.event("account_delete", mapOf("outcome" to
@@ -362,9 +366,9 @@ class AccountDeletionStore(
         if (held === opening) held = null
     }
 
+    // The transport reports its own failures; the store reports only what failed on this phone.
     private fun report(failure: Exception, operation: String) {
-        if (failure !is WindmillApiException.Offline && failure !is WindmillApiException.Refused)
-            telemetry.failure(operation, IOException("Account deletion could not be completed."))
+        if (failure !is WindmillApiException) telemetry.failure(operation, IOException("Account deletion could not be completed."))
     }
 
     private suspend fun run(body: suspend () -> Unit) {

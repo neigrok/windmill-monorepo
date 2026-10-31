@@ -174,6 +174,34 @@ class AuthSignOutTests {
         assertEquals(1, events.count { it == "auth_signed_out" })
     }
 
+    @Test fun anUnreadableSavedChoiceFinishesAsKeepReportsItsOneReadAndLetsSignInSendACode() = runTest {
+        val values = Values(); val lifecycle = Lifecycle()
+        val (auth, sessions) = open(values, lifecycle)
+        auth.prepareSignOut()
+        sessions.beginSignOut(SignOutIntent(user.id, AuthSignOutChoice.Discard))
+        values.kept["wm_sign_out.sealed"] = "garbage"
+        val reports = mutableListOf<String>()
+        val reporting = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { reports += operation }
+        }
+        val restartedSessions = PrefsSessions(values, SecretVault(reporting) { key }, reporting)
+        val restarted = AuthStore(server.url("/"), restartedSessions, telemetry = reporting, lifecycle = lifecycle, handoffScope = backgroundScope)
+        server.enqueue(MockResponse().setBody("{}"))
+        server.enqueue(MockResponse().setBody("{}"))
+        restarted.restore()
+        runCurrent()
+        restarted.requestLink("b@example.com")
+        assertEquals(AuthStatus.SignedOut, restarted.status)
+        assertFalse(restarted.transitionPending)
+        assertEquals("b@example.com", restarted.linkSentTo)
+        assertEquals(listOf(AuthSignOutChoice.Keep), lifecycle.choices)
+        assertEquals(listOf("session_open"), reports)
+        assertEquals(emptyMap<String, String>(), values.kept)
+        assertEquals(setOf("/v1/auth/logout", "/v1/auth/magic-link"),
+            setOf(server.takeRequest().path, server.takeRequest().path))
+    }
+
     @Test fun crashAfterFinishedMarkerRetriesOnlyCredentialCleanup() = runTest {
         val values = Values(); val lifecycle = Lifecycle()
         val (auth, _) = open(values, lifecycle)

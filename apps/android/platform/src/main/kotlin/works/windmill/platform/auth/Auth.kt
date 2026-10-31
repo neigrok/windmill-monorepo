@@ -473,8 +473,9 @@ class AuthStore(
             finishSignOut(retained, intent)
             return
         }
-        val intent = requireNotNull(sessions.pendingSignOut) { "The saved sign-out could not be read." }
         val user = requireNotNull(sessions.user()) { "The saved account could not be read." }
+        // An unreadable choice finishes as Keep, the choice that loses nothing.
+        val intent = sessions.pendingSignOut ?: SignOutIntent(user.id, AuthSignOutChoice.Keep).also(sessions::beginSignOut)
         check(user.id == intent.account) { "The account changed." }
         val opening = SignOutOpening(user, sessions.read(), ++generation, identityRevision, choice = intent.choice)
         signOutOpening = opening

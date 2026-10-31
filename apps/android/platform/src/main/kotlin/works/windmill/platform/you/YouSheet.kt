@@ -104,7 +104,11 @@ fun YouSheet(
                     }
                     auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
                     val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
-                        listOf(YouDestination("account_deletion", if (deletionPending) "Check deletion" else "Delete account", deletion::open)) else emptyList()
+                        listOf(YouDestination("account_deletion", when {
+                            !deletionPending -> "Delete account"
+                            deletion.closureConfirmed -> "Finish deletion"
+                            else -> "Check deletion"
+                        }, deletion::open)) else emptyList()
                     rows.forEach { destination ->
                         key(destination.id) {
                             Row(Modifier.fillMaxWidth()
