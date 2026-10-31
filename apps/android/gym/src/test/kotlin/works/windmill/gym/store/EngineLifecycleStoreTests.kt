@@ -154,7 +154,6 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    // Two hundred and one engine commits make this the slowest store test; it keeps a generous clock.
     @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest {
         engine().use { engine ->
             val gym = EngineTraining(engine)

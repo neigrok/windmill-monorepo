@@ -189,17 +189,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 override fun load(read: Reader) = action.load(read)
                 override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
                     val state = loaded.state
-                    val drawnOpen = TrainingLog(state.drawn, state.drawnSets, state.catalogue, state.moment).open
-                    if (drawnOpen != null && drawnOpen.id != action.id) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, drawnOpen.id.ref))
-                    if (requireRoutine && !loaded.prior) {
-                        val open = loaded.state.drawn.firstOrNull {
-                            it.id != action.id && SessionRules.drawn(it, loaded.state.drawnSets, loaded.state.moment.now).isOpen
-                        }
-                        if (open != null) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
-                        if (loaded.routine == null) {
-                            return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
-                        }
-                    }
+                    val open = TrainingLog(state.drawn, state.drawnSets, state.catalogue, state.moment).open
+                    if (open != null && open.id != action.id) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
+                    if (requireRoutine && !loaded.prior && loaded.routine == null)
+                        return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
                     val decision = action.decide(loaded, ids)
                     if (decision !is Decision.Write) return decision
                     val command = requireNotNull(decision.plan.command)
