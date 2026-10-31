@@ -508,7 +508,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             if (!activityAllowed() || !current(seat)) break
             val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.pull(request, seat.token) } ?: Reply.Unreachable
             val recv = engine.clock.reading()
-            if (!activityAllowed() || !current(seat)) break
+            if (!activityAllowed()) break
             val response = reply.answer
             if (response?.requiresUpgrade == true) { requireUpgrade(); break }
             if (!current(seat)) break
