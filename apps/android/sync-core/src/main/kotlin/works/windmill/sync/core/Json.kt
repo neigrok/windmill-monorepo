@@ -58,7 +58,7 @@ sealed class Json {
     }
     fun precedes(other: Json): Boolean = compareBytes(jcs, other.jcs) < 0
     final override fun toString(): String = jcs
-    final override fun equals(other: Any?): Boolean = other is Json && jcs == other.jcs
+    final override fun equals(other: Any?): Boolean = other === this || other is Json && jcs == other.jcs
     final override fun hashCode(): Int = jcs.hashCode()
 
     companion object {

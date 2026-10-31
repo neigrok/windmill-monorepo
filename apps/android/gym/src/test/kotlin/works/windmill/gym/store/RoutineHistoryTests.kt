@@ -9,7 +9,19 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant
+import works.windmill.domain.kit.Outcome
 import works.windmill.gym.domain.*
+import works.windmill.gym.domain.sync.ImportSession
+import works.windmill.gym.domain.sync.ImportedSet
+import works.windmill.gym.domain.sync.Exercise as EngineExercise
+import works.windmill.gym.domain.sync.Routine as EngineRoutine
+import works.windmill.gym.domain.sync.Session as EngineSession
+import works.windmill.gym.domain.sync.TrainingSet as EngineSet
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.schema.SyncSchema
@@ -29,16 +41,17 @@ class RoutineHistoryTests {
             val draft = RoutineDraft(name = "Pull", creationId = "routine_history").adding("bench-press")
                 .capturingMovements(room.store.catalog)
             assertTrue(room.store.saveRoutine(draft) is GymResult.Ok)
-            val details = mutableListOf<SessionDetail>()
-            for (i in 0..50) {
+            val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+            val details = (0..50).map { i ->
                 val id = "history_${i.toString().padStart(2, '0')}"
                 val start = room.now + 1_000
                 room.now = start + 100
-                room.training.startSession(SessionStart(id, start, routineId = "routine_history".takeIf { i < 21 }))
-                for (j in 0..1) room.training.appendSet(id, SetWrite("${id}_$j",
-                    if (j == 0) "bench-press" else "barbell-row", 40.0, 8, start + 10 + j))
-                room.training.finishSession(id, room.now)
-                details += requireNotNull(room.training.session(id))
+                val sets = listOf("bench-press", "barbell-row").mapIndexed { j, exercise ->
+                    ImportedSet(Id("${id}_$j", EngineSet), Id(exercise, EngineExercise), 40.0, 8, Instant(start + 10 + j))
+                }
+                assertTrue(runner.run(ImportSession(Id(id, EngineSession), Instant(start), Instant(room.now), sets,
+                    Id("routine_history", EngineRoutine).takeIf { i < 21 })) is Outcome.Committed)
+                requireNotNull(room.training.session(id))
             }
             room.now += 1_000
             room.training.startSession(SessionStart("history_open", room.now, routineId = "routine_history"))
