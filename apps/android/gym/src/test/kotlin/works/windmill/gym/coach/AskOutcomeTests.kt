@@ -6,22 +6,37 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 
 class AskOutcomeTests {
     private fun refused(status: Int, code: String? = null, message: String? = null) =
         AskOutcome.refusing(WindmillApiException.Refused(status, Refusal(message, code = code)), null)
 
-    // BOTH 429s take the composer down, because the one unrationed way on — the connect door — is
-    // drawn in that state and nowhere else. Which ceiling it was rides along, told apart by the CODE,
-    // and the two wordless fallbacks never say the same thing.
+    @Test fun allowanceCapSurvivesMissingOrMalformedTimingAndUsesOnlyItsOwn429Code() {
+        for (value in listOf("null", "{}", "[]", "true", "{\"resetsAtMs\":null}", "{\"resetsAtMs\":\"1800000000000\"}",
+            "{\"resetsAtMs\":-1}", "{\"resetsAtMs\":1.5}", "{\"resetsAtMs\":true}", "{\"resetsAtMs\":{}}")) {
+            val wire = "{\"code\":\"subject_exhausted\",\"allowance\":" + value + "}"
+            val refusal = works.windmill.platform.net.WindmillJson.decodeFromString(Refusal.serializer(), wire)
+            assertEquals(AskOutcome.Capped(AskCap.Allowance.wordless, AskCap.Allowance),
+                AskOutcome.refusing(WindmillApiException.Refused(429, refusal), null))
+        }
+        val cap = AskOutcome.refusing(WindmillApiException.Refused(429, Refusal(code = "subject_exhausted",
+            allowance = JsonObject(mapOf("resetsAtMs" to JsonPrimitive(1_800_000_000_123L))))), null)
+        assertEquals(AskOutcome.Capped(AskCap.Allowance.wordless, AskCap.Allowance, retryAtMs = 1_800_000_000_123L), cap)
+        for (code in listOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required"))
+            assertEquals(AskOutcome.Refused("Server sentence", terminal = true), refused(429, code, "Server sentence"))
+        assertEquals(AskOutcome.Refused("Server sentence", terminal = true), refused(403, "subject_exhausted", "Server sentence"))
+    }
+
     @Test
-    fun testBothCeilingsTakeTheComposerDownWithTheirOwnSentenceAndNeitherIsRetried() {
+    fun capsKeepDistinctNoticesAndMissingDailyTimingDoesNotInventAWait() {
         assertEquals(
-            AskOutcome.Capped("the next question frees up in a couple of hours", AskCap.Daily),
+            AskOutcome.Capped(Ask.capReached, AskCap.Daily),
             refused(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours"),
         )
         assertEquals("a wordless cap still says what to do next",
-            AskOutcome.Capped("The next question frees up in a couple of hours.", AskCap.Daily),
+            AskOutcome.Capped(Ask.capReached, AskCap.Daily),
             refused(429, code = "ask-daily-limit"))
         assertEquals(
             AskOutcome.Capped("this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on", AskCap.Ceiling),
@@ -54,7 +69,7 @@ class AskOutcomeTests {
     @Test
     fun testAWorkoutStillOpenIsAnAnswerAndNotAFailure() {
         assertEquals(
-            AskOutcome.Refused("finish your workout first — Coach reads a log that has stopped moving"),
+            AskOutcome.Refused("finish your workout first — Coach reads a log that has stopped moving", terminal = true),
             refused(409, code = "ask-session-open", message = "finish your workout first — Coach reads a log that has stopped moving"),
         )
     }
@@ -79,12 +94,12 @@ class AskOutcomeTests {
 
     @Test
     fun testATerminalRefusalCarriesTheLogsOwnSentence() {
-        assertEquals(AskOutcome.Refused("that isn’t a conversation Coach can answer"),
+        assertEquals(AskOutcome.Refused("that isn’t a conversation Coach can answer", terminal = true),
             refused(400, message = "that isn’t a conversation Coach can answer"))
-        assertEquals(AskOutcome.Refused("sign in to open your training log"),
+        assertEquals(AskOutcome.Refused("sign in to open your training log", terminal = true),
             refused(401, message = "sign in to open your training log"))
         assertEquals("a refusal that arrived wordless still says something true",
-            AskOutcome.Refused("Coach couldn’t take that one"), refused(400))
+            AskOutcome.Refused("Coach couldn’t take that one", terminal = true), refused(400))
     }
 
     // The partial reply already on screen stays with every outcome that can still show it.
@@ -93,11 +108,23 @@ class AskOutcomeTests {
         val partial = AskGeneration("generation-a", "request-a", "Question", "running", "Half an answer", revision = 2)
         fun refusing(error: Throwable) = AskOutcome.refusing(error, partial)
         assertEquals(AskOutcome.Failed("Coach didn’t answer. Try again in a moment", partial), refusing(WindmillApiException.Offline))
-        assertEquals(AskOutcome.Capped("The next question frees up in a couple of hours.", AskCap.Daily, partial),
+        assertEquals(AskOutcome.Capped(Ask.capReached, AskCap.Daily, partial),
             refusing(WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit"))))
-        assertEquals(AskOutcome.Refused("Coach couldn’t take that one", partial), refusing(WindmillApiException.Refused(400, Refusal())))
+        assertEquals(AskOutcome.Refused("Coach couldn’t take that one", partial, terminal = true), refusing(WindmillApiException.Refused(400, Refusal())))
         assertEquals(AskOutcome.Fresh("This conversation is unavailable. Start a new one."),
             refusing(WindmillApiException.Refused(409, Refusal(code = "ask-thread-full"))))
         assertEquals(AskOutcome.Absent, refusing(WindmillApiException.Refused(404, Refusal())))
+    }
+
+    @Test fun dailyDeadlinePrefersActualJsonTimeThenTheDeadlineCapturedWithRetryAfter() {
+        val receivedDeadline = 1_800_000_020_000L
+        val actual = 1_800_000_030_000L
+        for ((raw, expected) in listOf(JsonPrimitive(actual) to actual, JsonPrimitive(-1) to receivedDeadline,
+            JsonPrimitive("1800000030000") to receivedDeadline, JsonPrimitive(true) to receivedDeadline, JsonObject(emptyMap()) to receivedDeadline)) {
+            val outcome = AskOutcome.refusing(WindmillApiException.Refused(429,
+                Refusal(code = "ask-daily-limit", retryAtMs = raw), receivedDeadline), null) as AskOutcome.Capped
+            assertEquals(AskOutcome.Capped(Ask.capReached, AskCap.Daily, retryAtMs = expected), outcome)
+            assertEquals(expected, outcome.exchange(AskExchange("Question")).retryAtMs)
+        }
     }
 }

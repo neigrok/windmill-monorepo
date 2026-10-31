@@ -51,11 +51,29 @@ object TelemetryPolicy {
             "outcome" to setOf("skipped", "completed", "back", "closed"),
         ),
     )
+    private val coachOnboardingEvents = mapOf(
+        "gym_setup_step" to mapOf("screen" to setOf("coach"), "action" to setOf("shown", "screenshot", "build_manually", "photo_selected", "photo_removed", "sign_in")),
+        "gym_coach_import" to mapOf("outcome" to setOf("started", "committed", "replayed", "refused", "failed")),
+        "ai_installation_outcome" to mapOf("action" to setOf("bind"), "outcome" to setOf("refused", "failed")),
+    )
 
     fun eventName(name: String): Boolean = eventLabel.matches(name) &&
         (!name.startsWith("onboarding_") || name in onboardingEvents)
 
     fun eventProperties(name: String, properties: Map<String, String>): Map<String, String> {
+        coachOnboardingEvents[name]?.let { schema ->
+            return properties(properties.filter { (key, value) -> key in commonEventKeys || value in schema[key].orEmpty() })
+        }
+        if (name == "account_delete") {
+            val allowed = mapOf("state" to setOf("shown"), "action" to setOf("confirm", "check", "cleanup", "back", "done"),
+                "outcome" to setOf("started", "cancelled", "refused", "failed", "ok", "cleanup_pending", "pending_confirmation"))
+            return properties(properties.filter { (key, value) -> key in commonEventKeys || value in allowed[key].orEmpty() })
+        }
+        if (name == "gym_sign_out") {
+            val allowed = mapOf("state" to setOf("shown"), "action" to setOf("keep", "discard", "cancel"),
+                "outcome" to setOf("completed", "failed"))
+            return properties(properties.filter { (key, value) -> key in commonEventKeys || value in allowed[key].orEmpty() })
+        }
         if (name == "gym_action") {
             val actions = when (properties["screen"]) {
                 "routines", "notes" -> mapOf("delete" to setOf("ok", "refused", "failed"))
@@ -72,8 +90,8 @@ object TelemetryPolicy {
                 "bodyweight" -> mapOf("delete" to setOf("held", "closed", "refused", "failed"),
                     "undo" to setOf("ok", "closed", "failed"), "cancel" to setOf("rewritten"),
                     "calendar_open" to setOf("ok"), "calendar_confirm" to setOf("ok"), "calendar_cancel" to setOf("ok"))
-                "coach" -> listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "jump_latest")
-                    .associateWith { setOf("ok") } + mapOf("copy" to setOf("ok", "failed"))
+                "coach" -> listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "choose", "continue_draft", "jump_latest")
+                    .associateWith { setOf("ok") } + mapOf("copy" to setOf("ok", "failed"), "access" to setOf("available", "bound", "unavailable"))
                 "threads" -> mapOf("delete" to setOf("ok", "refused", "failed", "cancelled"))
                 "notification" -> mapOf("open" to setOf("ok", "refused"), "log_set" to setOf("ok", "refused"))
                 "workout_bar" -> mapOf("open" to setOf("ok", "refused"))
@@ -121,9 +139,12 @@ object TelemetryPolicy {
         else -> error.javaClass.simpleName.takeIf(label::matches) ?: "exception"
     }
 
-    fun report(error: Throwable): Boolean = when (error) {
+    fun report(error: Throwable, operation: String? = null): Boolean = when (error) {
         is CancellationException, is WindmillApiException.Offline -> false
-        is WindmillApiException.Refused -> error.status !in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
+        is WindmillApiException.Refused -> error.status !in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429) &&
+            !(error.status == 503 && operation in setOf("ai_installation", "gym.coachOnboarding") &&
+                error.refusal.code in setOf("anonymous_ai_unavailable", "unconfigured", "subject_exhausted",
+                    "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "funding_required", "debt_outstanding"))
         else -> true
     }
 

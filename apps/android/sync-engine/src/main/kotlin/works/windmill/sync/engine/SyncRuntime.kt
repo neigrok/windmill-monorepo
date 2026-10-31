@@ -23,7 +23,9 @@ object CoroutineSleeper : EngineSleeper { override suspend fun sleep(ms: Long) {
 
 class SyncRuntime(private val engine: Engine, private val transport: SyncTransport, private val tokens: SessionTokens,
     private val appVersion: String, private val sleeper: EngineSleeper = CoroutineSleeper,
-    private val products: List<String> = listOf("gym"), private val liveHint: () -> Boolean = { false }) : AutoCloseable {
+    private val products: List<String> = listOf("gym"), private val liveHint: () -> Boolean = { false },
+    private val activityAllowed: () -> Boolean = { true },
+    private val signOutDrainAllowed: () -> Boolean = activityAllowed) : AutoCloseable {
     private data class Seat(val replica: String, val account: String?, val token: String?)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val senderTurn = Mutex()
@@ -120,10 +122,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         launchWorker(EngineOperation.release) {
             while (isActive && !closed) {
                 try {
+                    if (!activityAllowed()) { wait(heldWake, 1_000); continue }
                     val due = engine.lock.withLock { engine.device.current().entries().filter { it.state == "held" }.minOfOrNull { it.json.member("releaseAt").long() } }
                     if (due == null) { heldWake.receiveCatching(); continue }
                     val remaining = due - engine.clock.now()
-                    if (remaining > 0) wait(heldWake, remaining) else engine.releaseHeld()
+                    if (remaining > 0) wait(heldWake, remaining) else engine.lock.withLock { if (activityAllowed()) engine.releaseHeld() }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (failure: CommitFailure) {
                     if (failure.kind != CommitFailure.Kind.storeFailure) throw failure
@@ -133,27 +136,27 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         launchWorker(EngineOperation.storage) {
             while (isActive && !closed) {
-                try { while (engine.sweepReleased()) { yield() } }
+                try { while (engine.lock.withLock { activityAllowed() && engine.sweepReleased() }) { yield() } }
                 catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
                 catch (_: Exception) { engine.report(EngineOperation.storage, EngineOutcome.failure) }
                 sleeper.sleep(1_000)
             }
         }
         launchWorker(EngineOperation.push) { while (isActive && !closed) {
-            try { if (foreground && online) senderStep() }
+            try { if (activityAllowed() && foreground && online) senderStep() }
             catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
             catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure) }
             wait(senderWake, 1_000)
         } }
         launchWorker(EngineOperation.pull) { while (isActive && !closed) {
-            try { if (foreground && online) pullerStep() }
+            try { if (activityAllowed() && foreground && online) pullerStep() }
             catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
             catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
         } }
         launchWorker(EngineOperation.live) { var k = 0
             while (isActive && !closed) {
-                if (!foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
+                if (!activityAllowed() || !foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
                 try { liveStep() }
                 catch (_: CancellationException) { if (!isActive) break }
                 catch (_: LiveEnded) { /* Its end is already reported. */ }
@@ -161,7 +164,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 // §7.5: a socket that stayed open 30 s resets the reopen backoff, however it ended.
                 if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) k = 0
                 socketOpenedAt = null
-                if (foreground && online && seat() != null) {
+                if (activityAllowed() && foreground && online && seat() != null) {
                     engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit)
                     val pause = engine.draw(minOf(30_000L, 1_000L shl minOf(k++, 5)).toInt()).toLong()
                     wait(liveWake, pause)
@@ -175,16 +178,19 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     // §9.6 426 upgrade-required: nothing more is sent or pulled until the app is upgraded; the status says so.
     private fun requireUpgrade() { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
     @Synchronized fun launch(forkGuard: ForkGuardStore) {
-        if (launched) return
+        if (launched || !activityAllowed()) return
         val copy = storageIO { forkGuard.load() }
-        val started = engine.start(copy?.let(Json::of) ?: Json.Null)
+        val started = engine.lock.withLock {
+            if (!activityAllowed()) return
+            engine.start(copy?.let(Json::of) ?: Json.Null)
+        }
         val guard = engine.lock.withLock { engine.device.meta.member("forkGuard").str() }
         if (guard != copy) storageIO { forkGuard.save(guard) }
         val needed = engine.lock.withLock {
             val replica = engine.device.current()
             setOfNotNull(if (replica.state == "bound") replica.account else null, started["pendingSignIn"]?.get("account")?.str())
         }
-        storageIO { tokens.accounts() }.filter { it !in needed }.forEach { try { tokens.delete(it) } catch (_: Exception) { engine.report(EngineOperation.lifecycle, EngineOutcome.failure) } }
+        storageIO { tokens.accounts() }.filter { it !in needed }.forEach { if (!activityAllowed()) return; try { tokens.delete(it) } catch (_: Exception) { engine.report(EngineOperation.lifecycle, EngineOutcome.failure) } }
         val activeAccount = engine.lock.withLock { engine.device.current().takeIf { it.state == "bound" }?.account }
         val missing = activeAccount != null && storageIO { tokens.token(activeAccount) } == null
         if (missing) engine.write(EngineOperation.lifecycle) { replica ->
@@ -193,10 +199,14 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         launched = true
     }
     fun enter() {
+        if (!activityAllowed()) return
+        heldWake.trySend(Unit)
         engine.lock.withLock { if (!foreground) { foreground = true; readinessGeneration++ } }
         launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
     fun connectivity(online: Boolean) {
+        if (!activityAllowed()) return
+        heldWake.trySend(Unit)
         val reconnected = engine.lock.withLock {
             val reconnected = online && !this.online
             if (this.online != online) readinessGeneration++
@@ -207,27 +217,30 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (!online) { socket?.close(); socket = null }
         if (reconnected) launchWorker(EngineOperation.hello) {
             val account = engine.lock.withLock { engine.device.current().takeIf { it.state == "bound" }?.account }
-            account?.let { storageIO { tokens.token(it) } }?.let { hello(it) }
+            account?.let { storageIO { tokens.token(it) } }?.let { hello(it, activityAllowed) }
         }
         launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
     suspend fun leave() {
         engine.lock.withLock { if (foreground) { foreground = false; readinessGeneration++ } }
         socket?.close(); socket = null
-        engine.releaseHeld(true)
+        engine.lock.withLock { if (activityAllowed()) engine.releaseHeld(true) }
         if (online && wait.leaveMayPush(mono())) deadline(2_000) { senderStep(leaving = true) }
         wakeAll()
     }
-    suspend fun hello(token: String?): Reply<SyncResponse> {
+    suspend fun hello(token: String?): Reply<SyncResponse> = hello(token) { true }
+    private suspend fun hello(token: String?, allowed: () -> Boolean): Reply<SyncResponse> {
+        if (!allowed()) return Reply.Unreachable
         val sentFor = engine.lock.withLock { engine.device.current().let { it.id to it.account } }
         val send = engine.clock.reading(); val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.hello(token) } ?: Reply.Unreachable; val recv = engine.clock.reading()
+        if (!allowed()) return reply
         val response = reply.answer
         if (response != null) {
             val sameReplica = engine.lock.withLock { engine.device.current().let { it.id == sentFor.first && it.account == sentFor.second } }
             val sameToken = sentFor.second == null || storageIO { tokens.token(sentFor.second!!) } == token
             if (sameReplica && sameToken) engine.lock.withLock {
                 val active = engine.device.current()
-                if (active.id == sentFor.first && active.account == sentFor.second) {
+                if (allowed() && active.id == sentFor.first && active.account == sentFor.second) {
                     engine.onHello(response, RequestTiming(send, recv))
                     engine.write(EngineOperation.hello) { replica ->
                         if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("serverSchema" to null)
@@ -368,7 +381,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         try { return work.await() } finally { if (!currentCoroutineContext().isActive) work.cancel() }
     }
     private suspend fun senderStepInLane(leaving: Boolean, draining: Boolean): Boolean = senderTurn.withLock {
-        if (closed || !online || upgradeRequired || !leaving && !draining && !foreground || !leaving && !wait.due(mono()) || leaving && !wait.leaveMayPush(mono())) return@withLock false
+        fun admitted() = activityAllowed() || draining && signOutDrainAllowed()
+        if (!admitted() || closed || !online || upgradeRequired || !leaving && !draining && !foreground || !leaving && !wait.due(mono()) || leaving && !wait.leaveMayPush(mono())) return@withLock false
         val earlier = if (leaving) wait.snapshot() else null
         try {
             val seat = seat() ?: return@withLock false
@@ -382,12 +396,12 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             }
             if (!queued) return@withLock false
             val (epoch, generation) = engine.lock.withLock { engine.device.current().meta["serverEpoch"] to readinessGeneration }
-            fun ready() = !closed && online && (leaving || draining || foreground) && readinessGeneration == generation
+            fun ready() = admitted() && !closed && online && (leaving || draining || foreground) && readinessGeneration == generation
             var response: SyncResponse? = null
             var compatible = false
             var invalidated = false
             try {
-                response = hello(seat.token).answer
+                response = hello(seat.token, ::admitted).answer
                 if (!current(seat) || !ready()) { invalidated = true; return@withLock false }
                 compatible = !upgradeRequired && response?.status == 200 && response.body?.get("as") == Json.of(seat.account!!) &&
                     response.body["schema"]?.long()?.let { it >= engine.registry.minVersion } == true
@@ -461,7 +475,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         return if (draining) again else true
     }
     suspend fun pullerStep(): Boolean = pullerTurn.withLock {
-        if (closed || !foreground || !online || upgradeRequired || mono() < pullFloor) return@withLock false
+        if (!activityAllowed() || closed || !foreground || !online || upgradeRequired || mono() < pullFloor) return@withLock false
         val seat = pullSeat() ?: return@withLock false
         val scopes = engine.subscriptions(products)
         engine.reconcile(scopes)
@@ -485,19 +499,24 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (batch.isNotEmpty()) batches.add(batch)
         batches.addAll(due.filter { it in dueDoubts }.map { listOf(it) })
         for (planned in batches) {
-            if (!current(seat)) break
+            if (!activityAllowed() || !current(seat)) break
             val request = engine.pullRequest(planned) ?: continue
             val pulled = request.member("scopes").arr().map { ScopeRef(it.member("scope")) }
             engine.lock.withLock { dueDoubts.filter { it in pulled }.forEach(engine.doubts::pulling) }
             pulled.forEach { pullWanted.remove(it) }
             val send = engine.clock.reading()
+            if (!activityAllowed() || !current(seat)) break
             val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.pull(request, seat.token) } ?: Reply.Unreachable
             val recv = engine.clock.reading()
+            if (!activityAllowed()) break
             val response = reply.answer
             if (response?.requiresUpgrade == true) { requireUpgrade(); break }
             if (!current(seat)) break
             if (response != null) {
-                val outcomes = engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
+                val outcomes = engine.lock.withLock {
+                    if (!activityAllowed() || !current(seat)) return@withLock emptyList()
+                    engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
+                }
                 for (result in outcomes) {
                     val target = ScopeRef(result.member("scope"))
                     val outcome = result.member("outcome").str()
@@ -525,9 +544,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         true
     }
     private suspend fun liveStep() = liveTurn.withLock {
+        if (!activityAllowed() || !foreground || !online || closed) return@withLock
         val seat = seat() ?: return@withLock
         val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.openLive(seat.token!!) } ?: Reply.Unreachable
-        if (!current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return@withLock }
+        if (!activityAllowed() || !current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return@withLock }
         // §7.5: a handshake's 426 proves nothing on its own; the pull the failed open runs hears the server's own verdict.
         if (reply is Reply.Failed) {
             if (reply.response.status == 401) engine.write(EngineOperation.live) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
@@ -540,7 +560,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             var heard = mono(); var pongDue: Long? = null
             val incoming = Channel<Json?>(1)
             val reader = launch { try { while (isActive) { val frame = connection.receive(); incoming.send(frame); if (frame == null) break } } finally { incoming.close() } }
-            try { while (isActive && current(seat) && foreground && online && !closed) {
+            try { while (isActive && activityAllowed() && current(seat) && foreground && online && !closed) {
                 val scopes = engine.subscriptions(products).filter { engine.lock.withLock { (it in following || engine.doubts.mayFollow(it)) && !engine.awaitsGoverningCreate(engine.device.current(), it) && engine.device.current().cursors[it.text]?.get("digestStop") != Json.of(appVersion) } }.toSet()
                 for (scope in following - scopes) { connection.send(Json.objectOf("op" to Json.of("unsub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.unfollowed(scope, mono()) } }
                 for (scope in scopes - following) { connection.send(Json.objectOf("op" to Json.of("sub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.followed(scope, mono()) } }
@@ -550,12 +570,15 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 }
                 if (pongDue == null && mono() - heard >= Constants.LIVE_PING_MS) { connection.send(Json.objectOf("op" to Json.of("ping"))); pongDue = mono() + Constants.LIVE_PONG_MS }
                 val item = withTimeoutOrNull(1_000) { incoming.receiveCatching() }
+                if (!activityAllowed() || !current(seat)) break
                 if (item == null) continue
                 val frame = item.getOrNull() ?: break
                 heard = mono(); if (frame.member("op").str() == "pong") pongDue = null
                 val op = frame.member("op").str()
                 if (op in setOf("gone", "not-found")) { val target = ScopeRef(frame.member("scope")); following.remove(target); engine.lock.withLock { engine.doubts.unfollowed(target, mono()) } }
-                val outcome = pullerTurn.withLock { if (current(seat)) engine.onFrame(frame, appVersion, seat.replica) else "outside" }
+                val outcome = pullerTurn.withLock { engine.lock.withLock {
+                    if (activityAllowed() && current(seat)) engine.onFrame(frame, appVersion, seat.replica) else "outside"
+                } }
                 if (outcome == "pull") { pullWanted.add(ScopeRef(frame.member("scope"))); pullerWake.trySend(Unit) }
                 if (outcome == "ignored" && op in setOf("gone", "not-found")) engine.lock.withLock { engine.doubts.end(ScopeRef(frame.member("scope")), mono(), engine::draw) }
                 if (outcome == "paused") break

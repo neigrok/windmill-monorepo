@@ -10,6 +10,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthLifecycle
+import works.windmill.platform.auth.AuthSignOutChoice
+import works.windmill.platform.auth.AuthSignOutSession
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.telemetry.Telemetry
@@ -20,6 +22,7 @@ import works.windmill.sync.engine.SignInSession
 import works.windmill.sync.engine.SignOutChoice
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.anonCount
+import works.windmill.sync.engine.discardDormant
 import works.windmill.sync.core.*
 
 class GymEngineSession(
@@ -29,6 +32,7 @@ class GymEngineSession(
     private val transport: AutoCloseable? = null,
     // Settles what the training store owes the replica in hand before another one is selected.
     private val beforeAccountChange: suspend () -> Unit = {},
+    private val clearAccountCredential: (String) -> Unit = {},
 ) : AuthLifecycle, AutoCloseable {
     var decision: SignInSession? by mutableStateOf(null)
         private set
@@ -118,14 +122,102 @@ class GymEngineSession(
         } finally { decisionBusy = false }
     }
 
-    override suspend fun signOut() {
+    private var recoveringSignOut: works.windmill.sync.engine.SignOutSession? = null
+
+    private fun activeAccount(): String? {
         val snapshot = engine.snapshot()
         val active = snapshot.member("replicas").arr().first { it.member("meta").member("replica") == snapshot.member("active") }.member("meta")
-        if (active.member("state").str() != "bound") return
+        return if (active.member("state").str() == "bound") active.member("account").str() else null
+    }
+
+    override suspend fun prepareSignOut(account: String): AuthSignOutSession {
+        check(activeAccount() == account) { "The account changed." }
         beforeAccountChange()
-        val session = runtime.signOut()
-        session.finish(SignOutChoice.keep)
-        telemetry.event("gym_sign_out", mapOf("action" to "keep", "outcome" to "completed"))
+        check(activeAccount() == account) { "The account changed." }
+        val held = runtime.signOut()
+        if (held.account != account) {
+            held.cancel()
+            error("The account changed.")
+        }
+        telemetry.event("gym_sign_out", mapOf("state" to "shown"))
+        return object : AuthSignOutSession {
+            override val account = held.account
+            override val unsent = held.unsent
+            override suspend fun finish(choice: AuthSignOutChoice) = signOutAction(choice.name.lowercase()) {
+                held.finish(if (choice == AuthSignOutChoice.Keep) SignOutChoice.keep else SignOutChoice.discard)
+            }
+            override suspend fun cancel() = signOutAction("cancel") { held.cancel() }
+        }
+    }
+
+    private suspend fun signOutAction(action: String, body: suspend () -> Unit) {
+        try {
+            body()
+            telemetry.event("gym_sign_out", mapOf("action" to action, "outcome" to "completed"))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            telemetry.event("gym_sign_out", mapOf("action" to action, "outcome" to "failed"))
+            throw failure
+        }
+    }
+
+    override suspend fun recoverSignOut(account: String, choice: AuthSignOutChoice) = signOutAction(choice.name.lowercase()) {
+        val active = activeAccount()
+        check(active == null || active == account) { "The account changed." }
+        if (active == account) {
+            if (recoveringSignOut == null) beforeAccountChange()
+            check(activeAccount() == account) { "The account changed." }
+            val held = recoveringSignOut ?: runtime.signOut().also { recoveringSignOut = it }
+            check(held.account == account) { "The account changed." }
+            held.finish(if (choice == AuthSignOutChoice.Keep) SignOutChoice.keep else SignOutChoice.discard)
+            recoveringSignOut = null
+        } else if (choice == AuthSignOutChoice.Discard) engine.discardDormant(account)
+    }
+
+    fun deletionUnsent(account: String): Int {
+        val snapshot = engine.snapshot()
+        val active = snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") }
+        check(active.member("meta")["account"]?.str() == account && active.member("meta").member("state").str() == "bound")
+        val pending = active["device"]?.obj().orEmpty().entries.sumOf { (product, rows) ->
+            WorkoutImports.pendingDeviceWork(product, rows.obj()).distinct().count { it in rows.obj() }
+        }
+        return active["outbox"]?.arr().orEmpty().count { it.member("state").str() in setOf("held", "ready", "sent") } + pending
+    }
+
+    private var deletingSignOut: works.windmill.sync.engine.SignOutSession? = null
+
+    suspend fun finishAccountDeletion(account: String, replica: String, held: AuthSignOutSession?) {
+        val snapshot = engine.snapshot()
+        val retained = snapshot.member("replicas").arr().filter { it.member("meta")["account"]?.str() == account }
+        check(retained.all { it.member("meta").member("replica").str() == replica }) { "The account replica changed." }
+        val original = retained.singleOrNull()
+        if (original == null) { held?.cancel(); deletingSignOut = null; return }
+        val meta = original.member("meta")
+        if (meta.member("state").str() == "dormant") {
+            held?.cancel()
+            engine.discardDormant(account)
+            deletingSignOut = null
+            return
+        }
+        check(meta.member("state").str() == "bound" && snapshot.member("active").str() == replica) { "The account changed." }
+        if (held != null) held.finish(AuthSignOutChoice.Discard)
+        else {
+            val opening = deletingSignOut ?: runtime.signOut().also { deletingSignOut = it }
+            check(opening.account == account)
+            opening.finish(SignOutChoice.discard)
+        }
+        deletingSignOut = null
+    }
+
+    override suspend fun cleanupSignOut(account: String) {
+        check(activeAccount() != account) { "The account is still selected." }
+        clearAccountCredential(account)
+    }
+
+    override suspend fun signOut() {
+        val account = activeAccount() ?: return
+        recoverSignOut(account, AuthSignOutChoice.Keep)
+        cleanupSignOut(account)
     }
 
     fun enter() = runtime.enter()

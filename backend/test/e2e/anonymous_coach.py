@@ -37,9 +37,12 @@ def fixture_result(details):
         {"exerciseId": exercise, "sets": [{"reps": reps, "weightKg": None} for _ in range(sets)], "restSeconds": None}
         for exercise, sets, reps in day]} for index, day in enumerate(days[:count])]}
     if details.get("mode") == "conversation":
+        if details.get("text") == "fixture_account_required":
+            return {"message": "", "routines": [], "errorCode": "account_required"}
         if "routine" not in details.get("text", "").lower():
-            return {"message": "Hello. What would you like to work on?" if not details.get("context") else "Three days gives us room to build gradually. Would you like a routine draft?", "routines": []}
+            return {"message": "Hello. What would you like to work on?" if not details.get("context") else "Three days gives us room to build gradually. Would you like a routine draft?", "routines": [], "errorCode": None}
         result["message"] = "Here are your routine drafts. Review them before saving."
+        result["errorCode"] = None
     return result
 
 
@@ -180,6 +183,9 @@ class AnonymousCoachProof(coach_live.LiveCoachProof):
             context += [{"role": "user", "text": "I can train three days each week"}, {"role": "assistant", "text": followup["message"]}]
             _, draft = self.generate("dialogue_draft", issued["program"], {"mode": "conversation", "text": "Yes, draft a routine", "context": context})
             self.check("dialogue_draft_not_imported", bool(draft["routines"]) and self.sql("SELECT count(*) FROM gym_routines") == "0")
+            _, policy = self.generate("account_required", issued["program"], {"mode": "conversation", "text": "fixture_account_required", "context": []}, expected="failed")
+            self.check("typed_account_required_without_account_writes", policy["errorCode"] == "account_required" and policy["message"] == "" and policy["routines"] == [] and
+                       all(self.sql("SELECT count(*) FROM " + table) == "0" for table in ("gym_routines", "gym_notes", "gym_proposals")))
         for path in ("/v1/gym/threads", "/v1/gym/exercises", "/v1/gym/routines", "/v1/gym/threads/thr_private/attachments/img_private"):
             status, _, _ = self.call("GET", path, credential=issued["goal"])
             self.check("account_route_locked_" + path.split("/")[-1], status == 401)

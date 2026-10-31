@@ -64,13 +64,13 @@ class TelemetryTests {
 
             val cases = listOf(
                 Triple(WindmillApiException.Refused(401, Refusal(message = "sign in first")),
-                    AskOutcome.Refused("sign in first"),
+                    AskOutcome.Refused("sign in first", terminal = true),
                     mapOf("outcome" to "refused", "failure_kind" to "http", "status" to "401")),
                 Triple(WindmillApiException.Refused(429, Refusal(code = "ask-out-of-budget")),
                     AskOutcome.Capped("This account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on.", AskCap.Ceiling),
                     mapOf("outcome" to "capped", "cap" to "ceiling", "failure_kind" to "http", "status" to "429")),
                 Triple(WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit")),
-                    AskOutcome.Capped("The next question frees up in a couple of hours.", AskCap.Daily),
+                    AskOutcome.Capped(works.windmill.gym.coach.Ask.capReached, AskCap.Daily),
                     mapOf("outcome" to "capped", "cap" to "daily", "failure_kind" to "http", "status" to "429")),
                 Triple(WindmillApiException.Refused(404, Refusal()), AskOutcome.Absent,
                     mapOf("outcome" to "absent", "failure_kind" to "http", "status" to "404")),

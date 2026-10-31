@@ -114,7 +114,7 @@ class CoachChatTests {
         val first = store.freshChat()
         assertTrue(store.submit(first, "First question", requestId = "request-a"))
         runCurrent()
-        assertEquals(AskQuestion(first, "First question", "request-a"), started.await())
+        assertEquals(AskQuestion(first, "First question", "request-a", purpose = "conversation"), started.await())
         val second = store.freshChat()
         store.saveDraft(second, CoachDraft("Second draft"))
         assertEquals(first, store.pendingChat(second)?.id)
@@ -215,6 +215,93 @@ class CoachChatTests {
         assertEquals(CoachDraft("Keep editing"), store.draft("selected"))
         assertEquals("Complete", store.chat("origin")?.exchanges?.single()?.answer?.answer)
         assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("alice"))
+    }
+
+    @Test fun aFullHistoryReadKeepsTheExactLocalRefusalAndDeadlineAcrossRestart() = runTest {
+        for (marked in listOf(false, true)) {
+            val file = File(tmp.root, "terminal-history-$marked")
+            val disk = LocalCoach(file)
+            val page = AskThread("thread-a", "First question", turns = listOf(
+                AskTurn(Ask.fromLifter, "First question", requestId = "answered", position = 1),
+                AskTurn("coach", "First answer", requestId = "answered", position = 2)))
+            val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
+            val refusal = AskExchange("Retained question", trouble = Ask.capReached, requestId = "refused",
+                attachments = listOf(photo), retryAtMs = 1_800_000_000_000L, terminalRefusal = marked)
+            val draft = CoachDraft(refusal.question, photo)
+            disk.savePhoto("alice", photo.id, byteArrayOf(1, 2, 3))
+            disk.saveChat("alice", LocalChat(page.id, exchanges = page.exchanges() + refusal, cap = "Daily"))
+            disk.saveDraft("alice", page.id, draft)
+            val api = FakeGymRest().apply { conversations[page.id] = page }
+            repeat(2) {
+                val reopened = LocalCoach(file)
+                val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, reopened, Telemetry.None,
+                    System::nanoTime, backgroundScope)
+                repeat(2) { assertEquals(GymResult.Ok(page), store.thread(page.id)) }
+                store.resumeChats(); runCurrent()
+                val saved = LocalCoach(file).archivedChat("alice", page.id)!!
+                assertEquals(page.exchanges() + refusal, saved.exchanges)
+                assertEquals("Daily", saved.cap)
+                assertNull(saved.history?.nextCursor)
+                assertEquals(draft, reopened.draft("alice", page.id))
+                assertArrayEquals(byteArrayOf(1, 2, 3), reopened.photoFile("alice", photo.id).readBytes())
+                assertEquals(emptyList<AskQuestion>(), reopened.pending("alice"))
+            }
+            assertEquals(emptyList<AskQuestion>(), api.asked)
+        }
+    }
+
+    @Test fun aMatchingServerTurnReplacesTheLocalTerminalRefusalWithoutADuplicate() = runTest {
+        val completed = AskThread("thread-a", "Question", turns = listOf(
+            AskTurn(Ask.fromLifter, "Question", requestId = "same-request", position = 1),
+            AskTurn("coach", "Answer", requestId = "same-request", position = 2)))
+        val running = completed.copy(turns = emptyList(),
+            generation = AskGeneration("generation-a", "same-request", "Question", "running", "Partial"))
+        for ((index, page) in listOf(completed, running).withIndex()) for (absent in listOf(false, true)) {
+            val file = File(tmp.root, "terminal-matched-history-$index-$absent")
+            val disk = LocalCoach(file)
+            disk.saveChat("alice", LocalChat(page.id, exchanges = listOf(AskExchange("Question",
+                trouble = if (absent) Ask.notHere else Ask.capReached, requestId = "same-request",
+                retryAtMs = 1_800_000_000_000L.takeUnless { absent }, terminalRefusal = true)),
+                cap = "Daily".takeUnless { absent }, absent = absent))
+            val api = FakeGymRest().apply { conversations[page.id] = page }
+            val store = CoachStore({ "alice" }, { emptySet() }, {}, { api }, disk, Telemetry.None,
+                System::nanoTime, backgroundScope)
+            repeat(2) { assertEquals(GymResult.Ok(page), store.thread(page.id)) }
+            val saved = LocalCoach(file).archivedChat("alice", page.id)!!
+            assertEquals(page.exchanges(), saved.exchanges)
+            assertNull(saved.cap)
+            assertFalse(saved.absent)
+            assertEquals(emptyList<AskQuestion>(), api.asked)
+        }
+    }
+
+    @Test fun aLateHistoryReadCannotRestoreARefusalAfterOwnerChangeOrDeletion() = runTest {
+        for (deleting in listOf(false, true)) {
+            val file = File(tmp.root, "terminal-late-history-$deleting")
+            val disk = LocalCoach(file)
+            var owner = "alice"
+            val release = CompletableDeferred<Unit>()
+            val page = AskThread("thread-a", "Question", turns = listOf(AskTurn("coach", "Answer")))
+            val api = object : GymRest by FakeGymRest() {
+                override suspend fun thread(id: String, before: String?): AskThread { release.await(); return page }
+            }
+            disk.saveChat("alice", LocalChat(page.id, exchanges = listOf(AskExchange("Question",
+                trouble = Ask.capReached, requestId = "refused", retryAtMs = 1_800_000_000_000L)), cap = "Daily"))
+            disk.saveChat("bob", LocalChat("bob-chat"))
+            val store = CoachStore({ owner }, { emptySet() }, {}, { api }, disk, Telemetry.None,
+                System::nanoTime, backgroundScope)
+            val reading = async { store.thread(page.id) }
+            runCurrent()
+            if (deleting) { store.eraseOwner("alice"); disk.reopenVerifiedOwner("alice") }
+            else { owner = "bob"; store.resetThreads() }
+            val before = file.readText()
+            release.complete(Unit)
+            assertEquals(GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused(
+                "The account changed. Open this again.")), reading.await())
+            assertEquals(before, file.readText())
+            assertEquals(listOf("bob-chat"), LocalCoach(file).chats("bob").map { it.id })
+            if (deleting) assertEquals(emptyList<LocalChat>(), LocalCoach(file).chats("alice"))
+        }
     }
 
     @Test fun loadedOlderMessagesAndManualScrollSurviveRestartAndNewestPageRefresh() = runTest {

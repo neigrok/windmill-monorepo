@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -17,6 +18,30 @@ spec.loader.exec_module(capture)
 
 
 class DesignCaptureTests(unittest.TestCase):
+    def test_event_snapshot_survives_capture_failure_before_database_cleanup(self):
+        for failing in (False, True):
+            with self.subTest(failing=failing), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                fixture = capture.Fixture("http://127.0.0.1:8120", "unused")
+                events = '[{"name":"gym_setup_step","props":{"action":"shown"}}]'
+                order = []
+                def query(sql):
+                    order.append("events")
+                    self.assertNotIn("dropped", order)
+                    self.assertIn("ORDER BY id", sql)
+                    return events
+                with patch.object(fixture, "sql", side_effect=query):
+                    try:
+                        with ExitStack() as stack:
+                            stack.callback(order.append, "dropped")
+                            stack.callback(fixture.save_events, output)
+                            if failing:
+                                raise RuntimeError("capture stopped")
+                    except RuntimeError as error:
+                        self.assertEqual("capture stopped", str(error))
+                self.assertEqual(["events", "dropped"], order)
+                self.assertEqual(events + "\n", (output / "events.json").read_text())
+
     def test_launcher_capture_requires_an_empty_account_and_a_boolean_choice(self):
         scenario = {"board": "A4", "name": "onboarding-gym", "account": "empty", "launcher": True}
         capture.validate_scenarios([scenario])
@@ -104,6 +129,22 @@ class DesignCaptureTests(unittest.TestCase):
                 path.write_text(json.dumps(invalid))
                 with self.subTest(fixture=invalid), self.assertRaises(ValueError):
                     capture.read_fixture(path)
+
+    def test_capture_only_accepts_only_an_explicit_empty_training_fixture(self):
+        fixture = {"exercises": [], "routines": [], "history": []}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(json.dumps(fixture))
+            self.assertEqual(fixture, capture.read_fixture(path, capture_only=True))
+            with self.assertRaises(ValueError):
+                capture.read_fixture(path)
+            for invalid in ({"exercises": [], "routines": []}, {**fixture, "connections": True},
+                            {**fixture, "history": [{"routine": 0}]}):
+                path.write_text(json.dumps(invalid))
+                with self.subTest(fixture=invalid), self.assertRaises(ValueError):
+                    capture.read_fixture(path, capture_only=True)
+        with self.assertRaises(ValueError):
+            capture.read_fixture(None, capture_only=True)
 
     def test_connections_fixture_is_an_explicit_boolean_choice(self):
         fixture = {"exercises": [], "routines": [{"name": "Push A", "entries": [{"exerciseId": "bench-press"}]}]}
@@ -647,7 +688,8 @@ class DesignCaptureTests(unittest.TestCase):
                 delta = {"type": "input_json_delta", "partial_json": "{}"} if block["type"] == "tool_use" else {"type": "text_delta", "text": block["text"]}
                 self.assertEqual([
                     {"type": "message_start", "message": {"id": "msg_capture", "type": "message", "role": "assistant", "model": "fixture",
-                        "content": [], "stop_reason": None, "usage": {"input_tokens": 100, "output_tokens": 25}}},
+                        "content": [], "stop_reason": None, "usage": {"input_tokens": 100, "output_tokens": 25,
+                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}},
                     {"type": "content_block_start", "index": 0, "content_block": start},
                     {"type": "content_block_delta", "index": 0, "delta": delta},
                     {"type": "content_block_stop", "index": 0},
@@ -686,7 +728,9 @@ class DesignCaptureTests(unittest.TestCase):
                 request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/v1/messages",
                     json.dumps({"model": "fixture", "stream": False}).encode(), {"Content-Type": "application/json"})
                 with urllib.request.urlopen(request) as response:
-                    self.assertEqual(content, json.load(response)["content"])
+                    self.assertEqual({"id": "msg_capture", "type": "message", "role": "assistant", "model": "fixture",
+                        "content": content, "stop_reason": "tool_use", "usage": {"input_tokens": 100, "output_tokens": 25,
+                            "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}, json.load(response))
                 self.assertEqual([1], [call.args[0] for call in sleep.call_args_list])
             self.assertEqual(([], 2), (server.responses, server.calls))
         finally:

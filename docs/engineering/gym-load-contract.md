@@ -1,10 +1,10 @@
 # Gym loads and unavailable metrics
 
-The composed source registry is 10/minimum 10. Gym loads have no fixed kg bound. A load must be a
+The composed source registry is 12/minimum 11. Gym loads have no fixed kg bound. A load must be a
 finite Double on its normalized cent grid; exact zero is valid, while an absent routine target still
 means last time. Reps, set counts, bodyweight and configured movement steps retain their own bounds.
-The [coordinated cutoff](../../backend/deploy/README.md#coordinated-client-cutoff) remains held until
-the replacement Android/iOS distributions and upgrade access are verified.
+Production's hello advertised schema 11 / minimum 11 when last verified
+([coordinated cutoff](../../backend/deploy/README.md#coordinated-client-cutoff)).
 
 ## Normalization and storage
 

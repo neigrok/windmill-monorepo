@@ -114,10 +114,44 @@ workout or chat identifier, question, routine name, amount or failure sentence e
 
 ## Coach archive and navigation
 
+The signed-out onboarding transport uses `ai_installation` for installation issue/read/bind and sealed-state failures, and `gym.coachOnboarding` for request transport, archive persistence and atomic import failures. Binding runs after the existing authentication lifecycle in the application scope; its failure cannot invalidate an accepted account sign-in. Installation state is retained separately from account credentials on sign-out. Consumers of a reported outcome do not report it again.
+
+Onboarding attempts emit `gym_ask_started` and `gym_ask_outcome` with `state=anonymous`, bounded outcomes `answered|refused|capped|failed|cancelled`, `duration_ms` and `cap=allowance` only when applicable. `gym_coach_import` emits `started`, then `committed|replayed|refused|failed`; installation binding refusal/failure emits `ai_installation_outcome` with `action=bind`. Expected 401/409/429 refusals and the declared anonymous-unavailable or allowance 503 codes are events, not Issues. Unexpected accounting/server failures remain Issues. No credential, owner/chat/request/result/record ID, fingerprint, draft, photo or routine name is included.
+
+Terminal `provider_failed`, `invalid_result`, `internal_error`, `output_truncated`, `interrupted` and `unavailable` responses emit `failed`; their server failures create no duplicate client Issue. `result_expired`, model refusal, provider busy and installation policy refusals emit `refused`. Allowance refusals emit `capped`. A deleted originating chat emits `cancelled` and cannot be recreated by request persistence or a late reply.
+
+Unexpected HTTP 5xx responses also emit `failed`; transport reports their one client Issue and the
+store retains the original input. Declared anonymous-unavailable and allowance HTTP 503 responses
+retain their `refused` or `capped` outcomes without an Issue. A terminal binding/invalid-installation
+result updates the retained credential's state before another Send; bound requests can still recover
+their original result by GET.
+
+Coach setup emits `gym_setup_step` with `screen=coach` and the bounded actions
+`shown|screenshot|build_manually|photo_selected|photo_removed|sign_in`. Photo selection and removal emit only
+after the draft reference is saved; failed removal retains the previous reference. Picking a photo
+does not send a model request. No photo bytes, size, filename, URI or identifier enters these events.
+Signed-out photo preparation failures report once under `gym.coachOnboarding`; signed-in preparation
+uses `gym.preparePhoto`. Photo storage and draft failures use `gym.savePhoto` and `gym.saveDraft`.
+The greeting emits no model turn and no content in telemetry.
+
 Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
 `action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
 Recreation restores the selected chat without a fresh-entry event. Ask transport retains
 `gym_ask_started`, `gym_ask_outcome` and the `gym.ask` failure boundary.
+Anonymous access changes emit `gym_action` with `screen=coach`, `action=access` and
+`outcome=available|bound|unavailable`. The typed `account_required` response emits the existing
+anonymous `refused` outcome and no client Issue. Its original input remains in its own chat;
+model prose is not the displayed policy sentence. Sign in keeps the existing auth-door events.
+Daily/ceiling notices retain the refused composer and existing Connected log navigation. Retry
+deadlines persist on the exchange, are recomputed for clock/locale/timezone changes and never
+enter telemetry. Deadline expiry performs no automatic Send.
+
+Coach choice and kept-draft actions emit `gym_action`, `screen=coach`,
+`action=choose|continue_draft`, `outcome=ok` only after durable publication or verified recovery.
+Photo-copy/adoption failures report `gym.adoptCoachDraft`; selection and Continue failures report
+`gym.saveDraft`. A published-but-unreadable operation retains its attachments and reconciles before
+retry; recovery emits the completed step once. Invalid optional clarification metadata is ignored
+without an Issue. Events contain no question, choice label, draft text, photo reference or chat ID.
 
 The existing local Coach document owns archive failures at `gym.saveConversation` and
 `gym.restoreConversation`; draft writes use `gym.saveDraft`, photo preparation uses
@@ -128,6 +162,12 @@ request identities, drafts, photo names/bytes, answer previews and receipt conte
 or failure properties. Cancelled photo uploads retire their pending request atomically while retaining
 the Retry draft. Late photo completion cannot recreate a deleted chat; cleanup retains every photo
 referenced by a live draft, request or archived exchange.
+Known HTTP refusals without an accepted generation atomically retain the refusal and draft while
+retiring automatic request recovery. Reopening or changing appearance emits no new ask for that
+refusal. Legacy cap/absent/new-thread exchanges retire only their matching request without a
+snapshot; running generations and uncertain transport retain the original request. A failed local
+retirement reports `gym.saveConversation`; uncertain publication is read back before recovery can
+send again. Expected server refusals remain outcome events, not Issues.
 
 History confirmation emits `gym_action` with `screen=threads`, `action=delete`, `state=shown`.
 Cancel or dismissal emits `outcome=cancelled`; the application-owned confirmed delete emits one
@@ -145,10 +185,9 @@ properties or diagnostics. Plain taps and opening the menu do not claim a copy. 
 emits `action=jump_latest`, `outcome=ok` when the local scroll command is accepted.
 
 The native state-input pipeline retains draft/selection ownership while Material3 supplies its
-filled-field decoration. Signed-out local History uses the existing disabled native component:
-text/photo drafts stay retained, while editing, adding/removing a photo and Send stay disabled.
-Anonymous network composition remains gated by the installation implementation. The signed-out
-access-screen body belongs to task 36.
+filled-field decoration. An available anonymous installation can ask within its original local
+chat. Bound or unavailable installations retain History and their drafts without an anonymous
+composer; already submitted work can recover by GET. No replacement installation is issued.
 
 Routine-editor History and the summary’s `· yours` marker emit no events or writes. Unexpected history-read failures report under `gym.routineHistory`; owner or replica changes are expected refusals.
 
@@ -431,6 +470,8 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach archive navigation | `gym_action` | screen: `coach`; action: `fresh_entry`, `history_open`, `draft_restored`, `reply_open`, `read_sources`; outcome: `ok` |
+| Coach anonymous access | `gym_action` | screen: `coach`; action: `access`; outcome: `available`, `bound`, `unavailable` |
+| Coach setup choices and kept drafts | `gym_action` | screen: `coach`; action: `choose`, `continue_draft`; outcome: `ok` |
 | Coach messages | `gym_action` | screen: `coach`; action: `copy`; outcome: `ok`, `failed`; or action: `jump_latest`, outcome: `ok` |
 | Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |
@@ -449,7 +490,9 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Outer routine Save | `gym_action` | screen: `routine_editor`; action: `save`; outcome: `ok`, `refused`, `failed` |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action: `inspect`, `keep`, `fix`, `retry`, `discard`; bounded state and outcome labels above |
-| Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
+| Sign-in decisions | `gym_sign_in_decision` | state, action, outcome |
+| Sign-out question and recovery | `gym_sign_out` | state: `shown`; action: `keep`, `discard`, `cancel`; outcome: `completed`, `failed` |
+| Account deletion and recovery | `account_delete` | state: `shown`; action: `confirm`, `check`, `cleanup`, `back`, `done`; outcome: `started`, `pending_confirmation`, `cleanup_pending`, `ok`, `refused`, `failed`, `cancelled` |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
@@ -605,3 +648,31 @@ The Record native recipe reaches first-party intake with four `gym_screen_viewed
 workout identity, estimate or load. Opening the menu/editor and cancelling writes no edit; the
 accepted local fixture retains all 18 sets and six finished workouts. Existing progress failures
 stay at `gym.loadProgress`; the native capture does not inject a storage failure.
+
+The typed `subject_exhausted` notice preserves the refused input and emits `gym_ask_outcome` with
+`outcome=capped`, `cap=allowance`; anonymous sends also carry `state=anonymous`. Its Sign in door
+emits `gym_setup_step` with `action=sign_in`. Expected 429 responses produce no Issue. Reset dates,
+allowance amounts, server sentences and draft text are excluded from these events.
+
+The You sheet opens Notes and Connected log directly. Their existing `gym_screen_viewed`
+values remain `notes` and `connections`; the retired `settings` route emits no view event.
+About Windmill retains its onboarding replay events. Restoring malformed or unknown navigation
+reports `gym.restoreNavigation`; removal of a known retired Settings entry is a migration, not a failure.
+The removed units control emits no events. Android reads confirmation feedback without changing shared wire units; no preferences-write UI remains.
+
+Sign-out preparation emits `gym_sign_out` with `state=shown`; finishing or cancelling emits only
+the finite action/outcome labels above. The held count, account, credential and user content are
+excluded. `auth_signed_out` fires when the saved account has been cleared. Finish and recovery
+failures report under `auth_sign_out`; best-effort original-credential logout uses `auth_logout`.
+Unreadable sealed choice data reports `session_sign_out_decode`. Existing storage and vault
+boundaries report failed writes or decryption. A pending choice does not run ordinary auth restore.
+
+Account deletion emits only the finite labels above. `ok` follows a confirmed closed receipt and
+successful local cleanup; an unknown result emits `pending_confirmation`, and owed local removal
+emits `cleanup_pending`. No email, account/operation id, recovery proof, credential, deadline or
+body is an event property. `account_delete_request` and `account_delete_result` identify transport
+failures; sealed-record failures use `account_delete_storage`, preparation uses
+`account_delete_prepare`, and local cleanup/recovery use `account_delete_cleanup` and
+`account_delete_recovery`. Expected refusals and offline results do not create Issues. Local
+storage reports use static messages. The first-party intake and native failure collector checks for
+this flow remain pending.

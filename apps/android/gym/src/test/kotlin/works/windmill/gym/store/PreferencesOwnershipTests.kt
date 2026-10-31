@@ -25,12 +25,12 @@ class PreferencesOwnershipTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("b"); other.pull(server)
-            assertNull(other.store.savePreferences(b))
+            other.seedFeedback(b)
             other.sync(server)
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertNull(room.store.savePreferences(a))
+            room.seedFeedback(a)
             room.select("b"); room.pull(server); room.store.refreshEngine()
             assertEquals(b, room.store.preferences)
             assertEquals(b, room.training.settings())
@@ -51,8 +51,8 @@ class PreferencesOwnershipTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("a")
-            assertNull(room.store.savePreferences(old))
-            assertNull(room.store.savePreferences(latest))
+            room.seedFeedback(old)
+            room.seedFeedback(latest)
             assertEquals(latest, room.store.preferences)
             room.sync(server); room.store.refreshEngine()
             assertEquals(latest, room.store.preferences)

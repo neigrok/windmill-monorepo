@@ -947,11 +947,9 @@ No production injection hook or extra telemetry framework is added for acceptanc
 Web promotion checks the live sync interval before mkdir or rsync and retains a complete pinned
 source/schema/file-hash artifact first. The helper passes 33 script checks plus the final seven-case
 web class, including rejection of symlinks before hashing. An actual local anonymous hello at
-schema 10/minimum 10 admits the matching client and holds both mismatch directions. This proves
-the local decision and modeled workflow boundary; production promotion and queued delivery are
-pending. Source schema 10/minimum 10 activates neither the production cutoff nor either mobile
-distribution. The compatible served website stays in place until both replacement distributions,
-the pinned web artifact and the acknowledged cutoff are ready.
+schema 10/minimum 10 admitted the matching client and held both mismatch directions, which
+proves the local decision and the modeled workflow boundary. Current source is registry 12 /
+minimum 11; production's hello advertised schema 11 / minimum 11 when last verified, on 2026-10-30.
 
 The simplification pass keeps decimal normalization, exact estimate ordering, checked aggregates
 and sender readiness at shared boundaries. Native receipt integration reuses text wrapping and
@@ -1145,7 +1143,7 @@ all non-AVD evidence and leaves the shared collector unchanged. The source is on
 ## Main batch verification and canon status
 
 Main `b40dd5e0` contains tasks 18, 22, 23, 24, 45, 51 and 52 as separate task commits.
-The active task pack has 30 of 42 tasks on main. The canonical shipped frames and complete
+33 of the 42 active tasks are on main; tasks 19, 25 and 50 followed this batch. The canonical shipped frames and complete
 Weigh-in/Connected-log flows are marked In production; mixed Routines/Workout parents and
 unfinished creation, History and Coach states retain their own statuses. Shell A4 reuses the
 approved headerless rack without changing its surrounding composition. The Target-summary

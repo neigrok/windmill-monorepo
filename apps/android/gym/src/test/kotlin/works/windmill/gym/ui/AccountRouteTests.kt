@@ -115,14 +115,14 @@ class AccountRouteTests {
                 compose.onNode(hasText(tab) and hasClickAction()).performClick()
                 compose.onNodeWithContentDescription("Your account").assertIsDisplayed().performClick()
                 compose.onNodeWithText("You").assertIsDisplayed()
-                compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).performClick()
+                compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).performClick()
                 compose.onNodeWithContentDescription("Back to $tab").performClick()
             }
             compose.onNodeWithContentDescription("History").assertIsDisplayed()
             compose.onNodeWithContentDescription("More").assertDoesNotExist()
             compose.runOnIdle {
-                assertEquals(listOf("routines", "settings", "routines", "log", "settings", "log",
-                    "coach", "settings", "coach").map { mapOf("screen" to it) }, screens)
+                assertEquals(listOf("routines", "notes", "routines", "log", "notes", "log",
+                    "coach", "notes", "coach").map { mapOf("screen" to it) }, screens)
                 assertEquals(emptyList<String>(), failures)
             }
         } finally {
@@ -139,16 +139,16 @@ class AccountRouteTests {
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back to Routines").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
         assertSame("the root retained its ShellActions instance", first, shell)
         assertEquals("closing a child route must not unregister the still-mounted GymRoom",
-            listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+            listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         scope.cancel()
     }
@@ -160,15 +160,16 @@ class AccountRouteTests {
         val store = room(tmp.newFolder(), scope, signedIn = false).store
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
+        compose.onNode(hasText("Coach") and hasClickAction()).assertIsSelected()
         compose.onNodeWithContentDescription("Your account").performClick()
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).performClick()
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("You").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Back to Routines").performClick()
+        compose.onNodeWithContentDescription("Back to Coach").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
-        compose.onNodeWithText("Sign in").assertIsDisplayed()
+        compose.onNode(hasText("Sign in") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         scope.cancel()
     }
 
@@ -180,13 +181,13 @@ class AccountRouteTests {
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithContentDescription("Back to Routines").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
         assertSame(first, shell)
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
     }
 
@@ -212,8 +213,8 @@ class AccountRouteTests {
         assertNotSame(firstShell, shell)
         assertSame(firstOwner, owners.last())
         assertEquals(setOf(store), owners.toSet())
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
     }
 
@@ -241,14 +242,14 @@ class AccountRouteTests {
             restoration.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("You").assertIsDisplayed()
             compose.runOnIdle { assertEquals(AuthStatus.Unknown, auth.status) }
-            assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
+            assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
             release.countDown()
             compose.waitUntil(5_000) { auth.status is AuthStatus.SignedIn }
             compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
             compose.onNodeWithContentDescription("Back to Routines").performClick()
             compose.onNodeWithContentDescription("Your account").performClick()
-            assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-            compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+            assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+            compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
             compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         } finally { release.countDown() }
     }
@@ -274,8 +275,8 @@ class AccountRouteTests {
         runBlocking { auth.reverify() }
         compose.onNodeWithContentDescription("Your account").performClick()
         assertSame(first, shell)
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
     }
 
@@ -297,12 +298,12 @@ class AccountRouteTests {
         compose.onNodeWithText("You").assertIsDisplayed()
         assertNotSame(first, shell)
         assertEquals(2, stores)
-        assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        assertEquals(listOf("notes", "connections"), shell.destinations.map { it.id })
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithContentDescription("Back to Routines").performClick()
         compose.onNodeWithContentDescription("Your account").performClick()
-        compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        compose.onNode(hasText("Notes") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         scope.cancel()
     }

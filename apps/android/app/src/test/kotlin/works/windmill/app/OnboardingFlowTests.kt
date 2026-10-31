@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.Density
@@ -36,6 +37,19 @@ import works.windmill.gym.store.WorkoutControls
 import androidx.test.core.app.ActivityScenario
 import works.windmill.platform.telemetry.Telemetry
 
+private fun ComposeTestRule.assertEmptyGymSetup() {
+    val heading = hasText("Coach") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit)
+    try { waitUntil(10_000) { onAllNodes(heading, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+    catch (failure: Throwable) { throw AssertionError(onRoot(useUnmergedTree = true).printToString(), failure) }
+    onNode(heading, useUnmergedTree = true).assertIsDisplayed()
+    onNodeWithContentDescription("Your account").assertIsDisplayed()
+    runOnIdle {
+        val store = (RuntimeEnvironment.getApplication() as WindmillApplication).gym.store
+        assertEquals(true, store.initialGymEmpty)
+        assertEquals(true, store.coach.selectedChatId?.let { store.coach.chat(it)?.setup })
+    }
+}
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi", application = WindmillApplication::class)
 class OnboardingFlowTests {
@@ -57,24 +71,20 @@ class OnboardingFlowTests {
         compose.onNodeWithText("Skip").assertDoesNotExist()
         compose.onNodeWithText("Get started").performClick()
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
-        compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Your account").assertIsDisplayed()
+        compose.assertEmptyGymSetup()
     }
 
     @Test
     fun skipOpensGymAndColdActivityEntryDoesNotShowItAgain() {
         compose.onNodeWithText("Skip").performClick()
-        compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        compose.assertEmptyGymSetup()
         compose.runOnIdle {
             assertFalse((compose.activity.application as WindmillApplication).onboardingLaunch
                 .firstLaunch(hasAccount = false, deepLink = false))
         }
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
-        compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        compose.assertEmptyGymSetup()
     }
 
     @Test
@@ -188,8 +198,7 @@ class OnboardingFlowTests {
             }
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
             compose.onNodeWithText("You").assertDoesNotExist()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
         } finally {
             compose.runOnUiThread { compose.activity.intent = originalIntent }
         }
@@ -208,8 +217,7 @@ class OnboardingFlowTests {
                     compose.activity, Intent(Intent.ACTION_MAIN).setClass(compose.activity, MainActivity::class.java))
             }
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
         } finally {
             compose.runOnUiThread { compose.activity.intent = originalIntent }
         }
@@ -268,8 +276,7 @@ class OnboardingEntryTests {
         val intent = Intent(Intent.ACTION_MAIN).setClass(runtime, MainActivity::class.java)
         ActivityScenario.launch<MainActivity>(intent).use {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
             assertTrue(prefs.getBoolean("examined", false))
         }
     }
@@ -293,8 +300,7 @@ class OnboardingExistingDataTests {
         assertFalse(introduction)
         compose.runOnUiThread { compose.activity.setContent { Root(runtime, introduction, onIntroductionExit = {}) } }
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
-        compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+        compose.assertEmptyGymSetup()
         assertEquals(sets, WorkoutControls(file, deviceOwner = "other").sets(workout.id))
     }
 
@@ -358,8 +364,7 @@ class OnboardingLifecycleTests {
             compose.onNodeWithContentDescription("Page 2 of 4").assertIsDisplayed()
             repeat(2) { compose.onNodeWithText("Next").performClick() }
             compose.onNodeWithText("Get started").performClick()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
             assertEquals(listOf(mapOf("state" to "first_launch", "screen" to "gym", "outcome" to "completed")), exits)
         } finally {
             controller.pause().stop().destroy()
@@ -380,8 +385,7 @@ class OnboardingLifecycleTests {
             controller.restart().start().resume().visible()
             compose.onNodeWithContentDescription("Page 2 of 4").assertIsDisplayed()
             compose.onNodeWithText("Skip").performClick()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
             assertEquals(listOf(mapOf("state" to "first_launch", "screen" to "roadmap", "outcome" to "skipped")), exits)
         } finally {
             keyguard.setIsDeviceLocked(false)
@@ -417,8 +421,7 @@ class OnboardingLifecycleTests {
         val restored = activity(savedState)
         try {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
         } finally {
             restored.pause().stop().destroy()
         }
@@ -435,8 +438,7 @@ class OnboardingLifecycleTests {
         val restored = activity(savedState)
         try {
             compose.onNodeWithTag("onboarding").assertDoesNotExist()
-            compose.onNode(hasText("Routines") and SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit), useUnmergedTree = true).assertIsDisplayed()
-            compose.onNodeWithContentDescription("New routine").assertIsDisplayed()
+            compose.assertEmptyGymSetup()
         } finally {
             restored.pause().stop().destroy()
         }

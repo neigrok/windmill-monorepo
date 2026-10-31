@@ -55,6 +55,7 @@ import works.windmill.platform.ShellActions
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.design.LocalWindmillDark
 import works.windmill.platform.design.WindmillMaterial
+import works.windmill.platform.you.DeleteAccount
 import works.windmill.platform.you.YouSheet
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.ui.onboarding.OnboardingPager
@@ -256,7 +257,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                     OnboardingPager(replay = false, onExit = onIntroductionExit, onPageSettled = onIntroductionPage)
                 } else {
                     Box {
-                        Box(if (about) Modifier.clearAndSetSemantics { }.pointerInput(Unit) {
+                        Box(if (about || runtime.accountDeletion.visible) Modifier.clearAndSetSemantics { }.pointerInput(Unit) {
                             awaitPointerEventScope {
                                 while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
                             }
@@ -276,9 +277,10 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
                             onPageSettled = { aboutPage = it })
                     }
-                    if (youUp && !about && runtime.engineSession.decision == null) YouSheet(auth, onDismiss = { auth.status.user?.id?.let(signInAttempts::complete) ?: signInAttempts.cancel(); youUp = false },
+                    if (runtime.accountDeletion.visible) DeleteAccount(runtime.accountDeletion) { done -> youUp = !done; signIn = false }
+                    if (youUp && !about && !runtime.accountDeletion.visible && runtime.engineSession.decision == null) YouSheet(auth, onDismiss = { auth.status.user?.id?.let(signInAttempts::complete) ?: signInAttempts.cancel(); youUp = false },
                         destinations = shell.destinations + YouDestination("about_windmill", aboutLabel) { about = true },
-                        startSignIn = signIn)
+                        startSignIn = signIn, deletion = runtime.accountDeletion)
                     EngineAccountDecision(runtime.engineSession, auth, runtime.telemetry) { youUp = false; signIn = false }
                 }
             }

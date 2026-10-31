@@ -44,12 +44,18 @@ import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.LastTime
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.StatsProgress
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
-class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release) {
+class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> Boolean = engine::release,
+    private val writeAuthority: () -> Boolean = { true }) {
     companion object {
+        val rewriteDeviceValue: works.windmill.sync.engine.DeviceValueRewrite = { product, key, value, type, from, to ->
+            CoachRoutineImports.rewriteDeviceValue(product, key,
+                WorkoutImports.rewriteDeviceValue(product, key, value, type, from, to), type, from, to)
+        }
         val intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
             WorkoutImports.intentResultWrites(intent, result, epoch, gestureId, values) +
                 RemovalReceipts.intentResultWrites(intent, result, epoch, gestureId, values)
@@ -59,7 +65,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val details: List<SessionDetail>, val openId: String?, val lastTrainedAt: Map<String, Long>,
         val staleSessions: Set<String>, val pendingSetIds: Set<String>)
     private var parsedLog: ParsedLog? = null
-    private val removalReceipts = RemovalReceipts(engine)
+    private val removalReceipts = RemovalReceipts(engine, writeAuthority)
     fun removalReceipts(): Map<String, Proposal> = removalReceipts.confirmed()
     fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
     fun removalPending(id: String): Boolean = removalReceipts.pending(id)
@@ -84,8 +90,19 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private val zone = Zone { at ->
         ZoneId.systemDefault().rules.getOffset(java.time.Instant.ofEpochMilli(at.ms)).totalSeconds
     }
+    private fun requireWriteAuthority() {
+        if (!writeAuthority()) throw TrainingRefused("account-changed", "The account changed. Open this again.")
+    }
+    private val writable = object : works.windmill.sync.api.Replica by engine {
+        override fun <T> commit(scope: ScopeRef, body: (works.windmill.sync.api.CommitContext) -> Pair<works.windmill.sync.api.Gesture?, T>): Pair<works.windmill.sync.api.CommitOutcome?, T> =
+            engine.commit(scope) { context -> requireWriteAuthority(); body(context) }
+        override fun undo(gestureId: String): Boolean {
+            requireWriteAuthority()
+            return engine.undo(gestureId)
+        }
+    }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
-    val imports = WorkoutImports(engine)
+    val imports = WorkoutImports(engine, writeAuthority)
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
     val notesReady: Boolean get() = anonymous || firstPullComplete
@@ -97,7 +114,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
     private suspend fun <T> writing(body: (ActionRunner) -> T): T = withGymActionContext { context ->
         check(!context.insideRun) { "a run cannot enter inside a run" }
-        body(ActionRunner(engine, engine.registry, zone, context))
+        body(ActionRunner(writable, engine.registry, zone, context))
     }
     private suspend fun <L, T> apply(action: Decider<L, T, GymRefusal>): T =
         writing { runner -> runner.execute(action) }
@@ -589,19 +606,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         ?.let { MovementRecord.of(it, details()) }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
-        GymPreferences(Units.entries.first { it.wire == value.units }, value.confirmHaptic, value.confirmSound)
-    }
-    suspend fun savePreferences(document: GymPreferences): GymPreferences {
-        val next = Preferences(units = document.units.wire, confirmHaptic = document.confirmHaptic, confirmSound = document.confirmSound)
-        writing { runner ->
-            val draft = runner.open(Preferences, next.id, Preferences()).edit { next }
-            when (val result = runner.save(draft, Preferences, GymRefusal) {}) {
-                is SaveResult.Refused -> throw refusal(result.refusal)
-                is SaveResult.Failed -> throw result.error
-                is SaveResult.Saved -> Unit
-            }
-        }
-        return settings()
+        GymPreferences(value.confirmHaptic, value.confirmSound)
     }
     fun notes(): List<Note> = read { reader -> reader.repository(EngineNote).all(ViewMode.drawn)
         .mapIndexed { index, note -> Note(note.id.text, index, note.title, note.body, note.updatedAt?.ms ?: 0) } }
@@ -753,6 +758,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val value = engineSet(operation.sessionId, SetWrite(entry.set)).copy(rpe = entry.set.rpe, note = entry.set.note)
         writing {
             val outcome = engine.commit(EngineSet.scope) { context ->
+                requireWriteAuthority()
                 if (imports.operationSubmission(operation, context, null) == null) return@commit null to Unit
                 val read = Reader(context, EngineSet.scope, Moment(Instant(context.now), zone), engine.registry)
                 val state = TrainingState(read)
@@ -808,6 +814,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         RefusedChange(notice.id, "Note: $title", refusal(domain.refusal).line)
     }
     fun dismissRefusals() {
+        requireWriteAuthority()
         val notices = engine.notices("gym").notices.value
         removalReceipts.dismissRefused(notices.mapNotNull { it.content.command?.args?.get("proposalId")?.str() }.toSet())
         for (notice in notices) engine.dismissNotice(notice.id)
@@ -817,7 +824,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     fun commitAccepted(controls: WorkoutControls, set: TrainingSet, sessionId: String): TrainingSet {
         val value = engineSet(sessionId, SetWrite(set))
         val action = AppendSet(value)
-        val runner = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
+        val runner = ActionRunner(writable, engine.registry, zone, object : ActionContext { override var insideRun = false })
         if (alreadyWritten(value) == null) when (val outcome = runner.run(object : Action<TrainingState, Id<EngineSet>, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
@@ -854,6 +861,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val wanted = controls(controls)
         if (engine.read(EngineSession.scope) { reader -> wanted.all { reader.device(it.key) == it.value } }) return
         engine.commit(EngineSession.scope) { reader ->
+            requireWriteAuthority()
             val changed = wanted.filter { reader.device(it.key) != it.value }
             if (changed.isEmpty()) null to Unit else works.windmill.sync.api.Gesture(emptyList(), local = changed) to Unit
         }

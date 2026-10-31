@@ -130,7 +130,7 @@ class CoachRequestLifecycleTests {
             assertTrue(store.submit(chat, "Question", requestId = "request-a"))
             runCurrent(); io.last(); runCurrent()
             assertTrue(secondEntered.isCompleted)
-            val request = AskQuestion(chat, "Question", "request-a")
+            val request = AskQuestion(chat, "Question", "request-a", purpose = "conversation")
             assertEquals(listOf(request), LocalCoach(file).pending("alice"))
             io.next(); runCurrent()
             assertTrue(store.isAsking(chat))
@@ -228,6 +228,82 @@ class CoachRequestLifecycleTests {
         runCurrent(); io.next(); runCurrent(); io.next(); runCurrent()
         assertFalse(store.isAsking("thread-a"))
         assertEquals("Retry answer", store.chat("thread-a")?.exchanges?.single()?.answer?.answer)
+    }
+
+    @Test fun photoRemovalPublishesOnlyAfterPersistenceAndKeepsAcceptedRequestAttachments() = runTest {
+        val file = File(tmp.root, "photo-removal")
+        var failWrites = false
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        val disk = LocalCoach(file) { target, text ->
+            if (failWrites) throw java.io.IOException("private storage detail")
+            works.windmill.platform.storage.AtomicDocument.write(target, text)
+        }
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val store = CoachStore({ "alice" }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry,
+            System::nanoTime, backgroundScope)
+        val chat = store.freshChat("Retained caption")
+        events.clear()
+        val photo = CoachAttachment("attachment-one", "image/png", 1, 1, 3)
+        val bytes = byteArrayOf(1, 2, 3)
+        store.importPhoto(chat) { photo to bytes }
+        assertEquals(listOf("gym_setup_step" to mapOf("screen" to "coach", "action" to "photo_selected")), events)
+        val accepted = AskQuestion(chat, "Accepted question", "request-kept", listOf(photo.id))
+        disk.keep("alice", accepted)
+        events.clear()
+        failWrites = true
+        assertThrows(java.io.IOException::class.java) { store.removePhoto(chat) }
+        val original = CoachDraft("Retained caption", photo)
+        assertEquals(original, store.draft(chat))
+        assertEquals(original, LocalCoach(file).draft("alice", chat))
+        assertArrayEquals(bytes, disk.photoFile("alice", photo.id).readBytes())
+        assertEquals(emptyList<Pair<String, Map<String, String>>>(), events)
+        assertEquals(listOf("gym.saveDraft"), failures)
+        failWrites = false
+        store.removePhoto(chat)
+        assertEquals(CoachDraft("Retained caption"), store.draft(chat))
+        assertEquals(CoachDraft("Retained caption"), LocalCoach(file).draft("alice", chat))
+        assertEquals(listOf(accepted), LocalCoach(file).pending("alice"))
+        assertArrayEquals(bytes, disk.photoFile("alice", photo.id).readBytes())
+        assertEquals(listOf("gym_setup_step" to mapOf("screen" to "coach", "action" to "photo_removed")), events)
+        store.removePhoto(chat)
+        assertEquals(1, events.size)
+    }
+
+    @Test fun photoPreparationFailureKeepsItsOriginalAccountBoundaryAndDraft() = runTest {
+        val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.test.StandardTestDispatcher(testScheduler))
+        try {
+        for (initialOwner in listOf(null, "alice")) {
+            var owner = initialOwner
+            val failures = mutableListOf<String>()
+            val events = mutableListOf<String>()
+            val telemetry = object : Telemetry {
+                override fun event(name: String, properties: Map<String, String>) { events += name }
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+            }
+            val disk = LocalCoach(File(tmp.root, "prepare-" + (initialOwner ?: "anonymous")))
+            val store = CoachStore({ owner }, { emptySet() }, {}, { FakeGymRest() }, disk, telemetry,
+                System::nanoTime, scope)
+            val chat = store.freshChat("Keep this text")
+            events.clear()
+            val gate = CompletableDeferred<Unit>()
+            val importing = async(start = CoroutineStart.UNDISPATCHED) {
+                try { store.importPhoto(chat) { gate.await(); throw java.io.IOException("private photo detail") } }
+                catch (_: java.io.IOException) { }
+            }
+            runCurrent()
+            owner = if (initialOwner == null) "alice" else null
+            gate.complete(Unit)
+            importing.await()
+            assertEquals(listOf(if (initialOwner == null) "gym.coachOnboarding" else "gym.preparePhoto"), failures)
+            assertEquals(emptyList<String>(), events)
+            owner = initialOwner
+            assertEquals(CoachDraft("Keep this text"), store.draft(chat))
+        }
+        } finally { scope.cancel() }
     }
 
     @Test fun twoStoredImportsKeepBothDraftReferencesBeforeEitherMainPublication() = runTest {

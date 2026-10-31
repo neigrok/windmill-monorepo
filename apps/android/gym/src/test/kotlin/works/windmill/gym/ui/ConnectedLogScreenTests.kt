@@ -198,7 +198,7 @@ class ConnectedLogScreenTests {
     }
 
     @Test
-    fun testTheTwoScreensShareOneReadPerSeatAndOnlyAReturnAPullOrANewSeatReadsAgain() {
+    fun connectedLogReadsAgainOnlyOnReturnPullOrNewSeat() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = FakeGymRest()
         server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read")
@@ -208,29 +208,15 @@ class ConnectedLogScreenTests {
             override val lifecycle = LifecycleRegistry(this)
         }
         app.lifecycle.currentState = Lifecycle.State.RESUMED
-        var standing by mutableStateOf("settings")
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides app) {
-                if (standing == "settings") SettingsScreen(
-                    store = store, isSignedIn = true, backTo = "routines", onBack = {}, onNotes = {},
-                    onConnectedLog = { standing = "connected" }, say = {},
-                ) else ConnectedLogScreen(
-                    store = store, isSignedIn = true, origin = "https://windmill.works", backTo = "Settings",
-                    onBack = { standing = "settings" }, onSignIn = {},
-                )
+                ConnectedLogScreen(store, true, "https://windmill.works", "Routines", {}, {})
             }
         }
         fun credentialReads() = server.calls.count { it == "grants" || it == "mcpKeys" }
 
-        compose.onNodeWithText("Claude Desktop · read").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.title).performScrollTo().performClick()
         compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Back to Settings").performClick()
-        compose.onNodeWithText("Claude Desktop · read").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { assertEquals(2, credentialReads()) }
-
-        compose.runOnIdle { standing = "connected" }
-        compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
         compose.runOnIdle {
             // A dialog over the room only pauses: not a return.
             app.lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
@@ -274,13 +260,7 @@ class ConnectedLogScreenTests {
         compose.onNodeWithText("Static").assertIsDisplayed()
         scope.cancel()
     }
-    @Test fun sameOwnerReconnectRestartsTheConnectedScreenPairWhenLoadingIsAlreadySettled() =
-        sameOwnerReconnect(settings = false)
-
-    @Test fun sameOwnerReconnectRestartsTheSettingsPairWhenLoadingIsAlreadySettled() =
-        sameOwnerReconnect(settings = true)
-
-    private fun sameOwnerReconnect(settings: Boolean) {
+    @Test fun sameOwnerReconnectRestartsTheConnectedScreenPairWhenLoadingIsAlreadySettled() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val release = CompletableDeferred<Unit>()
         var grantReads = 0
@@ -299,9 +279,7 @@ class ConnectedLogScreenTests {
         val phone = room(scope, server, true)
         val store = phone.store
         try {
-            if (settings) compose.setContent {
-                SettingsScreen(store, true, "Routines", {}, {}, {}, {})
-            } else screen(store, true)
+            screen(store, true)
             compose.runOnIdle {
                 assertEquals(1, grantReads)
                 val original = phone.account()
@@ -315,7 +293,7 @@ class ConnectedLogScreenTests {
                 assertEquals(ConnectedLog.state(listOf(OAuthGrant("grant", "Current grant", 1, "gym:read")),
                     listOf(McpKey("key", "Static", 2))), store.connectedLog)
             }
-            compose.onNodeWithText(if (settings) "2 tools" else "Current grant").assertIsDisplayed()
+            compose.onNodeWithText("Current grant").assertIsDisplayed()
             compose.onNodeWithText("Old grant").assertDoesNotExist()
         } finally { scope.cancel() }
     }

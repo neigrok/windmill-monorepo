@@ -44,6 +44,52 @@ class EngineTrainingTests {
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
 
+    @Test fun aNoteAcceptedAtTheStoreEntryCannotCommitAfterItsTransitionFenceCloses() = runTest {
+        var permitted = true
+        var closeAfterEntry = false
+        EngineRoomFixture(tmp.newFolder(), backgroundScope,
+            workoutAuthority = { permitted.also { if (closeAfterEntry) permitted = false } },
+            writeAuthority = { permitted }).use { room ->
+            room.select(null)
+            val before = room.engine.snapshot()
+            val replica = room.engine.activeReplica()
+            closeAfterEntry = true
+            val result = room.store.saveNote("note0001", NoteWrite("Queued note", ""))
+            assertTrue(result is GymResult.Failed && result.why is WriteFailure.Refused)
+            assertEquals(before, room.engine.snapshot())
+            assertEquals(replica, room.engine.activeReplica())
+            assertEquals(emptyList<Note>(), room.training.notes())
+            assertNull(room.selected)
+        }
+    }
+
+    @Test fun onlyTheCurrentTransitionCanDrainAlreadyAcceptedControlsWhileOrdinaryWritesStayFenced() = runTest {
+        engine().use { engine ->
+            val initial = EngineTraining(engine)
+            val session = initial.startSession(SessionStart("session1", now))
+            val accepted = TrainingSet("accepted1", "bench-press", weightKg = 40.0, reps = 8, completedAtMs = now + 1)
+            val controls = WorkoutControls(java.io.File(tmp.newFolder(), "controls.json"))
+            controls.project(engine.activeReplica(), session, emptyList())
+            controls.store(accepted, session.id)
+            controls.control(controls.workout.copy(consumed = setOf(accepted.id)))
+            val fenced = EngineTraining(engine, writeAuthority = { false })
+            val store = TrainingStore(controls, fenced, backgroundScope, workoutAuthority = { false })
+            val before = engine.snapshot()
+            try { store.prepareEngineTransition { false }; fail("A replaced transition cannot drain.") }
+            catch (_: TrainingRefused) { }
+            assertEquals(before, engine.snapshot())
+            assertEquals(emptyList<TrainingSet>(), initial.session(session.id)!!.sets)
+            store.prepareEngineTransition { true }
+            assertEquals(listOf(accepted), initial.session(session.id)!!.sets)
+            val drained = engine.snapshot()
+            try { fenced.writeNote("note0001", NoteWrite("Blocked", "")); fail("Ordinary writes remain fenced.") }
+            catch (_: TrainingRefused) { }
+            assertEquals(drained, engine.snapshot())
+            store.prepareEngineTransition { true }
+            assertEquals(drained, engine.snapshot())
+        }
+    }
+
     @Test fun restoredReceiptAbsenceRequiresAReadReplicaOrAReleasedLocalDeletion() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
@@ -469,27 +515,13 @@ class EngineTrainingTests {
             assertEquals("Original", gym.routine("routine1")!!.name)
         }
     }
-    @Test fun unitWritesPreserveTheFreshServerDocumentIncludingUnownedFields() = runBlocking {
+    @Test fun feedbackReadsIgnoreSharedUnitsWithoutChangingTheReplica() = runBlocking {
         engine().use { engine ->
-            seed(engine, Gym.Types.prefs, "prefs", mapOf("units" to Json.of("kg"), "restSeconds" to Json.of(180), "restSound" to Json.of(true)))
-            val gym = EngineTraining(engine)
-            assertEquals(GymPreferences(), gym.settings())
-            assertEquals(GymPreferences(units = Units.Pounds), gym.savePreferences(GymPreferences(units = Units.Pounds)))
-            assertEquals(GymPreferences(), gym.savePreferences(GymPreferences()))
-            engine.read(works.windmill.sync.core.ScopeRef(Gym.scope)) { reader ->
-                val prefs = reader.drawn(Gym.Types.prefs, RecordID("prefs"))!!
-                assertEquals(Json.of(180), prefs.values["restSeconds"])
-                assertEquals(Json.of(true), prefs.values["restSound"])
-            }
-        }
-    }
-    @Test fun aFailedPreferenceReadCannotReplaceTheServerDocumentWithDefaults() = runBlocking {
-        engine().use { engine ->
-            val gym = EngineTraining(engine)
-            gym.savePreferences(GymPreferences(units = Units.Pounds))
-            engine.failNextCommit()
-            try { gym.savePreferences(GymPreferences()); fail("Storage must preserve the saved preferences.") } catch (_: CommitFailure) {}
-            assertEquals(GymPreferences(units = Units.Pounds), gym.settings())
+            seed(engine, Gym.Types.prefs, "prefs", mapOf("units" to Json.of("lb"), "restSeconds" to Json.of(180),
+                "restSound" to Json.of(true), "confirmHaptic" to Json.of(false), "confirmSound" to Json.of(true)))
+            val before = engine.snapshot()
+            assertEquals(GymPreferences(confirmHaptic = false, confirmSound = true), EngineTraining(engine).settings())
+            assertEquals(before, engine.snapshot())
         }
     }
     @Test fun anonymousWorkoutIsDurableInTheEngineWithoutRestAndAllIdsSurviveRestore() = runBlocking {

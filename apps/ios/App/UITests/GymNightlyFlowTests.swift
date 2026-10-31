@@ -42,7 +42,7 @@ import XCTest
     XCTAssertEqual(again.minY, minimized.minY, accuracy: 1, "Beside the minimized bar again the footer \(again) stands where it stood \(minimized)")
   }
 
-  // A pushed screen hides the tab bar; back at the conversation's end, or back from another tab, its last card stands where
+  // A pushed screen hides the tab bar; back at the conversation's end, or back from another tab, its receipt stands where
   // it stood, over the composer.
   func testTheConversationsEndStaysClearOfTheComposerAfterAPushedScreenPopsAndATabSwitch() {
     let app = XCUIApplication()
@@ -59,19 +59,22 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["coach-proposal-header"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-    let review = app.buttons["coach-reject-proposal"]
+    let review = app.buttons["coach-reject-proposal"], receipt = app.buttons["coach-read-receipt"]
     for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
-    XCTAssertFalse(app.buttons["coach-read-receipt"].isHittable, "At this size the conversation scrolls past its receipt")
-    let atEnd = settledFrame(review)
-    XCTAssertLessThanOrEqual(atEnd.maxY, composer.frame.minY + 1, "At rest the last card \(atEnd) clears \(composer.frame)")
+    XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+    XCTAssertTrue(receipt.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    let atEnd = settledFrame(receipt)
+    XCTAssertLessThanOrEqual(atEnd.maxY, composer.frame.minY + 1, "At rest the receipt \(atEnd) clears \(composer.frame)")
     app.buttons["coach-history"].tap()
     XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
     back(app)
     XCTAssertTrue(app.navigationBars["Coach"].waitForExistence(timeout: 5))
-    let returned = settledFrame(review)
-    XCTAssertEqual(returned.minY, atEnd.minY, accuracy: 1, "The last card \(returned) stands where it stood \(atEnd)")
-    XCTAssertLessThanOrEqual(returned.maxY, composer.frame.minY + 1, "The last card \(returned) clears \(composer.frame)")
+    XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+    XCTAssertTrue(receipt.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    let returned = settledFrame(receipt)
+    XCTAssertEqual(returned.minY, atEnd.minY, accuracy: 1, "The receipt \(returned) stands where it stood \(atEnd)")
+    XCTAssertLessThanOrEqual(returned.maxY, composer.frame.minY + 1, "The receipt \(returned) clears \(composer.frame)")
     openTab("Routines", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     openTab("Coach", app)
@@ -80,7 +83,9 @@ import XCTest
     let previous = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
     XCTAssertTrue(previous.waitForExistence(timeout: 5)); previous.tap()
     for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
-    let reopened = settledFrame(review)
+    XCTAssertTrue(receipt.waitForExistence(timeout: 5))
+    XCTAssertTrue(receipt.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    let reopened = settledFrame(receipt)
     XCTAssertLessThanOrEqual(reopened.maxY, composer.frame.minY + 1, "The reopened conversation clears the composer")
     for name in ["Routines", "The log", "Coach"] { XCTAssertTrue(app.tabBars.buttons[name].isHittable) }
   }

@@ -265,3 +265,11 @@ action/readback evidence. Capture cleanup waits for the saved workout receipt.
 Retire a capture AVD only after verifying its emulator process has stopped. Keep the APK,
 screenshots, XML, traces, logs, events and manifest; removing only the retired `avd/` directory
 recovers its mutable userdata space without removing acceptance evidence.
+
+
+`--capture-only --fixture capture-recipes/coach-setup-fixture.json --scenarios capture-recipes/coach-setup.json`
+captures the approved 01.1/01.2 greeting in both appearances. This mode accepts only the explicit
+empty exercises/routines/history fixture, enables anonymous Coach on its disposable local backend,
+and waits for the greeting after account sign-in. It retains runtime logs and first-party events;
+`performanceAccepted` is null because it runs no cold-workout or idle profile. Normal fixture runs
+retain their existing Push A performance gate. Native setup acceptance is pending.

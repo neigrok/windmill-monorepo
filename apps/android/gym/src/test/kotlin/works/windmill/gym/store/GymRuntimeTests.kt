@@ -245,7 +245,7 @@ class GymRuntimeTests {
                 assertTrue(room.store.start(routine.id) is GymResult.Ok)
                 val live = requireNotNull(room.store.session)
                 room.store.choose("bench-press"); room.store.choose("overhead-press"); room.store.choose("bench-press")
-                assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
+                room.seedFeedback(GymPreferences(confirmSound = true))
                 val runtime = GymRuntime(room.store, { sessions.user()?.id }, { sessions.localSession is LocalSession.Owned },
                     StandardTestDispatcher(testScheduler), authorityRevision = { auth.identityRevision })
                 runtime.restoreLocal()
@@ -270,7 +270,6 @@ class GymRuntimeTests {
                     room.store.fixSet(live.id, accepted.id, SetFix(weightKg = 40.0)))
                 assertEquals(WriteFailure.Refused("the account changed while deleting"), room.store.deleteSet(live.id, accepted.id))
                 assertFalse(room.store.discard(previous.id))
-                assertTrue(room.store.savePreferences(GymPreferences(confirmHaptic = false)) is WriteFailure.Refused)
                 room.store.connect(Account(auth.baseUrl.toString(), ana))
                 assertEquals("u.A", room.store.accountKey)
                 assertEquals(GymPreferences(confirmSound = true), room.training.settings())
@@ -385,7 +384,7 @@ class GymRuntimeTests {
         val directory = tmp.newFolder()
         val (offer, snapshot) = room(directory, WorkoutClock { moment }).use { first ->
             first.startWorkout("bench-press")
-            assertNull(first.store.savePreferences(GymPreferences(confirmSound = true)))
+            first.seedFeedback(GymPreferences(confirmSound = true))
             val runtime = GymRuntime(first.store, { null }, { true }, StandardTestDispatcher(testScheduler))
             runtime.restoreLocal()
             val offer = requireNotNull(runtime.notification.value?.offer)

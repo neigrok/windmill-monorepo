@@ -1,5 +1,7 @@
 # Allowance used: signed out, signed in (interim), Windmill One
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; 01.12 stays 🚧 In progress and unbuilt. The captures for 01.10/01.11 and event acceptance remain.
+
 **Figma:**
 - 01.10 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35870) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39675)
 - 01.11 signed in, interim: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35979) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39698)
@@ -9,15 +11,15 @@
   - `Android / Chat bubble` `337:2761`
   - `Android / Button` `210:181`: Tonal *Sign in*
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `backend/`)
-- Android reads only two cap codes (`coach/CoachStore.kt:397-411`):
-  - `ask-daily-limit` → *The next question frees up in a couple of hours.* (`coach/Ask.kt:180`)
-  - `ask-out-of-budget` → *This account has reached its AI ceiling for the last 30 days. …*
-  - Both take the composer down for `CapDoors` (`coach/AskScreen.kt:339-343`: *Connect own agent*, *Ask something new*).
-- The allowance refusal is a 429 with code `subject_exhausted`, reason `allowance_exhausted`, *Your AI allowance is fully used or reserved.* and an `allowance` object carrying `resetsAtMs` (`backend/products/gym/adapters/http/AskApi.cpp:25-43`).
-  - Android falls through to a generic refusal with that sentence. It never reads `resetsAtMs`.
-- Signed out there is no Coach (38). *You have used all of your AI allowance.* exists nowhere.
-- Android has no paid-plan gate. Checkout is closed: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns `false`.
+**Implementation**
+- `subject_exhausted` selects `AskCap.Allowance` for a signed-in 429 or the latest anonymous
+  onboarding refusal. The draft stays editable. Anonymous refusals stay in their original chat.
+- Reset metadata is optional raw JSON at the transport boundary. A positive numeric integer is
+  formatted in the phone's locale and time zone; missing or malformed timing leaves the first
+  sentence intact. Other budget codes retain their server sentence.
+- Anonymous access offers the existing Sign in door; signed-in access has no action button.
+  Checkout remains closed and no Windmill One entry is built.
+- Native 01.10/01.11 captures and installed event receipts remain pending in the Coach cohort.
 
 **Change**
 - After the refused message, a centred `Android / Chat notice` above the composer: *You have used all of your AI allowance.*

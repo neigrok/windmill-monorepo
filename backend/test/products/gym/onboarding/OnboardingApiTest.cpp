@@ -143,3 +143,29 @@ TEST(gym_onboarding_conversation_photo_checks_pixels_before_claim) {
   CHECK_EQ(h.h.model->calls.load(),0);
   CHECK(h.h.records->rows.empty());
 }
+
+TEST(gym_onboarding_account_required_is_durable_on_the_existing_response_and_recovery_path) {
+  HttpHarness h;
+  h.h.model->error="account_required";
+  std::promise<void> entered;
+  h.h.model->before=[&]{entered.set_value();};
+  const auto input=parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"Make Push A harder","context":[]})");
+  const auto first=h.post(input,h.h.issue.credential);
+  CHECK_EQ(first->getStatusCode(),drogon::k202Accepted);
+  REQUIRE(entered.get_future().wait_for(std::chrono::seconds(5))==std::future_status::ready);
+  h.h.service->stop();
+  const auto recovered=h.get(input["requestId"].asString(),h.h.issue.credential);
+  REQUIRE_EQ(recovered->getStatusCode(),drogon::k200OK);
+  const auto body=parse(std::string(recovered->body()));
+  CHECK_EQ(body["status"],"failed");
+  CHECK_EQ(body["errorCode"],"account_required");
+  CHECK_EQ(body["message"],"");
+  CHECK_EQ(body["routines"],Json::Value(Json::arrayValue));
+  CHECK_EQ(body.getMemberNames(),(Json::Value::Members{"allowance","errorCode","expiresAtMs","message","requestId","resultId","routines","status"}));
+  const auto replay=h.post(input,h.h.issue.credential);
+  CHECK_EQ(replay->getStatusCode(),drogon::k200OK);
+  CHECK_EQ(parse(std::string(replay->body())),body);
+  CHECK_EQ(h.h.model->calls.load(),1);
+  CHECK_EQ(h.h.catalog->ownerReads.load(),0);
+  CHECK(h.h.failures->reports.empty());
+}

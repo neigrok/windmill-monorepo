@@ -234,7 +234,7 @@ class AuthStoreTest {
     @Test fun unfinishedSignOutThatCannotKeepShowsRecoveryAndRetainsItsCredential() = runTest {
         val user = User("A", "a@example.com")
         val sessions = object : SessionStore {
-            override val signOutPending = true
+            override val pendingSignOut = SignOutIntent(user.id, AuthSignOutChoice.Keep)
             override fun read() = "secret-A"
             override fun write(secret: String) = Unit
             override fun user() = user
@@ -455,7 +455,7 @@ class AuthStoreTest {
     @Test
     fun signOutClearsEvenWhenTheServerCannotBeTold() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
-        val sessions = MemorySessions("s3cret")
+        val sessions = MemorySessions("s3cret", User("A", "a@example.com"))
         val auth = store(sessions)
         auth.signOut()
         assertNull(sessions.read())
@@ -545,7 +545,7 @@ class AuthStoreTest {
                 }
             }
             val sessions = MemorySessions("secret-A", User("A", "a@b.c", "Ana"))
-            val auth = store(sessions)
+            val auth = AuthStore(server.url("/"), sessions, handoffScope = backgroundScope)
             val logout = async { auth.signOut() }
             arrived.await()
             try { auth.completeLink("token-B") }
