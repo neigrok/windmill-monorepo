@@ -9,6 +9,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.serialization.Serializable
 import works.windmill.platform.storage.AtomicDocument
+import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 
 @Serializable
 data class LocalChat(
@@ -40,6 +41,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val snapshots: Map<String, Map<String, AskGeneration>> = emptyMap(),
         val drafts: Map<String, Map<String, CoachDraft>> = emptyMap(),
         val confirmations: Map<String, Map<String, CoachRoutineConfirmation>> = emptyMap(),
+        val onboarding: Map<String, Map<String, CoachOnboardingRecord>> = emptyMap(),
     )
 
     private val restored = runCatching {
@@ -100,6 +102,38 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun pending(owner: String): List<AskQuestion> {
         restored.getOrThrow()
         return document.pending[owner].orEmpty().values.toList()
+    }
+
+    @Synchronized fun onboarding(owner: String, requestId: String): CoachOnboardingRecord? {
+        restored.getOrThrow()
+        return document.onboarding[owner]?.get(requestId)
+    }
+
+    @Synchronized fun archivedChat(owner: String, chat: String): LocalChat? {
+        restored.getOrThrow()
+        return document.chats[owner]?.get(chat)
+    }
+
+    @Synchronized fun onboarding(): List<CoachOnboardingRecord> {
+        restored.getOrThrow()
+        return document.onboarding.values.flatMap { it.values }
+    }
+
+    @Synchronized fun keepOnboarding(record: CoachOnboardingRecord): Boolean {
+        restored.getOrThrow()
+        val chat = document.chats[record.owner]?.get(record.chat) ?: return false
+        require(record.request().requestId == record.requestId)
+        val previous = document.onboarding[record.owner]?.get(record.requestId)
+        require(previous == null || previous.owner == record.owner && previous.chat == record.chat &&
+            previous.replica == record.replica && previous.body == record.body)
+        if (previous?.response?.terminal == true && record.response?.terminal != true) return true
+        if (previous == record) return true
+        val next = document.copy(
+            chats = document.chats + (record.owner to (document.chats[record.owner].orEmpty() + (record.chat to chat))),
+            onboarding = document.onboarding + (record.owner to (document.onboarding[record.owner].orEmpty() + (record.requestId to record))))
+        write(file, diskJson.encodeToString(Document.serializer(), next))
+        document = next
+        return true
     }
 
     @Synchronized fun keep(owner: String, question: AskQuestion) {
@@ -171,7 +205,10 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val hasDraft = document.drafts[owner]?.containsKey(threadId) == true
         val hasConfirmation = document.confirmations[owner].orEmpty().values.any { it.thread == threadId }
         val hasChat = document.chats[owner]?.containsKey(threadId) == true
-        if (kept == mine && (requestId != null || !hasDraft && !hasConfirmation && !hasChat)) return
+        val onboarding = document.onboarding[owner].orEmpty().filterValues {
+            it.chat != threadId || requestId != null && it.requestId != requestId
+        }
+        if (kept == mine && onboarding == document.onboarding[owner].orEmpty() && (requestId != null || !hasDraft && !hasConfirmation && !hasChat)) return
         val removed = mine.keys - kept.keys
         val next = document.copy(
             chats = if (requestId == null) document.chats + (owner to (document.chats[owner].orEmpty() - threadId)) else document.chats,
@@ -179,7 +216,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
             pending = (document.pending + (owner to kept)).filterValues { it.isNotEmpty() },
             snapshots = (document.snapshots + (owner to (document.snapshots[owner].orEmpty() - removed))).filterValues { it.isNotEmpty() },
             drafts = if (requestId == null) document.drafts + (owner to (document.drafts[owner].orEmpty() - threadId)) else document.drafts,
-            confirmations = if (requestId == null) document.confirmations + (owner to document.confirmations[owner].orEmpty().filterValues { it.thread != threadId }) else document.confirmations)
+            confirmations = if (requestId == null) document.confirmations + (owner to document.confirmations[owner].orEmpty().filterValues { it.thread != threadId }) else document.confirmations,
+            onboarding = (document.onboarding + (owner to onboarding)).filterValues { it.isNotEmpty() })
         write(file, diskJson.encodeToString(Document.serializer(), next))
         document = next
         discardUnusedPhotos(owner)

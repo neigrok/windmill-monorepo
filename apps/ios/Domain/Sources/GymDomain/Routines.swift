@@ -221,10 +221,7 @@ public struct SaveRoutinePlan: Action {
         if loaded.catalogue.find(next.id) != nil {
           return .refuse(GymRefusal(Refused(.idTaken, subject: next.id.ref, path: .predicted)))
         }
-        plan.create(try Valid(next, at: loaded.moment))
-        if next.equipment == "dumbbell", next.loadCount != 2 {
-          plan.create(try Valid(ExerciseName(id: ID(next.id.record), name: nil, loadCount: next.loadCount), at: loaded.moment), fields: ["loadCount"])
-        }
+        try plan.createRoutineMovement(Valid(next, at: loaded.moment), at: loaded.moment)
         wrote = true
         continue
       }
@@ -270,6 +267,16 @@ public struct SaveRoutinePlan: Action {
     }
     if former != loaded.formerNames { plan.device(Catalogue.formerNamesKey, .object(former)) }
     return wrote ? .write(plan, current.id) : .unchanged(current.id)
+  }
+}
+
+extension Plan {
+  mutating func createRoutineMovement(_ value: Valid<Exercise>, at moment: Moment) throws(Violation) {
+    create(value)
+    let movement = value.value
+    if movement.equipment == "dumbbell", movement.loadCount != 2 {
+      create(try Valid(ExerciseName(id: ID(movement.id.record), name: nil, loadCount: movement.loadCount), at: moment), fields: ["loadCount"])
+    }
   }
 }
 

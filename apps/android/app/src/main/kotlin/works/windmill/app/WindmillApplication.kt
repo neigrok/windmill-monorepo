@@ -1,6 +1,13 @@
 package works.windmill.app
 
 import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.coach.onboarding.CoachOnboardingHttp
+import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
+import works.windmill.gym.coach.onboarding.CoachOnboardingStore
+import works.windmill.gym.coach.onboarding.CoachRoutineImports
+import works.windmill.platform.ai.AiInstallation
+import works.windmill.platform.ai.AiInstallationHttp
+import works.windmill.platform.ai.AiInstallationLifecycle
 import android.app.Application
 import android.app.KeyguardManager
 import android.app.NotificationManager
@@ -67,6 +74,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         private set
     lateinit var engineSession: GymEngineSession
         private set
+    lateinit var coachOnboarding: CoachOnboardingStore
+        private set
+    lateinit var coachImports: CoachRoutineImports
+        private set
     lateinit var onboardingLaunch: OnboardingLaunch
         private set
     override lateinit var workoutNotifications: WorkoutNotifications
@@ -96,7 +107,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val initial = Engine.memory(SyncSchema.registry, identities = identities).use { it.snapshot() }
         val engine = AndroidSqlite.open(File(filesDir, "sync-replica.sqlite"), SyncSchema.registry, initial,
             AndroidClock(this), identities, identities.actorID(), telemetry = engineTelemetry,
-            rewriteDeviceValue = WorkoutImports.rewriteDeviceValue,
+            rewriteDeviceValue = EngineTraining.rewriteDeviceValue,
             intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork)
         val engineStorage = EngineStorage(this, vault)
@@ -117,6 +128,12 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         val syncRuntime = SyncRuntime(engine, reportedTransport,
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"))
         val training = EngineTraining(engine)
+        val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName))
+        val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry)
+        if (local is LocalSession.Owned) {
+            try { installation.retainBindingIntent() }
+            catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }
+        }
         val store = TrainingStore(
             controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
             training = training,
@@ -129,10 +146,22 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
-            localCoach = LocalCoach(File(filesDir, LocalCoach.fileName)),
+            localCoach = localCoach,
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
-        auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession, handoffScope = scope)
+        auth = AuthStore(baseUrl, sessions, telemetry = telemetry,
+            lifecycle = AiInstallationLifecycle(engineSession, installation, scope, telemetry), handoffScope = scope)
+        val anonymousSeat = {
+            if (sessions.localSession == LocalSession.Absent && training.anonymous)
+                CoachOnboardingSeat(localCoach.anonymousOwner(), engine.activeReplica()) else null
+        }
+        coachOnboarding = CoachOnboardingStore(localCoach, installation, CoachOnboardingHttp(baseUrl, telemetry), anonymousSeat, scope, telemetry)
+        coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
+        scope.launch {
+            try { coachOnboarding.resume() }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { telemetry.failure("gym.coachOnboarding", java.io.IOException("Coach recovery could not be read.")) }
+        }
         delivery = { replica, reply -> if (training.reportDelivery(replica, reply)) store.refreshEngine() }
         syncRuntime.launch(engineStorage)
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },

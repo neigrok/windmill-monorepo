@@ -44,6 +44,7 @@ class AskTests {
 
     @Test
     fun theDoorIsShutOnABlankQuestionAndOnOneOverTheCeiling() {
+        assertEquals(8000, Ask.maxTurnBytes)
         assertFalse(Ask.sendable("   "))
         assertTrue(Ask.sendable("what’s stalled?"))
         assertTrue(Ask.sendable("x".repeat(Ask.maxTurnBytes)))
