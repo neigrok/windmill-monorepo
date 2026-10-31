@@ -70,6 +70,8 @@ class AiInstallation(
     private val vault: SecretVault,
     private val api: AiInstallationApi,
     private val telemetry: Telemetry = Telemetry.None,
+    private val version: String = "",
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     @Serializable
     private data class Saved(val credential: String, val bound: Boolean? = null, val invalid: Boolean = false)
@@ -128,6 +130,7 @@ class AiInstallation(
         retainBindingIntent()
         mutex.withLock {
             if (checkedAccount == account) return@withLock
+            if (existing() == null && issuanceDeferred()) return@withLock
             val saved = credential()
             if (saved.invalid) return@withLock
             persist(saved.copy(bound = true))
@@ -152,7 +155,12 @@ class AiInstallation(
 
     private suspend fun credential(): Saved {
         existing()?.let { return it }
-        val response = api.issue()
+        if (issuanceDeferred()) throw WindmillApiException.Refused(503, Refusal(code = unavailable))
+        val response = try { api.issue() }
+        catch (failure: WindmillApiException.Refused) {
+            if (failure.status == 503 && failure.refusal.code == unavailable) state { values.write(mapOf(deferredKey to deferral())) }
+            throw failure
+        }
         val credential = response.credential
         if (credential == null || !validCredential.matches(credential) || response.bound) {
             telemetry.failure("ai_installation", WindmillApiException.Malformed)
@@ -199,6 +207,10 @@ class AiInstallation(
         }
     }
 
+    // A server with signed-out Coach switched off is asked again on the next UTC day or app version, not every launch.
+    private fun deferral(): String = "$version:${now() / 86_400_000L}"
+    private fun issuanceDeferred(): Boolean = state { values.read(deferredKey) == deferral() }
+
     private fun flag(key: String, expected: String): Boolean = state {
         val saved = values.read(key) ?: return@state false
         if (vault.open(saved) != expected) throw IOException("Installation state is unreadable.")
@@ -225,9 +237,11 @@ class AiInstallation(
     companion object {
         private const val key = "installation.sealed"
         private const val bindingKey = "binding.sealed"
+        private const val deferredKey = "issue.deferred"
+        private const val unavailable = "anonymous_ai_unavailable"
         private val validCredential = Regex("[A-Za-z0-9_-]{43}")
 
-        fun onThisDevice(context: Context, api: AiInstallationApi, telemetry: Telemetry): AiInstallation {
+        fun onThisDevice(context: Context, api: AiInstallationApi, telemetry: Telemetry, version: String): AiInstallation {
             val prefs = context.getSharedPreferences("works.windmill.ai", Context.MODE_PRIVATE)
             val values = object : KeptValues {
                 override fun read(key: String): String? = prefs.getString(key, null)
@@ -238,7 +252,7 @@ class AiInstallation(
                 }
             }
             // The installation boundary owns crypto failures under ai_installation.
-            return AiInstallation(values, SecretVault.onThisDevice(Telemetry.None), api, telemetry)
+            return AiInstallation(values, SecretVault.onThisDevice(Telemetry.None), api, telemetry, version)
         }
     }
 }

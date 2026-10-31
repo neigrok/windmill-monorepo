@@ -139,7 +139,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
             signOutDrainAllowed = { !sessions.signOutPending && !deletionStorage.blocked })
         val training = EngineTraining(engine, writeAuthority = ::accountWritable)
         val localCoach = LocalCoach(File(filesDir, LocalCoach.fileName), writesAllowed = { !deletionPending() })
-        val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry)
+        val installation = AiInstallation.onThisDevice(this, AiInstallationHttp(baseUrl, telemetry), telemetry, BuildConfig.VERSION_NAME)
         if (local is LocalSession.Owned && !deletionPending()) {
             try { installation.retainBindingIntent() }
             catch (_: Exception) { telemetry.event("ai_installation_outcome", mapOf("action" to "bind", "outcome" to "failed")) }

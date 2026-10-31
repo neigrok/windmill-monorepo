@@ -34,7 +34,8 @@ class AiInstallationTest {
     private val values = Values()
     private val telemetry = Events()
     private val api = Api()
-    private fun store() = AiInstallation(values, SecretVault { key }, api, telemetry)
+    private var clock = 1_800_000_000_000L
+    private fun store() = AiInstallation(values, SecretVault { key }, api, telemetry, "0.13.0") { clock }
 
     @Test fun preparedSignOutAndRecoveryDelegateWithoutChangingInstallationBinding() = runTest {
         val calls = mutableListOf<String>()
@@ -69,6 +70,29 @@ class AiInstallationTest {
         assertEquals(emptyMap<String, String>(), TelemetryPolicy.eventProperties("gym_coach_import", mapOf("outcome" to credential)))
         assertEquals(mapOf("action" to "bind", "outcome" to "refused"), TelemetryPolicy.eventProperties("ai_installation_outcome",
             mapOf("action" to "bind", "outcome" to "refused", "requestId" to "private-request")))
+    }
+
+    @Test fun aServerWithSignedOutCoachOffIsAskedOncePerDayAndVersionAndBindingWaitsQuietly() = runTest {
+        api.issueFailure = WindmillApiException.Refused(503, Refusal(code = "anonymous_ai_unavailable"))
+        repeat(2) {
+            val refused = runCatching { store().forAnonymousSend() }.exceptionOrNull() as WindmillApiException.Refused
+            assertEquals(503 to "anonymous_ai_unavailable", refused.status to refused.refusal.code)
+        }
+        val lifecycle = AiInstallationLifecycle(AuthLifecycle.None, store(), backgroundScope, telemetry)
+        lifecycle.signedIn(User("account", "lifter@example.com"), "token", restoring = true)
+        runCurrent()
+        assertEquals(1, api.issues)
+        assertTrue(api.bindings.isEmpty())
+        assertTrue(telemetry.events.isEmpty())
+        val another = Values()
+        assertTrue(runCatching { AiInstallation(another, SecretVault { key }, api, telemetry, "0.13.1") { clock }.forAnonymousSend() }.isFailure)
+        assertEquals(2, api.issues)
+        api.issueFailure = null
+        clock += 86_400_000L
+        store().bind("account", "token")
+        assertEquals(3, api.issues)
+        assertEquals(listOf(credential to "token"), api.bindings)
+        assertTrue(telemetry.issues.isEmpty())
     }
 
     private class Values : KeptValues {
@@ -278,6 +302,7 @@ class AiInstallationTest {
             assertEquals(1, api.issues)
             assertTrue(api.bindings.isEmpty())
             api.issueFailure = null
+            clock += 86_400_000L
             store().bind("account", "token")
             assertEquals(2, api.issues)
             assertEquals(listOf(credential to "token"), api.bindings)
