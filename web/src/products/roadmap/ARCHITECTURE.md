@@ -25,6 +25,7 @@ owner view reframes as chrome measurements arrive until the reader moves the cam
 | Area | Responsibility |
 |---|---|
 | `model/` | Graph validation, trunk selection, unlock rules, legend, workspace and spatial queries. |
+| `board/` | The Board's derived columns, card reasons, orders, narrowing and every Board string. |
 | `layout/` | Deterministic layout engines behind `index.js`. |
 | `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools. |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB. |
@@ -44,8 +45,10 @@ best-effort projection when replicated state contains cycles. `TrunkTree` choose
 parent per node for layout: same-kind parents first, then depth and id; siblings retain their
 fractional order and creation-stamp order.
 
-`UnlockRules.derive` is the authority for locked, available and complete states. An edge inherits
-its source node's state. Legend order lives in the lattice and is written by `ReorderKinds`;
+`UnlockRules.derive` is the authority for locked, available and complete states; the same file
+answers what a step still owes (`owedStepsOf` and `gateOf` for one step, `owedCounts` for every
+step in one pass) and what completing it opens (`unlocksOf`). An edge inherits its source node's
+state. Legend order lives in the lattice and is written by `ReorderKinds`;
 `Legend`'s array operations also serve import drafts. Genesis kinds and stamps come from
 `packages/api-contract/genesis.js`, checked by `vite.config.js`.
 
@@ -112,6 +115,11 @@ coverage, acknowledgements and durability limits. Shared structure and private p
 socket and HLC clock but separate frames. Pending writes are derived from lattice state.
 `materialize.js` turns each local gesture into stamped field writes; refusal handling uses machine
 codes rather than error sentences.
+
+Each projected step carries `createdMs`, the wall time of its add stamp: when it joined this tree.
+Create and import stamp it, a fork re-adds every step at the fork, and edits never touch it. A
+genesis seed reads `null`, unknown. A restore re-adds the step with a fresh stamp, so its
+`createdMs` becomes the time of the restore.
 
 `SyncStore` saves `{frame, progress, lastSeq}` in one IndexedDB record with transactional read-join-put.
 Coverage is rebuilt on subscribe. Saves are queued before sending, but not awaited; transaction

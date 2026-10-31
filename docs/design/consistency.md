@@ -569,10 +569,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
   384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
   hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
-- **Board · subtasks complete a step on web.** `ui/tree/useWorkspace.js` completes a step 600ms
-  (`AUTO_COMPLETE_HOLD`) after its last subtask is checked. Canon says subtasks never complete a step;
-  the proposal offers *All subtasks done · Complete step* instead (phone 07.06 231:1174, desktop 03.09
-  399:19282). Remove the automatic call.
+- **Board · no Complete offer after the last subtask.** Checking the last subtask on web fills the
+  gauge and nothing else. The proposal offers *All subtasks done · Complete step* there (phone 07.06
+  231:1174, desktop 03.09 399:19282); no web surface draws it yet.
 - **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
   `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
   (desktop 10.03 386:13666).

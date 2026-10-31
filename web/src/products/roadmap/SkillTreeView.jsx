@@ -235,7 +235,6 @@ export function SkillTreeView({ treeId, demo = false }) {
   const selectedEdgesRef = useRef(new Set());
   const toastTimersRef = useRef([]);
   const toastKeyRef = useRef(0);
-  const completeStepRef = useRef(null);
   const composerOpenRef = useRef(false);
 
   const {
@@ -248,7 +247,7 @@ export function SkillTreeView({ treeId, demo = false }) {
   const {
     workspaceByNode, hydrateWorkspaces, pushArcs,
     onAddSubtask, onToggleSubtask, onEditSubtask, onDeleteSubtask, onSetNote, onAddLink, onDeleteLink,
-  } = useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef });
+  } = useWorkspace({ seedRef, sceneRef });
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -1411,8 +1410,6 @@ export function SkillTreeView({ treeId, demo = false }) {
       }
     }
   }
-
-  completeStepRef.current = completeStep;
 
   // completeStep can't be looped: each call reads the same render-time `completed`, so only the last would stick.
   function bulkMarkDone() {

@@ -330,7 +330,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
                                                    *oauthService, *accountFootprint, *liveSessions, appBaseUrl);
-  auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
+  auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens, *systemClock);
   // Empty client id/secret leaves configured() false and the routes bounce to the app. The redirect
   // URI must be registered verbatim in the Google Cloud console.
   const char* googleClientId = std::getenv("GOOGLE_CLIENT_ID");

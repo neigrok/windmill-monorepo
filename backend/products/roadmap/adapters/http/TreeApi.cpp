@@ -17,9 +17,10 @@ namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
-                 std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork)
+                 std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork, std::shared_ptr<Clock> clock)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)) {}
+      ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)),
+      clock_(std::move(clock)) {}
 
 std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
@@ -100,8 +101,6 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason));
     return;
   }
-  GraphState state = LooseGraph(*data, genesis_).exportState();
-
   // The whole decision runs under the tree's strand; the callback fires outside the lock.
   drogon::HttpResponsePtr reply = [&]() -> drogon::HttpResponsePtr {
     std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
@@ -133,6 +132,11 @@ void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
         return error(tooLarge ? drogon::k413RequestEntityTooLarge : drogon::k400BadRequest, refusal->reason);
       }
     }
+
+    // A document that creates the tree adds its steps now. One joined into a standing tree takes
+    // the genesis stamp, which every live edit outranks.
+    const Hlc plantedAt = existing ? genesis_ : Hlc{clock_->nowMs(), 0, std::string{TreeRoom::kServerActor}};
+    GraphState state = LooseGraph(*data, plantedAt).exportState();
 
     LegendState legend;
     if (!data->kinds.empty()) legend = Legend(data->kinds, genesis_).exportState();

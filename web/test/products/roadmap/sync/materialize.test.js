@@ -304,3 +304,61 @@ test('DescribeNode clearing back to empty drops the description from the project
   play({ kind: 'DescribeNode', id: 'n1', description: '' });
   assert.strictEqual(lattice.toTreeData().nodes.find((n) => n.id === 'n1').description, undefined);
 });
+
+// Created: when each step was added to this roadmap, read from the projection the Board sorts by.
+function timedTree() {
+  const lattice = new TreeLattice('t_0000000000000000', 'Sail');
+  const hlc = new HlcClock('tester');
+  const play = (wallMs, gesture) => lattice.join(materialize(gesture, lattice, { tick: () => hlc.tick(wallMs) }));
+  const created = () => Object.fromEntries(lattice.toTreeData().nodes.map((n) => [n.id, n.createdMs]));
+  return { play, created };
+}
+
+test('Created: a create stamps each step with the moment it is added', () => {
+  const { play, created } = timedTree();
+  play(Date.UTC(2026, 9, 21, 10), { kind: 'CreateNode', id: 'wind', label: 'Read the wind' });
+  play(Date.UTC(2026, 9, 22, 10), { kind: 'CreateNode', id: 'bowline', label: 'Tie a bowline', parentId: 'wind' });
+
+  assert.deepStrictEqual(created(), {
+    wind: Date.UTC(2026, 9, 21, 10),
+    bowline: Date.UTC(2026, 9, 22, 10),
+  });
+});
+
+test('Created: an import gives every pasted step the one import time', () => {
+  const { play, created } = timedTree();
+  play(Date.UTC(2026, 9, 19, 9), { kind: 'CreateNode', id: 'root', label: 'Sail' });
+  play(Date.UTC(2026, 9, 20, 9), {
+    kind: 'ImportSubgraph',
+    nodes: [{ id: 'knots', label: 'Knots' }, { id: 'bowline', label: 'Bowline' }],
+    edges: [{ from: 'root', to: 'knots' }, { from: 'knots', to: 'bowline' }],
+  });
+
+  assert.deepStrictEqual(created(), {
+    root: Date.UTC(2026, 9, 19, 9),
+    knots: Date.UTC(2026, 9, 20, 9),
+    bowline: Date.UTC(2026, 9, 20, 9),
+  });
+});
+
+test('Created: renaming, describing, recolouring, reordering, rewiring and deleting a neighbour leave it alone', () => {
+  const { play, created } = timedTree();
+  play(Date.UTC(2026, 9, 20, 9), { kind: 'CreateNode', id: 'root', label: 'Sail' });
+  play(Date.UTC(2026, 9, 21, 9), { kind: 'CreateNode', id: 'knots', label: 'Knots', parentId: 'root' });
+  play(Date.UTC(2026, 9, 21, 9), { kind: 'CreateNode', id: 'spare', label: 'Spare', parentId: 'knots' });
+
+  const later = Date.UTC(2026, 9, 30, 12);
+  play(later, { kind: 'RenameNode', id: 'knots', label: 'Knots and hitches' });
+  play(later, { kind: 'DescribeNode', id: 'knots', description: 'Six to start' });
+  play(later, { kind: 'SetNodeColor', id: 'knots', color: 'olive' });
+  play(later, { kind: 'SetNodeOrder', id: 'knots', order: 'a5' });
+  play(later, { kind: 'RemoveEdge', from: 'root', to: 'knots' });
+  play(later, { kind: 'AddEdge', from: 'root', to: 'knots' });
+  play(later, { kind: 'BulkRecolor', nodeIds: ['root', 'knots'], color: 'gold' });
+  play(later, { kind: 'DeleteNode', id: 'spare' });
+
+  assert.deepStrictEqual(created(), {
+    root: Date.UTC(2026, 9, 20, 9),
+    knots: Date.UTC(2026, 9, 21, 9),
+  });
+});
