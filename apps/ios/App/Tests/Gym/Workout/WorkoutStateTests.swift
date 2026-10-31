@@ -1548,11 +1548,11 @@ import SyncTesting
     let edited = [RoutineEntry(exerciseId: first, sets: [SetTarget(reps: 3, weightKg: 50), SetTarget(reps: 3, weightKg: 50)])]
     let session = Session(id: gym.runner.mint(Session.self), startedAt: start, finishedAt: Instant(ms: start.ms + 60_000), closedBy: "finish",
                           routineId: stored.id, plan: SessionPlan(routine: stored.name, entries: edited), planRevision: 2, routineRevision: revision)
-    let saved = { recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } }
+    let planSaves = { recorder.entries.withLock { $0.filter { $0.name == "gym_receipt_plan_saved" }.map(\.properties) } }
 
     let off = WorkoutReceiptData(session: session, sets: [], routine: stored)
     #expect(off.changes.changeCount == 1 && off.offersSave && off.routine == "Private training name")
-    #expect(off.savePlan(gym) && gym.routines.first { $0.id == stored.id }?.entries == stored.entries && saved().isEmpty)
+    #expect(off.savePlan(gym) && gym.routines.first { $0.id == stored.id }?.entries == stored.entries && planSaves().isEmpty)
 
     let failing = WorkoutReceiptData(session: session, sets: [], routine: stored)
     failing.savesPlan = true
@@ -1564,7 +1564,7 @@ import SyncTesting
     #expect(gym.routines.first { $0.id == stored.id }?.entries == edited)
     // A second Done, before the receipt has gone, closes it without saving or reporting again.
     #expect(failing.savePlan(gym) && failing.offersSave && !failing.routineMoved)
-    #expect(saved() == [["outcome": "failed"], ["outcome": "ok"]])
+    #expect(planSaves() == [["outcome": "failed"], ["outcome": "ok"]])
   }
 
   @Test func aRoutineChangedSinceTheStartGivesTheSwitchItsSentenceAndSavesNothing() throws {

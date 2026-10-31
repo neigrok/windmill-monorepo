@@ -270,15 +270,19 @@ import SyncTesting
     let sessions = try #require(try body.member("context").asArray().first { try $0.member("name").asString() == "list_sessions" })
     let open = try sessions.member("result").member("sessions").asArray().first
     #expect(try open?.member("id").asString() == session.record.string && (try? open?.member("finishedAt")) == nil)
+    let reads: [String] = CoachTurnBounds.contextReads + ["get_session"]
     let context = try body.member("context").asArray()
-    #expect(try context.map { try $0.member("name").asString() } == CoachTurnBounds.contextReads + ["get_session"])
+    let sent: [String] = try context.map { try $0.member("name").asString() }
+    #expect(sent == reads)
     let workout = try #require(context.last)
     #expect(try workout.member("input") == ["sessionId": session.json])
     #expect(try workout.member("result").member("session").member("id").asString() == session.record.string)
     let answer = try #require(try messages(phone).last { $0.role == .coach })
     #expect([answer.text, answer.state.rawValue] == ["Keep going.", "completed"])
-    #expect(answer.calls.map(\.name) == CoachTurnBounds.contextReads + ["get_session"] && answer.calls.allSatisfy { $0.outcome == .ok })
-    #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_ability" }.map { $0.properties["name"] ?? "" } } == CoachTurnBounds.contextReads + ["get_session"])
+    let recorded: [String] = answer.calls.map(\.name)
+    #expect(recorded == reads && answer.calls.allSatisfy { $0.outcome == .ok })
+    let reported: [String] = phone.telemetry.entries.withLock { $0.filter { $0.name == "coach_ability" }.map { $0.properties["name"] ?? "" } }
+    #expect(reported == reads)
     #expect(phone.telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map { $0.properties["outcome"] ?? "" } } == ["answered"])
   }
 
