@@ -244,8 +244,9 @@ Registered in `products/roadmap/routes.cpp`.
 
 Single edits have no REST endpoint — they ride the socket; `PUT /v1/trees/{id}` takes a whole
 document and joins it as one write. A PUT that creates the tree stamps its steps at the moment of
-creation, as `POST /v1/trees` does; one joined into a standing tree takes the genesis stamp, so every
-live edit outranks it and its new steps read as unknown creation time. Inbound models are suffixed `Request`, outbound `Response`.
+creation, as `POST /v1/trees` does. A PUT into a standing tree replaces the stored row of every step
+and edge it carries with the genesis stamp: those steps take the document's fields over any live edit
+and read as unknown creation time. No client calls this door. Inbound models are suffixed `Request`, outbound `Response`.
 
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
