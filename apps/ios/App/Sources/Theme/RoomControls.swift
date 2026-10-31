@@ -1,7 +1,10 @@
 import SwiftUI
 
+// The one primary of a screen. On a system bar it spans the bar: iOS 26 redraws the system's prominent glass there as a
+// compact bar item, so the bar's primary is the room's tinted glass capsule drawn across the width instead.
 struct RoomPrimaryStyle: ViewModifier {
   let room: RoomColors
+  var onBar = false
   @Environment(\.isEnabled) private var enabled
 
   func body(content: Content) -> some View {
@@ -10,8 +13,20 @@ struct RoomPrimaryStyle: ViewModifier {
   }
 
   @ViewBuilder private func styled(_ content: Content) -> some View {
-    if #available(iOS 26.0, *) { content.buttonStyle(.glassProminent) }
+    if #available(iOS 26.0, *) {
+      if onBar { content.buttonStyle(BarGlass(tint: enabled ? room.accent : nil)) } else { content.buttonStyle(.glassProminent) }
+    }
     else { content.buttonStyle(.borderedProminent) }
+  }
+
+  @available(iOS 26.0, *)
+  struct BarGlass: ButtonStyle {
+    let tint: Color?
+
+    func makeBody(configuration: Configuration) -> some View {
+      configuration.label.font(.headline).frame(minHeight: 52)
+        .contentShape(Capsule()).glassEffect(.regular.tint(tint).interactive(), in: Capsule())
+    }
   }
 }
 
