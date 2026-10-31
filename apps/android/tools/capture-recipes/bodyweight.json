@@ -332,7 +332,7 @@
     ]
   },
   {
-    "board": "06.3",
+    "board": "06.9",
     "name": "weigh-in-correction",
     "account": "fixture",
     "steps": [

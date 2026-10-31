@@ -444,10 +444,10 @@ class DesignCaptureTests(unittest.TestCase):
         ], calls)
 
     def test_recipes_accept_canonical_board_ids_and_reject_unsafe_output_names(self):
-        for board in ("02.7", "08.21", "15a", "15b", "15c", "27a", "27g", "A4"):
+        for board in ("02.7", "08.21", "08.58b", "15a", "15b", "15c", "27a", "27g", "A4"):
             capture.validate_scenarios([{"board": board, "name": "signed-in", "account": "fixture"}])
         for field, value in (("board", "../02.7"), ("board", "15a/extra"), ("board", "A4.png"),
-                             ("board", "15 a"), ("board", "15a\n"), ("board", ""),
+                             ("board", "15 a"), ("board", "15a\n"), ("board", ""), ("board", "08.58bb"), ("board", "08.58B"),
                              ("name", "../capture"), ("name", "Capture"), ("account", "production")):
             scenario = {"board": "02.7", "name": "signed-in", "account": "fixture", field: value}
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):

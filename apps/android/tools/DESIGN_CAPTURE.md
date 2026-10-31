@@ -153,7 +153,7 @@ observed control bounds and release in `finally` as described below.
 `tap` and `wait` match exact accessibility text, description or resource ID. `wait_contains`
 explicitly matches a visible partial label while a model answer grows. Other steps are `text`, `key`
 (Android key name) and `swipe` (`[fromX, fromY, toX, toY, durationMs]`). Canonical board IDs such as
-`02.7`, `15a`, `27g` and `A4`, and filename
+`02.7`, `08.58b`, `15a`, `27g` and `A4`, and filename
 slugs are validated. Choose a body-state selector, not the navigation label. Two matching fresh
 accessibility trees establish settlement. Recipes may opt into `resend_countdown: true`, which
 normalizes only the bounded `Resend in 1s` through `Resend in 30s` label for that comparison; the

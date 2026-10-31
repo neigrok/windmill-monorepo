@@ -17,7 +17,7 @@
     "after": [{"keyboard": "hide"}, {"tap": "Increase Load"}, {"tap": "Cancel"}]
   },
   {
-    "board": "02.14", "name": "movement-unsaved", "account": "fixture",
+    "board": "02.17", "name": "movement-unsaved", "account": "fixture",
     "steps": [{"wait": "Discard changes?"}],
     "after": [{"tap": "Discard"}, {"wait": "Edit routine"}, {"key": "KEYCODE_BACK"}, {"wait": "Start workout"},
       {"key": "KEYCODE_BACK"}, {"wait": "Routines"}]

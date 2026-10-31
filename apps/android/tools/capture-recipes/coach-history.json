@@ -125,7 +125,7 @@
     ]
   },
   {
-    "board": "08.34",
+    "board": "08.60",
     "name": "history-delete",
     "account": "fixture",
     "steps": [
@@ -200,7 +200,7 @@
     ]
   },
   {
-    "board": "08.33",
+    "board": "08.59",
     "name": "coach-jump-latest",
     "account": "fixture",
     "responses": [

@@ -836,12 +836,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   | 07.4 · 07.5 | 07.11 · 07.12 | Sign-in decision · Discard 3 workouts? |
   | 08.6 · 08.6b · 08.33–08.36 | 08.58 · 08.58b · 08.59–08.62 | No seat · Signed out, earlier chats retained · Scroll · Delete a conversation · Another reply pending · Draft restored |
 
-  The build side still uses the old numbers: `androidgym_tasks/` (README, 18, 19, 24, 25, 28,
-  36, 37, 38), the capture recipes (`bodyweight.json`, `coach-history.json`,
-  `on-this-phone.json`, `routine-targets.json`) and `docs/engineering/android-implementation.md`,
-  `android-task-readiness.md`. `routine-targets.json` also names the movement editor's discard
-  dialog 02.14 although its board is 02.17. Flows drawn on both phones under different numbers
-  remain (Android 02.9 and iOS 02.14 *Create movement*; Android 03.38 and iOS 03.16 *Add movement*).
+  The task files, capture recipes and engineering docs use the new numbers; `routine-targets.json`
+  captures the movement editor's discard dialog as 02.17. Flows drawn on both phones under
+  different numbers remain (Android 02.9 and iOS 02.14 *Create movement*; Android 03.38 and iOS
+  03.16 *Add movement*).
 - **11s · Android review boards, ✅ Ready for dev (owner approved 2026-10-31).** Drawn from the
   native emulator review; implementation pending.
 

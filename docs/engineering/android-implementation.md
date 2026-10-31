@@ -884,7 +884,7 @@ does not establish that fault. No native discard storage-failure Issue delivery 
 owned rig is stopped, its retired AVD removed and all acceptance evidence retained.
 
 Regular numeric entry retains its 20 sp value and 16 sp unit bases at the chosen text scale.
-The human-approved [02.19 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
+The human-approved [02.25 unit-below layout](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1661-33960)
 is marked In production on the canonical Android page. It keeps a realistic signed load visible at narrow
 width and enlarged text. Task 18 implements and verifies that exact focused Load scope; the older
 full-width/buttons-below fallback remains unapproved.

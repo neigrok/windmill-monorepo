@@ -1,6 +1,6 @@
 # Create movement in a routine draft or an active workout
 
-**Design status:** The paired 02.9/02.14 creation states and their captions are 🚀 In production on the canonical Android page (`56:2`). The shared editor and equipment control are also in production.
+**Design status:** The paired 02.9/02.22 creation states and their captions are 🚀 In production on the canonical Android page (`56:2`). The shared editor and equipment control are also in production.
 
 **Approved flow:** [Routine editor](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-30392) — human-approved 2026-10-25. The live-workout picker/custom-create return is covered by the approved [Workout flow](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28036).
 
