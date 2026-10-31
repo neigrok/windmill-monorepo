@@ -146,6 +146,13 @@ Daily/ceiling notices retain the refused composer and existing Connected log nav
 deadlines persist on the exchange, are recomputed for clock/locale/timezone changes and never
 enter telemetry. Deadline expiry performs no automatic Send.
 
+Coach choice and kept-draft actions emit `gym_action`, `screen=coach`,
+`action=choose|continue_draft`, `outcome=ok` only after durable publication or verified recovery.
+Photo-copy/adoption failures report `gym.adoptCoachDraft`; selection and Continue failures report
+`gym.saveDraft`. A published-but-unreadable operation retains its attachments and reconciles before
+retry; recovery emits the completed step once. Invalid optional clarification metadata is ignored
+without an Issue. Events contain no question, choice label, draft text, photo reference or chat ID.
+
 The existing local Coach document owns archive failures at `gym.saveConversation` and
 `gym.restoreConversation`; draft writes use `gym.saveDraft`, photo preparation uses
 `gym.preparePhoto` and photo storage uses `gym.savePhoto`. A failed archive publication retains
@@ -155,6 +162,12 @@ request identities, drafts, photo names/bytes, answer previews and receipt conte
 or failure properties. Cancelled photo uploads retire their pending request atomically while retaining
 the Retry draft. Late photo completion cannot recreate a deleted chat; cleanup retains every photo
 referenced by a live draft, request or archived exchange.
+Known HTTP refusals without an accepted generation atomically retain the refusal and draft while
+retiring automatic request recovery. Reopening or changing appearance emits no new ask for that
+refusal. Legacy cap/absent/new-thread exchanges retire only their matching request without a
+snapshot; running generations and uncertain transport retain the original request. A failed local
+retirement reports `gym.saveConversation`; uncertain publication is read back before recovery can
+send again. Expected server refusals remain outcome events, not Issues.
 
 History confirmation emits `gym_action` with `screen=threads`, `action=delete`, `state=shown`.
 Cancel or dismissal emits `outcome=cancelled`; the application-owned confirmed delete emits one
@@ -458,6 +471,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Coach archive navigation | `gym_action` | screen: `coach`; action: `fresh_entry`, `history_open`, `draft_restored`, `reply_open`, `read_sources`; outcome: `ok` |
 | Coach anonymous access | `gym_action` | screen: `coach`; action: `access`; outcome: `available`, `bound`, `unavailable` |
+| Coach setup choices and kept drafts | `gym_action` | screen: `coach`; action: `choose`, `continue_draft`; outcome: `ok` |
 | Coach messages | `gym_action` | screen: `coach`; action: `copy`; outcome: `ok`, `failed`; or action: `jump_latest`, outcome: `ok` |
 | Coach History deletion | `gym_action` | screen: `threads`; action: `delete`; state: `shown`, or outcome: `ok`, `refused`, `failed`, `cancelled` |
 | Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, then `saved`, `refused` (the server answered 4xx) or `failed` (5xx, no reply or an unreadable one); no IDs, names or contents |

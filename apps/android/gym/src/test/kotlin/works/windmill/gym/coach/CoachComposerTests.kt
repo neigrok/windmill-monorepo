@@ -20,6 +20,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
@@ -81,6 +82,45 @@ class CoachComposerTests {
             rooms += room
             runBlocking { room.select("user-a") }
         }
+
+    @Test fun automaticComposerSyncRecoversThePublishedSwapBeforeFlushingItsOldField() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val file = File(tmp.root, "uncertain-swap.json")
+        val published = File(tmp.root, "published-swap.json")
+        var unreadable = false
+        val local = LocalCoach(file) { target, text ->
+            AtomicDocument.write(target, text)
+            if (unreadable) {
+                check(target.renameTo(published)); check(target.mkdir())
+                throw IOException("unreadable publication")
+            }
+        }
+        val phone = local.anonymousOwner()
+        local.saveChat(phone, LocalChat("phone-chat"), true); local.saveDraft(phone, "phone-chat", CoachDraft("Phone draft", setup = true))
+        local.saveChat("user-a", LocalChat("account-chat"), true); local.saveDraft("user-a", "account-chat", CoachDraft("Account draft"))
+        local.adoptPhoneDraft("user-a") { true }
+        val held = local.keptDrafts("user-a", "account-chat").single()
+        val store = signedIn(scope, local).store.coach
+        var shown by mutableStateOf(true)
+        compose.setContent { if (shown) CoachComposer(store, "account-chat", "", false, { _, _ -> }, null, null, true) }
+        compose.runOnIdle {
+            unreadable = true
+            org.junit.Assert.assertThrows(IOException::class.java) { store.continueDraft("account-chat", held.id) }
+        }
+        compose.onNodeWithContentDescription("Question").performTextReplacement("A stale field")
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(file.delete()); org.junit.Assert.assertTrue(published.renameTo(file)); unreadable = false
+            store.saveDraft("unrelated-chat", CoachDraft("Trigger the ordinary draft observer"))
+        }
+        compose.onNodeWithContentDescription("Question").assert(androidx.compose.ui.test.hasText("Phone draft"))
+        compose.runOnIdle {
+            assertEquals(held.draft, LocalCoach(file).draft("user-a", "account-chat"))
+            assertEquals(listOf(held.copy(draft = CoachDraft("Account draft"))), LocalCoach(file).keptDrafts("user-a", "account-chat"))
+            shown = false
+        }
+        compose.waitForIdle()
+        assertEquals(held.draft, LocalCoach(file).draft("user-a", "account-chat"))
+    }
 
     @Test fun pickerResultReturnsToItsLaunchingChatAndCannotCrossAnAccountChange() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

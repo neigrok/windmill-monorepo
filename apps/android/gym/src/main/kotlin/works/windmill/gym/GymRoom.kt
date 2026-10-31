@@ -529,6 +529,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         }
         if (standing != null) seatRead = true
         store.connect(account)
+        if (store.accountReady) account.user?.id?.let { store.coach.adoptPhoneDraft(it) }
         try {
             store.coach.resumeChats()
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }

@@ -57,6 +57,7 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
 internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking: Boolean,
     onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, upload: Float?, retainDraft: Boolean, enabled: Boolean = true,
     photoRequest: Int = 0,
+    onDraftSync: (((() -> Boolean)?) -> Unit)? = null,
 ) {
     val skin = LocalGymColors.current
     val context = LocalContext.current
@@ -66,7 +67,10 @@ internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking:
     val account = store.accountKey
     val hidden by rememberUpdatedState(asking && upload == null)
     val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
-    DisposableEffect(editor) { onDispose { editor.sync(hidden) } }
+    DisposableEffect(editor) {
+        onDraftSync?.invoke { editor.sync(hidden, retry = true) }
+        onDispose { editor.sync(hidden); onDraftSync?.invoke(null) }
+    }
     LaunchedEffect(editor) {
         snapshotFlow { Triple(editor.field.text.toString(), store.draftVersion, hidden) }
             .collect { editor.sync(hidden) }
@@ -192,6 +196,15 @@ private class CoachDraftEditor(private val store: CoachStore, private val key: S
 
     fun sync(hidden: Boolean, retry: Boolean = false): Boolean {
         if (store.accountKey != account) return false
+        if (!store.draftChangeReady(key)) {
+            val recovered = store.draft(key)
+            if (recovered != draft) {
+                draft = recovered
+                this.hidden = hidden
+                field.setTextAndPlaceCursorAtEnd(if (hidden) "" else recovered.text)
+            }
+            return false
+        }
         val current = store.draft(key)
         if (retry && !store.draftSaved(key)) return keep(current.copy(text = field.text.toString()))
         val refresh = current.text != draft.text || this.hidden != hidden

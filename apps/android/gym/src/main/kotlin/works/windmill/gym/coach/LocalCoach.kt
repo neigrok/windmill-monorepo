@@ -8,14 +8,17 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class LocalChat(
     val id: String,
-    val createdAtMs: Long = System.currentTimeMillis(),
-    val updatedAtMs: Long = createdAtMs,
+    @EncodeDefault val createdAtMs: Long = System.currentTimeMillis(),
+    @EncodeDefault val updatedAtMs: Long = createdAtMs,
     val exchanges: List<AskExchange> = emptyList(),
     val history: AskThread? = null,
     val scroll: Int = 0,
@@ -25,7 +28,19 @@ data class LocalChat(
     val setup: Boolean = false,
 ) {
     val title: String get() = history?.title ?: exchanges.firstOrNull()?.question.orEmpty()
+
+    fun refusedRequest(requestId: String): Boolean {
+        val exchange = exchanges.lastOrNull { it.requestId == requestId } ?: return false
+        if (exchange.generation != null || exchange.pending || exchange.again) return false
+        return exchange.terminalRefusal || exchange.needsNew ||
+            exchange == exchanges.lastOrNull() && (cap != null || absent)
+    }
 }
+
+internal data class CoachDraftRecovery(val owner: String, val chat: String, val action: String,
+    val source: Pair<String, String>? = null, val published: Boolean = false)
+
+internal data class CoachDraftMove(val sourceOwner: String, val sourceChat: String, val targetChat: String)
 
 internal class CoachDraftWriteFailure(cause: Exception) : Exception(cause)
 
@@ -41,6 +56,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
         val pending: Map<String, Map<String, AskQuestion>> = emptyMap(),
         val snapshots: Map<String, Map<String, AskGeneration>> = emptyMap(),
         val drafts: Map<String, Map<String, CoachDraft>> = emptyMap(),
+        val keptDrafts: Map<String, Map<String, List<KeptCoachDraft>>> = emptyMap(),
+        val choices: Map<String, Map<String, Map<String, Map<String, List<String>>>>> = emptyMap(),
         val confirmations: Map<String, Map<String, CoachRoutineConfirmation>> = emptyMap(),
         val onboarding: Map<String, Map<String, CoachOnboardingRecord>> = emptyMap(),
     )
@@ -50,8 +67,50 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
     private var document = restored.getOrDefault(Document())
 
-    @Synchronized fun anonymousOwner(): String {
+    private var uncertainWrite: kotlinx.serialization.json.JsonElement? = null
+    private var draftRecovery: CoachDraftRecovery? = null
+    private var uncertainDraftRecovery: CoachDraftRecovery? = null
+
+    private fun ready() {
         restored.getOrThrow()
+        uncertainWrite?.let { intended ->
+            val actual = diskJson.parseToJsonElement(file.readText())
+            document = diskJson.decodeFromJsonElement(Document.serializer(), actual)
+            uncertainDraftRecovery?.let { draftRecovery = it.copy(published = actual == intended) }
+            uncertainDraftRecovery = null
+            uncertainWrite = null
+        }
+    }
+
+    private fun saveChange(next: Document, recovery: CoachDraftRecovery? = null, publishedFailure: (Exception) -> Unit) {
+        val encoded = diskJson.encodeToString(Document.serializer(), next)
+        try { write(file, encoded) }
+        catch (failure: Exception) {
+            val actual = try {
+                diskJson.parseToJsonElement(file.readText()).also { document = diskJson.decodeFromJsonElement(Document.serializer(), it) }
+            } catch (_: Exception) {
+                uncertainWrite = diskJson.parseToJsonElement(encoded)
+                uncertainDraftRecovery = recovery
+                if (recovery != null) draftRecovery = recovery
+                throw failure
+            }
+            if (actual != diskJson.parseToJsonElement(encoded)) throw failure
+            publishedFailure(failure)
+            return
+        }
+        document = next
+    }
+
+    @Synchronized internal fun reconcileDraftChange(owner: String, chat: String? = null): CoachDraftRecovery? {
+        if (draftRecovery?.let { it.owner == owner && (chat == null || it.chat == chat) } != true) return null
+        ready()
+        val result = draftRecovery
+        draftRecovery = null
+        return result?.takeIf { it.published }
+    }
+
+    @Synchronized fun anonymousOwner(): String {
+        ready()
         if (document.anonymousId.isNotEmpty()) return document.anonymousId
         val next = document.copy(anonymousId = "anonymous:" + Ids.thread())
         write(file, diskJson.encodeToString(Document.serializer(), next))
@@ -60,12 +119,12 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun selected(owner: String): String? {
-        restored.getOrThrow()
+        ready()
         return document.selected[owner]
     }
 
     @Synchronized fun select(owner: String, id: String) {
-        restored.getOrThrow()
+        ready()
         require(chats(owner).any { it.id == id })
         if (document.selected[owner] == id) return
         val next = document.copy(selected = document.selected + (owner to id))
@@ -74,7 +133,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun chats(owner: String): List<LocalChat> {
-        restored.getOrThrow()
+        ready()
         val chats = document.chats[owner].orEmpty().toMutableMap()
         val legacyIds = document.drafts[owner].orEmpty().keys + document.pending[owner].orEmpty().values.map { it.thread }
         legacyIds.forEach { id ->
@@ -91,7 +150,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun saveChat(owner: String, chat: LocalChat, select: Boolean = false) {
-        restored.getOrThrow()
+        ready()
         if (document.chats[owner]?.get(chat.id) == chat && (!select || document.selected[owner] == chat.id)) return
         val next = document.copy(
             selected = if (select) document.selected + (owner to chat.id) else document.selected,
@@ -101,27 +160,27 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun pending(owner: String): List<AskQuestion> {
-        restored.getOrThrow()
+        ready()
         return document.pending[owner].orEmpty().values.toList()
     }
 
     @Synchronized fun onboarding(owner: String, requestId: String): CoachOnboardingRecord? {
-        restored.getOrThrow()
+        ready()
         return document.onboarding[owner]?.get(requestId)
     }
 
     @Synchronized fun archivedChat(owner: String, chat: String): LocalChat? {
-        restored.getOrThrow()
+        ready()
         return document.chats[owner]?.get(chat)
     }
 
     @Synchronized fun onboarding(): List<CoachOnboardingRecord> {
-        restored.getOrThrow()
+        ready()
         return document.onboarding.values.flatMap { it.values }
     }
 
     @Synchronized fun keepOnboarding(record: CoachOnboardingRecord): Boolean {
-        restored.getOrThrow()
+        ready()
         val chat = document.chats[record.owner]?.get(record.chat) ?: return false
         require(record.request().requestId == record.requestId)
         val previous = document.onboarding[record.owner]?.get(record.requestId)
@@ -138,7 +197,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized fun keep(owner: String, question: AskQuestion) {
-        restored.getOrThrow()
+        ready()
         require(!question.requestId.isNullOrBlank())
         val original = document.pending[owner]?.get(question.requestId)
         require(original == null || original == question) { "A retry must keep the original message." }
@@ -151,7 +210,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun snapshot(owner: String, requestId: String): AskGeneration? = document.snapshots[owner]?.get(requestId)
 
     @Synchronized fun record(owner: String, generation: AskGeneration) {
-        restored.getOrThrow()
+        ready()
         val request = document.pending[owner]?.get(generation.requestId) ?: return
         val current = snapshot(owner, generation.requestId)
         if (current == generation || (current != null && current.id == generation.id && current.revision > generation.revision)) return
@@ -177,7 +236,7 @@ class LocalCoach internal constructor(private val file: File, private val write:
     @Synchronized fun confirmed(owner: String, requestId: String): AskGeneration? = document.confirmations[owner]?.get(requestId)?.generation
 
     @Synchronized fun confirm(owner: String, confirmation: CoachRoutineConfirmation) {
-        restored.getOrThrow()
+        ready()
         val generation = confirmation.generation
         val current = document.confirmations[owner]?.get(generation.requestId)
         if (current != null && current.generation.revision >= generation.revision) return
@@ -187,20 +246,21 @@ class LocalCoach internal constructor(private val file: File, private val write:
         document = next
     }
 
-    @Synchronized fun pauseRequest(owner: String, chat: LocalChat, requestId: String) {
-        restored.getOrThrow()
+    @Synchronized fun pauseRequest(owner: String, chat: LocalChat, requestId: String,
+        publishedFailure: (Exception) -> Unit = { throw it },
+    ) {
+        ready()
         val next = document.copy(
             chats = document.chats + (owner to (document.chats[owner].orEmpty() + (chat.id to chat))),
             pending = document.pending + (owner to (document.pending[owner].orEmpty() - requestId)),
             snapshots = document.snapshots + (owner to (document.snapshots[owner].orEmpty() - requestId)),
         )
-        write(file, diskJson.encodeToString(Document.serializer(), next))
-        document = next
+        saveChange(next, publishedFailure = publishedFailure)
         discardUnusedPhotos(owner)
     }
 
     @Synchronized fun clear(owner: String, threadId: String, requestId: String? = null) {
-        restored.getOrThrow()
+        ready()
         val mine = document.pending[owner].orEmpty()
         val kept = mine.filterValues { it.thread != threadId || (requestId != null && it.requestId != requestId) }
         val hasDraft = document.drafts[owner]?.containsKey(threadId) == true
@@ -217,6 +277,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
             pending = (document.pending + (owner to kept)).filterValues { it.isNotEmpty() },
             snapshots = (document.snapshots + (owner to (document.snapshots[owner].orEmpty() - removed))).filterValues { it.isNotEmpty() },
             drafts = if (requestId == null) document.drafts + (owner to (document.drafts[owner].orEmpty() - threadId)) else document.drafts,
+            keptDrafts = if (requestId == null) document.keptDrafts + (owner to (document.keptDrafts[owner].orEmpty() - threadId)) else document.keptDrafts,
+            choices = if (requestId == null) document.choices + (owner to (document.choices[owner].orEmpty() - threadId)) else document.choices,
             confirmations = if (requestId == null) document.confirmations + (owner to document.confirmations[owner].orEmpty().filterValues { it.thread != threadId }) else document.confirmations,
             onboarding = (document.onboarding + (owner to onboarding)).filterValues { it.isNotEmpty() })
         write(file, diskJson.encodeToString(Document.serializer(), next))
@@ -226,8 +288,92 @@ class LocalCoach internal constructor(private val file: File, private val write:
 
     @Synchronized fun draft(owner: String, key: String): CoachDraft = document.drafts[owner]?.get(key) ?: CoachDraft()
 
+    @Synchronized fun keptDrafts(owner: String, chat: String): List<KeptCoachDraft> {
+        return document.keptDrafts[owner]?.get(chat).orEmpty()
+    }
+
+    @Synchronized fun choices(owner: String, chat: String, clarification: String): Map<String, List<String>> {
+        return document.choices[owner]?.get(chat)?.get(clarification).orEmpty()
+    }
+
+    @Synchronized internal fun saveChoice(owner: String, chatId: String, clarification: String,
+        selected: Map<String, List<String>>, draft: CoachDraft, publishedFailure: (Exception) -> Unit = {}) {
+        ready()
+        val chat = document.chats[owner]?.get(chatId) ?: return
+        val next = document.copy(
+            chats = document.chats + (owner to (document.chats[owner].orEmpty() + (chatId to chat.copy(updatedAtMs = System.currentTimeMillis())))),
+            drafts = document.drafts + (owner to (document.drafts[owner].orEmpty() + (chatId to draft))),
+            choices = document.choices + (owner to (document.choices[owner].orEmpty() +
+                (chatId to (document.choices[owner]?.get(chatId).orEmpty() + (clarification to selected))))))
+        saveChange(next, CoachDraftRecovery(owner, chatId, "choose"), publishedFailure)
+    }
+
+    @Synchronized internal fun continueDraft(owner: String, chatId: String, heldId: String,
+        publishedFailure: (Exception) -> Unit = {}): Boolean {
+        ready()
+        val chat = document.chats[owner]?.get(chatId) ?: return false
+        val held = keptDrafts(owner, chatId)
+        val index = held.indexOfFirst { it.id == heldId }
+        if (index < 0) return false
+        val previous = draft(owner, chatId)
+        val remaining = held.toMutableList().apply {
+            if (previous.text.isNotEmpty() || previous.photo != null) set(index, held[index].copy(draft = previous)) else removeAt(index)
+        }
+        val next = document.copy(
+            chats = document.chats + (owner to (document.chats[owner].orEmpty() + (chatId to chat.copy(updatedAtMs = System.currentTimeMillis())))),
+            drafts = document.drafts + (owner to (document.drafts[owner].orEmpty() + (chatId to held[index].draft))),
+            keptDrafts = document.keptDrafts + (owner to (document.keptDrafts[owner].orEmpty() + (chatId to remaining))))
+        saveChange(next, CoachDraftRecovery(owner, chatId, "continue_draft"), publishedFailure)
+        return true
+    }
+
+    @Synchronized internal fun adoptPhoneDraft(targetOwner: String, publishedFailure: (Exception) -> Unit = {},
+        current: () -> Boolean): CoachDraftMove? {
+        ready()
+        val sourceOwner = document.anonymousId.takeIf { it.isNotEmpty() && it != targetOwner } ?: return null
+        val sourceId = document.selected[sourceOwner] ?: return null
+        val source = document.chats[sourceOwner]?.get(sourceId) ?: return null
+        val original = draft(sourceOwner, sourceId)
+        if (original.text.isEmpty() && original.photo == null) return null
+        val selected = document.selected[targetOwner]
+        val target = selected?.let { document.chats[targetOwner]?.get(it) } ?: LocalChat(Ids.thread(), setup = source.setup)
+        val previous = draft(targetOwner, target.id)
+        var moved = original.copy(setup = original.setup || source.setup)
+        var copied: File? = null
+        var committed = false
+        try {
+            original.photo?.let { photo ->
+                val from = photoFile(sourceOwner, photo.id)
+                require(from.length() == photo.bytes && photo.bytes in 1..CoachPhotos.maxBytes.toLong())
+                var id = Ids.thread()
+                while (photoFile(targetOwner, id).exists()) id = Ids.thread()
+                savePhoto(targetOwner, id, from.readBytes())
+                copied = photoFile(targetOwner, id)
+                moved = moved.copy(photo = photo.copy(id = id))
+            }
+            if (!current() || document.selected[targetOwner] != selected) return null
+            val occupied = previous.text.isNotEmpty() || previous.photo != null ||
+                document.pending[targetOwner].orEmpty().values.any { it.thread == target.id }
+            val kept = keptDrafts(targetOwner, target.id) + if (occupied) listOf(KeptCoachDraft(Ids.thread(), moved)) else emptyList()
+            val next = document.copy(
+                selected = document.selected + (targetOwner to target.id),
+                chats = document.chats + (targetOwner to (document.chats[targetOwner].orEmpty() +
+                    (target.id to target.copy(updatedAtMs = System.currentTimeMillis())))),
+                drafts = document.drafts + (sourceOwner to (document.drafts[sourceOwner].orEmpty() - sourceId)) +
+                    (targetOwner to (document.drafts[targetOwner].orEmpty() + (target.id to if (occupied) previous else moved))),
+                keptDrafts = document.keptDrafts + (targetOwner to (document.keptDrafts[targetOwner].orEmpty() + (target.id to kept))))
+            saveChange(next, CoachDraftRecovery(targetOwner, target.id, "adopt", source = sourceOwner to sourceId), publishedFailure)
+            committed = true
+            discardUnusedPhotos(sourceOwner)
+            return CoachDraftMove(sourceOwner, sourceId, target.id)
+        } finally {
+            if (!committed && uncertainWrite == null) copied?.takeIf { it.name !in retainedPhotoIds(targetOwner) }?.delete()
+        }
+    }
+
     @Synchronized fun saveDraft(owner: String, key: String, draft: CoachDraft) {
-        restored.getOrThrow()
+        ready()
+        check(draftRecovery?.let { it.owner == owner && it.chat == key } != true)
         if ((document.drafts[owner]?.get(key) ?: CoachDraft()) == draft) return
         val mine = document.drafts[owner].orEmpty() + (key to draft)
         val chat = chats(owner).firstOrNull { it.id == key } ?: LocalChat(key)
@@ -239,11 +385,15 @@ class LocalCoach internal constructor(private val file: File, private val write:
         discardUnusedPhotos(owner)
     }
 
-    @Synchronized internal fun discardUnusedPhotos(owner: String) {
-        val retained = document.pending[owner].orEmpty().values.flatMap { it.attachmentIds }.toSet() +
+    private fun retainedPhotoIds(owner: String): Set<String> = (document.pending[owner].orEmpty().values.flatMap { it.attachmentIds }.toSet() +
             document.drafts[owner].orEmpty().values.mapNotNull { it.photo?.id } +
+            document.keptDrafts[owner].orEmpty().values.flatten().mapNotNull { it.draft.photo?.id } +
             document.onboarding[owner].orEmpty().values.mapNotNull { it.attachment?.id } +
-            document.chats[owner].orEmpty().values.flatMap { chat -> chat.exchanges.flatMap { it.attachments.map { photo -> photo.id } } }
+            document.chats[owner].orEmpty().values.flatMap { chat -> chat.exchanges.flatMap { it.attachments.map { photo -> photo.id } } }).toSet()
+
+    @Synchronized internal fun discardUnusedPhotos(owner: String) {
+        ready()
+        val retained = retainedPhotoIds(owner)
         photoFile(owner, "directory-probe").parentFile?.listFiles()?.forEach { photo ->
             if (photo.name !in retained) photo.delete()
         }
@@ -256,7 +406,8 @@ class LocalCoach internal constructor(private val file: File, private val write:
     }
 
     @Synchronized internal fun attachPhoto(owner: String, key: String, photo: CoachAttachment, bytes: ByteArray): Boolean {
-        restored.getOrThrow()
+        ready()
+        if (draftRecovery?.let { it.owner == owner && it.chat == key } == true) return false
         if (document.chats[owner]?.containsKey(key) != true) return false
         savePhoto(owner, photo.id, bytes)
         try { saveDraft(owner, key, draft(owner, key).copy(photo = photo)) }
