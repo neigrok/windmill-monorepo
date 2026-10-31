@@ -471,12 +471,27 @@ class CoachStore internal constructor(
         } catch (failure: Exception) { unsavedDrafts += seat to key; reportFailure("gym.saveDraft", failure); throw failure }
     }
 
+    fun removePhoto(key: String) {
+        val seat = archiveOwner
+        val current = draft(seat, key)
+        if (current.photo == null) return
+        val next = current.copy(photo = null)
+        try { localCoach?.saveDraft(seat, key, next) }
+        catch (failure: Exception) { reportFailure("gym.saveDraft", failure); throw failure }
+        drafts[seat to key] = next
+        unsavedDrafts.remove(seat to key)
+        draftVersion++
+        archive[seat to key]?.let { archive[seat to key] = it.copy(updatedAtMs = System.currentTimeMillis()) }
+        telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "photo_removed"))
+    }
+
     suspend fun importPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) {
         val maxBytes = if (owner == null) CoachOnboardingLimits.photoBytes else CoachPhotos.maxBytes
         importPhoto(key) { withContext(storageDispatcher) { CoachPhotos.read(resolver, uri, maxBytes = maxBytes) } }
     }
 
     internal suspend fun importPhoto(key: String, prepare: suspend () -> Pair<CoachAttachment, ByteArray>) {
+        val prepareOperation = if (owner == null) "gym.coachOnboarding" else "gym.preparePhoto"
         val seat = archiveOwner
         val origin = seat to key
         val version = chatVersions[origin] ?: 0
@@ -486,7 +501,7 @@ class CoachStore internal constructor(
         scope.async {
             val prepared = try { prepare() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { reportFailure("gym.preparePhoto", failure); throw failure }
+            catch (failure: Exception) { reportFailure(prepareOperation, failure); throw failure }
             if ((chatVersions[origin] ?: 0) != version || archive[origin] == null) return@async
             val (photo, bytes) = prepared
             val attached = try { withContext(storageDispatcher) { disk.attachPhoto(seat, key, photo, bytes) } }
@@ -502,6 +517,7 @@ class CoachStore internal constructor(
                 return@async
             }
             saveDraft(seat, key, draft(seat, key).copy(photo = photo))
+            telemetry.event("gym_setup_step", mapOf("screen" to "coach", "action" to "photo_selected"))
         }.await()
     }
 

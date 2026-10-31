@@ -117,6 +117,37 @@ class CoachComposerTests {
         scope.cancel()
     }
 
+    @Test fun attachedPhotoShowsItsAccountsCaptionAndCanBeSentWithoutTextThenRemoved() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val disk = LocalCoach(File(tmp.root, "captions.json"))
+        var owner by mutableStateOf<String?>(null)
+        val store = CoachStore({ owner }, { emptySet() }, {}, { null }, disk,
+            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime, scope)
+        val chat = "caption-chat"
+        store.freshChat(id = chat)
+        var sent: Pair<String, CoachAttachment?>? = null
+        compose.setContent { CoachComposer(store, chat, "", false, { text, photo -> sent = text to photo }, null, null, true) }
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        val photo = CoachAttachment("attachment-caption", "image/png", 1, 1, 3)
+        compose.runOnIdle { store.saveDraft(chat, CoachDraft(photo = photo)) }
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertIsDisplayed()
+        compose.onNodeWithText("Saved only in this chat.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        assertEquals("" to photo, sent)
+        compose.onNodeWithContentDescription("Remove photo").performClick()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertDoesNotExist()
+        compose.runOnIdle { owner = "alice"; store.freshChat(id = chat); store.saveDraft(chat, CoachDraft("Caption", photo)) }
+        compose.onNodeWithText("Saved only in this chat.").assertIsDisplayed()
+        compose.onNodeWithText("Sent to Coach. Saved only on this phone.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
+        compose.onNodeWithText("Saved only in this chat.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        assertEquals(CoachDraft("Caption"), store.draft(chat))
+        scope.cancel()
+    }
+
     @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = CoachStore({ null }, { emptySet() }, {}, { null }, LocalCoach(File(tmp.root, "anonymous.json")),
@@ -144,7 +175,7 @@ class CoachComposerTests {
         compose.onNodeWithContentDescription("Question").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Add photo").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
-        compose.onNodeWithText("Remove photo").assertIsNotEnabled().performClick()
+        compose.onNodeWithContentDescription("Remove photo").assertIsNotEnabled().performClick()
         assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(draft, LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
         scope.cancel()
@@ -174,9 +205,9 @@ class CoachComposerTests {
         compose.runOnIdle { store.coach.saveDraft("another-thread", CoachDraft("Unrelated draft")) }
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         compose.runOnIdle { store.coach.saveDraft("thread-a", draft.copy(photo = photo)) }
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        compose.onNodeWithText("Remove photo").performClick()
+        compose.onNodeWithContentDescription("Remove photo").performClick()
         assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
@@ -210,16 +241,16 @@ class CoachComposerTests {
 
         compose.onNodeWithContentDescription("Cancel upload").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").performClick()
         compose.runOnIdle { upload = null }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove photo").assertDoesNotExist()
         assertEquals(CoachDraft("Latest caption", photo), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
 
         compose.onNodeWithContentDescription("Stop response").performClick()
         assertEquals("Latest caption", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("Remove photo").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove photo").assertIsDisplayed()
         assertEquals(List(2) { CoachDraft("Latest caption", photo) }, sent)
         scope.cancel()
     }

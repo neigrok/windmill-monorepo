@@ -127,7 +127,12 @@ result updates the retained credential's state before another Send; bound reques
 their original result by GET.
 
 Coach setup emits `gym_setup_step` with `screen=coach` and the bounded actions
-`shown|screenshot|build_manually`. The greeting emits no model turn and no content in telemetry.
+`shown|screenshot|build_manually|photo_selected|photo_removed`. Photo selection and removal emit only
+after the draft reference is saved; failed removal retains the previous reference. Picking a photo
+does not send a model request. No photo bytes, size, filename, URI or identifier enters these events.
+Signed-out photo preparation failures report once under `gym.coachOnboarding`; signed-in preparation
+uses `gym.preparePhoto`. Photo storage and draft failures use `gym.savePhoto` and `gym.saveDraft`.
+The greeting emits no model turn and no content in telemetry.
 
 Coach chat navigation emits bounded `gym_action` steps with `screen=coach`,
 `action=fresh_entry|history_open|draft_restored|reply_open|read_sources` and `outcome=ok`.
