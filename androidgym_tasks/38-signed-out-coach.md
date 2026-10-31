@@ -1,6 +1,6 @@
 # Signed-out Coach on this phone (installation credential, onboarding endpoint)
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; this task has no board. Live installation issue, binding, process-restart and telemetry acceptance remain, and the deployed onboarding switches are off.
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. This task has no board, and the deployed onboarding switches are off. Native acceptance on a local stack (2026-10-31) covers installation issue, binding at sign-in, a killed process recovering its request by GET, GET-only recovery after binding, a lost request replaced by a new question without replay on relaunch, one issuance request a day with the switches off, and Sentry reports only for injected failures. Open: a question answered while the app was dead stays in the composer, and Send posts it again as a new request; once a newer question follows, an interrupted one keeps *Retry to continue this response.* but loses its Try again control. Import has no native entry point until task 41, so `gym_coach_import` and a kill mid-import are verified only in JVM tests.
 
 **Figma:** none. This task builds the plumbing that 39–44 draw on. The signed-out boards are 01.1, 01.4, 01.7, 01.10, 01.14, 01.15, 01.16.
 

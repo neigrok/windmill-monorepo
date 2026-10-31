@@ -1,0 +1,16 @@
+[
+  {
+    "board": "08.31",
+    "name": "coach-change-needs-account",
+    "account": "empty",
+    "responses": [[{"type": "text", "text": "{\"message\": \"\", \"routines\": [], \"errorCode\": \"account_required\"}"}]],
+    "steps": [{"tap": "Coach"}, {"wait": "Ask about your training"}, {"tap": "Question"}, {"wait": "Ask about your training"}, {"tap": "Question"}, {"text": "Make Push A harder"}, {"wait": "Make Push A harder"}, {"tap": "Send"}, {"wait": "I need your account to change a routine. Sign in, then ask again."}, {"wait": "Sign in"}]
+  },
+  {
+    "board": "08.31",
+    "name": "coach-change-needs-account-200",
+    "account": "empty",
+    "viewport": {"width": 1080, "height": 2400, "density": 420, "fontScale": 2},
+    "steps": [{"wait": "I need your account to change a routine. Sign in, then ask again."}]
+  }
+]

@@ -1,6 +1,6 @@
 # Coach asks with choice chips, and a draft written signed out waits as Draft kept on this phone
 
-**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for 01.17/01.18 remain.
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev. 01.17 and 01.18 match natively in Dark, Daylight and 200 % text; `choose` and `continue_draft` arrive with `outcome=ok`, and recipe `coach-choices.json` covers 01.17. 01.18 cannot be reached through the UI once the phone has signed in, because sign-in binds the installation for good; its capture cleared the installation preference. Open: at a first sign-in the phone draft reaches the composer only after the activity is recreated, and the choices sit under a *Read nothing from your log* row that the board does not draw.
 
 **Figma:**
 - 01.17 Coach asks a choice, signed in: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40111) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1283-40235)
