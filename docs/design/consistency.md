@@ -559,15 +559,35 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   are still growing in, although `QuestShelf.jsx` and `PasteComposer.jsx` provide both. Its promise
   that a first branch unlocks tonight also exceeds the completion-dependent unlock behavior.
   Marketing owns the copy correction; Roadmap drawings must not reproduce these promises as canon.
-- **Board vocabulary drifts from the tiers.** The Board proposal pages name the three tiers
-  *Closed · Up next · Done* and the same state *ready*, *blocked* and *locked* in toasts and empty
-  states; canon names them locked · available · complete and the card glyph is a lock. Owner ruling
-  2026-10-28: **Locked · Up next · Done**, one word per state ([review](roadmap-board-review.md));
-  redraw both pages before any Board flow is Ready for dev.
-- **Board says node where the product says step.** Both Board pages use *node* in every control
-  (*Search nodes*, *New node*, *Needs 2 nodes*); the shipped roadmap and the L4 vocabulary say
-  *step*. Redraw with *step*; the proposal's validation list must stop naming node terminology as a
-  requirement.
+- **Board · light focus ring on cream.** `--focus-ring` in `tokens/shadows.css` is a 4px
+  `--accent-terracotta-100` (#F3DFD2) shadow: 1.18:1 against `--surface-canvas` (#F9F5EB), under the
+  3:1 non-text minimum. The [Board proposal](roadmap-board-proposal.md) draws a 2px brand-colour
+  `:focus-visible` ring with a 2px offset (card state sheets 353:5571, 353:5686). The token is shared
+  by the design-system Button, IconButton, Input, Select and SegmentedControl; the library owner
+  retokens it before the Board ships.
+- **Board · kind choices in the editor.** The proposal's create and edit form offers six kinds: the
+  legend kinds by name and the unnamed hues by hue name (Kind choice 306:4848; desktop 09.05
+  384:19561). The shipped `ui/StepPanel.jsx` offers only the legend's kinds, falling back to the six
+  hues when the legend is empty, plus *Manage kinds*. Rule which one is canon.
+- **Board · subtasks complete a step on web.** `ui/tree/useWorkspace.js` completes a step 600ms
+  (`AUTO_COMPLETE_HOLD`) after its last subtask is checked. Canon says subtasks never complete a step;
+  the proposal offers *All subtasks done · Complete step* instead (phone 07.06 231:1174, desktop 03.09
+  399:19282). Remove the automatic call.
+- **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
+  `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
+  (desktop 10.03 386:13666).
+- **Board · swipe commit.** The shipped List commits a swipe on release past 72px
+  (`SWIPE_COMMIT_PX` in `list/editing.js`). The Board card swipe reveals Complete at 96px and never
+  commits on release or a full swipe; only a tap on Complete does (phone 17.03 378:16515, swipe spec
+  379:17279). The two must not share the commit-on-release path.
+- **Board · Shell at 200% text.** The 200%-text Board specimen (phone 18.05 380:18803) leaves out
+  the Shared Shell: neither the proposal's Shell component (290:7085) nor the shipped
+  `web/src/shell/chrome/chrome.css` (room-switcher pills at a fixed 30px height with
+  `white-space: nowrap`, 32px grid gutters) defines a reflow. The Shell owner draws and builds it at
+  320px with 200% text.
+- **Email me a link is over the CTA budget.** `web/src/shell/auth/SignInDialog.jsx` and
+  `web/src/products/roadmap/ui/mobile/ForkDoor.jsx` label the submit *Email me a link*, four words
+  against the 1–3-word button budget in `guidelines/text-budget.md`.
 - **1e · Available-node treatment.** The DOM specimen draws a card-coloured available node;
   `NodeBatch.js` paints available and complete with saturated fills, distinguishing complete with a
   halo. Choose one treatment and align shader and specimen.
