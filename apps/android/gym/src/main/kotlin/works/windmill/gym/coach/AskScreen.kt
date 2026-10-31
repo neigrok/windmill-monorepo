@@ -208,7 +208,9 @@ fun AskScreen(
                             ChatTimestamp(exchange.atMs, nowMs)
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 exchange.attachments.forEach { CoachPhoto(store.coach, conversationId, it, Modifier.size(160.dp)) }
-                                if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
+                                val heldInComposer = cap != null && index == thread.lastIndex && exchange.answer == null &&
+                                    exchange.question == store.coach.draft(conversationId.ifEmpty { "new" }).text
+                                if (exchange.question.isNotEmpty() && !heldInComposer) CoachQuestion(exchange.question, if (exchange.attachments.isEmpty()) CoachGroup.Single else CoachGroup.Last)
                             }
                             val answered = exchange.answer ?: exchange.generation?.response()
                             val text = rememberRevealedText(messageKeys[index], answered?.answer.orEmpty(), exchange.generation?.status in listOf("failed", "stopped"))

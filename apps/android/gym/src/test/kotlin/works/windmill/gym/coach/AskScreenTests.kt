@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -508,20 +510,35 @@ class AskScreenTests {
     fun theDayCapKeepsEditableRefusedInputAndSendWithAnHonestNotice() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
-        store.coach.saveDraft("new", CoachDraft("What should Thursday look like?"))
         val refused = AskExchange("is my week too light?", trouble = "the next question frees up in a couple of hours")
+        store.coach.saveDraft("new", CoachDraft(refused.question))
         val doors = mutableListOf<String>()
         room(store, thread = listOf(refused), cap = AskCap.Daily, doors = doors)
         compose.onNodeWithText(Ask.capReached).assertIsDisplayed()
         compose.onNodeWithText(refused.trouble!!).assertDoesNotExist()
-        compose.onNodeWithText(refused.question).assertIsDisplayed()
+        compose.onAllNodesWithText(refused.question).assertCountEquals(1)
+        compose.onNode(hasText(refused.question) and hasSetTextAction()).assertIsDisplayed()
         compose.onNodeWithContentDescription("Question").assertIsDisplayed()
         compose.onNodeWithContentDescription("Send").assertIsDisplayed()
         compose.onNodeWithText(Threads.open).assertDoesNotExist()
         compose.onNodeWithText("Use your own AI agent").performClick()
         compose.runOnIdle { assertEquals(listOf("connections"), doors) }
         compose.onNodeWithContentDescription("Send").performClick()
-        compose.runOnIdle { assertEquals(listOf("connections", "ask:What should Thursday look like?"), doors) }
+        compose.runOnIdle { assertEquals(listOf("connections", "ask:is my week too light?"), doors) }
+        scope.cancel()
+    }
+
+    @Test
+    fun theSignedOutAllowanceRefusalShowsItsInputOnlyInTheComposerAsBoard0110Draws() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val fixture = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).also { rooms += it }
+        runBlocking { fixture.select(null) }
+        val input = "Swap chin-ups for pulldowns"
+        fixture.store.coach.saveDraft("new", CoachDraft(input))
+        room(fixture.store, thread = listOf(AskExchange(input, trouble = AskCap.Allowance.wordless, refusalCode = "subject_exhausted")),
+            cap = AskCap.Allowance, doors = mutableListOf())
+        compose.onAllNodesWithText(input).assertCountEquals(1)
+        compose.onNode(hasText(input) and hasSetTextAction()).assertIsDisplayed()
         scope.cancel()
     }
 
