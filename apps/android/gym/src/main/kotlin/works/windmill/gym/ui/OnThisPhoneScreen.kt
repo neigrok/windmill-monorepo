@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -109,7 +110,7 @@ fun OnThisPhoneSection(read: RecoveryRead?, onList: () -> Unit, onInspect: (Stri
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         RecoveryHeading("On this phone")
         if (rows.size == 1) RecoveryRow(rows.single()) { onInspect(rows.single().id) }
-        else Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp))
+        else Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(skin.surface)
             .clickable(role = Role.Button, onClick = onList).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -159,7 +160,7 @@ private fun RecoveryRow(row: ImportRecovery, onInspect: () -> Unit) {
         if (Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == today) "Today"
         else Readout.date(ms).substringBeforeLast(" ")
     }
-    Row(Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(16.dp))
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(skin.surface)
         .clickable(role = Role.Button, onClick = onInspect).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

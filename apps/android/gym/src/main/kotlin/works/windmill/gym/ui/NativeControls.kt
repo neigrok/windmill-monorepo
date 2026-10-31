@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -73,17 +74,20 @@ fun GymFab(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+// Collapsed to its icon while the list beneath it is scrolled; the label stays its accessible name.
 @Composable
-fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier) {
+fun GymExtendedFab(label: String, onClick: () -> Unit, icon: Painter, modifier: Modifier = Modifier, expanded: Boolean = true) {
     val skin = LocalGymColors.current
-    FloatingActionButton(onClick, modifier.heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp),
-        containerColor = skin.accentSoft.compositeOver(skin.surface), contentColor = skin.accent) {
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(24.dp))
-            Text(label, style = GymNativeType.button.copy(lineHeight = 24.sp))
-        }
-    }
+    ExtendedFloatingActionButton(
+        text = { Text(label, style = GymNativeType.button.copy(lineHeight = 24.sp)) },
+        icon = { Icon(icon, null, Modifier.size(24.dp)) },
+        onClick = onClick,
+        modifier = modifier.semantics { contentDescription = label },
+        expanded = expanded,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = skin.accentSoft.compositeOver(skin.surface),
+        contentColor = skin.accent,
+    )
 }
 
 @Composable

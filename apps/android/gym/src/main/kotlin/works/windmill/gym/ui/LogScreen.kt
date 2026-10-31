@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -103,15 +104,10 @@ fun LogScreen(
             finally { closing = false }
         }
     }
+    val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     GymScreen(title = "The log", actions = { YouSeat(seat) }, transient = transient, floatingActionButton = {
-        ExtendedFloatingActionButton(
-            onClick = { weighingIn = true },
-            icon = { Icon(painterResource(R.drawable.gym_native_monitor_weight), null, Modifier.size(24.dp)) },
-            text = { Text(Bodyweight.chip, style = WindmillFont.body(16, FontWeight.Bold)) },
-            modifier = Modifier.heightIn(min = 56.dp).semantics { contentDescription = Bodyweight.chip },
-            containerColor = skin.accentSoft.compositeOver(skin.surface),
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
+        GymExtendedFab(Bodyweight.chip, onClick = { weighingIn = true }, painterResource(R.drawable.gym_native_monitor_weight),
+            expanded = atTop)
     }) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(),
@@ -260,7 +256,7 @@ private fun SessionRow(row: LogReadout.Row, onOpen: () -> Unit, onShare: () -> U
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val timeBelowTitle = maxWidth < 320.dp || fontScale >= 1.5f
         Row(Modifier.fillMaxWidth().testTag("session:${row.summary.id}").heightIn(min = 72.dp)
-            .background(skin.surface, RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp)).background(skin.surface)
             .combinedClickable(role = Role.Button, onClickLabel = "Open workout", onLongClickLabel = "Workout actions",
                 onClick = onOpen, onLongClick = { haptics.revealed(); menu = true })
             .semantics {

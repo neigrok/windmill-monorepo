@@ -165,8 +165,12 @@ class LoggerScreenTests {
             compose.onNodeWithContentDescription("Load, kg total").performImeAction()
             compose.onNodeWithText(reason).performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Load, kg total").assertIsNotEnabled()
+            // A real disabled button: accessibility reads it as disabled, and a tap logs nothing.
             compose.onNodeWithText("Log set").assertIsNotEnabled()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button))
+                .performClick()
             compose.runOnIdle {
+                assertEquals(emptyList<works.windmill.gym.domain.TrainingSet>(), first.store.sets)
                 assertEquals(listOf("gym.editRack"), failures)
                 assertEquals(before, first.controlsFile.readText())
                 current.value = other.store

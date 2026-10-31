@@ -25,7 +25,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -438,24 +441,24 @@ private fun Foot(
                 onKeep = { turningDown = false },
             )
         }
-        val ready = seen && !deciding
-        Box(
-            contentAlignment = Alignment.Center,
+        Button(
+            onClick = { onDecide(true) },
+            enabled = seen && !deciding,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = GymTap.secondary)
-                .alpha(if (ready) 1f else 0.4f)
-                .background(skin.accent, RoundedCornerShape(WindmillRadius.lg))
                 // TalkBack announced `disabled` and nothing else; the reason belongs on the control
                 // that is refusing, not only in the row beneath it.
-                .semantics { if (!seen) stateDescription = Proposal.applyHint }
-                .clickable(enabled = ready, role = Role.Button) { onDecide(true) },
+                .semantics { if (!seen) stateDescription = Proposal.applyHint },
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = skin.accent,
+                contentColor = skin.onAccent,
+                disabledContainerColor = skin.accent.copy(alpha = .4f),
+                disabledContentColor = skin.onAccent.copy(alpha = .4f),
+            ),
         ) {
-            Text(
-                proposal.applyLabel,
-                style = WindmillFont.body(16, FontWeight.Bold),
-                color = skin.onAccent,
-            )
+            Text(proposal.applyLabel, style = WindmillFont.body(16, FontWeight.Bold))
         }
         // Laid out in BOTH states so the band's height never changes, and off the SEMANTICS tree in
         // BOTH: the reason Apply is refusing belongs to Apply, which says it above, and a reader
@@ -476,14 +479,14 @@ private fun Foot(
             color = skin.inkDim,
             modifier = Modifier.fillMaxWidth(),
         )
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .clickable(enabled = !deciding, role = Role.Button) { turningDown = true },
+        TextButton(
+            onClick = { turningDown = true },
+            enabled = !deciding,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            shape = RoundedCornerShape(WindmillRadius.lg),
+            colors = ButtonDefaults.textButtonColors(contentColor = skin.ink),
         ) {
-            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)
+            Text(Proposal.turnDownVerb, style = WindmillFont.body(16, FontWeight.Bold))
         }
     }
 }
