@@ -9,7 +9,7 @@
 
 **Current implementation**
 - When the keyboard opens, Fix set, the movement editor and Add movement expand under the status bar. Their drag handle sits about 30 px into the 63 px status band.
-- Evidence from the 2026-10-31 review: `runs/rack/03.3-fix-set-keyboard-light.png`, `runs/targets/02.12-combined-load-keyboard-dark.png`, `manual/m06-load-keyboard.png`.
+- To reproduce: open Fix set from a logged row, or the movement editor's Load field, so the keyboard comes up; the handle sits in the status band. The rig's `03.3` and `routine-targets` keyboard captures show it.
 - `adjustResize` and `imePadding` work for screens. The fault is in how `ModalBottomSheet` content and window insets combine.
 
 **Change**

@@ -5,7 +5,7 @@
 **Figma:** Shell 15b Sign in, code focused: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4237) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-792). The caption reads "Code takes the number keyboard".
 
 **Current implementation** (the sign-in fields from task 27)
-- The 6-digit code field opens the full phone pad (− , . space): `runs/outside/15b-sign-in-code-focused-dark.png`.
+- The 6-digit code field opens the full phone pad (− , . space). The rig's `15b-sign-in-code-focused` capture shows it.
 - Neither field carries an autofill hint.
 - The email field already uses `TYPE_TEXT_VARIATION_EMAIL_ADDRESS`.
 

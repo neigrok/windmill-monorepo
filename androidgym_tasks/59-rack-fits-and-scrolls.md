@@ -8,9 +8,9 @@
 - 03.2 Rack with the keyboard: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1252-28178)
 
 **Current implementation**
-- **Unit wraps:** a real 22.5 kg total wraps "kg total" onto its own line, so the rack panel grows about 80 px and the layout jumps while stepping (`manual/m16-after-log-set.png`).
-- **Keyboard up:** the set list collapses to a clipped sliver, and the current row is cut mid-glyph (`runs/rack/03.12-rack-keyboard-dark.png`).
-- **Large text:** at 320 dp / 200 % the list is clipped the same way (`manual/m20-rack-320dp-200.png`).
+- **Unit wraps:** a real 22.5 kg total wraps "kg total" onto its own line, so the rack panel grows about 80 px and the layout jumps while stepping (step a barbell load from 20 to 22.5 kg in a live workout).
+- **Keyboard up:** the set list collapses to a clipped sliver, and the current row is cut mid-glyph (the rig's `03.12` rack-keyboard capture).
+- **Large text:** at 320 dp / 200 % the list is clipped the same way (`adb shell wm size 840x1866` plus `settings put system font_scale 2.0` gives 320 dp / 200 % on a Pixel 8 profile).
 - **Typed value lost:**
   - `ui/NumberDraft.kt` `focus(active)` calls `cancel()` when focus leaves.
   - A typed load is therefore thrown away when the lifter taps Reps instead of the keyboard's Done; it reproduces every time.

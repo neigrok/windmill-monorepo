@@ -5,7 +5,7 @@
 **Context:** a phone signed in to an account it has not pulled yet holds partial history. Rule: device-local data can support leaving something out, never asserting it. PR #43 gated the receipt's record and the record page's tiles. Native e2e on 2026-10-31 found three more places.
 
 **Current implementation**
-- **Record page:** on an unread account the record page still shows the latest estimate and "Last 12 weeks · 1 workout" while the server holds 8 (`s4-f-record-page-unread.png`).
+- **Record page:** on an unread account the record page still shows the latest estimate and "Last 12 weeks · 1 workout" while the server holds 8 (sign in on a fresh install to an account with history, with the pull blocked at a proxy).
 - **Log foot:** the unread log's foot reads *That read failed. Retry*, but nothing failed; it is waiting for the first pull.
 - **New-best marker:** the log's *new best* marker is missing on a one-set workout that set an e1RM (115×8, e1RM 145.7 over 133.3), though the record page lists it under earlier records. Slight workouts (fewer than 4 sets) are not record-eligible by design, so this may be intended. Check the shared rule and make the log and the record page agree.
 

@@ -12,7 +12,7 @@
 - **D3 dead end:**
   - Outside the window, when the receipt read answers `unavailable`, the phone stays on D3 ("We can't confirm the result") with the account fence up.
   - That happens even when the server never received the close and the account is live.
-  - Only clearing app data gets out; native acceptance reproduced it on 2026-10-31 (`D3-after-offline-past-window-dark.png`).
+  - Only clearing app data gets out; native acceptance reproduced it on 2026-10-31 (airplane mode, Delete, wait more than 5 minutes, back online, Check deletion).
 
 **Change (once approved)**
 - **27h:**

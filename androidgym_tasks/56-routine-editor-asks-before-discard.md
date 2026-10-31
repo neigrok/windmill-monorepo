@@ -9,7 +9,7 @@
 
 **Current implementation**
 - `ui/RoutineBuilder.kt` swallows Back only while saving (`BackHandler(enabled = saving) {}`).
-- A back gesture on a new routine with a name and two movements discards it silently: no question, no Undo. Evidence: `manual/m09-editor-two.png` → `manual/m12-after-back-commit.png`.
+- A back gesture on a new routine with a name and two movements discards it silently: no question, no Undo. To reproduce: New routine, type a name, add two movements, swipe back.
 - The movement editor already asks (02.17), but its dismiss button reads *Cancel*.
 - The routine Name is a label-above outlined field. The movement form uses floating-label fields, so the one editor mixes two field idioms.
 

@@ -9,7 +9,7 @@
   - `gym/.../domain/Readout.kt` writes a target with no load as `last × {reps}`.
   - `domain/LiveSession.kt` draws planned rows as `last {unit} × {reps}`.
 - iOS: `apps/ios/Domain/Sources/GymDomain/TrainingReads.swift` `setTarget` writes the same `last × …`.
-- With no history, the rack's planned rows read the template words "last kg total × max" (`manual/m15-rack-light.png`).
+- With no history, the rack's planned rows read the template words "last kg total × max" (start a routine on a fresh install, so no movement has history).
 
 **Change**
 - In the rack's planned rows, show the load the rack will offer for that set: "22.5 kg total × max". With nothing to offer, show "— × max".
