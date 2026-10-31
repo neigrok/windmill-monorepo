@@ -137,7 +137,8 @@ step and how many steps are up next.
   "astronomy"** with **Clear search**, and for the owner **New step "astronomy"**.
 - Filter by kind combines kinds with OR across all columns. Progress never changes with a filter. A
   roadmap with one kind shows no filter.
-- Sort: **Roadmap order** (default), then **Created**, newest or oldest, within each column. A
+- Sort: **Roadmap order** (default), then **Created**, newest or oldest, within Locked and Up next.
+  Done always lists the most recently completed first. A
   non-default order puts a dot on the phone's Sort control and a removable chip (*Created · newest*)
   above the column.
 - **Done collapse.** Above 12 cards Done shows the 12 most recently completed, newest first, then
@@ -250,12 +251,12 @@ never sits above eight-step columns.
 
 ## Data prerequisites
 
-- **Created sort** needs an immutable per-roadmap creation time: the first addition of the step to
-  this roadmap, assigned on create, import and fork, unchanged by rename, edit, completion, reset or
-  restore. Nothing stores that today. `sync/lattice.js` exposes `createdAt` from the CRDT add-life
-  stamp; `sync/materialize.js` gives a pasted subgraph one shared stamp and writes a fresh
-  `createdAt` on `ResurrectNode`. Unknown dates sort last in both directions; ties keep stable order,
-  then stable ID. Never infer a date.
+- **Created sort** reads `createdMs` on each step (`sync/lattice.js`): the step's first addition to
+  this roadmap. Create, import and fork stamp it; rename, edit, completion and reset never touch it.
+  Restore re-stamps it, because a restored step's add-life must beat its removal; keeping the first
+  addition through restore needs a first-addition register on the wire (dogfood node
+  `rb-created-restore-born-at`). Genesis-stamped and legacy steps read as unknown. Unknown dates
+  sort last in both directions; ties keep stable order. Never infer a date.
 - **Unlocked sort** stays out until `unlockedAt` persists. `model/UnlockRules.js` derives present
   eligibility only.
 - **Done order** reads `completedAt`, which `model/progress.js` records per step.

@@ -572,6 +572,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board · no Complete offer after the last subtask.** Checking the last subtask on web fills the
   gauge and nothing else. The proposal offers *All subtasks done · Complete step* there (phone 07.06
   231:1174, desktop 03.09 399:19282); no web surface draws it yet.
+- **Board · phone Up next order.** Roadmap order puts the step that unlocks most first. Phone 01.06
+  (and its swipe outcome 17.04) draws *Tie a bowline* above *Leave the dock* after Read the wind is
+  done, though Leave the dock unlocks Sail a triangle and Tie a bowline unlocks nothing; desktop 02.01
+  draws them in rule order. Designer to reorder the phone boards.
 - **Board · `/` has two owners.** `shortcuts/shortcutMap.js` lists `/` as Ask AI's second chord and
   `SkillTreeView.jsx` binds it. The proposal gives `/` to *Find a step* and leaves Ask AI on ⌘K
   (desktop 10.03 386:13666).
