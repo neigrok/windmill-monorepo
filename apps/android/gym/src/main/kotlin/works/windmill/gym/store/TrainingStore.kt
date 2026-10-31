@@ -618,6 +618,9 @@ class TrainingStore(
         private set
     val workoutReplica: String? get() = controls.engineReplica
     val accountReady: Boolean get() = workoutAuthorized && !isLoading
+    private var logReadReady by mutableStateOf(false)
+    val initialGymEmpty: Boolean? get() = if (accountReady && logReadReady)
+        program.isEmpty() && allSessions.isEmpty() && session == null else null
     val canFinish: Boolean get() = workoutAuthorized && session != null && !isFinishing
 
     private var seated: Account? = null
@@ -707,6 +710,7 @@ class TrainingStore(
         pendingConnection = account
         resumePending = true
         if (arriving) {
+            logReadReady = false
             isLoading = true
             workoutReady = false
             workoutFacts.value = null
@@ -2063,6 +2067,7 @@ class TrainingStore(
             return
         }
         if (!workoutAuthorized || seat != owner || live != controls.session?.id || !controls.writable) return
+        logReadReady = training.anonymous || training.firstPullComplete
         if (open == null) {
             // The replica holds no open session, so whatever this phone was holding is over.
             controls.session?.let { controls.close(it.id) }

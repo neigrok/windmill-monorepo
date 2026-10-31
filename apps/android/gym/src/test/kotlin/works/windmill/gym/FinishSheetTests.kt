@@ -187,9 +187,9 @@ class FinishSheetTests {
         return compose.onAllNodesWithText(text).fetchSemanticsNodes().count { it.root == sheet }
     }
 
-    private fun askAnOpener() {
+    private fun askAQuestion() {
         compose.onNodeWithText("Coach").performClick()
-        compose.onNodeWithContentDescription("Question").performTextInput(Ask.openers.first())
+        compose.onNodeWithContentDescription("Question").performTextInput("What’s stalled?")
         compose.onNodeWithContentDescription("Send").performClick()
     }
 
@@ -335,7 +335,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("nothing has moved in three weeks.").fetchSemanticsNodes().isNotEmpty()
             }
@@ -355,11 +355,11 @@ class FinishSheetTests {
 
             compose.onNodeWithText(FinishCoach.question).assertIsDisplayed()
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
+            compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText("nothing has moved in three weeks.").assertCountEquals(0)
             compose.waitUntil(10_000) { compose.runOnIdle { entered.isCompleted } }
             compose.runOnIdle {
-                assertEquals(listOf(Ask.openers.first(), "Check my last workout."),
+                assertEquals(listOf("What’s stalled?", "Check my last workout."),
                              server.asked.map { it.question })
                 assertTrue("a new conversation, not the one that stood",
                            server.asked[0].thread != server.asked[1].thread)
@@ -443,7 +443,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithContentDescription("Coach is thinking").fetchSemanticsNodes().isNotEmpty()
             }
@@ -455,10 +455,10 @@ class FinishSheetTests {
                 compose.onAllNodesWithText("Ended early.").fetchSemanticsNodes().isEmpty()
             }
             compose.onNodeWithContentDescription("Coach is thinking").assertIsDisplayed()
-            compose.onAllNodesWithText(Ask.openers.first()).assertCountEquals(0)
+            compose.onAllNodesWithText("What’s stalled?").assertCountEquals(0)
             compose.onAllNodesWithText(FinishCoach.question).assertCountEquals(1)
             compose.runOnIdle {
-                assertEquals(listOf(Ask.openers.first(), FinishCoach.question), server.asked.map { it.question })
+                assertEquals(listOf("What’s stalled?", FinishCoach.question), server.asked.map { it.question })
                 assertTrue(server.asked[0].thread != server.asked[1].thread)
             }
 
@@ -492,7 +492,7 @@ class FinishSheetTests {
             show(room)
             compose.waitForIdle()
 
-            askAnOpener()
+            askAQuestion()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(Ask.notHere).fetchSemanticsNodes().isNotEmpty()
             }

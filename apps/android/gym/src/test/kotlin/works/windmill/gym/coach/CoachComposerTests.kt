@@ -1,6 +1,14 @@
 package works.windmill.gym.coach
 
 import works.windmill.gym.ui.*
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.compose.runtime.getValue
@@ -73,6 +81,41 @@ class CoachComposerTests {
             rooms += room
             runBlocking { room.select("user-a") }
         }
+
+    @Test fun pickerResultReturnsToItsLaunchingChatAndCannotCrossAnAccountChange() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val room = signedIn(scope)
+        val store = room.store.coach
+        store.freshChat(id = "first")
+        store.freshChat(id = "second")
+        var chat by mutableStateOf("first")
+        var requestCode = 0
+        val registry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(code: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {
+                requestCode = code
+            }
+        }
+        val registryOwner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+        val file = File(tmp.root, "picked.png")
+        file.outputStream().use { Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }
+        compose.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+                CoachComposer(store, chat, "", false, { _, _ -> }, null, null, true)
+            }
+        }
+        compose.onNodeWithContentDescription("Add photo").performClick()
+        compose.runOnIdle { chat = "second" }
+        compose.runOnIdle { org.junit.Assert.assertTrue(registry.dispatchResult(requestCode, Uri.fromFile(file))) }
+        compose.waitUntil(10_000) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); store.draft("first").photo != null }
+        assertEquals(CoachDraft(), store.draft("second"))
+        compose.onNodeWithContentDescription("Add photo").performClick()
+        compose.runOnIdle { runBlocking { room.select("user-b") }; store.freshChat(id = "second") }
+        compose.runOnIdle { org.junit.Assert.assertTrue(registry.dispatchResult(requestCode, Uri.fromFile(file))) }
+        compose.waitForIdle()
+        assertEquals(CoachDraft(), store.draft("second"))
+        assertEquals(null, LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "second").photo)
+        scope.cancel()
+    }
 
     @Test fun anonymousSendUsesItsExistingFourThousandByteBoundWithoutChangingTheBuffer() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

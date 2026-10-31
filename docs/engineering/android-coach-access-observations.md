@@ -21,3 +21,13 @@ rerun beside the other 67 retained passing cases. The anonymous History Stop cor
 states, backend adapter tests, actual mounted policy roundtrip and paired native acceptance are
 pending their allocated gates. Task 38's literal process recovery and other live boundaries remain part of the
 later Coach native cohort. Flags, quotas and postponed action/save/review appearances are unchanged.
+
+
+## Setup chat ownership
+
+The setup greeting is local chat metadata, separate from the durable model exchanges. Its first
+accepted exchange hides the greeting. An account's initial empty-training decision waits for its
+first pull and successful owned routine and workout reads; cached navigation is independent.
+One room function records deliberate tab choices, and one native picker serves both photo doors.
+The capture runner has an explicit empty-training capture-only path; it makes no workout
+performance claim. Empty setup captures remain a separate native acceptance gate.

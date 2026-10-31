@@ -1,0 +1,14 @@
+[
+  {
+    "board": "01.1",
+    "name": "coach-greeting-signed-out",
+    "account": "empty",
+    "steps": [{"wait": "Hi, I’m Coach. I can help you with:"}, {"wait": "Add screenshot"}, {"wait": "Build my own"}]
+  },
+  {
+    "board": "01.2",
+    "name": "coach-greeting-signed-in",
+    "account": "fixture",
+    "steps": [{"wait": "Hi, I’m Coach. I can help you with:"}, {"wait": "Add screenshot"}, {"wait": "Build my own"}]
+  }
+]
