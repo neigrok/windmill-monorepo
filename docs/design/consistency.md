@@ -512,6 +512,13 @@ and Android disagree.
   rows on 24 pt card shapes in a scroll view, with its own accent focus stroke, where Fix set, Fix workout, the
   rename sheet and the movement picker use a native grouped `Form`. For the designer: whether the weigh-in becomes
   a native grouped form (with the content-sized sheet and graphical calendar of 10y) or keeps its drawn rows.
+- **A machine's load unit has two answers (build drift, needs a design/product decision).** The domain's
+  `Readout.loadUnit` (`apps/ios/Domain/Sources/GymDomain/TrainingReads.swift`, held by the shared `loadUnit` vector)
+  reads a machine's load as *kg total*, like a barbell's, and a workout plan's swap keeps the targets only between
+  movements of one unit. The app's `MovementEquipment.unit` (`Gym/Components/MovementEquipment.swift`) draws a
+  machine's load as plain *kg* on the rack, Fix set, Edit sets and the routine editor, with cable, kettlebell and
+  Other; Gym's 11e names *kg total* for barbell/machine. For the designer and the owner: which unit a machine's load
+  shows, after which both sources speak it.
 
 ## Onboarding
 

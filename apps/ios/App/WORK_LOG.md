@@ -11,10 +11,8 @@ the system may dismiss that confirmation outside its popover on iOS 26. Tests co
 as well as committed deletion. The app has no Undo band or delayed removal task.
 
 Routine summaries are sheets with Close, Edit and Start. Starting waits for dismissal before
-opening the workout. Start stands in the sheet's reach band, not its system bottom bar: iOS 27 sizes
-a bottom-bar toolbar item to its content and ignores `.frame(maxWidth: .infinity)`, so a bar item
-there measures 38 pt wide against 355 pt in the band. The band is on a surface, so the movements
-pass under it on a hard edge over the bar material and no row reads through Start.
+opening the workout. Start stands in the sheet's reach band and spans it. The band is on a surface,
+so the movements pass under it on a hard edge over the bar material and no row reads through Start.
 `GymIntegrationFlowTests.testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit` holds Start to at least 85% of the
 window's width. Workout pages use the native pager and page control. The compact ledger
 contains the saved sets and preserves access to earlier rows without a duplicate statistics strip.
@@ -306,10 +304,8 @@ dismissal in a signed Release build on a physical device, repeating open/save/cl
 before selecting a fix. Current sampled stacks show framework rendering/teardown and no changed flow
 function; release-device performance remains unmeasured.
 
-Built with the iOS 27 SDK, the room menu's inline picker rows reach XCTest without their `room-…`
-identifiers, labelled only by their room's title, so every UI test that switched rooms by identifier
-stopped at the open menu. UI tests find a room through `XCUIApplication.roomItem(_:)`, which takes the
-identifier or the title. `PalettesTests` holds the palettes to exactly the theme catalog's colours, each
+UI tests find a room-menu row by its `room-…` identifier or its room's title through
+`XCUIApplication.roomItem(_:)`. `PalettesTests` holds the palettes to exactly the theme catalog's colours, each
 carried by the app's bundle.
 
 Every button role a room draws lives in `Theme/RoomControls.swift`: the primary (`RoomPrimaryStyle`), the

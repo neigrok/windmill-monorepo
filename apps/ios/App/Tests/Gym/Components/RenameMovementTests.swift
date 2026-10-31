@@ -50,6 +50,48 @@ import SyncTesting
     #expect(try scalars(#require(gym.catalogue.find(exercise.id)).name) == Array(repeating: 0xE9, count: 40))
   }
 
+  // A paste of 100 000 scalars caps as quickly as a typed name. 50 000 spaces the rule trims, then words, keep the spaces
+  // and fifteen words with the space after them, since the next letter would make 61; 50 000 decomposed é keep 60 of
+  // them, whole; one letter under 99 999 acute accents composes with the first and keeps 60.
+  @Test func aHugePasteCapsAtTheRuleQuickly() {
+    let scalars = { (text: String) in text.unicodeScalars.map(\.value) }
+    let spaces = String(repeating: " ", count: 50_000)
+    var capped: [String] = []
+    let elapsed = ContinuousClock().measure {
+      capped = [spaces + String(repeating: "Row ", count: 12_500), String(repeating: "e\u{301}", count: 50_000),
+                "a" + String(repeating: "\u{301}", count: 99_999)].map(NameField.movement.capped)
+    }
+    #expect(capped.map(scalars) == [scalars(spaces + String(repeating: "Row ", count: 15)),
+                                    scalars(String(repeating: "e\u{301}", count: 60)),
+                                    scalars("a" + String(repeating: "\u{301}", count: 60))])
+    #expect(capped.map(NameField.movement.counter) == ["59/60", "60/60", "60/60"])
+    #expect(elapsed < .seconds(2))
+  }
+
+  // A name can measure less as it grows: L with a macron is two characters until a dot below composes all three into Ḹ.
+  // The cap stops at the first scalar past the rule, the macron here, though the dot below would bring the name back to 60.
+  @Test func aNameStopsAtTheFirstScalarPastTheRule() {
+    let scalars = { (text: String) in text.unicodeScalars.map(\.value) }
+    let name = String(repeating: "a", count: 59) + "L\u{304}\u{323}b"
+    #expect((59...63).map { NameField.movement.rule.measure(String(String.UnicodeScalarView(name.unicodeScalars.prefix($0)))) }
+            == [59, 60, 61, 60, 61])
+    #expect(scalars(NameField.movement.capped(name)) == scalars(String(repeating: "a", count: 59) + "L"))
+  }
+
+  // The field trims as the save does: composed first, then ECMAScript whitespace, so U+FEFF and NBSP go and U+0085 stays.
+  @Test func theFieldTrimsAsTheMovementNameSaves() throws {
+    let scalars = { (text: String) in text.unicodeScalars.map(\.value) }
+    let typed = ["\u{FEFF}Row\u{FEFF}", "\u{A0}Row\u{A0}", "\u{85}Row\u{85}", " e\u{301}\u{A0}", "\u{FEFF}\u{A0} \u{FEFF}", "\u{85}"]
+    #expect(typed.map { scalars(NameField.movement.trimmed($0)) } == [
+      scalars("Row"), scalars("Row"), scalars("\u{85}Row\u{85}"), [0xE9], [], [0x85],
+    ])
+    for text in typed where NameField.movement.problem(text) == nil {
+      #expect(try scalars(ExerciseRules.name.apply(text, at: "name")) == scalars(NameField.movement.trimmed(text)))
+    }
+    #expect(typed.map(NameField.movement.problem) == [nil, nil, nil, nil, "Name it to save it.", nil])
+    #expect(throws: Violation.self) { _ = try ExerciseRules.name.apply("\u{FEFF}\u{A0} \u{FEFF}", at: "name") }
+  }
+
   // A load reads by its equipment: a barbell's total, a dumbbell pair's weight per hand, one dumbbell's own weight, the
   // weight added to the body, and the external weight of anything else. Dumbbells default to two; nothing else counts.
   @Test func eachEquipmentSaysWhatItsLoadMeans() {

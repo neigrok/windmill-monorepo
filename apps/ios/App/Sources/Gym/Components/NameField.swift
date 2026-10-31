@@ -11,15 +11,18 @@ struct NameField {
 
   func trimmed(_ value: String) -> String { rule.normalised(value) }
 
-  // The typed text up to the scalar that would take it past the rule's length.
+  // The typed text up to the scalar that would take it past the rule's length. A whitespace scalar never lengthens the
+  // text, which the rule trims until more follows, so only the other scalars are measured; at most four of them compose
+  // into one character, so however long a paste is, the cap is found within a few times the rule's length of them.
   func capped(_ value: String) -> String {
     guard rule.measure(value) > rule.max else { return value }
     var kept = String.UnicodeScalarView()
     for scalar in value.unicodeScalars {
-      var longer = kept
-      longer.append(scalar)
-      if rule.measure(String(longer)) > rule.max { break }
-      kept = longer
+      kept.append(scalar)
+      if !TextSpec.isBlank(String(scalar)), rule.measure(String(kept)) > rule.max {
+        kept.removeLast()
+        break
+      }
     }
     return String(kept)
   }

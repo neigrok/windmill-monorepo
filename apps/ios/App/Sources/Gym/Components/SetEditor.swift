@@ -41,9 +41,9 @@ nonisolated enum LoadText {
 // One load on the system decimal pad (03.23, 03.25, 03.30). Editing selects its text, so the first key replaces it. While
 // it is typed in, `weightKg` holds the load the field stands for: a readable value, else the load it opened on, which is
 // what the field shows again when it lets go. Bodyweight and Other add ± to the keyboard row, the pad having no minus,
-// unless the host draws its own; ± flips the load, whatever is typed. `focus` asks for the keyboard. SwiftUI's focus does
-// not report back from the rack's reach band, so the field's own selection says when typing begins: the field takes one as
-// it starts editing, and gives it up when a text field ends editing while this one is typed in, which only this one can be.
+// unless the host draws its own; ± flips the load, whatever is typed. `focus` asks for the keyboard; whether the field is
+// being typed in comes from the text field's own editing callback, SwiftUI's focus not reporting back from the rack's
+// reach band.
 struct LoadField: View {
   @Binding var weightKg: Double
   let basis: MovementEquipment
@@ -53,24 +53,22 @@ struct LoadField: View {
   var ended: () -> Void = {}
   @State private var typed = ""
   @State private var opening = 0.0
-  @State private var selection: TextSelection?
   @State private var editing = false
 
   var standsFor: Double { LoadText.parse(typed, signed: basis.signed) ?? opening }
 
   var body: some View {
-    TextField("Load", text: $typed, selection: $selection)
+    TextField("Load", text: $typed, onEditingChanged: { editing = $0 })
       .keyboardType(.decimalPad)
       .focused(focus)
       .onAppear { typed = LoadText.typed(weightKg) }
-      .onChange(of: selection == nil) { _, cleared in
-        guard !cleared, !editing else { return }
-        editing = true; opening = weightKg; typed = LoadText.typed(weightKg)
-        selection = TextSelection(range: typed.startIndex..<typed.endIndex)
-      }
-      .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidEndEditingNotification)) { _ in
-        guard editing else { return }
-        editing = false; selection = nil
+      .onChange(of: editing) { _, began in
+        if began {
+          opening = weightKg; typed = LoadText.typed(weightKg)
+          // Focus from code leaves the caret at the end; the editing field is the first responder, which selects its text.
+          DispatchQueue.main.async { UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil) }
+          return
+        }
         weightKg = standsFor; typed = LoadText.typed(weightKg)
         ended()
       }
