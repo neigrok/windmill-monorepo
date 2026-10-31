@@ -13,7 +13,9 @@ import {
   addKind,
   removeKind,
   recolorKind,
+  kindOptions,
 } from '../../../../src/products/roadmap/model/Legend.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { NODE_COLOR_NAMES, DEFAULT_NODE_COLOR } from '../../../../src/products/roadmap/theme.js';
 
 function savedLegend() {
@@ -282,4 +284,60 @@ test('recolorKind refuses an unknown kind and a missing hue', () => {
   assert.deepEqual(recolorKind(legend, 'learn', null), { legend, oldHue: null, newHue: null });
   assert.deepEqual(recolorKind(legend, 'learn', ''), { legend, oldHue: null, newHue: null });
   assert.deepEqual(legend, savedLegend());
+});
+
+function tree(nodes) {
+  return new SkillTree({ id: 't', title: 'T', nodes });
+}
+
+function node(id, prerequisites, extra = {}) {
+  return { id, label: id.toUpperCase(), prerequisites, ...extra };
+}
+
+test('kindOptions — legend order first, in-tree hues only, strays appended in palette order', () => {
+  const t = tree([
+    node('r', [], { color: 'gold' }),
+    node('a', ['r'], { color: 'sky' }),
+    node('b', ['r'], { color: 'plum' }),
+  ]);
+  const legend = [
+    { id: 'k1', hue: 'sky', label: 'Sky work' },
+    { id: 'k2', hue: 'olive', label: 'Unworn' },
+    { id: 'k3', hue: 'gold', label: '' },
+  ];
+
+  assert.deepEqual(kindOptions(t, legend), [
+    { id: 'k1', hue: 'sky', label: 'Sky work' },
+    { id: 'k3', hue: 'gold', label: 'Gold' },
+    { id: 'plum', hue: 'plum', label: 'Plum' },
+  ]);
+});
+
+test('kindOptions — a duplicated hue in the legend is offered once, under the first kind that named it', () => {
+  const t = tree([node('r', [], { color: 'sky' }), node('a', ['r'], { color: 'olive' })]);
+  const legend = [
+    { id: 'k1', hue: 'sky', label: 'Sky' },
+    { id: 'k2', hue: 'sky', label: 'Sky again' },
+    { id: 'k3', hue: 'olive', label: 'Olive' },
+  ];
+
+  assert.deepEqual(kindOptions(t, legend), [
+    { id: 'k1', hue: 'sky', label: 'Sky' },
+    { id: 'k3', hue: 'olive', label: 'Olive' },
+  ]);
+});
+
+test('kindOptions — a tree of one kind gets no row at all (a filter that returns everything is theatre)', () => {
+  const one = tree([node('r', [], { color: 'sky' }), node('a', ['r'], { color: 'sky' })]);
+  assert.deepEqual(kindOptions(one, [{ id: 'k1', hue: 'sky', label: 'Sky' }, { id: 'k2', hue: 'olive', label: 'Olive' }]), []);
+  assert.deepEqual(kindOptions(tree([node('r', [])]), []), []);
+});
+
+test('kindOptions — with no legend at all the worn hues stand in palette order under their own names', () => {
+  const t = tree([node('r', [], { color: 'plum' }), node('a', ['r'], { color: 'olive' })]);
+
+  assert.deepEqual(kindOptions(t), [
+    { id: 'olive', hue: 'olive', label: 'Olive' },
+    { id: 'plum', hue: 'plum', label: 'Plum' },
+  ]);
 });

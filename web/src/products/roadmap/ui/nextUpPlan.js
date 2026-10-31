@@ -2,15 +2,10 @@
 // every other prerequisite already is), ties broken by id.
 
 import { DEFAULT_NODE_COLOR } from '../theme.js';
+import { unlocksOf } from '../model/UnlockRules.js';
 
 const FEATURED_CAP = 3;
 const KIND_CAP = 2;
-
-export function unlocksOf(tree, states, id) {
-  return tree.childrenOf(id).filter((child) =>
-    states.get(child.id) !== 'complete'
-    && child.prerequisites.every((prereqId) => prereqId === id || states.get(prereqId) === 'complete')).length;
-}
 
 export function planNextUp(tree, states) {
   if (tree.nodes.length <= 1) return { mount: false };
@@ -18,7 +13,7 @@ export function planNextUp(tree, states) {
   const row = (node) => ({
     id: node.id,
     kind: node.color ?? DEFAULT_NODE_COLOR,
-    unlocks: unlocksOf(tree, states, node.id),
+    unlocks: unlocksOf(tree, states, node.id).length,
   });
   const byRank = (a, b) => b.unlocks - a.unlocks || (a.id < b.id ? -1 : 1);
   const ready = tree.nodes.filter((node) => states.get(node.id) === 'available').map(row).sort(byRank);
