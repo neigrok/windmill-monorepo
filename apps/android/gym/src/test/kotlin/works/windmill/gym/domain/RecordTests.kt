@@ -87,7 +87,7 @@ class RecordTests {
         assertNull(page.noEstimate)
         assertNull(page.nothingYet)
         assertEquals("Nothing logged for this movement yet. The first set you log lands here.",
-            Record.page(MovementRecord(chin), today, MovementProgress(chin.id, emptyList())).nothingYet)
+            Record.page(MovementRecord(chin), today, StatsProgress.empty(today).movement(chin.id)).nothingYet)
     }
     @Test
     fun earlierRecordsUseTheSharedStatedStepsWithoutRepeatingTheStandingBest() {

@@ -27,7 +27,7 @@ class LogTimelineTests {
             LogEntry.Workout(summaries[1]),
             LogEntry.Workout(summaries[0]))
         assertEquals(expected, logTimeline(summaries.reversed() + SessionSummary("open", now), stats, emptyList(), now, zone))
-        assertEquals(expected, logTimeline(summaries, stats.copy(sessions = stats.sessions.reversed()), emptyList(), now, zone))
+        assertEquals(expected, logTimeline(summaries, StatsProgress.of(details, now), emptyList(), now, zone))
         assertEquals("a partial history claims no new best", summaries.reversed().map { LogEntry.Workout(it) },
             logTimeline(summaries, StatsProgress.of(details, now, complete = false), emptyList(), now, zone))
     }
@@ -69,7 +69,7 @@ class LogTimelineTests {
             logTimeline(emptyList(), stats, listOf(weight, earlier), now, zone))
         assertEquals(listOf(LogEntry.Weight(weight, now), LogEntry.Moment.Month(YearMonth.of(2026, 8), 6,
             LocalDate.parse("2026-08-31").atStartOfDay(zone).toInstant().toEpochMilli()), LogEntry.Weight(earlier, null)),
-            logTimeline(emptyList(), stats.copy(sessions = stats.sessions.filter { it.sessionId != record.session.id }), listOf(weight, earlier), now, zone))
+            logTimeline(emptyList(), stats.without(setOf(record.session.id)), listOf(weight, earlier), now, zone))
         assertEquals(listOf(LogEntry.Weight(weight, now), LogEntry.Weight(earlier, null)),
             logTimeline(emptyList(), null, listOf(earlier, weight), now, zone))
     }
@@ -78,18 +78,14 @@ class LogTimelineTests {
     fun aMonthMustFinishAndEveryIntersectingWeekMustHoldTrainingInsideThatMonth() {
         val zone = ZoneId.of("UTC")
         fun at(day: String) = LocalDate.parse(day).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
-        val fact = MovementSessionFact("bench", 1, PerformedFact("set", 80.0, 12))
+        fun stats(days: List<String>) = StatsProgress.of(days.map { day -> SessionDetail(Session(day, at(day), at(day) + 1),
+            listOf(TrainingSet("set-$day", "bench", weightKg = 80.0, reps = 12, completedAtMs = at(day)))) }, at("2026-03-01"))
         val days = listOf("2026-02-01", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23")
-        val stats = StatsProgress(at("2026-03-01"), days.map { ProgressSession(it, at(it), listOf(fact)) })
-        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats, emptyList(), at("2026-02-28"), zone))
+        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats(days), emptyList(), at("2026-02-28"), zone))
         assertEquals(listOf(LogEntry.Moment.Month(YearMonth.of(2026, 2), 5,
             LocalDate.parse("2026-02-28").atStartOfDay(zone).toInstant().toEpochMilli())),
-            logTimeline(emptyList(), stats, emptyList(), at("2026-03-01"), zone))
-        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats.copy(sessions = stats.sessions.drop(1) +
-            ProgressSession("outside", at("2026-01-31"), listOf(fact))), emptyList(), at("2026-03-01"), zone))
-        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats.copy(sessions = stats.sessions.mapIndexed { index, session ->
-            if (index == 0) session.copy(movements = listOf(fact.copy(workingSetCount = 0))) else session
-        }), emptyList(), at("2026-03-01"), zone))
+            logTimeline(emptyList(), stats(days), emptyList(), at("2026-03-01"), zone))
+        assertEquals(emptyList<LogEntry>(), logTimeline(emptyList(), stats(days.drop(1) + "2026-01-31"), emptyList(), at("2026-03-01"), zone))
     }
 
     @Test
@@ -130,7 +126,7 @@ class LogTimelineTests {
         val stats = StatsProgress.of(details, at)
         val winner = LogEntry.Moment.Best(NewBest("bench", "a", at, "base", before, estimate = 81.0, gain = 1.0))
         assertEquals(listOf(winner), logTimeline(emptyList(), stats, emptyList(), at, zone))
-        assertEquals(listOf(winner), logTimeline(emptyList(), stats.copy(sessions = stats.sessions.reversed()), emptyList(), at, zone))
+        assertEquals(listOf(winner), logTimeline(emptyList(), StatsProgress.of(details.reversed(), at), emptyList(), at, zone))
         val later = at + 3 * 86_400_000
         val weight = WeighIn("2026-09-24", 82.0, later)
         assertEquals(listOf(LogEntry.Weight(weight, later)), logTimeline(emptyList(), stats,

@@ -26,7 +26,7 @@ class ProgressReadTests {
             room.select("a")
             room.workout(80.0)
             runCurrent()
-            val expected = StatsProgress.of(room.training.details(), room.engine.physNow())
+            val expected = StatsProgress.of(room.training.details(), room.engine.physNow(), complete = false)
             assertEquals(GymResult.Ok(expected), room.store.loadProgress())
             EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
                 other.now = room.now + 600_000
@@ -70,11 +70,11 @@ class ProgressReadTests {
             assertTrue(room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0)) is FixOutcome.Corrected)
             runCurrent()
             val read = room.store.progress!!
-            val expected = StatsProgress.of(room.training.details(), read.asOf)
+            val expected = StatsProgress.of(room.training.details(), read.asOf, complete = false)
             assertEquals(expected, read)
             assertEquals(listOf(90.0), read.sessions.flatMap { it.movements }.map { it.heaviest.weightKg })
             room.store.withhold(Deletion.Session(session.id))
-            assertEquals(StatsProgress(read.asOf, emptyList()), room.store.progress)
+            assertEquals(emptyList<ProgressSession>(), room.store.progress!!.sessions)
             room.store.keepWithheld()
             assertEquals(expected, room.store.progress)
         }

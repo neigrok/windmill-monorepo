@@ -30,7 +30,6 @@ import works.windmill.gym.domain.PersonalRecord
 import works.windmill.gym.domain.Program
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
-import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.domain.PlannedLine
@@ -57,7 +56,7 @@ class FinishTests {
                 "2 × 8 · ${Readout.weight(-Double.MAX_VALUE)}–${Readout.weight(Double.MAX_VALUE)}",
         )
         for ((effort, expected) in vectors) {
-            val review = Review(ReviewStats(60_000, effort.sets), against = Against("before", startedAtMs = 1,
+            val review = Review(against = Against("before", startedAtMs = 1,
                 movements = listOf(AgainstMovement("back-squat", effort))))
             val ended = FinishedSession(Session("now", startedAtMs = 2, finishedAtMs = 3), sets = emptyList(), review = review)
             val saved = works.windmill.platform.net.WindmillJson.encodeToString(FinishedSession.serializer(), ended)
@@ -104,13 +103,6 @@ class FinishTests {
                                      value = 9.0, weightKg = 100.0, reps = 9,
                                      previous = 8.0, previousAtMs = 1_750_723_200_000L)
         assertNull(Finish.recordSentence(unheard, catalog))
-    }
-
-    @Test
-    fun aRecordThatNamesNothingItBeatDrawsNothing() {
-        val firstEntry = PersonalRecord(kind = "e1rm", exerciseId = "back-squat", value = 122.5,
-                                        weightKg = 105.0, reps = 5)
-        assertNull(Finish.recordSentence(firstEntry, catalog))
     }
 
     @Test
@@ -275,28 +267,19 @@ class FinishTests {
 
 
 class RecordEstimateFormattingTests {
-    private fun workout(id: String, at: Long, load: Double, reps: Int) = works.windmill.gym.domain.SessionDetail(
-        Session(id, startedAtMs = at, finishedAtMs = at + 60_000, routineId = "routineA"),
-        List(4) { index -> TrainingSet("$id$index", "bench-press", weightKg = load, reps = reps, completedAtMs = at + index + 1) },
-    )
+    private val bench = listOf(Exercise("bench-press", "Bench Press"))
 
     @Test
-    fun aLocalReviewKeepsItsApprovedTenthForCurrentAndPriorEstimates() {
-        val before = workout("before", 1_000, 70.0, 8)
-        val now = workout("now", 100_000, 80.0, 8)
-        val review = Review.of(now, listOf(before, now))
-        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_001)}.",
-            Finish.recordSentence(review.record, listOf(Exercise("bench-press", "Bench Press"))))
+    fun aRecordKeepsItsApprovedTenthForCurrentAndPriorEstimates() {
+        val record = PersonalRecord("e1rm", "bench-press", 80.0 * (1 + 8 / 30.0), 80.0, 8, 70.0 * (1 + 8 / 30.0), 1_000)
+        assertEquals("Bench Press e1RM 101.3 kg — past 88.7 from ${Readout.day(1_000)}.", Finish.recordSentence(record, bench))
     }
 
     @Test
     fun aHugeFiniteEstimateRetainsItsCompleteFiniteSpelling() {
-        val before = workout("before", 1_000, Double.MAX_VALUE / 2, 1)
-        val now = workout("now", 100_000, Double.MAX_VALUE, 1)
-        val review = Review.of(now, listOf(before, now))
-        val text = Finish.recordSentence(review.record, listOf(Exercise("bench-press", "Bench Press")))!!
-        assertEquals("e1rm", review.record?.kind)
-        assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_001)}.", text)
+        val record = PersonalRecord("e1rm", "bench-press", Double.MAX_VALUE, Double.MAX_VALUE, 1, Double.MAX_VALUE / 2, 1_000)
+        val text = Finish.recordSentence(record, bench)!!
+        assertEquals("Bench Press e1RM ${Readout.estimatedWeight(Double.MAX_VALUE)} kg — past ${Readout.estimatedWeight(Double.MAX_VALUE / 2)} from ${Readout.day(1_000)}.", text)
         assertFalse(text.contains("Infinity"))
         assertFalse(text.contains("NaN"))
     }
@@ -311,9 +294,26 @@ class FinishedSessionTests {
                     completedAtMs = 2_000L + index)
     }
 
+    // A receipt saved by the build before the shared review restores whole; the stats it carried are dropped.
+    @Test
+    fun aReceiptSavedByThePreviousBuildRestoresItsRecordAndComparison() {
+        val saved = """{"session":{"id":"w1","startedAt":1799500000000,"finishedAt":1799503600000,"routineId":"routineA"},""" +
+            """"sets":[{"id":"s1","exerciseId":"bench-press","setNumber":1,"weightKg":110.0,"reps":5,"completedAt":1799500060000}],""" +
+            """"review":{"stats":{"durationMs":3600000,"workingSets":4,"topE1rm":128.3},""" +
+            """"record":{"kind":"e1rm","exerciseId":"bench-press","value":128.3,"weightKg":110.0,"reps":5,"previous":105.0,"previousAt":1799000060000},""" +
+            """"against":{"sessionId":"w0","routine":"Push A","startedAt":1799000000000,"movements":[{"exerciseId":"bench-press",""" +
+            """"now":{"sets":4,"reps":5,"weightKg":110.0},"before":{"sets":4,"reps":5,"weightKg":100.0},"planned":{"sets":[{"reps":5,"weightKg":100.0}]}}]}}}"""
+        assertEquals(FinishedSession(Session("w1", 1_799_500_000_000, 1_799_503_600_000, "routineA"),
+            listOf(TrainingSet("s1", "bench-press", 1, 110.0, 5, null, "", 1_799_500_060_000)),
+            Review(PersonalRecord("e1rm", "bench-press", 128.3, 110.0, 5, 105.0, 1_799_000_060_000),
+                Against("w0", "Push A", 1_799_000_000_000, listOf(AgainstMovement("bench-press", Effort(4, 5, 110.0), Effort(4, 5, 100.0),
+                    PlannedLine(listOf(SetTarget(5, 100.0)))))))),
+            works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved))
+    }
+
     @Test
     fun actualSetCountDecidesTheHeadingWithoutDependingOnReview() {
-        val misleading = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 20), slight = false)
+        val misleading = Review(PersonalRecord("heaviest", "back-squat", 100.0, 100.0, 5, 90.0, 0))
         for (review in listOf(null, misleading)) {
             for (count in 0..4) {
                 val ended = FinishedSession(session = session(null), sets = lifted.take(count), review = review)
@@ -358,13 +358,13 @@ class ShareWithCoachTests {
             TrainingSet(id = "set_1", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
                         completedAtMs = 2_000),
         ),
-        review = Review(stats = ReviewStats(durationMs = 660_000, workingSets = 3), slight = true),
+        review = Review(),
     )
 
     private val ordinary = FinishedSession(
         session = Session(id = "ses_2", startedAtMs = 1_000, finishedAtMs = 3_600_000),
         sets = List(4) { index -> short.sets.single().copy(id = "set_$index", completedAtMs = 2_000L + index) },
-        review = Review(stats = ReviewStats(durationMs = 3_600_000, workingSets = 5)),
+        review = Review(),
     )
 
     // One composition per test, redrawn off state: a test walks both branches through it.

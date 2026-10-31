@@ -2,61 +2,54 @@ package works.windmill.gym.domain
 
 import java.time.Instant
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Moment
+import works.windmill.domain.kit.Zone
 import works.windmill.domain.kit.Instant as DomainInstant
 import works.windmill.gym.domain.sync.Catalogue as DomainCatalogue
+import works.windmill.gym.domain.sync.EstimateScore
+import works.windmill.gym.domain.sync.EstimatedFact as DomainEstimatedFact
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
+import works.windmill.gym.domain.sync.GymEstimate
+import works.windmill.gym.domain.sync.MovementProgress as DomainMovementProgress
+import works.windmill.gym.domain.sync.MovementSessionFact as DomainMovementSessionFact
 import works.windmill.gym.domain.sync.PerformedFact as DomainPerformedFact
 import works.windmill.gym.domain.sync.ProgressRecords
+import works.windmill.gym.domain.sync.ProgressSession as DomainProgressSession
 import works.windmill.gym.domain.sync.Session as DomainSession
 import works.windmill.gym.domain.sync.StatsProgress as DomainStatsProgress
 import works.windmill.gym.domain.sync.TrainingLog as DomainTrainingLog
 import works.windmill.gym.domain.sync.TrainingSet as DomainTrainingSet
-import works.windmill.gym.domain.sync.GymEstimate
-import works.windmill.gym.domain.sync.EstimateScore
 
-// The shared progress read, projected for the screens. `source` is the read itself, kept so the log's new bests are
-// decided by the shared rule over exactly the sessions this projection shows; the wire form carries none.
-@Serializable
-data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>, @Transient private val source: DomainStatsProgress? = null) {
+// The shared progress read, projected for the screens with string ids and epoch-ms instants. Every best, record,
+// window and chart threshold is the shared read's own, completeness gate included; nothing here decides one.
+class StatsProgress(private val read: DomainStatsProgress) {
+    val asOf: Long get() = read.asOf.ms
+    val sessions: List<ProgressSession> = read.sessions.map(::ProgressSession)
+
     fun movement(exerciseId: String): MovementProgress {
-        val points = sessions.sortedWith(compareBy({ it.startedAt }, { it.sessionId })).mapNotNull { session ->
-            session.movements.firstOrNull { it.exerciseId == exerciseId }?.let {
-                MovementProgress.Session(session.sessionId, session.startedAt, it)
-            }
-        }
-        val earlier = records?.movements?.get(Id(exerciseId, DomainExercise)).orEmpty()
-            .map { it.previous.id.record.string }.toSet()
-        return MovementProgress(exerciseId, points, points.filter { it.id in earlier })
+        val id = Id(exerciseId, DomainExercise)
+        val earlier = ProgressRecords(read).movements[id].orEmpty().map { it.previous.id }.toSet()
+        val movement = read.movement(id)
+        return MovementProgress(movement, movement.sessions.filter { it.id in earlier }.map(MovementProgress::Point))
     }
 
-    fun sessionEstimate(sessionId: String): Double? {
-        val movements = sessions.firstOrNull { it.sessionId == sessionId }?.movements ?: return null
-        if (movements.any { !it.estimatesComplete }) return null
-        return movements.mapNotNull { it.estimate?.e1rm }.maxOrNull()
-    }
-
-    // Two projections of the same facts are equal however they were read.
-    override fun equals(other: Any?): Boolean = other is StatsProgress && asOf == other.asOf && sessions == other.sessions
-    override fun hashCode(): Int = 31 * asOf.hashCode() + sessions.hashCode()
-
-    private val records: ProgressRecords?
-        get() {
-            val read = source ?: return null
-            val shown = read.sessions.filter { session -> sessions.any { it.sessionId == session.sessionId.record.string } }
-            return ProgressRecords(read.copy(sessions = shown))
-        }
+    fun sessionEstimate(sessionId: String): Double? = read.sessionEstimate(Id(sessionId, DomainSession))
 
     val newBests: List<NewBest>
-        get() = records?.movements.orEmpty().flatMap { (exerciseId, run) ->
-            run.map { NewBest(exerciseId.record.string!!, it) }
-        }
+        get() = ProgressRecords(read).movements.flatMap { (exerciseId, run) -> run.map { NewBest(exerciseId.record.string!!, it) } }
+
+    // The read as it stood at `nowMs`: a workout that starts later is not drawn yet.
+    fun until(nowMs: Long): StatsProgress = StatsProgress(read.copy(sessions = read.sessions.filter { it.startedAt.ms <= nowMs }))
+
+    // The read without workouts a held delete hides.
+    fun without(sessionIds: Set<String>): StatsProgress =
+        StatsProgress(read.copy(sessions = read.sessions.filterNot { it.sessionId.record.string in sessionIds }))
+
+    override fun equals(other: Any?): Boolean = other is StatsProgress && read == other.read
+    override fun hashCode(): Int = read.hashCode()
+    override fun toString(): String = "StatsProgress(asOf=$asOf, sessions=$sessions, complete=${read.isComplete})"
 
     companion object {
         // Progress reads estimates, never load counts, so its log carries no movements.
@@ -68,17 +61,10 @@ data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>, @T
                 DomainTrainingSet(Id(set.id, DomainTrainingSet), Id(detail.session.id, DomainSession), Id(set.exerciseId, DomainExercise),
                     set.weightKg, set.reps, set.rpe, set.note, DomainInstant(set.completedAtMs), set.setNumber)
             } }, DomainCatalogue(emptyList()), Moment(DomainInstant(asOf), FixedZone(0)), complete)
-            val source = DomainStatsProgress(log)
-            return StatsProgress(asOf, source.sessions.map { session ->
-                ProgressSession(session.sessionId.record.string!!, session.startedAt.ms, session.movements.map { fact ->
-                    MovementSessionFact(fact.exerciseId.record.string!!, fact.workingSetCount, PerformedFact(fact.heaviest),
-                        fact.estimate?.let { EstimatedFact(it.setId.record.string!!, it.weightKg, it.reps, it.rpe, it.e1rm) },
-                        fact.bodyweightReps?.let(::PerformedFact), fact.estimatesComplete)
-                })
-            }, source)
+            return StatsProgress(DomainStatsProgress(log))
         }
 
-        fun estimate(weightKg: Double, reps: Int, rpe: Double?): Double? = GymEstimate.value(weightKg, reps, rpe = rpe)
+        fun empty(asOf: Long): StatsProgress = StatsProgress(DomainStatsProgress(DomainInstant(asOf), emptyList()))
     }
 }
 
@@ -89,79 +75,65 @@ data class NewBest(val exerciseId: String, val sessionId: String, val startedAt:
         record.previous.id.record.string!!, record.previous.startedAt.ms, record.estimate, record.gain)
 }
 
-@Serializable
-data class ProgressSession(val sessionId: String, val startedAt: Long, val movements: List<MovementSessionFact>)
+data class ProgressSession(val sessionId: String, val startedAt: Long, val movements: List<MovementSessionFact>) {
+    constructor(session: DomainProgressSession) : this(session.sessionId.record.string!!, session.startedAt.ms,
+        session.movements.map(::MovementSessionFact))
+}
 
-@Serializable
 data class MovementSessionFact(
     val exerciseId: String,
     val workingSetCount: Int,
     val heaviest: PerformedFact,
     val estimate: EstimatedFact? = null,
-    @SerialName("mostReps") val bodyweightReps: PerformedFact? = heaviest.takeIf { it.weightKg == 0.0 },
+    val bodyweightReps: PerformedFact? = null,
     val estimatesComplete: Boolean = true,
-)
+) {
+    constructor(fact: DomainMovementSessionFact) : this(fact.exerciseId.record.string!!, fact.workingSetCount, PerformedFact(fact.heaviest),
+        fact.estimate?.let(::EstimatedFact), fact.bodyweightReps?.let(::PerformedFact), fact.estimatesComplete)
+}
 
-@Serializable
 data class PerformedFact(val setId: String, val weightKg: Double, val reps: Int, val rpe: Double? = null) {
     constructor(fact: DomainPerformedFact) : this(fact.setId.record.string!!, fact.weightKg, fact.reps, fact.rpe)
 }
 
-@Serializable
 data class EstimatedFact(val setId: String, val weightKg: Double, val reps: Int, val rpe: Double? = null, val e1rm: Double?) {
+    constructor(fact: DomainEstimatedFact) : this(fact.setId.record.string!!, fact.weightKg, fact.reps, fact.rpe, fact.e1rm)
     val score: EstimateScore get() = GymEstimate.score(weightKg, reps, rpe = rpe) ?: EstimateScore.zero
 }
 
-data class MovementProgress(val exerciseId: String, val sessions: List<Session>, val earlierRecords: List<Session> = emptyList()) {
-    companion object {
-        const val maxGapDays = 21L
+// One movement's series from the shared read: its standing best, heaviest and most reps answer nothing until the
+// account's history has been read, and `earlierRecords` are the bests the standing one beat on its way up.
+class MovementProgress(private val read: DomainMovementProgress, val earlierRecords: List<Point> = emptyList()) {
+    data class Point(val id: String, val startedAt: Long, val fact: MovementSessionFact) {
+        constructor(point: DomainMovementProgress.Point) : this(point.id.record.string!!, point.startedAt.ms, MovementSessionFact(point.fact))
     }
 
-    data class Session(val id: String, val startedAt: Long, val fact: MovementSessionFact)
+    val exerciseId: String = read.exerciseId.record.string!!
+    val sessions: List<Point> = read.sessions.map(::Point)
+    val estimatesComplete: Boolean get() = read.estimatesComplete
+    val estimates: List<Point> get() = read.estimates.map(::Point)
+    val best: Point? get() = read.best?.let(::Point)
+    val heaviest: Point? get() = read.heaviest?.let(::Point)
+    val bodyweightReps: Point? get() = read.bodyweightReps?.let(::Point)
 
-    val estimatesComplete: Boolean get() = sessions.all { it.fact.estimatesComplete }
-    val estimates: List<Session> get() = if (estimatesComplete) sessions.filter { it.fact.estimate?.e1rm != null } else emptyList()
-    val latest: Session? get() = estimates.lastOrNull()
-    val best: Session? get() = estimates.sortedWith(compareByDescending<Session> { it.fact.estimate!!.score }
-        .thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
-    val heaviest: Session? get() = sessions.sortedWith(compareByDescending<Session> { it.fact.heaviest.weightKg }
-        .thenByDescending { it.fact.heaviest.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
-    val bodyweightReps: Session? get() = sessions.filter { it.fact.bodyweightReps != null }
-        .sortedWith(compareByDescending<Session> { it.fact.bodyweightReps!!.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
-    val records: List<Session> get() {
-        val records = mutableListOf<Session>()
-        for (session in estimates) {
-            if (session.fact.estimate!!.score > (records.lastOrNull()?.fact?.estimate?.score ?: EstimateScore.zero)) records += session
-        }
-        return records
-    }
-
-    fun window(nowMs: Long, zone: ZoneId): MovementProgress {
-        val start = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().minusWeeks(12).atStartOfDay(zone).toInstant().toEpochMilli()
-        return copy(sessions = sessions.filter { it.startedAt in start..nowMs })
-    }
-
-    fun hasChart(zone: ZoneId): Boolean {
-        val points = estimates
-        if (points.size < 4) return false
-        val first = Instant.ofEpochMilli(points.first().startedAt).atZone(zone).toLocalDate()
-        val last = Instant.ofEpochMilli(points.last().startedAt).atZone(zone).toLocalDate()
-        return ChronoUnit.DAYS.between(first, last) >= 21
-    }
+    fun window(nowMs: Long, zone: ZoneId): MovementProgress = MovementProgress(read.window(DomainInstant(nowMs), zone.domain))
+    fun hasChart(zone: ZoneId): Boolean = read.hasChart(zone.domain)
 }
 
-fun progressReading(point: MovementProgress.Session, nowMs: Long): String {
+private val ZoneId.domain: Zone get() = Zone { at -> rules.getOffset(Instant.ofEpochMilli(at.ms)).totalSeconds }
+
+fun progressReading(point: MovementProgress.Point, nowMs: Long): String {
     val fact = point.fact.estimate!!
     return "${Readout.estimatedWeight(requireNotNull(fact.e1rm))} kg est · ${Readout.briefDay(point.startedAt, nowMs)} · ${Readout.effort(fact.weightKg, fact.reps)}"
 }
 
 fun progressSeries(progress: MovementProgress, nowMs: Long, zone: ZoneId, all: Boolean = false): DatedSeries {
     val points = progress.estimates.groupBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() }
-        .values.map { day -> day.sortedWith(compareByDescending<MovementProgress.Session> { it.fact.estimate!!.score }
+        .values.map { day -> day.sortedWith(compareByDescending<MovementProgress.Point> { it.fact.estimate!!.score }
             .thenBy { it.startedAt }.thenBy { it.id }).first() }
         .sortedWith(compareBy({ it.startedAt }, { it.id }))
         .map { DatedPoint(it.id, it.startedAt, requireNotNull(it.fact.estimate!!.e1rm), progressReading(it, nowMs)) }
     val from = if (all) points.firstOrNull()?.atMs ?: nowMs else Instant.ofEpochMilli(nowMs).atZone(zone)
         .toLocalDate().minusWeeks(12).atStartOfDay(zone).toInstant().toEpochMilli()
-    return DatedSeries(points, from, nowMs, zone, MovementProgress.maxGapDays)
+    return DatedSeries(points, from, nowMs, zone, DomainMovementProgress.gapDays.toLong())
 }

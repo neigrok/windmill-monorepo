@@ -198,7 +198,9 @@ class TrainingStore(
             readProgram()
             series = training.weighins()
             val movement = controls.chosenMovement
-            val previous = if (owner == null && movement != null) readTraining { LastTime.of(movement, training.details()) } else null
+            val previous = if (owner == null && movement != null) readTraining {
+                try { training.lastTime(movement) } catch (_: TrainingRefused) { null } catch (_: TrainingUnanswered) { null }
+            } else null
             workoutReady = true
             reconcileWorkoutTime()
             exerciseId = controls.chosenMovement
@@ -417,7 +419,7 @@ class TrainingStore(
         get() {
             val read = progressCache ?: return null
             val heldSessions = withheld.mapNotNull { (it.deletion as? Deletion.Session)?.sessionId }.toSet()
-            return read.copy(sessions = read.sessions.filterNot { it.sessionId in heldSessions })
+            return read.without(heldSessions)
         }
     val accountKey: String get() = Seat.of(owner)
 
@@ -1611,9 +1613,9 @@ class TrainingStore(
     }
 
     // Computed by the DOMAIN and read here, never re-derived. A refused import kept on this phone
-    // reviews against itself: no record and no comparison, which need the account's whole history.
+    // has nothing to say: a record and a comparison need the account's whole history.
     suspend fun review(of: String): Review? {
-        shelfDetail(of)?.let { return Review.of(it) }
+        shelfDetail(of)?.let { return Review() }
         val seat = owner
         val result = tried("gym.review") { readTraining { training.review(of) } }
         return result.takeIf { seat == owner }

@@ -81,7 +81,7 @@ test('last-time and lastSets read every set of the latest finished session and s
   const rows = [sessionRow('previous', at), row('session', 'open_now', { startedAt: at + 86400000 }), setRow('working_1', 'previous', { weightKg: 100 }), setRow('last_set1', 'previous', { weightKg: 40, reps: 12 }), setRow('warmup_1', 'previous', { weightKg: 120 }), setRow('open_set1', 'open_now', { weightKg: 200, completedAt: at + 86400001 })];
   rows[3].v.setNumber = 3; rows[4].v.setNumber = 4;
   const api = readView(rows, { now: at + 86400002 });
-  assert.deepEqual(api.lastSets(), [{ exerciseId: 'bench-press', weightKg: 120, reps: 8, at }]);
+  assert.deepEqual(api.lastSets(), [{ exerciseId: 'bench-press', weightKg: 100, reps: 8, at }], 'logged order, ties by id; set numbers order nothing');
   assert.deepEqual(api.lastTime('bench-press'), { exerciseId: 'bench-press', session: { id: 'previous', startedAt: at, finishedAt: at + 3600000 }, sets: ['working_1', 'last_set1', 'warmup_1'].map((id) => api.session('previous').sets.find((set) => set.id === id)) });
   assert.deepEqual(api.lastTime('back-squat'), { exerciseId: 'back-squat' });
 });

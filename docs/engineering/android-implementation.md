@@ -964,8 +964,9 @@ the existing application-owned deletion, retained-detail failure and immediate l
 remain its boundary. Set swipe behavior and ground remain shared with task 05. Empty review output
 adds no blank list item before the actions; a missing review still shows its existing failure line.
 
-The actual Android read path is `EngineTraining.review` → app-local `Review.of(detail, history)`.
-Its grouped effort counts every set and carries minimum/maximum reps plus minimum load; the existing
+The Android read path is `EngineTraining.review` → the shared `SessionReview` over the replica,
+which chooses the record, the previous routine workout and the top sets. The projection's grouped
+effort counts every set of each side and carries minimum/maximum reps plus minimum load; the shared
 top load and its reps remain the comparison predicate. The formatter draws both endpoints directly,
 including negative assistance and mixed zero/load ranges, without subtracting extreme signed loads.
 Only an all-zero effort omits its load. Bounds serialize with the existing review/receipt state;

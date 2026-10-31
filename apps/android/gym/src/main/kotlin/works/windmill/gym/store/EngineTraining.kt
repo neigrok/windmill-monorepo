@@ -46,6 +46,9 @@ import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.LastTime
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.domain.StatsProgress
+import works.windmill.gym.domain.PersonalRecord
+import works.windmill.gym.domain.LastSet
+import works.windmill.gym.domain.sync.LastSet as EngineLastSet
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
@@ -374,7 +377,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
             .filter { before == null || it.session.startedAtMs < before || it.session.startedAtMs == before && (beforeId == null || it.session.id < beforeId) }
             .take(limit).map { detail ->
                 val stale = detail.session.id in parsedLog?.staleSessions.orEmpty()
-                val summary = SessionSummary.of(detail, history, catalog)
+                val summary = SessionSummary(detail.session, detail.sets, catalog)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
@@ -396,18 +399,23 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         if (!reader.isAnonymous && !reader.firstPullComplete() && record?.life?.isAlive != false) throw TrainingUnanswered
         null
     }
-    fun review(sessionId: String): Review = Review.of(
-        session(sessionId) ?: throw missing("That workout is no longer on the log."), details())
-    fun lastTime(exerciseId: String): LastTime {
-        if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
-        val known = LastTime.of(exerciseId, details())
-        if (!anonymous && !firstPullComplete && known.isFirstTime) throw TrainingUnanswered
-        return known
+    // The shared review over the replica. A workout this phone holds that the replica does not draw yet has nothing
+    // to say: its record and comparison need the account's history.
+    fun review(sessionId: String): Review = read { reader ->
+        val review = SessionReview.of(Id(sessionId, EngineSession), TrainingLog(reader))
+        if (review == null && session(sessionId) == null) throw missing("That workout is no longer on the log.")
+        review?.ui() ?: Review()
     }
-    fun lastSets(): List<LastSet> {
-        val known = LastSet.of(details())
-        if (!anonymous && !firstPullComplete && known.isEmpty()) throw TrainingUnanswered
-        return known
+    fun lastTime(exerciseId: String): LastTime = read { reader ->
+        if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
+        val last = TrainingLog(reader).lastTime(Id(exerciseId, EngineExercise))
+        if (last.session == null && !last.isComplete && !reader.isAnonymous) throw TrainingUnanswered
+        LastTime(exerciseId, last.session?.ui(), last.routine, last.sets.map { it.ui() })
+    }
+    fun lastSets(): List<LastSet> = read { reader ->
+        val known = EngineLastSet.all(TrainingLog(reader)).map { LastSet(it.exerciseId.text, it.weightKg, it.reps, it.at.ms) }
+        if (!reader.isAnonymous && !reader.firstPullComplete() && known.isEmpty()) throw TrainingUnanswered
+        known
     }
     fun program(): List<Routine> = read { reader ->
         details()
@@ -604,8 +612,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
         StatsProgress.of(details().filterNot { it.session.id in refused }, engine.physNow(), complete = anonymous || firstPullComplete)
     }
-    fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }
-        ?.let { MovementRecord.of(it, details()) }
+    fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }?.let { exercise ->
+        val refused = imports.refusals().filter { it.session != null }.mapTo(mutableSetOf()) { it.id }
+        MovementRecord.of(exercise, details().filterNot { it.session.id in refused })
+    }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
         GymPreferences(value.confirmHaptic, value.confirmSound)
@@ -883,6 +893,13 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
     private fun EngineSession.ui() = Session(id.text, startedAt.ms, finishedAt?.ms, (historyRoutineId ?: routineId)?.text,
         plan?.let { PlanSnapshot(name ?: it.routine, it.entries.map { entry -> PlanEntry(entry.exerciseId.text, entry.sets.orEmpty().map { set -> SetTarget(set.reps, set.weightKg) }) }) })
     private fun EngineSet.ui() = TrainingSet(id.text, exerciseId.text, setNumber, weightKg, reps, rpe, note, completedAt.ms)
+    private fun SessionReview.ui() = Review(record?.let { PersonalRecord(it.kind, it.exerciseId.text, it.value, it.weightKg, it.reps, it.previous, it.previousAt.ms) },
+        against?.let { against -> Against(against.previous.id.text, against.previous.plan?.routine?.takeIf { it.isNotEmpty() }, against.previous.startedAt.ms,
+            against.movements.map { movement -> AgainstMovement(movement.exerciseId.text, movement.now.effort()!!, movement.before.effort(),
+                movement.planned?.let { entry -> PlannedLine(entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) }) }) })
+    private fun List<EngineSet>.effort(): Effort? = topSet(this)?.let { top ->
+        Effort(size, top.reps, top.weightKg, minOf { it.reps }, maxOf { it.reps }, minOf { it.weightKg })
+    }
     private fun EngineRoutine.ui(last: Long? = null, proposal: Proposal? = null) = Routine(id.text, name, position, last,
         entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId.text, entry.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }, entry.restSeconds) }, revision ?: 1, proposal)
     private fun RoutineWrite.engine(old: EngineRoutine?) = EngineRoutine(Id(id, EngineRoutine), name, position,

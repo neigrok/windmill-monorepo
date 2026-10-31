@@ -255,8 +255,9 @@ export class TrainingHistory {
   lastSets() {
     return [...new Set(this.finished.flatMap((session) => this.log.setsFor(session.id).map((set) => String(set.exerciseId.record))))]
       .sort(compareText).flatMap((exerciseId) => {
-        const last = this.lastTime(exerciseId); const set = last.sets?.at(-1);
-        return set ? [{ exerciseId, weightKg: set.weightKg, reps: set.reps, at: last.session?.startedAt }] : [];
+        // The typed last time holds its sets in logged order; a set number is the server's serial and absent until it answers.
+        const last = this.log.lastTime(new Id(exerciseId, Exercise)); const set = last.sets.at(-1);
+        return set && last.session ? [{ exerciseId, weightKg: set.weightKg, reps: set.reps, at: last.session.startedAt.ms }] : [];
       });
   }
 

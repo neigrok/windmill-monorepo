@@ -214,7 +214,7 @@ class EngineTrainingTests {
             room.training.appendSet("session1", SetWrite("set00002", id, -5.0, 4, completedAt = ++room.now))
             room.training.finishSession("session1", ++room.now)
             val history = room.training.session("session1")!!
-            assertEquals(256.0, SessionSummary.of(history, listOf(history), listOf(pair)).tonnageKg)
+            assertEquals(256.0, SessionSummary(history.session, history.sets, listOf(pair)).tonnageKg)
             var opened = pair
             for ((equipment, count, volume) in listOf(Triple("other", 2, 128.0), Triple("bodyweight", 2, 128.0), Triple("dumbbell", 1, 128.0),
                 Triple("barbell", 3, 128.0), Triple("dumbbell", 2, 256.0))) {
@@ -223,7 +223,7 @@ class EngineTrainingTests {
                 assertEquals(if (equipment == "dumbbell") count else 1, edited.loadCount)
                 val after = room.training.session("session1")!!
                 assertEquals(history, after)
-                assertEquals(volume, SessionSummary.of(after, listOf(after), listOf(edited)).tonnageKg)
+                assertEquals(volume, SessionSummary(after.session, after.sets, listOf(edited)).tonnageKg)
                 opened = edited
             }
             assertEquals(pair, opened)
@@ -243,7 +243,7 @@ class EngineTrainingTests {
             }
             room.training.finishSession("session1", ++room.now)
             val before = room.training.session("session1")!!
-            val volume = SessionSummary.of(before, listOf(before), catalog.values.toList()).tonnageKg
+            val volume = SessionSummary(before.session, before.sets, catalog.values.toList()).tonnageKg
             assertEquals(896.0, volume)
             for (id in ids) {
                 val original = catalog.getValue(id)
@@ -253,7 +253,7 @@ class EngineTrainingTests {
             val after = room.training.session("session1")!!
             val renamed = room.training.catalogue().associateBy { it.id }
             assertEquals(before, after)
-            assertEquals(volume, SessionSummary.of(after, listOf(after), renamed.values.toList()).tonnageKg)
+            assertEquals(volume, SessionSummary(after.session, after.sets, renamed.values.toList()).tonnageKg)
             assertEquals(listOf("1 × 8 · 16 kg total", "1 × 8 · 16 kg each", "1 × 8 · 16 kg", "1 × 8 · 16 kg total", "1 × 8 · −10 kg added", "1 × 8 · 16 kg", "1 × 8 · 16 kg"),
                 ids.map { id -> Readout.targetWithUnit(after.sets.filter { it.exerciseId == id }.map { SetTarget(it.reps, it.weightKg) }, renamed.getValue(id)) })
         }
@@ -681,17 +681,6 @@ class EngineTrainingTests {
             assertEquals(reordered, room.store.notes)
         }
     }
-    @Test fun readoutsPreserveRecordsAndFrozenPlanComparison() {
-        fun detail(id: String, at: Long, kg: Double) = SessionDetail(Session(id, at, at + 100, "routine1", PlanSnapshot("Frozen", listOf(PlanEntry("back-squat", listOf(SetTarget(5, 80.0)))))),
-            (1..4).map { TrainingSet("set$id$it", "back-squat", weightKg = kg, reps = 5, completedAtMs = at + it) })
-        val earlier = detail("session1", 1000, 80.0)
-        val later = detail("session2", 2000, 90.0)
-        val review = Review.of(later, listOf(earlier, later))
-        assertEquals("e1rm", review.record!!.kind)
-        assertEquals("session1", review.against!!.sessionId)
-        assertEquals(PlannedLine(listOf(SetTarget(5, 80.0))), review.against!!.movements.single().planned)
-        assertTrue(SessionSummary.of(later, listOf(earlier, later), listOf(Exercise("back-squat", "Back Squat"))).record)
-    }
     @Test fun trainingStoreUsesEngineForAnonymousAndNotificationLogThenFinish() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select(null)
@@ -760,18 +749,4 @@ class EngineTrainingTests {
         }
     }
 
-    @Test fun reviewPriorMarksUseCompletedTimeAcrossMidnight() {
-        val midnight = 1_800_057_600_000L
-        fun detail(id: String, started: Long, completed: Long, load: Double, count: Int = 1) = SessionDetail(
-            Session(id, started, completed + 1, "routine1", PlanSnapshot("Frozen", listOf(PlanEntry("bench-press", listOf(SetTarget(5, load)))))),
-            (0 until count).map { TrainingSet("set$id$it", "bench-press", it + 1, load, 5, null, "", completed + it) })
-        val first = detail("session1", midnight - 30_000, midnight + 20_000, 100.0)
-        val tied = detail("session2", midnight - 10_000, midnight + 10_000, 100.0)
-        val today = detail("session3", midnight + 60_000, midnight + 70_000, 110.0, 5)
-        val history = listOf(today, first, tied)
-        val review = Review.of(today, history)
-        assertEquals(midnight + 10_000, review.record!!.previousAtMs)
-        assertEquals("e1rm", review.record!!.kind)
-        assertEquals("Frozen", review.against!!.routine)
-    }
 }

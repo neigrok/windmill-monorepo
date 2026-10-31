@@ -52,7 +52,7 @@ fun logTimeline(
 ): List<LogEntry> {
     val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
     val monday = TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
-    val facts = progress?.copy(sessions = progress.sessions.filter { it.startedAt <= nowMs }) ?: StatsProgress(nowMs, emptyList())
+    val facts = progress?.until(nowMs) ?: StatsProgress.empty(nowMs)
     val moments = mutableListOf<LogEntry.Moment>()
     moments += facts.newBests.map { LogEntry.Moment.Best(it) }
 
