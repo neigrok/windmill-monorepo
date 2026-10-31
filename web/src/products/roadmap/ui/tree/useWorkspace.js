@@ -9,15 +9,12 @@ import {
 } from '../../model/NodeWorkspace.js';
 
 const workspaceStore = new WorkspaceStore();
-const AUTO_COMPLETE_HOLD = 600; // held breath before auto-completing: arc-close 280 + hold 320
 
-export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef }) {
+export function useWorkspace({ seedRef, sceneRef }) {
   const [workspaceByNode, setWorkspaceByNode] = useState(() => ({})); // { nodeId: workspace } — sub-tasks, note, links
   const workspaceByNodeRef = useRef({}); // nodeId → workspace; the fresh read for arc pushes + persistence
-  const pendingCompleteRef = useRef(new Map()); // nodeId → auto-complete timer awaiting its held breath
 
   useEffect(() => { workspaceByNodeRef.current = workspaceByNode; }, [workspaceByNode]);
-  useEffect(() => () => pendingCompleteRef.current.forEach(clearTimeout), []);
 
   const persistWorkspace = useCallback((byNode) => {
     if (!seedRef.current) return;
@@ -41,14 +38,6 @@ export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef 
     setWorkspaceByNode(saved);
   }, []);
 
-  const cancelAutoComplete = useCallback((nodeId) => {
-    const timer = pendingCompleteRef.current.get(nodeId);
-    if (!timer) return;
-    clearTimeout(timer);
-    pendingCompleteRef.current.delete(nodeId);
-  }, []);
-
-
   // The one seam every workspace edit funnels through: fresh ref, render, persist.
   const commitWorkspace = useCallback((nodeId, nextWs) => {
     const nextMap = { ...workspaceByNodeRef.current, [nodeId]: nextWs };
@@ -58,59 +47,43 @@ export function useWorkspace({ seedRef, sceneRef, completedRef, completeStepRef 
   }, [persistWorkspace]);
 
   const onAddSubtask = useCallback((nodeId, label) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, addSubtask(current, label));
     pushArcs();
-  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
+  }, [commitWorkspace, pushArcs]);
 
-  // A check that closes the gauge holds a breath, then runs the completion beat; any other
-  // workspace edit cancels the timer.
+  // A check moves only the gauge: the step's progress is the person's own Complete, never the checklist's.
   const onToggleSubtask = useCallback((nodeId, subtaskId) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
-    const next = toggleSubtask(current, subtaskId);
-    commitWorkspace(nodeId, next);
+    commitWorkspace(nodeId, toggleSubtask(current, subtaskId));
     pushArcs();
-    const allDone = next.subtasks.length > 0 && next.subtasks.every((subtask) => subtask.done);
-    if (!allDone || completedRef.current.has(nodeId)) return;
-    const timer = setTimeout(() => {
-      pendingCompleteRef.current.delete(nodeId);
-      completeStepRef.current?.(nodeId);
-    }, AUTO_COMPLETE_HOLD);
-    pendingCompleteRef.current.set(nodeId, timer);
-  }, [cancelAutoComplete, commitWorkspace, pushArcs, completedRef, completeStepRef]);
+  }, [commitWorkspace, pushArcs]);
 
   const onEditSubtask = useCallback((nodeId, subtaskId, label) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, editSubtask(current, subtaskId, label));
-  }, [cancelAutoComplete, commitWorkspace]);
+  }, [commitWorkspace]);
 
   const onDeleteSubtask = useCallback((nodeId, subtaskId) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, deleteSubtask(current, subtaskId));
     pushArcs();
-  }, [cancelAutoComplete, commitWorkspace, pushArcs]);
+  }, [commitWorkspace, pushArcs]);
 
   const onSetNote = useCallback((nodeId, markdown) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, setNote(current, markdown));
-  }, [cancelAutoComplete, commitWorkspace]);
+  }, [commitWorkspace]);
 
   const onAddLink = useCallback((nodeId, rawUrl) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, addLink(current, rawUrl));
-  }, [cancelAutoComplete, commitWorkspace]);
+  }, [commitWorkspace]);
 
   const onDeleteLink = useCallback((nodeId, linkId) => {
-    cancelAutoComplete(nodeId);
     const current = workspaceByNodeRef.current[nodeId] ?? emptyWorkspace();
     commitWorkspace(nodeId, deleteLink(current, linkId));
-  }, [cancelAutoComplete, commitWorkspace]);
+  }, [commitWorkspace]);
 
   return {
     workspaceByNode,
