@@ -210,6 +210,8 @@ A `touch` down may set `row: true` to use the nearest observed clickable ancesto
 
 A `touch` step has `phase: "down"`, an accessibility `target`, and optional `at: [x, y]` fractions
 inside that control's observed bounds. `move` uses those same bounds; `up` releases the pointer.
+A down with `screen: true` names no target and uses the whole window's bounds instead, so a recipe
+can hold a system back gesture from the edge (`at: [0, 0.55]`) and capture it mid-swipe.
 Every scenario releases an outstanding pointer in `finally`, including capture failures. The normal
 settle check gives a long-pressed reorder handle time to expose its raised state. Local fixture sync
 accepts a valid acknowledged prefix, retains operation identity for the suffix, and bounds retries.
@@ -253,6 +255,11 @@ partial or continuously changing output fails at the bounded deadline instead of
 The script prints its device and local database, saves allowlisted events, then stops its processes
 and drops its database. Normal completion, errors, Ctrl-C and SIGTERM run the same cleanup. A
 failed run preserves its manifest, logs and any completed captures for inspection.
+
+`--scenarios apps/android/tools/capture-recipes/predictive-back.json` captures 00.5 and 00.6 in both
+appearances: Bodyweight over The log, then This workout over the rack, each at rest, held mid-swipe
+from the left edge, and 90 ms after release. The held stills settle normally; the release stills
+are transient. The workout recipe logs one set and finishes the workout in its last `after` steps.
 
 `capture-recipes/this-workout.json` uses `this-workout-fixture.json` for the approved 03.4
 four-set management state, an end-to-start removal ground and 320 × 640 dp / 200% text.

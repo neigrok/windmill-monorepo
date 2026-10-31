@@ -1,8 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import works.windmill.platform.telemetry.LocalTelemetry
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,8 +45,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -464,17 +461,17 @@ fun LoggerScreen(
     val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
-        ModalBottomSheet(
-            onDismissRequest = { if (open == LoggerSheet.Picker) cancelPicker() else if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
+        val back = { if (open == LoggerSheet.Picker) cancelPicker() else if (!fixBusy) cancelFixEntry?.invoke() ?: close() }
+        WindmillSheet(
+            onDismissRequest = back,
+            onBack = back,
             sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
-            WindmillSheetWindow()
             sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
-                LoggerSheet.Assembly -> WindmillSheetBack(onDismiss = { close() }) { AssemblySheet(
+                LoggerSheet.Assembly -> AssemblySheet(
                     rows = LiveLines.assemblyRows(store.order, store.sets.filterNot { it.id in store.withheldIds || it.id in store.deletedSets }, store.session?.plan,
                                                   store.catalog, store.exerciseId, store.stalled),
                     routine = store.session?.plan?.routine,
@@ -503,8 +500,7 @@ fun LoggerScreen(
                         telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "picker_open", "outcome" to "ok"))
                     },
                 )
-                }
-                LoggerSheet.Picker -> WindmillSheetBack(onDismiss = { cancelPicker() }) { MovementPicker(
+                LoggerSheet.Picker -> MovementPicker(
                     catalog = store.catalog,
                     taken = store.order,
                     lastSets = store.lastSets,
@@ -534,36 +530,34 @@ fun LoggerScreen(
                         .padding(horizontal = GymLayout.gutter)
                         .padding(bottom = GymLayout.sheetBottom),
                     onClose = { cancelPicker() },
-                ) }
+                )
                 is LoggerSheet.Fix -> {
                     val set = fixing!!
                     val sessionId = store.session?.id
-                    WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
-                        FixSheet(
-                            set = set,
-                            exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
-                            origin = FixOrigin.Workout,
-                            movement = Readout.movement(set.exerciseId, store.catalog),
-                            setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
-                            routine = store.session?.plan?.routine,
-                            onSave = { fix ->
-                                if (sessionId == null) {
-                                    telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
-                                    FixOutcome.Gone("that workout is no longer open")
-                                }
-                                else store.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
-                            },
-                            onSaved = { close(); say(null) },
-                            onGone = { close(); say(it) },
-                            onBusy = { fixBusy = it },
-                            onEntryCancel = { cancelFixEntry = it },
-                            onDelete = {
-                                close()
-                                say(null)
-                                if (sessionId != null) scope.launch { say(store.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
-                            },
-                        )
-                    }
+                    FixSheet(
+                        set = set,
+                        exercise = store.catalog.firstOrNull { it.id == set.exerciseId },
+                        origin = FixOrigin.Workout,
+                        movement = Readout.movement(set.exerciseId, store.catalog),
+                        setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
+                        routine = store.session?.plan?.routine,
+                        onSave = { fix ->
+                            if (sessionId == null) {
+                                telemetry.event("gym_action", mapOf("screen" to "workout", "action" to "fix", "outcome" to "refused"))
+                                FixOutcome.Gone("that workout is no longer open")
+                            }
+                            else store.fixSet(sessionId, set.id, fix, FixOrigin.Workout)
+                        },
+                        onSaved = { close(); say(null) },
+                        onGone = { close(); say(it) },
+                        onBusy = { fixBusy = it },
+                        onEntryCancel = { cancelFixEntry = it },
+                        onDelete = {
+                            close()
+                            say(null)
+                            if (sessionId != null) scope.launch { say(store.delete(Deletion.Set(sessionId, set))?.line("that set is still on the log")) }
+                        },
+                    )
                 }
             }
         }

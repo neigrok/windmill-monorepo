@@ -1,0 +1,110 @@
+[
+  {
+    "board": "00.5",
+    "name": "pushed-back-start",
+    "account": "fixture",
+    "steps": [
+      {"tap": "The log"},
+      {"tap": "80 kg"},
+      {"wait": "Every weigh-in"},
+      {"wait": "90 days"}
+    ]
+  },
+  {
+    "board": "00.5",
+    "name": "pushed-back-mid",
+    "account": "fixture",
+    "steps": [
+      {"touch": {"phase": "down", "screen": true, "at": [0, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.05, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.12, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.2, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.3, 0.55]}}
+    ],
+    "after": [
+      {"touch": {"phase": "up"}},
+      {"wait": "Coach"}
+    ]
+  },
+  {
+    "board": "00.5",
+    "name": "pushed-back-release",
+    "account": "fixture",
+    "settle": false,
+    "frame_delay_ms": 90,
+    "steps": [
+      {"tap": "80 kg"},
+      {"wait": "Every weigh-in"},
+      {"touch": {"phase": "down", "screen": true, "at": [0, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.05, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.12, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.2, 0.55]}},
+      {"touch": {"phase": "move", "at": [0.3, 0.55]}},
+      {"touch": {"phase": "up"}}
+    ],
+    "after": [
+      {"wait": "Coach"},
+      {"tap": "Routines"},
+      {"wait": "Push A"}
+    ]
+  },
+  {
+    "board": "00.6",
+    "name": "sheet-back-start",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"tap": "Push A"},
+      {"tap": "Start workout"},
+      {"wait": "Load, kg total"},
+      {"tap": "Log set"},
+      {"wait": "75 kg total × 8"},
+      {"tap": "Bench Press"},
+      {"wait": "This workout"}
+    ]
+  },
+  {
+    "board": "00.6",
+    "name": "sheet-back-mid",
+    "account": "fixture",
+    "workout_clock": true,
+    "steps": [
+      {"touch": {"phase": "down", "screen": true, "at": [0, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.05, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.12, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.2, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.3, 0.6]}}
+    ],
+    "after": [
+      {"touch": {"phase": "up"}},
+      {"wait": "Log set"}
+    ]
+  },
+  {
+    "board": "00.6",
+    "name": "sheet-back-release",
+    "account": "fixture",
+    "workout_clock": true,
+    "settle": false,
+    "frame_delay_ms": 90,
+    "steps": [
+      {"tap": "Bench Press"},
+      {"wait": "This workout"},
+      {"touch": {"phase": "down", "screen": true, "at": [0, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.05, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.12, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.2, 0.6]}},
+      {"touch": {"phase": "move", "at": [0.3, 0.6]}},
+      {"touch": {"phase": "up"}}
+    ],
+    "after": [
+      {"wait": "Log set"},
+      {"tap": "Finish"},
+      {"wait": "Ended early."},
+      {"key": "KEYCODE_BACK"},
+      {"wait": "Share this workout"},
+      {"tap": "Back to Routines"},
+      {"wait": "Routines"}
+    ]
+  }
+]

@@ -1,5 +1,6 @@
 package works.windmill.platform.you
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -31,8 +32,7 @@ import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
 import works.windmill.platform.design.LocalWindmillPalette
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
+import works.windmill.platform.design.WindmillSheet
 
 data class YouDestination(val id: String, val label: String, val onOpen: () -> Unit)
 
@@ -76,8 +76,7 @@ fun YouSheet(
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = { dismiss() }, sheetState = sheet,
-        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+    WindmillSheet(onDismissRequest = { dismiss() }, onBack = { dismiss() }, sheetState = sheet,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = {
@@ -88,55 +87,53 @@ fun YouSheet(
                     .background(palette.inkDim, RoundedCornerShape(2.dp)))
             }
         }) {
-        WindmillSheetWindow()
-        WindmillSheetBack(onDismiss = { dismiss() }) {
-            if (form && !deletionPending) formState.SaveableStateProvider("auth") {
-                SignInDoor(auth, onDone = { dismiss() }, onBusy = { busy = it })
-            }
-            else Column(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, top = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
-                        if (deletionPending) Text("Deletion unconfirmed", style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.inkDim)
-                        else auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
-                    }
-                    auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
-                    val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
-                        listOf(YouDestination("account_deletion", when {
-                            !deletionPending -> "Delete account"
-                            deletion.closureConfirmed -> "Finish deletion"
-                            else -> "Check deletion"
-                        }, deletion::open)) else emptyList()
-                    rows.forEach { destination ->
-                        key(destination.id) {
-                            Row(Modifier.fillMaxWidth()
-                                .clickable(enabled = !busy && !auth.signOutBusy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
-                                .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
-                                    color = if (destination.id == "account_deletion" && !deletionPending) MaterialTheme.colorScheme.error else palette.ink, modifier = Modifier.weight(1f))
-                                Icon(painterResource(R.drawable.you_chevron), contentDescription = null,
-                                    tint = palette.inkDim, modifier = Modifier.size(18.dp))
-                            }
+        BackHandler(enabled = busy || auth.signOutBusy || closing) {}
+        if (form && !deletionPending) formState.SaveableStateProvider("auth") {
+            SignInDoor(auth, onDone = { dismiss() }, onBusy = { busy = it })
+        }
+        else Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, end = 20.dp, top = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("You", style = WindmillFont.body(26, FontWeight.ExtraBold).copy(lineHeight = 32.sp), color = palette.ink)
+                    if (deletionPending) Text("Deletion unconfirmed", style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.inkDim)
+                    else auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 24.sp), color = palette.ink) }
+                }
+                auth.signOutFailure?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
+                val rows = destinations + if (deletion != null && (deletionPending || auth.status is AuthStatus.SignedIn))
+                    listOf(YouDestination("account_deletion", when {
+                        !deletionPending -> "Delete account"
+                        deletion.closureConfirmed -> "Finish deletion"
+                        else -> "Check deletion"
+                    }, deletion::open)) else emptyList()
+                rows.forEach { destination ->
+                    key(destination.id) {
+                        Row(Modifier.fillMaxWidth()
+                            .clickable(enabled = !busy && !auth.signOutBusy && !closing, role = Role.Button) { dismiss(after = destination.onOpen) }
+                            .padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(destination.label, style = WindmillFont.body(15, FontWeight.Bold).copy(lineHeight = 22.sp),
+                                color = if (destination.id == "account_deletion" && !deletionPending) MaterialTheme.colorScheme.error else palette.ink, modifier = Modifier.weight(1f))
+                            Icon(painterResource(R.drawable.you_chevron), contentDescription = null,
+                                tint = palette.inkDim, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
-                if (deletionPending) Spacer(Modifier.height(64.dp))
-                else TextButton(onClick = {
-                    if (busy || auth.signOutBusy || auth.signOutQuestion != null || closing) return@TextButton
-                    if (auth.status !is AuthStatus.SignedIn) form = true
-                    else scope.launch {
-                        auth.prepareSignOut()
-                        if (auth.status == AuthStatus.SignedOut) dismiss()
-                    }
-                }, enabled = !busy && !auth.signOutBusy && !closing,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                        .padding(top = 20.dp, bottom = 16.dp).heightIn(min = 48.dp)) {
-                    Text(if (auth.signOutBusy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
-                        style = MaterialTheme.typography.labelLarge, color = palette.ink)
+            }
+            if (deletionPending) Spacer(Modifier.height(64.dp))
+            else TextButton(onClick = {
+                if (busy || auth.signOutBusy || auth.signOutQuestion != null || closing) return@TextButton
+                if (auth.status !is AuthStatus.SignedIn) form = true
+                else scope.launch {
+                    auth.prepareSignOut()
+                    if (auth.status == AuthStatus.SignedOut) dismiss()
                 }
+            }, enabled = !busy && !auth.signOutBusy && !closing,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+                    .padding(top = 20.dp, bottom = 16.dp).heightIn(min = 48.dp)) {
+                Text(if (auth.signOutBusy) "Signing out…" else if (auth.status is AuthStatus.SignedIn) "Sign out" else "Sign in",
+                    style = MaterialTheme.typography.labelLarge, color = palette.ink)
             }
         }
     }

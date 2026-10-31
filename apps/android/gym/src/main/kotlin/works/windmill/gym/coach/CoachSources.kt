@@ -1,5 +1,6 @@
 package works.windmill.gym.coach
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -29,7 +29,6 @@ import java.time.format.DateTimeFormatter
 import works.windmill.gym.R
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.ui.LocalGymColors
-import works.windmill.platform.design.WindmillSheetWindow
 import works.windmill.platform.telemetry.LocalTelemetry
 
 internal object CoachSources {
@@ -89,7 +88,7 @@ internal fun CoachReadSources(
     }
     if (!expanded) return
     DisposableEffect(Unit) { onDispose { onSheetTop(null) } }
-    ModalBottomSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
+    WindmillSheet(onDismissRequest = { expanded = false }, sheetState = sheet,
         containerColor = skin.surface, scrimColor = skin.scrim,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
@@ -98,7 +97,6 @@ internal fun CoachReadSources(
             }
         },
     ) {
-        WindmillSheetWindow()
         Column(Modifier.fillMaxWidth()
             .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

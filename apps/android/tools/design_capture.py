@@ -626,9 +626,16 @@ class Device:
         if phase == "down":
             if self.touch_point is not None:
                 raise ValueError("Release the previous touch before starting another.")
-            if type(value.get("row", False)) is not bool:
-                raise ValueError("Touch row selection must be a boolean.")
-            target = self.find(value["target"], row=True) if value.get("row") else self.find(value["target"])
+            if type(value.get("row", False)) is not bool or type(value.get("screen", False)) is not bool:
+                raise ValueError("Touch row and screen selections must be booleans.")
+            if value.get("screen") and ("target" in value or value.get("row")):
+                raise ValueError("A screen touch names no target; it uses the whole window.")
+            if value.get("screen"):
+                target = next(self.tree().iter("node"), None)
+                if target is None:
+                    raise RuntimeError("The capture window has no observed bounds.")
+            else:
+                target = self.find(value["target"], row=True) if value.get("row") else self.find(value["target"])
             bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", target.get("bounds", ""))
             if not bounds:
                 raise RuntimeError("Capture control has no touch bounds.")

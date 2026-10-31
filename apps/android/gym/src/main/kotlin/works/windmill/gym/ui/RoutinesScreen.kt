@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +24,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,7 +55,6 @@ import works.windmill.gym.domain.sync.SeedExercises
 import works.windmill.gym.store.RefusedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetWindow
 
 @Composable
 fun RoutinesScreen(
@@ -183,7 +182,7 @@ fun RoutineSheet(
 ) {
     val skin = LocalGymColors.current
     val routine = store.routine(routineId)
-    ModalBottomSheet(
+    WindmillSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = skin.surface,
@@ -196,7 +195,6 @@ fun RoutineSheet(
         },
         modifier = Modifier.testTag("routine-sheet"),
     ) {
-        WindmillSheetWindow()
         Column(Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.weight(1f, fill = false).fillMaxWidth()

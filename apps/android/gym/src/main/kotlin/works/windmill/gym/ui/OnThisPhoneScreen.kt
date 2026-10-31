@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -457,7 +458,7 @@ fun WorkoutFixScreen(store: TrainingStore, currentOwner: () -> Boolean) {
         val set = draft.copy.sets.firstOrNull { it.id == editing }
         if (set != null) {
             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
+            WindmillSheet(onDismissRequest = { editing = null }, sheetState = sheet, containerColor = skin.canvas) {
                 FixSheet(set, Readout.movement(set.exerciseId, store.catalog),
                     Performed.movements(draft.copy.sets, store.catalog).flatMap { it.rows }.first { it.id == set.id }.number,
                     draft.copy.session.plan?.routine,

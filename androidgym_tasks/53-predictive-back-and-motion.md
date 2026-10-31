@@ -1,6 +1,6 @@
 # Predictive back and navigation motion: pushed screens follow the gesture, sheets keep the stock preview
 
-**Status:** ✅ Ready for dev. The owner approved 00.5 and 00.6 on 2026-10-31. Not started.
+**Status:** Implemented, awaiting merge. `GymNavigator.kt` holds the room's navigation (tab, `Away` stack, saver, `Standing` back rules, `BackMeans`, `BackGuard`) and `GymStage` draws it; every sheet is a `WindmillSheet` (`:platform` design). Material 1.3's own sheet preview cannot be kept: its window callback outranks the sheet's dispatcher, so it would close a busy sheet or skip a nested step. `WindmillSheet` draws the same bottom-anchored shrink from the dispatcher instead. The boards are 00.5 and 00.6, approved 2026-10-31.
 
 **Figma:**
 - 00.5 Pushed screen, predictive back (swipe starts · mid swipe · release): [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1743-26713) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1743-27031)

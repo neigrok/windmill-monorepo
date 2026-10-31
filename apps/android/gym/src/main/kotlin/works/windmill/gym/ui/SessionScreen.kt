@@ -1,8 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import works.windmill.gym.sharing.WorkoutShareCard
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,8 +26,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -318,59 +315,56 @@ fun SessionScreen(
         movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
     }
     if (open != null) {
-        ModalBottomSheet(
-            onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
+        val back = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }
+        WindmillSheet(
+            onDismissRequest = back,
+            onBack = back,
             sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
             containerColor = skin.surface,
             scrimColor = skin.scrim,
         ) {
-            WindmillSheetWindow()
             val (movement, row) = open
             fixStates.SaveableStateProvider(fixing!!) {
-            WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
-                FixSheet(
-                    set = row.set,
-                    exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
-                    origin = FixOrigin.Session,
-                    movement = movement,
-                    setNumber = row.number,
-                    routine = standing.plan?.routine,
-                    onSave = { fix ->
-                        val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
-                        when (ended) {
-                            is FixOutcome.Corrected -> {
-                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
-                                    if (it.id == row.id) ended.set else it
-                                }) }
-                                corrected += 1
-                            }
-                            is FixOutcome.Gone -> {
-                                detail = currentDetail?.let { held -> held.copy(sets = held.sets.filterNot { it.id == row.id }) }
-                                corrected += 1
-                            }
-                            is FixOutcome.Failed -> Unit
+            FixSheet(
+                set = row.set,
+                exercise = store.catalog.firstOrNull { it.id == row.set.exerciseId },
+                origin = FixOrigin.Session,
+                movement = movement,
+                setNumber = row.number,
+                routine = standing.plan?.routine,
+                onSave = { fix ->
+                    val ended = store.fixSet(readId, row.id, fix, FixOrigin.Session)
+                    when (ended) {
+                        is FixOutcome.Corrected -> {
+                            detail = currentDetail?.let { held -> held.copy(sets = held.sets.map {
+                                if (it.id == row.id) ended.set else it
+                            }) }
+                            corrected += 1
                         }
-                        ended
-                    },
-                    onSaved = { close(); say(null) },
-                    onGone = { close(); say(it) },
-                    onBusy = { fixBusy = it },
-                    onEntryCancel = { cancelFixEntry = it },
-                    onDelete = {
-                        close()
-                        say(null)
-                        scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
-                    },
-                )
-            }
+                        is FixOutcome.Gone -> {
+                            detail = currentDetail?.let { held -> held.copy(sets = held.sets.filterNot { it.id == row.id }) }
+                            corrected += 1
+                        }
+                        is FixOutcome.Failed -> Unit
+                    }
+                    ended
+                },
+                onSaved = { close(); say(null) },
+                onGone = { close(); say(it) },
+                onBusy = { fixBusy = it },
+                onEntryCancel = { cancelFixEntry = it },
+                onDelete = {
+                    close()
+                    say(null)
+                    scope.launch { say(store.delete(Deletion.Set(readId, row.set))?.line("that set is still on the log")) }
+                },
+            )
             }
         }
     }
-    if (shareOpen) ModalBottomSheet(onDismissRequest = { shareOpen = false },
+    if (shareOpen) WindmillSheet(onDismissRequest = { shareOpen = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = skin.surface, scrimColor = skin.scrim) {
-            WindmillSheetWindow()
         WorkoutShareCard(sharing, readId)
     }
 

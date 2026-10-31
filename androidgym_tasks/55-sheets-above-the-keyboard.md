@@ -1,6 +1,6 @@
 # Sheets stay below the status bar when the keyboard opens
 
-**Status:** ✅ Conformance to approved boards. Not started.
+**Status:** Implemented, awaiting merge. `WindmillSheet` pads its sheet by the status bar read in the sheet's own window, so a sheet taller than the room above the keyboard resizes its content there instead of sliding under the status band; `WindmillSheetTests` pins it with the IME showing. The boards stop the movement editor at the top app bar's line; the build stops every sheet at the status bar, as this task asks.
 
 **Figma** (each draws a sheet with the keyboard up and its handle clear of the status bar):
 - 02.24 Movement editor, Load keyboard: [board](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1452-22388). Its caption reads "Native IME insets resize the sheet".

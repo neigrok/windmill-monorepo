@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,8 +19,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SelectableDates
@@ -79,8 +78,6 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.design.WindmillFont
-import works.windmill.platform.design.WindmillSheetBack
-import works.windmill.platform.design.WindmillSheetWindow
 
 @Composable
 internal fun WeighInHandle() {
@@ -352,32 +349,28 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     }
 
     repairing?.let { open ->
-        ModalBottomSheet(onDismissRequest = { close() }, sheetState = sheetState,
-            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
+        WindmillSheet(onDismissRequest = { close() }, onBack = { close() }, sheetState = sheetState,
             containerColor = skin.surface, scrimColor = skin.scrim,
             dragHandle = { WeighInHandle() }, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
-            WindmillSheetWindow()
             sheetStates.SaveableStateProvider(open.dateLocal) {
-                WindmillSheetBack(onDismiss = { close() }) {
-                    WeighInSheet(initial = open, fixedDate = open.date, nowMs = nowMs,
-                        saving = saving || closing, refused = refused, draftKey = open.dateLocal,
-                        onSave = { dateLocal, weightKg ->
-                            if (!saving && !closing) {
-                                saving = true
-                                refused = null
-                                scope.launch {
-                                    try {
-                                        val failed = store.weighIn(dateLocal, weightKg)
-                                        if (failed != null) refused = failed.line("that weigh-in wasn’t saved")
-                                        saving = false
-                                        if (failed == null) close()
-                                    } finally { saving = false }
-                                }
+                WeighInSheet(initial = open, fixedDate = open.date, nowMs = nowMs,
+                    saving = saving || closing, refused = refused, draftKey = open.dateLocal,
+                    onSave = { dateLocal, weightKg ->
+                        if (!saving && !closing) {
+                            saving = true
+                            refused = null
+                            scope.launch {
+                                try {
+                                    val failed = store.weighIn(dateLocal, weightKg)
+                                    if (failed != null) refused = failed.line("that weigh-in wasn’t saved")
+                                    saving = false
+                                    if (failed == null) close()
+                                } finally { saving = false }
                             }
-                        },
-                        onDelete = { close { say(null); store.withhold(Deletion.Bodyweight(open.dateLocal)) } },
-                    )
-                }
+                        }
+                    },
+                    onDelete = { close { say(null); store.withhold(Deletion.Bodyweight(open.dateLocal)) } },
+                )
             }
         }
     }

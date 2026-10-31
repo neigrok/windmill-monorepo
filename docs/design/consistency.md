@@ -865,7 +865,7 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
 
   | Gap | Build today | Board (Dark · Daylight) |
   |---|---|---|
-  | In-app predictive back and navigation motion | One root `BackHandler` (`GymRoom.kt`); `WindmillSheetBack` overrides `ModalBottomSheet`'s own predictive back; pushes, pops and tab switches cut | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
+  | In-app predictive back and navigation motion | Built (task 53, awaiting merge): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
   | Nav labels at 320dp/200% | *Routines* and *The log* clip (see *Narrow tab label*) | 00.7 `1745:27419` · `1745:27475` |
   | Dirty routine draft on Back (4k) | Back drops a new draft with no question | 02.20 `1742:39519` · `1742:39682` |
   | Movement editor discard wording | The dialog's dismiss says *Cancel* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
