@@ -148,8 +148,11 @@ screen restores that edge only when the conversation was at its end; finger scro
 Signed in or out, `create_routine` lands on the replica under the turn and is drawn as one receipt per
 routine created. The drafts card (*3 NEW ROUTINES*, each routine a heading that opens in place to its
 movements as added blocks, then **Apply** and **Reject**) stands only under an archived signed-out
-onboarding answer of an earlier version: Apply commits its routines and the replay receipt in one domain
-action (`ImportCoachRoutines`), and Reject drops them on this phone with *Rejected · 3 routines*, which stays
+onboarding answer of an earlier version: Apply commits its routines and their replay receipt in one domain
+action (`ImportCoachRoutineBatch`, the shared vectors' action), under a receipt key of the answer's result,
+so a retried Apply returns the routines it made; an answer imported under the earlier single receipt
+(`rack:coachOnboarding`) replays its routines from there, and adoption rewrites a joined routine or movement
+id in every import receipt. Reject drops the drafts on this phone with *Rejected · 3 routines*, which stays
 through a new chat, an opened or deleted conversation and adoption. A movement the phone does not know
 yet reads *New movement*. After sign-in and *Add* the adopted conversation stays on screen, and the next
 question goes to the account's seat, which can answer it with a change to a routine the conversation

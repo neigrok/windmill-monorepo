@@ -73,20 +73,25 @@ extension CoachConversation {
     return response.allowance
   }
 
-  // Apply on an archived answer's drafts: the routines land on the replica in one gesture, replayed by the answer's id.
+  // Apply on an archived answer's drafts: one gesture, replayed by the result identity so a retry makes no new routines.
   func importOnboarding(_ record: CoachOnboardingRecord, owner: String) throws {
     guard self.owner == owner, allowed, let response = record.response, response.status == "completed" else { throw CancellationError() }
-    let result: Outcome<[ID<Routine>], GymRefusal>
+    let refused = AppFailure(message: "These routines couldn’t be saved. Your response is kept; try again.")
+    let result: Outcome<CoachImportReceipt, GymRefusal>
     do {
       let replica = try gym.runner.read(Gym.scope) { $0.replica }
-      result = try gym.runner.run(ImportCoachRoutines(replica: replica, requestId: record.id,
-        resultId: response.resultId, routines: response.routines.map(\.domain)))
+      let drafts = response.routines.map(\.domain).map { routine in
+        CoachRoutineImport(id: gym.runner.mint(Routine.self), name: routine.name, entries: routine.entries)
+      }
+      result = try gym.runner.run(ImportCoachRoutineBatch(replica: replica, resultId: response.resultId, drafts: drafts, at: gym.runner.moment()))
+    } catch is Violation {
+      throw refused
     } catch {
       gym.report("gym_action", error)
       gym.telemetry.event("gym_action", properties: ["screen": "coach", "outcome": "failed"])
       throw AppFailure(message: "Your routines couldn’t be saved. The response is kept on this phone; try again.")
     }
-    guard let ids = result.value else { throw AppFailure(message: "These routines couldn’t be saved. Your response is kept; try again.") }
+    guard let ids = result.value?.routines else { throw refused }
     guard ids.count == response.routines.count else { throw URLError(.badServerResponse) }
     var completed = record
     completed.results = zip(ids, response.routines).enumerated().map { index, item in

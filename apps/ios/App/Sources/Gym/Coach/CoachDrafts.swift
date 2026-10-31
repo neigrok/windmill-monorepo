@@ -87,7 +87,7 @@ extension CoachConversation {
     var next = saved; next.rejectedDrafts = (next.rejectedDrafts ?? []) + [id]
     if keep(next, failure: "Your choice couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "drafts_rejected"]) }
   }
-  // Apply saves the answer's routines on this phone, by the answer's own id, so a second Apply changes nothing.
+  // Apply saves the answer's routines on this phone, by the answer's result identity, so a second Apply changes nothing.
   func saveRoutines(_ requestId: String) -> CoachDraftsCard.Outcome {
     guard let owner, allowed else { return .closed(CoachCopy.accountChanged) }
     guard let record = saved.onboarding?.first(where: { $0.id == requestId }) else { return .closed(CoachCopy.draftGone) }
