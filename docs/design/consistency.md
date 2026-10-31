@@ -866,8 +866,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   |---|---|---|
   | In-app predictive back and navigation motion | Built (task 53, awaiting merge): `GymStage` previews pushed screens, the logger and the editor; `WindmillSheet` previews every sheet from its own window, so a busy sheet still swallows Back; shared axis X and fade-through, cuts with Remove animations | 00.5 `1743:26713` · `1743:27031`; 00.6 `1745:25871` · `1745:26174` |
   | Nav labels at 320dp/200% | *Routines* and *The log* clip (see *Narrow tab label*) | 00.7 `1745:27419` · `1745:27475` |
-  | Dirty routine draft on Back (4k) | Back drops a new draft with no question | 02.20 `1742:39519` · `1742:39682` |
-  | Movement editor discard wording | The dialog's dismiss says *Cancel* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
+  | Dirty routine draft on Back (4k) | Built (task 56, awaiting merge): Back, the gesture and the back arrow ask on an unsaved draft; a clean one leaves at once | 02.20 `1742:39519` · `1742:39682` |
+  | Movement editor discard wording | Built (task 56, awaiting merge): *Keep editing* | 02.17 `1443:19730` · `1443:20852` (*Keep editing*) |
   | Load below zero for Barbell/Dumbbells | Accepted in targets and Fix set; the field shows a hyphen, summaries a minus | 02.21 `1742:39774` · `1742:40098`; 03.33 `1742:40425` · `1742:40717` |
   | Rack height and planned rows | *22.5 kg total* moves the unit below (O rule) and grows the rack about 80px; planned rows read *last kg total × max* | 03.34 `1742:40960` · `1742:41112` |
   | Rack at 320dp/200% | The ledger collapses to a clipped sliver | 03.35 `1742:41245` · `1742:41402` |
@@ -877,8 +877,10 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   Shared rules these change beyond Android: iOS and web accept a load below zero for Barbell and
   Dumbbells, and iOS planned rows read *last × max* (`Readout.setTarget`). 03.34 adds a fit-first
   step to the O rule for the rack. 02.20 draws the routine Name field in the outlined
-  floating-label idiom the movement sheet uses; 02.3, 02.5 and the other editor boards still draw a
-  label above the field.
+  floating-label idiom the movement sheet uses, and Android builds it (task 56); 02.3, 02.5 and the
+  other editor boards still draw a label above the field (designer to redraw). 02.20 draws only a
+  named draft: Android says *This routine won't be saved.* while the name is blank (designer to
+  confirm).
 
 - **11t · You after a confirmed closure (designer).** D5's caption names the row *Finish deletion*
   once closure is confirmed, and Android builds that label (task 48). The subtitle under *You* is
@@ -1101,9 +1103,10 @@ iOS. It and the product differ in these places.
   whether that difference is intentional. Android's targets are drawn as number steppers (Android
   02.6, 02.11; 11d).
 - **4k · Leaving drafts.** iOS asks *Discard routine changes?* (Discard · Keep editing) on a
-  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`); Android Back drops a dirty new
-  routine silently, while its movement editor asks (02.17). Approved Android 02.20 and the
-  revised 02.17 (✅, 11s) follow the iOS rule and words. Web and restored drafts remain open.
+  dirty Cancel and blocks swipe-dismiss (`RoutineBuilder.swift`). Android follows the same rule and
+  words (02.20, the revised 02.17; task 56, awaiting merge): Back, the gesture and the back arrow ask
+  on an unsaved draft, and the gesture previews nothing while it would ask. Web and restored drafts
+  remain open.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
   records and finish reads elsewhere in the room. Undo visibility and stored-count validation are
   already separate concerns (`guidelines/system-architecture.md` §3, the window rule).

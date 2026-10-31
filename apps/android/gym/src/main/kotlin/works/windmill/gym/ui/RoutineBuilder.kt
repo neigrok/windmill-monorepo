@@ -2,6 +2,7 @@ package works.windmill.gym.ui
 
 import works.windmill.platform.design.WindmillSheet
 import androidx.activity.compose.BackHandler
+import works.windmill.gym.BackGuard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -37,7 +38,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -63,7 +63,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -232,7 +231,17 @@ fun RoutineBuilder(
     }
 
     val editing = draft.id != null
-    BackHandler(enabled = saving) {}
+    // Asked over the draft, so a recreation mid-question keeps both the question and the draft.
+    var discarding by rememberSaveable { mutableStateOf(false) }
+    // A lambda rather than a local fun: Compose remembers it against the draft it reads, never a stale one.
+    val leave: () -> Unit = leave@{
+        if (saving) return@leave
+        if (!draft.unsaved) return@leave onClose()
+        discarding = true
+        telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "state" to "shown"))
+    }
+    // While a save is in flight Back does nothing; while the draft holds work it asks.
+    BackGuard(enabled = saving || draft.unsaved, ask = leave)
     LaunchedEffect(saving) {
         if (saving) { focusManager.clearFocus(); keyboard?.hide() }
     }
@@ -247,7 +256,7 @@ fun RoutineBuilder(
             else sheet = BuilderSheet.Target(id, TargetEntry.Draft(draft.entry(id)?.sets.orEmpty()), movement)
         },
         onRemove = { onDraft(draft.removing(it)) }, onAdd = { sheet = BuilderSheet.Picker },
-        onSave = onSave, onCancel = { if (!saving) onClose() },
+        onSave = onSave, onCancel = leave,
     )
 
     val open = sheet
@@ -309,44 +318,29 @@ fun RoutineBuilder(
         }
     }
     val form = open as? BuilderSheet.Target
-    if (form?.discarding == true) AlertDialog(onDismissRequest = { sheet = form.copy(discarding = false) },
-        title = { Text("Discard changes?") }, text = { Text("Changes to this movement won’t be kept.") },
-        confirmButton = { TextButton(onClick = ::leaveForm) { Text("Discard", color = skin.error) } },
-        dismissButton = { TextButton(onClick = { sheet = form.copy(discarding = false) }) { Text("Cancel") } },
-        containerColor = skin.surface)
+    if (form?.discarding == true) DiscardQuestion("Discard changes?", "Changes to this movement won’t be kept.",
+        onKeepEditing = { sheet = form.copy(discarding = false) }, onDiscard = ::leaveForm)
+    if (discarding) DiscardQuestion("Discard routine changes?",
+        "${Program.named(draft.name) ?: "This routine"} won’t be saved.",
+        onKeepEditing = {
+            discarding = false
+            telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "cancelled"))
+        },
+        onDiscard = {
+            discarding = false
+            telemetry.event("gym_action", mapOf("screen" to "routine_editor", "action" to "discard", "outcome" to "ok"))
+            onClose()
+        })
 }
 
+// The editor's two questions before work is let go: the movement form's and the whole draft's.
 @Composable
-internal fun PlanningNameField(
-    value: String,
-    onValue: (String) -> Unit,
-    description: String,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    container: Color? = null,
-) {
+private fun DiscardQuestion(title: String, text: String, onKeepEditing: () -> Unit, onDiscard: () -> Unit) {
     val skin = LocalGymColors.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Name", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
-        OutlinedTextField(
-            value, onValueChange = onValue, singleLine = true, enabled = enabled,
-            placeholder = { Text(placeholder) }, textStyle = WindmillFont.body(18).copy(lineHeight = 25.sp),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
-                autoCorrectEnabled = false, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-            shape = RoundedCornerShape(8.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = container ?: skin.surface,
-                unfocusedContainerColor = container ?: skin.surface, focusedBorderColor = skin.accent,
-                unfocusedBorderColor = skin.line, focusedTextColor = skin.ink,
-                unfocusedTextColor = skin.ink, cursorColor = skin.accent,
-                focusedPlaceholderColor = skin.inkDim, unfocusedPlaceholderColor = skin.inkDim),
-            modifier = modifier.fillMaxWidth().heightIn(min = 56.dp)
-                .semantics { contentDescription = description },
-        )
-        Program.counter(value)?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
-    }
+    AlertDialog(onDismissRequest = onKeepEditing, title = { Text(title) }, text = { Text(text) },
+        confirmButton = { TextButton(onClick = onDiscard) { Text("Discard", color = skin.error) } },
+        dismissButton = { TextButton(onClick = onKeepEditing) { Text("Keep editing", color = skin.accent) } },
+        containerColor = skin.surface)
 }
 
 @Composable
@@ -429,8 +423,18 @@ private fun BuildStep(
             .onGloballyPositioned { viewport = it.boundsInRoot() }
             .testTag("routine-editor-body").verticalScroll(scroll).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            PlanningNameField(draft.name, { onDraft(draft.named(it)) }, "Routine name", "Routine name",
-                modifier = Modifier.focusRequester(focus), enabled = editable)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                NativeFieldType {
+                    OutlinedTextField(draft.name, onValueChange = { onDraft(draft.named(it)) }, enabled = editable,
+                        label = { Text("Name") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words,
+                            autoCorrectEnabled = false, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus)
+                            .semantics { contentDescription = "Routine name" })
+                }
+                Program.counter(draft.name)?.let { Text(it, style = WindmillFont.body(13), color = skin.inkDim) }
+            }
             if (draft.name.isBlank() && (editing || draft.entries.isNotEmpty())) {
                 Text(Program.nameItToSaveIt, style = WindmillFont.body(14), color = skin.inkDim)
             }

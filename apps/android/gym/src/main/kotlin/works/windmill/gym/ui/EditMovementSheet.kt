@@ -12,8 +12,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,10 +71,7 @@ internal fun MovementFields(
     var menu by remember { mutableStateOf(false) }
     val choice = ExerciseRules.loadingChoice(equipment, loadCount)
     val labels = mapOf("barbell" to "Barbell", "dumbbell" to "Dumbbells", "other" to "Other")
-    MaterialTheme(typography = MaterialTheme.typography.copy(
-        bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
-        bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
-    )) {
+    NativeFieldType {
         OutlinedTextField(name, onValueChange = onName, enabled = enabled, label = { Text("Name") },
             singleLine = true, isError = problem != null,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),

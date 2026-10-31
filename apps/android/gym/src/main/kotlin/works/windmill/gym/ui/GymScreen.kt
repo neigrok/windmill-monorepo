@@ -168,6 +168,16 @@ fun gymFieldColours(): TextFieldColors {
     )
 }
 
+// The planning forms' outlined fields speak the platform's own type: body-large for what is typed,
+// body-small for the label once it floats.
+@Composable
+fun NativeFieldType(content: @Composable () -> Unit) {
+    MaterialTheme(typography = MaterialTheme.typography.copy(
+        bodyLarge = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = .5.sp),
+        bodySmall = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .4.sp),
+    ), content = content)
+}
+
 // A top bar action whose verb has no icon worth the guess. Material's own text action, in the
 // room's accent.
 @Composable

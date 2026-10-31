@@ -148,8 +148,10 @@ key: pushes and pops travel along the shared X axis and tab changes fade through
 emphasized easing. A back gesture shrinks a pushed screen, the logger or the routine editor toward
 90 % over the frame its release returns to. A Back that lands during a release cannot stop the pop
 it committed to; it waits for the stage to settle and then acts on where the room stands. A busy
-`BackHandler` swallows the gesture. `BackGuard` is the API for a screen to veto the preview and ask
-instead of leaving; no screen registers one yet, and task 56's routine editor is its first user.
+`BackHandler` swallows the gesture. A `BackGuard` vetoes the preview and asks instead of leaving;
+only the standing frame's guard counts. The routine editor registers one: on a draft holding unsaved
+work, Back, the gesture and its back arrow ask *Discard routine changes?*, a clean draft leaves at
+once, and a save in flight swallows Back.
 `KeepOnBack` lets a screen keep typed entry before Back leaves it; the logger's rack registers one.
 Every sheet is a `WindmillSheet`, which previews Back from its own window and finishes a close it
 has begun even when another Back arrives. With Remove animations on, all of these cut.

@@ -331,6 +331,9 @@ data class RoutineDraft(
     val changed: Boolean get() = original == null ||
         Program.named(name) != original.name || position != original.position || write != original.entries || movements.any { it.changed }
 
+    // What a Back would lose: anything typed into a new draft, or an edit that differs from its routine.
+    val unsaved: Boolean get() = if (original == null) name.isNotBlank() || entries.isNotEmpty() else changed
+
     val full: Boolean get() = entries.size >= Program.maxEntries
 
     fun named(to: String): RoutineDraft = copy(name = Program.capped(to))

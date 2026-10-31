@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -263,6 +264,10 @@ internal class BackGuards {
 
 internal val LocalBackGuards = staticCompositionLocalOf { BackGuards() }
 
+// Whether the frame drawing this is the one standing. A frame sliding away, or one a gesture reveals
+// beneath, asks nothing: a back belongs to what stands.
+internal val LocalFrameStands = compositionLocalOf { true }
+
 @Composable
 internal fun KeepOnBack(keep: () -> Unit) {
     val guards = LocalBackGuards.current
@@ -277,9 +282,10 @@ internal fun KeepOnBack(keep: () -> Unit) {
 @Composable
 internal fun BackGuard(enabled: Boolean, ask: () -> Unit) {
     val guards = LocalBackGuards.current
+    val stands = LocalFrameStands.current
     val currentAsk by rememberUpdatedState(ask)
     val guard = remember { BackGuards.Guard { currentAsk() } }
-    SideEffect { guard.enabled = enabled }
+    SideEffect { guard.enabled = enabled && stands }
     DisposableEffect(guards, guard) {
         guards.hold(guard)
         onDispose { guards.release(guard) }
@@ -460,7 +466,11 @@ internal fun GymStage(
             shape = RoundedCornerShape(NavigationMotion.backCorner * progress)
             clip = true
             shadowElevation = 12.dp.toPx() * progress
-        }) { CompositionLocalProvider(LocalBackGuards provides guards) { content(shown) } }
+        }) {
+            CompositionLocalProvider(LocalBackGuards provides guards, LocalFrameStands provides (shown.key == frame.key)) {
+                content(shown)
+            }
+        }
     }
 }
 
