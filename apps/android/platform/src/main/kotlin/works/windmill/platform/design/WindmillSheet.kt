@@ -7,6 +7,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -40,7 +41,9 @@ import kotlinx.coroutines.launch
 // sheet toward 90 %, anchored at its bottom, and a release means `onBack`: by default Material's own
 // close, which slides the sheet down and then asks `onDismissRequest`.
 //
-// Its window's bars follow the appearance.
+// Its top stops at the status bar. Material lets a sheet taller than the space above the keyboard
+// slide under the status band; the padding, read in the sheet's own window, takes that band out of
+// the space the sheet measures in, so the content resizes above the keyboard instead. Its window's bars follow the appearance.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WindmillSheet(
@@ -63,6 +66,7 @@ fun WindmillSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         modifier = modifier
+            .statusBarsPadding()
             .graphicsLayer {
                 val progress = preview.value
                 if (progress > 0f) {
