@@ -84,12 +84,12 @@ class CoachOnboardingStore(
             synchronized(jobs) {
                 jobs.values.firstOrNull { it.record.owner == origin.owner && it.record.chat == chat }?.let { return it.job }
                 val held = local.onboarding().firstOrNull { it.owner == origin.owner && it.chat == chat && it.pending }
-                if (held != null) return start(held, Attempt.Recover)
+                if (held != null && held.request().text == text && held.attachment == attachment) return start(held, Attempt.Recover)
                 val id = requestId()
                 val request = CoachOnboardingRequest(id, "conversation", text, context(origin.owner, captured), image)
                 val record = CoachOnboardingRecord(origin.owner, chat, origin.replica, id,
                     WindmillJson.encodeToString(CoachOnboardingRequest.serializer(), request), now(), attachment = attachment)
-                return start(record, Attempt.Send)
+                return start(record, Attempt.Send, replaces = held)
             }
         } catch (failure: Exception) {
             reportUnexpected(failure)
@@ -146,11 +146,11 @@ class CoachOnboardingStore(
     fun records(owner: String, chat: String): List<CoachOnboardingRecord> =
         local.onboarding().filter { it.owner == owner && it.chat == chat }.sortedBy { it.createdAtMs }
 
-    private fun start(record: CoachOnboardingRecord, attempt: Attempt): Deferred<CoachOnboardingOutcome> = synchronized(jobs) {
+    private fun start(record: CoachOnboardingRecord, attempt: Attempt, replaces: CoachOnboardingRecord? = null): Deferred<CoachOnboardingOutcome> = synchronized(jobs) {
         val key = record.owner to record.requestId
         jobs[key]?.let { return@synchronized it.job }
         val authority = local.admit(record.owner)
-        val job = scope.async(start = CoroutineStart.LAZY) { execute(record, attempt, authority) }
+        val job = scope.async(start = CoroutineStart.LAZY) { execute(record, attempt, authority, replaces) }
         jobs[key] = Active(record, job)
         revision.update { it + 1 }
         job.invokeOnCompletion { synchronized(jobs) {
@@ -160,13 +160,16 @@ class CoachOnboardingStore(
         job
     }
 
-    private suspend fun execute(original: CoachOnboardingRecord, attempt: Attempt, authority: LocalCoach.Authority): CoachOnboardingOutcome {
+    private suspend fun execute(original: CoachOnboardingRecord, attempt: Attempt, authority: LocalCoach.Authority,
+        replaces: CoachOnboardingRecord?): CoachOnboardingOutcome {
         val began = elapsedNanos()
         var record = original
         telemetry.event("gym_ask_started", mapOf("state" to "anonymous"))
         var outcome = "failed"
         var cap: String? = null
         try {
+            replaces?.let { local.onboarding(it.owner, it.requestId) }?.takeIf { it.pending }
+                ?.let { keep(it.copy(refusalCode = CoachOnboardingRecord.unanswered), authority) }
             val violation = withContext(storageDispatcher) { CoachOnboardingLimits.violation(record.request()) }
             if (violation != null) {
                 record = record.copy(refusalCode = "input_limit")
@@ -219,7 +222,15 @@ class CoachOnboardingStore(
         } catch (failure: WindmillApiException.Refused) {
             if (failure.status == 404 && failure.refusal.code == "not_found") {
                 outcome = "failed"
-                return CoachOnboardingOutcome.Unanswered(record)
+                return try {
+                    record = (local.onboarding(record.owner, record.requestId) ?: record).copy(refusalCode = CoachOnboardingRecord.unanswered)
+                    keep(record, authority)
+                    CoachOnboardingOutcome.Unanswered(record)
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    reportUnexpected(failure)
+                    CoachOnboardingOutcome.Failed(record)
+                }
             }
             val code = failure.refusal.code ?: "unavailable"
             try {

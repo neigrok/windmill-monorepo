@@ -264,4 +264,28 @@ class CoachRoutineImportsTests {
         assertEquals(key, CoachRoutineImports.receiptKey(opaque))
         assertNotEquals(key, CoachRoutineImports.receiptKey(opaque + "y"))
     }
+
+    @Test fun parallelAndRetriedAppliesWithFreshlyMintedIdsImportOnce() = runBlocking {
+        Engine.memory(SyncSchema.registry, null as Json?, clock = object : EngineClock { override fun now() = 1_800_000_000_000L },
+            rewriteDeviceValue = EngineTraining.rewriteDeviceValue).use { engine ->
+            val record = CoachOnboardingRecord("anonymous:fixture", "chat", engine.activeReplica(),
+                "11111111-1111-4111-8111-111111111111", "", 1_800_000_000_000, response = CoachOnboardingResponse(
+                    "11111111-1111-4111-8111-111111111111", "result", "completed", 1_900_000_000_000,
+                    listOf(CoachOnboardingResponse.Routine("Upper", listOf(CoachOnboardingResponse.Entry("bench-press",
+                        listOf(CoachOnboardingResponse.Target(5, 0.0)), 90))),
+                        CoachOnboardingResponse.Routine("Lower", listOf(CoachOnboardingResponse.Entry("back-squat",
+                            listOf(CoachOnboardingResponse.Target(5, 60.0)), 120)))),
+                    allowance))
+            val minted = java.util.concurrent.atomic.AtomicInteger()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val imports = CoachRoutineImports(engine, { CoachOnboardingSeat(record.owner, record.replica) }, scope,
+                mintRoutine = { "routine" + minted.incrementAndGet() })
+            val outcomes = (1..8).map { scope.async { imports.apply(record) } }.map { it.await() } + imports.apply(record)
+            assertEquals(1, outcomes.count { it is CoachImportOutcome.Committed })
+            assertEquals(8, outcomes.count { it is CoachImportOutcome.Replayed })
+            assertEquals(2, engine.read(Routine.scope) { it.drawn(Routine.type).size })
+            assertEquals(1, outcomes.mapNotNull { (it as? CoachImportOutcome.Committed)?.receipt ?: (it as? CoachImportOutcome.Replayed)?.receipt }.toSet().size)
+            scope.cancel()
+        }
+    }
 }

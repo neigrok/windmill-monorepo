@@ -177,7 +177,8 @@ class CoachOnboardingStoreTests {
         val store = CoachOnboardingStore(local, installation(), api, { seat }, backgroundScope, telemetry,
             StandardTestDispatcher(testScheduler), { id })
         assertTrue(store.send("chat", "whole retained question").await() is CoachOnboardingOutcome.Unanswered)
-        assertTrue(store.resume().single().await() is CoachOnboardingOutcome.Unanswered)
+        assertEquals(CoachOnboardingRecord.unanswered, local.onboarding(origin.owner, id)?.refusalCode)
+        assertTrue(store.resume().isEmpty())
         assertEquals(1, api.posts.size)
         val original = api.posts.single()
         api.onPost = { response() }

@@ -53,6 +53,11 @@ data class CoachOnboardingRecord(val owner: String, val chat: String, val replic
     val attachment: CoachAttachment? = null, val refusalMessage: String? = null) {
     val pending: Boolean get() = refusalCode == null && response?.terminal != true
     fun request(): CoachOnboardingRequest = WindmillJson.decodeFromString(CoachOnboardingRequest.serializer(), body)
+
+    companion object {
+        // A request the server never answered: it never arrived, or a newer question replaced it before it was read.
+        const val unanswered = "unanswered"
+    }
 }
 
 enum class CoachOnboardingLimit { text, contextTurns, contextBytes, contextText, photoBytes, photoFormat, photoEdge, invalidInput }

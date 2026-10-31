@@ -30,6 +30,7 @@ import works.windmill.gym.coach.onboarding.CoachOnboardingStore
 import works.windmill.gym.coach.onboarding.CoachOnboardingOutcome
 import works.windmill.gym.coach.onboarding.CoachOnboardingImage
 import works.windmill.gym.coach.onboarding.CoachOnboardingLimits
+import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -170,6 +171,7 @@ class CoachStore internal constructor(
                 answer = response?.takeIf { it.status == "completed" }?.let { AskAnswer(it.message, ReadTally()) },
                 trouble = when {
                     response?.status == "completed" || pending -> null
+                    code == CoachOnboardingRecord.unanswered -> Ask.interrupted
                     code == "account_required" -> Ask.accountRequired
                     code == "subject_exhausted" -> AskCap.Allowance.wordless
                     code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required") ->
@@ -177,7 +179,7 @@ class CoachStore internal constructor(
                     code != null || response?.status == "expired" -> "Coach couldn’t take that one"
                     else -> Ask.interrupted
                 },
-                again = response == null && !pending && code == null,
+                again = response == null && !pending && (code == null || code == CoachOnboardingRecord.unanswered),
                 requestId = record.requestId, atMs = record.createdAtMs, refusalCode = code, attachments = listOfNotNull(record.attachment))
         }
         val ordered = exchanges.sortedBy { it.atMs }
@@ -318,7 +320,8 @@ class CoachStore internal constructor(
     private fun submitAnonymous(id: String, text: String, photo: CoachAttachment?, requestId: String): Boolean {
         val coordinator = onboarding ?: return false
         if (anonymousAccess != AnonymousCoachAccess.Available || isAsking(id) || chat(id) == null) return false
-        if (text.trim().toByteArray().size > CoachOnboardingLimits.textBytes || text.isBlank() && photo == null) return false
+        val question = text.trim()
+        if (question.toByteArray().size > CoachOnboardingLimits.textBytes || question.isEmpty() && photo == null) return false
         val seat = archiveOwner
         val held = CoachDraft(text, photo)
         try { saveDraft(seat, id, held) } catch (_: Exception) { return false }
@@ -326,7 +329,7 @@ class CoachStore internal constructor(
         busy[key] = true
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val existing = coordinator.records(seat, id).firstOrNull { it.requestId == requestId && it.request().text == text }
+                val existing = coordinator.records(seat, id).firstOrNull { it.requestId == requestId && it.request().text == question }
                 val outcome = if (existing != null) coordinator.retry(seat, existing.requestId).await() else {
                     val image = photo?.let { attachment ->
                         val bytes = withContext(storageDispatcher) { localCoach?.photoFile(seat, attachment.id)?.readBytes() }
@@ -334,9 +337,11 @@ class CoachStore internal constructor(
                         CoachOnboardingImage(attachment.mediaType, Base64.getEncoder().encodeToString(bytes))
                     }
                     if (owner != null || archiveOwner != seat || archive[key] == null) return@launch
-                    coordinator.send(id, text, image, photo).await()
+                    coordinator.send(id, question, image, photo).await()
                 }
-                if (outcome is CoachOnboardingOutcome.Answered && draft(seat, id) == held) saveDraft(seat, id, CoachDraft())
+                val answered = (outcome as? CoachOnboardingOutcome.Answered)?.record
+                if (answered?.request()?.text == question && answered.attachment == photo && draft(seat, id) == held)
+                    saveDraft(seat, id, CoachDraft())
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.coachOnboarding", failure) }
             finally { busy.remove(key); jobs.remove(key); onboardingRevision++ }
