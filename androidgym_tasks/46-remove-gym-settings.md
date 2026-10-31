@@ -5,11 +5,11 @@
 - Shell · Android 16b You, signed in: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4408) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-877)
 - No Gym board draws a Gym settings page, a Units control or lb anywhere.
 
-**Today** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` = `apps/android/platform/src/main/kotlin/works/windmill/platform/` or `app/`)
-- Gym settings (`ui/SettingsScreen.kt:81-129`): *Units* with kg / lb (`UnitsRow`, :131-162; under lb the caption `Bodyweight.kilogramsOnly`), *Workout hidden* / *Show workout* (:113-119, 45), *Notes* / *what you write for Coach* and *Connected log* rows (:122-123), *Account* / the email or *Not signed in* (:125), and the saved-workout cards (`DeviceTrainingRow`, :126, 25).
-- It is reached from You's *Gym settings* row (`GymRoom.kt:438-441`, `Away.Settings` at :410, :942, :1032) and from the logger's gear (03 deletes it) and the review door (25 deletes it).
-- lb draws nothing: every screen prints kg. The choice is stored in the shared preferences record (`domain/Preferences.kt:13-30`, written through `store/EngineTraining.kt:392-395`).
-- You (`platform/you/YouSheet.kt:83-121`): *You*, the email, *One account across Windmill.* (:86), the room's rows (today *Gym settings*, *Connected log*) plus *About Windmill* (`app/MainActivity.kt:238`), then *Sign in* / *Sign out* in ink.
+**Implementation**
+- You presents Notes, Connected log and About Windmill directly, with the approved typography, spacing and imported chevron. The sign-in form remains unchanged. Task 47 owns the sign-out question; task 48 owns the Delete account row.
+- The Gym settings screen, route and units control are removed. Restoration drops only the known retired Settings route and keeps other valid entries; malformed or unknown navigation retains its technical failure report.
+- The Android preferences view contains only confirmation feedback. Shared domain preferences retain units. Android reads confirmation feedback only; the obsolete settings-write wrappers are removed.
+- Focused JVM validation passed 7 platform and 56 gym cases; the 12 affected gym cases passed again after removing unused preference writers. Source review and native Dark/Daylight acceptance remain pending. No production claim is made.
 
 **Change**
 - You (16a, signed out): *You*, then the rows **Notes**, **Connected log**, **About Windmill**, and **Sign in** in ink at the foot.

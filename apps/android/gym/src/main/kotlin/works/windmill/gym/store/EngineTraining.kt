@@ -594,19 +594,7 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
         ?.let { MovementRecord.of(it, details()) }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
-        GymPreferences(Units.entries.first { it.wire == value.units }, value.confirmHaptic, value.confirmSound)
-    }
-    suspend fun savePreferences(document: GymPreferences): GymPreferences {
-        val next = Preferences(units = document.units.wire, confirmHaptic = document.confirmHaptic, confirmSound = document.confirmSound)
-        writing { runner ->
-            val draft = runner.open(Preferences, next.id, Preferences()).edit { next }
-            when (val result = runner.save(draft, Preferences, GymRefusal) {}) {
-                is SaveResult.Refused -> throw refusal(result.refusal)
-                is SaveResult.Failed -> throw result.error
-                is SaveResult.Saved -> Unit
-            }
-        }
-        return settings()
+        GymPreferences(value.confirmHaptic, value.confirmSound)
     }
     fun notes(): List<Note> = read { reader -> reader.repository(EngineNote).all(ViewMode.drawn)
         .mapIndexed { index, note -> Note(note.id.text, index, note.title, note.body, note.updatedAt?.ms ?: 0) } }
