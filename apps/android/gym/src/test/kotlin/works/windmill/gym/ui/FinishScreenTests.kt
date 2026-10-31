@@ -294,6 +294,23 @@ class FinishedSessionTests {
                     completedAtMs = 2_000L + index)
     }
 
+    // A receipt saved by the build before the shared review restores whole; the stats it carried are dropped.
+    @Test
+    fun aReceiptSavedByThePreviousBuildRestoresItsRecordAndComparison() {
+        val saved = """{"session":{"id":"w1","startedAt":1799500000000,"finishedAt":1799503600000,"routineId":"routineA"},""" +
+            """"sets":[{"id":"s1","exerciseId":"bench-press","setNumber":1,"weightKg":110.0,"reps":5,"completedAt":1799500060000}],""" +
+            """"review":{"stats":{"durationMs":3600000,"workingSets":4,"topE1rm":128.3},""" +
+            """"record":{"kind":"e1rm","exerciseId":"bench-press","value":128.3,"weightKg":110.0,"reps":5,"previous":105.0,"previousAt":1799000060000},""" +
+            """"against":{"sessionId":"w0","routine":"Push A","startedAt":1799000000000,"movements":[{"exerciseId":"bench-press",""" +
+            """"now":{"sets":4,"reps":5,"weightKg":110.0},"before":{"sets":4,"reps":5,"weightKg":100.0},"planned":{"sets":[{"reps":5,"weightKg":100.0}]}}]}}}"""
+        assertEquals(FinishedSession(Session("w1", 1_799_500_000_000, 1_799_503_600_000, "routineA"),
+            listOf(TrainingSet("s1", "bench-press", 1, 110.0, 5, null, "", 1_799_500_060_000)),
+            Review(PersonalRecord("e1rm", "bench-press", 128.3, 110.0, 5, 105.0, 1_799_000_060_000),
+                Against("w0", "Push A", 1_799_000_000_000, listOf(AgainstMovement("bench-press", Effort(4, 5, 110.0), Effort(4, 5, 100.0),
+                    PlannedLine(listOf(SetTarget(5, 100.0)))))))),
+            works.windmill.platform.net.WindmillJson.decodeFromString(FinishedSession.serializer(), saved))
+    }
+
     @Test
     fun actualSetCountDecidesTheHeadingWithoutDependingOnReview() {
         val misleading = Review(PersonalRecord("heaviest", "back-squat", 100.0, 100.0, 5, 90.0, 0))

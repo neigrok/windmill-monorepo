@@ -235,7 +235,7 @@ data class PersonalRecord(
     val weightKg: Double,
     val reps: Int,
     val previous: Double,
-    val previousAtMs: Long,
+    @SerialName("previousAt") val previousAtMs: Long,
 )
 
 // Every set of the movement on one side of a comparison: their count and bounds, and the top set the comparison stands on.
@@ -272,7 +272,7 @@ data class AgainstMovement(
 data class Against(
     val sessionId: String,
     val routine: String? = null,
-    val startedAtMs: Long,
+    @SerialName("startedAt") val startedAtMs: Long,
     val movements: List<AgainstMovement> = emptyList(),
 )
 

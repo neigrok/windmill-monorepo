@@ -18,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.sync.engine.signIn
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -507,6 +508,30 @@ class TrainingStoreTests {
                 listOf(60.0, 82.5), room.store.lastTime?.sets?.map { it.weightKg })
             assertEquals("the last set's weight, the first set's reps", Prefill(82.5, 10), room.store.prefill)
             runCurrent()
+        }
+    }
+
+    // A workout chosen signed out, carried into an account the phone has not read yet, restored with no cached owner:
+    // the account cannot answer last time, so the rack opens without it rather than refusing the workout.
+    @Test
+    fun testARestoreOverAnUnreadAccountOpensTheWorkoutWithoutLastTime() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val session = room.startExternalWorkout()
+            room.store.choose("back-squat")
+            val schema = works.windmill.sync.schema.SyncSchema.registry.version
+            val question = room.engine.signIn("a", mapOf("gym" to true), serverSchema = schema)
+            if (!question.member("complete").bool()) {
+                val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map { it.str() } }
+                room.engine.signIn("a", mapOf("gym" to true), mapOf("gym" to "add"), pins, serverSchema = schema)
+            }
+            assertFalse(room.training.anonymous || room.training.firstPullComplete)
+            val cold = room.freshStore()
+            assertTrue(cold.restoreWorkout(null, true))
+            assertNull(cold.workoutFailure)
+            assertEquals(session.id, cold.session?.id)
+            assertEquals("back-squat", cold.exerciseId)
+            assertNull(cold.lastTime)
         }
     }
 

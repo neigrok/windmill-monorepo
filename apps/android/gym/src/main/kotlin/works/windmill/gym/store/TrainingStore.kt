@@ -195,7 +195,7 @@ class TrainingStore(
             series = training.weighins()
             val movement = controls.chosenMovement
             val previous = if (owner == null && movement != null) readTraining {
-                try { training.lastTime(movement) } catch (_: TrainingRefused) { null }
+                try { training.lastTime(movement) } catch (_: TrainingRefused) { null } catch (_: TrainingUnanswered) { null }
             } else null
             workoutReady = true
             reconcileWorkoutTime()
