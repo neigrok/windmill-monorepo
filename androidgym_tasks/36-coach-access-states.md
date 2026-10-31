@@ -1,5 +1,7 @@
 # Coach access states: no seat, not on this Windmill, the day's cap, a change needs an account
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the rig recipes and captures for 08.6–08.8, 08.6b and 08.31 and native process-restart acceptance remain.
+
 **Figma:**
 - 08.6 Coach, no seat: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1253-28737) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-41279)
 - 08.6b Signed out, earlier chats retained: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49152) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1489-49306), human-approved 2026-10-28 and ✅ Ready for dev on the Android design page.

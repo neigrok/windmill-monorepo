@@ -1,5 +1,7 @@
 # Allowance used: signed out, signed in (interim), Windmill One
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; 01.12 stays 🚧 In progress and unbuilt. The captures for 01.10/01.11 and event acceptance remain.
+
 **Figma:**
 - 01.10 signed out: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35870) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39675)
 - 01.11 signed in, interim: [Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-35979) / [Daylight](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1254-39698)

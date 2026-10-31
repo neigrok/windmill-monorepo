@@ -153,8 +153,8 @@ must be public.
 
 ## Coordinated client cutoff
 
-The repository registry is schema 11 / minimum 11 with explicit gym `other`, finite normalized loads
-without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
+The repository registry is schema 12 / minimum 11. Every schema in that interval carries explicit gym
+`other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 11 / minimum 11, verified on 2026-10-30 after
 [deployment 40873633845](https://github.com/neigrok/windmill-monorepo/actions/runs/40873633845).
 The latest published Android release is 0.12.1 / code 184. iOS 0.2.0 (23) is uploaded and VALID,

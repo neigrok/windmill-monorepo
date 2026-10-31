@@ -1,5 +1,7 @@
 # Delete account, from You, signed in (Shell file)
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for Shell 27a–27g and D1–D5 and the full local-stack fault acceptance remain.
+
 **Figma:**
 - Shell · Android 27a Delete your account?: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1269) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1667)
 - Shell · Android 27b Email typed: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1328) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=54-1693)

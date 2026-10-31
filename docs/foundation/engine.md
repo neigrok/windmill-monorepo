@@ -14,16 +14,16 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**Registry contract:** The composed source registry is version 10 with minimum version 10. Gym's
+**Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
-whose versions rise together (§2.4); journal's field shape is unchanged. Production cutoff is held
-behind the [coordinated release guard](../../backend/deploy/README.md#coordinated-client-cutoff) until
-Android and iOS replacement artifacts and upgrade availability are verified. Every other product
+whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
+schema 11 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+holds the receipts. Every other product
 starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`

@@ -1,5 +1,7 @@
 # Remove Gym settings and the lb toggle; You holds Notes, Connected log and About Windmill (Shell file)
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for Shell 16a/16b remain.
+
 **Figma:**
 - Shell · Android 16a You, signed out: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-1569) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-719)
 - Shell · Android 16b You, signed in: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=33-4408) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=34-877)

@@ -1,5 +1,7 @@
 # Signed-out Coach on this phone (installation credential, onboarding endpoint)
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; this task has no board. Live installation issue, binding, process-restart and telemetry acceptance remain, and the deployed onboarding switches are off.
+
 **Figma:** none. This task builds the plumbing that 39–44 draw on. The signed-out boards are 01.1, 01.4, 01.7, 01.10, 01.14, 01.15, 01.16.
 
 **Current implementation** (paths under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start with `platform/` or `backend/`)

@@ -1,5 +1,7 @@
 # Sign out asks first, and offers Keep or Discard for unconfirmed changes (Shell file)
 
+**Status:** On draft pull request [#41](https://github.com/neigrok/windmill-monorepo/pull/41), not on main. Its boards are ✅ Ready for dev; the captures for Shell 16c/16e and the native Sentry collector check remain.
+
 **Figma:**
 - Shell · Android 16c Sign out?: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1053) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1215)
 - Shell · Android 16e Sign out? with unconfirmed changes: [Dark](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1127) / [Daylight](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=52-1257)
