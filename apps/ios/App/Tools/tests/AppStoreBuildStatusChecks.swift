@@ -62,7 +62,10 @@ import Foundation
     let safe = String(data: try JSONEncoder().encode(access), encoding: .utf8)!
     precondition(!safe.contains("private-tester-canary") && !safe.contains("group-a") && !safe.contains("group-b"))
     let paths = StatusProtocol.state.paths()
-    precondition(paths.count == 6 && paths[1].contains("filter%5Bbuilds%5D=build-id"))
+    precondition(paths.count == 6)
+    let groupQuery = URLComponents(string: "https://api.appstoreconnect.apple.com" + paths[1])!.queryItems!
+    precondition(Dictionary(uniqueKeysWithValues: groupQuery.map { ($0.name, $0.value!) }) ==
+      ["filter[app]": "app-id", "fields[betaGroups]": "isInternalGroup,hasAccessToAllBuilds", "limit": "200"])
     precondition(paths[2].hasPrefix("/v1/betaGroups/group-a/relationships/builds?"))
     precondition(paths[3].hasPrefix("/v1/betaGroups/group-a/relationships/betaTesters?"))
     precondition(paths.allSatisfy { !$0.contains("email") && !$0.contains("firstName") && !$0.contains("lastName") })
@@ -107,9 +110,43 @@ import Foundation
     StatusProtocol.state.set([firstPage, firstPage])
     do { _ = try await fixture.pages("/v1/betaGroups/group-a/relationships/betaTesters", query: ["limit": "200"]); preconditionFailure("Repeated page accepted") }
     catch AppStoreStatusFailure.response {}
-    StatusProtocol.state.set([valid, oneGroup.replacingOccurrences(of: "isInternalGroup\":true", with: "isInternalGroup\":false")])
-    do { _ = try await fixture.betaAccess(app: "app-id", bundle: "works.windmill.app", targetBuild: "candidate-id", targetStatus: ready, referenceVersion: "0.2.0", referenceBuild: "19"); preconditionFailure("External group accepted") }
+    let external = oneGroup.replacingOccurrences(of: "isInternalGroup\":true", with: "isInternalGroup\":false")
+    StatusProtocol.state.set([valid, external])
+    let externalOnly = try await fixture.betaAccess(app: "app-id", bundle: "works.windmill.app", targetBuild: "candidate-id",
+      targetStatus: ready, referenceVersion: "0.2.0", referenceBuild: "19")
+    precondition(externalOnly == AppStoreBetaAccess(status: "NO_ESTABLISHED_GROUP", groups: []))
+    precondition(StatusProtocol.state.paths().count == 2)
+    StatusProtocol.state.set([valid, groups, #"{"data":[{"type":"builds","id":"candidate-id"}]}"#, builds, testers])
+    let establishedOnly = try await fixture.betaAccess(app: "app-id", bundle: "works.windmill.app", targetBuild: "candidate-id",
+      targetStatus: ready, referenceVersion: "0.2.0", referenceBuild: "19")
+    precondition(establishedOnly == AppStoreBetaAccess(status: "VERIFIED",
+      groups: [.init(index: 1, hasAccessToAllBuilds: false, buildAssigned: true, testerCount: 1)]))
+    precondition(StatusProtocol.state.paths().count == 5)
+    precondition(!StatusProtocol.state.paths().contains(where: { $0.contains("group-a/relationships/betaTesters") }))
+    StatusProtocol.state.set([valid, oneGroup.replacingOccurrences(of: "betaGroups", with: "unexpected")])
+    do { _ = try await fixture.betaAccess(app: "app-id", bundle: "works.windmill.app", targetBuild: "candidate-id", targetStatus: ready,
+      referenceVersion: "0.2.0", referenceBuild: "19"); preconditionFailure("Unexpected group resource accepted") }
     catch AppStoreStatusFailure.response {}
+
+    let refused = #"{"errors":[{"code":"PARAMETER_ERROR.INVALID","title":"private-title-canary","detail":"private-detail-canary","source":{"parameter":"filter[builds]"}}]}"#
+    StatusProtocol.state.set([refused], status: 400)
+    do { _ = try await fixture.get("/v1/betaGroups", query: ["filter[app]": "app-id"]); preconditionFailure("HTTP error accepted") }
+    catch let failure as AppStoreStatusFailure {
+      precondition(failure.code == "http_400")
+      precondition(failure.diagnostics == " route=beta_groups apple_code=PARAMETER_ERROR.INVALID parameter=filter[builds]")
+    }
+    for body in [#"{"errors":[{"code":"private-code-canary","source":{"parameter":"private-parameter-canary"}}]}"#,
+                 "private-invalid-json-canary", String(repeating: "x", count: 1_048_577)] {
+      let failure = AppStoreStatusFailure.request(status: 400, path: "/v1/betaGroups/private-group-canary/relationships/betaTesters", data: Data(body.utf8))
+      precondition(failure.code == "http_400")
+      precondition(failure.diagnostics == " route=beta_group_testers apple_code=unreported parameter=unreported")
+    }
+    for path in ["/v1/betaGroups", "/v1/betaGroups/group-a/relationships/builds", "/v1/betaGroups/group-a/relationships/betaTesters"] {
+      let signed = try fixture.request(path, query: ["limit": "200"])
+      let token = signed.value(forHTTPHeaderField: "Authorization")!.dropFirst("Bearer ".count).split(separator: ".")
+      let body = try JSONSerialization.jsonObject(with: decoded(String(token[1]))) as! [String: Any]
+      precondition(body["scope"] as? [String] == ["GET " + path + "?limit=200"])
+    }
     print("App Store status checks passed: signed GET scope, exact archive match, literal beta states, pending/failure and bounded output.")
   }
 }
@@ -119,15 +156,18 @@ final class StatusProtocol: URLProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private var responses: [String] = []
     private var requests: [String] = []
-    func set(_ values: [String]) { lock.lock(); defer { lock.unlock() }; responses = values; requests = [] }
+    private var status = 200
+    func set(_ values: [String], status: Int = 200) {
+      lock.lock(); defer { lock.unlock() }; responses = values; requests = []; self.status = status
+    }
     func paths() -> [String] { lock.lock(); defer { lock.unlock() }; return requests }
-    func next(_ request: URLRequest) -> String {
+    func next(_ request: URLRequest) -> (status: Int, body: String) {
       lock.lock(); defer { lock.unlock() }
       precondition(request.httpMethod == "GET" && request.url?.host == "api.appstoreconnect.apple.com")
       precondition(request.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true)
       requests.append(request.url!.path + "?" + (request.url!.query ?? ""))
       precondition(!responses.isEmpty)
-      return responses.removeFirst()
+      return (status, responses.removeFirst())
     }
   }
   static let state = State()
@@ -135,8 +175,8 @@ final class StatusProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
     let body = Self.state.next(request)
-    client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: body.status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data(body.body.utf8)); client?.urlProtocolDidFinishLoading(self)
   }
   override func stopLoading() {}
 }
